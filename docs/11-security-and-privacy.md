@@ -1,0 +1,69 @@
+# Bảo mật và quyền riêng tư
+
+## Tài sản nhạy cảm
+
+- thông tin đăng nhập và OAuth token;
+- ngày đi, điểm đến, thành viên nhóm và URL plan riêng tư;
+- danh tính creator và thông tin nhận tiền;
+- hồ sơ payment/order/refund;
+- nội dung được nhập riêng tư và prompt của user;
+- dữ liệu vị trí/tiến độ có thể tiết lộ user đang hoặc sẽ ở đâu.
+
+## Xác thực và phân quyền
+
+- Dùng thuật toán hash mật khẩu tiêu chuẩn hoặc nhà cung cấp danh tính đáng tin.
+- Khi phù hợp, lưu session trong cookie secure, HTTP-only và same-site.
+- Backend phải kiểm tra quyền cho mọi private plan, listing draft, order,
+  entitlement, review, creator metric và hành động admin.
+- Mô hình hóa rõ quyền của thành viên trip.
+- Yêu cầu xác thực bổ sung khi thay đổi payout, email, mật khẩu hoặc thực hiện
+  thao tác tài khoản có tính phá hủy.
+
+Trường role hiện tại không đủ để làm hệ thống phân quyền hoàn chỉnh.
+
+## API và hạ tầng
+
+- Validate payload và giới hạn kích thước request/body.
+- Rate limit authentication, AI generation, nhập URL, search và checkout.
+- Ngoài môi trường trên máy cá nhân, chỉ cho phép CORS từ origin đã biết.
+- Lưu secret trong biến môi trường/secret manager, không đưa vào source control.
+- Pin, quét dependency và container image.
+- Backup database và kiểm tra quy trình restore.
+- Dùng audit event cho kiểm duyệt, refund, entitlement và thay đổi đặc quyền.
+
+## Nhập URL và AI
+
+- Chống SSRF bằng cách chặn địa chỉ local, private, metadata và non-HTTP.
+- Giới hạn redirect, content type, response size và thời gian fetch.
+- Xem văn bản trang/video là nội dung không đáng tin và cô lập khỏi system
+  prompt.
+- Không để lộ hidden prompt, secret, private plan hoặc nội dung của user khác cho
+  model.
+- Validate model output trước provider call hoặc trước khi lưu.
+- Yêu cầu xác nhận cho hành động có hậu quả; không cho model tuyên bố
+  booking/payment/liên hệ đã thành công.
+
+## Chợ lịch trình và thanh toán
+
+- Dùng trang thu thập thanh toán của provider; không lưu dữ liệu thẻ thô.
+- Xác minh chữ ký webhook, event ID, số tiền, tiền tệ và order mapping.
+- Xử lý webhook phải idempotent.
+- Chỉ cấp entitlement sau xác nhận thanh toán phía server.
+- Giữ phiên bản đã mua để xử lý tranh chấp và refund.
+- Tách số dư creator thành pending, available, paid và reversed.
+- Có luồng moderation, report, takedown và refund trước khi mở publish tự do.
+
+## Quyền riêng tư
+
+- Chỉ thu thập dữ liệu cần thiết cho tính năng.
+- Giải thích lý do cần vị trí, contact, media hoặc URL được nhập.
+- Mặc định plan và thành viên nhóm ở trạng thái riêng tư.
+- Xác định thời gian lưu prompt, nội dung nguồn, log, lịch sử trip và hồ sơ tài
+  chính.
+- Hỗ trợ export và xóa dữ liệu khi pháp luật cho phép.
+- Không theo dõi vị trí chính xác trừ khi user chủ động bật và tính năng thực sự
+  cần.
+- Loại bỏ dữ liệu cá nhân khỏi log và analytics.
+
+Phải thực hiện threat model trước khi phát hành authentication, URL fetching,
+payment, collaboration hoặc nội dung creator công khai.
