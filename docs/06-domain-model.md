@@ -4,9 +4,11 @@
 
 ### Người dùng
 
-Entity SQLAlchemy được lưu bền vững, gồm `id`, `email`, `fullName`, `role`,
-`avatarUrl`, `travelPreferences` và timestamp. Các role hiện tại là `traveler`,
-`host`, `creator` và `admin`.
+Entity SQLAlchemy được lưu bền vững, gồm danh tính, password hash, role, trạng
+thái tài khoản, hồ sơ, trạng thái creator, portfolio và timestamp. Refresh
+session được lưu riêng với token hash, JTI, hạn dùng và trạng thái thu hồi. Các
+role hiện tại là `traveler`, `host`, `creator` và `admin`; `host` được giữ để
+tương thích nhưng chưa có luồng Marketplace riêng.
 
 ### Đối tượng giá trị của Planner
 

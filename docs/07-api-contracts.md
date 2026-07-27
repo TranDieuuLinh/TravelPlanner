@@ -12,22 +12,33 @@ Base URL: `/api`. Các field trong JSON response sử dụng camelCase.
 {"message": "ok"}
 ```
 
-### Người dùng
+### Authentication và hồ sơ
 
-- `GET /api/users`
-- `POST /api/users`
+- `POST /api/auth/register`: tạo traveler và set access/refresh/CSRF cookie.
+- `POST /api/auth/login`: xác minh email/password và set cookie.
+- `POST /api/auth/refresh`: rotate refresh session; yêu cầu CSRF header.
+- `POST /api/auth/logout`: thu hồi refresh session và xóa cookie.
+- `GET /api/me`: lấy user hiện tại.
+- `PATCH /api/me/profile`: sửa hồ sơ; yêu cầu CSRF header.
+- `POST /api/me/creator-application`: gửi yêu cầu creator; yêu cầu CSRF header.
 
-Request tạo user:
+Request đăng ký:
 
 ```json
 {
   "email": "traveler@example.com",
-  "fullName": "Nguyen An",
-  "role": "traveler",
-  "avatarUrl": null,
-  "travelPreferences": ["food", "local"]
+  "password": "MatKhauManh123",
+  "fullName": "Nguyen An"
 }
 ```
+
+JWT không được trả trong JSON. Backend lưu access/refresh token trong HTTP-only
+cookie và lưu refresh token dạng hash trong `auth_sessions`. Request thay đổi dữ
+liệu gửi cookie phải đặt `X-CSRF-Token` bằng giá trị cookie `vsf_csrf`.
+
+`GET /api/users` và `POST /api/users` được giữ cho quản trị; cả hai yêu cầu role
+admin, và `POST` yêu cầu CSRF. Đăng ký public chỉ đi qua `/api/auth/register`,
+client không được tự chọn role.
 
 ### Lịch trình
 
@@ -58,7 +69,6 @@ chỉ hoạt động khi plan chính vẫn còn trong bộ nhớ của cùng ti�
 
 ### Điểm cuối minh họa/tạm thời
 
-- `POST /api/profiles/planner-preview`
 - `GET /api/marketplace/categories`
 
 Đây chưa phải contract production.
@@ -76,18 +86,35 @@ chỉ hoạt động khi plan chính vẫn còn trong bộ nhớ của cùng ti�
 - Job chạy lâu trả `202 Accepted` kèm job resource.
 - Chỉnh sửa optimistic gửi version hoặc ETag và trả `409` khi xung đột.
 
-Cấu trúc lỗi chuẩn:
+Cấu trúc lỗi chuẩn của các module mới:
 
 ```json
 {
-  "error": {
-    "code": "PLAN_VERSION_CONFLICT",
-    "message": "Plan đã được cập nhật bởi một phiên làm việc khác.",
-    "details": {"currentVersion": 7},
-    "requestId": "req_..."
-  }
+  "code": "VERSION_CONFLICT",
+  "message": "Dữ liệu đã được cập nhật bởi một phiên làm việc khác.",
+  "fieldErrors": {},
+  "requestId": "req_..."
 }
 ```
+
+Backend trả cùng request ID trong header `X-Request-ID`. Validation trả
+`VALIDATION_ERROR`; chưa đăng nhập trả `AUTHENTICATION_REQUIRED`; sai role trả
+`INSUFFICIENT_ROLE`.
+
+## Contract liên module đã triển khai
+
+`PlanMarketplaceGateway` là protocol Python dùng giữa module Planner và
+Marketplace trong modular monolith. Đây không phải HTTP endpoint và không cho
+Marketplace truy cập trực tiếp `PlanRepository`.
+
+- `get_publish_info(planId, actorId)`: xác minh ownership, version và trạng thái
+  publishable.
+- `get_preview(planVersionId)`: trả snapshot preview an toàn.
+- `clone_for_buyer(planVersionId, buyerId, sourceListingVersionId)`: tạo bản sao
+  buyer độc lập.
+
+Hiện protocol, schema và fake contract test đã có; implementation persistence và
+version phía Planner vẫn là phần Người B cần hoàn thành trước Listing.
 
 ## Nhóm tài nguyên mục tiêu của MVP
 

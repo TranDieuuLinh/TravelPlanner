@@ -18,14 +18,17 @@ plan có cấu trúc -> kiểm tra tính khả thi -> plan có thể chỉnh s�
 
 Repository này đang ở giai đoạn khởi tạo kỹ thuật, chưa phải một MVP hoàn chỉnh.
 
-- Frontend Next.js hiện minh họa chức năng tạo và xem danh sách người dùng.
-- Backend FastAPI đã có chức năng tạo/đọc người dùng và lưu bằng SQLAlchemy.
+- Frontend Next.js đã có đăng ký, đăng nhập bằng cookie, hồ sơ cá nhân và form
+  đăng ký creator kết nối backend thật.
+- Backend FastAPI đã có authentication, refresh session, CSRF, RBAC, hồ sơ,
+  creator application và lưu bằng SQLAlchemy.
 - Module lập kế hoạch đã có ranh giới cho các bước Explorer, Planner, Finder,
   Check và Backup, nhưng vẫn dùng LLM giả lập và lưu plan trong bộ nhớ.
-- Profile Planner và danh mục Marketplace mới chỉ là các endpoint minh họa.
-- Xác thực, bản đồ, nhập dữ liệu từ URL, chỉnh sửa plan, chế độ offline,
-  giao dịch Marketplace, thanh toán, đánh giá và phân tích cho creator chưa được
-  triển khai.
+- Danh mục Marketplace vẫn chỉ là endpoint minh họa; contract giao tiếp giữa
+  Marketplace và Planner đã được định nghĩa nhưng chưa có listing thật.
+- Bản đồ, nhập dữ liệu từ URL, chỉnh sửa plan, chế độ offline, listing, giao dịch
+  Marketplace, thanh toán, đánh giá và phân tích cho creator chưa được triển
+  khai.
 
 Xem [Phạm vi MVP](docs/04-mvp-scope.md) để biết ranh giới phát triển chính thức.
 
@@ -48,6 +51,7 @@ VSF_TravelPlanner/
 │   ├── 10-testing-strategy.md
 │   ├── 11-security-and-privacy.md
 │   ├── 12-roadmap.md
+│   ├── 12-roadmap-person-c.md
 │   ├── assets/
 │   ├── glossary.md
 │   └── decisions/
@@ -88,6 +92,19 @@ npm run dev
 ```
 
 Frontend có tại `http://localhost:3000`.
+
+## Kiểm thử
+
+```bash
+# Backend
+cd backend
+pytest
+
+# Frontend
+cd frontend
+npm run typecheck
+npm run build
+```
 
 ## Tài liệu dự án
 

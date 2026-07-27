@@ -1,9 +1,11 @@
 # Chiến lược kiểm thử
 
-## Khoảng trống hiện tại
+## Hiện trạng
 
-Repository chưa cấu hình bộ test tự động. `npm run typecheck` và các bước
-build/compile chỉ cung cấp mức bảo vệ giới hạn, chưa kiểm tra hành vi.
+Backend đã có pytest và database SQLite cô lập cho Auth, refresh session, CSRF,
+RBAC, Profile, creator application và contract Planner–Marketplace. Frontend
+hiện được bảo vệ bằng typecheck và production build; component test và
+Playwright vẫn là khoảng trống cần bổ sung ở các giai đoạn sau.
 
 ## Các lớp kiểm thử
 
