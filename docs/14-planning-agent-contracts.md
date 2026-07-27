@@ -43,13 +43,18 @@ FinderAgentOutput
   `PlanDay[]`.
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
-- Nếu final plan cần khách sạn, phương tiện, giá tiền và lịch theo ngày, Explorer
-  phải trả thêm `tripSpec` và `finalPlanRequirements`. Planner/Finder dựa vào đó
-  để không bỏ sót phần output cuối.
+- `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
+- `placeCandidates` là các địa điểm chi tiết trong khu vực đó, ví dụ `Son Tra`,
+  `Quan mi quang A`, `Hotel near Han River`.
+- URL tool có thể trích địa điểm từ reels và đưa vào `placeCandidates`. User cũng
+  có thể nhập địa điểm cụ thể trực tiếp vào `placeCandidates` với `source: "user"`.
+- Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
+  schema output của Finder: `finalDays` và `tripCostEstimate`.
 
 ## Explorer
 
-Explorer nhận request ban đầu, selected places và tín hiệu từ URL reels.
+Explorer nhận request ban đầu, destination, `tripSpec`, địa điểm chi tiết nếu có
+và tín hiệu từ URL reels.
 
 Input chính:
 
@@ -57,13 +62,15 @@ Input chính:
 {
   "rawRequest": "Tạo lịch trình Đà Nẵng 3 ngày từ vài reels đồ ăn",
   "destination": "Da Nang",
-  "days": 3,
-  "selectedPlaces": [
+  "placeCandidates": [
     {
       "name": "Son Tra",
+      "placeId": null,
       "source": "user",
+      "sourceUrl": null,
+      "confidence": 1,
       "priority": 1,
-      "notes": null
+      "notes": "User wants this in the trip"
     }
   ],
   "urlReelSignals": [
@@ -127,8 +134,7 @@ Output chính:
 {
   "intent": {
     "destination": "Da Nang",
-    "days": 3,
-    "budget": "balanced",
+    "budgetLevel": "balanced",
     "travelStyle": "local",
     "pace": "balanced",
     "interests": ["food", "coffee"],
@@ -171,8 +177,34 @@ Output chính:
       "includeHotel": true,
       "includeTickets": true
     }
-  }
-  "selectedPlaces": [],
+  },
+  "placeCandidates": [
+    {
+      "name": "Son Tra",
+      "placeId": null,
+      "source": "user",
+      "sourceUrl": null,
+      "confidence": 1,
+      "priority": 1,
+      "notes": "Detailed place inside Da Nang"
+    },
+    {
+      "name": "Quan mi quang A",
+      "placeId": null,
+      "source": "url_reel",
+      "sourceUrl": "https://www.instagram.com/reel/...",
+      "confidence": 0.82,
+      "priority": 2,
+      "notes": "Extracted from reel and accepted as a concrete food stop"
+    },
+    {
+      "name": "Cafe with sea view",
+      "source": "url_reel",
+      "sourceUrl": "https://www.instagram.com/reel/...",
+      "confidence": 0.55,
+      "notes": "Not specific enough to schedule yet"
+    }
+  ],
   "assumptions": ["Use balanced budget because user did not specify exact amount."],
   "missingInfoQuestions": [],
   "trace": {
@@ -196,7 +228,7 @@ Input chính:
   "mode": "main",
   "intent": {},
   "tripSpec": {},
-  "selectedPlaces": [],
+  "placeCandidates": [],
   "planState": {
     "tripId": "trip_123",
     "lockedItemIds": [],
@@ -216,7 +248,6 @@ Output chính:
   "tripSpec": {},
   "macroPlan": {
     "title": "Main plan for Da Nang",
-    "destination": "Da Nang",
     "dayBriefs": [
       {
         "day": 1,
@@ -239,8 +270,8 @@ Output chính:
 
 ## Finder
 
-Finder nhận `MacroPlan`, selected places và state hiện tại, sau đó fill lịch trình
-cụ thể theo ngày.
+Finder nhận `MacroPlan`, `placeCandidates` và state hiện tại, sau đó fill lịch
+trình cụ thể theo ngày.
 
 Input chính:
 
@@ -250,7 +281,7 @@ Input chính:
   "intent": {},
   "tripSpec": {},
   "macroPlan": {},
-  "selectedPlaces": [],
+  "placeCandidates": [],
   "planState": {
     "tripId": "trip_123",
     "lockedItemIds": [],
@@ -271,20 +302,6 @@ Output chính:
 ```json
 {
   "mode": "main",
-  "days": [
-    {
-      "day": 1,
-      "theme": "Food and local neighborhoods",
-      "items": [
-        {
-          "name": "Quan mi quang A",
-          "timeWindow": "09:00-11:00",
-          "placeType": "restaurant",
-          "notes": "Committed by Finder"
-        }
-      ]
-    }
-  ],
   "finalDays": [
     {
       "day": 1,

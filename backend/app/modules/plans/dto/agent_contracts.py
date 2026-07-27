@@ -3,7 +3,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.plans.domain.entities import CheckReport, MacroPlan, PlanDay, TravelIntent
+from app.modules.plans.domain.entities import CheckReport, DayBrief
+from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 
 
 class PlanningAgentName(StrEnum):
@@ -61,10 +62,12 @@ class AgentTrace(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
-class SelectedPlaceHint(BaseModel):
+class PlaceCandidateHint(BaseModel):
     name: str
-    place_id: Annotated[str | None, Field(alias="placeId")] = None
-    source: str = "user"
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    source: str = "url_reel"
+    source_url: Annotated[str | None, Field(default=None, alias="sourceUrl")]
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     priority: int = Field(default=1, ge=1, le=5)
     notes: str | None = None
 
@@ -97,6 +100,20 @@ class PlanWorkingState(BaseModel):
     locked_item_ids: Annotated[list[str], Field(alias="lockedItemIds")] = Field(default_factory=list)
     excluded_place_names: Annotated[list[str], Field(alias="excludedPlaceNames")] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class PlanningIntent(BaseModel):
+    destination: str
+    budget_level: Annotated[BudgetLevel, Field(alias="budgetLevel")] = BudgetLevel.balanced
+    travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
+    pace: TravelPace = TravelPace.balanced
+    interests: list[str] = Field(default_factory=list)
+    must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
+    avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    clarifying_questions: Annotated[list[str], Field(alias="clarifyingQuestions")] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
@@ -141,27 +158,6 @@ class TransportRequirement(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class FinalPlanRequirements(BaseModel):
-    include_day_by_day: Annotated[bool, Field(default=True, alias="includeDayByDay")]
-    include_attractions: Annotated[bool, Field(default=True, alias="includeAttractions")]
-    include_food: Annotated[bool, Field(default=True, alias="includeFood")]
-    include_cafes: Annotated[bool, Field(default=True, alias="includeCafes")]
-    include_hotel: Annotated[bool, Field(default=True, alias="includeHotel")]
-    include_transport: Annotated[bool, Field(default=True, alias="includeTransport")]
-    include_price_estimate: Annotated[bool, Field(default=True, alias="includePriceEstimate")]
-    required_item_categories: Annotated[list[ItineraryItemCategory], Field(alias="requiredItemCategories")] = Field(
-        default_factory=lambda: [
-            ItineraryItemCategory.attraction,
-            ItineraryItemCategory.food,
-            ItineraryItemCategory.cafe,
-            ItineraryItemCategory.hotel,
-            ItineraryItemCategory.transport,
-        ]
-    )
-
-    model_config = {"populate_by_name": True}
-
-
 class TripPlanningSpec(BaseModel):
     days: int = Field(ge=1, le=30)
     party_size: Annotated[int, Field(default=1, ge=1, alias="partySize")]
@@ -170,9 +166,6 @@ class TripPlanningSpec(BaseModel):
     accommodation: AccommodationRequirement = Field(default_factory=AccommodationRequirement)
     transport: TransportRequirement = Field(default_factory=TransportRequirement)
     budget: BudgetEnvelope = Field(default_factory=BudgetEnvelope)
-    final_plan_requirements: Annotated[FinalPlanRequirements, Field(alias="finalPlanRequirements")] = Field(
-        default_factory=FinalPlanRequirements
-    )
 
     model_config = {"populate_by_name": True}
 
@@ -218,11 +211,17 @@ class FinalTripCostEstimate(BaseModel):
     total: MoneyEstimate | None = None
 
 
+class AgentMacroPlan(BaseModel):
+    title: str
+    day_briefs: Annotated[list[DayBrief], Field(alias="dayBriefs")]
+
+    model_config = {"populate_by_name": True}
+
+
 class ExplorerAgentInput(BaseModel):
     raw_request: Annotated[str | None, Field(alias="rawRequest")] = None
     destination: str
-    days: int = Field(ge=1, le=30)
-    selected_places: Annotated[list[SelectedPlaceHint], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     url_reel_signals: Annotated[list[UrlReelSignal], Field(alias="urlReelSignals")] = Field(default_factory=list)
     user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(default_factory=UserPlanningState)
     trip_spec: Annotated[TripPlanningSpec | None, Field(default=None, alias="tripSpec")]
@@ -231,10 +230,9 @@ class ExplorerAgentInput(BaseModel):
 
 
 class ExplorerAgentOutput(BaseModel):
-    intent: TravelIntent
+    intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    final_plan_requirements: Annotated[FinalPlanRequirements, Field(alias="finalPlanRequirements")]
-    selected_places: Annotated[list[SelectedPlaceHint], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(alias="missingInfoQuestions")] = Field(default_factory=list)
     trace: AgentTrace
@@ -244,11 +242,11 @@ class ExplorerAgentOutput(BaseModel):
 
 class PlannerAgentInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
-    intent: TravelIntent
+    intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    selected_places: Annotated[list[SelectedPlaceHint], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
-    original_macro_plan: Annotated[MacroPlan | None, Field(alias="originalMacroPlan")] = None
+    original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
     check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
 
     model_config = {"populate_by_name": True}
@@ -256,7 +254,7 @@ class PlannerAgentInput(BaseModel):
 
 class PlannerAgentOutput(BaseModel):
     mode: PlanningMode
-    macro_plan: Annotated[MacroPlan, Field(alias="macroPlan")]
+    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     day_briefs_ready: Annotated[bool, Field(alias="dayBriefsReady")] = True
     assumptions: list[str] = Field(default_factory=list)
@@ -267,10 +265,10 @@ class PlannerAgentOutput(BaseModel):
 
 class FinderAgentInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
-    intent: TravelIntent
+    intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    macro_plan: Annotated[MacroPlan, Field(alias="macroPlan")]
-    selected_places: Annotated[list[SelectedPlaceHint], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
+    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(default_factory=UserPlanningState)
 
@@ -279,10 +277,9 @@ class FinderAgentInput(BaseModel):
 
 class FinderAgentOutput(BaseModel):
     mode: PlanningMode
-    days: list[PlanDay]
     final_days: Annotated[list[FinalItineraryDay], Field(alias="finalDays")] = Field(default_factory=list)
     trip_cost_estimate: Annotated[FinalTripCostEstimate | None, Field(default=None, alias="tripCostEstimate")]
-    unscheduled_places: Annotated[list[SelectedPlaceHint], Field(alias="unscheduledPlaces")] = Field(default_factory=list)
+    unscheduled_places: Annotated[list[PlaceCandidateHint], Field(alias="unscheduledPlaces")] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
 
