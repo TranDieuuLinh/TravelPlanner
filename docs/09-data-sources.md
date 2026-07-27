@@ -38,17 +38,47 @@ Map provider chưa được lựa chọn. Xem ADR-002.
 Xem nội dung được nhập là dữ liệu không đáng tin cậy, không bao giờ là system
 instruction.
 
-1. Kiểm tra scheme và chặn địa chỉ mạng private/internal.
-2. Fetch qua service được kiểm soát với giới hạn kích thước, redirect và timeout.
-3. Phát hiện loại nguồn và tuân thủ điều khoản/quyền truy cập của nền tảng.
-4. Trích xuất địa điểm ứng viên, caption, ngày và các claim.
-5. Chuẩn hóa địa điểm qua place provider.
-6. Hiển thị độ tin cậy và yêu cầu user xác nhận kết quả không chắc chắn.
-7. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+### Pipeline
 
-MVP bắt đầu với một loại nguồn hợp pháp, khả thi về kỹ thuật và các trang web
-công khai thông thường. “Dán bất kỳ URL Reel/TikTok/Facebook nào” là khả năng mục
-tiêu, không phải lời hứa đáng tin cậy của MVP.
+1. Chuẩn hóa URL, kiểm tra scheme và chặn địa chỉ mạng private/internal.
+2. Nhận diện nguồn và chọn connector theo allowlist.
+3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
+4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
+5. Trích xuất artifact được phép: caption, transcript, frame reference hoặc văn
+   bản trang.
+6. Tạo claim/place candidate có evidence và confidence.
+7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
+8. Hiển thị kết quả để user xác nhận trước khi tạo `SelectedPlace`.
+9. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+
+### Ma trận trạng thái nguồn
+
+| Trạng thái | Hành vi |
+| --- | --- |
+| Được hỗ trợ và công khai | Chạy toàn bộ pipeline |
+| Thiếu transcript/caption | Dùng phần dữ liệu có sẵn, báo rõ giới hạn |
+| Riêng tư hoặc cần đăng nhập | Không vượt quyền truy cập; cho nhập thủ công |
+| Không được hỗ trợ | Giữ URL và cho dán caption/thêm place |
+| Provider timeout | Giữ kết quả từng phần và retry |
+| Nội dung bị xóa | Giữ provenance tối thiểu theo chính sách, đánh dấu unavailable |
+
+### Phạm vi connector của MVP
+
+MVP hỗ trợ end-to-end ít nhất một nguồn video ngắn ưu tiên và URL trang công
+khai thông thường. TikTok là use case sản phẩm ưu tiên, nhưng connector cụ thể
+chỉ được công bố sau ADR xác nhận cách truy cập hợp lệ, độ ổn định và chi phí.
+Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI phải công bố rõ nguồn
+được hỗ trợ và luôn có fallback nhập caption/place thủ công.
+
+### Xung đột dữ liệu
+
+- Caption/video là claim của nguồn, không phải dữ liệu vận hành hiện tại.
+- Place provider quyết định danh tính/tọa độ; user quyết định candidate nào là
+  địa điểm họ muốn.
+- Giờ hoạt động, giá và route mới hơn được ưu tiên cho kiểm tra plan, nhưng claim
+  gốc vẫn được giữ để giải thích khác biệt.
+- Nhiều URL có thể củng cố một place; confidence tổng hợp không được xóa dấu vết
+  từng nguồn.
 
 ## Độ mới dữ liệu
 

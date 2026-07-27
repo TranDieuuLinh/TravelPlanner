@@ -2,75 +2,146 @@
 
 ## Kết quả cần đạt
 
-Người dùng có thể tạo hoặc mua một lịch trình đáng tin cậy, chỉnh sửa, xem địa
-điểm trên bản đồ và lưu để sử dụng trong chuyến đi. Creator có thể xuất bản và
-bán plan. Nhân sự vận hành có thể quản lý các rủi ro Marketplace tối thiểu.
+MVP phải chứng minh được hai hành trình hoàn chỉnh:
+
+1. Traveler đưa URL video/nội dung tham khảo vào hệ thống và nhận một plan có
+   nguồn, khả thi, chỉnh sửa được, có Main Plan và Backup Plan.
+2. Creator tạo, xuất bản và bán plan; buyer thanh toán, nhận đúng phiên bản đã
+   mua, tạo bản sao cá nhân và tiếp tục tùy chỉnh bằng Planner.
+
+Marketplace và Planner đều thuộc MVP. Có thể phát triển theo các mốc khác nhau,
+nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí nghiệm thu.
 
 ## Trong phạm vi
 
 ### Nền tảng cơ bản
 
 - Authentication bằng email và hồ sơ người dùng.
-- Quyền traveler và creator với authorization phía server.
-- Nhập điểm đến/yêu cầu và hỗ trợ một loại URL tham khảo.
+- Quyền traveler, host, creator, buyer và admin được kiểm tra phía server.
+- Trip riêng tư, thành viên với quyền host/editor/viewer và audit cơ bản.
+- Lưu plan, version, import, listing, order và entitlement trong PostgreSQL.
+- Background job có retry giới hạn, tiến độ và khả năng khôi phục lỗi.
 
-### Công cụ lập kế hoạch
+### Nhập URL và hiểu nguồn cảm hứng
 
-- Lịch trình AI có cấu trúc theo ngày và từng mục.
-- Các phương án cơ bản hoặc một plan chính kèm plan dự phòng rõ ràng.
-- Chỉnh sửa thủ công: thêm, xóa, đổi thứ tự, đổi thời gian và khóa địa điểm.
-- Lưu plan trong PostgreSQL.
-- Hiển thị marker và tuyến đường trên bản đồ.
-- Gợi ý thời gian và phương tiện di chuyển.
-- Cảnh báo cơ bản về tính khả thi.
+- Nhập một hoặc nhiều URL cho cùng trip.
+- Hỗ trợ end-to-end ít nhất một nguồn video ngắn ưu tiên và URL trang công khai
+  thông thường; nguồn cụ thể phải được xác nhận bằng ADR về khả năng kỹ thuật,
+  điều khoản và chi phí.
+- Nhận diện nguồn, lấy metadata/nội dung được phép, caption hoặc transcript khi
+  có và ghi nhận phần dữ liệu không truy cập được.
+- Trích xuất place candidate, hoạt động, món ăn, thời điểm, thời lượng, giá được
+  nhắc đến, mẹo và claim có bằng chứng.
+- Place resolution, gộp trùng, độ tin cậy và provenance cho từng kết quả.
+- UI để xác nhận, sửa, loại bỏ hoặc thêm địa điểm thủ công.
+- Giữ kết quả từng phần và fallback thủ công khi URL không được hỗ trợ, riêng tư
+  hoặc provider lỗi.
+- Chống SSRF, giới hạn fetch và cô lập nội dung nguồn khỏi instruction của AI.
 
-### Sử dụng trong chuyến đi
+### Explorer và Planner
 
-- Giao diện lịch trình responsive.
-- Truy cập offline ở chế độ đọc cho một plan đã chọn.
+- Nhập điểm đến, ngày/số ngày, điểm xuất phát, nhóm đi, ngân sách, tiền tệ, nhịp
+  độ, sở thích, phương tiện, nhu cầu tiếp cận và ràng buộc cứng.
+- Câu hỏi làm rõ có giá trị cao, cập nhật cùng draft.
+- Tạo `MacroPlan` và `DayBrief` trước khi điền lịch chi tiết.
+- Tạo `Main Plan` theo ngày với item ổn định, khung giờ, thời lượng, place, chi
+  phí, nguồn và ghi chú.
+- Finder ưu tiên `SelectedPlaces`, gom khu vực hợp lý và đưa địa điểm chưa xếp
+  được vào danh sách có lý do.
+- Hiển thị marker, route, khoảng cách, thời gian và phương tiện giữa các item.
+- Thêm khoảng đệm, bữa ăn/nghỉ và timezone địa phương.
+- Structured output, schema validation và không dùng văn bản tự do làm dữ liệu
+  vận hành duy nhất.
+
+### Kiểm tra và Backup Plan
+
+- Kiểm tra thời gian chồng lấn, mật độ, ngân sách, giờ hoạt động, place identity,
+  route, dữ liệu cũ và ràng buộc cứng.
+- Hiển thị issue theo mức độ, bằng chứng, item bị ảnh hưởng và hành động sửa.
+- Làm mới dữ liệu vận hành trước khi chốt hoặc mở lại plan cũ.
+- Tạo Backup Plan từ Main Plan và CheckOverall Report.
+- Backup là plan riêng có `parentPlanId`, có thể dùng độc lập và không mutate
+  Main Plan.
+- Cho phép chấp nhận, bỏ qua có cảnh báo hoặc sửa từng issue có phạm vi.
+
+### Editor và sử dụng trong chuyến đi
+
+- Thêm, xóa, kéo thả, đổi ngày/giờ, khóa item và hoàn tác thay đổi gần nhất.
+- AI revision theo ngày, khung giờ hoặc item chưa khóa; luôn bảo toàn item khóa.
+- Version history cơ bản, optimistic concurrency và khôi phục version.
+- Giao diện lịch trình và bản đồ responsive.
+- Truy cập offline ở chế độ đọc cho plan đã chọn.
 - Trạng thái hoàn thành/tiến độ đơn giản.
 
-### Chợ lịch trình
+### Marketplace cho creator
 
-- Creator tạo bản nháp, preview, listing, publish/unpublish và snapshot phiên bản.
-- Duyệt listing, tìm kiếm, lọc và xem preview chi tiết.
-- Checkout qua một nhà cung cấp thanh toán.
-- Order và tạo bản sao cá nhân từ plan đã mua.
-- Rating/review từ buyer đủ điều kiện.
-- Creator dashboard cơ bản: lượt xem, lượt mua, đánh giá và doanh thu.
+- Creator profile và trạng thái xác minh.
+- Tạo plan từ URL, Planner, plan cũ hoặc nhập thủ công.
+- Listing draft, media, preview trước/sau mua, giá, license và metadata.
+- Check trước publish, moderation tối thiểu, publish/unpublish và version.
+- Version đã publish là bất biến; update tạo version mới.
+- Dashboard cơ bản: view, conversion, order, review, refund và doanh thu.
+
+### Marketplace cho buyer
+
+- Duyệt, tìm kiếm, lọc, favorite và xem listing detail.
+- Preview đủ để ra quyết định nhưng không lộ toàn bộ nội dung trả phí.
+- Checkout qua một payment provider.
+- Order, payment webhook idempotent, refund và entitlement.
+- Bản sao cá nhân từ đúng plan version đã mua.
+- Buyer có thể đưa bản sao vào Planner để đổi ràng buộc hoặc thêm URL.
+- Rating/review từ buyer đủ điều kiện và luồng report.
 
 ### Vận hành
 
-- Giao diện admin cho user, creator, listing, order, report và refund.
-- Trạng thái xác minh creator.
-- Audit trail cơ bản và xử lý báo cáo nội dung.
+- Admin quản lý user, creator, listing, order, report và refund.
+- Audit trail cho publish, moderation, payment, entitlement và hành động admin.
+- Rate limit, telemetry job/provider và cảnh báo lỗi tích hợp.
+- Quy trình xử lý nội dung lỗi thời, vi phạm hoặc tranh chấp.
 
 ## Ngoài phạm vi MVP
 
-- Hỗ trợ nhiều mạng xã hội và hiểu đầy đủ nội dung video.
-- Chỉnh sửa nhiều người theo thời gian thực; ban đầu chỉ cần mời thành viên và
-  đồng bộ đơn giản.
-- Tự động gọi điện, nhắn tin, đặt bàn hoặc thực hiện booking.
+- Cam kết hỗ trợ mọi URL TikTok/Reels/Facebook bất kể quyền truy cập hoặc thay đổi
+  nền tảng; MVP chỉ cam kết các connector đã công bố.
+- Tự động hiểu hoàn hảo mọi chi tiết hình ảnh/âm thanh khi không có đủ bằng
+  chứng.
+- Chỉnh sửa nhiều người theo thời gian thực; MVP dùng đồng bộ có version.
+- Tự động gọi điện, nhắn tin, đặt bàn hoặc hoàn thành booking.
 - Tổng hợp booking từ nhiều provider.
 - Remix thương mại và chia royalty tự động.
-- Subscription phức tạp và nhiều phương thức thanh toán.
-- Bản đồ thành tựu nâng cao, nền kinh tế điểm và xếp hạng xã hội.
-- Tối ưu hoàn toàn tuyến đường cho mọi phương tiện.
-- Định giá động, xếp hạng gợi ý và phân khúc người xem của creator.
+- Subscription phức tạp và nhiều payment provider.
+- Tối ưu tuyến đường toàn cục cho mọi loại phương tiện.
+- Định giá động và recommendation cá nhân hóa nâng cao.
+- Thành tựu, điểm thưởng và mạng xã hội nâng cao.
 
-## Tín hiệu nghiệm thu MVP
+## Tín hiệu nghiệm thu Planner
 
-- Traveler mới có thể lưu một plan hợp lệ mà không cần nhân sự hỗ trợ.
-- Chỉnh sửa được lưu và địa điểm đã khóa không bị thay đổi khi AI sửa plan.
-- Bản đồ và lịch trình dùng cùng ID địa điểm và cùng thứ tự.
-- Buyer không thể truy cập nội dung trả phí trước khi thanh toán được xác nhận.
-- Order luôn trỏ tới phiên bản listing/plan bất biến.
-- Creator có thể xuất bản phiên bản mới mà không thay đổi giao dịch cũ.
-- Plan đã chọn vẫn mở được sau khi thiết bị mất kết nối.
-- Admin có thể truy vết và xử lý listing bị báo cáo hoặc giao dịch thất bại.
+- URL hợp lệ tạo import job có trạng thái và không làm mất dữ liệu khi retry.
+- Mỗi địa điểm trích xuất có source/evidence/confidence; địa điểm không chắc chắn
+  không tự động trở thành `SelectedPlace`.
+- Traveler có thể đi từ URL đến Main Plan hợp lệ mà không cần nhân sự hỗ trợ.
+- Địa điểm đã xác nhận được xếp vào plan hoặc xuất hiện trong danh sách chưa xếp
+  kèm lý do.
+- Plan vượt qua schema/domain check; issue từ provider có bằng chứng và hành
+  động sửa.
+- Chỉnh sửa được lưu và item đã khóa không bị AI thay đổi.
+- Bản đồ và lịch trình dùng cùng place ID và cùng thứ tự route.
+- Backup Plan dùng được độc lập và không thay đổi Main Plan.
+- Plan đã chọn vẫn mở được ở chế độ đọc khi thiết bị mất kết nối.
+
+## Tín hiệu nghiệm thu Marketplace
+
+- Creator có thể tạo plan, preview, publish và phát hành version mới.
+- Buyer không thể truy cập nội dung trả phí trước khi payment được xác nhận.
+- Order luôn trỏ tới `ListingVersion` và `TripPlanVersion` bất biến.
+- Mỗi payment event chỉ cấp entitlement một lần.
+- Buyer nhận bản sao cá nhân, có thể chỉnh bằng Planner mà không sửa plan creator.
+- Chỉ buyer đủ điều kiện mới được review; report/refund tạo audit event.
+- Admin có thể truy vết một giao dịch và xử lý listing bị báo cáo.
 
 ## Quy tắc phạm vi
 
-Các tính năng trong báo cáo nguồn là tầm nhìn sản phẩm nếu không nằm trong mục
-“Trong phạm vi”. Mọi bổ sung vào MVP phải chỉ ra hạng mục nào bị thay thế hoặc lý
-do cần thay đổi ranh giới phát triển.
+“Làm đầy đủ Planner và Marketplace trong MVP” nghĩa là hoàn thành các hành trình
+và bất biến trên, không đồng nghĩa với hỗ trợ mọi provider hoặc mọi khả năng nâng
+cao ngay phiên bản đầu. Mọi bổ sung phải nêu rõ tiêu chí nghiệm thu nào được phục
+vụ và chi phí/phạm vi nào bị thay thế.

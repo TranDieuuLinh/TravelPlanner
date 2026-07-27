@@ -5,13 +5,14 @@ Phải đọc file này trước khi thay đổi code.
 
 ## Tóm tắt sản phẩm
 
-VSF Travel Planner kết hợp công cụ tạo lịch trình bằng AI với Marketplace dành
-cho nhà sáng tạo. Người đi du lịch có thể bắt đầu từ một điểm đến/URL tham khảo
-hoặc khám phá plan của creator, sau đó chỉnh sửa và sử dụng một bản sao cá nhân.
-Creator có thể xây dựng, bổ sung nội dung, xuất bản và bán plan. Điểm khác biệt
-của sản phẩm là lịch trình vẫn hữu ích sau khi được AI tạo ra: có nhiều phương
-án, bản đồ và phương tiện di chuyển, chỉnh sửa thủ công, kiểm tra tính khả thi,
-cộng tác, dùng offline và nội dung Marketplace đáng tin cậy.
+VSF Travel Planner có hai năng lực cùng nằm trong MVP. Năng lực cốt lõi là biến
+URL video hoặc nội dung tham khảo thành địa điểm và ngữ cảnh có nguồn, để người
+dùng xác nhận trước khi Planner tạo Main Plan, kiểm tra tính khả thi và tạo
+Backup Plan riêng khi cần. Năng lực Marketplace cho phép creator xuất bản và bán
+plan có version; buyer nhận một bản sao cá nhân rồi tiếp tục chỉnh sửa bằng cùng
+Planner. Giá trị khác biệt của sản phẩm là chuỗi
+`URL -> dữ liệu có cấu trúc -> plan khả thi`, không chỉ là một phản hồi AI dạng
+văn bản.
 
 ## Hiện trạng cần ghi nhớ
 
@@ -36,8 +37,9 @@ API.
 | Công việc | Ngữ cảnh bắt buộc |
 | --- | --- |
 | Hành vi sản phẩm hoặc mức độ ưu tiên | `docs/01`, `docs/02`, `docs/03`, `docs/04` |
-| Backend hoặc hạ tầng | `docs/05`, `docs/06`, `docs/07`, ADR-001 |
-| AI Planner | `docs/06`, `docs/08`, `docs/09`, ADR-003 |
+| Backend hoặc hạ tầng | `docs/05`, `docs/06`, `docs/07`, `docs/13`, ADR-001 |
+| Database hoặc migration | `docs/06`, `docs/13`, ADR-001 |
+| AI Planner | `docs/06`, `docs/08`, `docs/09`, `docs/13`, ADR-003 |
 | Bản đồ, định tuyến, địa điểm | `docs/04`, `docs/09`, ADR-002 |
 | Marketplace hoặc thanh toán | `docs/01`, `docs/03`, `docs/06`, `docs/11` |
 | Test hoặc CI | `docs/10` |
@@ -53,6 +55,8 @@ API.
   FastAPI.
 - Các nhà cung cấp AI, bản đồ, thanh toán và nội dung bên ngoài phải được đặt sau
   interface.
+- Importer không được truyền payload thô của nguồn vào domain Planner. Nội dung
+  phải được chuẩn hóa thành source, claim và place candidate có provenance.
 - JSON của API sử dụng camelCase ở bên ngoài và snake_case trong Python.
 - Dữ liệu nghiệp vụ phải được lưu thông qua repository. Repository trong bộ nhớ
   chỉ phù hợp cho prototype và test.
