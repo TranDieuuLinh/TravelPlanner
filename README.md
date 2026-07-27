@@ -48,7 +48,6 @@ VSF_TravelPlanner/
 │   ├── 10-testing-strategy.md
 │   ├── 11-security-and-privacy.md
 │   ├── 12-roadmap.md
-│   ├── 13-database-architecture.md
 │   ├── assets/
 │   ├── glossary.md
 │   └── decisions/

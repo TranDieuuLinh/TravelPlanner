@@ -37,9 +37,9 @@ API.
 | Công việc | Ngữ cảnh bắt buộc |
 | --- | --- |
 | Hành vi sản phẩm hoặc mức độ ưu tiên | `docs/01`, `docs/02`, `docs/03`, `docs/04` |
-| Backend hoặc hạ tầng | `docs/05`, `docs/06`, `docs/07`, `docs/13`, ADR-001 |
-| Database hoặc migration | `docs/06`, `docs/13`, ADR-001 |
-| AI Planner | `docs/06`, `docs/08`, `docs/09`, `docs/13`, ADR-003 |
+| Backend hoặc hạ tầng | `docs/05`, `docs/06`, `docs/07`, ADR-001 |
+| Database hoặc migration | `docs/06`, ADR-001 |
+| AI Planner | `docs/06`, `docs/08`, `docs/09`, ADR-003 |
 | Bản đồ, định tuyến, địa điểm | `docs/04`, `docs/09`, ADR-002 |
 | Marketplace hoặc thanh toán | `docs/01`, `docs/03`, `docs/06`, `docs/11` |
 | Test hoặc CI | `docs/10` |

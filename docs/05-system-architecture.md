@@ -62,9 +62,6 @@ hoặc client được sinh tự động.
 Bắt đầu bằng modular monolith. Chỉ tách service khi có bằng chứng rõ ràng về nhu
 cầu scale, ownership hoặc reliability.
 
-Schema PostgreSQL mục tiêu, quan hệ giữa các bounded context và lộ trình migration
-được mô tả tại [Kiến trúc cơ sở dữ liệu](13-database-architecture.md).
-
 ## Pipeline từ URL đến Planner
 
 ```text
