@@ -11,6 +11,9 @@ migration và model trong các bước tiếp theo.
 | --- | --- | --- |
 | `users` | Implemented | `backend/app/modules/users/model.py`, migration `20260727_0001_create_users_table.py` |
 | `places` | Planned | Cần thêm module/model |
+| `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
+| `place_region_catalog_state` | Planned | Trạng thái thay đổi của danh mục theo khu vực |
+| `place_region_snapshots` | Planned | Snapshot thống kê khu vực cho Planner |
 | `trips` | Planned | Liên quan module `plans` hiện đang dùng Pydantic/in-memory |
 | `itinerary_items` | Planned | Nên dùng thay `trip_places` vì lưu được lịch trình chi tiết |
 | `trip_members` | Planned | Cần cho chia sẻ trip |
@@ -53,11 +56,108 @@ Lưu địa điểm có thể xuất hiện trong lịch trình.
 | `address` | text, nullable | Địa chỉ |
 | `city` | varchar, nullable | Thành phố |
 | `country` | varchar, nullable | Quốc gia |
+| `country_code` | varchar(2), nullable | Mã quốc gia ISO, ví dụ `VN` |
+| `region_key` | varchar(160), nullable | Khóa gom nhóm ổn định, ví dụ `vn,da-nang,hai-chau` |
+| `primary_area` | varchar(160), nullable | Tên khu vực hiển thị |
 | `latitude` | decimal, nullable | Tọa độ |
 | `longitude` | decimal, nullable | Tọa độ |
-| `metadata` | json | Giờ mở cửa, provider IDs, tags |
+| `status` | varchar(32) | `active`, `temporarily_closed`, `permanently_closed`, `unverified` |
+| `opening_hours` | json, nullable | Giờ mở cửa đã chuẩn hóa |
+| `typical_duration_minutes` | integer, nullable | Thời lượng ghé thăm điển hình |
+| `data_confidence` | varchar(16) | `low`, `medium`, `high` |
+| `source_fetched_at` | timestamptz, nullable | Thời điểm dữ liệu vận hành được lấy hoặc xác minh |
+| `revision` | bigint | Tăng khi dữ liệu ảnh hưởng Planner thay đổi |
+| `metadata` | json | Tags, mô tả ngắn và thuộc tính phụ không cần truy vấn thường xuyên |
+| `deleted_at` | timestamptz, nullable | Soft delete để giữ toàn vẹn tham chiếu lịch trình |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+
+`city` và `country` vẫn được giữ để hiển thị và tương thích dữ liệu nhập, nhưng
+không dùng làm khóa gom nhóm. Planner sử dụng `region_key`. Giờ mở cửa được đưa
+ra khỏi `metadata`; ID của provider được lưu riêng trong `place_external_refs`.
+
+### `place_external_refs`
+
+Lưu định danh địa điểm theo provider mà không làm domain `Place` phụ thuộc vào
+payload riêng của provider.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `place_id` | FK `places.id` | Địa điểm chuẩn hóa |
+| `provider` | varchar(64) | Tên provider |
+| `external_id` | varchar(255) | ID của địa điểm tại provider |
+| `fetched_at` | timestamptz | Thời điểm lấy dữ liệu |
+| `confidence` | varchar(16) | `low`, `medium`, `high` |
+| `attributes` | json | Thuộc tính được phép lưu, không chứa payload thô |
+| `created_at` | timestamptz | Tạo lúc |
+| `updated_at` | timestamptz | Cập nhật lúc |
+
+### `place_region_catalog_state`
+
+Mỗi `region_key` có một dòng mutable để biết danh mục đã thay đổi và có cần tạo
+snapshot mới hay không.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `region_key` | varchar(160) PK | Ví dụ `vn,da-nang,hai-chau` |
+| `catalog_version` | bigint | Tăng khi Place trong khu vực thay đổi |
+| `current_snapshot_id` | FK `place_region_snapshots.id`, nullable | Snapshot hiện tại Planner được phép dùng |
+| `dirty_since` | timestamptz, nullable | Thời điểm bắt đầu có thay đổi chưa tổng hợp |
+| `refresh_status` | varchar(16) | `clean`, `pending`, `running`, `failed` |
+| `refresh_attempts` | integer | Số lần worker đã thử |
+| `next_retry_at` | timestamptz, nullable | Thời điểm được retry |
+| `last_error_code` | varchar(64), nullable | Mã lỗi an toàn, không lưu payload provider |
+| `updated_at` | timestamptz | Cập nhật lúc |
+
+### `place_region_snapshots`
+
+Lưu snapshot thống kê bất biến mà Planner dùng để tạo `MacroPlan`. Snapshot mới
+không ghi đè snapshot cũ; sau khi tính thành công,
+`place_region_catalog_state.current_snapshot_id` mới được chuyển sang snapshot
+mới.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `region_key` | varchar(160) | Khu vực được thống kê |
+| `catalog_version` | bigint | Phiên bản danh mục Place nguồn |
+| `algorithm_version` | varchar(32) | Version của logic thống kê |
+| `place_count` | integer | Tổng Place hợp lệ |
+| `active_place_count` | integer | Tổng Place đang hoạt động |
+| `source_max_updated_at` | timestamptz, nullable | Mốc dữ liệu Place mới nhất được sử dụng |
+| `metrics` | json | Thống kê theo loại, thời điểm, chất lượng và phân bố địa lý |
+| `generated_at` | timestamptz | Thời điểm tạo snapshot |
+| `expires_at` | timestamptz, nullable | Thời điểm nên làm mới |
+| `created_at` | timestamptz | Tạo lúc |
+
+`metrics` có thể chứa:
+
+- số lượng theo `place_type` và `status`;
+- độ phủ hoạt động buổi sáng, trưa, chiều và tối;
+- thời lượng điển hình theo loại địa điểm;
+- số Place thiếu tọa độ, giờ mở cửa hoặc có dữ liệu cũ;
+- tâm khu vực và số cụm địa điểm ở mức tổng quan.
+
+Snapshot không lưu route chính xác giữa mọi cặp Place, giao thông hiện tại, thời
+tiết, booking hoặc giá hiện tại. Finder và CheckOverall phải kiểm tra các dữ liệu
+động này khi điền và kiểm tra plan.
+
+### Luồng tự động thống kê Place
+
+1. `PlaceService` thêm, sửa, đóng hoặc chuyển khu vực của một Place.
+2. Trong cùng transaction, tăng `catalog_version` và đặt khu vực liên quan thành
+   `pending`. Nếu Place chuyển khu vực thì đánh dấu cả khu vực cũ và mới.
+3. Background worker gom các thay đổi, đọc Place theo `region_key` và tạo
+   `place_region_snapshots`.
+4. Khi thành công, worker cập nhật `current_snapshot_id`. Nếu `catalog_version`
+   đã tăng trong lúc tính, khu vực vẫn ở trạng thái `pending` để chạy tiếp.
+5. Planner đọc snapshot hiện tại và lưu `snapshot_id` hoặc `catalog_version`
+   trong dấu vết lần lập plan.
+
+Worker phải idempotent theo bộ
+`region_key, catalog_version, algorithm_version`. Nếu refresh thất bại, snapshot
+cũ vẫn được giữ để Planner sử dụng kèm cảnh báo về độ mới.
 
 ### `trips`
 
@@ -248,6 +348,9 @@ users 1--N trips
 users N--N trips through trip_members
 trips 1--N itinerary_items
 places 1--N itinerary_items
+places 1--N place_external_refs
+place_region_catalog_state 1--N place_region_snapshots
+place_region_catalog_state 0--1 current place_region_snapshots
 
 users 1--N marketplace_plans
 marketplace_plans 1--N marketplace_plan_items
@@ -268,8 +371,15 @@ users N--N achievements through user_achievements
 ## Index và constraint nên có
 
 - `users.email` unique.
-- `places` nên index theo `place_type`, `city`, và nếu dùng Postgres thì cân nhắc
-  geo index cho tọa độ.
+- `places`: index `region_key, status`; index `region_key, place_type, status`;
+  index `source_fetched_at`; và nếu dùng Postgres thì cân nhắc geo index cho tọa
+  độ.
+- `place_external_refs`: unique `provider, external_id`; index `place_id`.
+- `place_region_snapshots`: unique
+  `region_key, catalog_version, algorithm_version`; index
+  `region_key, generated_at`.
+- `place_region_catalog_state.current_snapshot_id` phải tham chiếu snapshot có
+  cùng `region_key`; bất biến này được bảo vệ trong service/transaction.
 - `trips.owner_id`, `itinerary_items.trip_id`, `itinerary_items.place_id`.
 - `itinerary_items`: unique mềm trên `trip_id, day_number, sort_order`.
 - `trip_members`: primary key `trip_id, user_id`.
@@ -286,13 +396,16 @@ users N--N achievements through user_achievements
 
 ## Migration plan đề xuất
 
-1. Thêm `places`.
-2. Thêm `trips`, `trip_members`, `itinerary_items`.
-3. Chuyển module `plans` từ in-memory repository sang SQLAlchemy repository.
-4. Thêm `marketplace_plans`, `marketplace_plan_items`, `favorites`.
-5. Thêm `orders`, `order_items`, `payments`.
-6. Thêm `reviews`.
-7. Thêm `achievements`, `user_achievements`.
+1. Thêm `places` và `place_external_refs`.
+2. Thêm `place_region_catalog_state`, `place_region_snapshots` và background job
+   cập nhật thống kê khu vực.
+3. Thêm `trips`, `trip_members`, `itinerary_items`.
+4. Chuyển module `plans` từ in-memory repository sang SQLAlchemy repository và
+   lưu snapshot Place đã dùng trong lần lập plan.
+5. Thêm `marketplace_plans`, `marketplace_plan_items`, `favorites`.
+6. Thêm `orders`, `order_items`, `payments`.
+7. Thêm `reviews`.
+8. Thêm `achievements`, `user_achievements`.
 
-Trong code hiện tại, bước 3 là điểm chuyển quan trọng nhất: `PlanRepository` đang
+Trong code hiện tại, bước 4 là điểm chuyển quan trọng nhất: `PlanRepository` đang
 lưu trong memory, vì vậy dữ liệu plan sẽ mất khi backend restart.
