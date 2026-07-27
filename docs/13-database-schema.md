@@ -10,10 +10,10 @@ migration và model trong các bước tiếp theo.
 | Table | Status | Nguồn trong codebase |
 | --- | --- | --- |
 | `users` | Implemented | `backend/app/modules/users/model.py`, migration `20260727_0001_create_users_table.py` |
-| `places` | Planned | Cần thêm module/model |
+| `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
-| `place_region_catalog_state` | Planned | Trạng thái thay đổi của danh mục theo khu vực |
-| `place_region_snapshots` | Planned | Snapshot thống kê khu vực cho Planner |
+| `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
+| `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
 | `trips` | Planned | Liên quan module `plans` hiện đang dùng Pydantic/in-memory |
 | `itinerary_items` | Planned | Nên dùng thay `trip_places` vì lưu được lịch trình chi tiết |
 | `trip_members` | Planned | Cần cho chia sẻ trip |
@@ -123,6 +123,7 @@ mới.
 | `region_key` | varchar(160) | Khu vực được thống kê |
 | `catalog_version` | bigint | Phiên bản danh mục Place nguồn |
 | `algorithm_version` | varchar(32) | Version của logic thống kê |
+| `source_fingerprint` | varchar(64) | Dấu vân tay dữ liệu Place thuộc khu vực và các vùng con |
 | `place_count` | integer | Tổng Place hợp lệ |
 | `active_place_count` | integer | Tổng Place đang hoạt động |
 | `source_max_updated_at` | timestamptz, nullable | Mốc dữ liệu Place mới nhất được sử dụng |
@@ -134,10 +135,25 @@ mới.
 `metrics` có thể chứa:
 
 - số lượng theo `place_type` và `status`;
+- `tagCounts`: số Place theo tag chuẩn hóa; một Place chỉ được tính một lần cho
+  mỗi tag;
+- `placeGroupCounts`: phân bố theo nhóm hoạt động cấp cao;
+- `tagTimeCoverage`: độ phủ sáng, trưa, chiều và tối của từng tag;
+- `tagDurationProfile`: thời lượng trung vị và cỡ mẫu theo tag;
+- `indoorOutdoorMix`, `weatherSensitivityCounts` và
+  `bookingRequirementCounts`;
 - độ phủ hoạt động buổi sáng, trưa, chiều và tối;
 - thời lượng điển hình theo loại địa điểm;
 - số Place thiếu tọa độ, giờ mở cửa hoặc có dữ liệu cũ;
-- tâm khu vực và số cụm địa điểm ở mức tổng quan.
+- tâm khu vực và bounding box;
+- `areaProfiles`: hồ sơ các khu vực con nổi bật;
+- `plannerSignals`: tag nổi trội, buổi mạnh/yếu, khu vực ứng viên và mức đa dạng
+  hoạt động để Planner tạo `MacroPlan`/`DayBrief`.
+
+Tag phải được chuẩn hóa và gộp alias trước khi đếm, ví dụ
+`cafe, coffee_shop -> coffee` và `restaurant, food_drink -> food`. Một Place chỉ
+được tính một lần cho mỗi tag chuẩn hóa. Tag không có dạng semantic như số điện
+thoại hoặc chuỗi địa chỉ phải bị loại khỏi thống kê Planner.
 
 Snapshot không lưu route chính xác giữa mọi cặp Place, giao thông hiện tại, thời
 tiết, booking hoặc giá hiện tại. Finder và CheckOverall phải kiểm tra các dữ liệu
@@ -145,19 +161,19 @@ tiết, booking hoặc giá hiện tại. Finder và CheckOverall phải kiểm 
 
 ### Luồng tự động thống kê Place
 
-1. `PlaceService` thêm, sửa, đóng hoặc chuyển khu vực của một Place.
-2. Trong cùng transaction, tăng `catalog_version` và đặt khu vực liên quan thành
-   `pending`. Nếu Place chuyển khu vực thì đánh dấu cả khu vực cũ và mới.
-3. Background worker gom các thay đổi, đọc Place theo `region_key` và tạo
-   `place_region_snapshots`.
-4. Khi thành công, worker cập nhật `current_snapshot_id`. Nếu `catalog_version`
-   đã tăng trong lúc tính, khu vực vẫn ở trạng thái `pending` để chạy tiếp.
-5. Planner đọc snapshot hiện tại và lưu `snapshot_id` hoặc `catalog_version`
-   trong dấu vết lần lập plan.
+1. `PlaceCatalogService` thêm, sửa, đóng hoặc chuyển khu vực của Place và tăng
+   `places.revision`; không chạy thống kê ngay.
+2. Khi Planner yêu cầu một `region_key`, repository tính fingerprint từ các
+   Place thuộc đúng khu vực đó và mọi `region_key` con.
+3. Nếu fingerprint và `algorithm_version` trùng snapshot hiện tại, Planner dùng
+   snapshot đó ngay.
+4. Nếu dữ liệu hoặc thuật toán thay đổi, hệ thống tính lại, tạo một
+   `place_region_snapshots` bất biến mới và tăng `catalog_version`.
+5. `place_region_catalog_state.current_snapshot_id` được chuyển sang snapshot
+   mới; snapshot cũ vẫn được giữ để truy vết.
 
-Worker phải idempotent theo bộ
-`region_key, catalog_version, algorithm_version`. Nếu refresh thất bại, snapshot
-cũ vẫn được giữ để Planner sử dụng kèm cảnh báo về độ mới.
+Thay đổi ở khu vực khác không làm snapshot đang được Planner yêu cầu hết hạn.
+Nếu refresh thất bại, snapshot cũ không bị ghi đè.
 
 ### `trips`
 
@@ -409,3 +425,21 @@ users N--N achievements through user_achievements
 
 Trong code hiện tại, bước 4 là điểm chuyển quan trọng nhất: `PlanRepository` đang
 lưu trong memory, vì vậy dữ liệu plan sẽ mất khi backend restart.
+
+## Công cụ thống kê Place hiện tại
+
+Module `backend/app/modules/places/auto_statistics` dùng
+`SqlAlchemyPlaceRepository` để đọc `places` từ PostgreSQL. Import CSV chỉ nằm ở
+script biên `backend/scripts/import_places_to_postgres.py`, không phải repository
+runtime. Create/update Place qua `PlaceCatalogService` chỉ tăng `revision` và
+commit. Khi Planner yêu cầu một `region_key`, `auto_statistics` kiểm tra
+fingerprint của đúng khu vực đó và các vùng con:
+
+- fingerprint không đổi: đọc snapshot hiện tại từ
+  `place_region_snapshots`;
+- fingerprint thay đổi: tạo snapshot bất biến mới, tăng `catalog_version` và
+  chuyển `place_region_catalog_state.current_snapshot_id`;
+- thay đổi ở khu vực khác không làm snapshot đang được yêu cầu hết hạn.
+
+Planner workflow chưa được nối trực tiếp vì contract hiện vẫn dùng destination
+dạng text, chưa có `region_key` chuẩn hóa.
