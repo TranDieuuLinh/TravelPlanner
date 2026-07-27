@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any
 
 
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 SOURCE_DIR = Path(r"K:\VSF\TravelPlanner\database_mock")
-OUTPUT_FILE = Path(__file__).resolve().parents[2] / "database" / "places.csv"
+OUTPUT_FILE = PROJECT_DIR / "database" / "places.csv"
 
 OUTPUT_COLUMNS = [
     "id",
