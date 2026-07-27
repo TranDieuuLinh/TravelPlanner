@@ -1,14 +1,18 @@
 # VSF Travel Planner
 
-VSF Travel Planner là nền tảng lập kế hoạch du lịch có AI hỗ trợ, kết hợp với
-chợ lịch trình dành cho người đi du lịch và nhà sáng tạo nội dung. Người dùng có
-thể tự tạo hoặc mua lịch trình, cá nhân hóa, sử dụng trong chuyến đi và đánh giá
-sau khi hoàn thành. Nhà sáng tạo có thể chuyển kinh nghiệm du lịch thực tế thành
-các lịch trình có thể chỉnh sửa và bán trên Marketplace.
+VSF Travel Planner biến nguồn cảm hứng du lịch thành lịch trình có thể sử dụng
+thực tế. Người dùng có thể dán URL video hoặc nội dung tham khảo, kiểm tra các
+địa điểm được hệ thống trích xuất, bổ sung ngày đi, ngân sách và ràng buộc, sau
+đó nhận Main Plan đã được kiểm tra cùng Backup Plan riêng khi cần.
 
-Luận điểm cốt lõi của sản phẩm là: chỉ tạo ra một lịch trình là chưa đủ. Một kế
-hoạch du lịch hữu ích phải có khả năng so sánh, chỉnh sửa, hiển thị lộ trình,
-đáng tin cậy, hỗ trợ cộng tác và đồng hành cùng người dùng trong suốt chuyến đi.
+Sản phẩm đồng thời có Marketplace để creator chuyển nội dung và kinh nghiệm
+thực tế thành plan có version để xuất bản và bán. Buyer nhận một bản sao cá nhân
+có thể chỉnh sửa bằng cùng công cụ Planner, không làm thay đổi plan gốc của
+creator.
+
+Luận điểm cốt lõi là: giá trị không nằm ở việc sinh ra một đoạn lịch trình bằng
+AI, mà ở toàn bộ chuỗi `URL -> ngữ cảnh có nguồn -> địa điểm đã xác nhận ->
+plan có cấu trúc -> kiểm tra tính khả thi -> plan có thể chỉnh sửa và sử dụng`.
 
 ## Trạng thái hiện tại
 
@@ -44,6 +48,8 @@ VSF_TravelPlanner/
 │   ├── 10-testing-strategy.md
 │   ├── 11-security-and-privacy.md
 │   ├── 12-roadmap.md
+│   ├── 13-database-architecture.md
+│   ├── assets/
 │   ├── glossary.md
 │   └── decisions/
 ├── frontend/

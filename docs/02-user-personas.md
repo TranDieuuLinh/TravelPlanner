@@ -12,6 +12,8 @@
 
 **Mục tiêu**
 
+- Dán một hoặc nhiều URL đã lưu thay vì phải gõ lại toàn bộ địa điểm trong video.
+- Xem bằng chứng và sửa các địa điểm hệ thống trích xuất sai trước khi tạo plan.
 - Có một plan rõ ràng, phù hợp ngân sách, nhịp độ, sở thích và ràng buộc của nhóm.
 - So sánh các phương án trước khi quyết định.
 - Chỉnh sửa lịch trình nhanh mà không phải bắt đầu lại.

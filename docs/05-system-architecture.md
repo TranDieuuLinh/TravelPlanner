@@ -50,23 +50,72 @@ hoặc client được sinh tự động.
 ## Thành phần mục tiêu của MVP
 
 - Authentication và authorization.
-- Repository lưu bền vững cho plan/listing/order.
-- Background job runner cho nhập URL, tạo plan AI, bổ sung route, xử lý media và
-  notification.
+- Repository lưu bền vững cho import/source/place/plan/listing/order.
+- Background job runner cho nhập URL, trích xuất nội dung, tạo plan AI, bổ sung
+  route, xử lý media và notification.
 - Object storage cho media của creator.
 - Kho cache/rate limit khi mức dùng provider yêu cầu.
 - LLM gateway có structured output, retry, telemetry và chuyển đổi provider.
-- Gateway cho place/map và payment.
+- Gateway cho source connector, speech/vision extraction, place/map và payment.
 - Chiến lược cache offline và đồng bộ trong web client.
 
 Bắt đầu bằng modular monolith. Chỉ tách service khi có bằng chứng rõ ràng về nhu
 cầu scale, ownership hoặc reliability.
+
+Schema PostgreSQL mục tiêu, quan hệ giữa các bounded context và lộ trình migration
+được mô tả tại [Kiến trúc cơ sở dữ liệu](13-database-architecture.md).
+
+## Pipeline từ URL đến Planner
+
+```text
+Web client
+   |
+   | POST /imports
+   v
+Import API -> Import Job -> Source Connector
+                           |
+                           v
+                  Content Extraction
+             caption / transcript / frames
+                           |
+                           v
+                 Claim + PlaceCandidate
+                           |
+                           v
+                    Place Resolver
+                           |
+                           v
+                User Confirmation UI
+                           |
+                           v
+                    SelectedPlaces
+                           |
+                           v
+Explorer -> Planner -> Finder -> Check -> Main/Backup Plan
+```
+
+Ranh giới trách nhiệm:
+
+- `imports`: vòng đời URL, connector, nội dung được phép lưu, trạng thái job và
+  provenance.
+- `extraction`: chuyển nội dung nguồn không đáng tin thành claim/place candidate
+  có schema; không gọi trực tiếp domain Planner.
+- `places`: chuẩn hóa danh tính, gộp trùng và lưu ánh xạ provider.
+- `planning`: chỉ nhận source/claim/place đã chuẩn hóa cùng ràng buộc của trip.
+- `checks`: kết hợp rule engine với dữ liệu place/route/weather có thời điểm lấy.
+- `marketplace`: chỉ publish version đã kiểm tra; buyer clone version vào trip
+  riêng trước khi chỉnh sửa.
+
+Connector của từng nền tảng phải nằm sau interface và trả về mô hình nội bộ.
+Không để payload riêng của TikTok, YouTube hoặc provider khác lan vào domain.
 
 ## Quy tắc dữ liệu và request
 
 - Idempotency key do client tạo bảo vệ thao tác retry khi tạo plan và checkout.
 - Tác vụ nhập/generate kéo dài phải trở thành job với trạng thái rõ ràng:
   `queued`, `running`, `succeeded`, `failed`, `cancelled`.
+- Import phải lưu kết quả từng bước để retry extraction hoặc resolution mà không
+  fetch lại nguồn khi không cần thiết.
 - Dữ liệu thực tế từ bên ngoài phải có nguồn, thời điểm lấy và độ tin cậy.
 - Nội dung đã publish và đã mua phải có version.
 - Giá tiền dùng số nguyên theo đơn vị nhỏ nhất và mã tiền ISO; không dùng số thực
