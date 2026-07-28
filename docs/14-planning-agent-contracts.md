@@ -44,12 +44,15 @@ FinderAgentOutput
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
 - `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- `placeCandidates` và `foodPlaces` là gợi ý chưa được xác nhận và không được
-  Planner xem là yêu cầu bắt buộc. `placeCandidates` giữ điểm tham quan/hoạt
-  động; `foodPlaces` giữ quán ăn và quán cà phê. `selectedPlaces` là các Place
-  đã được user xác nhận và là đầu vào chính thức của Planner.
-- URL tool có thể trích địa điểm từ reels và đưa vào đúng nhóm. User cũng có thể
-  nhập địa điểm cụ thể trực tiếp với `source: "user"`.
+- Explorer context là output công khai. Place extraction là stream nội bộ; mọi
+  loại địa điểm, gồm food/cafe, nằm trong một `placeCandidates` và category dùng
+  để phân loại.
+- `PlaceCandidateAggregator` gộp candidate từ prompt/OCR/URL và giữ danh sách
+  source. Resolver tự động lưu chúng vào `user_must_place`; không hỏi user lại.
+- Explorer chỉ bàn giao `intakeId + userId + explorer`; không tự gọi Planner
+  hoặc Finder. Planner downstream dùng context và giữ hai correlation key.
+- Finder là consumer của `user_must_place` trong planning flow và phải đọc theo
+  cả `intakeId + userId`.
 - Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
   schema output của Finder: `finalDays` và `tripCostEstimate`.
 
@@ -208,38 +211,6 @@ Output chính:
       "notes": "User gave an approximate total budget."
     }
   },
-  "placeCandidates": [
-    {
-      "name": "Son Tra",
-      "category": "attraction",
-      "placeId": null,
-      "source": "user",
-      "sourceUrl": null,
-      "confidence": 1,
-      "priority": 1,
-      "notes": "Detailed place inside Da Nang"
-    }
-  ],
-  "foodPlaces": [
-    {
-      "name": "Quan mi quang A",
-      "category": "food",
-      "placeId": null,
-      "source": "url_reel",
-      "sourceUrl": "https://www.instagram.com/reel/...",
-      "confidence": 0.82,
-      "priority": 2,
-      "notes": "Extracted from reel and accepted as a concrete food stop"
-    },
-    {
-      "name": "Cafe with sea view",
-      "category": "cafe",
-      "source": "url_reel",
-      "sourceUrl": "https://www.instagram.com/reel/...",
-      "confidence": 0.55,
-      "notes": "Not specific enough to schedule yet"
-    }
-  ],
   "assumptions": ["Use medium budget because user did not specify exact amount."],
   "missingInfoQuestions": [],
   "trace": {
@@ -248,6 +219,29 @@ Output chính:
     "summary": "Normalized user request into TravelIntent.",
     "notes": []
   }
+}
+```
+
+Output place riêng:
+
+```json
+{
+  "placeCandidates": [
+    {
+      "name": "Quan mi quang A",
+      "category": "food",
+      "addressHint": "12 Nguyen Hue, Da Nang",
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://www.instagram.com/reel/..."
+        }
+      ],
+      "confidence": 0.82,
+      "priority": 1,
+      "notes": "Caption mentioned this address"
+    }
+  ]
 }
 ```
 
@@ -342,6 +336,16 @@ Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/
 `allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
 Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
 
+Planner MVP hiện dùng rule deterministic và không commit output văn bản của LLM.
+Số `selectedPlaces` được phân bổ bị giới hạn theo số activity block của pace và
+số ngày; phần vượt quá được trả với `reasonCode: "no_day_capacity"`. Khi catalog
+trống nhưng có Place đã xác nhận, Planner vẫn tạo DayBrief và cảnh báo Finder chỉ
+có thể dùng các Place đó. Khi cả hai nguồn đều trống, `dayBriefsReady` là
+`false`. `avoidPlaces` là constraint loại trừ: Place đã xác nhận nhưng xung đột
+được trả với `reasonCode: "avoided_by_user"` thay vì vẫn đưa vào DayBrief.
+`focusTags` giữ tối đa bốn interest/tag liên quan để chuyến đi ngắn không làm mất
+các interest đứng sau phần tử đầu tiên.
+
 ## Finder
 
 Finder nhận `MacroPlan`, `selectedPlaces`, `UserStatus` và `FinderPlanStatus`,
@@ -428,6 +432,26 @@ Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi a
 block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
 khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
 sinh số.
+
+Runtime phải inject `RepositoryFinderPlaceTool`; `EmptyFinderPlaceTool` chỉ dùng
+cho test hoặc fallback cô lập. Service nhận/trả qua `FinderAgentInput` và
+`FinderAgentOutput`; các helper `fill_main_plan`/`fill_backup_plan` chỉ được giữ
+để tương thích code cũ.
+
+Trước khi commit candidate, Finder kiểm tra:
+
+- tên Place không nằm trong `avoidPlaces`;
+- duration không vượt quá activity block;
+- intensity và `maxConsecutiveActiveMinutes`;
+- `availableAt`;
+- accessibility feature đáp ứng toàn bộ `accessibilityNeeds`;
+- constraint `avoid_outdoor` dựa trên type/tag, không suy luận chỉ từ tên.
+
+Khi chưa có route data, `maxWalkingMinutesPerDay` được trả thành warning thay vì
+giả vờ đã kiểm tra. `requiredRestMinutes` cũng tạo warning nếu skeleton không đủ
+thời gian nghỉ. Selected Place nhập tay không có ID giữ `placeId: null`; Finder
+dùng stable ref nội bộ và không biến display name thành ID giả. `sourceRefs` và
+`tags` của selected Place được giữ tới `PlanItem` và Backup Plan.
 
 ## Message envelope
 

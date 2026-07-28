@@ -10,7 +10,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     app_name: str = "VSF Travel API"
     app_env: str = "local"
-    database_url: str = "sqlite:///./vsf_travel.db"
+    database_url: str = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
     backend_cors_origins: str = Field(default="http://localhost:3000")
     jwt_secret: str = "local-only-change-me"
     jwt_algorithm: str = "HS256"
@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
+    place_resolver_provider: str = "nominatim"
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+    nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"
+    nominatim_timeout_seconds: float = 15.0
+    nominatim_min_interval_seconds: float = 1.0
 
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 

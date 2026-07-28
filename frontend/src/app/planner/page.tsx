@@ -16,17 +16,7 @@ type ChatMessage = {
   text: string;
 };
 
-const categoryLabels: Record<PlaceCategory, string> = {
-  attraction: "Tham quan · vui chơi",
-  food: "Ăn uống",
-  cafe: "Cà phê",
-  hotel: "Lưu trú",
-  transport: "Di chuyển",
-  free_time: "Thời gian tự do",
-  other: "Khác"
-};
-
-function formatBudget(result: ExploreResponse): string {
+function formatBudget(result: ExplorerContext): string {
   const budget = result.tripSpec.budget;
   const formatter = new Intl.NumberFormat("vi-VN", {
     style: "currency",
@@ -104,7 +94,7 @@ function Planner() {
         {
           id: Date.now() + 1,
           role: "assistant",
-          text: `Explorer đã đọc yêu cầu và trích xuất ${nextExploreResult.placeCandidates.length} điểm đến cùng ${nextExploreResult.foodPlaces.length} địa điểm ăn uống cho ${nextExploreResult.intent.destination}.`
+          text: `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.intent.destination}. Các địa điểm trích xuất đã được lưu nội bộ cho Finder.`
         }
       ]);
       setImages([]);
@@ -141,7 +131,7 @@ function Planner() {
   return (
     <main className="plannerPage">
       <header className="plannerHeader pageWidth">
-        <div><span className="eyebrow">AI Planner</span><h1>{exploreResult?.intent.destination ?? "Chatbot VSF"}</h1><p>Gửi prompt, URL hoặc screenshot để Explorer chuẩn hóa dữ liệu.</p></div>
+        <div><span className="eyebrow">AI Planner</span><h1>{exploreResult?.explorer.intent.destination ?? "Chatbot VSF"}</h1><p>Gửi prompt, URL hoặc screenshot để Explorer chuẩn hóa dữ liệu.</p></div>
         <div className="futureActions"><button disabled type="button">Mời thành viên</button><button disabled type="button">Chia sẻ</button></div>
       </header>
 
@@ -210,11 +200,11 @@ function Planner() {
           {exploreResult ? (
             <div className="exploreResult">
               <section>
-                <h3>{exploreResult.intent.destination}</h3>
-                <p>{exploreResult.tripSpec.days} ngày · {exploreResult.tripSpec.partySize} người · {exploreResult.intent.budgetLevel}</p>
-                <p>{formatBudget(exploreResult)} · độ tin cậy {exploreResult.tripSpec.budget.confidence}</p>
+                <h3>{exploreResult.explorer.intent.destination}</h3>
+                <p>{exploreResult.explorer.tripSpec.days} ngày · {exploreResult.explorer.tripSpec.partySize} người · {exploreResult.explorer.intent.budgetLevel}</p>
+                <p>{formatBudget(exploreResult.explorer)} · độ tin cậy {exploreResult.explorer.tripSpec.budget.confidence}</p>
                 <div className="tagRow">
-                  {exploreResult.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
+                  {exploreResult.explorer.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
                 </div>
               </section>
               <section>
@@ -293,11 +283,12 @@ function Planner() {
               ) : null}
               <section>
                 <h3>Câu hỏi còn thiếu</h3>
-                {exploreResult.missingInfoQuestions.length ? exploreResult.missingInfoQuestions.map((question) => <p className="questionItem" key={question}>{question}</p>) : <p className="mutedText">Không có câu hỏi bổ sung.</p>}
+                {exploreResult.explorer.missingInfoQuestions.length ? exploreResult.explorer.missingInfoQuestions.map((question) => <p className="questionItem" key={question}>{question}</p>) : <p className="mutedText">Không có câu hỏi bổ sung.</p>}
               </section>
               <section>
-                <h3>Nguồn đã đọc</h3>
-                <p className="mutedText">{exploreResult.urlReelSignals.length} URL</p>
+                <h3>Intake</h3>
+                <p className="mutedText">{exploreResult.intakeId}</p>
+                <p className="mutedText">Place search data © OpenStreetMap contributors.</p>
               </section>
             </div>
           ) : (

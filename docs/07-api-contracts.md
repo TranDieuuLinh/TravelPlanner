@@ -47,6 +47,7 @@ client không được tự chọn role.
 - `POST /api/plans/explore/full/intake`
 - `POST /api/plans/main`
 - `POST /api/plans/main/from-explorer`
+- `POST /api/plans/main/from-context`
 - `POST /api/plans/{planId}/backup`
 
 Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
@@ -63,16 +64,22 @@ Form fields:
 - `urls`: tùy chọn để tương thích client cũ; client mới dán URL trực tiếp vào
   `rawRequest` và backend tự trích xuất.
 - `tripSpec`: tùy chọn; JSON object theo shape của Explorer `tripSpec`.
+- `userState`: tùy chọn; JSON object gồm locale, timezone, travelStyle và
+  travelPreferences.
 - `images`: tùy chọn; nhiều file ảnh JPEG, PNG, WebP, HEIC hoặc HEIF.
 
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
 tả khác. Giá trị mặc định hiện tại là `local`.
 
-Output tách địa điểm thành hai mảng. `placeCandidates` chứa điểm tham quan và
-địa điểm không phải ăn uống; `foodPlaces` chứa item có category `food` hoặc
-`cafe`. Backend chuẩn hóa lại hai mảng trước khi trả response để không trộn hai
-nhóm. `ExploreResponse` không công khai dữ liệu chẩn đoán nội bộ `debug`.
+Output công khai chỉ chứa `intakeId`, `userId` và JSON `explorer` với intent,
+tripSpec, assumptions và missingInfoQuestions. `placeCandidates` là contract
+nội bộ giữa extractor, aggregator, resolver và repository; không trả cho client.
+
+Không công khai raw OCR, transcript, URL result hoặc debug. Backend tự động gộp
+candidate trùng, giữ mọi source URL, resolve place và lưu toàn bộ kết quả chỉ
+vào PostgreSQL table `user_must_place`. Flow này không ghi vào `places` và không
+lưu Explorer context.
 
 Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
 `food`, `cafe`, `hotel`, `transport`, `free_time`, `other`. Khi evidence không
@@ -82,19 +89,37 @@ Mỗi phần tử địa điểm có `category` với một trong các giá tr�
 {
   "name": "Bánh mì Phượng",
   "category": "food",
-  "placeId": null,
-  "address": "Hội An",
-  "source": "url_reel",
-  "sourceUrl": "https://example.com/video",
+  "addressHint": "Hội An",
+  "sources": [
+    {
+      "type": "url",
+      "url": "https://example.com/video"
+    }
+  ],
   "confidence": 0.88,
   "priority": 1,
   "notes": "Được nhắc trong transcript"
 }
 ```
 
-`ExploreResponse.tripSpec.budget` dùng một envelope thống nhất cho cả mô tả định
-tính và số tiền cụ thể. Các field include theo từng hạng mục không nằm trong
-contract này:
+Response tổng quát:
+
+```json
+{
+  "intakeId": "uuid",
+  "userId": "user-uuid",
+  "explorer": {
+    "intent": {},
+    "tripSpec": {},
+    "assumptions": [],
+    "missingInfoQuestions": []
+  }
+}
+```
+
+`explorer.tripSpec.budget` dùng một envelope thống nhất cho cả mô tả định tính
+và số tiền cụ thể. Các field include theo từng hạng mục không nằm trong contract
+này:
 
 ```json
 {
@@ -132,18 +157,58 @@ Request tạo plan chính:
 
 ```json
 {
-  "destination": "Ha Noi",
-  "days": 3,
-  "budget": "medium",
-  "travelStyle": "local",
-  "pace": "balanced",
-  "interests": ["food", "coffee"],
-  "mustVisitPlaces": ["Hoan Kiem Lake"],
-  "avoidPlaces": [],
-  "constraints": ["not too dense"],
-  "selectedPlaces": []
+  "intakeId": "uuid-từ-explorer",
+  "userId": "user-uuid",
+  "explorer": {
+    "intent": {},
+    "tripSpec": {},
+    "assumptions": [],
+    "missingInfoQuestions": []
+  }
 }
 ```
+
+Khi upstream đã có output chuẩn hóa từ Explorer, Planner có thể nhận trực tiếp
+phần context mà không chạy lại Explorer qua
+`POST /api/plans/main/from-context`:
+
+```json
+{
+  "intent": {
+    "destination": "Hà Nội",
+    "budgetLevel": "medium",
+    "travelStyle": "local",
+    "pace": "balanced",
+    "interests": ["food", "culture"],
+    "mustVisitPlaces": [],
+    "avoidPlaces": [],
+    "constraints": [],
+    "clarifyingQuestions": []
+  },
+  "tripSpec": {
+    "days": 3,
+    "partySize": 2
+  },
+  "regionKey": "vn,ha-noi",
+  "selectedPlaces": [
+    {
+      "placeId": "place_123",
+      "name": "Văn Miếu",
+      "mustVisit": true,
+      "sourceRefs": ["source_123"]
+    }
+  ],
+  "userStatus": {}
+}
+```
+
+`selectedPlaces` vẫn là ranh giới xác nhận: endpoint không tự chuyển
+`placeCandidates` hoặc `foodPlaces` chưa xác nhận thành yêu cầu bắt buộc.
+
+Nếu cả catalog vùng và `selectedPlaces` đều trống, endpoint trả lỗi
+`PLANNER_INPUT_INSUFFICIENT` với HTTP 422. Plan chỉ có trạng thái `locked` khi
+`CheckOverall.status` là `passed`; khi có warning cần backup, plan giữ trạng thái
+`draft`; lỗi kiểm tra mức `error` tạo plan `failed`.
 
 Plan hiện bị mất khi tiến trình backend khởi động lại. Request tạo plan dự phòng
 chỉ hoạt động khi plan chính vẫn còn trong bộ nhớ của cùng tiến trình.

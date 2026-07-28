@@ -52,19 +52,7 @@ export type BudgetEnvelope = {
   notes?: string | null;
 };
 
-export type ExplorePlace = {
-  name: string;
-  category: PlaceCategory;
-  placeId?: string | null;
-  address?: string | null;
-  source?: string;
-  sourceUrl?: string | null;
-  confidence?: number;
-  priority?: number;
-  notes?: string | null;
-};
-
-export type ExploreResponse = {
+export type ExplorerContext = {
   intent: {
     destination: string;
     budgetLevel: BudgetLevel;
@@ -83,17 +71,6 @@ export type ExploreResponse = {
     endDate?: string | null;
     budget: BudgetEnvelope;
   };
-  placeCandidates: ExplorePlace[];
-  foodPlaces: ExplorePlace[];
-  urlReelSignals: Array<{
-    url: string;
-    platform?: string | null;
-    extractedPlaces: string[];
-    interests: string[];
-    constraints: string[];
-    confidence: number;
-    notes: string[];
-  }>;
   assumptions: string[];
   missingInfoQuestions: string[];
 };

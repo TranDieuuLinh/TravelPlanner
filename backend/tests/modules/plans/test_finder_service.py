@@ -8,6 +8,12 @@ from app.modules.plans.domain.entities import (
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
+from app.modules.plans.dto.agent_contracts import (
+    AgentMacroPlan,
+    FinderAgentInput,
+    PlanningIntent,
+    TripPlanningSpec,
+)
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import FinderPlace
 
@@ -284,6 +290,7 @@ def _place(
     *,
     tags: list[str],
     intensity: str | None,
+    duration: int = 60,
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
@@ -293,7 +300,7 @@ def _place(
         tags=tags,
         latitude=21.03,
         longitude=105.85,
-        typicalDurationMinutes=60,
+        typicalDurationMinutes=duration,
         activityIntensity=intensity,
         dataConfidence="high",
     )

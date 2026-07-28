@@ -1,4 +1,3 @@
-from app.integrations.llm.base import LLMClient
 from app.modules.plans.domain.entities import (
     CheckReport,
     DayBrief,
@@ -20,7 +19,6 @@ from app.modules.plans.dto.agent_contracts import (
     TripPlanningSpec,
     UnallocatedSelectedPlace,
 )
-from app.modules.plans.planner.prompt_builder import PlanPromptBuilder
 from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
     load_region_statistics_context,
@@ -30,13 +28,9 @@ from app.modules.plans.planner.region_context import (
 class PlannerService:
     def __init__(
         self,
-        llm_client: LLMClient,
         statistics_provider: PlannerStatisticsProvider,
-        prompt_builder: PlanPromptBuilder | None = None,
     ) -> None:
-        self.llm_client = llm_client
         self.statistics_provider = statistics_provider
-        self.prompt_builder = prompt_builder or PlanPromptBuilder()
 
     async def create_main_macro_plan(
         self,
@@ -128,9 +122,6 @@ class PlannerService:
         planner_input: PlannerAgentInput,
         statistics_status: str,
     ) -> PlannerAgentOutput:
-        await self.llm_client.generate_profile_plan(
-            self.prompt_builder.build_prompt(planner_input)
-        )
         macro_plan, unallocated = self._build_macro_plan(planner_input)
         warnings = self._statistics_warnings(planner_input)
         ready = (
@@ -138,7 +129,9 @@ class PlannerService:
             or bool(planner_input.selected_places)
         )
         assumptions = [
-            "Finder will choose exact places, times, and routes.",
+            "Planner used deterministic rules; no LLM-generated schedule was committed.",
+            "Finder will choose exact places and times.",
+            "Routes and costs remain unavailable until their providers are configured.",
             f"Region statistics status: {statistics_status}.",
         ]
         return PlannerAgentOutput(
@@ -186,12 +179,38 @@ class PlannerService:
             name.casefold()
             for name in planner_input.plan_state.excluded_place_names
         }
+        avoided = {
+            name.casefold()
+            for name in planner_input.intent.avoid_places
+        }
         selected_places = sorted(
             planner_input.selected_places,
             key=lambda place: (not place.must_visit, place.priority, place.name),
         )
+        activity_capacity = {
+            "relaxed": 2,
+            "balanced": 3,
+            "packed": 5,
+        }[intent.pace.value]
+        allocation_order = [
+            day
+            for _ in range(activity_capacity)
+            for day in range(1, planner_input.trip_spec.days + 1)
+        ]
         allocation_index = 0
         for place in selected_places:
+            if place.name.casefold() in avoided:
+                unallocated.append(
+                    UnallocatedSelectedPlace(
+                        place=place,
+                        reasonCode="avoided_by_user",
+                        reason=(
+                            "Place conflicts with the user's explicit "
+                            "avoidPlaces constraint."
+                        ),
+                    )
+                )
+                continue
             if place.name.casefold() in excluded:
                 unallocated.append(
                     UnallocatedSelectedPlace(
@@ -201,7 +220,19 @@ class PlannerService:
                     )
                 )
                 continue
-            day = allocation_index % planner_input.trip_spec.days + 1
+            if allocation_index >= len(allocation_order):
+                unallocated.append(
+                    UnallocatedSelectedPlace(
+                        place=place,
+                        reasonCode="no_day_capacity",
+                        reason=(
+                            "Confirmed Place exceeds the activity-block capacity "
+                            "for the requested number of days and pace."
+                        ),
+                    )
+                )
+                continue
+            day = allocation_order[allocation_index]
             allocated_by_day[day].append(place.stable_ref)
             allocation_index += 1
 
@@ -275,8 +306,14 @@ class PlannerService:
         dominant_tags: list[str],
         day: int,
     ) -> list[str]:
-        primary = focus[(day - 1) % len(focus)]
-        return list(dict.fromkeys([primary, *dominant_tags[:2]]))
+        start_index = (day - 1) % len(focus)
+        rotated_focus = [
+            *focus[start_index:],
+            *focus[:start_index],
+        ]
+        return list(
+            dict.fromkeys([*rotated_focus, *dominant_tags[:2]])
+        )[:4]
 
     def _day_part_goals(
         self,
@@ -309,7 +346,8 @@ class PlannerService:
         warnings: list[str] = []
         if context.place_count == 0:
             warnings.append(
-                f"No Places are available for {context.region_key}."
+                f"No catalog Places are available for {context.region_key}; "
+                "Finder is limited to confirmed selected Places."
             )
             return warnings
         missing_hours = int(context.data_quality.get("missingOpeningHours", 0))

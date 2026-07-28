@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import (
@@ -14,7 +15,14 @@ from app.modules.plans.domain.entities import (
     UserStatus,
     UserStatusLocation,
 )
-from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
+from app.modules.plans.dto.agent_contracts import (
+    AgentTrace,
+    FinderAgentInput,
+    FinderAgentOutput,
+    PlanningAgentName,
+    PlanningAgentStatus,
+    SelectedPlaceContext,
+)
 from app.modules.plans.finder.place_tool import (
     EmptyFinderPlaceTool,
     FinderPlace,
@@ -60,11 +68,14 @@ class FinderService:
     ) -> FinderResult:
         return self._fill_days(
             macro_plan,
-            intent,
             self._normalize_selected_places(selected_places),
             mode="main",
             user_status=user_status or UserStatus(),
             plan_status=plan_status or FinderPlanStatus(),
+            avoided_place_names={
+                name.casefold() for name in intent.avoid_places
+            },
+            intent_constraints=intent.constraints,
         )
 
     def fill_backup_plan(
@@ -78,22 +89,74 @@ class FinderService:
     ) -> FinderResult:
         return self._fill_days(
             macro_plan,
-            intent,
             self._normalize_selected_places(selected_places),
             mode="backup",
             user_status=user_status or UserStatus(),
             plan_status=plan_status or FinderPlanStatus(),
+            avoided_place_names={
+                name.casefold() for name in intent.avoid_places
+            },
+            intent_constraints=intent.constraints,
+        )
+
+    def fill_agent_plan(
+        self,
+        finder_input: FinderAgentInput,
+    ) -> FinderAgentOutput:
+        result = self._fill_days(
+            finder_input.macro_plan,
+            finder_input.selected_places,
+            mode=finder_input.mode.value,
+            user_status=finder_input.user_status,
+            plan_status=finder_input.finder_plan_status,
+            avoided_place_names={
+                name.casefold()
+                for name in finder_input.intent.avoid_places
+            },
+            intent_constraints=finder_input.intent.constraints,
+        )
+        committed_place_count = sum(
+            item.place_id is not None or item.source == "selected_place"
+            for day in result.days
+            for item in day.items
+        )
+        return FinderAgentOutput(
+            mode=finder_input.mode,
+            finalDays=result.days,
+            tripCostEstimate=None,
+            unscheduledPlaces=result.unscheduled_places,
+            finalUserStatus=result.final_user_status,
+            finalPlanStatus=result.final_plan_status,
+            warnings=result.warnings,
+            trace=AgentTrace(
+                agent=PlanningAgentName.finder,
+                status=(
+                    PlanningAgentStatus.completed
+                    if committed_place_count
+                    else PlanningAgentStatus.blocked
+                ),
+                summary=(
+                    "Filled dynamic day skeletons from MacroPlan."
+                    if committed_place_count
+                    else "No Place could be committed to the day skeletons."
+                ),
+                notes=[
+                    f"committedPlaceCount={committed_place_count}",
+                    f"unscheduledPlaceCount={len(result.unscheduled_places)}",
+                ],
+            ),
         )
 
     def _fill_days(
         self,
         macro_plan: MacroPlan,
-        intent: TravelIntent,
         selected_places: list[SelectedPlaceContext],
         *,
         mode: str,
         user_status: UserStatus,
         plan_status: FinderPlanStatus,
+        avoided_place_names: set[str],
+        intent_constraints: list[str],
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -122,6 +185,16 @@ class FinderService:
 
             for block in skeleton.blocks:
                 tentative_plan_status.current_slot = block.role
+                if not self._block_is_available(block, tentative_user_status):
+                    if block.activity and not block.optional:
+                        message = (
+                            f"Day {brief.day} skipped {block.role} because "
+                            f"the user is only available at "
+                            f"{tentative_user_status.available_at}."
+                        )
+                        warnings.append(message)
+                        tentative_plan_status.warnings.append(message)
+                    continue
                 if not block.activity:
                     day_items.append(self._build_break_item(block))
                     self._apply_break(
@@ -137,6 +210,8 @@ class FinderService:
                     selected_by_ref=selected_by_ref,
                     plan_status=tentative_plan_status,
                     user_status=tentative_user_status,
+                    avoided_place_names=avoided_place_names,
+                    intent_constraints=intent_constraints,
                 )
                 if candidate is None:
                     message = (
@@ -148,7 +223,7 @@ class FinderService:
                         tentative_plan_status.warnings.append(message)
                     continue
 
-                selected_source = candidate.place_id in selected_by_ref
+                selected_source = candidate.stable_ref in selected_by_ref
                 day_items.append(
                     self._build_activity_item(
                         candidate,
@@ -164,7 +239,14 @@ class FinderService:
                     tentative_plan_status,
                 )
 
+            self._append_constraint_warnings(
+                day=brief.day,
+                user_status=tentative_user_status,
+                plan_status=tentative_plan_status,
+                warnings=warnings,
+            )
             self._finish_day_location(tentative_user_status)
+            tentative_user_status.available_at = None
             tentative_user_status.after_committed_day = brief.day
             tentative_plan_status.current_slot = None
             committed_user_status = tentative_user_status
@@ -205,6 +287,8 @@ class FinderService:
         selected_by_ref: dict[str, SelectedPlaceContext],
         plan_status: FinderPlanStatus,
         user_status: UserStatus,
+        avoided_place_names: set[str],
+        intent_constraints: list[str],
     ) -> FinderPlace | None:
         candidates: list[FinderPlace] = []
         preferred_refs = [
@@ -242,9 +326,9 @@ class FinderService:
         unique_candidates: list[FinderPlace] = []
         seen: set[str] = set()
         for candidate in candidates:
-            if candidate.place_id in seen:
+            if candidate.stable_ref in seen:
                 continue
-            seen.add(candidate.place_id)
+            seen.add(candidate.stable_ref)
             unique_candidates.append(candidate)
 
         attempts = 0
@@ -252,12 +336,19 @@ class FinderService:
             if attempts >= self.max_candidates_per_block:
                 break
             attempts += 1
-            if candidate.place_id in plan_status.used_place_ids:
+            candidate_ref = candidate.stable_ref
+            if candidate_ref in plan_status.used_place_ids:
                 continue
-            if not self._intensity_allowed(candidate, user_status):
-                if candidate.place_id not in plan_status.rejected_candidate_ids:
+            if not self._candidate_allowed(
+                candidate,
+                block,
+                user_status,
+                avoided_place_names=avoided_place_names,
+                intent_constraints=intent_constraints,
+            ):
+                if candidate_ref not in plan_status.rejected_candidate_ids:
                     plan_status.rejected_candidate_ids.append(
-                        candidate.place_id
+                        candidate_ref
                     )
                 continue
             return candidate
@@ -271,9 +362,19 @@ class FinderService:
         if selected.place_id:
             stored_place = self.place_tool.get(selected.place_id)
             if stored_place is not None:
-                return stored_place
+                return stored_place.model_copy(
+                    update={
+                        "must_visit": selected.must_visit,
+                        "source_refs": list(selected.source_refs),
+                        "tags": list(
+                            dict.fromkeys(
+                                [*selected.tags, *stored_place.tags]
+                            )
+                        ),
+                    }
+                )
         return FinderPlace(
-            placeId=selected.stable_ref,
+            placeId=selected.place_id,
             name=selected.name,
             placeType="selected_place",
             regionKey=(
@@ -282,6 +383,8 @@ class FinderService:
                 or brief.target_area
             ),
             tags=selected.tags,
+            mustVisit=selected.must_visit,
+            sourceRefs=selected.source_refs,
             dataConfidence="user_confirmed",
         )
 
@@ -294,6 +397,114 @@ class FinderService:
         if not allowed or candidate.activity_intensity is None:
             return True
         return candidate.activity_intensity in allowed
+
+    def _candidate_allowed(
+        self,
+        candidate: FinderPlace,
+        block: DayBlock,
+        user_status: UserStatus,
+        *,
+        avoided_place_names: set[str],
+        intent_constraints: list[str],
+    ) -> bool:
+        if candidate.name.casefold() in avoided_place_names:
+            return False
+        normalized_constraints = {
+            constraint.strip().casefold().replace("-", "_").replace(" ", "_")
+            for constraint in intent_constraints
+        }
+        if (
+            "avoid_outdoor" in normalized_constraints
+            and self._is_outdoor(candidate)
+        ):
+            return False
+        duration = (
+            candidate.typical_duration_minutes
+            or block.duration_minutes
+        )
+        if duration > block.duration_minutes:
+            return False
+        max_consecutive = (
+            user_status.constraints.max_consecutive_active_minutes
+        )
+        if max_consecutive is not None and duration > max_consecutive:
+            return False
+        accessibility_needs = {
+            need.casefold()
+            for need in user_status.constraints.accessibility_needs
+        }
+        accessibility_features = {
+            feature.casefold()
+            for feature in candidate.accessibility_features
+        }
+        if (
+            accessibility_needs
+            and not accessibility_needs.issubset(accessibility_features)
+        ):
+            return False
+        return self._intensity_allowed(candidate, user_status)
+
+    def _is_outdoor(self, candidate: FinderPlace) -> bool:
+        outdoor_markers = {
+            "outdoor",
+            "nature",
+            "park",
+            "beach",
+            "hiking",
+        }
+        values = {
+            candidate.place_type.casefold(),
+            *(tag.casefold() for tag in candidate.tags),
+        }
+        return bool(values.intersection(outdoor_markers))
+
+    def _block_is_available(
+        self,
+        block: DayBlock,
+        user_status: UserStatus,
+    ) -> bool:
+        if not user_status.available_at:
+            return True
+        available_minutes = self._extract_clock_minutes(
+            user_status.available_at
+        )
+        if available_minutes is None:
+            return True
+        block_start = self._extract_clock_minutes(block.time_window)
+        return block_start is None or block_start >= available_minutes
+
+    def _extract_clock_minutes(self, value: str) -> int | None:
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)", value)
+        if match is None:
+            return None
+        return int(match.group(1)) * 60 + int(match.group(2))
+
+    def _append_constraint_warnings(
+        self,
+        *,
+        day: int,
+        user_status: UserStatus,
+        plan_status: FinderPlanStatus,
+        warnings: list[str],
+    ) -> None:
+        required_rest = user_status.constraints.required_rest_minutes
+        if (
+            required_rest is not None
+            and plan_status.day_usage.rest_minutes < required_rest
+        ):
+            message = (
+                f"Day {day} provides {plan_status.day_usage.rest_minutes} rest "
+                f"minutes, below the required {required_rest}."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
+        if user_status.constraints.max_walking_minutes_per_day is not None:
+            message = (
+                f"Day {day} walking-limit feasibility cannot be verified "
+                "until route data is available."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
 
     def _build_activity_item(
         self,
@@ -310,6 +521,10 @@ class FinderService:
             timeWindow=block.time_window,
             placeType=(
                 "must_visit"
+                if selected_source
+                and mode == "main"
+                and candidate.must_visit
+                else "selected_place"
                 if selected_source and mode == "main"
                 else "backup_option"
                 if mode == "backup"
@@ -326,6 +541,8 @@ class FinderService:
                 or block.duration_minutes
             ),
             activityIntensity=candidate.activity_intensity,
+            sourceRefs=candidate.source_refs,
+            tags=candidate.tags,
             notes="Selected by deterministic Finder candidate loop.",
         )
 
@@ -354,9 +571,10 @@ class FinderService:
         user_status: UserStatus,
         plan_status: FinderPlanStatus,
     ) -> None:
-        plan_status.used_place_ids.append(candidate.place_id)
-        if candidate.place_id in plan_status.remaining_selected_place_ids:
-            plan_status.remaining_selected_place_ids.remove(candidate.place_id)
+        candidate_ref = candidate.stable_ref
+        plan_status.used_place_ids.append(candidate_ref)
+        if candidate_ref in plan_status.remaining_selected_place_ids:
+            plan_status.remaining_selected_place_ids.remove(candidate_ref)
         for tag in candidate.tags:
             plan_status.visited_tag_counts[tag] = (
                 plan_status.visited_tag_counts.get(tag, 0) + 1

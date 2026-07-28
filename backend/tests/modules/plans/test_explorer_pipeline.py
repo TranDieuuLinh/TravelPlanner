@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from app.modules.plans.explorer.schema import ExploreImageContext, FullExploreRequest
+from app.modules.places.resolver import PlaceResolution
+from app.modules.plans.explorer.schema import (
+    ExploreBundleDraft,
+    ExploreImageContext,
+    FullExploreRequest,
+)
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
@@ -13,7 +18,17 @@ class RecordingFormatter:
     def __init__(self) -> None:
         self.payload: FullExploreRequest | None = None
         self.url_reel_results: list[Any] | None = None
-        self.response = object()
+        self.response = ExploreBundleDraft.model_validate(
+            {
+                "explorer": {
+                    "intent": {"destination": "Hội An"},
+                    "tripSpec": {"days": 3},
+                    "assumptions": [],
+                    "missingInfoQuestions": [],
+                },
+                "places": {"placeCandidates": []},
+            }
+        )
 
     async def format(
         self,
@@ -56,6 +71,21 @@ class RecordingImageOcr:
         ]
 
 
+class PassthroughAggregator:
+    def aggregate(self, **kwargs: Any) -> list[Any]:
+        return list(kwargs["generated"])
+
+
+class RecordingResolver:
+    async def resolve_many(
+        self,
+        candidates: list[Any],
+        *,
+        destination: str,
+    ) -> list[PlaceResolution]:
+        return []
+
+
 def build_service(
     formatter: RecordingFormatter,
     url_reels: RecordingUrlReels,
@@ -68,6 +98,8 @@ def build_service(
         backup_workflow=object(),  # type: ignore[arg-type]
         image_ocr=image_ocr,  # type: ignore[arg-type]
         url_reels=url_reels,  # type: ignore[arg-type]
+        place_candidate_aggregator=PassthroughAggregator(),  # type: ignore[arg-type]
+        place_resolver=RecordingResolver(),  # type: ignore[arg-type]
     )
 
 
@@ -79,11 +111,16 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     payload = FullExploreRequest(
         rawRequest="Hội An 3 ngày, ưu tiên ẩm thực",
         destination="Hội An",
+        userState={"userId": "user-1"},
     )
 
     result = asyncio.run(service.explore_full(payload))
 
-    assert result is formatter.response
+    assert result.explorer is formatter.response.explorer
+    assert result.intake_id
+    assert result.user_id == "user-1"
+    assert not hasattr(result, "places")
+    assert not hasattr(result, "persistence_status")
     assert url_reels.inputs == []
     assert formatter.payload is payload
     assert formatter.url_reel_results == []

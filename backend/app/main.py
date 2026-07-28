@@ -1,11 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
+import logging
 from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from app.api_router import api_router
@@ -15,6 +16,7 @@ from app.core.security_headers import (
     security_headers_middleware,
 )
 from app.db.base import Base
+from app.db.models import Place, User, UserMustPlace  # noqa: F401
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.db.seed import seed_demo_marketplace
@@ -29,8 +31,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_demo_marketplace(db)
     if settings.preload_url_reel_models:
@@ -41,6 +42,12 @@ async def lifespan(_: FastAPI):
             logger.exception("URL reel audio model preload failed")
     yield
 
+    if getattr(settings, "preload_url_reel_models", False):
+        try:
+            preload_audio_model()
+            logger.info("URL reel audio model preloaded")
+        except Exception:
+            logger.exception("URL reel audio model preload failed")
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
@@ -70,7 +77,6 @@ async def security_headers_wrapper(request: Request, call_next):
 @app.middleware("http")
 async def rate_limit_wrapper(request: Request, call_next):
     return await rate_limit_middleware(request, call_next)
-
 
 
 @app.exception_handler(AppError)

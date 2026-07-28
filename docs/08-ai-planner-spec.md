@@ -30,8 +30,10 @@ yêu cầu của user.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-`StubLLMClient` hiện chỉ trả văn bản placeholder. Phần lớn cấu trúc plan được tạo
-bởi các domain service theo quy tắc, chưa phải model thật.
+Planner và Finder hiện tạo cấu trúc plan bằng domain rule deterministic; không
+gọi LLM chỉ để bỏ kết quả. `StubLLMClient` vẫn phục vụ các luồng/provider khác
+đang cần gateway, nhưng output Main/Backup Plan hiện chưa phải output sinh bởi
+model.
 
 ## Luồng mục tiêu của MVP
 
@@ -56,13 +58,16 @@ Structured output của extraction gồm:
 Extraction không được kết luận giờ mở cửa, giá hiện tại hay tọa độ chỉ từ lời nói
 trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 
-### Giai đoạn 3: Resolve và Confirm
+### Giai đoạn 3: Resolve và lưu tự động
 
 - tìm place phù hợp cho từng candidate;
 - gộp candidate trùng nhưng giữ nhiều source ref;
-- đánh dấu kết quả mơ hồ hoặc không tìm thấy;
-- yêu cầu user xác nhận place, mức ưu tiên và mục bắt buộc;
-- tạo `SelectedPlace` làm đầu vào Planner.
+- lưu kết quả dưới trạng thái `resolved`, `provisional` hoặc `unresolved`;
+- không chặn intake để hỏi user;
+- lưu dữ liệu resolve đầy đủ chỉ vào `UserMustPlace`, không ghi `Place`;
+- Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
+- Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
+  đọc `UserMustPlace` theo cả `intakeId + userId`.
 
 ### Giai đoạn 4: Explorer
 
@@ -91,6 +96,11 @@ Finder điền item cụ thể:
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
 
+Adapter Finder dùng `RepositoryFinderPlaceTool` trong runtime để tìm Place đang
+active theo `regionKey` và `focusTags`. Nếu catalog vùng trống nhưng có
+`SelectedPlace`, Finder vẫn có thể lập plan giới hạn trong danh sách đã xác
+nhận; cảnh báo giới hạn phải xuất hiện trong output.
+
 ### Giai đoạn 7: CheckOverall
 
 Check chạy theo lớp:
@@ -103,6 +113,12 @@ Check chạy theo lớp:
 
 Issue không chỉ là chuỗi văn bản; phải có code, severity, affected item,
 evidence, `canAutoFix` và phạm vi sửa.
+
+Trong implementation hiện tại, các check schema/allocation deterministic được
+chạy thật. Route, giờ hoạt động, availability và thời tiết live chưa có provider
+thì được trả thành issue `info`, không được mô tả như đã xác minh. Warning làm
+Main Plan ở trạng thái `draft` để sửa hoặc tạo backup; chỉ report `passed` mới
+khóa plan.
 
 ### Giai đoạn 8: Main Plan và Backup Plan
 
@@ -119,7 +135,8 @@ phải có `parentPlanId`, được validate độc lập và không mutate Main
 - sở thích, địa điểm bắt buộc, địa điểm tránh, nhu cầu hỗ trợ tiếp cận và ràng
   buộc;
 - URL/place tham khảo đã chọn kèm độ tin cậy khi trích xuất;
-- source claim đã được user xác nhận và mức ưu tiên của từng `SelectedPlace`;
+- source claim/candidate đã được intake tự động lưu kèm confidence, provenance
+  và resolution status;
 - item đã khóa và phạm vi được phép thay đổi khi chỉnh sửa lại.
 
 Nếu thiếu thông tin quan trọng, chỉ hỏi một số câu có giá trị cao. Không buộc
@@ -154,7 +171,8 @@ tuyến đường hoặc danh tính địa điểm.
 - Hiển thị rõ các giả định.
 - Giữ địa điểm người dùng đã chọn trừ khi xung đột với ràng buộc cứng; khi đó
   phải giải thích.
-- Không biến place candidate chưa xác nhận thành địa điểm bắt buộc.
+- Candidate được tự động lưu theo lựa chọn sản phẩm no-interruption, nhưng phải
+  giữ confidence và resolution status để Finder/Check có thể cảnh báo.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
 - Phân biệt claim từ nguồn, dữ liệu provider xác minh và suy luận của model.
 - Plan dự phòng phải dùng được độc lập và được liên kết với plan chính.
