@@ -18,15 +18,16 @@ văn bản.
 
 Tầm nhìn sản phẩm rộng hơn phần đã được triển khai.
 
-- Đã triển khai: tạo/xem danh sách người dùng, migration bảng user, khung luồng
-  lập kế hoạch, điền plan theo quy tắc, kiểm tra plan, endpoint tạo plan dự phòng,
-  health check và giao diện người dùng tối giản.
+- Đã triển khai: đăng ký/đăng nhập bằng JWT cookie, refresh session, CSRF, RBAC,
+  hồ sơ, creator application, test backend, contract Planner–Marketplace, khung
+  luồng lập kế hoạch, kiểm tra plan, endpoint tạo plan dự phòng, health check và
+  giao diện người dùng tối giản.
 - Đang giả lập: phản hồi AI thông qua `StubLLMClient`.
 - Tạm thời: plan được lưu trong bộ nhớ của tiến trình và mất khi khởi động lại.
-- Placeholder: profile và Marketplace chỉ có endpoint preview/danh mục.
-- Chưa triển khai: authentication, phân quyền, nhập URL, bản đồ, chỉnh sửa cộng
-  tác, đồng bộ offline, listing, order, payment, review, achievement,
-  notification, creator analytics và quy trình admin.
+- Placeholder: Marketplace chỉ có endpoint danh mục.
+- Chưa triển khai: nhập URL, bản đồ, chỉnh sửa cộng tác, đồng bộ offline,
+  listing, order, payment, review, achievement, notification, creator analytics
+  và quy trình admin duyệt creator/listing.
 
 Không được mô tả một tính năng mục tiêu như thể nó đã được triển khai. Không
 được thêm các tuyên bố chưa đúng về trạng thái production vào UI hoặc tài liệu
@@ -100,5 +101,6 @@ uvicorn app.main:app --reload
 docker compose up --build
 ```
 
-Backend hiện chưa cấu hình bộ test tự động. Hãy thêm pytest cùng thay đổi backend
-nghiệp vụ đầu tiên; xem `docs/10-testing-strategy.md`.
+Backend đã có pytest cho Auth, Profile và contract Planner–Marketplace. Mọi
+thay đổi nghiệp vụ mới phải bổ sung test sát module; xem
+`docs/10-testing-strategy.md`.

@@ -15,6 +15,7 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService

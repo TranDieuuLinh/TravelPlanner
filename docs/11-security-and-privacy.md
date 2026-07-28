@@ -30,6 +30,10 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 - Pin, quét dependency và container image.
 - Backup database và kiểm tra quy trình restore.
 - Dùng audit event cho kiểm duyệt, refund, entitlement và thay đổi đặc quyền.
+- **Cơ chế bảo mật đã triển khai trong Backend MVP**:
+  - Global Security Headers middleware (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy`, `HSTS`).
+  - In-memory Rate Limiting cho các endpoint nhạy cảm như Đăng ký (`/api/auth/register`), Đăng nhập (`/api/auth/login`), Tạo Checkout (`/api/checkout-sessions`).
+  - Lọc thông tin nhạy cảm trong metadata nhật ký kiểm toán (`password`, `jwt`, `token`, `secret`, `authorization`).
 
 ## Nhập URL và AI
 
