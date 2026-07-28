@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from uuid import uuid4
+import logging
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -31,6 +32,14 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+from app.db.models import User
+from app.db.session import engine
+from app.modules.plans.explorer.tools.url_reels.speech_to_text import preload_audio_model
+from app.shared.schemas import APIMessage
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,6 +101,13 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
             "requestId": getattr(request.state, "request_id", uuid4().hex),
         },
     )
+
+    if settings.preload_url_reel_models:
+        try:
+            preload_audio_model()
+            logger.info("URL reel audio model preloaded")
+        except Exception:
+            logger.exception("URL reel audio model preload failed")
 
 
 @app.get("/health", response_model=APIMessage)

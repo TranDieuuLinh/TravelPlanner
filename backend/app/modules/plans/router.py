@@ -1,16 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.modules.plans.dependencies import get_plan_service
+from app.modules.plans.explorer.schema import FullExploreRequest, ExploreResponse
 from app.modules.plans.schema import (
     BackupPlanCreate,
-    ExplorerRequest,
     FeatureMapItem,
     MainPlanCreate,
     PlanBundleRead,
     PlanRead,
-    TravelIntentRead,
 )
 from app.modules.plans.service import PlanService
 
@@ -22,9 +21,14 @@ def feature_map(service: Annotated[PlanService, Depends(get_plan_service)]) -> l
     return service.feature_map()
 
 
-@router.post("/explore", response_model=TravelIntentRead)
-def explore(payload: ExplorerRequest, service: Annotated[PlanService, Depends(get_plan_service)]) -> TravelIntentRead:
-    return service.explore(payload)
+
+
+@router.post("/explore/full", response_model=ExploreResponse)
+async def explore_full(payload: FullExploreRequest, service: Annotated[PlanService, Depends(get_plan_service)]) -> ExploreResponse:
+    try:
+        return await service.explore_full(payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.post("/main", response_model=PlanRead, status_code=status.HTTP_201_CREATED)

@@ -1,7 +1,8 @@
-from app.modules.plans.domain.entities import Plan, TravelIntent
-from app.modules.plans.explorer.explorer_service import ExplorerService
+from app.modules.plans.domain.entities import Plan
+from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
+from app.modules.plans.explorer.schema import FullExploreRequest, ExploreResponse
 from app.modules.plans.repository import PlanRepository
-from app.modules.plans.schema import BackupPlanCreate, ExplorerRequest, FeatureMapItem, MainPlanCreate, PlanBundleRead
+from app.modules.plans.schema import BackupPlanCreate, FeatureMapItem, MainPlanCreate, PlanBundleRead
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 
@@ -10,12 +11,12 @@ class PlanService:
     def __init__(
         self,
         repository: PlanRepository,
-        explorer: ExplorerService,
+        explore_formatter: ExploreResponseFormatter,
         main_workflow: MainPlanWorkflow,
         backup_workflow: BackupPlanWorkflow,
     ) -> None:
         self.repository = repository
-        self.explorer = explorer
+        self.explore_formatter = explore_formatter
         self.main_workflow = main_workflow
         self.backup_workflow = backup_workflow
 
@@ -28,8 +29,8 @@ class PlanService:
             FeatureMapItem(stage="backup", feature="Backup Planner", description="Create a separate backup plan without mutating the locked main plan."),
         ]
 
-    def explore(self, payload: ExplorerRequest) -> TravelIntent:
-        return self.explorer.explore(payload)
+    async def explore_full(self, payload: FullExploreRequest) -> ExploreResponse:
+        return await self.explore_formatter.format(payload)
 
     async def create_main_plan(self, payload: MainPlanCreate) -> Plan:
         plan = await self.main_workflow.run(payload)

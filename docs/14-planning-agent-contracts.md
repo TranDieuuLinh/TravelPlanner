@@ -44,8 +44,9 @@ FinderAgentOutput
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
 - `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- `placeCandidates` là các địa điểm chi tiết trong khu vực đó, ví dụ `Son Tra`,
-  `Quan mi quang A`, `Hotel near Han River`.
+- `placeCandidates` là gợi ý chưa được xác nhận và không được Planner xem là
+  yêu cầu bắt buộc. `selectedPlaces` là các Place đã được user xác nhận và là
+  đầu vào chính thức của Planner.
 - URL tool có thể trích địa điểm từ reels và đưa vào `placeCandidates`. User cũng
   có thể nhập địa điểm cụ thể trực tiếp vào `placeCandidates` với `source: "user"`.
 - Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
@@ -66,6 +67,7 @@ Input chính:
     {
       "name": "Son Tra",
       "placeId": null,
+      "address": null,
       "source": "user",
       "sourceUrl": null,
       "confidence": 1,
@@ -78,6 +80,18 @@ Input chính:
       "url": "https://www.instagram.com/reel/...",
       "platform": "instagram",
       "extractedPlaces": ["Quan mi quang A"],
+      "extractedPlaceDetails": [
+        {
+          "name": "Quan mi quang A",
+          "placeId": null,
+          "address": "12 Nguyen Hue, Da Nang",
+          "source": "url_reel",
+          "sourceUrl": "https://www.instagram.com/reel/...",
+          "confidence": 0.82,
+          "priority": 1,
+          "notes": "Caption mentioned this address"
+        }
+      ],
       "interests": ["food"],
       "constraints": [],
       "confidence": 0.82,
@@ -218,8 +232,12 @@ Output chính:
 
 ## Planner
 
-Planner nhận `TravelIntent` đã chuẩn hóa và tạo macro plan/day briefs. Planner
-không chọn giờ cụ thể và không commit địa điểm vào từng ngày.
+Planner nhận `TravelIntent` đã chuẩn hóa, `selectedPlaces` và snapshot thống kê
+theo `regionKey`, sau đó tạo macro plan/day briefs. Ngay trước khi lập kế hoạch,
+workflow gọi `auto_statistics.get_for_planner(regionKey)`; Place thay đổi thì
+snapshot mới được tạo, không thay đổi thì dùng snapshot hiện tại. Planner chỉ
+phân bổ Place đã xác nhận vào ngày ở mức constraint, không chọn giờ, route hoặc
+commit `TripItem` chi tiết.
 
 Input chính:
 
@@ -228,6 +246,22 @@ Input chính:
   "mode": "main",
   "intent": {},
   "tripSpec": {},
+  "regionContext": {
+    "regionKey": "vn,ha-noi",
+    "snapshotRef": {
+      "regionKey": "vn,ha-noi",
+      "snapshotId": "snapshot_123",
+      "catalogVersion": 3,
+      "algorithmVersion": "auto_statistics_v2_1",
+      "generatedAt": "2026-07-28T10:00:00+00:00"
+    },
+    "placeCount": 100,
+    "tagCounts": {},
+    "timeOfDayCoverage": {},
+    "areaProfiles": [],
+    "plannerSignals": {}
+  },
+  "selectedPlaces": [],
   "placeCandidates": [],
   "planState": {
     "tripId": "trip_123",
@@ -247,31 +281,51 @@ Output chính:
   "mode": "main",
   "tripSpec": {},
   "macroPlan": {
-    "title": "Main plan for Da Nang",
+    "title": "Main plan for Hà Nội",
+    "destination": "Hà Nội",
+    "regionKey": "vn,ha-noi",
     "dayBriefs": [
       {
         "day": 1,
-        "theme": "Food and local neighborhoods",
-        "targetArea": "Hai Chau",
-        "notes": ["Keep pace balanced"]
+        "theme": "Culture and local food",
+        "targetArea": "Hoan Kiem",
+        "targetRegionKey": "vn,ha-noi,hoan-kiem",
+        "focusTags": ["culture", "food"],
+        "pace": "balanced",
+        "dayPartGoals": {
+          "morning": "Prioritize culture activities supported in the morning.",
+          "lunch": "Use a balanced food block in the lunch.",
+          "afternoon": "Use a balanced culture block in the afternoon.",
+          "evening": "Keep evening flexible; regional data coverage is weak."
+        },
+        "allocatedSelectedPlaceRefs": ["place_123"],
+        "notes": ["Exact schedule is delegated to Finder."]
       }
     ]
   },
   "dayBriefsReady": true,
+  "unallocatedSelectedPlaces": [],
   "assumptions": [],
+  "warnings": [],
   "trace": {
     "agent": "planner",
     "status": "completed",
     "summary": "Created MacroPlan and DayBriefs.",
-    "notes": []
+    "notes": ["snapshotId=snapshot_123"]
   }
 }
 ```
 
+Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/log, không
+đưa vào `MacroPlan` hoặc Finder context. Mọi `selectedPlace` phải xuất hiện trong
+`allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
+Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
+
 ## Finder
 
-Finder nhận `MacroPlan`, `placeCandidates` và state hiện tại, sau đó fill lịch
-trình cụ thể theo ngày.
+Finder nhận `MacroPlan`, `selectedPlaces`, `UserStatus` và `FinderPlanStatus`,
+sau đó tạo DaySkeleton động và fill lịch cụ thể. Số block phụ thuộc pace và
+UserStatus: `relaxed` ít block, `anchor_led` trung bình, `multi_stop` nhiều block.
 
 Input chính:
 
@@ -281,6 +335,7 @@ Input chính:
   "intent": {},
   "tripSpec": {},
   "macroPlan": {},
+  "selectedPlaces": [],
   "placeCandidates": [],
   "planState": {
     "tripId": "trip_123",
@@ -293,7 +348,9 @@ Input chính:
     "locale": "vi-VN",
     "timezone": "Asia/Ho_Chi_Minh",
     "travelPreferences": []
-  }
+  },
+  "userStatus": {},
+  "finderPlanStatus": {}
 }
 ```
 
@@ -305,113 +362,51 @@ Output chính:
   "finalDays": [
     {
       "day": 1,
-      "title": "Food and local neighborhoods",
-      "hotel": {
-        "name": "Hotel near Han River",
-        "category": "hotel",
-        "timeWindow": "overnight",
-        "address": "Da Nang city center",
-        "estimatedCost": {
-          "amount": 800000,
-          "currency": "VND",
-          "confidence": "medium",
-          "notes": "Estimated nightly cost"
-        },
-        "notes": "Suggested area, not booked"
-      },
+      "theme": "Food and local neighborhoods",
+      "strategy": "anchor_led",
       "items": [
         {
-          "name": "Son Tra",
-          "category": "attraction",
-          "timeWindow": "08:30-11:00",
-          "address": null,
-          "estimatedCost": {
-            "amount": 0,
-            "currency": "VND",
-            "confidence": "medium",
-            "notes": "Entrance estimate"
-          },
-          "notes": "Morning visit"
+          "itemId": "item_123",
+          "placeId": "place_123",
+          "name": "Selected museum",
+          "timeWindow": "09:00-11:00",
+          "placeType": "must_visit",
+          "role": "main_activity",
+          "source": "selected_place",
+          "durationMinutes": 120,
+          "activityIntensity": "moderate"
         },
         {
-          "name": "Quan mi quang A",
-          "category": "food",
-          "timeWindow": "12:00-13:30",
-          "address": null,
-          "estimatedCost": {
-            "amount": 100000,
-            "currency": "VND",
-            "confidence": "medium",
-            "notes": "Per person estimate"
-          },
-          "notes": "Lunch"
+          "itemId": "item_124",
+          "placeId": null,
+          "name": "Break between main and support activities",
+          "timeWindow": "11:00-12:00",
+          "placeType": "break",
+          "role": "break_main_support",
+          "source": "finder_rule",
+          "durationMinutes": 60
         }
-      ],
-      "transportLegs": [
-        {
-          "fromPlace": "Hotel near Han River",
-          "toPlace": "Son Tra",
-          "mode": "taxi",
-          "estimatedDurationMinutes": 25,
-          "estimatedCost": {
-            "amount": 180000,
-            "currency": "VND",
-            "confidence": "low",
-            "notes": "Traffic-dependent estimate"
-          },
-          "notes": "Check traffic before leaving"
-        }
-      ],
-      "dayCostEstimate": {
-        "amount": 1080000,
-        "currency": "VND",
-        "confidence": "medium",
-        "notes": "Hotel + food + transport"
-      }
+      ]
     }
   ],
-  "tripCostEstimate": {
-    "accommodation": {
-      "amount": 2400000,
-      "currency": "VND",
-      "confidence": "medium",
-      "notes": "3 nights estimate"
-    },
-    "food": {
-      "amount": 1200000,
-      "currency": "VND",
-      "confidence": "medium",
-      "notes": "Meals and cafes"
-    },
-    "transport": {
-      "amount": 900000,
-      "currency": "VND",
-      "confidence": "low",
-      "notes": "Taxi/walking mix"
-    },
-    "attractions": {
-      "amount": 500000,
-      "currency": "VND",
-      "confidence": "medium",
-      "notes": "Tickets/activities"
-    },
-    "total": {
-      "amount": 5000000,
-      "currency": "VND",
-      "confidence": "medium",
-      "notes": "Estimated total trip cost"
-    }
-  },
+  "tripCostEstimate": null,
   "unscheduledPlaces": [],
+  "finalUserStatus": {},
+  "finalPlanStatus": {},
   "warnings": [],
   "trace": {
     "agent": "finder",
     "status": "completed",
-    "summary": "Filled day itinerary from MacroPlan.",
+    "summary": "Filled dynamic day skeletons from MacroPlan.",
     "notes": []
   }
 }
 ```
+
+Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi activity
+block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
+khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
+sinh số.
 
 ## Message envelope
 
