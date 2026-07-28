@@ -74,3 +74,24 @@ Hành vi AI cần bộ evaluation có version bên cạnh test truyền thống.
 
 Test phải deterministic: cố định thời gian, seed random, không gọi provider thật
 và dùng fixture timezone/tiền tệ rõ ràng.
+
+## Evaluation Planner/Finder cục bộ
+
+Chạy bộ scenario deterministic từ planning context qua Planner, Finder, Main
+Plan và Backup Plan:
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe scripts\evaluate_planner_finder.py
+```
+
+Có thể lưu report JSON để review thủ công:
+
+```bash
+.\.venv\Scripts\python.exe scripts\evaluate_planner_finder.py --output .runlogs/planner-finder-evaluation.json
+```
+
+Evaluator kiểm tra catalog fill, giới hạn thời gian/user status, ranh giới
+selected/avoided/unscheduled, ID nhập tay, duration so với time window, source
+provenance và bảo toàn selected Place trong Backup Plan. Evaluator không dùng
+provider thật và không đánh giá chất lượng `CheckOverall`.

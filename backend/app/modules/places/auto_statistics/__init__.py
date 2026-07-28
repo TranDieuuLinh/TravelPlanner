@@ -1,3 +1,6 @@
-from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
+"""Automatic Place statistics package.
 
-__all__ = ["AutoPlaceStatisticsService"]
+Import concrete services from ``auto_statistics.service``. Keeping the package
+initializer free of eager imports prevents a cycle when the Place repository
+imports statistics domain records.
+"""

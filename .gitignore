@@ -14,5 +14,5 @@ node_modules/
 out/
 dist/
 coverage/
-*.db
+*.db*
 *.sqlite3
