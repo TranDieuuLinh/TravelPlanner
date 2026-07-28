@@ -9,8 +9,10 @@ __pycache__/
 .ruff_cache/
 node_modules/
 .next/
+.next-dev
+.next-build/
 out/
 dist/
 coverage/
-*.db
+*.db*
 *.sqlite3

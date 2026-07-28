@@ -2,8 +2,14 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from app.modules.plans.domain.entities import CheckReport, Plan, TravelIntent
+from app.modules.plans.domain.entities import (
+    CheckReport,
+    Plan,
+    TravelIntent,
+    UserStatus,
+)
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
+from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 
 
 class FeatureMapItem(BaseModel):
@@ -15,7 +21,7 @@ class FeatureMapItem(BaseModel):
 class ExplorerRequest(BaseModel):
     destination: str
     days: Annotated[int, Field(ge=1, le=30)] = 3
-    budget: BudgetLevel = BudgetLevel.balanced
+    budget: BudgetLevel = BudgetLevel.medium
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)
@@ -24,8 +30,45 @@ class ExplorerRequest(BaseModel):
     constraints: list[str] = Field(default_factory=list)
 
 
+class SelectedPlaceCreate(BaseModel):
+    name: str
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    priority: Annotated[int, Field(default=1, ge=1, le=5)]
+    must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    tags: list[str] = Field(default_factory=list)
+    source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
+        default_factory=list
+    )
+    notes: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class MainPlanCreate(ExplorerRequest):
-    selected_places: Annotated[list[str], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate | str],
+        Field(alias="selectedPlaces"),
+    ] = Field(default_factory=list)
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+
+
+class MainPlanFromExplorerCreate(BaseModel):
+    intent: PlanningIntent
+    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate],
+        Field(alias="selectedPlaces"),
+    ] = Field(default_factory=list)
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class BackupPlanCreate(BaseModel):
@@ -35,16 +78,9 @@ class BackupPlanCreate(BaseModel):
     avoid_outdoor: Annotated[bool, Field(alias="avoidOutdoor")] = False
 
 
-class TravelIntentRead(TravelIntent):
-    pass
-
-
-class PlanRead(Plan):
-    pass
-
-
-class CheckReportRead(CheckReport):
-    pass
+TravelIntentRead = TravelIntent
+PlanRead = Plan
+CheckReportRead = CheckReport
 
 
 class PlanBundleRead(BaseModel):
