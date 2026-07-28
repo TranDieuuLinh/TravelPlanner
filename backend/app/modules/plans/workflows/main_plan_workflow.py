@@ -1,12 +1,6 @@
 from uuid import uuid4
 
-from app.modules.plans.checks.overall_checker import OverallChecker
-from app.modules.plans.domain.entities import (
-    Plan,
-    TravelIntent,
-    UnscheduledPlace,
-    UserStatus,
-)
+from app.modules.plans.domain.entities import Plan
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
     FinderAgentInput,
@@ -22,10 +16,9 @@ from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
     MainPlanCreate,
-    PlanningContextCreate,
+    MainPlanFromExplorerCreate,
     SelectedPlaceCreate,
 )
-from app.shared.errors import AppError
 
 
 class MainPlanWorkflow:
@@ -34,15 +27,67 @@ class MainPlanWorkflow:
         explorer: ExplorerService,
         planner: PlannerService,
         finder: FinderService,
-        checker: OverallChecker,
     ) -> None:
         self.explorer = explorer
         self.planner = planner
         self.finder = finder
-        self.checker = checker
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
+        return await self._run(
+            payload,
+            intent=intent,
+            trip_spec=TripPlanningSpec(days=intent.days),
+        )
+
+    async def run_from_explorer(
+        self,
+        payload: MainPlanFromExplorerCreate,
+    ) -> Plan:
+        intent = self.explorer.explore(
+            MainPlanCreate(
+                destination=payload.intent.destination,
+                days=payload.trip_spec.days,
+                budget=payload.intent.budget_level,
+                travelStyle=payload.intent.travel_style,
+                pace=payload.intent.pace,
+                interests=payload.intent.interests,
+                mustVisitPlaces=payload.intent.must_visit_places,
+                avoidPlaces=payload.intent.avoid_places,
+                constraints=payload.intent.constraints,
+                regionKey=payload.region_key,
+                selectedPlaces=payload.selected_places,
+                userStatus=payload.user_status,
+            )
+        )
+        main_payload = MainPlanCreate(
+            destination=intent.destination,
+            days=intent.days,
+            budget=intent.budget,
+            travelStyle=intent.travel_style,
+            pace=intent.pace,
+            interests=intent.interests,
+            mustVisitPlaces=intent.must_visit_places,
+            avoidPlaces=intent.avoid_places,
+            constraints=intent.constraints,
+            regionKey=payload.region_key,
+            selectedPlaces=payload.selected_places,
+            userStatus=payload.user_status,
+        )
+        return await self._run(
+            main_payload,
+            intent=intent,
+            trip_spec=payload.trip_spec,
+        )
+
+    async def _run(
+        self,
+        payload: MainPlanCreate,
+        *,
+        intent,
+        trip_spec: TripPlanningSpec,
+    ) -> Plan:
+        region_key = normalize_region_key(intent.destination, payload.region_key)
         selected_places = [
             self._selected_place_context(place)
             for place in payload.selected_places
@@ -159,7 +204,7 @@ class MainPlanWorkflow:
         plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.main,
-            status=PlanStatus.checking,
+            status=PlanStatus.locked,
             title=macro_plan.title,
             destination=intent.destination,
             intent=intent,
@@ -194,7 +239,7 @@ class MainPlanWorkflow:
         return PlanningIntent(
             destination=intent.destination,
             budgetLevel=intent.budget,
-            travelStyle=intent.travel_style,
+            travelStyle=intent.travel_style,https://github.com/TranDieuuLinh/VSF_TravelPlanner/pull/16/conflict?name=backend%252Fapp%252Fmodules%252Fplans%252Fworkflows%252Fmain_plan_workflow.py&ancestor_oid=52f76b9dfd8961638c99953e6140d20984437587&base_oid=6081b1ae837f0b8d0038f1100a1524b7835764a6&head_oid=2e3be01fb60d8655510a36e507d0bbb9dda5be3d
             pace=intent.pace,
             interests=intent.interests,
             mustVisitPlaces=intent.must_visit_places,

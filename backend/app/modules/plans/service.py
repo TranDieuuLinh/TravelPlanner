@@ -25,6 +25,8 @@ from app.modules.plans.schema import (
     BackupPlanCreate,
     FeatureMapItem,
     MainPlanCreate,
+    MainPlanFromExplorerCreate,
+    PlanBundleRead,
     PlanBundleRead,
     PlanningContextCreate,
 )
@@ -63,7 +65,6 @@ class PlanService:
             FeatureMapItem(stage="explore", feature="Explorer", description="Clarify destination, budget, pace, interests, and constraints."),
             FeatureMapItem(stage="create", feature="Planner", description="Generate MacroPlan and DayBriefs for the main itinerary."),
             FeatureMapItem(stage="fill", feature="Finder", description="Choose day windows, fill places, and commit each day."),
-            FeatureMapItem(stage="check", feature="CheckOverall", description="Review weather, transport, availability, and plan risks."),
             FeatureMapItem(stage="backup", feature="Backup Planner", description="Create a separate backup plan without mutating the locked main plan."),
         ]
 
@@ -183,11 +184,11 @@ class PlanService:
         self.repository.save(plan)
         return plan
 
-    async def create_main_plan_from_context(
+    async def create_main_plan_from_explorer(
         self,
-        payload: PlanningContextCreate,
+        payload: MainPlanFromExplorerCreate,
     ) -> Plan:
-        plan = await self.main_workflow.run_from_context(payload)
+        plan = await self.main_workflow.run_from_explorer(payload)
         self.repository.save(plan)
         return plan
 

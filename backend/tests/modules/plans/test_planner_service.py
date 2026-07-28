@@ -9,8 +9,6 @@ from app.modules.places.auto_statistics.service import (
 )
 from app.modules.plans.domain.entities import TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
-from app.modules.plans.checks.overall_checker import OverallChecker
-from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.dto.agent_contracts import (
     PlanWorkingState,
     SelectedPlaceContext,
@@ -20,6 +18,7 @@ from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.schema import MainPlanCreate, MainPlanFromExplorerCreate
 from app.modules.plans.schema import BackupPlanCreate, MainPlanCreate
 from app.modules.plans.schema import PlanningContextCreate
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
@@ -183,13 +182,37 @@ def test_planner_does_not_allocate_explicitly_avoided_place() -> None:
     assert output.unallocated_selected_places[0].reason_code == "avoided_by_user"
 
 
+def test_planner_is_ready_with_confirmed_place_when_region_is_empty() -> None:
+    service = PlannerService(
+        FakeLLMClient(),
+        FakeStatisticsProvider(place_count=0),
+    )
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=2),
+            region_key="vn,ha-noi",
+            selected_places=[
+                SelectedPlaceContext(
+                    name="Văn Miếu",
+                    placeId="place-van-mieu",
+                    mustVisit=True,
+                )
+            ],
+        )
+    )
+
+    assert output.day_briefs_ready is True
+    assert output.trace.status.value == "completed"
+
+
 def test_main_workflow_accepts_structured_selected_places() -> None:
     statistics = FakeStatisticsProvider()
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=PlannerService(statistics),
         finder=FinderService(),
-        checker=OverallChecker(),
     )
     payload = MainPlanCreate.model_validate(
         {
@@ -219,14 +242,14 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
     assert plan.days[0].items[0].name == "Văn Miếu"
 
 
-def test_main_workflow_accepts_normalized_planning_context() -> None:
+def test_main_workflow_accepts_confirmed_explorer_context() -> None:
+    llm = FakeLLMClient()
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
-        planner=PlannerService(FakeStatisticsProvider()),
+        planner=PlannerService(llm, FakeStatisticsProvider(place_count=0)),
         finder=FinderService(),
-        checker=OverallChecker(),
     )
-    payload = PlanningContextCreate.model_validate(
+    payload = MainPlanFromExplorerCreate.model_validate(
         {
             "intent": {
                 "destination": "Hà Nội",
@@ -238,6 +261,34 @@ def test_main_workflow_accepts_normalized_planning_context() -> None:
             "tripSpec": {
                 "days": 2,
                 "partySize": 3,
+                "budget": {
+                    "inputMode": "unknown",
+                    "currency": "VND",
+                    "isHardCap": False,
+                    "confidence": "low",
+                },
+            },
+            "selectedPlaces": [
+                {
+                    "name": "Văn Miếu",
+                    "mustVisit": True,
+                    "tags": ["culture"],
+                    "sourceRefs": ["https://example.com/reel"],
+                }
+            ],
+        }
+    )
+
+    plan = asyncio.run(workflow.run_from_explorer(payload))
+
+    assert plan.status.value == "locked"
+    assert plan.days[0].items[0].name == "Văn Miếu"
+    assert '"partySize":3' in llm.prompts[0]
+
+
+class FakeLLMClient(LLMClient):
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
             },
             "regionKey": "vn,ha-noi",
             "selectedPlaces": [

@@ -15,7 +15,6 @@ from app.modules.places.resolver import (
 )
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
-from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
@@ -40,13 +39,12 @@ def get_plan_service(
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     llm_client = get_llm_client()
-    planner = PlannerService(statistics)
+    planner = PlannerService(llm_client, statistics)
     finder = FinderService(RepositoryFinderPlaceTool(place_repository))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=planner,
         finder=finder,
-        checker=OverallChecker(),
     )
     backup_workflow = BackupPlanWorkflow(
         planner=planner,

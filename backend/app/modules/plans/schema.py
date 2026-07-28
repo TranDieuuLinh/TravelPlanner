@@ -56,6 +56,14 @@ class MainPlanCreate(ExplorerRequest):
     )
 
 
+class MainPlanFromExplorerCreate(BaseModel):
+    intent: PlanningIntent
+    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate],
+        Field(alias="selectedPlaces"),
+    ] = Field(default_factory=list)
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
 class PlanningContextCreate(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]

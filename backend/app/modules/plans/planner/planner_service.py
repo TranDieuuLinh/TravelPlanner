@@ -124,18 +124,9 @@ class PlannerService:
     ) -> PlannerAgentOutput:
         macro_plan, unallocated = self._build_macro_plan(planner_input)
         warnings = self._statistics_warnings(planner_input)
-        capacity_overflow_count = sum(
-            place.reason_code == "no_day_capacity"
-            for place in unallocated
-        )
-        if capacity_overflow_count:
-            warnings.append(
-                f"{capacity_overflow_count} confirmed Places exceed the current "
-                "day-block capacity and must remain unscheduled."
-            )
-        ready = bool(
-            planner_input.region_context.place_count
-            or planner_input.selected_places
+        ready = (
+            planner_input.region_context.place_count > 0
+            or bool(planner_input.selected_places)
         )
         assumptions = [
             "Planner used deterministic rules; no LLM-generated schedule was committed.",

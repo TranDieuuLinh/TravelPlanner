@@ -69,6 +69,11 @@ PlanService
 `ExploreResponseFormatter` chỉ tổng hợp raw prompt và context đã được các
 extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Nếu request
 chỉ có raw prompt, `PlanService` bỏ qua cả hai extractor và gọi formatter trực
+tiếp. Kết quả Explorer hiện được trả thẳng về client, chưa được lưu thành draft
+trong database. Sau khi user xác nhận candidate trên UI, client gọi
+`POST /api/plans/main/from-explorer` với `intent`, `tripSpec` và
+`selectedPlaces`. Đây hiện là handoff theo request; persistence theo trip cho
+`SelectedPlace` vẫn chưa được triển khai.
 tiếp. Output được tách thành Explorer context và một mảng `placeCandidates`.
 Aggregator gộp trùng nhưng giữ mọi source URL. Resolver chạy tự động sau
 extraction; không dừng luồng để hỏi user. Kết quả được lưu đầy đủ chỉ vào

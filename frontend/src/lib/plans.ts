@@ -9,6 +9,27 @@ export type TravelPlan = {
   checkReport?: { status: string; summary: string } | null;
 };
 
+export type FeatureMapItem = {
+  stage: string;
+  feature: string;
+  description: string;
+};
+
+export type PlanBundle = {
+  mainPlan: TravelPlan;
+  backupPlan: TravelPlan;
+  validation: { status: string; summary: string };
+};
+
+export type PlaceCategory =
+  | "attraction"
+  | "food"
+  | "cafe"
+  | "hotel"
+  | "transport"
+  | "free_time"
+  | "other";
+
 export type BudgetLevel = "budget" | "medium" | "high";
 export type BudgetInputMode = "qualitative" | "exact" | "range" | "unknown";
 export type BudgetConfidence = "low" | "medium" | "high";
@@ -54,18 +75,9 @@ export type ExplorerContext = {
   missingInfoQuestions: string[];
 };
 
-export type ExploreResponse = {
-  intakeId: string;
-  userId?: string | null;
-  explorer: ExplorerContext;
-};
-
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
-
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
-  const response = await fetch(`${apiBase}/plans/main`, {
+  return apiFetch<TravelPlan>("/plans/main", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       destination: input.destination,
       days: input.days,
@@ -79,9 +91,6 @@ export async function createPlan(input: { destination: string; days: number; int
       selectedPlaces: []
     })
   });
-
-  if (!response.ok) throw new Error("Không thể tạo plan. Hãy kiểm tra backend ở cổng 8000.");
-  return response.json() as Promise<TravelPlan>;
 }
 
 export async function exploreFullIntake(input: {
@@ -94,14 +103,59 @@ export async function exploreFullIntake(input: {
     form.append("images", image);
   }
 
-  const response = await fetch(`${apiBase}/plans/explore/full/intake`, {
+  return apiFetch<ExploreResponse>("/plans/explore/full/intake", {
     method: "POST",
     body: form
   });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "Không thể chạy Explorer. Hãy kiểm tra backend ở cổng 8000.");
-  }
-  return response.json() as Promise<ExploreResponse>;
 }
+
+export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
+  return apiFetch<FeatureMapItem[]>("/plans/feature-map");
+}
+
+export async function exploreFull(
+  input: Record<string, unknown>
+): Promise<ExploreResponse> {
+  return apiFetch<ExploreResponse>("/plans/explore/full", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function createPlanFromExplorer(input: {
+  context: ExploreResponse;
+  selectedPlaces: ExplorePlace[];
+}): Promise<TravelPlan> {
+  return apiFetch<TravelPlan>("/plans/main/from-explorer", {
+    method: "POST",
+    body: JSON.stringify({
+      intent: input.context.intent,
+      tripSpec: input.context.tripSpec,
+      selectedPlaces: input.selectedPlaces.map((place) => ({
+        name: place.name,
+        placeId: place.placeId ?? null,
+        priority: place.priority ?? 1,
+        mustVisit: true,
+        tags: [place.category],
+        sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
+        notes: place.notes ?? null
+      }))
+    })
+  });
+}
+
+export async function createBackupPlan(
+  planId: string,
+  input: {
+    reason?: string;
+    constraints?: string[];
+    keepDays?: boolean;
+    avoidOutdoor?: boolean;
+  } = {}
+): Promise<PlanBundle> {
+  return apiFetch<PlanBundle>(`/plans/${planId}/backup`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+import { apiFetch } from "@/lib/api";

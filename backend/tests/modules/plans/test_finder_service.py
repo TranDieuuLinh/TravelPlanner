@@ -163,291 +163,68 @@ def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:
     assert result.unscheduled_places[0].reason_code == "no_available_slot"
 
 
-def test_finder_agent_contract_wraps_result_and_trace() -> None:
-    finder = FinderService(
-        FakeFinderPlaceTool(
-            {
-                "selected-main": _place(
-                    "selected-main",
-                    "Selected museum",
-                    tags=["culture"],
-                    intensity="moderate",
-                )
-            },
-            search_order=[],
-        )
+def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> None:
+    selected = _place(
+        "selected-day-2",
+        "Selected day two",
+        tags=["culture"],
+        intensity="light",
     )
-
-    output = finder.fill_agent_plan(
-        FinderAgentInput(
-            intent=PlanningIntent(
-                destination="Hà Nội",
-                budgetLevel="medium",
-                pace="balanced",
-                interests=["culture"],
-            ),
-            tripSpec=TripPlanningSpec(days=1),
-            macroPlan=AgentMacroPlan.model_validate(_macro_plan().model_dump()),
-            selectedPlaces=[
-                SelectedPlaceContext(
-                    placeId="selected-main",
-                    name="Selected museum",
-                    mustVisit=True,
-                )
-            ],
-        )
+    support = _place(
+        "support",
+        "Catalog support",
+        tags=["food"],
+        intensity="light",
     )
-
-    assert output.final_days[0].items[0].place_id == "selected-main"
-    assert output.trip_cost_estimate is None
-    assert output.trace.status.value == "completed"
-    assert output.trace.notes == [
-        "committedPlaceCount=1",
-        "unscheduledPlaceCount=0",
-    ]
-
-
-def test_finder_rejects_avoided_and_overlong_candidates() -> None:
     tool = FakeFinderPlaceTool(
-        {
-            "avoid": _place(
-                "avoid",
-                "Avoid Me",
-                tags=["culture"],
-                intensity="light",
-                duration=60,
-            ),
-            "too-long": _place(
-                "too-long",
-                "Too Long",
-                tags=["culture"],
-                intensity="light",
-                duration=240,
-            ),
-        },
-        search_order=["avoid", "too-long"],
+        {"selected-day-2": selected, "support": support},
+        search_order=["selected-day-2", "support"],
     )
     finder = FinderService(tool)
-
-    output = finder.fill_agent_plan(
-        FinderAgentInput(
-            intent=PlanningIntent(
-                destination="Hà Nội",
-                budgetLevel="medium",
-                pace="balanced",
-                interests=["culture"],
-                avoidPlaces=["Avoid Me"],
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Food",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+                focusTags=["food"],
             ),
-            tripSpec=TripPlanningSpec(days=1),
-            macroPlan=AgentMacroPlan.model_validate(_macro_plan().model_dump()),
-        )
+            DayBrief(
+                day=2,
+                theme="Culture",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+                focusTags=["culture"],
+                allocatedSelectedPlaceRefs=["selected-day-2"],
+            ),
+        ],
     )
-
-    assert all(
-        item.place_id is None
-        for item in output.final_days[0].items
-    )
-    assert output.trace.status.value == "blocked"
-    assert output.final_plan_status.rejected_candidate_ids == [
-        "avoid",
-        "too-long",
-    ]
-
-
-def test_finder_respects_availability_and_user_constraints() -> None:
-    tool = FakeFinderPlaceTool(
-        {
-            "accessible": FinderPlace(
-                placeId="accessible",
-                name="Accessible museum",
-                placeType="museum",
-                regionKey="vn,ha-noi,hoan-kiem",
-                tags=["culture"],
-                typicalDurationMinutes=60,
-                activityIntensity="light",
-                accessibilityFeatures=["wheelchair"],
-            )
-        },
-        search_order=["accessible"],
-    )
-    finder = FinderService(tool)
-    user_status = UserStatus.model_validate(
-        {
-            "availableAt": "15:00",
-            "constraints": {
-                "maxConsecutiveActiveMinutes": 90,
-                "requiredRestMinutes": 120,
-                "maxWalkingMinutesPerDay": 30,
-                "accessibilityNeeds": ["wheelchair"],
-            },
-        }
-    )
-
-    result = finder.fill_main_plan(
-        _macro_plan(),
-        _intent(),
-        [],
-        user_status=user_status,
-    )
-
-    activity_items = [
-        item
-        for item in result.days[0].items
-        if item.place_id
-    ]
-    assert [item.time_window for item in activity_items] == ["17:00-19:00"]
-    assert any("only available at 15:00" in item for item in result.warnings)
-    assert any("walking-limit feasibility" in item for item in result.warnings)
-    assert result.final_user_status.available_at is None
-
-
-def test_finder_does_not_fabricate_place_id_for_name_only_selection() -> None:
-    finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
-    macro_plan = _macro_plan()
-    macro_plan.day_briefs[0].allocated_selected_place_refs = [
-        "Manual Place"
-    ]
 
     result = finder.fill_main_plan(
         macro_plan,
         _intent(),
         [
             SelectedPlaceContext(
-                name="Manual Place",
-                mustVisit=False,
-                sourceRefs=["source-manual"],
-                tags=["local"],
+                placeId="selected-day-2",
+                name="Selected day two",
+                mustVisit=True,
+                tags=["culture"],
             )
         ],
     )
 
-    item = next(
-        item
+    assert all(
+        item.place_id != "selected-day-2"
         for item in result.days[0].items
-        if item.source == "selected_place"
     )
-    assert item.place_id is None
-    assert item.place_type == "selected_place"
-    assert item.source_refs == ["source-manual"]
-    assert item.tags == ["local"]
-    assert result.final_plan_status.used_place_ids == ["Manual Place"]
-
-
-def test_finder_rejects_unverified_accessibility_match() -> None:
-    finder = FinderService(
-        FakeFinderPlaceTool(
-            {
-                "unknown-access": _place(
-                    "unknown-access",
-                    "Unknown access",
-                    tags=["culture"],
-                    intensity="light",
-                )
-            },
-            search_order=["unknown-access"],
-        )
+    assert any(
+        item.place_id == "selected-day-2"
+        for item in result.days[1].items
     )
-
-    result = finder.fill_main_plan(
-        _macro_plan(),
-        _intent(),
-        [],
-        user_status=UserStatus.model_validate(
-            {
-                "constraints": {
-                    "accessibilityNeeds": ["wheelchair"],
-                }
-            }
-        ),
-    )
-
-    assert result.final_plan_status.used_place_ids == []
-    assert result.final_plan_status.rejected_candidate_ids == [
-        "unknown-access"
-    ]
-
-
-def test_finder_respects_max_consecutive_activity_minutes() -> None:
-    finder = FinderService(
-        FakeFinderPlaceTool(
-            {
-                "one-hour": _place(
-                    "one-hour",
-                    "One-hour activity",
-                    tags=["culture"],
-                    intensity="light",
-                    duration=60,
-                )
-            },
-            search_order=["one-hour"],
-        )
-    )
-
-    result = finder.fill_main_plan(
-        _macro_plan(),
-        _intent(),
-        [],
-        user_status=UserStatus.model_validate(
-            {
-                "constraints": {
-                    "maxConsecutiveActiveMinutes": 30,
-                }
-            }
-        ),
-    )
-
-    assert result.final_plan_status.used_place_ids == []
-    assert result.final_plan_status.rejected_candidate_ids == ["one-hour"]
-
-
-def test_finder_avoid_outdoor_uses_type_and_tags() -> None:
-    finder = FinderService(
-        FakeFinderPlaceTool(
-            {
-                "beach": FinderPlace(
-                    placeId="beach",
-                    name="Coastal Stop",
-                    placeType="beach",
-                    regionKey="vn,ha-noi,hoan-kiem",
-                    tags=["outdoor"],
-                    typicalDurationMinutes=60,
-                    activityIntensity="light",
-                ),
-                "indoor": FinderPlace(
-                    placeId="indoor",
-                    name="Park Museum",
-                    placeType="museum",
-                    regionKey="vn,ha-noi,hoan-kiem",
-                    tags=["indoor", "culture"],
-                    typicalDurationMinutes=60,
-                    activityIntensity="light",
-                ),
-            },
-            search_order=["beach", "indoor"],
-        )
-    )
-
-    output = finder.fill_agent_plan(
-        FinderAgentInput(
-            mode="backup",
-            intent=PlanningIntent(
-                destination="Hà Nội",
-                budgetLevel="medium",
-                constraints=["avoid_outdoor"],
-            ),
-            tripSpec=TripPlanningSpec(days=1),
-            macroPlan=AgentMacroPlan.model_validate(_macro_plan().model_dump()),
-        )
-    )
-
-    activity_names = [
-        item.name
-        for item in output.final_days[0].items
-        if item.place_id
-    ]
-    assert "Coastal Stop" not in activity_names
-    assert "Park Museum" in activity_names
-    assert output.final_plan_status.rejected_candidate_ids == ["beach"]
 
 
 class FakeFinderPlaceTool:

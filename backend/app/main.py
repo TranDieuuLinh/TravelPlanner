@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 import logging
 from uuid import uuid4
@@ -19,7 +20,9 @@ from app.db.models import Place, User, UserMustPlace  # noqa: F401
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.db.seed import seed_demo_marketplace
-from app.modules.plans.explorer.tools.url_reels.speech_to_text import preload_audio_model
+from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
+    preload_audio_model,
+)
 from app.shared.errors import AppError
 from app.shared.schemas import APIMessage
 
@@ -31,6 +34,13 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_demo_marketplace(db)
+    if settings.preload_url_reel_models:
+        try:
+            preload_audio_model()
+            logger.info("URL reel audio model preloaded")
+        except Exception:
+            logger.exception("URL reel audio model preload failed")
+    yield
 
     if getattr(settings, "preload_url_reel_models", False):
         try:
@@ -38,9 +48,6 @@ async def lifespan(_: FastAPI):
             logger.info("URL reel audio model preloaded")
         except Exception:
             logger.exception("URL reel audio model preload failed")
-
-    yield
-
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
@@ -103,7 +110,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
             "requestId": getattr(request.state, "request_id", uuid4().hex),
         },
     )
-
 
 @app.get("/health", response_model=APIMessage)
 def health() -> APIMessage:

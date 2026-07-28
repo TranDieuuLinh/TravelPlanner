@@ -1,13 +1,22 @@
 import { apiFetch } from "@/lib/api";
 import type {
   FavoriteResponse,
+  AuditEvent,
+  BuyerPlan,
   ListingDetail,
   ListingPaginated,
   ListingSummary,
   ListingVersion,
   PendingListingVersion,
   PublishablePlan,
+  MarketplaceReport,
+  Review,
+  ReviewPaginated,
 } from "@/types/marketplace";
+
+export async function getMarketplaceCategories(): Promise<string[]> {
+  return apiFetch<string[]>("/marketplace/categories");
+}
 
 export async function getPublishablePlans(): Promise<PublishablePlan[]> {
   return apiFetch<PublishablePlan[]>("/creator/publishable-plans");
@@ -114,6 +123,42 @@ export async function getUserFavorites(): Promise<ListingSummary[]> {
   return apiFetch<ListingSummary[]>("/me/favorites");
 }
 
+export async function getPurchasedPlans(): Promise<BuyerPlan[]> {
+  return apiFetch<BuyerPlan[]>("/me/plans");
+}
+
+export async function getListingReviews(
+  listingId: string,
+  page = 1,
+  pageSize = 10
+): Promise<ReviewPaginated> {
+  return apiFetch<ReviewPaginated>(
+    `/listings/${listingId}/reviews?page=${page}&pageSize=${pageSize}`
+  );
+}
+
+export async function saveListingReview(
+  listingId: string,
+  rating: number,
+  comment: string
+): Promise<Review> {
+  return apiFetch<Review>(`/listings/${listingId}/reviews`, {
+    method: "POST",
+    body: JSON.stringify({ rating, comment })
+  });
+}
+
+export async function reportListing(
+  listingId: string,
+  reason: string,
+  description: string
+): Promise<MarketplaceReport> {
+  return apiFetch<MarketplaceReport>(`/listings/${listingId}/reports`, {
+    method: "POST",
+    body: JSON.stringify({ reason, description })
+  });
+}
+
 export async function getAdminPendingListings(): Promise<PendingListingVersion[]> {
   return apiFetch<PendingListingVersion[]>("/admin/listings/pending");
 }
@@ -127,4 +172,53 @@ export async function reviewListingVersion(
     method: "POST",
     body: JSON.stringify({ decision, reason }),
   });
+}
+
+export async function getAdminReports(filters: {
+  status?: string;
+  reason?: string;
+} = {}): Promise<MarketplaceReport[]> {
+  const search = new URLSearchParams();
+  if (filters.status) search.set("status", filters.status);
+  if (filters.reason) search.set("reason", filters.reason);
+  return apiFetch<MarketplaceReport[]>(
+    `/admin/reports${search.size ? `?${search}` : ""}`
+  );
+}
+
+export async function resolveAdminReport(
+  reportId: string,
+  decision: "dismiss" | "unpublish" | "requestChanges",
+  note?: string
+): Promise<MarketplaceReport> {
+  return apiFetch<MarketplaceReport>(`/admin/reports/${reportId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ decision, note })
+  });
+}
+
+export async function refundOrder(
+  orderId: string,
+  reason?: string
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/admin/orders/${orderId}/refund`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
+  });
+}
+
+export async function getAdminAuditEvents(filters: {
+  actorId?: number;
+  action?: string;
+  resourceType?: string;
+  resourceId?: string;
+} = {}): Promise<AuditEvent[]> {
+  const search = new URLSearchParams();
+  if (filters.actorId !== undefined) search.set("actorId", String(filters.actorId));
+  if (filters.action) search.set("action", filters.action);
+  if (filters.resourceType) search.set("resourceType", filters.resourceType);
+  if (filters.resourceId) search.set("resourceId", filters.resourceId);
+  return apiFetch<AuditEvent[]>(
+    `/admin/audit-events${search.size ? `?${search}` : ""}`
+  );
 }

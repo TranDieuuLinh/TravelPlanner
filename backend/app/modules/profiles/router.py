@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.integrations.llm.factory import get_llm_client
 from app.modules.auth.dependencies import get_current_user, require_csrf
 from app.modules.profiles.service import ProfileService
 from app.modules.users.model import User

@@ -5,18 +5,23 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { APIError } from "@/lib/api";
-import { addFavorite, removeFavorite, searchListings } from "@/lib/marketplace";
+import {
+  addFavorite,
+  getMarketplaceCategories,
+  removeFavorite,
+  searchListings
+} from "@/lib/marketplace";
 import type { ListingSummary } from "@/types/marketplace";
 
-const categories = [
-  { id: "Tất cả", label: "Tất cả" },
-  { id: "food", label: "Ẩm thực" },
-  { id: "nature", label: "Thiên nhiên" },
-  { id: "family", label: "Gia đình" },
-  { id: "budget", label: "Tiết kiệm" },
-  { id: "comfortable", label: "Nghỉ dưỡng" },
-  { id: "creator-picks", label: "Gợi ý Creator" },
-];
+const categoryLabels: Record<string, string> = {
+  budget: "Tiết kiệm",
+  medium: "Cân bằng",
+  high: "Cao cấp",
+  food: "Ẩm thực",
+  nature: "Thiên nhiên",
+  family: "Gia đình",
+  "creator-picks": "Gợi ý Creator"
+};
 
 const sortOptions = [
   { id: "newest", label: "Mới nhất" },
@@ -30,6 +35,7 @@ export default function ExplorePage() {
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Tất cả");
+  const [categories, setCategories] = useState<string[]>([]);
   const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
 
@@ -44,6 +50,12 @@ export default function ExplorePage() {
   useEffect(() => {
     fetchListings();
   }, [category, page, sort, user]);
+
+  useEffect(() => {
+    void getMarketplaceCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, []);
 
   async function fetchListings() {
     setLoading(true);
@@ -123,17 +135,17 @@ export default function ExplorePage() {
       <section className="pageWidth exploreContent">
         <div className="filterRow" aria-label="Bộ lọc">
           <div>
-            {categories.map((item) => (
+            {["Tất cả", ...categories].map((item) => (
               <button
-                className={category === item.id ? "filter active" : "filter"}
-                key={item.id}
+                className={category === item ? "filter active" : "filter"}
+                key={item}
                 onClick={() => {
-                  setCategory(item.id);
+                  setCategory(item);
                   setPage(1);
                 }}
                 type="button"
               >
-                {item.label}
+                {item === "Tất cả" ? item : (categoryLabels[item] ?? item)}
               </button>
             ))}
           </div>

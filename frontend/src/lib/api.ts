@@ -3,6 +3,7 @@ const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/a
 export type APIErrorBody = {
   code?: string;
   message?: string;
+  detail?: string | { message?: string };
   fieldErrors?: Record<string, string>;
   requestId?: string;
 };
@@ -36,6 +37,11 @@ async function parseError(response: Response): Promise<APIError> {
   let body: APIErrorBody = {};
   try {
     body = await response.json() as APIErrorBody;
+    if (!body.message && body.detail) {
+      body.message = typeof body.detail === "string"
+        ? body.detail
+        : body.detail.message;
+    }
   } catch {
     body = { message: "Backend không trả về phản hồi hợp lệ." };
   }
@@ -60,7 +66,13 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  const bodyNeedsJsonContentType = (
+    init.body
+    && !(typeof FormData !== "undefined" && init.body instanceof FormData)
+    && !(typeof URLSearchParams !== "undefined" && init.body instanceof URLSearchParams)
+    && !(typeof Blob !== "undefined" && init.body instanceof Blob)
+  );
+  if (bodyNeedsJsonContentType && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {

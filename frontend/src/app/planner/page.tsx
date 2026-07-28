@@ -2,7 +2,13 @@
 
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { exploreFullIntake, type ExplorerContext, type ExploreResponse } from "@/lib/plans";
+import {
+  createPlanFromExplorer,
+  exploreFullIntake,
+  type ExploreResponse,
+  type PlaceCategory,
+  type TravelPlan
+} from "@/lib/plans";
 
 type ChatMessage = {
   id: number;
@@ -48,6 +54,8 @@ function Planner() {
     }
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
+  const [selectedPlaceKeys, setSelectedPlaceKeys] = useState<Set<string>>(new Set());
+  const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,6 +82,13 @@ function Planner() {
         images
       });
       setExploreResult(nextExploreResult);
+      setPlan(null);
+      setSelectedPlaceKeys(
+        new Set(
+          [...nextExploreResult.placeCandidates, ...nextExploreResult.foodPlaces]
+            .map((place, index) => `${index}:${place.name}:${place.address ?? ""}`)
+        )
+      );
       setMessages((current) => [
         ...current,
         {
@@ -88,6 +103,26 @@ function Planner() {
       const message = caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
       setError(message);
       setMessages((current) => [...current, { id: Date.now() + 1, role: "assistant", text: message }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createFromExplorer() {
+    if (!exploreResult) return;
+    const allPlaces = [...exploreResult.placeCandidates, ...exploreResult.foodPlaces];
+    const confirmedPlaces = allPlaces.filter((place, index) =>
+      selectedPlaceKeys.has(`${index}:${place.name}:${place.address ?? ""}`)
+    );
+    setLoading(true);
+    setError("");
+    try {
+      setPlan(await createPlanFromExplorer({
+        context: exploreResult,
+        selectedPlaces: confirmedPlaces
+      }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Không thể tạo kế hoạch.");
     } finally {
       setLoading(false);
     }
@@ -172,6 +207,80 @@ function Planner() {
                   {exploreResult.explorer.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
                 </div>
               </section>
+              <section>
+                <h3>Địa điểm tham quan</h3>
+                {exploreResult.placeCandidates.length ? exploreResult.placeCandidates.map((place, index) => {
+                  const key = `${index}:${place.name}:${place.address ?? ""}`;
+                  return (
+                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
+                    <div className="candidateHeading">
+                      <label>
+                        <input
+                          checked={selectedPlaceKeys.has(key)}
+                          onChange={(event) => {
+                            const next = new Set(selectedPlaceKeys);
+                            if (event.target.checked) next.add(key); else next.delete(key);
+                            setSelectedPlaceKeys(next);
+                          }}
+                          type="checkbox"
+                        />
+                        <strong>{place.name}</strong>
+                      </label>
+                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
+                    </div>
+                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
+                  </article>
+                  );
+                }) : <p className="mutedText">Chưa có địa điểm tham quan.</p>}
+              </section>
+              <section>
+                <h3>Địa điểm ăn uống</h3>
+                {exploreResult.foodPlaces.length ? exploreResult.foodPlaces.map((place, index) => {
+                  const offset = exploreResult.placeCandidates.length;
+                  const key = `${offset + index}:${place.name}:${place.address ?? ""}`;
+                  return (
+                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
+                    <div className="candidateHeading">
+                      <label>
+                        <input
+                          checked={selectedPlaceKeys.has(key)}
+                          onChange={(event) => {
+                            const next = new Set(selectedPlaceKeys);
+                            if (event.target.checked) next.add(key); else next.delete(key);
+                            setSelectedPlaceKeys(next);
+                          }}
+                          type="checkbox"
+                        />
+                        <strong>{place.name}</strong>
+                      </label>
+                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
+                    </div>
+                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
+                  </article>
+                  );
+                }) : <p className="mutedText">Chưa có địa điểm ăn uống.</p>}
+              </section>
+              <button
+                className="generateButton"
+                disabled={loading || selectedPlaceKeys.size === 0}
+                onClick={() => void createFromExplorer()}
+                type="button"
+              >
+                {loading ? "Đang tạo kế hoạch…" : `Xác nhận ${selectedPlaceKeys.size} địa điểm và tạo kế hoạch`}
+              </button>
+              {plan ? (
+                <section>
+                  <h3>{plan.title}</h3>
+                  {plan.days.map((day) => (
+                    <article className="dayBlock" key={day.day}>
+                      <strong>Ngày {day.day}: {day.theme}</strong>
+                      {day.items.map((item, itemIndex) => (
+                        <p key={`${day.day}-${itemIndex}`}>{item.timeWindow} · {item.name}</p>
+                      ))}
+                    </article>
+                  ))}
+                </section>
+              ) : null}
               <section>
                 <h3>Câu hỏi còn thiếu</h3>
                 {exploreResult.explorer.missingInfoQuestions.length ? exploreResult.explorer.missingInfoQuestions.map((question) => <p className="questionItem" key={question}>{question}</p>) : <p className="mutedText">Không có câu hỏi bổ sung.</p>}
