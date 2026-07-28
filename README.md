@@ -1,34 +1,27 @@
 # VSF Travel Planner
 
-VSF Travel Planner biến nguồn cảm hứng du lịch thành lịch trình có thể sử dụng
-thực tế. Người dùng có thể dán URL video hoặc nội dung tham khảo, kiểm tra các
-địa điểm được hệ thống trích xuất, bổ sung ngày đi, ngân sách và ràng buộc, sau
-đó nhận Main Plan đã được kiểm tra cùng Backup Plan riêng khi cần.
+VSF Travel Planner là nền tảng lập kế hoạch du lịch có AI hỗ trợ, kết hợp với
+chợ lịch trình dành cho người đi du lịch và nhà sáng tạo nội dung. Người dùng có
+thể tự tạo hoặc mua lịch trình, cá nhân hóa, sử dụng trong chuyến đi và đánh giá
+sau khi hoàn thành. Nhà sáng tạo có thể chuyển kinh nghiệm du lịch thực tế thành
+các lịch trình có thể chỉnh sửa và bán trên Marketplace.
 
-Sản phẩm đồng thời có Marketplace để creator chuyển nội dung và kinh nghiệm
-thực tế thành plan có version để xuất bản và bán. Buyer nhận một bản sao cá nhân
-có thể chỉnh sửa bằng cùng công cụ Planner, không làm thay đổi plan gốc của
-creator.
-
-Luận điểm cốt lõi là: giá trị không nằm ở việc sinh ra một đoạn lịch trình bằng
-AI, mà ở toàn bộ chuỗi `URL -> ngữ cảnh có nguồn -> địa điểm đã xác nhận ->
-plan có cấu trúc -> kiểm tra tính khả thi -> plan có thể chỉnh sửa và sử dụng`.
+Luận điểm cốt lõi của sản phẩm là: chỉ tạo ra một lịch trình là chưa đủ. Một kế
+hoạch du lịch hữu ích phải có khả năng so sánh, chỉnh sửa, hiển thị lộ trình,
+đáng tin cậy, hỗ trợ cộng tác và đồng hành cùng người dùng trong suốt chuyến đi.
 
 ## Trạng thái hiện tại
 
 Repository này đang ở giai đoạn khởi tạo kỹ thuật, chưa phải một MVP hoàn chỉnh.
 
-- Frontend Next.js đã có đăng ký, đăng nhập bằng cookie, hồ sơ cá nhân và form
-  đăng ký creator kết nối backend thật.
-- Backend FastAPI đã có authentication, refresh session, CSRF, RBAC, hồ sơ,
-  creator application và lưu bằng SQLAlchemy.
+- Frontend Next.js hiện minh họa chức năng tạo và xem danh sách người dùng.
+- Backend FastAPI đã có chức năng tạo/đọc người dùng và lưu bằng SQLAlchemy.
 - Module lập kế hoạch đã có ranh giới cho các bước Explorer, Planner, Finder,
   Check và Backup, nhưng vẫn dùng LLM giả lập và lưu plan trong bộ nhớ.
-- Danh mục Marketplace vẫn chỉ là endpoint minh họa; contract giao tiếp giữa
-  Marketplace và Planner đã được định nghĩa nhưng chưa có listing thật.
-- Bản đồ, nhập dữ liệu từ URL, chỉnh sửa plan, chế độ offline, listing, giao dịch
-  Marketplace, thanh toán, đánh giá và phân tích cho creator chưa được triển
-  khai.
+- Profile Planner và danh mục Marketplace mới chỉ là các endpoint minh họa.
+- Xác thực, bản đồ, nhập dữ liệu từ URL, chỉnh sửa plan, chế độ offline,
+  giao dịch Marketplace, thanh toán, đánh giá và phân tích cho creator chưa được
+  triển khai.
 
 Xem [Phạm vi MVP](docs/04-mvp-scope.md) để biết ranh giới phát triển chính thức.
 
@@ -51,8 +44,6 @@ VSF_TravelPlanner/
 │   ├── 10-testing-strategy.md
 │   ├── 11-security-and-privacy.md
 │   ├── 12-roadmap.md
-│   ├── 12-roadmap-person-c.md
-│   ├── assets/
 │   ├── glossary.md
 │   └── decisions/
 ├── frontend/
@@ -92,19 +83,6 @@ npm run dev
 ```
 
 Frontend có tại `http://localhost:3000`.
-
-## Kiểm thử
-
-```bash
-# Backend
-cd backend
-pytest
-
-# Frontend
-cd frontend
-npm run typecheck
-npm run build
-```
 
 ## Tài liệu dự án
 

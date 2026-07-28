@@ -5,5 +5,5 @@ def find_empty_days(plan: Plan) -> list[CheckIssue]:
     return [
         CheckIssue(code="empty_day", severity="warning", message=f"Day {day.day} has no committed places.")
         for day in plan.days
-        if not any(item.place_id for item in day.items)
+        if not day.items
     ]

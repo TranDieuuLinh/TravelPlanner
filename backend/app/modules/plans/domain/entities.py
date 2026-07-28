@@ -18,38 +18,10 @@ class TravelIntent(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class DayPartGoals(BaseModel):
-    morning: str | None = None
-    lunch: str | None = None
-    afternoon: str | None = None
-    evening: str | None = None
-
-
-class RegionSnapshotReference(BaseModel):
-    region_key: str = Field(alias="regionKey")
-    snapshot_id: str = Field(alias="snapshotId")
-    catalog_version: int = Field(alias="catalogVersion")
-    algorithm_version: str = Field(alias="algorithmVersion")
-    generated_at: str = Field(alias="generatedAt")
-
-    model_config = {"populate_by_name": True}
-
-
 class DayBrief(BaseModel):
     day: int
     theme: str
     target_area: str = Field(alias="targetArea")
-    target_region_key: str | None = Field(default=None, alias="targetRegionKey")
-    focus_tags: list[str] = Field(default_factory=list, alias="focusTags")
-    pace: TravelPace = TravelPace.balanced
-    day_part_goals: DayPartGoals = Field(
-        default_factory=DayPartGoals,
-        alias="dayPartGoals",
-    )
-    allocated_selected_place_refs: list[str] = Field(
-        default_factory=list,
-        alias="allocatedSelectedPlaceRefs",
-    )
     notes: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -58,25 +30,15 @@ class DayBrief(BaseModel):
 class MacroPlan(BaseModel):
     title: str
     destination: str
-    region_key: str | None = Field(default=None, alias="regionKey")
     day_briefs: list[DayBrief] = Field(alias="dayBriefs")
 
     model_config = {"populate_by_name": True}
 
 
 class PlanItem(BaseModel):
-    item_id: str | None = Field(default=None, alias="itemId")
-    place_id: str | None = Field(default=None, alias="placeId")
     name: str
     time_window: str = Field(alias="timeWindow")
     place_type: str = Field(alias="placeType")
-    role: str | None = None
-    source: str = "finder"
-    duration_minutes: int | None = Field(default=None, alias="durationMinutes")
-    activity_intensity: str | None = Field(
-        default=None,
-        alias="activityIntensity",
-    )
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -85,135 +47,7 @@ class PlanItem(BaseModel):
 class PlanDay(BaseModel):
     day: int
     theme: str
-    strategy: str = "anchor_led"
     items: list[PlanItem]
-
-
-class UserStatusMetrics(BaseModel):
-    physical: int | None = Field(default=None, ge=0, le=100)
-    mental: int | None = Field(default=None, ge=0, le=100)
-    energy: int | None = Field(default=None, ge=0, le=100)
-    mood: int | None = Field(default=None, ge=0, le=100)
-    satiety: int | None = Field(default=None, ge=0, le=100)
-    hydration: int | None = Field(default=None, ge=0, le=100)
-
-
-class UserStatusLocation(BaseModel):
-    place_id: str | None = Field(default=None, alias="placeId")
-    region_key: str | None = Field(default=None, alias="regionKey")
-    latitude: float | None = None
-    longitude: float | None = None
-
-    model_config = {"populate_by_name": True}
-
-
-class UserStatusConstraints(BaseModel):
-    max_walking_minutes_per_day: int | None = Field(
-        default=None,
-        ge=0,
-        alias="maxWalkingMinutesPerDay",
-    )
-    max_consecutive_active_minutes: int | None = Field(
-        default=None,
-        ge=0,
-        alias="maxConsecutiveActiveMinutes",
-    )
-    required_rest_minutes: int | None = Field(
-        default=None,
-        ge=0,
-        alias="requiredRestMinutes",
-    )
-    allowed_activity_intensities: list[str] = Field(
-        default_factory=list,
-        alias="allowedActivityIntensities",
-    )
-    accessibility_needs: list[str] = Field(
-        default_factory=list,
-        alias="accessibilityNeeds",
-    )
-
-    model_config = {"populate_by_name": True}
-
-
-class UserStatus(BaseModel):
-    after_committed_day: int = Field(default=0, ge=0, alias="afterCommittedDay")
-    available_at: str | None = Field(default=None, alias="availableAt")
-    location: UserStatusLocation | None = None
-    active_accommodation_place_id: str | None = Field(
-        default=None,
-        alias="activeAccommodationPlaceId",
-    )
-    metrics: UserStatusMetrics = Field(default_factory=UserStatusMetrics)
-    constraints: UserStatusConstraints = Field(
-        default_factory=UserStatusConstraints
-    )
-
-    model_config = {"populate_by_name": True}
-
-
-class FinderUsage(BaseModel):
-    activity_minutes: int = Field(default=0, ge=0, alias="activityMinutes")
-    travel_minutes: int = Field(default=0, ge=0, alias="travelMinutes")
-    walking_minutes: int = Field(default=0, ge=0, alias="walkingMinutes")
-    rest_minutes: int = Field(default=0, ge=0, alias="restMinutes")
-    place_count: int = Field(default=0, ge=0, alias="placeCount")
-
-    model_config = {"populate_by_name": True}
-
-
-class FinderPlanStatus(BaseModel):
-    current_day: int = Field(default=1, ge=1, alias="currentDay")
-    current_slot: str | None = Field(default=None, alias="currentSlot")
-    current_strategy: str = Field(default="anchor_led", alias="currentStrategy")
-    used_place_ids: list[str] = Field(default_factory=list, alias="usedPlaceIds")
-    remaining_selected_place_ids: list[str] = Field(
-        default_factory=list,
-        alias="remainingSelectedPlaceIds",
-    )
-    locked_item_ids: list[str] = Field(
-        default_factory=list,
-        alias="lockedItemIds",
-    )
-    visited_tag_counts: dict[str, int] = Field(
-        default_factory=dict,
-        alias="visitedTagCounts",
-    )
-    visited_region_counts: dict[str, int] = Field(
-        default_factory=dict,
-        alias="visitedRegionCounts",
-    )
-    trip_usage: FinderUsage = Field(default_factory=FinderUsage, alias="tripUsage")
-    day_usage: FinderUsage = Field(default_factory=FinderUsage, alias="dayUsage")
-    rejected_candidate_ids: list[str] = Field(
-        default_factory=list,
-        alias="rejectedCandidateIds",
-    )
-    warnings: list[str] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
-
-
-class UnscheduledPlace(BaseModel):
-    place_id: str | None = Field(default=None, alias="placeId")
-    name: str
-    day: int | None = None
-    reason_code: str = Field(alias="reasonCode")
-    reason: str
-
-    model_config = {"populate_by_name": True}
-
-
-class FinderResult(BaseModel):
-    days: list[PlanDay]
-    final_user_status: UserStatus = Field(alias="finalUserStatus")
-    final_plan_status: FinderPlanStatus = Field(alias="finalPlanStatus")
-    unscheduled_places: list[UnscheduledPlace] = Field(
-        default_factory=list,
-        alias="unscheduledPlaces",
-    )
-    warnings: list[str] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
 
 
 class CheckIssue(BaseModel):
@@ -238,22 +72,6 @@ class Plan(BaseModel):
     intent: TravelIntent
     macro_plan: MacroPlan = Field(alias="macroPlan")
     days: list[PlanDay]
-    initial_user_status: UserStatus = Field(
-        default_factory=UserStatus,
-        alias="initialUserStatus",
-    )
-    final_user_status: UserStatus = Field(
-        default_factory=UserStatus,
-        alias="finalUserStatus",
-    )
-    final_plan_status: FinderPlanStatus = Field(
-        default_factory=FinderPlanStatus,
-        alias="finalPlanStatus",
-    )
-    unscheduled_places: list[UnscheduledPlace] = Field(
-        default_factory=list,
-        alias="unscheduledPlaces",
-    )
     check_report: CheckReport | None = Field(default=None, alias="checkReport")
 
     model_config = {"populate_by_name": True}

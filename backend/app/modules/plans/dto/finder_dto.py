@@ -1,6 +1,4 @@
-from app.modules.plans.domain.entities import FinderResult
-from app.modules.plans.finder.context import FinderContext
+from app.modules.plans.domain.entities import PlanDay
 
 
-FinderInput = FinderContext
-FinderOutput = FinderResult
+FinderOutput = list[PlanDay]
