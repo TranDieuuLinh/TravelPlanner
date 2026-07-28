@@ -100,6 +100,7 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Audit trail cho publish, moderation, payment, entitlement và hành động admin.
 - Rate limit, telemetry job/provider và cảnh báo lỗi tích hợp.
 - Quy trình xử lý nội dung lỗi thời, vi phạm hoặc tranh chấp.
+- **Trạng thái triển khai MVP Marketplace (Người C - Tuần 1 đến Tuần 6)**: Toàn bộ backend đã được triển khai hoàn chỉnh (Auth JWT HTTP-Only, Creator Application, Marketplace Listings & Versioning bất biến, Thanh toán MoMo Sandbox IPN Anti-replay, Cấp quyền Entitlement & Copy Plan cá nhân, Đánh giá Review, Báo cáo Report, Hoàn tiền Refund bảo toàn bản copy, và Nhật ký kiểm toán Audit Logs tự động che giấu thông tin nhạy cảm).
 
 ## Ngoài phạm vi MVP
 

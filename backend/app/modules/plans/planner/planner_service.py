@@ -239,7 +239,6 @@ class PlannerService:
                 title=f"{mode_label} plan for {intent.destination}",
                 destination=intent.destination,
                 regionKey=context.region_key,
-                snapshotRef=context.snapshot_ref,
                 dayBriefs=briefs,
             ),
             unallocated,

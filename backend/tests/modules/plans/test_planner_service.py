@@ -57,8 +57,8 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
 
     assert statistics.requested_region_keys == ["vn,ha-noi"]
     assert output.day_briefs_ready is True
-    assert output.macro_plan.snapshot_ref is not None
-    assert output.macro_plan.snapshot_ref.snapshot_id == "snapshot-3"
+    assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
+    assert output.trace.notes == ["snapshotId=snapshot-3"]
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
     )
@@ -124,8 +124,7 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
     plan = asyncio.run(workflow.run(payload))
 
     assert plan.macro_plan.region_key == "vn,ha-noi"
-    assert plan.macro_plan.snapshot_ref is not None
-    assert plan.macro_plan.snapshot_ref.snapshot_id == "snapshot-3"
+    assert "snapshotRef" not in plan.macro_plan.model_dump(by_alias=True)
     assert plan.macro_plan.day_briefs[0].allocated_selected_place_refs == [
         "place-van-mieu"
     ]

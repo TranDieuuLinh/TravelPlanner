@@ -60,9 +60,11 @@ class MainPlanWorkflow:
         macro_plan = planner_output.macro_plan
         selected_place_names = [place.name for place in finder_places]
         days = self.finder.fill_main_plan(
+        finder_result = self.finder.fill_main_plan(
             macro_plan,
             intent,
-            selected_place_names,
+            selected_places,
+            user_status=payload.user_status,
         )
         plan = Plan(
             id=str(uuid4()),
@@ -72,7 +74,11 @@ class MainPlanWorkflow:
             destination=intent.destination,
             intent=intent,
             macroPlan=macro_plan,
-            days=days,
+            days=finder_result.days,
+            initialUserStatus=payload.user_status,
+            finalUserStatus=finder_result.final_user_status,
+            finalPlanStatus=finder_result.final_plan_status,
+            unscheduledPlaces=finder_result.unscheduled_places,
         )
         check_report = self.checker.check(plan)
         return plan.model_copy(update={"status": PlanStatus.locked, "check_report": check_report})
