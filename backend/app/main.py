@@ -9,6 +9,10 @@ from starlette.requests import Request
 
 from app.api_router import api_router
 from app.core.config import settings
+from app.core.security_headers import (
+    rate_limit_middleware,
+    security_headers_middleware,
+)
 from app.db.base import Base
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
@@ -44,6 +48,17 @@ async def request_id_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+@app.middleware("http")
+async def security_headers_wrapper(request: Request, call_next):
+    return await security_headers_middleware(request, call_next)
+
+
+@app.middleware("http")
+async def rate_limit_wrapper(request: Request, call_next):
+    return await rate_limit_middleware(request, call_next)
+
 
 
 @app.exception_handler(AppError)
