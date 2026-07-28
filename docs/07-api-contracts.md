@@ -33,8 +33,82 @@ Request tạo user:
 
 - `GET /api/plans/feature-map`
 - `POST /api/plans/explore`
+- `POST /api/plans/explore/full/intake`
 - `POST /api/plans/main`
 - `POST /api/plans/{planId}/backup`
+
+Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
+composer duy nhất: người dùng nhập prompt hoặc dán URL vào cùng trường nội dung,
+và đính kèm ảnh ngay trong composer. Backend chọn nhánh xử lý dựa trên dữ liệu
+có mặt: OCR khi có ảnh, URL extraction khi tìm thấy URL, nếu không thì xử lý
+prompt thường. Không dùng LLM để phân loại kiểu input.
+
+Form fields:
+
+- `rawRequest`: nội dung user nhập bắt buộc; có thể chứa prompt hoặc một hay
+  nhiều URL. Ảnh là context bổ sung và không thay thế raw prompt.
+- `destination`: tùy chọn; nếu thiếu backend suy luận từ `rawRequest`.
+- `urls`: tùy chọn để tương thích client cũ; client mới dán URL trực tiếp vào
+  `rawRequest` và backend tự trích xuất.
+- `tripSpec`: tùy chọn; JSON object theo shape của Explorer `tripSpec`.
+- `images`: tùy chọn; nhiều file ảnh JPEG, PNG, WebP, HEIC hoặc HEIF.
+
+Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
+du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
+tả khác. Giá trị mặc định hiện tại là `local`.
+
+Output tách địa điểm thành hai mảng. `placeCandidates` chứa điểm tham quan và
+địa điểm không phải ăn uống; `foodPlaces` chứa item có category `food` hoặc
+`cafe`. Backend chuẩn hóa lại hai mảng trước khi trả response để không trộn hai
+nhóm. `ExploreResponse` không công khai dữ liệu chẩn đoán nội bộ `debug`.
+
+Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
+`food`, `cafe`, `hotel`, `transport`, `free_time`, `other`. Khi evidence không
+đủ để phân loại, backend dùng `other`:
+
+```json
+{
+  "name": "Bánh mì Phượng",
+  "category": "food",
+  "placeId": null,
+  "address": "Hội An",
+  "source": "url_reel",
+  "sourceUrl": "https://example.com/video",
+  "confidence": 0.88,
+  "priority": 1,
+  "notes": "Được nhắc trong transcript"
+}
+```
+
+`ExploreResponse.tripSpec.budget` dùng một envelope thống nhất cho cả mô tả định
+tính và số tiền cụ thể. Các field include theo từng hạng mục không nằm trong
+contract này:
+
+```json
+{
+  "inputMode": "qualitative",
+  "minAmount": 4300000,
+  "targetAmount": 4800000,
+  "maxAmount": 5400000,
+  "currency": "VND",
+  "isHardCap": false,
+  "confidence": "medium",
+  "calculationBasis": {
+    "partySize": 2,
+    "days": 3,
+    "nights": 2,
+    "destination": "Đà Nẵng",
+    "priceTier": "budget"
+  },
+  "notes": "Ước tính từ mức chi tiêu thấp."
+}
+```
+
+Nếu user chỉ nói thấp/trung bình/cao mà chưa có nguồn giá đủ tin cậy, Explorer
+giữ `inputMode: "qualitative"` và để các amount là `null` thay vì bịa giá.
+`isHardCap: true` bắt buộc có `maxAmount`.
+`budgetLevel` và `calculationBasis.priceTier` chỉ nhận `budget`, `medium` hoặc
+`high`; `balanced` chỉ dùng cho `pace`.
 
 Request tạo plan chính:
 
@@ -42,7 +116,7 @@ Request tạo plan chính:
 {
   "destination": "Ha Noi",
   "days": 3,
-  "budget": "balanced",
+  "budget": "medium",
   "travelStyle": "local",
   "pace": "balanced",
   "interests": ["food", "coffee"],

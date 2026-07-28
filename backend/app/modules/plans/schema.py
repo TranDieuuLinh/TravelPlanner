@@ -15,7 +15,7 @@ class FeatureMapItem(BaseModel):
 class ExplorerRequest(BaseModel):
     destination: str
     days: Annotated[int, Field(ge=1, le=30)] = 3
-    budget: BudgetLevel = BudgetLevel.balanced
+    budget: BudgetLevel = BudgetLevel.medium
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)

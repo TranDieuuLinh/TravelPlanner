@@ -15,8 +15,9 @@ class Settings(BaseSettings):
     preload_url_reel_models: bool = False
     enable_llm_explore_formatter: bool = False
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_audio_model: str = "gemini-3.6-flash"
+    gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
 
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 

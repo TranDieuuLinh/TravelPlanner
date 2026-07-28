@@ -12,6 +12,8 @@ from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
+from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
+from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.repository import PlanRepository
@@ -28,7 +30,8 @@ def get_plan_service(
         SqlAlchemyPlaceRepository(db),
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
-    planner = PlannerService(get_llm_client(), statistics)
+    llm_client = get_llm_client()
+    planner = PlannerService(llm_client, statistics)
     finder = FinderService()
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -46,4 +49,6 @@ def get_plan_service(
         explore_formatter=ExploreResponseFormatter(llm_client),
         main_workflow=main_workflow,
         backup_workflow=backup_workflow,
+        image_ocr=ImageOcrService(llm_client),
+        url_reels=UrlReelExtractionService(),
     )

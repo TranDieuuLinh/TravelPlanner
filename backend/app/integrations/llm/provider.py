@@ -1,7 +1,9 @@
+import base64
+
 import httpx
 
 from app.core.config import settings
-from app.integrations.llm.base import LLMClient
+from app.integrations.llm.base import LLMClient, LLMImageInput
 
 GEMINI_GENERATE_CONTENT_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -39,6 +41,43 @@ class GeminiLLMClient(LLMClient):
                     "generationConfig": {
                         "responseMimeType": "application/json",
                         "temperature": 0.1,
+                    },
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+        return self._extract_text(data)
+
+    async def generate_text_from_images(
+        self,
+        system_prompt: str,
+        user_text: str,
+        images: list[LLMImageInput],
+        *,
+        model: str | None = None,
+    ) -> str:
+        parts = [{"text": user_text}]
+        parts.extend(
+            {
+                "inline_data": {
+                    "mime_type": image.mime_type,
+                    "data": base64.b64encode(image.data).decode("ascii"),
+                }
+            }
+            for image in images
+        )
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                GEMINI_GENERATE_CONTENT_URL.format(model=model or self.model),
+                headers={
+                    "x-goog-api-key": self.api_key,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "system_instruction": {"parts": [{"text": system_prompt}]},
+                    "contents": [{"role": "user", "parts": parts}],
+                    "generationConfig": {
+                        "temperature": 0.0,
                     },
                 },
             )

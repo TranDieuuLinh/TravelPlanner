@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-import tempfile
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.modules.plans.explorer.tools.url_reels.extractor import UrlReelContextExtractor
 from app.modules.plans.explorer.tools.url_reels.loader import UrlReelLoader
 from app.modules.plans.explorer.tools.url_reels.media import UrlReelMediaExtractor
-from app.modules.plans.explorer.tools.url_reels.schema import SpeechToTextResult, UrlReelExtractionResult, UrlReelInput
+from app.modules.plans.explorer.tools.url_reels.schema import (
+    MediaArtifacts,
+    SpeechToTextResult,
+    UrlReelExtractionResult,
+    UrlReelInput,
+)
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import GeminiAudioSpeechToText
 
 
@@ -25,7 +30,19 @@ class UrlReelExtractionService:
         self.context_extractor = context_extractor or UrlReelContextExtractor()
 
     def extract(self, payload: UrlReelInput) -> UrlReelExtractionResult:
-        work_dir = payload.work_dir or Path(tempfile.mkdtemp(prefix="vsf_url_reel_"))
+        if payload.work_dir is not None:
+            return self._extract_in_work_dir(payload, payload.work_dir)
+
+        with TemporaryDirectory(prefix="vsf_url_reel_") as temporary_dir:
+            result = self._extract_in_work_dir(payload, Path(temporary_dir))
+            result.artifacts = MediaArtifacts()
+            return result
+
+    def _extract_in_work_dir(
+        self,
+        payload: UrlReelInput,
+        work_dir: Path,
+    ) -> UrlReelExtractionResult:
         work_dir.mkdir(parents=True, exist_ok=True)
         timings: dict[str, float] = {}
 

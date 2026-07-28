@@ -44,11 +44,12 @@ FinderAgentOutput
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
 - `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- `placeCandidates` là gợi ý chưa được xác nhận và không được Planner xem là
-  yêu cầu bắt buộc. `selectedPlaces` là các Place đã được user xác nhận và là
-  đầu vào chính thức của Planner.
-- URL tool có thể trích địa điểm từ reels và đưa vào `placeCandidates`. User cũng
-  có thể nhập địa điểm cụ thể trực tiếp vào `placeCandidates` với `source: "user"`.
+- `placeCandidates` và `foodPlaces` là gợi ý chưa được xác nhận và không được
+  Planner xem là yêu cầu bắt buộc. `placeCandidates` giữ điểm tham quan/hoạt
+  động; `foodPlaces` giữ quán ăn và quán cà phê. `selectedPlaces` là các Place
+  đã được user xác nhận và là đầu vào chính thức của Planner.
+- URL tool có thể trích địa điểm từ reels và đưa vào đúng nhóm. User cũng có thể
+  nhập địa điểm cụ thể trực tiếp với `source: "user"`.
 - Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
   schema output của Finder: `finalDays` và `tripCostEstimate`.
 
@@ -66,6 +67,7 @@ Input chính:
   "placeCandidates": [
     {
       "name": "Son Tra",
+      "category": "attraction",
       "placeId": null,
       "address": null,
       "source": "user",
@@ -83,6 +85,7 @@ Input chính:
       "extractedPlaceDetails": [
         {
           "name": "Quan mi quang A",
+          "category": "food",
           "placeId": null,
           "address": "12 Nguyen Hue, Da Nang",
           "source": "url_reel",
@@ -102,6 +105,7 @@ Input chính:
     "userId": "user_123",
     "locale": "vi-VN",
     "timezone": "Asia/Ho_Chi_Minh",
+    "travelStyle": "local",
     "travelPreferences": ["food", "coffee"]
   },
   "tripSpec": {
@@ -126,17 +130,21 @@ Input chính:
       "includeArrivalDeparture": true
     },
     "budget": {
-      "totalBudget": {
-        "amount": 5000000,
-        "currency": "VND",
-        "confidence": "medium",
-        "notes": "User estimate"
+      "inputMode": "exact",
+      "minAmount": null,
+      "targetAmount": 5000000,
+      "maxAmount": null,
+      "currency": "VND",
+      "isHardCap": false,
+      "confidence": "high",
+      "calculationBasis": {
+        "partySize": 2,
+        "days": 3,
+        "nights": 2,
+        "destination": "Da Nang",
+        "priceTier": "medium"
       },
-      "perPersonBudget": null,
-      "includeFood": true,
-      "includeTransport": true,
-      "includeHotel": true,
-      "includeTickets": true
+      "notes": "User gave an approximate total budget."
     }
   }
 }
@@ -144,11 +152,15 @@ Input chính:
 
 Output chính:
 
+`intent.budgetLevel` và `tripSpec.budget.calculationBasis.priceTier` chỉ nhận
+`budget`, `medium` hoặc `high`. Giá trị `balanced` chỉ thuộc contract nhịp độ
+`pace`.
+
 ```json
 {
   "intent": {
     "destination": "Da Nang",
-    "budgetLevel": "balanced",
+    "budgetLevel": "medium",
     "travelStyle": "local",
     "pace": "balanced",
     "interests": ["food", "coffee"],
@@ -179,31 +191,39 @@ Output chính:
       "includeArrivalDeparture": true
     },
     "budget": {
-      "totalBudget": {
-        "amount": 5000000,
-        "currency": "VND",
-        "confidence": "medium",
-        "notes": "Use as upper budget if possible"
+      "inputMode": "exact",
+      "minAmount": null,
+      "targetAmount": 5000000,
+      "maxAmount": null,
+      "currency": "VND",
+      "isHardCap": false,
+      "confidence": "high",
+      "calculationBasis": {
+        "partySize": 2,
+        "days": 3,
+        "nights": 2,
+        "destination": "Da Nang",
+        "priceTier": "medium"
       },
-      "perPersonBudget": null,
-      "includeFood": true,
-      "includeTransport": true,
-      "includeHotel": true,
-      "includeTickets": true
+      "notes": "User gave an approximate total budget."
     }
   },
   "placeCandidates": [
     {
       "name": "Son Tra",
+      "category": "attraction",
       "placeId": null,
       "source": "user",
       "sourceUrl": null,
       "confidence": 1,
       "priority": 1,
       "notes": "Detailed place inside Da Nang"
-    },
+    }
+  ],
+  "foodPlaces": [
     {
       "name": "Quan mi quang A",
+      "category": "food",
       "placeId": null,
       "source": "url_reel",
       "sourceUrl": "https://www.instagram.com/reel/...",
@@ -213,13 +233,14 @@ Output chính:
     },
     {
       "name": "Cafe with sea view",
+      "category": "cafe",
       "source": "url_reel",
       "sourceUrl": "https://www.instagram.com/reel/...",
       "confidence": 0.55,
       "notes": "Not specific enough to schedule yet"
     }
   ],
-  "assumptions": ["Use balanced budget because user did not specify exact amount."],
+  "assumptions": ["Use medium budget because user did not specify exact amount."],
   "missingInfoQuestions": [],
   "trace": {
     "agent": "explorer",

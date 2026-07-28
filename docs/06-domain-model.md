@@ -12,6 +12,9 @@ Entity SQLAlchemy được lưu bền vững, gồm `id`, `email`, `fullName`, `
 
 - `TravelIntent`: điểm đến, số ngày, ngân sách, phong cách, nhịp độ, sở thích,
   địa điểm bắt buộc, địa điểm tránh, ràng buộc và câu hỏi làm rõ.
+- `BudgetEnvelope`: kiểu input ngân sách, khoảng min/target/max, đơn vị tiền tệ,
+  hard cap, độ tin cậy và cơ sở dùng để tính; mức chi tiêu `budget`, `medium`
+  hoặc `high` được giữ riêng trong `TravelIntent.budgetLevel`.
 - `MacroPlan`: tên plan, điểm đến và mô tả cấp cao cho từng ngày.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên, khung giờ, loại địa điểm và ghi chú.

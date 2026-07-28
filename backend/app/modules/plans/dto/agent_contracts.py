@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.modules.plans.domain.entities import (
     CheckReport,
@@ -60,6 +60,13 @@ class BudgetConfidence(StrEnum):
     high = "high"
 
 
+class BudgetInputMode(StrEnum):
+    qualitative = "qualitative"
+    exact = "exact"
+    range = "range"
+    unknown = "unknown"
+
+
 class AgentTrace(BaseModel):
     agent: PlanningAgentName
     status: PlanningAgentStatus = PlanningAgentStatus.completed
@@ -69,6 +76,7 @@ class AgentTrace(BaseModel):
 
 class PlaceCandidateHint(BaseModel):
     name: str
+    category: ItineraryItemCategory = ItineraryItemCategory.other
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
     address: str | None = None
     source: str = "url_reel"
@@ -175,6 +183,7 @@ class UserPlanningState(BaseModel):
     user_id: Annotated[str | None, Field(alias="userId")] = None
     locale: str = "vi-VN"
     timezone: str = "Asia/Ho_Chi_Minh"
+    travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     travel_preferences: Annotated[list[str], Field(alias="travelPreferences")] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -191,7 +200,7 @@ class PlanWorkingState(BaseModel):
 
 class PlanningIntent(BaseModel):
     destination: str
-    budget_level: Annotated[BudgetLevel, Field(alias="budgetLevel")] = BudgetLevel.balanced
+    budget_level: Annotated[BudgetLevel, Field(alias="budgetLevel")] = BudgetLevel.medium
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)
@@ -210,15 +219,58 @@ class MoneyEstimate(BaseModel):
     notes: str | None = None
 
 
-class BudgetEnvelope(BaseModel):
-    total_budget: Annotated[MoneyEstimate | None, Field(alias="totalBudget")] = None
-    per_person_budget: Annotated[MoneyEstimate | None, Field(alias="perPersonBudget")] = None
-    include_food: Annotated[bool, Field(alias="includeFood")] = True
-    include_transport: Annotated[bool, Field(alias="includeTransport")] = True
-    include_hotel: Annotated[bool, Field(alias="includeHotel")] = True
-    include_tickets: Annotated[bool, Field(alias="includeTickets")] = True
+class BudgetCalculationBasis(BaseModel):
+    party_size: Annotated[int, Field(ge=1, alias="partySize")]
+    days: int = Field(ge=1, le=30)
+    nights: int = Field(ge=0, le=30)
+    destination: str = Field(min_length=1)
+    price_tier: Annotated[BudgetLevel, Field(alias="priceTier")]
 
     model_config = {"populate_by_name": True}
+
+
+class BudgetEnvelope(BaseModel):
+    input_mode: Annotated[BudgetInputMode, Field(alias="inputMode")] = (
+        BudgetInputMode.unknown
+    )
+    min_amount: Annotated[int | None, Field(default=None, ge=0, alias="minAmount")]
+    target_amount: Annotated[
+        int | None, Field(default=None, ge=0, alias="targetAmount")
+    ]
+    max_amount: Annotated[int | None, Field(default=None, ge=0, alias="maxAmount")]
+    currency: str = "VND"
+    is_hard_cap: Annotated[bool, Field(default=False, alias="isHardCap")]
+    confidence: BudgetConfidence = BudgetConfidence.medium
+    calculation_basis: Annotated[
+        BudgetCalculationBasis | None,
+        Field(default=None, alias="calculationBasis"),
+    ]
+    notes: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isalpha():
+            raise ValueError("currency must be a three-letter ISO 4217 code.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_amount_order(self) -> "BudgetEnvelope":
+        ordered_amounts = [
+            amount
+            for amount in (self.min_amount, self.target_amount, self.max_amount)
+            if amount is not None
+        ]
+        if ordered_amounts != sorted(ordered_amounts):
+            raise ValueError(
+                "budget amounts must satisfy minAmount <= targetAmount <= maxAmount."
+            )
+        if self.is_hard_cap and self.max_amount is None:
+            raise ValueError("maxAmount is required when isHardCap is true.")
+        return self
 
 
 class AccommodationRequirement(BaseModel):
@@ -315,11 +367,27 @@ class ExplorerAgentOutput(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
+    food_places: Annotated[list[PlaceCandidateHint], Field(alias="foodPlaces")] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(alias="missingInfoQuestions")] = Field(default_factory=list)
     trace: AgentTrace
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def separate_food_places(self) -> "ExplorerAgentOutput":
+        dining_categories = {
+            ItineraryItemCategory.food,
+            ItineraryItemCategory.cafe,
+        }
+        all_places = [*self.place_candidates, *self.food_places]
+        self.place_candidates = [
+            place for place in all_places if place.category not in dining_categories
+        ]
+        self.food_places = [
+            place for place in all_places if place.category in dining_categories
+        ]
+        return self
 
 
 class PlannerAgentInput(BaseModel):
