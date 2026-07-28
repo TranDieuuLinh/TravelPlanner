@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.modules.plans.dto.agent_contracts import ItineraryItemCategory
+
 
 class UrlReelInput(BaseModel):
     url: str
@@ -49,6 +51,7 @@ class SpeechToTextResult(BaseModel):
 
 class ExtractedPlace(BaseModel):
     name: str
+    category: ItineraryItemCategory = ItineraryItemCategory.other
     address: str | None = None
     source: str = "url_reel"
     evidence: str | None = None

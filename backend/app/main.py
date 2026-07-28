@@ -15,6 +15,7 @@ from app.core.security_headers import (
     security_headers_middleware,
 )
 from app.db.base import Base
+from app.db.models import Place, User, UserMustPlace
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.db.seed import seed_demo_marketplace
@@ -33,7 +34,6 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 from app.db.models import User
-from app.db.session import engine
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import preload_audio_model
 from app.shared.schemas import APIMessage
 
@@ -50,6 +50,17 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def create_local_tables() -> None:
+    if settings.database_url.startswith("sqlite"):
+        Base.metadata.create_all(
+            bind=engine,
+            tables=[
+                User.__table__,
+                Place.__table__,
+                UserMustPlace.__table__,
+            ],
+        )
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = uuid4().hex

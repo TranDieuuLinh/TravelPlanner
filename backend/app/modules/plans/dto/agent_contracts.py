@@ -370,28 +370,11 @@ class ExplorerAgentInput(BaseModel):
 class ExplorerAgentOutput(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
-    food_places: Annotated[list[PlaceCandidateHint], Field(alias="foodPlaces")] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(alias="missingInfoQuestions")] = Field(default_factory=list)
     trace: AgentTrace
 
     model_config = {"populate_by_name": True}
-
-    @model_validator(mode="after")
-    def separate_food_places(self) -> "ExplorerAgentOutput":
-        dining_categories = {
-            ItineraryItemCategory.food,
-            ItineraryItemCategory.cafe,
-        }
-        all_places = [*self.place_candidates, *self.food_places]
-        self.place_candidates = [
-            place for place in all_places if place.category not in dining_categories
-        ]
-        self.food_places = [
-            place for place in all_places if place.category in dining_categories
-        ]
-        return self
 
 
 class PlannerAgentInput(BaseModel):

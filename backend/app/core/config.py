@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
+    place_resolver_provider: str = "nominatim"
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+    nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"
+    nominatim_timeout_seconds: float = 15.0
+    nominatim_min_interval_seconds: float = 1.0
 
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 

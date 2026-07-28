@@ -4,14 +4,21 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.integrations.llm.factory import get_llm_client
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
+from app.modules.places.resolver import (
+    NominatimPlaceResolver,
+    PlaceResolver,
+    ProvisionalPlaceResolver,
+)
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
+from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.finder.finder_service import FinderService
@@ -52,4 +59,17 @@ def get_plan_service(
         backup_workflow=backup_workflow,
         image_ocr=ImageOcrService(llm_client),
         url_reels=UrlReelExtractionService(),
+        place_resolver=_get_place_resolver(),
+        explorer_persistence=ExplorerPersistenceRepository(db),
     )
+
+
+def _get_place_resolver() -> PlaceResolver:
+    if settings.place_resolver_provider == "nominatim":
+        return NominatimPlaceResolver(
+            base_url=settings.nominatim_base_url,
+            user_agent=settings.nominatim_user_agent,
+            timeout_seconds=settings.nominatim_timeout_seconds,
+            min_interval_seconds=settings.nominatim_min_interval_seconds,
+        )
+    return ProvisionalPlaceResolver()

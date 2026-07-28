@@ -2,7 +2,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.plans.dto.agent_contracts import PlaceCandidateHint
-from app.modules.plans.explorer.schema import ExploreResponse, FullExploreRequest
+from app.modules.plans.explorer.place_candidate_aggregator import (
+    PlaceCandidateAggregator,
+)
+from app.modules.plans.explorer.schema import (
+    FullExploreRequest,
+    UnifiedPlaceCandidate,
+)
 
 
 def test_place_candidate_serializes_category_in_api_shape() -> None:
@@ -40,31 +46,68 @@ def test_explorer_input_accepts_user_travel_style() -> None:
     ] == "adventure"
 
 
-def test_explorer_output_separates_food_places_and_omits_debug() -> None:
-    response = ExploreResponse.model_validate(
-        {
-            "intent": {"destination": "Hội An"},
-            "tripSpec": {"days": 2},
-            "placeCandidates": [
-                {"name": "Chùa Cầu", "category": "attraction"},
-                {"name": "Bánh mì Phượng", "category": "food"},
-            ],
-            "foodPlaces": [
-                {"name": "Faifo Coffee", "category": "cafe"},
-                {"name": "Phố cổ Hội An", "category": "attraction"},
-            ],
-            "debug": {"transcript": "must not leak into the response"},
-        }
+def test_explorer_aggregates_all_categories_into_one_candidate_array() -> None:
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hội An",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Chùa Cầu",
+                category="attraction",
+                sources=[{"type": "user_prompt", "url": None}],
+                confidence=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Bánh mì Phượng",
+                category="food",
+                sources=[
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                confidence=0.8,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
     )
 
-    payload = response.model_dump(mode="json", by_alias=True)
-
-    assert [place["name"] for place in payload["placeCandidates"]] == [
+    assert [candidate.name for candidate in candidates] == [
         "Chùa Cầu",
-        "Phố cổ Hội An",
-    ]
-    assert [place["name"] for place in payload["foodPlaces"]] == [
         "Bánh mì Phượng",
-        "Faifo Coffee",
     ]
-    assert "debug" not in payload
+    assert candidates[1].category.value == "food"
+    assert candidates[1].sources[0].url == "https://example.com/reel"
+
+
+def test_explorer_merges_duplicate_candidates_and_preserves_sources() -> None:
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Đà Nẵng",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Bà Nà Hills",
+                category="attraction",
+                sources=[{"type": "ocr", "url": None}],
+                confidence=0.7,
+            ),
+            UnifiedPlaceCandidate(
+                name="Ba Na Hills",
+                category="attraction",
+                sources=[
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                confidence=0.9,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert len(candidates) == 1
+    assert {source.type.value for source in candidates[0].sources} == {
+        "ocr",
+        "url",
+    }

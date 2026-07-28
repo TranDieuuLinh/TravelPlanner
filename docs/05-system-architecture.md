@@ -42,25 +42,40 @@ FastAPI intake router
     v
 PlanService
     |
-    +-- có ảnh? --> ImageOcrService ------> image contexts ----+
-    |                                                          |
-    +-- có URL? --> UrlReelExtractionService -> URL results ----+--> ExploreResponseFormatter
-    |                                                          |             |
-    +-- không có ảnh/URL ---------------------------------------+             v
-    |                                                                  Gemini JSON
-    +-----------------------------------------------------------------------|
-                                                                            v
-                                                              ExploreResponse schema
-                                                                            |
-                                                                            v
-                                                                    Planner result UI
+    +-- có ảnh? --> ImageOcrService --------+
+    |                                       |
+    +-- có URL? --> UrlReelExtractionService+--> ExploreResponseFormatter
+    |                                       |             |
+    +-- raw prompt -------------------------+             v
+    |                                            ExploreBundleDraft
+    |                                              /           \
+    |                                             v             v
+    |                                  ExplorerContext    PlaceCandidates
+    |                                                           |
+    |                                                           v
+    |                                              PlaceCandidateAggregator
+    |                                                           |
+    |                                                           v
+    |                                                PlaceResolver interface
+    |                                                           |
+    |                                                           v
+    +----------------------------------------------> PostgreSQL persistence
+                                                        | user_must_place
+                                                        v
+                                                  ExplorerIntakeResponse
+                                                  (intakeId + userId + explorer)
 ```
 
 `ExploreResponseFormatter` chỉ tổng hợp raw prompt và context đã được các
 extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Nếu request
 chỉ có raw prompt, `PlanService` bỏ qua cả hai extractor và gọi formatter trực
-tiếp. Kết quả Explorer hiện được trả thẳng về client, chưa được lưu thành draft
-trong database.
+tiếp. Output được tách thành Explorer context và một mảng `placeCandidates`.
+Aggregator gộp trùng nhưng giữ mọi source URL. Resolver chạy tự động sau
+extraction; không dừng luồng để hỏi user. Kết quả được lưu đầy đủ chỉ vào
+`user_must_place`; Explorer intake không ghi vào `places` và không lưu Explorer
+context. Response chỉ trả `intakeId`, `userId` cùng Explorer context. Explorer
+không tự gọi Planner/Finder. Planner downstream đọc context và chuyển tiếp hai
+khóa; Finder downstream đọc `user_must_place` bằng `intakeId + userId`.
 
 ## Ranh giới backend
 
