@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { APIError } from "@/lib/api";
 import { addFavorite, getPublicListingDetail, removeFavorite } from "@/lib/marketplace";
+import { createCheckoutSession } from "@/lib/orders";
 import type { ListingDetail } from "@/types/marketplace";
 
 export default function ListingDetailPage() {
@@ -19,6 +20,7 @@ export default function ListingDetailPage() {
   const [error, setError] = useState("");
   const [isFavorited, setIsFavorited] = useState(false);
   const [favBusy, setFavBusy] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
 
   useEffect(() => {
     if (listingId) {
@@ -58,6 +60,24 @@ export default function ListingDetailPage() {
       alert(err instanceof APIError ? err.message : "Không thể cập nhật yêu thích.");
     } finally {
       setFavBusy(false);
+    }
+  }
+
+  async function handleBuyMoMo() {
+    if (!user) {
+      router.push(`/login?next=/listings/${listingId}`);
+      return;
+    }
+    if (!listing || !listing.currentVersion) return;
+    setCheckoutBusy(true);
+    try {
+      const session = await createCheckoutSession(listing.id, listing.currentVersion.id);
+      if (session.paymentUrl) {
+        window.location.href = session.paymentUrl;
+      }
+    } catch (err) {
+      alert(err instanceof APIError ? err.message : "Không thể khởi tạo phiên thanh toán MoMo.");
+      setCheckoutBusy(false);
     }
   }
 
@@ -117,7 +137,7 @@ export default function ListingDetailPage() {
               <strong>{ver.durationDays} ngày</strong>
             </div>
             <div>
-              <span>Giá tham khảo</span>
+              <span>Giá mua plan</span>
               <strong className="priceTag">{ver.priceAmount.toLocaleString("vi-VN")} {ver.priceCurrency}</strong>
             </div>
           </div>
@@ -131,8 +151,13 @@ export default function ListingDetailPage() {
             >
               {isFavorited ? "♥ Đã lưu yêu thích" : "♡ Lưu yêu thích"}
             </button>
-            <button className="primaryBtn disabledBuy" disabled type="button">
-              Thanh toán MoMo (Ra mắt Tuần 4)
+            <button
+              className="primaryBtn momoBuyBtn"
+              disabled={checkoutBusy}
+              onClick={() => void handleBuyMoMo()}
+              type="button"
+            >
+              {checkoutBusy ? "Đang chuyển MoMo..." : "💳 Thanh toán qua Ví MoMo →"}
             </button>
           </div>
         </div>
@@ -168,7 +193,7 @@ export default function ListingDetailPage() {
 
           <div className="copyNoteBox">
             <p>
-              💡 <em>Mua bản copy đầy đủ để tự do chỉnh sửa lịch trình trong AI Planner sau khi thanh toán ra mắt ở Tuần 4.</em>
+              💡 <em>Sau khi thanh toán thành công qua MoMo, bạn sẽ được tự động tạo **Bản sao Lịch trình riêng** để thỏa sức chỉnh sửa trong AI Planner.</em>
             </p>
           </div>
         </section>

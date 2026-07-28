@@ -851,4 +851,247 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   }
 }
 
+/* Order Result Page Styles */
+.orderResultPage {
+  padding-top: 50px;
+  padding-bottom: 90px;
+  display: flex;
+  justify-content: center;
+}
+
+.resultCard {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 40px;
+  max-width: 620px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(20, 35, 35, 0.05);
+}
+
+.statusIcon {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  font-size: 2.2rem;
+  font-weight: 900;
+}
+.statusIcon.success {
+  background: #dcfce7;
+  color: #166534;
+}
+.statusIcon.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.resultCard h1 {
+  font-size: 2rem;
+  margin-bottom: 8px;
+  letter-spacing: -0.03em;
+}
+
+.resultDesc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin-bottom: 24px;
+}
+
+.orderSummaryBox {
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.summaryRow span {
+  color: var(--muted);
+}
+
+.amountTag {
+  color: var(--brand-dark);
+  font-size: 1.1rem;
+}
+
+.copySuccessBox {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 20px;
+}
+.copySuccessBox h3 {
+  color: #15803d;
+  font-size: 1.15rem;
+  margin-bottom: 6px;
+}
+.copySuccessBox p {
+  color: #166534;
+  font-size: 0.88rem;
+  margin-bottom: 16px;
+}
+.copyActions {
+  display: flex;
+  justify-content: center;
+}
+
+.badge.status-paid { background: #dcfce7; color: #166534; }
+.badge.status-pending { background: #fef3c7; color: #92400e; }
+.badge.status-failed { background: #fee2e2; color: #991b1b; }
+.momoBuyBtn { background: linear-gradient(135deg, #ae2070 0%, #a50064 100%) !important; color: white !important; box-shadow: 0 4px 14px rgba(174, 32, 112, 0.3) !important; }
+.momoBuyBtn:hover:not(:disabled) { box-shadow: 0 8px 22px rgba(174, 32, 112, 0.4) !important; filter: brightness(1.08); }
+
+/* Mock MoMo Page Styles */
+.mockMomoPage {
+  padding-top: 40px;
+  padding-bottom: 90px;
+  display: flex;
+  justify-content: center;
+}
+
+.momoCard {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  overflow: hidden;
+  max-width: 540px;
+  width: 100%;
+  box-shadow: 0 20px 45px rgba(174, 32, 112, 0.08);
+}
+
+.momoHeader {
+  background: linear-gradient(135deg, #ae2070 0%, #850050 100%);
+  color: white;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.momoLogo {
+  width: 56px;
+  height: 56px;
+  background: white;
+  color: #ae2070;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.momoHeader h1 {
+  font-size: 1.35rem;
+  margin-bottom: 2px;
+}
+
+.momoHeader p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.82rem;
+  margin-bottom: 0;
+}
+
+.momoBody {
+  padding: 32px;
+  display: grid;
+  gap: 24px;
+}
+
+.qrBox {
+  text-align: center;
+}
+
+.qrGraphic {
+  display: inline-block;
+  background: var(--canvas);
+  border: 2px dashed #ae2070;
+  border-radius: 20px;
+  padding: 24px 36px;
+  margin-bottom: 12px;
+}
+
+.qrFrame {
+  display: grid;
+  gap: 6px;
+}
+
+.qrText {
+  font-size: 0.72rem;
+  font-weight: 850;
+  color: #ae2070;
+  letter-spacing: 0.05em;
+}
+
+.qrAmount {
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.qrHint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.orderMetaBox {
+  background: #fff5f9;
+  border: 1px solid #fbcfe8;
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.momoAmountTag {
+  color: #ae2070;
+  font-size: 1.05rem;
+}
+
+.momoActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.momoSubmitBtn {
+  background: linear-gradient(135deg, #ae2070 0%, #850050 100%) !important;
+  color: white !important;
+  border: 0;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-weight: 850;
+  font-size: 0.95rem;
+  box-shadow: 0 6px 18px rgba(174, 32, 112, 0.3);
+  cursor: pointer;
+}
+
+.momoCancelBtn {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+  text-decoration: none;
+  padding: 8px;
+}
+
+
+
 

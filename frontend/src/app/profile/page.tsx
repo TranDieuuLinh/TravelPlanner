@@ -6,7 +6,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useAuth, type CreatorStatus } from "@/components/AuthProvider";
 import { APIError } from "@/lib/api";
 import { getUserFavorites } from "@/lib/marketplace";
+import { getUserOrders } from "@/lib/orders";
 import type { ListingSummary } from "@/types/marketplace";
+import type { OrderDetail } from "@/types/orders";
 
 const creatorStatusLabels: Record<CreatorStatus, string> = {
   none: "Chưa đăng ký",
@@ -19,7 +21,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { loading, submitCreatorApplication, updateProfile, user } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"profile" | "creator" | "favorites">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "creator" | "favorites" | "orders">("profile");
 
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -34,6 +36,9 @@ export default function ProfilePage() {
 
   const [favorites, setFavorites] = useState<ListingSummary[]>([]);
   const [loadingFavs, setLoadingFavs] = useState(false);
+
+  const [orders, setOrders] = useState<OrderDetail[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login?next=/profile");
@@ -55,6 +60,12 @@ export default function ProfilePage() {
         .then(setFavorites)
         .catch(() => setFavorites([]))
         .finally(() => setLoadingFavs(false));
+    } else if (activeTab === "orders" && user) {
+      setLoadingOrders(true);
+      getUserOrders()
+        .then(setOrders)
+        .catch(() => setOrders([]))
+        .finally(() => setLoadingOrders(false));
     }
   }, [activeTab, user]);
 
@@ -157,6 +168,13 @@ export default function ProfilePage() {
           👤 Thông tin cá nhân
         </button>
         <button
+          className={activeTab === "orders" ? "tabBtn active" : "tabBtn"}
+          onClick={() => setActiveTab("orders")}
+          type="button"
+        >
+          📦 Đơn hàng của tôi
+        </button>
+        <button
           className={activeTab === "creator" ? "tabBtn active" : "tabBtn"}
           onClick={() => setActiveTab("creator")}
           type="button"
@@ -237,7 +255,62 @@ export default function ProfilePage() {
           </section>
         ) : null}
 
-        {/* Tab 2: Creator Application / Info */}
+        {/* Tab 2: Orders */}
+        {activeTab === "orders" ? (
+          <section className="profileCardSection">
+            <div className="sectionHeader">
+              <h2>Lịch sử Đơn hàng MoMo</h2>
+              <p>Danh sách các plan bạn đã mua và trạng thái đơn hàng.</p>
+            </div>
+
+            {loadingOrders ? (
+              <div className="routeLoading">Đang tải lịch sử đơn hàng...</div>
+            ) : orders.length === 0 ? (
+              <div className="emptyState">
+                <h3>Bạn chưa mua plan nào</h3>
+                <p>Khám phá các hành trình chất lượng trên Marketplace và sở hữu plan riêng.</p>
+                <Link className="secondaryBtn" href="/explore">
+                  Khám phá Marketplace →
+                </Link>
+              </div>
+            ) : (
+              <div className="listingTableWrapper">
+                <table className="listingTable">
+                  <thead>
+                    <tr>
+                      <th>Mã Đơn hàng</th>
+                      <th>Tổng tiền</th>
+                      <th>Trạng thái</th>
+                      <th>Ngày mua</th>
+                      <th>Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((ord) => (
+                      <tr key={ord.id}>
+                        <td><code>{ord.id}</code></td>
+                        <td><strong>{ord.totalAmount.toLocaleString("vi-VN")} {ord.currency}</strong></td>
+                        <td>
+                          <span className={`badge status-${ord.status}`}>
+                            {ord.status === "paid" ? "Đã thanh toán" : ord.status === "failed" ? "Thất bại" : "Đang chờ"}
+                          </span>
+                        </td>
+                        <td>{new Date(ord.createdAt).toLocaleDateString("vi-VN")}</td>
+                        <td>
+                          <Link className="actionBtn" href={`/orders/${ord.id}/result`}>
+                            Chi tiết & Tạo copy →
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* Tab 3: Creator Application / Info */}
         {activeTab === "creator" ? (
           <section className="profileCardSection">
             <div className="creatorHeaderBox">
@@ -306,7 +379,7 @@ export default function ProfilePage() {
           </section>
         ) : null}
 
-        {/* Tab 3: Favorites */}
+        {/* Tab 4: Favorites */}
         {activeTab === "favorites" ? (
           <section className="profileCardSection">
             <div className="sectionHeader">
