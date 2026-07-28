@@ -75,6 +75,28 @@ export type ExplorerContext = {
   missingInfoQuestions: string[];
 };
 
+export type ExplorePlace = {
+  name: string;
+  category: PlaceCategory;
+  placeId?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source?: string;
+  sourceUrl?: string | null;
+  confidence?: number;
+  priority?: number;
+  notes?: string | null;
+};
+
+export type ExploreResponse = {
+  intakeId: string;
+  userId?: string | null;
+  explorer: ExplorerContext;
+  placeCandidates?: ExplorePlace[];
+  foodPlaces?: ExplorePlace[];
+};
+
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
   return apiFetch<TravelPlan>("/plans/main", {
     method: "POST",
@@ -123,7 +145,7 @@ export async function exploreFull(
 }
 
 export async function createPlanFromExplorer(input: {
-  context: ExploreResponse;
+  context: ExplorerContext;
   selectedPlaces: ExplorePlace[];
 }): Promise<TravelPlan> {
   return apiFetch<TravelPlan>("/plans/main/from-explorer", {

@@ -83,6 +83,8 @@ class PlaceCandidateHint(BaseModel):
     category: ItineraryItemCategory = ItineraryItemCategory.other
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
     address: str | None = None
+    latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
+    longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
     source: str = "url_reel"
     source_url: Annotated[str | None, Field(default=None, alias="sourceUrl")]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -90,6 +92,12 @@ class PlaceCandidateHint(BaseModel):
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def coordinates_are_a_pair(self) -> "PlaceCandidateHint":
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("latitude and longitude must be provided together")
+        return self
 
 
 class SelectedPlaceContext(BaseModel):
