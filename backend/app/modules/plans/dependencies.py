@@ -12,6 +12,7 @@ from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
@@ -28,7 +29,7 @@ def get_plan_service(
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     planner = PlannerService(get_llm_client(), statistics)
-    finder = FinderService()
+    finder = FinderService(RepositoryFinderPlaceTool(SqlAlchemyPlaceRepository(db)))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=planner,

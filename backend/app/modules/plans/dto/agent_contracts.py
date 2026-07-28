@@ -5,8 +5,12 @@ from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import (
     CheckReport,
+    FinderPlanStatus,
     MacroPlan,
+    PlanDay,
     RegionSnapshotReference,
+    UnscheduledPlace,
+    UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 
@@ -356,18 +360,37 @@ class FinderAgentInput(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
+    selected_places: Annotated[
+        list[SelectedPlaceContext], Field(alias="selectedPlaces")
+    ] = Field(default_factory=list)
     place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(default_factory=UserPlanningState)
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+    finder_plan_status: Annotated[
+        FinderPlanStatus, Field(alias="finderPlanStatus")
+    ] = Field(default_factory=FinderPlanStatus)
 
     model_config = {"populate_by_name": True}
 
 
 class FinderAgentOutput(BaseModel):
     mode: PlanningMode
-    final_days: Annotated[list[FinalItineraryDay], Field(alias="finalDays")] = Field(default_factory=list)
+    final_days: Annotated[list[PlanDay], Field(alias="finalDays")] = Field(
+        default_factory=list
+    )
     trip_cost_estimate: Annotated[FinalTripCostEstimate | None, Field(default=None, alias="tripCostEstimate")]
-    unscheduled_places: Annotated[list[PlaceCandidateHint], Field(alias="unscheduledPlaces")] = Field(default_factory=list)
+    unscheduled_places: Annotated[
+        list[UnscheduledPlace], Field(alias="unscheduledPlaces")
+    ] = Field(default_factory=list)
+    final_user_status: Annotated[UserStatus, Field(alias="finalUserStatus")] = Field(
+        default_factory=UserStatus
+    )
+    final_plan_status: Annotated[
+        FinderPlanStatus, Field(alias="finalPlanStatus")
+    ] = Field(default_factory=FinderPlanStatus)
     warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
 

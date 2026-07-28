@@ -45,7 +45,12 @@ class BackupPlanWorkflow:
             check_report=main_plan.check_report,
         )
         macro_plan = planner_output.macro_plan
-        days = self.finder.fill_backup_plan(macro_plan, main_plan.intent, selected_places)
+        finder_result = self.finder.fill_backup_plan(
+            macro_plan,
+            main_plan.intent,
+            selected_place_contexts,
+            user_status=main_plan.initial_user_status,
+        )
         backup_plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.backup,
@@ -55,7 +60,11 @@ class BackupPlanWorkflow:
             parentPlanId=main_plan.id,
             intent=main_plan.intent,
             macroPlan=macro_plan,
-            days=days,
+            days=finder_result.days,
+            initialUserStatus=main_plan.initial_user_status,
+            finalUserStatus=finder_result.final_user_status,
+            finalPlanStatus=finder_result.final_plan_status,
+            unscheduledPlaces=finder_result.unscheduled_places,
         )
         validation = self.validator.validate(main_plan, backup_plan)
         status = PlanStatus.locked if validation.status == "valid" else PlanStatus.failed

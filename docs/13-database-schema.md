@@ -443,6 +443,6 @@ fingerprint của đúng khu vực đó và các vùng con:
 
 Planner workflow đã gọi trực tiếp `get_for_planner(region_key)`. Contract nhận
 `regionKey` chuẩn hóa; để tương thích request cũ, backend có thể chuẩn hóa
-destination Việt Nam, ví dụ `Hà Nội` thành `vn,ha-noi`. `MacroPlan` lưu
-`snapshotRef` gồm snapshot ID, catalog version, algorithm version và thời điểm
-tạo. Thay đổi này không thêm hoặc xóa cột database.
+destination Việt Nam, ví dụ `Hà Nội` thành `vn,ha-noi`. Snapshot ID và version
+được giữ trong internal trace/log của Planner, không đưa vào `MacroPlan` hoặc
+Finder context. Thay đổi này không thêm hoặc xóa cột database.
