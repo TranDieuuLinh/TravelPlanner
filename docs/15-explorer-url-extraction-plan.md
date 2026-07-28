@@ -100,11 +100,12 @@ Response:
     {
       "name": "Quan mi quang A",
       "placeId": null,
+      "address": "12 Nguyen Hue, Da Nang",
       "source": "url_reel",
       "sourceUrl": "https://www.instagram.com/reel/...",
       "confidence": 0.82,
       "priority": 1,
-      "notes": "Extracted from transcript and OCR text"
+      "notes": "Extracted from transcript and metadata text"
     }
   ],
   "urlReelSignals": [
@@ -112,17 +113,28 @@ Response:
       "url": "https://www.instagram.com/reel/...",
       "platform": "instagram",
       "extractedPlaces": ["Quan mi quang A"],
+      "extractedPlaceDetails": [
+        {
+          "name": "Quan mi quang A",
+          "placeId": null,
+          "address": "12 Nguyen Hue, Da Nang",
+          "source": "url_reel",
+          "sourceUrl": "https://www.instagram.com/reel/...",
+          "confidence": 0.82,
+          "priority": 1,
+          "notes": "Transcript mentioned this address"
+        }
+      ],
       "interests": ["food"],
       "constraints": [],
       "confidence": 0.82,
-      "notes": ["extracted from transcript and OCR"]
+      "notes": ["extracted from transcript and metadata"]
     }
   ],
   "assumptions": [],
   "missingInfoQuestions": [],
   "debug": {
     "transcript": "...",
-    "ocrText": "...",
     "rawExtractedText": "..."
   }
 }

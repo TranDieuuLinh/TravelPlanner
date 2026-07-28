@@ -67,6 +67,7 @@ Input chính:
     {
       "name": "Son Tra",
       "placeId": null,
+      "address": null,
       "source": "user",
       "sourceUrl": null,
       "confidence": 1,
@@ -79,6 +80,18 @@ Input chính:
       "url": "https://www.instagram.com/reel/...",
       "platform": "instagram",
       "extractedPlaces": ["Quan mi quang A"],
+      "extractedPlaceDetails": [
+        {
+          "name": "Quan mi quang A",
+          "placeId": null,
+          "address": "12 Nguyen Hue, Da Nang",
+          "source": "url_reel",
+          "sourceUrl": "https://www.instagram.com/reel/...",
+          "confidence": 0.82,
+          "priority": 1,
+          "notes": "Caption mentioned this address"
+        }
+      ],
       "interests": ["food"],
       "constraints": [],
       "confidence": 0.82,
