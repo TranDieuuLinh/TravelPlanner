@@ -110,3 +110,60 @@ export interface PendingListingVersion {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Review {
+  id: string;
+  reviewerId: number;
+  reviewerName: string;
+  reviewerAvatarUrl?: string | null;
+  marketplacePlanId: string;
+  rating: number;
+  comment: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewPaginated {
+  items: Review[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface MarketplaceReport {
+  id: string;
+  reporterId: number;
+  reporterName?: string | null;
+  marketplacePlanId: string;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  createdAt: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  actorId?: number | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string | null;
+  requestId?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface BuyerPlan {
+  orderId: string;
+  entitlementId: string;
+  marketplacePlanId: string;
+  marketplacePlanVersionId: string;
+  title: string;
+  destination: string;
+  durationDays: number;
+  copiedPlanId?: string | null;
+  status: string;
+  createdAt: string;
+}

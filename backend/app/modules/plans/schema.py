@@ -9,6 +9,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
+from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 
 
 class FeatureMapItem(BaseModel):
@@ -53,6 +54,21 @@ class MainPlanCreate(ExplorerRequest):
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
     )
+
+
+class MainPlanFromExplorerCreate(BaseModel):
+    intent: PlanningIntent
+    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate],
+        Field(alias="selectedPlaces"),
+    ] = Field(default_factory=list)
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class BackupPlanCreate(BaseModel):

@@ -133,7 +133,10 @@ class PlannerService:
         )
         macro_plan, unallocated = self._build_macro_plan(planner_input)
         warnings = self._statistics_warnings(planner_input)
-        ready = planner_input.region_context.place_count > 0
+        ready = (
+            planner_input.region_context.place_count > 0
+            or bool(planner_input.selected_places)
+        )
         assumptions = [
             "Finder will choose exact places, times, and routes.",
             f"Region statistics status: {statistics_status}.",

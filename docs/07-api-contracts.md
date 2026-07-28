@@ -46,6 +46,7 @@ client không được tự chọn role.
 - `POST /api/plans/explore`
 - `POST /api/plans/explore/full/intake`
 - `POST /api/plans/main`
+- `POST /api/plans/main/from-explorer`
 - `POST /api/plans/{planId}/backup`
 
 Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
@@ -120,6 +121,12 @@ giữ `inputMode: "qualitative"` và để các amount là `null` thay vì bịa
 `isHardCap: true` bắt buộc có `maxAmount`.
 `budgetLevel` và `calculationBasis.priceTier` chỉ nhận `budget`, `medium` hoặc
 `high`; `balanced` chỉ dùng cho `pace`.
+
+`POST /api/plans/main/from-explorer` nối kết quả Explorer đã được user xác nhận
+vào Planner/Finder. Request gồm `intent`, `tripSpec` và `selectedPlaces`.
+`placeCandidates`/`foodPlaces` không tự động trở thành yêu cầu bắt buộc; frontend
+chỉ gửi các item user đã tick xác nhận. Planner phân bổ các item này trước và
+Finder thử chúng trước khi bổ sung địa điểm từ catalog chung.
 
 Request tạo plan chính:
 

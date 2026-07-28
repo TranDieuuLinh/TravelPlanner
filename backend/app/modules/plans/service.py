@@ -5,7 +5,13 @@ from app.modules.plans.explorer.tools.image_ocr import ImageOcrService, ImageUpl
 from app.modules.plans.explorer.tools.url_reels.schema import UrlReelInput
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.repository import PlanRepository
-from app.modules.plans.schema import BackupPlanCreate, FeatureMapItem, MainPlanCreate, PlanBundleRead
+from app.modules.plans.schema import (
+    BackupPlanCreate,
+    FeatureMapItem,
+    MainPlanCreate,
+    MainPlanFromExplorerCreate,
+    PlanBundleRead,
+)
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 
@@ -32,7 +38,6 @@ class PlanService:
             FeatureMapItem(stage="explore", feature="Explorer", description="Clarify destination, budget, pace, interests, and constraints."),
             FeatureMapItem(stage="create", feature="Planner", description="Generate MacroPlan and DayBriefs for the main itinerary."),
             FeatureMapItem(stage="fill", feature="Finder", description="Choose day windows, fill places, and commit each day."),
-            FeatureMapItem(stage="check", feature="CheckOverall", description="Review weather, transport, availability, and plan risks."),
             FeatureMapItem(stage="backup", feature="Backup Planner", description="Create a separate backup plan without mutating the locked main plan."),
         ]
 
@@ -82,6 +87,14 @@ class PlanService:
 
     async def create_main_plan(self, payload: MainPlanCreate) -> Plan:
         plan = await self.main_workflow.run(payload)
+        self.repository.save(plan)
+        return plan
+
+    async def create_main_plan_from_explorer(
+        self,
+        payload: MainPlanFromExplorerCreate,
+    ) -> Plan:
+        plan = await self.main_workflow.run_from_explorer(payload)
         self.repository.save(plan)
         return plan
 

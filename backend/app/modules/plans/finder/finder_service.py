@@ -223,11 +223,18 @@ class FinderService:
             or brief.target_area
         )
         if region_key.startswith("vn,"):
+            selected_place_ids = {
+                place.place_id
+                for place in selected_by_ref.values()
+                if place.place_id is not None
+            }
             candidates.extend(
                 self.place_tool.search(
                     region_key=region_key,
                     target_tags=brief.focus_tags,
-                    excluded_place_ids=set(plan_status.used_place_ids),
+                    excluded_place_ids=(
+                        set(plan_status.used_place_ids) | selected_place_ids
+                    ),
                     limit=self.max_candidates_per_block,
                 )
             )

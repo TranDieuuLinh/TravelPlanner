@@ -1,6 +1,5 @@
 from uuid import uuid4
 
-from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
@@ -11,7 +10,11 @@ from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.region_context import normalize_region_key
-from app.modules.plans.schema import MainPlanCreate, SelectedPlaceCreate
+from app.modules.plans.schema import (
+    MainPlanCreate,
+    MainPlanFromExplorerCreate,
+    SelectedPlaceCreate,
+)
 
 
 class MainPlanWorkflow:
@@ -20,15 +23,66 @@ class MainPlanWorkflow:
         explorer: ExplorerService,
         planner: PlannerService,
         finder: FinderService,
-        checker: OverallChecker,
     ) -> None:
         self.explorer = explorer
         self.planner = planner
         self.finder = finder
-        self.checker = checker
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
+        return await self._run(
+            payload,
+            intent=intent,
+            trip_spec=TripPlanningSpec(days=intent.days),
+        )
+
+    async def run_from_explorer(
+        self,
+        payload: MainPlanFromExplorerCreate,
+    ) -> Plan:
+        intent = self.explorer.explore(
+            MainPlanCreate(
+                destination=payload.intent.destination,
+                days=payload.trip_spec.days,
+                budget=payload.intent.budget_level,
+                travelStyle=payload.intent.travel_style,
+                pace=payload.intent.pace,
+                interests=payload.intent.interests,
+                mustVisitPlaces=payload.intent.must_visit_places,
+                avoidPlaces=payload.intent.avoid_places,
+                constraints=payload.intent.constraints,
+                regionKey=payload.region_key,
+                selectedPlaces=payload.selected_places,
+                userStatus=payload.user_status,
+            )
+        )
+        main_payload = MainPlanCreate(
+            destination=intent.destination,
+            days=intent.days,
+            budget=intent.budget,
+            travelStyle=intent.travel_style,
+            pace=intent.pace,
+            interests=intent.interests,
+            mustVisitPlaces=intent.must_visit_places,
+            avoidPlaces=intent.avoid_places,
+            constraints=intent.constraints,
+            regionKey=payload.region_key,
+            selectedPlaces=payload.selected_places,
+            userStatus=payload.user_status,
+        )
+        return await self._run(
+            main_payload,
+            intent=intent,
+            trip_spec=payload.trip_spec,
+        )
+
+    async def _run(
+        self,
+        payload: MainPlanCreate,
+        *,
+        intent,
+        trip_spec: TripPlanningSpec,
+    ) -> Plan:
         region_key = normalize_region_key(intent.destination, payload.region_key)
         selected_places = [
             self._selected_place_context(place)
@@ -36,7 +90,7 @@ class MainPlanWorkflow:
         ]
         planner_output = await self.planner.create_main_macro_plan(
             intent,
-            trip_spec=TripPlanningSpec(days=intent.days),
+            trip_spec=trip_spec,
             region_key=region_key,
             selected_places=selected_places,
         )
@@ -50,7 +104,7 @@ class MainPlanWorkflow:
         plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.main,
-            status=PlanStatus.checking,
+            status=PlanStatus.locked,
             title=macro_plan.title,
             destination=intent.destination,
             intent=intent,
@@ -61,8 +115,7 @@ class MainPlanWorkflow:
             finalPlanStatus=finder_result.final_plan_status,
             unscheduledPlaces=finder_result.unscheduled_places,
         )
-        check_report = self.checker.check(plan)
-        return plan.model_copy(update={"status": PlanStatus.locked, "check_report": check_report})
+        return plan
 
     def _selected_place_context(
         self,

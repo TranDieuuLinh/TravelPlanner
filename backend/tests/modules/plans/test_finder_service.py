@@ -157,6 +157,70 @@ def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:
     assert result.unscheduled_places[0].reason_code == "no_available_slot"
 
 
+def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> None:
+    selected = _place(
+        "selected-day-2",
+        "Selected day two",
+        tags=["culture"],
+        intensity="light",
+    )
+    support = _place(
+        "support",
+        "Catalog support",
+        tags=["food"],
+        intensity="light",
+    )
+    tool = FakeFinderPlaceTool(
+        {"selected-day-2": selected, "support": support},
+        search_order=["selected-day-2", "support"],
+    )
+    finder = FinderService(tool)
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Food",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+                focusTags=["food"],
+            ),
+            DayBrief(
+                day=2,
+                theme="Culture",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+                focusTags=["culture"],
+                allocatedSelectedPlaceRefs=["selected-day-2"],
+            ),
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="selected-day-2",
+                name="Selected day two",
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+    )
+
+    assert all(
+        item.place_id != "selected-day-2"
+        for item in result.days[0].items
+    )
+    assert any(
+        item.place_id == "selected-day-2"
+        for item in result.days[1].items
+    )
+
+
 class FakeFinderPlaceTool:
     def __init__(
         self,
@@ -207,7 +271,7 @@ def _intent() -> TravelIntent:
     return TravelIntent(
         destination="Hà Nội",
         days=1,
-        budget=BudgetLevel.balanced,
+        budget=BudgetLevel.medium,
         travelStyle="local",
         pace=TravelPace.balanced,
         interests=["culture", "food"],

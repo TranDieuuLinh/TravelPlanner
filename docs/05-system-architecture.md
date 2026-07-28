@@ -60,7 +60,10 @@ PlanService
 extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Nếu request
 chỉ có raw prompt, `PlanService` bỏ qua cả hai extractor và gọi formatter trực
 tiếp. Kết quả Explorer hiện được trả thẳng về client, chưa được lưu thành draft
-trong database.
+trong database. Sau khi user xác nhận candidate trên UI, client gọi
+`POST /api/plans/main/from-explorer` với `intent`, `tripSpec` và
+`selectedPlaces`. Đây hiện là handoff theo request; persistence theo trip cho
+`SelectedPlace` vẫn chưa được triển khai.
 
 ## Ranh giới backend
 
