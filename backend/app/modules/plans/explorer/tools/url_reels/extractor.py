@@ -227,6 +227,11 @@ class UrlReelContextExtractor:
         return [
             ExtractedPlace(
                 name=place,
+                category=self._category_for_place(
+                    place,
+                    metadata_text,
+                    transcript,
+                ),
                 address=None if self._dedupe_key(place) == destination_key else address_hints.get(self._dedupe_key(place)),
                 source="url_reel",
                 evidence=self._evidence_for_place(
@@ -238,6 +243,55 @@ class UrlReelContextExtractor:
             )
             for place in places
         ]
+
+    def _category_for_place(
+        self,
+        place: str,
+        metadata_text: str,
+        transcript: str,
+    ) -> str:
+        text = " ".join((place, metadata_text, transcript)).lower()
+        if any(term in text for term in ("coffee", "cafe", "café")):
+            return "cafe"
+        if any(
+            term in text
+            for term in (
+                "restaurant",
+                "food",
+                "mì",
+                "mi ",
+                "phở",
+                "pho",
+                "bánh",
+                "banh",
+                "bún",
+                "bun ",
+                "quán ăn",
+            )
+        ):
+            return "food"
+        if any(term in text for term in ("hotel", "homestay", "resort")):
+            return "hotel"
+        if any(
+            term in text
+            for term in ("station", "airport", "bus stop", "train station")
+        ):
+            return "transport"
+        if any(
+            term in text
+            for term in (
+                "temple",
+                "museum",
+                "bridge",
+                "market",
+                "quarter",
+                "prison",
+                "park",
+                "beach",
+            )
+        ):
+            return "attraction"
+        return "other"
 
     def _address_hints(
         self,

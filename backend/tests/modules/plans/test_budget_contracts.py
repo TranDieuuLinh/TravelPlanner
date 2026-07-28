@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from app.modules.plans.dto.agent_contracts import BudgetEnvelope, PlanningIntent
 from app.modules.plans.explorer.response_formatter import _complete_budget_basis
-from app.modules.plans.explorer.schema import ExploreResponse, ExploreTripSpecInput
+from app.modules.plans.explorer.schema import ExploreBundleDraft, ExploreTripSpecInput
 
 
 def test_budget_envelope_serializes_explorer_json_shape() -> None:
@@ -57,29 +57,35 @@ def test_explorer_budget_input_accepts_partial_hard_cap() -> None:
 
 
 def test_explorer_completes_budget_calculation_basis() -> None:
-    response = ExploreResponse.model_validate(
+    response = ExploreBundleDraft.model_validate(
         {
-            "intent": {
-                "destination": "Đà Nẵng",
-                "budgetLevel": "budget",
-            },
-            "tripSpec": {
-                "days": 3,
-                "partySize": 2,
-                "budget": {
-                    "inputMode": "qualitative",
-                    "currency": "VND",
-                    "confidence": "low",
+            "explorer": {
+                "intent": {
+                    "destination": "Đà Nẵng",
+                    "budgetLevel": "budget",
+                },
+                "tripSpec": {
+                    "days": 3,
+                    "partySize": 2,
+                    "budget": {
+                        "inputMode": "qualitative",
+                        "currency": "VND",
+                        "confidence": "low",
+                    },
                 },
             },
+            "places": {"placeCandidates": []},
         }
     )
 
     completed = _complete_budget_basis(response)
 
-    assert completed.trip_spec.budget.calculation_basis is not None
-    assert completed.trip_spec.budget.calculation_basis.nights == 2
-    assert completed.trip_spec.budget.calculation_basis.price_tier.value == "budget"
+    assert completed.explorer.trip_spec.budget.calculation_basis is not None
+    assert completed.explorer.trip_spec.budget.calculation_basis.nights == 2
+    assert (
+        completed.explorer.trip_spec.budget.calculation_basis.price_tier.value
+        == "budget"
+    )
 
 
 @pytest.mark.parametrize("budget_level", ["budget", "medium", "high"])

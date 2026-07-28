@@ -33,6 +33,12 @@
 
 Map provider chưa được lựa chọn. Xem ADR-002.
 
+Explorer place resolution hiện có adapter Nominatim cấu hình được cho local/MVP;
+đây không phải lựa chọn map/route provider cuối cùng. Khi dùng public endpoint,
+adapter phải gửi User-Agent nhận diện ứng dụng, tối đa một request/giây, cache
+response, hiển thị attribution OpenStreetMap và có khả năng đổi endpoint bằng
+cấu hình. Tải lớn phải chuyển sang hosted provider hoặc Nominatim tự vận hành.
+
 ## Nhập dữ liệu từ URL
 
 Xem nội dung được nhập là dữ liệu không đáng tin cậy, không bao giờ là system
@@ -48,8 +54,11 @@ instruction.
    bản trang.
 6. Tạo claim/place candidate có evidence và confidence.
 7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
-8. Hiển thị kết quả để user xác nhận trước khi tạo `SelectedPlace`.
-9. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+8. Tự động lưu candidate và kết quả resolve vào `user_must_place`; không chặn
+   để hỏi user. Kết quả yếu giữ trạng thái `provisional` hoặc `unresolved`.
+9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
+   downstream đọc record theo cả `intakeId + userId`.
+10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
 
 ### Ma trận trạng thái nguồn
 

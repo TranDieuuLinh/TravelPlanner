@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from app.modules.plans.checks.overall_checker import OverallChecker
-from app.modules.plans.domain.entities import Plan
+from app.modules.plans.domain.entities import Plan, TravelIntent
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
     SelectedPlaceContext,
@@ -34,14 +34,31 @@ class MainPlanWorkflow:
             self._selected_place_context(place)
             for place in payload.selected_places
         ]
-        planner_output = await self.planner.create_main_macro_plan(
+        return await self._build_plan(
             intent,
             trip_spec=TripPlanningSpec(days=intent.days),
             region_key=region_key,
-            selected_places=selected_places,
+            planner_places=selected_places,
+            finder_places=selected_places,
+        )
+
+    async def _build_plan(
+        self,
+        intent: TravelIntent,
+        *,
+        trip_spec: TripPlanningSpec,
+        region_key: str,
+        planner_places: list[SelectedPlaceContext],
+        finder_places: list[SelectedPlaceContext],
+    ) -> Plan:
+        planner_output = await self.planner.create_main_macro_plan(
+            intent,
+            trip_spec=trip_spec,
+            region_key=region_key,
+            selected_places=planner_places,
         )
         macro_plan = planner_output.macro_plan
-        selected_place_names = [place.name for place in selected_places]
+        selected_place_names = [place.name for place in finder_places]
         days = self.finder.fill_main_plan(
             macro_plan,
             intent,

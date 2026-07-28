@@ -60,6 +60,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `SourceClaim`: một thông tin được trích xuất như địa điểm, hoạt động, thời điểm,
   giá hoặc mẹo, kèm evidence span, confidence và trạng thái xác nhận.
 - `PlaceCandidate`: tên thô từ nguồn và các kết quả chuẩn hóa có thể tương ứng.
+- `UserMustPlace`: candidate của intake đã được tự động resolve/lưu với trạng
+  thái `resolved`, `provisional` hoặc `unresolved`; giữ source URL, address,
+  latitude/longitude, description, provider và độ mới ngay trên record. Flow
+  Explorer không tạo hoặc cập nhật `Place`.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
@@ -110,8 +114,12 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Số thứ tự ngày trong một version phải duy nhất và có thứ tự.
 - Plan dự phòng có đúng một plan chính làm cha và không được tự động thay thế nó.
 - AI không được thay đổi `TripItem` đã khóa khi chỉnh sửa theo phạm vi.
-- Chỉ `SelectedPlace` đã được xác nhận mới được coi là địa điểm bắt buộc từ
-  nguồn; candidate độ tin cậy thấp không được tự động commit.
+- Intake hiện chạy ở chế độ không hỏi lại user: mọi candidate được commit vào
+  `UserMustPlace`. Độ tin cậy thấp phải giữ trạng thái
+  `provisional`/`unresolved`; không được mô tả như dữ liệu đã xác minh.
+- Planner downstream nhận trực tiếp Explorer context và không đọc
+  `UserMustPlace`. Finder downstream dùng cả `intakeId + userId` để đọc đúng
+  record `UserMustPlace`; Explorer không điều phối hai module này.
 - Địa điểm đã xác nhận phải được xếp hoặc xuất hiện trong `UnscheduledPlace` kèm
   lý do, không được âm thầm bỏ.
 - Source claim luôn trỏ tới import và evidence; dữ liệu provider bổ sung phải có

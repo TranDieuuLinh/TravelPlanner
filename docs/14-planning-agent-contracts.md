@@ -44,12 +44,15 @@ FinderAgentOutput
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
 - `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- `placeCandidates` và `foodPlaces` là gợi ý chưa được xác nhận và không được
-  Planner xem là yêu cầu bắt buộc. `placeCandidates` giữ điểm tham quan/hoạt
-  động; `foodPlaces` giữ quán ăn và quán cà phê. `selectedPlaces` là các Place
-  đã được user xác nhận và là đầu vào chính thức của Planner.
-- URL tool có thể trích địa điểm từ reels và đưa vào đúng nhóm. User cũng có thể
-  nhập địa điểm cụ thể trực tiếp với `source: "user"`.
+- Explorer context là output công khai. Place extraction là stream nội bộ; mọi
+  loại địa điểm, gồm food/cafe, nằm trong một `placeCandidates` và category dùng
+  để phân loại.
+- `PlaceCandidateAggregator` gộp candidate từ prompt/OCR/URL và giữ danh sách
+  source. Resolver tự động lưu chúng vào `user_must_place`; không hỏi user lại.
+- Explorer chỉ bàn giao `intakeId + userId + explorer`; không tự gọi Planner
+  hoặc Finder. Planner downstream dùng context và giữ hai correlation key.
+- Finder là consumer của `user_must_place` trong planning flow và phải đọc theo
+  cả `intakeId + userId`.
 - Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
   schema output của Finder: `finalDays` và `tripCostEstimate`.
 
@@ -208,38 +211,6 @@ Output chính:
       "notes": "User gave an approximate total budget."
     }
   },
-  "placeCandidates": [
-    {
-      "name": "Son Tra",
-      "category": "attraction",
-      "placeId": null,
-      "source": "user",
-      "sourceUrl": null,
-      "confidence": 1,
-      "priority": 1,
-      "notes": "Detailed place inside Da Nang"
-    }
-  ],
-  "foodPlaces": [
-    {
-      "name": "Quan mi quang A",
-      "category": "food",
-      "placeId": null,
-      "source": "url_reel",
-      "sourceUrl": "https://www.instagram.com/reel/...",
-      "confidence": 0.82,
-      "priority": 2,
-      "notes": "Extracted from reel and accepted as a concrete food stop"
-    },
-    {
-      "name": "Cafe with sea view",
-      "category": "cafe",
-      "source": "url_reel",
-      "sourceUrl": "https://www.instagram.com/reel/...",
-      "confidence": 0.55,
-      "notes": "Not specific enough to schedule yet"
-    }
-  ],
   "assumptions": ["Use medium budget because user did not specify exact amount."],
   "missingInfoQuestions": [],
   "trace": {
@@ -248,6 +219,29 @@ Output chính:
     "summary": "Normalized user request into TravelIntent.",
     "notes": []
   }
+}
+```
+
+Output place riêng:
+
+```json
+{
+  "placeCandidates": [
+    {
+      "name": "Quan mi quang A",
+      "category": "food",
+      "addressHint": "12 Nguyen Hue, Da Nang",
+      "sources": [
+        {
+          "type": "url",
+          "url": "https://www.instagram.com/reel/..."
+        }
+      ],
+      "confidence": 0.82,
+      "priority": 1,
+      "notes": "Caption mentioned this address"
+    }
+  ]
 }
 ```
 
