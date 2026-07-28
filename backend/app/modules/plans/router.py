@@ -5,7 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.modules.plans.dependencies import get_plan_service
-from app.modules.plans.explorer.schema import ExploreResponse, ExploreTripSpecInput, FullExploreRequest
+from app.modules.plans.dto.agent_contracts import UserPlanningState
+from app.modules.plans.explorer.schema import (
+    ExploreIntakeResponse,
+    ExploreTripSpecInput,
+    FullExploreRequest,
+)
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.schema import (
     BackupPlanCreate,
@@ -27,23 +32,24 @@ def feature_map(service: Annotated[PlanService, Depends(get_plan_service)]) -> l
 
 
 
-@router.post("/explore/full", response_model=ExploreResponse)
-async def explore_full(payload: FullExploreRequest, service: Annotated[PlanService, Depends(get_plan_service)]) -> ExploreResponse:
+@router.post("/explore/full", response_model=ExploreIntakeResponse)
+async def explore_full(payload: FullExploreRequest, service: Annotated[PlanService, Depends(get_plan_service)]) -> ExploreIntakeResponse:
     try:
         return await service.explore_full(payload)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
-@router.post("/explore/full/intake", response_model=ExploreResponse)
+@router.post("/explore/full/intake", response_model=ExploreIntakeResponse)
 async def explore_full_intake(
     raw_request: Annotated[str, Form(alias="rawRequest")],
     service: Annotated[PlanService, Depends(get_plan_service)],
     destination: Annotated[str | None, Form()] = None,
     urls: Annotated[list[str] | None, Form()] = None,
     trip_spec_json: Annotated[str | None, Form(alias="tripSpec")] = None,
+    user_state_json: Annotated[str | None, Form(alias="userState")] = None,
     images: Annotated[list[UploadFile] | None, File()] = None,
-) -> ExploreResponse:
+) -> ExploreIntakeResponse:
     try:
         effective_request, normalized_urls = _prepare_intake(
             raw_request,
@@ -53,6 +59,7 @@ async def explore_full_intake(
             destination or _infer_destination(_remove_urls(effective_request))
         ).strip()
         trip_spec = _parse_trip_spec(trip_spec_json)
+        user_state = _parse_user_state(user_state_json)
         uploaded_images = await _read_and_close_images(images or [])
         return await service.explore_from_intake(
             raw_request=effective_request,
@@ -60,6 +67,7 @@ async def explore_full_intake(
             urls=normalized_urls,
             images=uploaded_images,
             trip_spec=trip_spec,
+            user_state=user_state,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
@@ -174,6 +182,16 @@ def _parse_trip_spec(value: str | None) -> ExploreTripSpecInput | None:
     except json.JSONDecodeError as exc:
         raise ValueError("tripSpec must be valid JSON.") from exc
     return ExploreTripSpecInput.model_validate(raw)
+
+
+def _parse_user_state(value: str | None) -> UserPlanningState | None:
+    if not value:
+        return None
+    try:
+        raw = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("userState must be valid JSON.") from exc
+    return UserPlanningState.model_validate(raw)
 
 
 def _infer_destination(raw_request: str) -> str:

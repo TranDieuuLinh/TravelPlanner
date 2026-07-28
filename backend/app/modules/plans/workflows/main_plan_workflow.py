@@ -102,7 +102,24 @@ class MainPlanWorkflow:
             intent,
             trip_spec=trip_spec,
             region_key=region_key,
-            selected_places=selected_places,
+            planner_places=selected_places,
+            finder_places=selected_places,
+        )
+
+    async def _build_plan(
+        self,
+        intent: TravelIntent,
+        *,
+        trip_spec: TripPlanningSpec,
+        region_key: str,
+        planner_places: list[SelectedPlaceContext],
+        finder_places: list[SelectedPlaceContext],
+    ) -> Plan:
+        planner_output = await self.planner.create_main_macro_plan(
+            intent,
+            trip_spec=trip_spec,
+            region_key=region_key,
+            selected_places=planner_places,
         )
         if not planner_output.day_briefs_ready:
             raise AppError(
@@ -132,6 +149,12 @@ class MainPlanWorkflow:
         unscheduled_places = self._merge_unscheduled_places(
             planner_output,
             finder_output.unscheduled_places,
+        selected_place_names = [place.name for place in finder_places]
+        finder_result = self.finder.fill_main_plan(
+            macro_plan,
+            intent,
+            selected_places,
+            user_status=payload.user_status,
         )
         plan = Plan(
             id=str(uuid4()),

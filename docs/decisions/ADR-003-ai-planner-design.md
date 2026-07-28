@@ -2,6 +2,8 @@
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-07-27
+- Cập nhật: bước confirm bắt buộc của Explorer intake được ADR-004 thay thế bằng
+  tự động lưu kèm resolution status; các phần còn lại vẫn giữ nguyên.
 
 ## Bối cảnh
 

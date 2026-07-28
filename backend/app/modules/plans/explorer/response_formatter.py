@@ -10,7 +10,7 @@ from app.modules.plans.dto.agent_contracts import (
     BudgetCalculationBasis,
     BudgetInputMode,
 )
-from app.modules.plans.explorer.schema import ExploreResponse, FullExploreRequest
+from app.modules.plans.explorer.schema import ExploreBundleDraft, FullExploreRequest
 from app.modules.plans.explorer.tools.url_reels.schema import UrlReelExtractionResult
 
 
@@ -23,7 +23,7 @@ class ExploreResponseFormatter:
         payload: FullExploreRequest,
         *,
         url_reel_results: list[UrlReelExtractionResult] | None = None,
-    ) -> ExploreResponse:
+    ) -> ExploreBundleDraft:
         if not settings.enable_llm_explore_formatter:
             raise RuntimeError("ENABLE_LLM_EXPLORE_FORMATTER must be true for /api/plans/explore/full.")
         if not settings.gemini_api_key:
@@ -39,13 +39,16 @@ class ExploreResponseFormatter:
 
         system_prompt = (
             "You are the Explorer formatter for a travel planning backend. "
-            "Return only valid JSON matching the required ExploreResponse schema. "
+            "Return only valid JSON matching the required ExploreBundleDraft schema. "
             "Read the request, URL metadata, STT transcripts, and OCR text from uploaded screenshots/images, then fill the JSON as completely as the evidence allows. "
             "Use rawRequest as the source of user intent. Use transcripts, OCR text, and metadata as evidence for places, interests, and constraints. "
             "Use request.userState.travelStyle as the user's explicit travel style and preserve it in intent.travelStyle unless stronger user input says otherwise. "
-            "Put restaurants, dishes, and coffee shops only in foodPlaces; classify them as food or cafe. "
-            "Put sightseeing, entertainment, hotels, transport, free-time, and unclear locations only in placeCandidates; never duplicate an item across the two arrays. "
-            "For every place item, set category to exactly one of attraction, food, cafe, hotel, transport, free_time, or other. "
+            "The explorer object must contain only intent, tripSpec, assumptions, and missingInfoQuestions. Never include places, URL results, transcripts, OCR text, or debug data in explorer. "
+            "Put concrete places from rawRequest and image OCR in places.placeCandidates. URL place extraction is already normalized by the URL adapter and will be merged after this formatter, so use URL results for intent/interests/constraints but do not copy URL places into places.placeCandidates. "
+            "Do not create separate foodPlaces or urlReelSignals arrays. "
+            "For every candidate, set category to exactly one of attraction, food, cafe, hotel, transport, free_time, or other. "
+            "Every candidate produced here must preserve its evidence source: use user_prompt for a place from rawRequest and ocr for a place from image OCR. Set source URL to null. "
+            "If the same place appears in multiple inputs, return one candidate with all sources. "
             "Normalize cheap, low, budget, economical, student, or tiet kiem budget language to intent.budgetLevel=budget; medium, mid, balanced, reasonable, or trung binh to medium; and high, comfortable, or thoai mai to high. "
             "Set tripSpec.budget.inputMode to qualitative when the user gives only a spending level, exact when the user gives one target amount, range when the user gives a minimum and maximum, and unknown when budget is absent. "
             "For 'under' or 'maximum' amounts, set isHardCap=true and put the limit in maxAmount. For approximate amounts, use targetAmount and isHardCap=false. "
@@ -56,7 +59,7 @@ class ExploreResponseFormatter:
         )
         user_payload = json.dumps(
             {
-                "requiredOutputShape": ExploreResponse.model_json_schema(),
+                "requiredOutputShape": ExploreBundleDraft.model_json_schema(),
                 "request": payload.model_dump(mode="json", by_alias=True),
                 "transcript": transcript,
                 "imageOcrText": image_ocr_text,
@@ -71,13 +74,15 @@ class ExploreResponseFormatter:
 
         try:
             raw = await self.llm.generate_json(system_prompt=system_prompt, user_payload=user_payload)
-            return _complete_budget_basis(ExploreResponse.model_validate_json(raw))
+            return _complete_budget_basis(ExploreBundleDraft.model_validate_json(raw))
         except (RuntimeError, ValidationError, json.JSONDecodeError, KeyError) as exc:
-            raise RuntimeError("Gemini failed to generate a valid ExploreResponse JSON.") from exc
+            raise RuntimeError(
+                "Gemini failed to generate a valid ExploreBundleDraft JSON."
+            ) from exc
 
 
-def _complete_budget_basis(response: ExploreResponse) -> ExploreResponse:
-    budget = response.trip_spec.budget
+def _complete_budget_basis(response: ExploreBundleDraft) -> ExploreBundleDraft:
+    budget = response.explorer.trip_spec.budget
     has_budget = budget.input_mode != BudgetInputMode.unknown or any(
         amount is not None
         for amount in (budget.min_amount, budget.target_amount, budget.max_amount)
@@ -86,10 +91,10 @@ def _complete_budget_basis(response: ExploreResponse) -> ExploreResponse:
         return response
 
     budget.calculation_basis = BudgetCalculationBasis(
-        partySize=response.trip_spec.party_size,
-        days=response.trip_spec.days,
-        nights=max(response.trip_spec.days - 1, 0),
-        destination=response.intent.destination,
-        priceTier=response.intent.budget_level,
+        partySize=response.explorer.trip_spec.party_size,
+        days=response.explorer.trip_spec.days,
+        nights=max(response.explorer.trip_spec.days - 1, 0),
+        destination=response.explorer.intent.destination,
+        priceTier=response.explorer.intent.budget_level,
     )
     return response

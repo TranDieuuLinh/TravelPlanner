@@ -9,15 +9,6 @@ export type TravelPlan = {
   checkReport?: { status: string; summary: string } | null;
 };
 
-export type PlaceCategory =
-  | "attraction"
-  | "food"
-  | "cafe"
-  | "hotel"
-  | "transport"
-  | "free_time"
-  | "other";
-
 export type BudgetLevel = "budget" | "medium" | "high";
 export type BudgetInputMode = "qualitative" | "exact" | "range" | "unknown";
 export type BudgetConfidence = "low" | "medium" | "high";
@@ -40,19 +31,7 @@ export type BudgetEnvelope = {
   notes?: string | null;
 };
 
-export type ExplorePlace = {
-  name: string;
-  category: PlaceCategory;
-  placeId?: string | null;
-  address?: string | null;
-  source?: string;
-  sourceUrl?: string | null;
-  confidence?: number;
-  priority?: number;
-  notes?: string | null;
-};
-
-export type ExploreResponse = {
+export type ExplorerContext = {
   intent: {
     destination: string;
     budgetLevel: BudgetLevel;
@@ -71,19 +50,14 @@ export type ExploreResponse = {
     endDate?: string | null;
     budget: BudgetEnvelope;
   };
-  placeCandidates: ExplorePlace[];
-  foodPlaces: ExplorePlace[];
-  urlReelSignals: Array<{
-    url: string;
-    platform?: string | null;
-    extractedPlaces: string[];
-    interests: string[];
-    constraints: string[];
-    confidence: number;
-    notes: string[];
-  }>;
   assumptions: string[];
   missingInfoQuestions: string[];
+};
+
+export type ExploreResponse = {
+  intakeId: string;
+  userId?: string | null;
+  explorer: ExplorerContext;
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";

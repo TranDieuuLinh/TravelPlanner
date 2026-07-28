@@ -1,18 +1,16 @@
+from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.modules.plans.dto.agent_contracts import (
-    AccommodationRequirement,
     BudgetCalculationBasis,
     BudgetConfidence,
-    BudgetEnvelope,
     BudgetInputMode,
+    ItineraryItemCategory,
     PlaceCandidateHint,
     PlanningIntent,
-    TransportRequirement,
     TripPlanningSpec,
-    UrlReelSignal,
     UserPlanningState,
 )
 
@@ -94,29 +92,55 @@ class FullExploreRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class ExploreResponse(BaseModel):
+class PlaceCandidateSourceType(StrEnum):
+    user_prompt = "user_prompt"
+    ocr = "ocr"
+    url = "url"
+
+
+class PlaceCandidateSource(BaseModel):
+    type: PlaceCandidateSourceType
+    url: str | None = None
+
+
+class UnifiedPlaceCandidate(BaseModel):
+    name: str = Field(min_length=1)
+    category: ItineraryItemCategory = ItineraryItemCategory.other
+    address_hint: Annotated[str | None, Field(default=None, alias="addressHint")]
+    sources: list[PlaceCandidateSource] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    priority: int = Field(default=1, ge=1, le=5)
+    notes: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ExplorerContextResponse(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")]
-    food_places: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="foodPlaces")]
-    url_reel_signals: Annotated[list[UrlReelSignal], Field(default_factory=list, alias="urlReelSignals")]
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(default_factory=list, alias="missingInfoQuestions")]
 
     model_config = {"populate_by_name": True}
 
-    @model_validator(mode="after")
-    def separate_food_places(self) -> "ExploreResponse":
-        dining_categories = {"food", "cafe"}
-        all_places = [*self.place_candidates, *self.food_places]
-        self.place_candidates = [
-            place
-            for place in all_places
-            if place.category.value not in dining_categories
-        ]
-        self.food_places = [
-            place
-            for place in all_places
-            if place.category.value in dining_categories
-        ]
-        return self
+
+class PlaceCandidatesResponse(BaseModel):
+    place_candidates: Annotated[
+        list[UnifiedPlaceCandidate],
+        Field(default_factory=list, alias="placeCandidates"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
+class ExploreBundleDraft(BaseModel):
+    explorer: ExplorerContextResponse
+    places: PlaceCandidatesResponse
+
+
+class ExploreIntakeResponse(BaseModel):
+    intake_id: Annotated[str, Field(alias="intakeId")]
+    user_id: Annotated[str | None, Field(default=None, alias="userId")]
+    explorer: ExplorerContextResponse
+
+    model_config = {"populate_by_name": True}
