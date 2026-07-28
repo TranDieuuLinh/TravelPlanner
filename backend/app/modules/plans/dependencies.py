@@ -1,4 +1,13 @@
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
 from app.integrations.llm.factory import get_llm_client
+from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
+from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
@@ -11,9 +20,15 @@ from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 
 
-def get_plan_service() -> PlanService:
-    llm_client = get_llm_client()
-    planner = PlannerService(llm_client)
+def get_plan_service(
+    db: Annotated[Session, Depends(get_db)],
+) -> PlanService:
+    project_dir = Path(__file__).resolve().parents[4]
+    statistics = AutoPlaceStatisticsService(
+        SqlAlchemyPlaceRepository(db),
+        project_dir / "database" / "generated" / "place_region_statistics.json",
+    )
+    planner = PlannerService(get_llm_client(), statistics)
     finder = FinderService()
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),

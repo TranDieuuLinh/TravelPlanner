@@ -18,10 +18,38 @@ class TravelIntent(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class DayPartGoals(BaseModel):
+    morning: str | None = None
+    lunch: str | None = None
+    afternoon: str | None = None
+    evening: str | None = None
+
+
+class RegionSnapshotReference(BaseModel):
+    region_key: str = Field(alias="regionKey")
+    snapshot_id: str = Field(alias="snapshotId")
+    catalog_version: int = Field(alias="catalogVersion")
+    algorithm_version: str = Field(alias="algorithmVersion")
+    generated_at: str = Field(alias="generatedAt")
+
+    model_config = {"populate_by_name": True}
+
+
 class DayBrief(BaseModel):
     day: int
     theme: str
     target_area: str = Field(alias="targetArea")
+    target_region_key: str | None = Field(default=None, alias="targetRegionKey")
+    focus_tags: list[str] = Field(default_factory=list, alias="focusTags")
+    pace: TravelPace = TravelPace.balanced
+    day_part_goals: DayPartGoals = Field(
+        default_factory=DayPartGoals,
+        alias="dayPartGoals",
+    )
+    allocated_selected_place_refs: list[str] = Field(
+        default_factory=list,
+        alias="allocatedSelectedPlaceRefs",
+    )
     notes: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -30,6 +58,11 @@ class DayBrief(BaseModel):
 class MacroPlan(BaseModel):
     title: str
     destination: str
+    region_key: str | None = Field(default=None, alias="regionKey")
+    snapshot_ref: RegionSnapshotReference | None = Field(
+        default=None,
+        alias="snapshotRef",
+    )
     day_briefs: list[DayBrief] = Field(alias="dayBriefs")
 
     model_config = {"populate_by_name": True}

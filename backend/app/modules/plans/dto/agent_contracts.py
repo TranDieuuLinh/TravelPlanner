@@ -1,9 +1,13 @@
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.plans.domain.entities import CheckReport, DayBrief
+from app.modules.plans.domain.entities import (
+    CheckReport,
+    MacroPlan,
+    RegionSnapshotReference,
+)
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 
 
@@ -25,6 +29,7 @@ class PlanningAgentStatus(StrEnum):
 class PlanningMode(StrEnum):
     main = "main"
     backup = "backup"
+    revision = "revision"
 
 
 class ItineraryItemCategory(StrEnum):
@@ -71,6 +76,84 @@ class PlaceCandidateHint(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     priority: int = Field(default=1, ge=1, le=5)
     notes: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class SelectedPlaceContext(BaseModel):
+    name: str
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    priority: int = Field(default=1, ge=1, le=5)
+    must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    tags: list[str] = Field(default_factory=list)
+    source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
+        default_factory=list
+    )
+    notes: str | None = None
+
+    @property
+    def stable_ref(self) -> str:
+        return self.place_id or self.name
+
+    model_config = {"populate_by_name": True}
+
+
+class RegionStatisticsContext(BaseModel):
+    region_key: Annotated[str, Field(alias="regionKey")]
+    snapshot_ref: Annotated[RegionSnapshotReference, Field(alias="snapshotRef")]
+    place_count: Annotated[int, Field(default=0, alias="placeCount")]
+    active_place_count: Annotated[int, Field(default=0, alias="activePlaceCount")]
+    counts_by_type: Annotated[dict[str, int], Field(alias="countsByType")] = Field(
+        default_factory=dict
+    )
+    tag_counts: Annotated[dict[str, int], Field(alias="tagCounts")] = Field(
+        default_factory=dict
+    )
+    time_of_day_coverage: Annotated[
+        dict[str, int], Field(alias="timeOfDayCoverage")
+    ] = Field(default_factory=dict)
+    typical_duration_by_type: Annotated[
+        dict[str, dict[str, int]], Field(alias="typicalDurationByType")
+    ] = Field(default_factory=dict)
+    tag_time_coverage: Annotated[
+        dict[str, dict[str, int]], Field(alias="tagTimeCoverage")
+    ] = Field(default_factory=dict)
+    tag_duration_profile: Annotated[
+        dict[str, dict[str, int]], Field(alias="tagDurationProfile")
+    ] = Field(default_factory=dict)
+    indoor_outdoor_mix: Annotated[
+        dict[str, int], Field(alias="indoorOutdoorMix")
+    ] = Field(default_factory=dict)
+    weather_sensitivity_counts: Annotated[
+        dict[str, int], Field(alias="weatherSensitivityCounts")
+    ] = Field(default_factory=dict)
+    booking_requirement_counts: Annotated[
+        dict[str, int], Field(alias="bookingRequirementCounts")
+    ] = Field(default_factory=dict)
+    data_quality: Annotated[dict[str, Any], Field(alias="dataQuality")] = Field(
+        default_factory=dict
+    )
+    price_coverage: Annotated[dict[str, int], Field(alias="priceCoverage")] = Field(
+        default_factory=dict
+    )
+    geographic_summary: Annotated[
+        dict[str, Any], Field(alias="geographicSummary")
+    ] = Field(default_factory=dict)
+    area_profiles: Annotated[list[dict[str, Any]], Field(alias="areaProfiles")] = (
+        Field(default_factory=list)
+    )
+    planner_signals: Annotated[dict[str, Any], Field(alias="plannerSignals")] = (
+        Field(default_factory=dict)
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class UnallocatedSelectedPlace(BaseModel):
+    place: SelectedPlaceContext
+    reason_code: Annotated[str, Field(alias="reasonCode")]
+    reason: str
 
     model_config = {"populate_by_name": True}
 
@@ -213,11 +296,8 @@ class FinalTripCostEstimate(BaseModel):
     total: MoneyEstimate | None = None
 
 
-class AgentMacroPlan(BaseModel):
-    title: str
-    day_briefs: Annotated[list[DayBrief], Field(alias="dayBriefs")]
-
-    model_config = {"populate_by_name": True}
+class AgentMacroPlan(MacroPlan):
+    pass
 
 
 class ExplorerAgentInput(BaseModel):
@@ -246,6 +326,10 @@ class PlannerAgentInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    region_context: Annotated[RegionStatisticsContext, Field(alias="regionContext")]
+    selected_places: Annotated[
+        list[SelectedPlaceContext], Field(alias="selectedPlaces")
+    ] = Field(default_factory=list)
     place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
@@ -259,7 +343,11 @@ class PlannerAgentOutput(BaseModel):
     macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     day_briefs_ready: Annotated[bool, Field(alias="dayBriefsReady")] = True
+    unallocated_selected_places: Annotated[
+        list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
+    ] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
 
     model_config = {"populate_by_name": True}
