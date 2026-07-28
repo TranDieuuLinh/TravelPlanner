@@ -1,19 +1,34 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   createPlanFromExplorer,
   exploreFullIntake,
+  type ExplorerContext,
   type ExploreResponse,
   type PlaceCategory,
   type TravelPlan
 } from "@/lib/plans";
+import {
+  PlannerMap,
+  type PlannerMapPlace
+} from "@/components/PlannerMap";
 
 type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   text: string;
+};
+
+const categoryLabels: Record<PlaceCategory, string> = {
+  attraction: "Tham quan",
+  food: "Ẩm thực",
+  cafe: "Cà phê",
+  hotel: "Khách sạn",
+  transport: "Di chuyển",
+  free_time: "Tự do",
+  other: "Khác"
 };
 
 function formatBudget(result: ExplorerContext): string {
@@ -55,9 +70,26 @@ function Planner() {
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
   const [selectedPlaceKeys, setSelectedPlaceKeys] = useState<Set<string>>(new Set());
+  const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const placeCandidates = exploreResult?.placeCandidates ?? [];
+  const foodPlaces = exploreResult?.foodPlaces ?? [];
+  const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
+    const places = [
+      ...(exploreResult?.placeCandidates ?? []),
+      ...(exploreResult?.foodPlaces ?? [])
+    ];
+
+    return places.map((place, index) => ({
+      ...place,
+      mapKey:
+        place.placeId ??
+        `${place.category}-${place.name}-${place.address ?? "unknown"}-${index}`,
+      mapOrder: index + 1
+    }));
+  }, [exploreResult]);
 
   async function sendMessage() {
     const text = prompt.trim();
@@ -83,9 +115,13 @@ function Planner() {
       });
       setExploreResult(nextExploreResult);
       setPlan(null);
+      setSelectedMapPlaceKey(null);
       setSelectedPlaceKeys(
         new Set(
-          [...nextExploreResult.placeCandidates, ...nextExploreResult.foodPlaces]
+          [
+            ...(nextExploreResult.placeCandidates ?? []),
+            ...(nextExploreResult.foodPlaces ?? [])
+          ]
             .map((place, index) => `${index}:${place.name}:${place.address ?? ""}`)
         )
       );
@@ -110,7 +146,7 @@ function Planner() {
 
   async function createFromExplorer() {
     if (!exploreResult) return;
-    const allPlaces = [...exploreResult.placeCandidates, ...exploreResult.foodPlaces];
+    const allPlaces = [...placeCandidates, ...foodPlaces];
     const confirmedPlaces = allPlaces.filter((place, index) =>
       selectedPlaceKeys.has(`${index}:${place.name}:${place.address ?? ""}`)
     );
@@ -118,7 +154,7 @@ function Planner() {
     setError("");
     try {
       setPlan(await createPlanFromExplorer({
-        context: exploreResult,
+        context: exploreResult.explorer,
         selectedPlaces: confirmedPlaces
       }));
     } catch (caught) {
@@ -209,7 +245,7 @@ function Planner() {
               </section>
               <section>
                 <h3>Địa điểm tham quan</h3>
-                {exploreResult.placeCandidates.length ? exploreResult.placeCandidates.map((place, index) => {
+                {placeCandidates.length ? placeCandidates.map((place, index) => {
                   const key = `${index}:${place.name}:${place.address ?? ""}`;
                   return (
                   <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
@@ -235,8 +271,8 @@ function Planner() {
               </section>
               <section>
                 <h3>Địa điểm ăn uống</h3>
-                {exploreResult.foodPlaces.length ? exploreResult.foodPlaces.map((place, index) => {
-                  const offset = exploreResult.placeCandidates.length;
+                {foodPlaces.length ? foodPlaces.map((place, index) => {
+                  const offset = placeCandidates.length;
                   const key = `${offset + index}:${place.name}:${place.address ?? ""}`;
                   return (
                   <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
@@ -295,6 +331,12 @@ function Planner() {
             <div className="emptyPlan"><span>✦</span><h3>Bắt đầu bằng một yêu cầu</h3><p>Kết quả Explorer từ backend sẽ xuất hiện tại đây.</p></div>
           )}
         </section>
+
+        <PlannerMap
+          onSelect={setSelectedMapPlaceKey}
+          places={mapPlaces}
+          selectedKey={selectedMapPlaceKey}
+        />
       </section>
     </main>
   );

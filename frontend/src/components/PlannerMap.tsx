@@ -1,0 +1,248 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  LayerGroup,
+  Map as LeafletMap,
+  Marker,
+  Polyline
+} from "leaflet";
+import type { ExplorePlace } from "@/lib/plans";
+
+export type PlannerMapPlace = ExplorePlace & {
+  mapKey: string;
+  mapOrder: number;
+};
+
+type PlannerMapProps = {
+  places: PlannerMapPlace[];
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+};
+
+const VIETNAM_CENTER: [number, number] = [16.2, 106.2];
+
+function hasCoordinates(
+  place: PlannerMapPlace
+): place is PlannerMapPlace & { latitude: number; longitude: number } {
+  return (
+    typeof place.latitude === "number" &&
+    Number.isFinite(place.latitude) &&
+    place.latitude >= -90 &&
+    place.latitude <= 90 &&
+    typeof place.longitude === "number" &&
+    Number.isFinite(place.longitude) &&
+    place.longitude >= -180 &&
+    place.longitude <= 180
+  );
+}
+
+export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markerLayerRef = useRef<LayerGroup | null>(null);
+  const routeLayerRef = useRef<Polyline | null>(null);
+  const markersRef = useRef(new Map<string, Marker>());
+  const lastPlacesSignatureRef = useRef("");
+  const [mapReady, setMapReady] = useState(false);
+  const [connectPoints, setConnectPoints] = useState(true);
+
+  const locatedPlaces = useMemo(() => places.filter(hasCoordinates), [places]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function initializeMap() {
+      if (!containerRef.current || mapRef.current) return;
+
+      const leaflet = await import("leaflet");
+      if (disposed || !containerRef.current) return;
+
+      leafletRef.current = leaflet;
+      const map = leaflet
+        .map(containerRef.current, {
+          attributionControl: true,
+          zoomControl: true
+        })
+        .setView(VIETNAM_CENTER, 5);
+
+      leaflet
+        .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
+        })
+        .addTo(map);
+
+      markerLayerRef.current = leaflet.layerGroup().addTo(map);
+      mapRef.current = map;
+      setMapReady(true);
+    }
+
+    void initializeMap();
+
+    return () => {
+      disposed = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      markerLayerRef.current = null;
+      routeLayerRef.current = null;
+      markersRef.current.clear();
+      leafletRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const leaflet = leafletRef.current;
+    const map = mapRef.current;
+    const markerLayer = markerLayerRef.current;
+    if (!mapReady || !leaflet || !map || !markerLayer) return;
+
+    markerLayer.clearLayers();
+    markersRef.current.clear();
+    routeLayerRef.current?.remove();
+    routeLayerRef.current = null;
+
+    locatedPlaces.forEach((place) => {
+      const isSelected = place.mapKey === selectedKey;
+      const icon = leaflet.divIcon({
+        className: [
+          "candidateMapMarker",
+          `category-${place.category}`,
+          isSelected ? "is-selected" : ""
+        ]
+          .filter(Boolean)
+          .join(" "),
+        html: `<span>${place.mapOrder}</span>`,
+        iconAnchor: [18, 38],
+        iconSize: [36, 38],
+        popupAnchor: [0, -34]
+      });
+
+      const marker = leaflet
+        .marker([place.latitude, place.longitude], {
+          icon,
+          keyboard: true,
+          title: place.name
+        })
+        .addTo(markerLayer);
+
+      const popup = document.createElement("div");
+      popup.className = "candidateMapPopup";
+      const name = document.createElement("strong");
+      name.textContent = `${place.mapOrder}. ${place.name}`;
+      const detail = document.createElement("span");
+      detail.textContent = place.address || "Địa điểm do Explorer đề xuất";
+      popup.append(name, detail);
+      marker.bindPopup(popup);
+      marker.on("click", () => onSelect(place.mapKey));
+      markersRef.current.set(place.mapKey, marker);
+    });
+
+    if (connectPoints && locatedPlaces.length > 1) {
+      routeLayerRef.current = leaflet
+        .polyline(
+          locatedPlaces.map((place) => [place.latitude, place.longitude]),
+          {
+            color: "#167c68",
+            dashArray: "8 9",
+            opacity: 0.76,
+            weight: 4
+          }
+        )
+        .addTo(map);
+    }
+
+    const signature = locatedPlaces
+      .map((place) => `${place.mapKey}:${place.latitude}:${place.longitude}`)
+      .join("|");
+    if (signature !== lastPlacesSignatureRef.current) {
+      fitPlaces();
+      lastPlacesSignatureRef.current = signature;
+    }
+  }, [connectPoints, locatedPlaces, mapReady, onSelect, selectedKey]);
+
+  useEffect(() => {
+    if (!selectedKey || !mapReady) return;
+    const marker = markersRef.current.get(selectedKey);
+    const map = mapRef.current;
+    if (!marker || !map) return;
+
+    map.panTo(marker.getLatLng(), { animate: true });
+    marker.openPopup();
+  }, [mapReady, selectedKey]);
+
+  function fitPlaces() {
+    const leaflet = leafletRef.current;
+    const map = mapRef.current;
+    if (!leaflet || !map) return;
+
+    if (locatedPlaces.length === 0) {
+      map.setView(VIETNAM_CENTER, 5);
+      return;
+    }
+    if (locatedPlaces.length === 1) {
+      map.setView(
+        [locatedPlaces[0].latitude, locatedPlaces[0].longitude],
+        14
+      );
+      return;
+    }
+
+    const bounds = leaflet.latLngBounds(
+      locatedPlaces.map((place) => [place.latitude, place.longitude])
+    );
+    map.fitBounds(bounds, { padding: [52, 52], maxZoom: 15 });
+  }
+
+  return (
+    <section className="plannerMap panel" aria-label="Bản đồ địa điểm đề xuất">
+      <div className="plannerMapHeader">
+        <div>
+          <span className="eyebrow">OpenStreetMap</span>
+          <h2>Bản đồ địa điểm</h2>
+        </div>
+        <span className="mapCount">
+          {locatedPlaces.length}/{places.length} đã định vị
+        </span>
+      </div>
+
+      <div className="plannerMapCanvasWrap">
+        <div className="plannerMapCanvas" ref={containerRef} />
+        {places.length > 0 && locatedPlaces.length === 0 ? (
+          <div className="mapEmptyNotice">
+            <strong>Chưa có tọa độ để đặt marker</strong>
+            <span>
+              Các địa điểm đề xuất vẫn được giữ trong danh sách để xác minh vị
+              trí.
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="plannerMapActions">
+        <button
+          disabled={locatedPlaces.length < 2}
+          onClick={() => setConnectPoints((current) => !current)}
+          type="button"
+        >
+          {connectPoints && locatedPlaces.length > 1
+            ? "Ẩn đường nối"
+            : "Nối các điểm"}
+        </button>
+        <button
+          disabled={locatedPlaces.length === 0}
+          onClick={fitPlaces}
+          type="button"
+        >
+          Vừa tất cả điểm
+        </button>
+      </div>
+      <p className="mapRouteNote">
+        Đường nét đứt chỉ thể hiện thứ tự đề xuất, chưa phải tuyến giao thông đã
+        kiểm tra.
+      </p>
+    </section>
+  );
+}

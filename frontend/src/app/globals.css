@@ -143,7 +143,7 @@ h1, h2, h3, p { margin-top: 0; }
 .plannerHeader p { margin-bottom: 0; color: var(--muted); font-size: .82rem; }
 .futureActions { display: flex; gap: 8px; }
 .futureActions button { border: 1px solid var(--line); border-radius: 999px; padding: 9px 12px; background: white; color: #8a9491; font-size: .68rem; }
-.plannerLayout { display: grid; grid-template-columns: minmax(320px,.82fr) minmax(460px,1.18fr); gap: 14px; align-items: stretch; }
+.plannerLayout { display: grid; grid-template-columns: minmax(300px,.82fr) minmax(330px,.86fr) minmax(420px,1.18fr); gap: 14px; align-items: start; }
 .panel { overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: white; box-shadow: 0 10px 30px rgba(24,54,48,.05); }
 .plannerSetup, .plannerChat { display: flex; min-height: 680px; flex-direction: column; padding: 20px; }
 .panelHeading { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
@@ -213,19 +213,37 @@ h1, h2, h3, p { margin-top: 0; }
 .category-hotel { background: #eee9ff; color: #604b9b; }
 .category-transport { background: #e7f0ff; color: #315f9d; }
 .mutedText, .questionItem { border-radius: 8px; padding: 10px 12px; background: var(--canvas); }
-.mapPanel { display: flex; min-height: 680px; flex-direction: column; }
-.mapToolbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 18px; font-size: .75rem; }
-.mapToolbar span { border-radius: 999px; padding: 5px 8px; background: #fff3cc; color: #7e6721; font-size: .56rem; font-weight: 850; }
-.fakeMap { position: relative; flex: 1; overflow: hidden; background: linear-gradient(45deg,#e9eee8 25%,transparent 25%) 0 0/40px 40px, linear-gradient(45deg,transparent 75%,#e9eee8 75%) 0 0/40px 40px, #f4f1e8; }
-.mapWater { position: absolute; right: -50px; bottom: -20px; width: 180px; height: 75%; transform: rotate(14deg); border-radius: 50%; background: #b9dfe2; }
-.mapRoad { position: absolute; width: 130%; height: 7px; border: 2px solid white; background: #d5d8cc; }
-.mapRoad.one { top: 35%; left: -15%; transform: rotate(-24deg); }
-.mapRoad.two { top: 62%; left: -15%; transform: rotate(18deg); }
-.mapPin { position: absolute; z-index: 2; display: grid; width: 30px; height: 30px; place-items: center; border: 3px solid white; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--brand); color: white; font-size: .6rem; font-weight: 900; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
-.mapPin::first-letter { transform: rotate(45deg); }
-.pin1 { top: 18%; left: 25%; }.pin2 { top: 39%; left: 57%; }.pin3 { top: 61%; left: 28%; }.pin4 { top: 75%; left: 66%; }
-.fakeMap p { position: absolute; z-index: 3; right: 20px; bottom: 15px; left: 20px; margin: 0; border-radius: 10px; padding: 10px; background: rgba(255,255,255,.85); color: var(--muted); font-size: .62rem; text-align: center; backdrop-filter: blur(8px); }
-.routeButton { margin: 12px; border: 0; border-radius: 11px; padding: 11px; background: #ecefed; color: #89928f; font-size: .65rem; font-weight: 800; }
+.plannerMap { position: sticky; top: 92px; display: flex; width: 100%; height: 680px; min-height: 680px; flex-direction: column; }
+.plannerMapHeader { display: flex; min-height: 82px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 18px; }
+.plannerMapHeader .eyebrow { margin-bottom: 5px; }
+.plannerMapHeader h2 { margin: 0; font-size: 1.16rem; letter-spacing: -.035em; }
+.mapCount { flex: 0 0 auto; border-radius: 999px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .58rem; font-weight: 850; }
+.plannerMapCanvasWrap { position: relative; min-height: 0; flex: 1; background: #e8eee9; }
+.plannerMapCanvas { position: absolute; inset: 0; z-index: 1; }
+.plannerMapCanvas .leaflet-control-zoom { overflow: hidden; border: 1px solid rgba(20,35,35,.12); border-radius: 10px; box-shadow: 0 6px 18px rgba(20,35,35,.12); }
+.plannerMapCanvas .leaflet-control-zoom a { color: var(--ink); }
+.plannerMapCanvas .leaflet-control-attribution { background: rgba(255,255,255,.9); font-size: 9px; }
+.mapEmptyNotice { position: absolute; z-index: 500; right: 18px; bottom: 18px; left: 18px; display: grid; gap: 4px; border: 1px solid rgba(20,35,35,.09); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,.93); box-shadow: 0 8px 24px rgba(20,35,35,.12); backdrop-filter: blur(8px); }
+.mapEmptyNotice strong { font-size: .7rem; }
+.mapEmptyNotice span { color: var(--muted); font-size: .61rem; line-height: 1.45; }
+.plannerMapActions { display: flex; gap: 8px; border-top: 1px solid var(--line); padding: 12px 14px 6px; }
+.plannerMapActions button { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: white; color: var(--ink); font-size: .62rem; font-weight: 850; }
+.plannerMapActions button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand-dark); }
+.plannerMapActions button:disabled { background: var(--canvas); color: #9aa5a1; }
+.mapRouteNote { margin: 0; padding: 2px 14px 12px; color: var(--muted); font-size: .54rem; line-height: 1.4; text-align: center; }
+.candidateMapMarker { border: 0 !important; background: transparent !important; }
+.candidateMapMarker > span { position: relative; display: grid; width: 34px; height: 34px; place-items: center; border: 3px solid white; border-radius: 50%; background: var(--brand); color: white; font-size: .66rem; font-weight: 900; box-shadow: 0 5px 15px rgba(20,35,35,.28); transition: transform .18s ease; }
+.candidateMapMarker > span::after { position: absolute; bottom: -7px; left: 50%; width: 0; height: 0; transform: translateX(-50%); border-top: 9px solid var(--brand); border-right: 6px solid transparent; border-left: 6px solid transparent; content: ""; }
+.candidateMapMarker.category-food > span, .candidateMapMarker.category-cafe > span { background: #d97822; }
+.candidateMapMarker.category-food > span::after, .candidateMapMarker.category-cafe > span::after { border-top-color: #d97822; }
+.candidateMapMarker.category-hotel > span { background: #6752a6; }
+.candidateMapMarker.category-hotel > span::after { border-top-color: #6752a6; }
+.candidateMapMarker.category-transport > span { background: #3f6faa; }
+.candidateMapMarker.category-transport > span::after { border-top-color: #3f6faa; }
+.candidateMapMarker.is-selected > span { transform: scale(1.16); box-shadow: 0 0 0 4px rgba(22,124,104,.2), 0 7px 20px rgba(20,35,35,.34); }
+.candidateMapPopup { display: grid; min-width: 160px; gap: 4px; color: var(--ink); }
+.candidateMapPopup strong { font-size: .72rem; }
+.candidateMapPopup span { color: var(--muted); font-size: .62rem; line-height: 1.4; }
 
 .profilePage { padding-top: 32px; padding-bottom: 90px; }
 .roleBar { display: flex; align-items: center; justify-content: space-between; gap: 28px; border: 1px solid #ebddb4; border-radius: 16px; padding: 13px 14px 13px 18px; background: #fff9e8; }
@@ -336,11 +354,14 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
 .creatorState p { color: var(--muted); font-size: .82rem; line-height: 1.6; }
 .creatorState span { color: var(--brand-dark); font-size: .72rem; font-weight: 800; }
 
+@media (max-width: 1240px) {
+  .plannerLayout { grid-template-columns: minmax(280px,.8fr) minmax(420px,1.2fr); }
+  .plannerMap { position: static; grid-column: 1/-1; height: 520px; min-height: 520px; }
+}
+
 @media (max-width: 1120px) {
   .planGrid { grid-template-columns: repeat(2,1fr); }
   .plannerLayout { grid-template-columns: minmax(250px,.8fr) minmax(420px,1.2fr); }
-  .mapPanel { grid-column: 1/-1; min-height: 480px; }
-  .fakeMap { min-height: 400px; }
   .metricGrid.four { grid-template-columns: repeat(2,1fr); }
 }
 
@@ -363,9 +384,12 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
   .planModal { grid-template-columns: 1fr; max-height: 92vh; overflow-y: auto; }
   .modalCover { min-height: 220px; }
   .plannerPage { padding-top: 24px; }
-  .plannerSetup, .itinerary { min-height: auto; }
-  .plannerSetup { padding: 18px; }
+  .plannerSetup, .plannerChat, .itinerary { min-height: auto; }
+  .plannerSetup, .plannerChat { padding: 18px; }
+  .plannerChat { min-height: 560px; }
   .itinerary { min-height: 580px; }
+  .plannerMap { order: 2; grid-column: auto; height: 500px; min-height: 500px; }
+  .itinerary { order: 3; }
   .roleBar { display: flex; }
   .roleButtons { width: 100%; }
   .roleButtons button { flex: 1; }

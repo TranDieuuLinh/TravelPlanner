@@ -28,6 +28,43 @@ def test_place_candidate_rejects_category_outside_contract() -> None:
         PlaceCandidateHint(name="Địa điểm", category="shopping")
 
 
+def test_place_candidate_serializes_valid_coordinates() -> None:
+    candidate = PlaceCandidateHint(
+        name="Cầu Rồng",
+        category="attraction",
+        latitude=16.0611,
+        longitude=108.2278,
+    )
+
+    payload = candidate.model_dump(mode="json", by_alias=True)
+
+    assert payload["latitude"] == 16.0611
+    assert payload["longitude"] == 108.2278
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("latitude", -90.1),
+        ("latitude", 90.1),
+        ("longitude", -180.1),
+        ("longitude", 180.1),
+    ],
+)
+def test_place_candidate_rejects_coordinates_outside_world_bounds(
+    field: str,
+    value: float,
+) -> None:
+    with pytest.raises(ValidationError):
+        PlaceCandidateHint(name="Địa điểm", **{field: value})
+
+
+@pytest.mark.parametrize("field", ["latitude", "longitude"])
+def test_place_candidate_requires_coordinate_pair(field: str) -> None:
+    with pytest.raises(ValidationError):
+        PlaceCandidateHint(name="Địa điểm", **{field: 16.0611})
+
+
 def test_explorer_input_accepts_user_travel_style() -> None:
     request = FullExploreRequest.model_validate(
         {
