@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     refresh_token_days: int = 7
     auth_cookie_secure: bool = False
 
+    # MoMo Sandbox Settings
+    momo_partner_code: str = "MOMO"
+    momo_access_key: str = "F8B39C29B7F5"
+    momo_secret_key: str = "K95549280BDF0E35417241123A0CE8A"
+    momo_api_url: str = "https://test-payment.momo.vn/v2/gateway/api/create"
+    momo_redirect_url: str = "http://localhost:3000/orders/{orderId}/result"
+    momo_ipn_url: str = "http://localhost:8000/api/payments/webhooks/momo"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
