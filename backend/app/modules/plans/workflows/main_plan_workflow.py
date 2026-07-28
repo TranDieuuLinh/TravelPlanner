@@ -1,6 +1,7 @@
 from uuid import uuid4
 
-from app.modules.plans.domain.entities import Plan
+from app.modules.plans.checks.overall_checker import OverallChecker
+from app.modules.plans.domain.entities import Plan, TravelIntent, UnscheduledPlace, UserStatus
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
     FinderAgentInput,
@@ -17,8 +18,10 @@ from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
     MainPlanCreate,
     MainPlanFromExplorerCreate,
+    PlanningContextCreate,
     SelectedPlaceCreate,
 )
+from app.shared.errors import AppError
 
 
 class MainPlanWorkflow:
@@ -27,77 +30,52 @@ class MainPlanWorkflow:
         explorer: ExplorerService,
         planner: PlannerService,
         finder: FinderService,
+        checker: OverallChecker | None = None,
     ) -> None:
         self.explorer = explorer
         self.planner = planner
         self.finder = finder
+        self.checker = checker or OverallChecker()
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
-        return await self._run(
-            payload,
+        return await self._run_planning(
             intent=intent,
+            planning_intent=self._planning_intent(intent),
             trip_spec=TripPlanningSpec(days=intent.days),
+            explicit_region_key=payload.region_key,
+            selected_places=[
+                self._selected_place_context(place)
+                for place in payload.selected_places
+            ],
+            user_status=payload.user_status,
         )
 
     async def run_from_explorer(
         self,
         payload: MainPlanFromExplorerCreate,
     ) -> Plan:
-        intent = self.explorer.explore(
-            MainPlanCreate(
-                destination=payload.intent.destination,
-                days=payload.trip_spec.days,
-                budget=payload.intent.budget_level,
-                travelStyle=payload.intent.travel_style,
-                pace=payload.intent.pace,
-                interests=payload.intent.interests,
-                mustVisitPlaces=payload.intent.must_visit_places,
-                avoidPlaces=payload.intent.avoid_places,
-                constraints=payload.intent.constraints,
-                regionKey=payload.region_key,
-                selectedPlaces=payload.selected_places,
-                userStatus=payload.user_status,
-            )
+        intent = TravelIntent(
+            destination=payload.intent.destination,
+            days=payload.trip_spec.days,
+            budget=payload.intent.budget_level,
+            travelStyle=payload.intent.travel_style,
+            pace=payload.intent.pace,
+            interests=payload.intent.interests,
+            mustVisitPlaces=payload.intent.must_visit_places,
+            avoidPlaces=payload.intent.avoid_places,
+            constraints=payload.intent.constraints,
+            clarifyingQuestions=payload.intent.clarifying_questions,
         )
-        main_payload = MainPlanCreate(
-            destination=intent.destination,
-            days=intent.days,
-            budget=intent.budget,
-            travelStyle=intent.travel_style,
-            pace=intent.pace,
-            interests=intent.interests,
-            mustVisitPlaces=intent.must_visit_places,
-            avoidPlaces=intent.avoid_places,
-            constraints=intent.constraints,
-            regionKey=payload.region_key,
-            selectedPlaces=payload.selected_places,
-            userStatus=payload.user_status,
-        )
-        return await self._run(
-            main_payload,
-            intent=intent,
-            trip_spec=payload.trip_spec,
-        )
-
-    async def _run(
-        self,
-        payload: MainPlanCreate,
-        *,
-        intent,
-        trip_spec: TripPlanningSpec,
-    ) -> Plan:
-        region_key = normalize_region_key(intent.destination, payload.region_key)
-        selected_places = [
-            self._selected_place_context(place)
-            for place in payload.selected_places
-        ]
         return await self._run_planning(
             intent=intent,
-            planning_intent=self._planning_intent(intent),
-            trip_spec=TripPlanningSpec(days=intent.days),
+            planning_intent=payload.intent,
+            trip_spec=payload.trip_spec,
             explicit_region_key=payload.region_key,
-            selected_places=selected_places,
+            selected_places=[
+                self._selected_place_context(place)
+                for place in payload.selected_places
+            ],
             user_status=payload.user_status,
         )
 
@@ -139,32 +117,12 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
     ) -> Plan:
-        region_key = normalize_region_key(
-            intent.destination,
-            explicit_region_key,
-        )
+        region_key = normalize_region_key(intent.destination, explicit_region_key)
         planner_output = await self.planner.create_main_macro_plan(
             intent,
             trip_spec=trip_spec,
             region_key=region_key,
-            planner_places=selected_places,
-            finder_places=selected_places,
-        )
-
-    async def _build_plan(
-        self,
-        intent: TravelIntent,
-        *,
-        trip_spec: TripPlanningSpec,
-        region_key: str,
-        planner_places: list[SelectedPlaceContext],
-        finder_places: list[SelectedPlaceContext],
-    ) -> Plan:
-        planner_output = await self.planner.create_main_macro_plan(
-            intent,
-            trip_spec=trip_spec,
-            region_key=region_key,
-            selected_places=planner_places,
+            selected_places=selected_places,
         )
         if not planner_output.day_briefs_ready:
             raise AppError(
@@ -180,6 +138,7 @@ class MainPlanWorkflow:
                     )
                 },
             )
+
         macro_plan = planner_output.macro_plan
         finder_output = self.finder.fill_agent_plan(
             FinderAgentInput(
@@ -194,17 +153,11 @@ class MainPlanWorkflow:
         unscheduled_places = self._merge_unscheduled_places(
             planner_output,
             finder_output.unscheduled_places,
-        selected_place_names = [place.name for place in finder_places]
-        finder_result = self.finder.fill_main_plan(
-            macro_plan,
-            intent,
-            selected_places,
-            user_status=payload.user_status,
         )
         plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.main,
-            status=PlanStatus.locked,
+            status=PlanStatus.checking,
             title=macro_plan.title,
             destination=intent.destination,
             intent=intent,
@@ -239,7 +192,7 @@ class MainPlanWorkflow:
         return PlanningIntent(
             destination=intent.destination,
             budgetLevel=intent.budget,
-            travelStyle=intent.travel_style,https://github.com/TranDieuuLinh/VSF_TravelPlanner/pull/16/conflict?name=backend%252Fapp%252Fmodules%252Fplans%252Fworkflows%252Fmain_plan_workflow.py&ancestor_oid=52f76b9dfd8961638c99953e6140d20984437587&base_oid=6081b1ae837f0b8d0038f1100a1524b7835764a6&head_oid=2e3be01fb60d8655510a36e507d0bbb9dda5be3d
+            travelStyle=intent.travel_style,
             pace=intent.pace,
             interests=intent.interests,
             mustVisitPlaces=intent.must_visit_places,

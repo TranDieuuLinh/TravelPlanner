@@ -64,6 +64,13 @@ class MainPlanFromExplorerCreate(BaseModel):
         Field(alias="selectedPlaces"),
     ] = Field(default_factory=list)
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+
+    model_config = {"populate_by_name": True}
+
+
 class PlanningContextCreate(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]

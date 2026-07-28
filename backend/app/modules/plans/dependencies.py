@@ -39,7 +39,7 @@ def get_plan_service(
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     llm_client = get_llm_client()
-    planner = PlannerService(llm_client, statistics)
+    planner = PlannerService(statistics)
     finder = FinderService(RepositoryFinderPlaceTool(place_repository))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),

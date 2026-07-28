@@ -16,11 +16,16 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.checks.backup_validator import BackupValidator
+from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.schema import MainPlanCreate, MainPlanFromExplorerCreate
-from app.modules.plans.schema import BackupPlanCreate, MainPlanCreate
-from app.modules.plans.schema import PlanningContextCreate
+from app.modules.plans.schema import (
+    BackupPlanCreate,
+    MainPlanCreate,
+    MainPlanFromExplorerCreate,
+    PlanningContextCreate,
+)
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.shared.errors import AppError
@@ -183,10 +188,7 @@ def test_planner_does_not_allocate_explicitly_avoided_place() -> None:
 
 
 def test_planner_is_ready_with_confirmed_place_when_region_is_empty() -> None:
-    service = PlannerService(
-        FakeLLMClient(),
-        FakeStatisticsProvider(place_count=0),
-    )
+    service = PlannerService(FakeStatisticsProvider(place_count=0))
 
     output = asyncio.run(
         service.create_main_macro_plan(
@@ -243,10 +245,9 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
 
 
 def test_main_workflow_accepts_confirmed_explorer_context() -> None:
-    llm = FakeLLMClient()
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
-        planner=PlannerService(llm, FakeStatisticsProvider(place_count=0)),
+        planner=PlannerService(FakeStatisticsProvider(place_count=0)),
         finder=FinderService(),
     )
     payload = MainPlanFromExplorerCreate.model_validate(
@@ -281,14 +282,37 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
 
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
-    assert plan.status.value == "locked"
+    assert plan.status.value == "draft"
+    assert plan.check_report is not None
+    assert plan.check_report.status == "needs_backup"
     assert plan.days[0].items[0].name == "Văn Miếu"
-    assert '"partySize":3' in llm.prompts[0]
 
 
-class FakeLLMClient(LLMClient):
-    def __init__(self) -> None:
-        self.prompts: list[str] = []
+def test_main_workflow_accepts_planning_context() -> None:
+    workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=PlannerService(FakeStatisticsProvider(place_count=0)),
+        finder=FinderService(),
+        checker=OverallChecker(),
+    )
+    payload = PlanningContextCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hà Nội",
+                "budgetLevel": "medium",
+                "travelStyle": "local",
+                "pace": "balanced",
+                "interests": ["culture"],
+            },
+            "tripSpec": {
+                "days": 2,
+                "partySize": 2,
+                "budget": {
+                    "inputMode": "unknown",
+                    "currency": "VND",
+                    "isHardCap": False,
+                    "confidence": "low",
+                },
             },
             "regionKey": "vn,ha-noi",
             "selectedPlaces": [
