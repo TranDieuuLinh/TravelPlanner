@@ -10,7 +10,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     app_name: str = "VSF Travel API"
     app_env: str = "local"
-    database_url: str = "sqlite:///./vsf_travel.db"
+    database_url: str = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
     backend_cors_origins: str = Field(default="http://localhost:3000")
     jwt_secret: str = "local-only-change-me"
     jwt_algorithm: str = "HS256"

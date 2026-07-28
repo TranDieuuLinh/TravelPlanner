@@ -1,11 +1,11 @@
 from contextlib import asynccontextmanager
-from uuid import uuid4
 import logging
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from app.api_router import api_router
@@ -15,31 +15,34 @@ from app.core.security_headers import (
     security_headers_middleware,
 )
 from app.db.base import Base
-from app.db.models import Place, User, UserMustPlace
+from app.db.models import Place, User, UserMustPlace  # noqa: F401
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.db.seed import seed_demo_marketplace
-from app.shared.errors import AppError
-from app.shared.schemas import APIMessage
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        seed_demo_marketplace(db)
-    yield
-
-
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
-from app.db.models import User
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import preload_audio_model
+from app.shared.errors import AppError
 from app.shared.schemas import APIMessage
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        seed_demo_marketplace(db)
+
+    if getattr(settings, "preload_url_reel_models", False):
+        try:
+            preload_audio_model()
+            logger.info("URL reel audio model preloaded")
+        except Exception:
+            logger.exception("URL reel audio model preload failed")
+
+    yield
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,17 +53,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def create_local_tables() -> None:
-    if settings.database_url.startswith("sqlite"):
-        Base.metadata.create_all(
-            bind=engine,
-            tables=[
-                User.__table__,
-                Place.__table__,
-                UserMustPlace.__table__,
-            ],
-        )
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request_id = uuid4().hex
@@ -78,7 +70,6 @@ async def security_headers_wrapper(request: Request, call_next):
 @app.middleware("http")
 async def rate_limit_wrapper(request: Request, call_next):
     return await rate_limit_middleware(request, call_next)
-
 
 
 @app.exception_handler(AppError)
@@ -112,13 +103,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
             "requestId": getattr(request.state, "request_id", uuid4().hex),
         },
     )
-
-    if settings.preload_url_reel_models:
-        try:
-            preload_audio_model()
-            logger.info("URL reel audio model preloaded")
-        except Exception:
-            logger.exception("URL reel audio model preload failed")
 
 
 @app.get("/health", response_model=APIMessage)
