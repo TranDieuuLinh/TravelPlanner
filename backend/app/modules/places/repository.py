@@ -96,6 +96,28 @@ class SqlAlchemyPlaceRepository:
     def get(self, place_id: str) -> Place | None:
         return self.session.get(Place, place_id)
 
+    def list_for_finder(
+        self,
+        region_key: str,
+        *,
+        limit: int = 200,
+    ) -> list[Place]:
+        _validate_region_key(region_key)
+        query = (
+            select(Place)
+            .where(
+                Place.deleted_at.is_(None),
+                Place.status == "active",
+                or_(
+                    Place.region_key == region_key,
+                    Place.region_key.like(f"{region_key},%"),
+                ),
+            )
+            .order_by(Place.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(query))
+
     def add(self, place: Place) -> Place:
         self.session.add(place)
         return place

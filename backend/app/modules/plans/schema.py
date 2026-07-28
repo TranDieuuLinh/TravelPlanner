@@ -2,7 +2,12 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from app.modules.plans.domain.entities import CheckReport, Plan, TravelIntent
+from app.modules.plans.domain.entities import (
+    CheckReport,
+    Plan,
+    TravelIntent,
+    UserStatus,
+)
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 
 
@@ -45,6 +50,9 @@ class MainPlanCreate(ExplorerRequest):
         list[SelectedPlaceCreate | str],
         Field(alias="selectedPlaces"),
     ] = Field(default_factory=list)
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
 
 
 class BackupPlanCreate(BaseModel):
