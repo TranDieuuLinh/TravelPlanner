@@ -441,5 +441,8 @@ fingerprint của đúng khu vực đó và các vùng con:
   chuyển `place_region_catalog_state.current_snapshot_id`;
 - thay đổi ở khu vực khác không làm snapshot đang được yêu cầu hết hạn.
 
-Planner workflow chưa được nối trực tiếp vì contract hiện vẫn dùng destination
-dạng text, chưa có `region_key` chuẩn hóa.
+Planner workflow đã gọi trực tiếp `get_for_planner(region_key)`. Contract nhận
+`regionKey` chuẩn hóa; để tương thích request cũ, backend có thể chuẩn hóa
+destination Việt Nam, ví dụ `Hà Nội` thành `vn,ha-noi`. `MacroPlan` lưu
+`snapshotRef` gồm snapshot ID, catalog version, algorithm version và thời điểm
+tạo. Thay đổi này không thêm hoặc xóa cột database.
