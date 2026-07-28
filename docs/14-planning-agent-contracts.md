@@ -44,8 +44,9 @@ FinderAgentOutput
 - `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
   vào Planner hoặc Finder.
 - `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- `placeCandidates` là các địa điểm chi tiết trong khu vực đó, ví dụ `Son Tra`,
-  `Quan mi quang A`, `Hotel near Han River`.
+- `placeCandidates` là gợi ý chưa được xác nhận và không được Planner xem là
+  yêu cầu bắt buộc. `selectedPlaces` là các Place đã được user xác nhận và là
+  đầu vào chính thức của Planner.
 - URL tool có thể trích địa điểm từ reels và đưa vào `placeCandidates`. User cũng
   có thể nhập địa điểm cụ thể trực tiếp vào `placeCandidates` với `source: "user"`.
 - Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
@@ -218,8 +219,12 @@ Output chính:
 
 ## Planner
 
-Planner nhận `TravelIntent` đã chuẩn hóa và tạo macro plan/day briefs. Planner
-không chọn giờ cụ thể và không commit địa điểm vào từng ngày.
+Planner nhận `TravelIntent` đã chuẩn hóa, `selectedPlaces` và snapshot thống kê
+theo `regionKey`, sau đó tạo macro plan/day briefs. Ngay trước khi lập kế hoạch,
+workflow gọi `auto_statistics.get_for_planner(regionKey)`; Place thay đổi thì
+snapshot mới được tạo, không thay đổi thì dùng snapshot hiện tại. Planner chỉ
+phân bổ Place đã xác nhận vào ngày ở mức constraint, không chọn giờ, route hoặc
+commit `TripItem` chi tiết.
 
 Input chính:
 
@@ -228,6 +233,22 @@ Input chính:
   "mode": "main",
   "intent": {},
   "tripSpec": {},
+  "regionContext": {
+    "regionKey": "vn,ha-noi",
+    "snapshotRef": {
+      "regionKey": "vn,ha-noi",
+      "snapshotId": "snapshot_123",
+      "catalogVersion": 3,
+      "algorithmVersion": "auto_statistics_v2_1",
+      "generatedAt": "2026-07-28T10:00:00+00:00"
+    },
+    "placeCount": 100,
+    "tagCounts": {},
+    "timeOfDayCoverage": {},
+    "areaProfiles": [],
+    "plannerSignals": {}
+  },
+  "selectedPlaces": [],
   "placeCandidates": [],
   "planState": {
     "tripId": "trip_123",
@@ -247,18 +268,39 @@ Output chính:
   "mode": "main",
   "tripSpec": {},
   "macroPlan": {
-    "title": "Main plan for Da Nang",
+    "title": "Main plan for Hà Nội",
+    "destination": "Hà Nội",
+    "regionKey": "vn,ha-noi",
+    "snapshotRef": {
+      "regionKey": "vn,ha-noi",
+      "snapshotId": "snapshot_123",
+      "catalogVersion": 3,
+      "algorithmVersion": "auto_statistics_v2_1",
+      "generatedAt": "2026-07-28T10:00:00+00:00"
+    },
     "dayBriefs": [
       {
         "day": 1,
-        "theme": "Food and local neighborhoods",
-        "targetArea": "Hai Chau",
-        "notes": ["Keep pace balanced"]
+        "theme": "Culture and local food",
+        "targetArea": "Hoan Kiem",
+        "targetRegionKey": "vn,ha-noi,hoan-kiem",
+        "focusTags": ["culture", "food"],
+        "pace": "balanced",
+        "dayPartGoals": {
+          "morning": "Prioritize culture activities supported in the morning.",
+          "lunch": "Use a balanced food block in the lunch.",
+          "afternoon": "Use a balanced culture block in the afternoon.",
+          "evening": "Keep evening flexible; regional data coverage is weak."
+        },
+        "allocatedSelectedPlaceRefs": ["place_123"],
+        "notes": ["Exact schedule is delegated to Finder."]
       }
     ]
   },
   "dayBriefsReady": true,
+  "unallocatedSelectedPlaces": [],
   "assumptions": [],
+  "warnings": [],
   "trace": {
     "agent": "planner",
     "status": "completed",
@@ -267,6 +309,11 @@ Output chính:
   }
 }
 ```
+
+`snapshotRef` bắt buộc đi cùng `MacroPlan` để có thể truy vết dữ liệu Planner đã
+dùng. Mọi `selectedPlace` phải xuất hiện trong
+`allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
+Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
 
 ## Finder
 

@@ -24,8 +24,27 @@ class ExplorerRequest(BaseModel):
     constraints: list[str] = Field(default_factory=list)
 
 
+class SelectedPlaceCreate(BaseModel):
+    name: str
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    priority: Annotated[int, Field(default=1, ge=1, le=5)]
+    must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    tags: list[str] = Field(default_factory=list)
+    source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
+        default_factory=list
+    )
+    notes: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class MainPlanCreate(ExplorerRequest):
-    selected_places: Annotated[list[str], Field(alias="selectedPlaces")] = Field(default_factory=list)
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate | str],
+        Field(alias="selectedPlaces"),
+    ] = Field(default_factory=list)
 
 
 class BackupPlanCreate(BaseModel):

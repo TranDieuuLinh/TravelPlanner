@@ -31,6 +31,8 @@ class PlannerRegionStatisticsResult:
     regions: list[dict[str, Any]]
     snapshot_id: str
     catalog_version: int
+    algorithm_version: str
+    generated_at: str
     source_fingerprint: str
 
 
@@ -115,6 +117,8 @@ class AutoPlaceStatisticsService:
                 regions=current_snapshot.metrics_json["regions"],
                 snapshot_id=current_snapshot.id,
                 catalog_version=current_snapshot.catalog_version,
+                algorithm_version=current_snapshot.algorithm_version,
+                generated_at=current_snapshot.generated_at.isoformat(),
                 source_fingerprint=str(source_signature["fingerprint"]),
             )
 
@@ -144,6 +148,8 @@ class AutoPlaceStatisticsService:
             regions=regions,
             snapshot_id=snapshot.id,
             catalog_version=snapshot.catalog_version,
+            algorithm_version=snapshot.algorithm_version,
+            generated_at=snapshot.generated_at.isoformat(),
             source_fingerprint=str(source_signature["fingerprint"]),
         )
 

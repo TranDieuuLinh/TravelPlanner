@@ -3,10 +3,15 @@ from uuid import uuid4
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
+from app.modules.plans.dto.agent_contracts import (
+    SelectedPlaceContext,
+    TripPlanningSpec,
+)
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.planner.planner_service import PlannerService
-from app.modules.plans.schema import MainPlanCreate
+from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.schema import MainPlanCreate, SelectedPlaceCreate
 
 
 class MainPlanWorkflow:
@@ -24,8 +29,24 @@ class MainPlanWorkflow:
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
-        macro_plan = await self.planner.create_main_macro_plan(intent)
-        days = self.finder.fill_main_plan(macro_plan, intent, payload.selected_places)
+        region_key = normalize_region_key(intent.destination, payload.region_key)
+        selected_places = [
+            self._selected_place_context(place)
+            for place in payload.selected_places
+        ]
+        planner_output = await self.planner.create_main_macro_plan(
+            intent,
+            trip_spec=TripPlanningSpec(days=intent.days),
+            region_key=region_key,
+            selected_places=selected_places,
+        )
+        macro_plan = planner_output.macro_plan
+        selected_place_names = [place.name for place in selected_places]
+        days = self.finder.fill_main_plan(
+            macro_plan,
+            intent,
+            selected_place_names,
+        )
         plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.main,
@@ -38,3 +59,11 @@ class MainPlanWorkflow:
         )
         check_report = self.checker.check(plan)
         return plan.model_copy(update={"status": PlanStatus.locked, "check_report": check_report})
+
+    def _selected_place_context(
+        self,
+        place: SelectedPlaceCreate | str,
+    ) -> SelectedPlaceContext:
+        if isinstance(place, str):
+            return SelectedPlaceContext(name=place, mustVisit=True)
+        return SelectedPlaceContext.model_validate(place.model_dump())
