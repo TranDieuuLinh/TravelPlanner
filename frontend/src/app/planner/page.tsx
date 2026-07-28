@@ -1,8 +1,44 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createPlan, type TravelPlan } from "@/lib/plans";
+import { exploreFullIntake, type ExploreResponse, type PlaceCategory } from "@/lib/plans";
+
+type ChatMessage = {
+  id: number;
+  role: "assistant" | "user";
+  text: string;
+};
+
+const categoryLabels: Record<PlaceCategory, string> = {
+  attraction: "Tham quan · vui chơi",
+  food: "Ăn uống",
+  cafe: "Cà phê",
+  hotel: "Lưu trú",
+  transport: "Di chuyển",
+  free_time: "Thời gian tự do",
+  other: "Khác"
+};
+
+function formatBudget(result: ExploreResponse): string {
+  const budget = result.tripSpec.budget;
+  const formatter = new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: budget.currency,
+    maximumFractionDigits: 0
+  });
+
+  if (budget.minAmount != null && budget.maxAmount != null) {
+    return `${formatter.format(budget.minAmount)} – ${formatter.format(budget.maxAmount)}`;
+  }
+  if (budget.targetAmount != null) {
+    return `${budget.isHardCap ? "Tối đa " : "Khoảng "}${formatter.format(budget.targetAmount)}`;
+  }
+  if (budget.maxAmount != null) {
+    return `${budget.isHardCap ? "Tối đa " : "Đến "}${formatter.format(budget.maxAmount)}`;
+  }
+  return "Chưa có số tiền ước tính";
+}
 
 export default function PlannerPage() {
   return <Suspense fallback={<div className="routeLoading">Đang mở AI Planner…</div>}><Planner /></Suspense>;
@@ -10,24 +46,58 @@ export default function PlannerPage() {
 
 function Planner() {
   const params = useSearchParams();
-  const [destination, setDestination] = useState(params.get("destination") ?? "");
-  const [days, setDays] = useState(3);
-  const [interests, setInterests] = useState("ẩm thực, văn hóa địa phương");
-  const [plan, setPlan] = useState<TravelPlan | null>(null);
+  const initialDestination = params.get("destination") ?? "";
+  const [prompt, setPrompt] = useState(initialDestination ? `Tạo lịch trình ${initialDestination} 3 ngày, ẩm thực và văn hóa địa phương` : "");
+  const [images, setImages] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 1,
+      role: "assistant",
+      text: "Nhập yêu cầu chuyến đi bằng một tin nhắn. Ví dụ: Đà Nẵng 3 ngày, ăn ngon, cà phê, đi chậm."
+    }
+  ]);
+  const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function generate() {
-    if (!destination.trim()) {
-      setError("Hãy nhập điểm đến trước.");
+  async function sendMessage() {
+    const text = prompt.trim();
+    if (!text) {
+      setError("Nhập yêu cầu hoặc dán URL trước khi gửi. Ảnh là nội dung bổ sung.");
       return;
     }
+
+    const attachmentSummary = images.length ? `📎 ${images.length} ảnh` : "";
+    const userMessage: ChatMessage = {
+      id: Date.now(),
+      role: "user",
+      text: [text, attachmentSummary].filter(Boolean).join("\n")
+    };
+    setMessages((current) => [...current, userMessage]);
+    setPrompt("");
     setLoading(true);
     setError("");
     try {
-      setPlan(await createPlan({ destination: destination.trim(), days, interests: interests.split(",").map((item) => item.trim()).filter(Boolean) }));
+      const nextExploreResult = await exploreFullIntake({
+        rawRequest: text,
+        images
+      });
+      setExploreResult(nextExploreResult);
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text: `Explorer đã đọc yêu cầu và trích xuất ${nextExploreResult.placeCandidates.length} điểm đến cùng ${nextExploreResult.foodPlaces.length} địa điểm ăn uống cho ${nextExploreResult.intent.destination}.`
+        }
+      ]);
+      setImages([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Có lỗi xảy ra.");
+      const message = caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
+      setError(message);
+      setMessages((current) => [...current, { id: Date.now() + 1, role: "assistant", text: message }]);
     } finally {
       setLoading(false);
     }
@@ -36,50 +106,119 @@ function Planner() {
   return (
     <main className="plannerPage">
       <header className="plannerHeader pageWidth">
-        <div><span className="eyebrow">AI Planner</span><h1>{destination || "Chuyến đi mới"}</h1><p>Lập lịch trình có cấu trúc từ sở thích của bạn.</p></div>
+        <div><span className="eyebrow">AI Planner</span><h1>{exploreResult?.intent.destination ?? "Chatbot VSF"}</h1><p>Gửi prompt, URL hoặc screenshot để Explorer chuẩn hóa dữ liệu.</p></div>
         <div className="futureActions"><button disabled type="button">Mời thành viên</button><button disabled type="button">Chia sẻ</button></div>
       </header>
 
       <section className="plannerLayout pageWidth">
-        <aside className="plannerSetup panel">
+        <aside className="plannerChat panel">
           <div className="panelHeading"><span className="aiOrb">✦</span><div><strong>Trợ lý VSF</strong><small>Kết nối Planner API</small></div></div>
-          <div className="assistantMessage">Bạn muốn đi đâu? Mình sẽ tạo lịch trình theo từng ngày và kiểm tra tính khả thi cơ bản.</div>
-          <label>Điểm đến<input onChange={(event) => setDestination(event.target.value)} placeholder="Đà Nẵng, Hà Giang..." value={destination} /></label>
-          <div className="formSplit">
-            <label>Số ngày<input max={30} min={1} onChange={(event) => setDays(Number(event.target.value))} type="number" value={days} /></label>
-            <label>Ngân sách<select defaultValue="balanced" disabled><option value="balanced">Cân bằng</option></select></label>
+          <div className="chatMessages" aria-live="polite">
+            {messages.map((message) => (
+              <div className={`chatBubble ${message.role}`} key={message.id}>{message.text}</div>
+            ))}
           </div>
-          <label>Sở thích<textarea onChange={(event) => setInterests(event.target.value)} rows={3} value={interests} /></label>
           {error ? <p className="formError">{error}</p> : null}
-          <button className="generateButton" disabled={loading} onClick={generate} type="button">{loading ? "Đang tạo lịch trình…" : "✦ Tạo lịch trình"}</button>
-          <small className="honestyNote">AI hiện dùng StubLLM và plan được lưu trong bộ nhớ backend.</small>
+          <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
+            <div className="composerBox">
+              <textarea
+                aria-label="Tin nhắn lập lịch trình"
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Nhập yêu cầu hoặc dán URL vào đây..."
+                rows={4}
+                value={prompt}
+              />
+              <input
+                accept="image/*"
+                aria-label="Ảnh hoặc screenshot"
+                className="composerFileInput"
+                multiple
+                onChange={(event) => setImages(Array.from(event.target.files ?? []))}
+                ref={fileInputRef}
+                type="file"
+              />
+              <div className="composerToolbar">
+                <button
+                  aria-label="Đính kèm ảnh"
+                  className="attachButton"
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                >
+                  ＋ Ảnh
+                </button>
+                {images.length ? (
+                  <span className="attachmentChip">
+                    {images.length} ảnh
+                    <button
+                      aria-label="Bỏ ảnh đã chọn"
+                      onClick={() => {
+                        setImages([]);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ) : <small>Prompt · URL · Screenshot</small>}
+              </div>
+            </div>
+            <button className="sendButton" disabled={loading || !prompt.trim()} type="submit">
+              {loading ? "Đang đọc..." : "Gửi"}
+            </button>
+          </form>
+          <small className="honestyNote">Explorer tự nhận biết prompt, URL hoặc ảnh theo nội dung bạn gửi.</small>
         </aside>
 
         <section className="itinerary panel">
-          <div className="itineraryTop"><div><span className="eyebrow">Lịch trình</span><h2>{plan?.title ?? "Plan của bạn"}</h2></div><span className="statusPill">{plan ? plan.kind : "Chưa tạo"}</span></div>
-          {plan ? (
-            <div className="daysList">
-              {plan.days.map((day) => (
-                <article className="dayBlock" key={day.day}>
-                  <div className="dayNumber"><span>Ngày</span><strong>{day.day}</strong></div>
-                  <div className="dayContent"><h3>{day.theme}</h3>{day.items.map((item, index) => <div className="timelineItem" key={`${day.day}-${index}`}><span className="timelineDot" /><div><small>{item.timeWindow}</small><strong>{item.name}</strong><p>{item.notes || item.placeType}</p></div></div>)}</div>
-                </article>
-              ))}
+          <div className="itineraryTop"><div><span className="eyebrow">Explorer</span><h2>{exploreResult ? "Dữ liệu đã trích xuất" : "Kết quả Explorer"}</h2></div><span className="statusPill">{exploreResult ? "ready" : "waiting"}</span></div>
+          {exploreResult ? (
+            <div className="exploreResult">
+              <section>
+                <h3>{exploreResult.intent.destination}</h3>
+                <p>{exploreResult.tripSpec.days} ngày · {exploreResult.tripSpec.partySize} người · {exploreResult.intent.budgetLevel}</p>
+                <p>{formatBudget(exploreResult)} · độ tin cậy {exploreResult.tripSpec.budget.confidence}</p>
+                <div className="tagRow">
+                  {exploreResult.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
+                </div>
+              </section>
+              <section>
+                <h3>Địa điểm tham quan</h3>
+                {exploreResult.placeCandidates.length ? exploreResult.placeCandidates.map((place) => (
+                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
+                    <div className="candidateHeading">
+                      <strong>{place.name}</strong>
+                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
+                    </div>
+                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
+                  </article>
+                )) : <p className="mutedText">Chưa có địa điểm tham quan.</p>}
+              </section>
+              <section>
+                <h3>Địa điểm ăn uống</h3>
+                {exploreResult.foodPlaces.length ? exploreResult.foodPlaces.map((place) => (
+                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
+                    <div className="candidateHeading">
+                      <strong>{place.name}</strong>
+                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
+                    </div>
+                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
+                  </article>
+                )) : <p className="mutedText">Chưa có địa điểm ăn uống.</p>}
+              </section>
+              <section>
+                <h3>Câu hỏi còn thiếu</h3>
+                {exploreResult.missingInfoQuestions.length ? exploreResult.missingInfoQuestions.map((question) => <p className="questionItem" key={question}>{question}</p>) : <p className="mutedText">Không có câu hỏi bổ sung.</p>}
+              </section>
+              <section>
+                <h3>Nguồn đã đọc</h3>
+                <p className="mutedText">{exploreResult.urlReelSignals.length} URL</p>
+              </section>
             </div>
           ) : (
-            <div className="emptyPlan"><span>✦</span><h3>Bắt đầu bằng một điểm đến</h3><p>Plan được tạo từ backend thật sẽ xuất hiện tại đây.</p></div>
+            <div className="emptyPlan"><span>✦</span><h3>Bắt đầu bằng một yêu cầu</h3><p>Kết quả Explorer từ backend sẽ xuất hiện tại đây.</p></div>
           )}
         </section>
-
-        <aside className="mapPanel panel">
-          <div className="mapToolbar"><strong>Bản đồ hành trình</strong><span>Demo</span></div>
-          <div className="fakeMap">
-            <div className="mapRoad one" /><div className="mapRoad two" /><div className="mapWater" />
-            {[1, 2, 3, 4].map((item) => <span className={`mapPin pin${item}`} key={item}>{item}</span>)}
-            <p>Chưa kết nối map provider</p>
-          </div>
-          <button className="routeButton" disabled type="button">Tối ưu tuyến đường · Sắp tới</button>
-        </aside>
       </section>
     </main>
   );

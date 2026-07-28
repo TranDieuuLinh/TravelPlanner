@@ -12,6 +12,12 @@ from app.modules.users.schema import CreatorApplicationCreate, ProfileUpdate, Us
 
 router = APIRouter(prefix="/me", tags=["profile"])
 
+@router.post("/planner-preview")
+async def planner_preview(destination: str, days: int = 3, budget: str = "medium") -> dict[str, str]:
+    client = get_llm_client()
+    prompt = f"Destination: {destination}. Days: {days}. Budget: {budget}."
+    draft = await client.generate_profile_plan(prompt)
+    return {"draft": draft}
 
 def get_profile_service(db: Annotated[Session, Depends(get_db)]) -> ProfileService:
     return ProfileService(UserRepository(db))

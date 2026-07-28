@@ -139,6 +139,10 @@ class FakeLLMClient(LLMClient):
         self.prompts.append(prompt)
         return "ok"
 
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        self.prompts.append(user_payload)
+        return "{}"
+
 
 class FakeStatisticsProvider:
     def __init__(self, *, place_count: int = 20) -> None:
@@ -209,7 +213,7 @@ def _intent() -> TravelIntent:
     return TravelIntent(
         destination="Hà Nội",
         days=2,
-        budget=BudgetLevel.balanced,
+        budget=BudgetLevel.medium,
         travelStyle="local",
         pace=TravelPace.balanced,
         interests=["culture", "food"],

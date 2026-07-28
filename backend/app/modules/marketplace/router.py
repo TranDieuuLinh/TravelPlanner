@@ -13,4 +13,4 @@ router.include_router(admin_router)
 
 @router.get("/marketplace/categories", tags=["marketplace"])
 def categories() -> list[str]:
-    return ["budget", "balanced", "comfortable", "food", "nature", "family", "creator-picks"]
+    return ["budget", "medium", "high", "food", "nature", "family", "creator-picks"]

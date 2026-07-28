@@ -13,7 +13,7 @@ Router FastAPI
     |
     +-- plans: service -> workflow -> domain service
     |                         |             |
-    |                         |             +-- LLM giả lập
+    |                         |             +-- LLM gateway (Stub/Gemini)
     |                         +-- PlanRepository trong bộ nhớ
     |
     +-- profiles/marketplace: endpoint placeholder
@@ -22,6 +22,45 @@ Router FastAPI
 Frontend và backend là hai ứng dụng riêng trong cùng một kho mã. PostgreSQL và
 backend được khai báo trong `docker-compose.yml`; khi chạy trên máy cá nhân,
 backend mặc định dùng SQLite.
+
+`/api/plans/explore/full` và `/api/plans/explore/full/intake` chỉ hoạt động khi
+Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
+có thể dùng `StubLLMClient` khi không có provider.
+
+### Pipeline Explorer intake hiện tại
+
+Raw prompt luôn là ngữ cảnh gốc của request. `PlanService` điều phối các nhánh
+làm giàu dữ liệu trước khi gọi formatter:
+
+```text
+Planner UI
+    |
+    | raw prompt + URL tìm thấy + ảnh đính kèm
+    v
+FastAPI intake router
+    |
+    v
+PlanService
+    |
+    +-- có ảnh? --> ImageOcrService ------> image contexts ----+
+    |                                                          |
+    +-- có URL? --> UrlReelExtractionService -> URL results ----+--> ExploreResponseFormatter
+    |                                                          |             |
+    +-- không có ảnh/URL ---------------------------------------+             v
+    |                                                                  Gemini JSON
+    +-----------------------------------------------------------------------|
+                                                                            v
+                                                              ExploreResponse schema
+                                                                            |
+                                                                            v
+                                                                    Planner result UI
+```
+
+`ExploreResponseFormatter` chỉ tổng hợp raw prompt và context đã được các
+extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Nếu request
+chỉ có raw prompt, `PlanService` bỏ qua cả hai extractor và gọi formatter trực
+tiếp. Kết quả Explorer hiện được trả thẳng về client, chưa được lưu thành draft
+trong database.
 
 ## Ranh giới backend
 

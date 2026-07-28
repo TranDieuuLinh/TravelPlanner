@@ -1,10 +1,13 @@
-from typing import Annotated, Any
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.plans.dto.agent_contracts import (
     AccommodationRequirement,
+    BudgetCalculationBasis,
+    BudgetConfidence,
     BudgetEnvelope,
+    BudgetInputMode,
     PlaceCandidateHint,
     PlanningIntent,
     TransportRequirement,
@@ -37,12 +40,22 @@ class ExploreTransportInput(BaseModel):
 
 
 class ExploreBudgetInput(BaseModel):
-    total_budget: Annotated[dict[str, Any] | None, Field(default=None, alias="totalBudget")]
-    per_person_budget: Annotated[dict[str, Any] | None, Field(default=None, alias="perPersonBudget")]
-    include_food: Annotated[bool | None, Field(default=None, alias="includeFood")]
-    include_transport: Annotated[bool | None, Field(default=None, alias="includeTransport")]
-    include_hotel: Annotated[bool | None, Field(default=None, alias="includeHotel")]
-    include_tickets: Annotated[bool | None, Field(default=None, alias="includeTickets")]
+    input_mode: Annotated[
+        BudgetInputMode | None, Field(default=None, alias="inputMode")
+    ]
+    min_amount: Annotated[int | None, Field(default=None, ge=0, alias="minAmount")]
+    target_amount: Annotated[
+        int | None, Field(default=None, ge=0, alias="targetAmount")
+    ]
+    max_amount: Annotated[int | None, Field(default=None, ge=0, alias="maxAmount")]
+    currency: str | None = None
+    is_hard_cap: Annotated[bool | None, Field(default=None, alias="isHardCap")]
+    confidence: BudgetConfidence | None = None
+    calculation_basis: Annotated[
+        BudgetCalculationBasis | None,
+        Field(default=None, alias="calculationBasis"),
+    ]
+    notes: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -59,6 +72,16 @@ class ExploreTripSpecInput(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ExploreImageContext(BaseModel):
+    file_name: Annotated[str, Field(alias="fileName")]
+    mime_type: Annotated[str, Field(alias="mimeType")]
+    ocr_text: Annotated[str, Field(default="", alias="ocrText")]
+    status: str = "ok"
+    error: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class FullExploreRequest(BaseModel):
     raw_request: Annotated[str, Field(min_length=1, alias="rawRequest")]
     destination: Annotated[str, Field(min_length=1)]
@@ -66,14 +89,7 @@ class FullExploreRequest(BaseModel):
     place_candidates: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")]
     user_state: Annotated[UserPlanningState, Field(default_factory=UserPlanningState, alias="userState")]
     trip_spec: Annotated[ExploreTripSpecInput, Field(default_factory=ExploreTripSpecInput, alias="tripSpec")]
-
-    model_config = {"populate_by_name": True}
-
-
-class ExploreDebug(BaseModel):
-    transcript: str | None = None
-    raw_extracted_text: Annotated[str | None, Field(default=None, alias="rawExtractedText")]
-    url_statuses: Annotated[list[dict[str, Any]], Field(default_factory=list, alias="urlStatuses")]
+    image_contexts: Annotated[list["ExploreImageContext"], Field(default_factory=list, alias="imageContexts")]
 
     model_config = {"populate_by_name": True}
 
@@ -82,9 +98,25 @@ class ExploreResponse(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     place_candidates: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")]
+    food_places: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="foodPlaces")]
     url_reel_signals: Annotated[list[UrlReelSignal], Field(default_factory=list, alias="urlReelSignals")]
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(default_factory=list, alias="missingInfoQuestions")]
-    debug: ExploreDebug = Field(default_factory=ExploreDebug)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def separate_food_places(self) -> "ExploreResponse":
+        dining_categories = {"food", "cafe"}
+        all_places = [*self.place_candidates, *self.food_places]
+        self.place_candidates = [
+            place
+            for place in all_places
+            if place.category.value not in dining_categories
+        ]
+        self.food_places = [
+            place
+            for place in all_places
+            if place.category.value in dining_categories
+        ]
+        return self
