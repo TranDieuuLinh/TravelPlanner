@@ -1,28 +1,101 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { marketPlans, type MarketPlan } from "@/data/demo";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import { APIError } from "@/lib/api";
+import { addFavorite, removeFavorite, searchListings } from "@/lib/marketplace";
+import type { ListingSummary } from "@/types/marketplace";
 
-const filters = ["Tất cả", "Ẩm thực", "Thiên nhiên", "Biển", "Tiết kiệm"];
+const categories = [
+  { id: "Tất cả", label: "Tất cả" },
+  { id: "food", label: "Ẩm thực" },
+  { id: "nature", label: "Thiên nhiên" },
+  { id: "family", label: "Gia đình" },
+  { id: "budget", label: "Tiết kiệm" },
+  { id: "comfortable", label: "Nghỉ dưỡng" },
+  { id: "creator-picks", label: "Gợi ý Creator" },
+];
+
+const sortOptions = [
+  { id: "newest", label: "Mới nhất" },
+  { id: "priceAsc", label: "Giá tăng dần" },
+  { id: "priceDesc", label: "Giá giảm dần" },
+];
 
 export default function ExplorePage() {
+  const router = useRouter();
+  const { user } = useAuth();
+
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("Tất cả");
-  const [selected, setSelected] = useState<MarketPlan | null>(null);
-  const [saved, setSaved] = useState<number[]>([]);
+  const [category, setCategory] = useState("Tất cả");
+  const [sort, setSort] = useState("newest");
+  const [page, setPage] = useState(1);
 
-  const visiblePlans = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase("vi");
-    return marketPlans.filter((plan) => {
-      const matchFilter = filter === "Tất cả" || plan.tag === filter;
-      const matchQuery = !needle || `${plan.title} ${plan.place} ${plan.creator}`.toLocaleLowerCase("vi").includes(needle);
-      return matchFilter && matchQuery;
-    });
-  }, [filter, query]);
+  const [listings, setListings] = useState<ListingSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  function toggleSaved(id: number) {
-    setSaved((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const [selected, setSelected] = useState<ListingSummary | null>(null);
+
+  useEffect(() => {
+    fetchListings();
+  }, [category, page, sort, user]);
+
+  async function fetchListings() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await searchListings({
+        page,
+        pageSize: 12,
+        query: query.trim() || undefined,
+        category: category !== "Tất cả" ? category : undefined,
+        sort,
+      });
+      setListings(data.items);
+      setTotal(data.total);
+      setTotalPages(data.totalPages);
+    } catch (err) {
+      setError(err instanceof APIError ? err.message : "Không thể tải danh sách chuyến đi.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setPage(1);
+    fetchListings();
+  }
+
+  async function toggleFavorite(item: ListingSummary) {
+    if (!user) {
+      router.push(`/login?next=/explore`);
+      return;
+    }
+
+    const currentFav = item.isFavorited;
+    // Optimistic update
+    setListings((prev) =>
+      prev.map((l) => (l.id === item.id ? { ...l, isFavorited: !currentFav } : l))
+    );
+
+    try {
+      if (currentFav) {
+        await removeFavorite(item.id);
+      } else {
+        await addFavorite(item.id);
+      }
+    } catch (err) {
+      // Revert on error
+      setListings((prev) =>
+        prev.map((l) => (l.id === item.id ? { ...l, isFavorited: currentFav } : l))
+      );
+    }
   }
 
   return (
@@ -34,75 +107,158 @@ export default function ExplorePage() {
             <h1>Đi đâu tiếp theo?</h1>
             <p>Khám phá plan từ creator địa phương, rồi dùng AI để biến nó thành chuyến đi của riêng bạn.</p>
           </div>
-          <div className="heroSearch">
+          <form className="heroSearch" onSubmit={handleSearchSubmit}>
             <span>⌕</span>
-            <input aria-label="Tìm plan" onChange={(event) => setQuery(event.target.value)} placeholder="Tìm Đà Nẵng, food tour, biển..." value={query} />
-            <button type="button">Tìm kiếm</button>
-          </div>
+            <input
+              aria-label="Tìm plan"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm Đà Nẵng, food tour, biển..."
+              value={query}
+            />
+            <button type="submit">Tìm kiếm</button>
+          </form>
         </div>
       </section>
 
       <section className="pageWidth exploreContent">
         <div className="filterRow" aria-label="Bộ lọc">
           <div>
-            {filters.map((item) => (
-              <button className={filter === item ? "filter active" : "filter"} key={item} onClick={() => setFilter(item)} type="button">{item}</button>
+            {categories.map((item) => (
+              <button
+                className={category === item.id ? "filter active" : "filter"}
+                key={item.id}
+                onClick={() => {
+                  setCategory(item.id);
+                  setPage(1);
+                }}
+                type="button"
+              >
+                {item.label}
+              </button>
             ))}
           </div>
-          <span className="demoLabel">Listing và giá đang là dữ liệu demo</span>
+
+          <div className="sortSelectBox">
+            <label htmlFor="sort-select">Sắp xếp:</label>
+            <select
+              id="sort-select"
+              onChange={(e) => {
+                setSort(e.target.value);
+                setPage(1);
+              }}
+              value={sort}
+            >
+              {sortOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="sectionTitle">
-          <div><span className="eyebrow">Gợi ý cho bạn</span><h2>{visiblePlans.length} hành trình đáng thử</h2></div>
-          <Link href="/planner">Tạo plan mới <span>→</span></Link>
+          <div>
+            <span className="eyebrow">Khám phá hành trình</span>
+            <h2>{total} hành trình khả thi từ Creator</h2>
+          </div>
+          <Link href="/planner">Tạo plan mới với AI <span>→</span></Link>
         </div>
 
-        <div className="planGrid">
-          {visiblePlans.map((plan) => (
-            <article className="planCard" key={plan.id}>
-              <button className={`planCover ${plan.tone}`} onClick={() => setSelected(plan)} type="button">
-                <span className="planTag">{plan.tag}</span>
-                <span className="coverPlace">{plan.place}</span>
-                <span className="coverDays">{plan.days} ngày</span>
-              </button>
-              <div className="planInfo">
-                <div className="creatorLine"><span className="creatorAvatar">{plan.creator.charAt(0)}</span><span>{plan.creator}</span><span className="verified">✓</span><span className="rating">★ {plan.rating}</span></div>
-                <button className="planTitle" onClick={() => setSelected(plan)} type="button">{plan.title}</button>
-                <p>{plan.summary}</p>
-                <div className="planMeta"><span>{plan.saves} lượt lưu</span><strong>{plan.price}</strong></div>
-                <div className="cardActions">
-                  <button className={saved.includes(plan.id) ? "saveButton saved" : "saveButton"} onClick={() => toggleSaved(plan.id)} type="button">{saved.includes(plan.id) ? "♥ Đã lưu" : "♡ Lưu"}</button>
-                  <button className="viewButton" onClick={() => setSelected(plan)} type="button">Xem plan</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+        {loading ? (
+          <div className="routeLoading">Đang tải danh sách hành trình...</div>
+        ) : error ? (
+          <div className="errorBanner">{error}</div>
+        ) : listings.length === 0 ? (
+          <div className="emptyState">
+            <h2>Chưa tìm thấy hành trình phù hợp</h2>
+            <p>Thử tìm kiếm với từ khóa khác hoặc bỏ các bộ lọc danh mục.</p>
+          </div>
+        ) : (
+          <div className="planGrid">
+            {listings.map((plan) => {
+              const ver = plan.currentVersion;
+              const creatorName = plan.creator?.fullName || "Creator";
+              const coverUrl = ver.mediaUrls?.[0] || "";
+
+              return (
+                <article className="planCard" key={plan.id}>
+                  <Link className="planCoverLink" href={`/listings/${plan.id}`}>
+                    <div className="planCover flexCover">
+                      {coverUrl ? (
+                        <img alt={ver.title} className="coverImg" src={coverUrl} />
+                      ) : (
+                        <span className="coverPlace">{ver.destination}</span>
+                      )}
+                      <span className="planTag">{ver.category}</span>
+                      <span className="coverDays">{ver.durationDays} ngày</span>
+                    </div>
+                  </Link>
+
+                  <div className="planInfo">
+                    <div className="creatorLine">
+                      <span className="creatorAvatar">{creatorName.charAt(0)}</span>
+                      <span>{creatorName}</span>
+                      <span className="verified">✓</span>
+                    </div>
+                    <Link className="planTitle textLink" href={`/listings/${plan.id}`}>
+                      {ver.title}
+                    </Link>
+                    <p>{ver.description}</p>
+
+                    <div className="planMeta">
+                      <span>{ver.destination}</span>
+                      <strong>{ver.priceAmount.toLocaleString("vi-VN")} {ver.priceCurrency}</strong>
+                    </div>
+
+                    <div className="cardActions">
+                      <button
+                        className={plan.isFavorited ? "saveButton saved" : "saveButton"}
+                        onClick={() => void toggleFavorite(plan)}
+                        type="button"
+                      >
+                        {plan.isFavorited ? "♥ Đã lưu" : "♡ Lưu"}
+                      </button>
+                      <Link className="viewButton" href={`/listings/${plan.id}`}>
+                        Xem chi tiết
+                      </Link>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        {totalPages > 1 ? (
+          <div className="paginationRow">
+            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} type="button">
+              ← Trang trước
+            </button>
+            <span>
+              Trang {page} / {totalPages}
+            </span>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} type="button">
+              Trang sau →
+            </button>
+          </div>
+        ) : null}
 
         <section className="creatorCallout">
-          <div><span className="eyebrow light">Dành cho creator</span><h2>Chia sẻ hành trình.<br />Tạo thêm giá trị.</h2></div>
-          <div><p>Biến trải nghiệm thật thành plan có cấu trúc và quản lý listing trong hồ sơ Creator.</p><Link href="/profile?mode=creator">Mở Creator Studio →</Link></div>
+          <div>
+            <span className="eyebrow light">Dành cho creator</span>
+            <h2>Chia sẻ hành trình.<br />Tạo thêm giá trị.</h2>
+          </div>
+          <div>
+            <p>Biến trải nghiệm thật thành plan có cấu trúc và quản lý listing trong Creator Studio.</p>
+            {user?.role === "creator" ? (
+              <Link href="/creator/listings">Vào Creator Studio →</Link>
+            ) : (
+              <Link href="/profile">Đăng ký thành Creator →</Link>
+            )}
+          </div>
         </section>
       </section>
-
-      {selected ? (
-        <div className="modalBackdrop" onMouseDown={() => setSelected(null)} role="presentation">
-          <section aria-modal="true" className="planModal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
-            <button aria-label="Đóng" className="modalClose" onClick={() => setSelected(null)} type="button">×</button>
-            <div className={`modalCover ${selected.tone}`}><span>{selected.place}</span><strong>{selected.days} ngày</strong></div>
-            <div className="modalBody">
-              <span className="eyebrow">{selected.tag}</span>
-              <h2>{selected.title}</h2>
-              <p>{selected.summary}</p>
-              <div className="modalFacts"><div><span>Creator</span><strong>{selected.creator}</strong></div><div><span>Đánh giá</span><strong>★ {selected.rating}</strong></div><div><span>Giá demo</span><strong>{selected.price}</strong></div></div>
-              <div className="modalActions">
-                <button disabled type="button">Thanh toán chưa triển khai</button>
-                <Link href={`/planner?destination=${encodeURIComponent(selected.place)}&source=marketplace`}>Dùng trong AI Planner →</Link>
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </main>
   );
 }

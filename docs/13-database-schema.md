@@ -10,6 +10,8 @@ migration và model trong các bước tiếp theo.
 | Table | Status | Nguồn trong codebase |
 | --- | --- | --- |
 | `users` | Implemented | `backend/app/modules/users/model.py`, migration `20260727_0001_create_users_table.py` |
+| `auth_sessions` | Implemented | `backend/app/modules/auth/model.py`, migration `20260727_0002_add_auth_and_profile.py` |
+| `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
 | `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
@@ -17,13 +19,18 @@ migration và model trong các bước tiếp theo.
 | `trips` | Planned | Liên quan module `plans` hiện đang dùng Pydantic/in-memory |
 | `itinerary_items` | Planned | Nên dùng thay `trip_places` vì lưu được lịch trình chi tiết |
 | `trip_members` | Planned | Cần cho chia sẻ trip |
-| `marketplace_plans` | Planned | Module marketplace hiện mới có endpoint placeholder |
-| `marketplace_plan_items` | Planned | Lưu itinerary mẫu của plan bán |
-| `orders` | Planned | Cần cho checkout |
-| `order_items` | Planned | Cho phép một order mua nhiều plan |
-| `payments` | Planned | Giao dịch thanh toán của order |
-| `reviews` | Planned | Review từ buyer cho marketplace plan |
-| `favorites` | Planned | User lưu marketplace plan yêu thích |
+| `marketplace_plans` | Implemented | Listing/sản phẩm ổn định của Marketplace, migration `20260727_0003_add_person_c_marketplace.py` |
+| `marketplace_plan_versions` | Implemented | Snapshot bất biến của listing/version, migration `20260727_0003_add_person_c_marketplace.py` |
+| `marketplace_plan_items` | Planned | Có thể thêm sau nếu cần lưu itinerary mẫu theo version |
+| `orders` | Implemented | Đơn mua listing version, migration `20260727_0003_add_person_c_marketplace.py` |
+| `order_items` | Implemented | Khóa marketplace plan version và giá mua, migration `20260727_0003_add_person_c_marketplace.py` |
+| `payments` | Implemented | Giao dịch thanh toán của order, migration `20260727_0003_add_person_c_marketplace.py` |
+| `payment_events` | Implemented | Event/IPN idempotent từ payment provider, migration `20260727_0003_add_person_c_marketplace.py` |
+| `entitlements` | Implemented | Quyền truy cập sau thanh toán, migration `20260727_0003_add_person_c_marketplace.py` |
+| `reviews` | Implemented | Review từ buyer cho marketplace plan, migration `20260727_0003_add_person_c_marketplace.py` |
+| `reports` | Implemented | Báo cáo listing cho admin xử lý, migration `20260727_0003_add_person_c_marketplace.py` |
+| `audit_events` | Implemented | Nhật ký hành động quan trọng, migration `20260727_0003_add_person_c_marketplace.py` |
+| `favorites` | Implemented | User lưu marketplace plan yêu thích, migration `20260727_0003_add_person_c_marketplace.py` |
 | `achievements` | Planned | Danh mục thành tựu |
 | `user_achievements` | Planned | Tiến độ/thời điểm user đạt thành tựu |
 
@@ -196,22 +203,45 @@ Lưu chuyến đi cá nhân do user tạo.
 
 ### `marketplace_plans`
 
-Lưu plan do creator đóng gói và bán.
+Lưu listing/sản phẩm ổn định do creator đóng gói và bán. Nội dung hiển thị,
+preview, giá và liên kết tới plan version của Planner nằm trong
+`marketplace_plan_versions` để version đã publish hoặc đã bán không bị thay đổi.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid/string PK | Opaque ID |
 | `creator_id` | FK `users.id` | Người bán |
-| `title` | varchar | Tên listing/plan |
-| `description` | text | Nội dung mô tả |
-| `destination` | varchar | Điểm đến |
-| `duration_days` | integer | Số ngày |
-| `price_amount` | integer | Giá theo đơn vị nhỏ nhất |
-| `price_currency` | varchar(3) | ISO currency |
-| `status` | varchar | draft, published, paused, retired |
-| `version` | integer | Version publish |
+| `status` | varchar | draft, published, unpublished, retired |
+| `current_published_version_id` | varchar, nullable | Version public hiện tại; service bảo vệ vì không tạo FK vòng |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+
+### `marketplace_plan_versions`
+
+Snapshot bất biến của một listing. Đây là bảng quan trọng nhất cho Người C vì
+checkout, entitlement và copy plan phải khóa đúng version đã mua.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `marketplace_plan_id` | FK `marketplace_plans.id` | Listing cha |
+| `version` | integer | Số version theo từng listing |
+| `source_plan_id` | varchar | Plan gốc do Planner quản lý; opaque vì Planner chưa có persistence |
+| `source_plan_version_id` | varchar | Version plan gốc được publish |
+| `title` | varchar | Tên listing/version |
+| `description` | text | Nội dung mô tả public |
+| `destination` | varchar | Điểm đến |
+| `duration_days` | integer | Số ngày |
+| `category` | varchar | Nhóm tìm kiếm/hiển thị |
+| `price_amount` | integer | Giá theo đơn vị nhỏ nhất |
+| `price_currency` | varchar(3) | ISO currency, mặc định `VND` |
+| `media_urls` | json | URL ảnh/video public cho listing |
+| `preview_snapshot` | json | Preview an toàn từ Planner tại thời điểm tạo version |
+| `moderation_status` | varchar | draft, pending_review, approved, rejected, published |
+| `rejection_reason` | text, nullable | Lý do admin từ chối |
+| `created_at` | timestamptz | Tạo lúc |
+| `updated_at` | timestamptz | Cập nhật lúc |
+| `published_at` | timestamptz, nullable | Thời điểm publish |
 
 ### `orders`
 
@@ -224,8 +254,12 @@ Lưu đơn mua plan.
 | `total_amount` | integer | Tổng tiền |
 | `currency` | varchar(3) | ISO currency |
 | `status` | varchar | pending, paid, fulfilled, cancelled, refunded |
+| `idempotency_key` | varchar, unique, nullable | Chống tạo checkout trùng |
+| `provider_request_id` | varchar, unique, nullable | Request ID gửi tới provider thanh toán |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+| `paid_at` | timestamptz, nullable | Thời điểm order được xác nhận paid |
+| `refunded_at` | timestamptz, nullable | Thời điểm refund được xác nhận |
 
 ### `payments`
 
@@ -237,12 +271,32 @@ Lưu giao dịch thanh toán của order.
 | `order_id` | FK `orders.id` | Order được thanh toán |
 | `provider` | varchar | Stripe, VNPay, Momo, manual |
 | `method` | varchar | card, wallet, bank_transfer |
+| `request_id` | varchar, unique, nullable | Request ID phía provider |
 | `transaction_id` | varchar, unique | Mã giao dịch provider |
 | `amount` | integer | Số tiền |
 | `currency` | varchar(3) | ISO currency |
 | `status` | varchar | pending, succeeded, failed, refunded |
+| `payment_url` | text, nullable | URL redirect thanh toán sandbox/production |
 | `paid_at` | timestamptz, nullable | Thời điểm thanh toán thành công |
 | `created_at` | timestamptz | Tạo lúc |
+| `updated_at` | timestamptz | Cập nhật lúc |
+
+### `payment_events`
+
+Lưu event/IPN từ provider để xử lý idempotent và phục vụ đối soát.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `payment_id` | FK `payments.id`, nullable | Payment liên quan nếu đã match được |
+| `order_id` | FK `orders.id`, nullable | Order liên quan nếu đã match được |
+| `provider` | varchar | momo, stripe, vnpay, manual |
+| `provider_event_id` | varchar | Mã event hoặc khóa idempotency từ provider |
+| `request_id` | varchar, nullable | Request ID trong payload |
+| `transaction_id` | varchar, nullable | Transaction ID trong payload |
+| `event_type` | varchar | Loại event |
+| `payload` | json | Payload đã được kiểm tra và được phép lưu |
+| `received_at` | timestamptz | Thời điểm nhận event |
 
 ### `reviews`
 
@@ -251,14 +305,66 @@ Review của buyer cho marketplace plan.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid/string PK | Opaque ID |
-| `user_id` | FK `users.id` | Buyer viết review |
+| `reviewer_id` | FK `users.id` | Buyer viết review |
 | `marketplace_plan_id` | FK `marketplace_plans.id` | Plan được review |
+| `marketplace_plan_version_id` | FK `marketplace_plan_versions.id`, nullable | Version được review |
 | `order_id` | FK `orders.id`, nullable | Order chứng minh quyền review |
 | `rating` | integer | 1 đến 5 |
-| `content` | text | Nội dung review |
-| `creator_reply` | text, nullable | Phản hồi của creator |
+| `comment` | text | Nội dung review |
+| `status` | varchar | published, hidden, flagged |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+
+### `entitlements`
+
+Quyền truy cập được cấp sau khi order/payment hợp lệ. Refund thu hồi entitlement
+nhưng không xóa bản plan buyer đã copy.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `user_id` | FK `users.id` | Buyer sở hữu quyền |
+| `order_id` | FK `orders.id` | Order cấp quyền |
+| `order_item_id` | FK `order_items.id`, unique | Mỗi order item cấp tối đa một entitlement |
+| `marketplace_plan_id` | FK `marketplace_plans.id` | Listing đã mua |
+| `marketplace_plan_version_id` | FK `marketplace_plan_versions.id` | Version đã mua |
+| `status` | varchar | active, revoked, refunded |
+| `copied_plan_id` | varchar, nullable | Plan copy do Planner tạo cho buyer |
+| `copied_plan_version_id` | varchar, nullable | Version copy của buyer |
+| `created_at` | timestamptz | Tạo lúc |
+| `revoked_at` | timestamptz, nullable | Thời điểm thu hồi quyền |
+
+### `reports`
+
+Nội dung user báo cáo để admin xử lý.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `reporter_id` | FK `users.id` | Người báo cáo |
+| `marketplace_plan_id` | FK `marketplace_plans.id` | Listing bị báo cáo |
+| `marketplace_plan_version_id` | FK `marketplace_plan_versions.id`, nullable | Version bị báo cáo |
+| `reason` | varchar | Lý do báo cáo |
+| `description` | text | Mô tả chi tiết |
+| `status` | varchar | pending, reviewed, dismissed, resolved |
+| `resolution` | text, nullable | Kết quả xử lý |
+| `created_at` | timestamptz | Tạo lúc |
+| `updated_at` | timestamptz | Cập nhật lúc |
+
+### `audit_events`
+
+Nhật ký hành động quan trọng như publish, payment, refund và admin review.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Opaque ID |
+| `actor_id` | FK `users.id`, nullable | User thực hiện hành động |
+| `action` | varchar | Tên hành động |
+| `resource_type` | varchar | Loại tài nguyên |
+| `resource_id` | varchar, nullable | ID tài nguyên |
+| `request_id` | varchar, nullable | Request ID để truy vết |
+| `metadata` | json | Metadata an toàn, không chứa secret/token |
+| `created_at` | timestamptz | Tạo lúc |
 
 ### `achievements`
 
@@ -336,13 +442,15 @@ Liên kết user với achievement.
 
 ### `order_items`
 
-Liên kết order với marketplace plans.
+Liên kết order với marketplace plan version đã mua. Đây là nơi khóa giá và
+version tại thời điểm checkout.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid/string PK | Opaque ID |
 | `order_id` | FK `orders.id` | Order |
 | `marketplace_plan_id` | FK `marketplace_plans.id` | Plan được mua |
+| `marketplace_plan_version_id` | FK `marketplace_plan_versions.id` | Version được mua |
 | `unit_amount` | integer | Giá tại thời điểm mua |
 | `currency` | varchar(3) | ISO currency |
 | `quantity` | integer | Mặc định 1 |
@@ -369,17 +477,24 @@ place_region_catalog_state 1--N place_region_snapshots
 place_region_catalog_state 0--1 current place_region_snapshots
 
 users 1--N marketplace_plans
-marketplace_plans 1--N marketplace_plan_items
-places 1--N marketplace_plan_items
+marketplace_plans 1--N marketplace_plan_versions
+marketplace_plans 1--N marketplace_plan_items (planned)
+places 1--N marketplace_plan_items (planned)
 
 users 1--N orders
 orders 1--N order_items
 marketplace_plans 1--N order_items
+marketplace_plan_versions 1--N order_items
 orders 1--N payments
+orders 1--N payment_events
+orders 1--N entitlements
 
 users 1--N reviews
 marketplace_plans 1--N reviews
+marketplace_plan_versions 1--N reviews
 users N--N marketplace_plans through favorites
+users 1--N reports
+users 1--N audit_events
 
 users N--N achievements through user_achievements
 ```
@@ -399,13 +514,24 @@ users N--N achievements through user_achievements
 - `trips.owner_id`, `itinerary_items.trip_id`, `itinerary_items.place_id`.
 - `itinerary_items`: unique mềm trên `trip_id, day_number, sort_order`.
 - `trip_members`: primary key `trip_id, user_id`.
-- `marketplace_plans.creator_id`, `marketplace_plans.status`.
-- `marketplace_plan_items`: unique mềm trên `marketplace_plan_id, day_number, sort_order`.
+- `marketplace_plans.creator_id`, `marketplace_plans.status`,
+  `marketplace_plans.current_published_version_id`.
+- `marketplace_plan_versions`: unique `marketplace_plan_id, version`; index
+  category, destination, price, moderation status, `source_plan_id` và
+  `source_plan_version_id`.
+- `marketplace_plan_items`: planned; nếu triển khai nên unique mềm trên
+  `marketplace_plan_version_id, day_number, sort_order`.
 - `orders.buyer_id`, `orders.status`.
-- `order_items.order_id`, `order_items.marketplace_plan_id`.
-- `payments.order_id`, `payments.transaction_id` unique.
-- `reviews`: cân nhắc unique `user_id, marketplace_plan_id` hoặc
-  `user_id, order_id, marketplace_plan_id` tùy business rule.
+- `order_items.order_id`, `order_items.marketplace_plan_id`,
+  `order_items.marketplace_plan_version_id`.
+- `payments.order_id`, `payments.request_id` unique,
+  `payments.transaction_id` unique.
+- `payment_events`: unique `provider, provider_event_id`; index `order_id`,
+  `request_id`, `transaction_id`.
+- `entitlements.order_item_id` unique; index user, order, status và version.
+- `reviews`: unique `reviewer_id, marketplace_plan_id`.
+- `reports`: index reporter, reason và status.
+- `audit_events`: index actor, action, resource và request ID.
 - `favorites`: primary key `user_id, marketplace_plan_id`.
 - `achievements.code` unique.
 - `user_achievements`: primary key `user_id, achievement_id`.
@@ -418,10 +544,13 @@ users N--N achievements through user_achievements
 3. Thêm `trips`, `trip_members`, `itinerary_items`.
 4. Chuyển module `plans` từ in-memory repository sang SQLAlchemy repository và
    lưu snapshot Place đã dùng trong lần lập plan.
-5. Thêm `marketplace_plans`, `marketplace_plan_items`, `favorites`.
-6. Thêm `orders`, `order_items`, `payments`.
-7. Thêm `reviews`.
-8. Thêm `achievements`, `user_achievements`.
+5. Đã thêm cụm Người C trong migration `20260727_0003`: `marketplace_plans`,
+   `marketplace_plan_versions`, `favorites`, `orders`, `order_items`,
+   `payments`, `payment_events`, `entitlements`, `reviews`, `reports` và
+   `audit_events`.
+6. Nếu cần query itinerary mẫu bằng SQL, thêm `marketplace_plan_items` theo
+   `marketplace_plan_versions`, không theo listing gốc.
+7. Thêm `achievements`, `user_achievements`.
 
 Trong code hiện tại, bước 4 là điểm chuyển quan trọng nhất: `PlanRepository` đang
 lưu trong memory, vì vậy dữ liệu plan sẽ mất khi backend restart.

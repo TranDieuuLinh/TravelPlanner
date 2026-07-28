@@ -9,7 +9,7 @@ export type TravelPlan = {
   checkReport?: { status: string; summary: string } | null;
 };
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
   const response = await fetch(`${apiBase}/plans/main`, {
