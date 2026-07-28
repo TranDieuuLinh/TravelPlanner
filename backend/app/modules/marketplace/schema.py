@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class PublishablePlanResponse(BaseModel):
@@ -121,3 +121,94 @@ class FavoriteResponse(BaseModel):
 class AdminModerationReviewRequest(BaseModel):
     decision: str  # "approve" | "reject"
     reason: str | None = None
+
+
+class ReviewCreateRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str
+
+
+class ReviewResponse(BaseModel):
+    id: str
+    reviewer_id: int = Field(alias="reviewerId")
+    reviewer_name: str = Field(alias="reviewerName")
+    reviewer_avatar_url: str | None = Field(default=None, alias="reviewerAvatarUrl")
+    marketplace_plan_id: str = Field(alias="marketplacePlanId")
+    rating: int
+    comment: str
+    status: str
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class ReviewPaginatedResponse(BaseModel):
+    items: list[ReviewResponse]
+    total: int
+    page: int
+    page_size: int = Field(alias="pageSize")
+    total_pages: int = Field(alias="totalPages")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ReportCreateRequest(BaseModel):
+    reason: str  # "scam" | "outdated" | "wrong_info" | "inappropriate"
+    description: str
+
+
+class ReportResponse(BaseModel):
+    id: str
+    reporter_id: int = Field(alias="reporterId")
+    reporter_name: str | None = Field(default=None, alias="reporterName")
+    marketplace_plan_id: str = Field(alias="marketplacePlanId")
+    reason: str
+    description: str
+    status: str
+    resolution: str | None = None
+    created_at: datetime = Field(alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class ReportResolveRequest(BaseModel):
+    decision: str  # "dismiss" | "unpublish" | "requestChanges"
+    note: str | None = None
+
+
+class AuditEventResponse(BaseModel):
+    id: str
+    actor_id: int | None = Field(default=None, alias="actorId")
+    action: str
+    resource_type: str = Field(alias="resourceType")
+    resource_id: str | None = Field(default=None, alias="resourceId")
+    request_id: str | None = Field(default=None, alias="requestId")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("metadata_", "metadata"),
+    )
+    created_at: datetime = Field(alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class AdminRefundRequest(BaseModel):
+    reason: str | None = None
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
+
+
+class BuyerPlanItemResponse(BaseModel):
+    order_id: str = Field(alias="orderId")
+    entitlement_id: str = Field(alias="entitlementId")
+    marketplace_plan_id: str = Field(alias="marketplacePlanId")
+    marketplace_plan_version_id: str = Field(alias="marketplacePlanVersionId")
+    title: str
+    destination: str
+    duration_days: int = Field(alias="durationDays")
+    copied_plan_id: str | None = Field(default=None, alias="copiedPlanId")
+    status: str
+    created_at: datetime = Field(alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True)
+

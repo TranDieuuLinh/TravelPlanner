@@ -5,9 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.modules.marketplace.model import (
     AuditEvent,
+    Entitlement,
     Favorite,
     MarketplacePlan,
     MarketplacePlanVersion,
+    Order,
+    Report,
+    Review,
 )
 from app.modules.users.model import User
 
@@ -195,3 +199,102 @@ class MarketplaceRepository:
         self.db.add(event)
         self.db.flush()
         return event
+
+    def get_audit_events(
+        self,
+        actor_id: int | None = None,
+        action: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+    ) -> Sequence[AuditEvent]:
+        stmt = select(AuditEvent)
+        if actor_id is not None:
+            stmt = stmt.where(AuditEvent.actor_id == actor_id)
+        if action and action.strip():
+            stmt = stmt.where(AuditEvent.action.ilike(f"%{action.strip()}%"))
+        if resource_type and resource_type.strip():
+            stmt = stmt.where(AuditEvent.resource_type == resource_type.strip())
+        if resource_id and resource_id.strip():
+            stmt = stmt.where(AuditEvent.resource_id == resource_id.strip())
+        stmt = stmt.order_by(desc(AuditEvent.created_at)).limit(100)
+        return self.db.scalars(stmt).all()
+
+    # Reviews
+    def get_review_by_user_and_plan(self, user_id: int, marketplace_plan_id: str) -> Review | None:
+        stmt = select(Review).where(
+            Review.reviewer_id == user_id,
+            Review.marketplace_plan_id == marketplace_plan_id,
+        )
+        return self.db.scalar(stmt)
+
+    def create_or_update_review(self, review: Review) -> Review:
+        self.db.add(review)
+        self.db.flush()
+        return review
+
+    def get_reviews_by_listing(
+        self,
+        marketplace_plan_id: str,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> tuple[Sequence[tuple[Review, User]], int]:
+        stmt = (
+            select(Review, User)
+            .join(User, User.id == Review.reviewer_id)
+            .where(Review.marketplace_plan_id == marketplace_plan_id, Review.status == "published")
+        )
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = self.db.scalar(count_stmt) or 0
+
+        offset = (page - 1) * page_size
+        stmt = stmt.order_by(desc(Review.created_at)).offset(offset).limit(page_size)
+        results = self.db.execute(stmt).all()
+        return results, total  # type: ignore
+
+    # Reports
+    def create_report(self, report: Report) -> Report:
+        self.db.add(report)
+        self.db.flush()
+        return report
+
+    def get_report_by_id(self, report_id: str) -> Report | None:
+        stmt = select(Report).where(Report.id == report_id)
+        return self.db.scalar(stmt)
+
+    def get_reports(
+        self,
+        status: str | None = None,
+        reason: str | None = None,
+    ) -> Sequence[tuple[Report, User, MarketplacePlan]]:
+        stmt = (
+            select(Report, User, MarketplacePlan)
+            .join(User, User.id == Report.reporter_id)
+            .join(MarketplacePlan, MarketplacePlan.id == Report.marketplace_plan_id)
+        )
+        if status and status.strip():
+            stmt = stmt.where(Report.status == status.strip())
+        if reason and reason.strip():
+            stmt = stmt.where(Report.reason == reason.strip())
+        stmt = stmt.order_by(desc(Report.created_at))
+        return self.db.execute(stmt).all()  # type: ignore
+
+    # Entitlements & Orders
+    def get_buyer_entitlements(
+        self, buyer_id: int
+    ) -> Sequence[tuple[Entitlement, MarketplacePlan, MarketplacePlanVersion]]:
+        stmt = (
+            select(Entitlement, MarketplacePlan, MarketplacePlanVersion)
+            .join(MarketplacePlan, MarketplacePlan.id == Entitlement.marketplace_plan_id)
+            .join(MarketplacePlanVersion, MarketplacePlanVersion.id == Entitlement.marketplace_plan_version_id)
+            .where(Entitlement.user_id == buyer_id)
+            .order_by(desc(Entitlement.created_at))
+        )
+        return self.db.execute(stmt).all()  # type: ignore
+
+    def get_order_by_id(self, order_id: str) -> Order | None:
+        stmt = select(Order).where(Order.id == order_id)
+        return self.db.scalar(stmt)
+
+    def get_entitlements_by_order_id(self, order_id: str) -> Sequence[Entitlement]:
+        stmt = select(Entitlement).where(Entitlement.order_id == order_id)
+        return self.db.scalars(stmt).all()
