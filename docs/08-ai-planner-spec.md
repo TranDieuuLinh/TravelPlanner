@@ -30,8 +30,10 @@ yêu cầu của user.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-`StubLLMClient` hiện chỉ trả văn bản placeholder. Phần lớn cấu trúc plan được tạo
-bởi các domain service theo quy tắc, chưa phải model thật.
+Planner và Finder hiện tạo cấu trúc plan bằng domain rule deterministic; không
+gọi LLM chỉ để bỏ kết quả. `StubLLMClient` vẫn phục vụ các luồng/provider khác
+đang cần gateway, nhưng output Main/Backup Plan hiện chưa phải output sinh bởi
+model.
 
 ## Luồng mục tiêu của MVP
 
@@ -94,6 +96,11 @@ Finder điền item cụ thể:
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
 
+Adapter Finder dùng `RepositoryFinderPlaceTool` trong runtime để tìm Place đang
+active theo `regionKey` và `focusTags`. Nếu catalog vùng trống nhưng có
+`SelectedPlace`, Finder vẫn có thể lập plan giới hạn trong danh sách đã xác
+nhận; cảnh báo giới hạn phải xuất hiện trong output.
+
 ### Giai đoạn 7: CheckOverall
 
 Check chạy theo lớp:
@@ -106,6 +113,12 @@ Check chạy theo lớp:
 
 Issue không chỉ là chuỗi văn bản; phải có code, severity, affected item,
 evidence, `canAutoFix` và phạm vi sửa.
+
+Trong implementation hiện tại, các check schema/allocation deterministic được
+chạy thật. Route, giờ hoạt động, availability và thời tiết live chưa có provider
+thì được trả thành issue `info`, không được mô tả như đã xác minh. Warning làm
+Main Plan ở trạng thái `draft` để sửa hoặc tạo backup; chỉ report `passed` mới
+khóa plan.
 
 ### Giai đoạn 8: Main Plan và Backup Plan
 

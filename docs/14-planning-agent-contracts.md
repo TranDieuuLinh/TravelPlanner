@@ -336,6 +336,16 @@ Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/
 `allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
 Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
 
+Planner MVP hiện dùng rule deterministic và không commit output văn bản của LLM.
+Số `selectedPlaces` được phân bổ bị giới hạn theo số activity block của pace và
+số ngày; phần vượt quá được trả với `reasonCode: "no_day_capacity"`. Khi catalog
+trống nhưng có Place đã xác nhận, Planner vẫn tạo DayBrief và cảnh báo Finder chỉ
+có thể dùng các Place đó. Khi cả hai nguồn đều trống, `dayBriefsReady` là
+`false`. `avoidPlaces` là constraint loại trừ: Place đã xác nhận nhưng xung đột
+được trả với `reasonCode: "avoided_by_user"` thay vì vẫn đưa vào DayBrief.
+`focusTags` giữ tối đa bốn interest/tag liên quan để chuyến đi ngắn không làm mất
+các interest đứng sau phần tử đầu tiên.
+
 ## Finder
 
 Finder nhận `MacroPlan`, `selectedPlaces`, `UserStatus` và `FinderPlanStatus`,
@@ -422,6 +432,26 @@ Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi a
 block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
 khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
 sinh số.
+
+Runtime phải inject `RepositoryFinderPlaceTool`; `EmptyFinderPlaceTool` chỉ dùng
+cho test hoặc fallback cô lập. Service nhận/trả qua `FinderAgentInput` và
+`FinderAgentOutput`; các helper `fill_main_plan`/`fill_backup_plan` chỉ được giữ
+để tương thích code cũ.
+
+Trước khi commit candidate, Finder kiểm tra:
+
+- tên Place không nằm trong `avoidPlaces`;
+- duration không vượt quá activity block;
+- intensity và `maxConsecutiveActiveMinutes`;
+- `availableAt`;
+- accessibility feature đáp ứng toàn bộ `accessibilityNeeds`;
+- constraint `avoid_outdoor` dựa trên type/tag, không suy luận chỉ từ tên.
+
+Khi chưa có route data, `maxWalkingMinutesPerDay` được trả thành warning thay vì
+giả vờ đã kiểm tra. `requiredRestMinutes` cũng tạo warning nếu skeleton không đủ
+thời gian nghỉ. Selected Place nhập tay không có ID giữ `placeId: null`; Finder
+dùng stable ref nội bộ và không biến display name thành ID giả. `sourceRefs` và
+`tags` của selected Place được giữ tới `PlanItem` và Backup Plan.
 
 ## Message envelope
 

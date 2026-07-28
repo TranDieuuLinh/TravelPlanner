@@ -8,7 +8,7 @@ from app.modules.places.model import Place
 
 
 class FinderPlace(BaseModel):
-    place_id: str = Field(alias="placeId")
+    place_id: str | None = Field(default=None, alias="placeId")
     name: str
     place_type: str = Field(alias="placeType")
     region_key: str = Field(alias="regionKey")
@@ -23,9 +23,19 @@ class FinderPlace(BaseModel):
         default=None,
         alias="activityIntensity",
     )
+    must_visit: bool = Field(default=False, alias="mustVisit")
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    accessibility_features: list[str] = Field(
+        default_factory=list,
+        alias="accessibilityFeatures",
+    )
     data_confidence: str = Field(default="low", alias="dataConfidence")
 
     model_config = {"populate_by_name": True}
+
+    @property
+    def stable_ref(self) -> str:
+        return self.place_id or self.name
 
 
 class FinderPlaceTool(Protocol):
@@ -122,5 +132,10 @@ class RepositoryFinderPlaceTool:
             ),
             typicalDurationMinutes=place.typical_duration_minutes,
             activityIntensity=metadata.get("activityIntensity"),
+            accessibilityFeatures=[
+                str(feature)
+                for feature in metadata.get("accessibilityFeatures", [])
+                if isinstance(feature, str)
+            ],
             dataConfidence=place.data_confidence,
         )

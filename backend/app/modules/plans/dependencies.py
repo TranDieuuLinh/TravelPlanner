@@ -34,13 +34,14 @@ def get_plan_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> PlanService:
     project_dir = Path(__file__).resolve().parents[4]
+    place_repository = SqlAlchemyPlaceRepository(db)
     statistics = AutoPlaceStatisticsService(
-        SqlAlchemyPlaceRepository(db),
+        place_repository,
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     llm_client = get_llm_client()
-    planner = PlannerService(llm_client, statistics)
-    finder = FinderService()
+    planner = PlannerService(statistics)
+    finder = FinderService(RepositoryFinderPlaceTool(place_repository))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=planner,

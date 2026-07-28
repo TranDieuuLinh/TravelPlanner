@@ -18,6 +18,7 @@ from app.modules.plans.schema import (
     MainPlanCreate,
     PlanBundleRead,
     PlanRead,
+    PlanningContextCreate,
 )
 from app.modules.plans.service import PlanService
 
@@ -80,6 +81,18 @@ async def create_main_plan(
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanRead:
     return await service.create_main_plan(payload)
+
+
+@router.post(
+    "/main/from-context",
+    response_model=PlanRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_main_plan_from_context(
+    payload: PlanningContextCreate,
+    service: Annotated[PlanService, Depends(get_plan_service)],
+) -> PlanRead:
+    return await service.create_main_plan_from_context(payload)
 
 
 @router.post("/{plan_id}/backup", response_model=PlanBundleRead, status_code=status.HTTP_201_CREATED)

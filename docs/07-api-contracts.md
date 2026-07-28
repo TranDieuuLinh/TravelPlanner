@@ -46,6 +46,7 @@ client không được tự chọn role.
 - `POST /api/plans/explore`
 - `POST /api/plans/explore/full/intake`
 - `POST /api/plans/main`
+- `POST /api/plans/main/from-context`
 - `POST /api/plans/{planId}/backup`
 
 Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
@@ -160,10 +161,47 @@ Contract bàn giao cho Planner dùng nguyên response ở trên:
 }
 ```
 
-Endpoint Planner tiêu thụ contract này thuộc module Planner downstream và chưa
-được triển khai trong Explorer. Planner dùng `explorer` để lập MacroPlan, đồng
-thời chuyển tiếp `intakeId + userId`. Finder downstream dùng đúng cặp khóa đó để
-query `user_must_place`; không có bước hỏi user lại.
+Khi upstream đã có output chuẩn hóa từ Explorer, Planner có thể nhận trực tiếp
+phần context mà không chạy lại Explorer qua
+`POST /api/plans/main/from-context`:
+
+```json
+{
+  "intent": {
+    "destination": "Hà Nội",
+    "budgetLevel": "medium",
+    "travelStyle": "local",
+    "pace": "balanced",
+    "interests": ["food", "culture"],
+    "mustVisitPlaces": [],
+    "avoidPlaces": [],
+    "constraints": [],
+    "clarifyingQuestions": []
+  },
+  "tripSpec": {
+    "days": 3,
+    "partySize": 2
+  },
+  "regionKey": "vn,ha-noi",
+  "selectedPlaces": [
+    {
+      "placeId": "place_123",
+      "name": "Văn Miếu",
+      "mustVisit": true,
+      "sourceRefs": ["source_123"]
+    }
+  ],
+  "userStatus": {}
+}
+```
+
+`selectedPlaces` vẫn là ranh giới xác nhận: endpoint không tự chuyển
+`placeCandidates` hoặc `foodPlaces` chưa xác nhận thành yêu cầu bắt buộc.
+
+Nếu cả catalog vùng và `selectedPlaces` đều trống, endpoint trả lỗi
+`PLANNER_INPUT_INSUFFICIENT` với HTTP 422. Plan chỉ có trạng thái `locked` khi
+`CheckOverall.status` là `passed`; khi có warning cần backup, plan giữ trạng thái
+`draft`; lỗi kiểm tra mức `error` tạo plan `failed`.
 
 Plan hiện bị mất khi tiến trình backend khởi động lại. Request tạo plan dự phòng
 chỉ hoạt động khi plan chính vẫn còn trong bộ nhớ của cùng tiến trình.

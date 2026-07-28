@@ -77,6 +77,11 @@ class PlanItem(BaseModel):
         default=None,
         alias="activityIntensity",
     )
+    source_refs: list[str] = Field(
+        default_factory=list,
+        alias="sourceRefs",
+    )
+    tags: list[str] = Field(default_factory=list)
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -220,6 +225,18 @@ class CheckIssue(BaseModel):
     code: str
     severity: str
     message: str
+    affected_item_ids: list[str] = Field(
+        default_factory=list,
+        alias="affectedItemIds",
+    )
+    evidence: list[str] = Field(default_factory=list)
+    can_auto_fix: bool = Field(default=False, alias="canAutoFix")
+    suggested_action: str | None = Field(
+        default=None,
+        alias="suggestedAction",
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class CheckReport(BaseModel):
@@ -254,6 +271,11 @@ class Plan(BaseModel):
         default_factory=list,
         alias="unscheduledPlaces",
     )
+    planning_assumptions: list[str] = Field(
+        default_factory=list,
+        alias="planningAssumptions",
+    )
+    warnings: list[str] = Field(default_factory=list)
     check_report: CheckReport | None = Field(default=None, alias="checkReport")
 
     model_config = {"populate_by_name": True}
