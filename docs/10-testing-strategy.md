@@ -2,10 +2,7 @@
 
 ## Hiện trạng
 
-Backend đã có pytest và database SQLite cô lập cho Auth, refresh session, CSRF,
-RBAC, Profile, creator application và contract Planner–Marketplace. Frontend
-hiện được bảo vệ bằng typecheck và production build; component test và
-Playwright vẫn là khoảng trống cần bổ sung ở các giai đoạn sau.
+Backend đã được kiểm thử tự động toàn diện với pytest và database SQLite cô lập (23+ test cases thuộc 7 test suite), bao gồm: Auth JWT cookie, refresh session, CSRF, RBAC, Profile, creator application, trọn bộ nghiệp vụ Marketplace (Creator listings, MoMo Sandbox IPN anti-replay, Entitlements, copy plan `copied_plan_id`, reviews, reports, refunds, audit logs), contract Planner–Marketplace, và bộ kiểm thử nghiệm thu E2E toàn trình (`backend/tests/test_person_c_e2e_week6.py`). Frontend hiện được bảo vệ bằng typecheck và production build.
 
 ## Các lớp kiểm thử
 

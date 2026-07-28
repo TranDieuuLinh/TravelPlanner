@@ -93,6 +93,14 @@ mất provenance. Xóa URL khỏi draft phải có chính sách rõ ràng với 
 - `Payment` và `Refund`
 - `PlanEntitlement`: quyền truy cập được cấp bởi order đã xác nhận.
 - `Review` và `Report`
+- **Triển khai DB Backend MVP**:
+  - `marketplace_plans`: id, creator_id, status, current_published_version_id.
+  - `marketplace_plan_versions`: id, marketplace_plan_id, version, source_plan_id, source_plan_version_id, title, description, destination, duration_days, category, price_amount, media_urls, preview_snapshot, moderation_status, published_at (Bất biến sau khi published).
+  - `orders` & `order_items`: Lưu thông tin đơn hàng, số tiền, buyer, status (`pending` -> `paid` / `refunded`).
+  - `payments` & `payment_events`: Ghi nhận giao dịch thanh toán MoMo Sandbox.
+  - `entitlements`: Cấp quyền truy cập duy nhất cho buyer sau khi order `paid`, liên kết với `copied_plan_id` của bản sao cá nhân.
+  - `reviews` & `reports`: Lưu đánh giá từ buyer đã mua (`active` entitlement) và báo cáo vi phạm listing.
+  - `audit_events`: Lưu nhật ký kiểm toán cho toàn bộ hành động quản trị viên (`action`, `resource_id`, `actor_id`, `metadata` ẩn từ khóa nhạy cảm).
 
 Order phải tham chiếu đến phiên bản listing và plan bất biến. Buyer chỉnh sửa một
 `TripPlan` cá nhân mới, không bao giờ sửa aggregate đã publish của creator.

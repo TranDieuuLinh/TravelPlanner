@@ -240,6 +240,12 @@ Planning job phải công bố stage như `exploring`, `planning`, `finding`,
 - `POST /api/orders/{orderId}/copy`: tạo TripPlan cá nhân từ version đã mua.
 - `POST /api/listings/{listingId}/reviews`: review từ buyer đủ điều kiện.
 - `POST /api/listings/{listingId}/reports`: báo cáo listing/version.
+- `GET /api/me/plans`: lấy thư viện các plan đã mua của buyer kèm `copiedPlanId` và trạng thái entitlement (`active` / `revoked`).
+- `POST /api/admin/creator-applications/{id}/approve`: admin duyệt creator application.
+- `POST /api/admin/listings/{versionId}/review`: admin duyệt/từ chối phiên bản listing (`decision`: `approve` | `reject`).
+- `POST /api/admin/reports/{reportId}/resolve`: admin xử lý báo cáo vi phạm (`decision`: `unpublish` | `dismiss`).
+- `POST /api/admin/orders/{orderId}/refund`: admin hoàn tiền đơn hàng, thu hồi quyền (`revoked`) nhưng bảo toàn bản sao `copiedPlanId`.
+- `GET /api/admin/audit-events`: tra cứu nhật ký kiểm toán quản trị viên (có ẩn dữ liệu nhạy cảm).
 
 Checkout request phải khóa version và số tiền phía server:
 
