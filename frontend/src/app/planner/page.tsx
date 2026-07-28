@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   createPlanFromExplorer,
@@ -10,6 +10,10 @@ import {
   type PlaceCategory,
   type TravelPlan
 } from "@/lib/plans";
+import {
+  PlannerMap,
+  type PlannerMapPlace
+} from "@/components/PlannerMap";
 
 type ChatMessage = {
   id: number;
@@ -66,11 +70,26 @@ function Planner() {
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
   const [selectedPlaceKeys, setSelectedPlaceKeys] = useState<Set<string>>(new Set());
+  const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const placeCandidates = exploreResult?.placeCandidates ?? [];
   const foodPlaces = exploreResult?.foodPlaces ?? [];
+  const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
+    const places = [
+      ...(exploreResult?.placeCandidates ?? []),
+      ...(exploreResult?.foodPlaces ?? [])
+    ];
+
+    return places.map((place, index) => ({
+      ...place,
+      mapKey:
+        place.placeId ??
+        `${place.category}-${place.name}-${place.address ?? "unknown"}-${index}`,
+      mapOrder: index + 1
+    }));
+  }, [exploreResult]);
 
   async function sendMessage() {
     const text = prompt.trim();
@@ -96,6 +115,7 @@ function Planner() {
       });
       setExploreResult(nextExploreResult);
       setPlan(null);
+      setSelectedMapPlaceKey(null);
       setSelectedPlaceKeys(
         new Set(
           [
@@ -312,6 +332,11 @@ function Planner() {
           )}
         </section>
 
+        <PlannerMap
+          onSelect={setSelectedMapPlaceKey}
+          places={mapPlaces}
+          selectedKey={selectedMapPlaceKey}
+        />
       </section>
     </main>
   );
