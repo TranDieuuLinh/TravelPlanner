@@ -59,7 +59,6 @@ class MainPlanWorkflow:
         )
         macro_plan = planner_output.macro_plan
         selected_place_names = [place.name for place in finder_places]
-        days = self.finder.fill_main_plan(
         finder_result = self.finder.fill_main_plan(
             macro_plan,
             intent,
