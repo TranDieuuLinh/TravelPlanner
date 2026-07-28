@@ -35,16 +35,9 @@ class BackupPlanCreate(BaseModel):
     avoid_outdoor: Annotated[bool, Field(alias="avoidOutdoor")] = False
 
 
-class TravelIntentRead(TravelIntent):
-    pass
-
-
-class PlanRead(Plan):
-    pass
-
-
-class CheckReportRead(CheckReport):
-    pass
+TravelIntentRead = TravelIntent
+PlanRead = Plan
+CheckReportRead = CheckReport
 
 
 class PlanBundleRead(BaseModel):

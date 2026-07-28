@@ -65,6 +65,7 @@ class AgentTrace(BaseModel):
 class PlaceCandidateHint(BaseModel):
     name: str
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    address: str | None = None
     source: str = "url_reel"
     source_url: Annotated[str | None, Field(default=None, alias="sourceUrl")]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -78,6 +79,7 @@ class UrlReelSignal(BaseModel):
     url: str
     platform: str | None = None
     extracted_places: Annotated[list[str], Field(alias="extractedPlaces")] = Field(default_factory=list)
+    extracted_place_details: Annotated[list[PlaceCandidateHint], Field(alias="extractedPlaceDetails")] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)

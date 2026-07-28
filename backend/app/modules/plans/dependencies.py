@@ -2,6 +2,7 @@ from app.integrations.llm.factory import get_llm_client
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
+from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.repository import PlanRepository
@@ -11,7 +12,8 @@ from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 
 
 def get_plan_service() -> PlanService:
-    planner = PlannerService(get_llm_client())
+    llm_client = get_llm_client()
+    planner = PlannerService(llm_client)
     finder = FinderService()
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -26,7 +28,7 @@ def get_plan_service() -> PlanService:
     )
     return PlanService(
         repository=PlanRepository(),
-        explorer=ExplorerService(),
+        explore_formatter=ExploreResponseFormatter(llm_client),
         main_workflow=main_workflow,
         backup_workflow=backup_workflow,
     )
