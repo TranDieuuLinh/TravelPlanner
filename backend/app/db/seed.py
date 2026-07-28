@@ -30,6 +30,35 @@ def seed_demo_marketplace(db: Session) -> None:
         db.add(creator)
         db.flush()
 
+    # 2. Ensure a demo traveler user exists
+    traveler = db.query(User).filter_by(email="traveler@example.com").first()
+    if not traveler:
+        traveler = User(
+            email="traveler@example.com",
+            full_name="Nguyễn Văn A (Demo Traveler)",
+            role="traveler",
+            status="active",
+            password_hash=hash_password("Password123!"),
+            bio="Yêu thích xê dịch, ẩm thực và khám phá văn hóa địa phương.",
+        )
+        db.add(traveler)
+        db.flush()
+
+    # 3. Ensure a demo admin user exists
+    admin = db.query(User).filter_by(email="admin@example.com").first()
+    if not admin:
+        admin = User(
+            email="admin@example.com",
+            full_name="Trần Quản Trị (Demo Admin)",
+            role="admin",
+            status="active",
+            password_hash=hash_password("Password123!"),
+            bio="Quản trị viên hệ thống VSF Travel Planner.",
+        )
+        db.add(admin)
+        db.flush()
+
+
     demo_listings = [
         {
             "id": "mp_demo_danang",
