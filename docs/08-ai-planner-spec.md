@@ -31,10 +31,19 @@ yêu cầu của user.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-Planner hiện dùng LLM để tạo `MacroPlan`/`DayBriefs`; code ứng dụng validate số
-ngày, region key và việc phân bổ mọi `selectedPlace`. Finder vẫn tạo lịch chi
-tiết bằng domain rule deterministic. Khi không cấu hình LLM, runtime Planner
-không tự rơi về một kế hoạch template rule-based.
+Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
+capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
+lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
+dụng validate số ngày, region key, journey phase và việc phân bổ mọi
+`selectedPlace`. Nếu model bỏ sót một `selectedPlace`, backend giữ địa điểm đó
+trong danh sách chưa phân bổ kèm reason code và cảnh báo thay vì làm mất dữ liệu
+hoặc làm hỏng toàn bộ request. Với các lỗi contract khác, backend yêu cầu model
+sửa lại output tối đa ba lần với feedback validation mới ở từng lượt trước khi
+trả lỗi provider. Nếu model tạo `allocatedSelectedPlaceRef` không tồn tại trong
+input `selectedPlaces`, backend loại ref đó và thêm cảnh báo; ref do model bịa
+không được truyền sang Finder. Finder vẫn tạo lịch
+chi tiết bằng domain rule deterministic.
+Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
 ## Luồng mục tiêu của MVP
 
@@ -89,6 +98,12 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 
 - mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
+- hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
+  động cho mọi ngày;
+- chuyến dài có thể tạo `journeyPhases` và mở rộng sang region lân cận đã được
+  tool kiểm chứng;
+- theme sáng tạo như biển, hải sản, hiking hoặc camping phải có capability
+  evidence từ Place active trước khi được mô tả như một khả năng có thật;
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
 - ghi rõ địa điểm nào chưa thể phân bổ.
@@ -98,6 +113,10 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 Finder điền item cụ thể:
 
 - chọn khung giờ theo giờ hoạt động và timing claim;
+- rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
+  category, tags, region, confidence và các dữ liệu có cấu trúc;
+- fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
+  dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
@@ -222,7 +241,17 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 - Version hóa prompt và output schema.
 - Ghi model/provider/version và phiên bản evaluation, không ghi toàn bộ prompt
   riêng tư.
-- Đặt timeout, retry có giới hạn và circuit breaker.
+- Đặt timeout và retry có giới hạn. Gemini runtime hiện retry tối đa ba lần với
+  backoff cho lỗi mạng, `429`, `500`, `502`, `503` và `504`; lỗi provider được
+  chuyển thành lỗi API có kiểm soát mà không ghi response hoặc API key vào log.
+  Không áp dụng khoảng chờ cố định giữa các call thành công. Khi Gemini trả
+  `Retry-After` hoặc `google.rpc.RetryInfo.retryDelay`, limiter dùng thời gian
+  provider yêu cầu (tối đa 60 giây) trước khi retry. `GEMINI_API_KEY` nhận một
+  key hoặc nhiều key phân tách bằng dấu phẩy. Client dùng chung pool key trong
+  tiến trình; khi key hiện tại trả `429`, key đó được cooldown theo chỉ dẫn của
+  provider và call chuyển sang key kế tiếp ngay. Key trả `401/403` bị loại khỏi
+  pool cho đến khi tiến trình khởi động lại. API key không được ghi vào log.
+  Circuit breaker vẫn là phần chưa triển khai.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.

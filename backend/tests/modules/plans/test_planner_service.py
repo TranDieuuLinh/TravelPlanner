@@ -71,7 +71,8 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert output.day_briefs_ready is True
     assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
     assert "generator=llm" in output.trace.notes
-    assert "promptVersion=macro_planner_v1" in output.trace.notes
+    assert "researchPromptVersion=journey_research_v1" in output.trace.notes
+    assert "promptVersion=macro_planner_v2" in output.trace.notes
     assert "snapshotId=snapshot-3" in output.trace.notes
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
@@ -125,12 +126,17 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
         )
     )
 
+    assert len(llm.calls) == 2
+    assert json.loads(llm.calls[0][1])["stage"] == "research"
     assert "Macro Planner" in llm.system_prompt
     payload = json.loads(llm.user_payload)
-    assert payload["promptVersion"] == "macro_planner_v1"
+    assert payload["stage"] == "macro_plan"
+    assert payload["promptVersion"] == "macro_planner_v2"
     assert payload["plannerInput"]["regionContext"]["plannerSignals"][
         "candidateAreas"
     ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"
+    assert payload["researchProposal"]["varietyStrategy"]
+    assert "verifiedResearch" in payload
 
 
 def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> None:
@@ -212,6 +218,128 @@ def test_planner_does_not_allocate_explicitly_avoided_place() -> None:
     assert output.unallocated_selected_places[0].reason_code == "avoided_by_user"
 
 
+def test_planner_preserves_selected_place_omitted_by_llm() -> None:
+    service = PlannerService(
+        FakeStatisticsProvider(),
+        OmittingSelectedPlaceLLM(),
+    )
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=1),
+            region_key="vn,ha-noi",
+            selected_places=[
+                SelectedPlaceContext(
+                    placeId="place-kept",
+                    name="Kept Place",
+                    mustVisit=True,
+                ),
+                SelectedPlaceContext(
+                    placeId="place-omitted",
+                    name="Omitted Place",
+                    mustVisit=True,
+                ),
+            ],
+        )
+    )
+
+    assert output.macro_plan.day_briefs[0].allocated_selected_place_refs == [
+        "place-kept"
+    ]
+    assert output.unallocated_selected_places[0].place.place_id == (
+        "place-omitted"
+    )
+    assert output.unallocated_selected_places[0].reason_code == (
+        "planner_omitted_selected_place"
+    )
+    assert any(
+        "backend đã giữ" in warning
+        for warning in output.warnings
+    )
+
+
+def test_planner_drops_hallucinated_selected_place_reference() -> None:
+    llm = HallucinatingSelectedRefLLM()
+    service = PlannerService(FakeStatisticsProvider(), llm)
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=1),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert output.macro_plan.day_briefs[0].allocated_selected_place_refs == []
+    assert output.unallocated_selected_places == []
+    assert any(
+        "backend đã loại bỏ" in warning
+        for warning in output.warnings
+    )
+    assert "repairAttempts=0" in output.trace.notes
+
+
+def test_planner_repairs_invalid_macro_contract_once() -> None:
+    llm = RepairingPlannerLLM()
+    service = PlannerService(FakeStatisticsProvider(), llm)
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=2),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert output.day_briefs_ready is True
+    assert [brief.day for brief in output.macro_plan.day_briefs] == [1, 2]
+    assert llm.macro_calls == 2
+    assert llm.repair_feedback == (
+        "MacroPlan must contain consecutive requested days."
+    )
+
+
+def test_planner_can_repair_invalid_macro_contract_three_times() -> None:
+    llm = MultiRepairPlannerLLM(valid_on_macro_call=4)
+    service = PlannerService(FakeStatisticsProvider(), llm)
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=2),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert output.day_briefs_ready is True
+    assert llm.macro_calls == 4
+    assert "repairAttempts=3" in output.trace.notes
+
+
+def test_planner_stops_after_three_failed_repairs() -> None:
+    llm = MultiRepairPlannerLLM(valid_on_macro_call=5)
+    service = PlannerService(FakeStatisticsProvider(), llm)
+
+    with pytest.raises(
+        RuntimeError,
+        match="after 3 repair attempts",
+    ):
+        asyncio.run(
+            service.create_main_macro_plan(
+                _intent(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[],
+            )
+        )
+
+    assert llm.macro_calls == 4
+
+
 def test_planner_is_ready_with_confirmed_place_when_region_is_empty() -> None:
     service = _planner(FakeStatisticsProvider(place_count=0))
 
@@ -232,6 +360,27 @@ def test_planner_is_ready_with_confirmed_place_when_region_is_empty() -> None:
 
     assert output.day_briefs_ready is True
     assert output.trace.status.value == "completed"
+
+
+def test_long_road_trip_uses_multiple_journey_phases() -> None:
+    service = _planner(FakeStatisticsProvider())
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent().model_copy(
+                update={"days": 7, "travel_style": "phượt"}
+            ),
+            trip_spec=TripPlanningSpec(days=7),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert output.macro_plan.journey_style == "road_trip"
+    assert [
+        (phase.start_day, phase.end_day)
+        for phase in output.macro_plan.journey_phases
+    ] == [(1, 3), (4, 7)]
 
 
 def test_main_workflow_accepts_structured_selected_places() -> None:
@@ -582,6 +731,52 @@ class FakePlannerLLM:
         intent = planner_input["intent"]
         trip_spec = planner_input["tripSpec"]
         context = planner_input["regionContext"]
+        if envelope["stage"] == "research":
+            capabilities = [
+                interest
+                for interest in intent["interests"]
+                if interest
+                in {
+                    "beach",
+                    "seafood",
+                    "mountain",
+                    "hiking",
+                    "food",
+                    "coffee",
+                    "culture",
+                    "nature",
+                    "nightlife",
+                    "camping",
+                    "shopping",
+                    "wellness",
+                }
+            ] or ["culture"]
+            return json.dumps(
+                {
+                    "journeyStyle": (
+                        "road_trip"
+                        if trip_spec["days"] >= 7
+                        else "local_base"
+                    ),
+                    "varietyStrategy": (
+                        "Vary themes according to duration and verified evidence."
+                    ),
+                    "themeQueries": [
+                        {
+                            "theme": capability,
+                            "capabilities": [capability],
+                            "preferredRegionKey": context["regionKey"],
+                            "rationale": "Verify the proposed theme.",
+                        }
+                        for capability in capabilities[:4]
+                    ],
+                    "expandBeyondRoot": trip_spec["days"] >= 7,
+                    "nearbyCapabilities": capabilities[:4],
+                    "maxDistanceKm": 150,
+                },
+                ensure_ascii=False,
+            )
+
         selected = sorted(
             planner_input["selectedPlaces"],
             key=lambda place: (
@@ -686,6 +881,31 @@ class FakePlannerLLM:
                     "title": f"Kế hoạch {intent['destination']}",
                     "destination": intent["destination"],
                     "regionKey": context["regionKey"],
+                    "journeyStyle": envelope["researchProposal"][
+                        "journeyStyle"
+                    ],
+                    "journeyPhases": (
+                        [
+                            {
+                                "startDay": 1,
+                                "endDay": 3,
+                                "baseRegionKey": context["regionKey"],
+                                "theme": "Di chuyển và khám phá chặng đầu",
+                                "movementGoal": "Phượt có điểm dừng",
+                                "stayNights": 2,
+                            },
+                            {
+                                "startDay": 4,
+                                "endDay": trip_spec["days"],
+                                "baseRegionKey": context["regionKey"],
+                                "theme": "Ở lại và khám phá sâu",
+                                "movementGoal": "Cân bằng di chuyển với trải nghiệm",
+                                "stayNights": trip_spec["days"] - 4,
+                            },
+                        ]
+                        if trip_spec["days"] >= 7
+                        else []
+                    ),
                     "dayBriefs": day_briefs,
                 },
                 "unallocatedSelectedPlaces": unallocated,
@@ -700,11 +920,85 @@ class RecordingPlannerLLM(FakePlannerLLM):
     def __init__(self) -> None:
         self.system_prompt = ""
         self.user_payload = ""
+        self.calls: list[tuple[str, str]] = []
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         self.system_prompt = system_prompt
         self.user_payload = user_payload
+        self.calls.append((system_prompt, user_payload))
         return await super().generate_json(system_prompt, user_payload)
+
+
+class OmittingSelectedPlaceLLM(FakePlannerLLM):
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        raw = await super().generate_json(system_prompt, user_payload)
+        envelope = json.loads(user_payload)
+        if envelope["stage"] == "research":
+            return raw
+
+        draft = json.loads(raw)
+        for day in draft["macroPlan"]["dayBriefs"]:
+            day["allocatedSelectedPlaceRefs"] = [
+                stable_ref
+                for stable_ref in day["allocatedSelectedPlaceRefs"]
+                if stable_ref != "place-omitted"
+            ]
+        return json.dumps(draft, ensure_ascii=False)
+
+
+class HallucinatingSelectedRefLLM(FakePlannerLLM):
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        envelope = json.loads(user_payload)
+        raw = await super().generate_json(system_prompt, user_payload)
+        if envelope["stage"] == "research":
+            return raw
+
+        draft = json.loads(raw)
+        draft["macroPlan"]["dayBriefs"][0][
+            "allocatedSelectedPlaceRefs"
+        ] = ["hallucinated-place"]
+        return json.dumps(draft, ensure_ascii=False)
+
+
+class RepairingPlannerLLM(FakePlannerLLM):
+    def __init__(self) -> None:
+        self.macro_calls = 0
+        self.repair_feedback = ""
+
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        envelope = json.loads(user_payload)
+        raw = await super().generate_json(system_prompt, user_payload)
+        if envelope["stage"] == "research":
+            return raw
+
+        self.macro_calls += 1
+        if envelope["stage"] == "macro_plan_repair":
+            self.repair_feedback = envelope["validationFeedback"]
+            return raw
+
+        draft = json.loads(raw)
+        draft["macroPlan"]["dayBriefs"][1]["day"] = 3
+        return json.dumps(draft, ensure_ascii=False)
+
+
+class MultiRepairPlannerLLM(FakePlannerLLM):
+    def __init__(self, *, valid_on_macro_call: int) -> None:
+        self.valid_on_macro_call = valid_on_macro_call
+        self.macro_calls = 0
+
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        envelope = json.loads(user_payload)
+        raw = await super().generate_json(system_prompt, user_payload)
+        if envelope["stage"] == "research":
+            return raw
+
+        self.macro_calls += 1
+        if self.macro_calls >= self.valid_on_macro_call:
+            return raw
+
+        draft = json.loads(raw)
+        draft["macroPlan"]["dayBriefs"][1]["day"] = 3
+        return json.dumps(draft, ensure_ascii=False)
 
 
 class FakeStatisticsProvider:

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     enable_llm_explore_formatter: bool = False
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
     place_resolver_provider: str = "nominatim"
