@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,12 +43,16 @@ class AutoPlaceStatisticsService:
         output_path: Path,
         *,
         stale_after_days: int = 30,
+        snapshot_ttl_hours: int = 24,
     ) -> None:
         if stale_after_days < 1:
             raise ValueError("stale_after_days must be at least 1")
+        if snapshot_ttl_hours < 1:
+            raise ValueError("snapshot_ttl_hours must be at least 1")
         self.repository = repository
         self.output_path = output_path.resolve()
         self.stale_after_days = stale_after_days
+        self.snapshot_ttl_hours = snapshot_ttl_hours
 
     def refresh(self, *, force: bool = False) -> AutoStatisticsRefreshResult:
         source_signature = self.repository.source_signature()
@@ -110,6 +114,7 @@ class AutoPlaceStatisticsService:
             and current_snapshot.algorithm_version == ALGORITHM_VERSION
             and current_snapshot.source_fingerprint
             == source_signature["fingerprint"]
+            and _is_future(current_snapshot.expires_at, utc_now())
         ):
             return PlannerRegionStatisticsResult(
                 status="cached",
@@ -141,6 +146,7 @@ class AutoPlaceStatisticsService:
             source_signature=source_signature,
             regions=regions,
             generated_at=generated_at,
+            expires_at=generated_at + timedelta(hours=self.snapshot_ttl_hours),
         )
         return PlannerRegionStatisticsResult(
             status="refreshed",
@@ -189,3 +195,11 @@ class AutoPlaceStatisticsService:
             os.replace(temporary_path, path)
         finally:
             temporary_path.unlink(missing_ok=True)
+
+
+def _is_future(value: datetime | None, now: datetime) -> bool:
+    if value is None:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value > now

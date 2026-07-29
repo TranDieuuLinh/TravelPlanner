@@ -99,6 +99,18 @@ async def create_main_plan_from_explorer(
     return await service.create_main_plan_from_explorer(payload)
 
 
+@router.post(
+    "/main/from-context",
+    response_model=PlanRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_main_plan_from_context(
+    payload: PlanningContextCreate,
+    service: Annotated[PlanService, Depends(get_plan_service)],
+) -> PlanRead:
+    return await service.create_main_plan_from_context(payload)
+
+
 @router.post("/{plan_id}/backup", response_model=PlanBundleRead, status_code=status.HTTP_201_CREATED)
 async def create_backup_plan(
     plan_id: str,

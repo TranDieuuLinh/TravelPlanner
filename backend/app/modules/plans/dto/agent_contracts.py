@@ -162,6 +162,9 @@ class RegionStatisticsContext(BaseModel):
     geographic_summary: Annotated[
         dict[str, Any], Field(alias="geographicSummary")
     ] = Field(default_factory=dict)
+    planner_eligible: Annotated[
+        dict[str, Any], Field(alias="plannerEligible")
+    ] = Field(default_factory=dict)
     area_profiles: Annotated[list[dict[str, Any]], Field(alias="areaProfiles")] = (
         Field(default_factory=list)
     )
@@ -414,6 +417,17 @@ class PlannerAgentOutput(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerMacroPlanDraft(BaseModel):
+    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
+    unallocated_selected_places: Annotated[
+        list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
+    ] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 

@@ -37,6 +37,7 @@ class PlaceStatisticsRepository(Protocol):
         source_signature: dict[str, str | int],
         regions: list[dict],
         generated_at: datetime,
+        expires_at: datetime,
     ) -> PlaceRegionSnapshot: ...
 
 
@@ -145,6 +146,7 @@ class SqlAlchemyPlaceRepository:
         source_signature: dict[str, str | int],
         regions: list[dict],
         generated_at: datetime,
+        expires_at: datetime,
     ) -> PlaceRegionSnapshot:
         state = self.session.scalar(
             select(PlaceRegionCatalogState)
@@ -185,7 +187,7 @@ class SqlAlchemyPlaceRepository:
                 "regions": regions,
             },
             generated_at=generated_at,
-            expires_at=None,
+            expires_at=expires_at,
         )
         self.session.add(snapshot)
         self.session.flush()

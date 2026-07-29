@@ -204,6 +204,14 @@ class PlanService:
         self.repository.save(plan)
         return plan
 
+    async def create_main_plan_from_context(
+        self,
+        payload: PlanningContextCreate,
+    ) -> Plan:
+        plan = await self.main_workflow.run_from_context(payload)
+        self.repository.save(plan)
+        return plan
+
     async def create_backup_plan(self, plan_id: str, payload: BackupPlanCreate) -> PlanBundleRead:
         main_plan = self.repository.get(plan_id)
         backup_plan, validation = await self.backup_workflow.run(main_plan, payload)

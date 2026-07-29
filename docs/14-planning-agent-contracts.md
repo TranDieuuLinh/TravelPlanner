@@ -267,14 +267,25 @@ Input chính:
       "regionKey": "vn,ha-noi",
       "snapshotId": "snapshot_123",
       "catalogVersion": 3,
-      "algorithmVersion": "auto_statistics_v2_1",
+      "algorithmVersion": "auto_statistics_v3_0",
       "generatedAt": "2026-07-28T10:00:00+00:00"
     },
     "placeCount": 100,
+    "activePlaceCount": 90,
     "tagCounts": {},
     "timeOfDayCoverage": {},
-    "areaProfiles": [],
-    "plannerSignals": {}
+    "plannerEligible": {},
+    "areaProfiles": [
+      {
+        "regionKey": "vn,ha-noi,hoan-kiem",
+        "activePlaceCount": 25,
+        "topTags": ["culture", "food"]
+      }
+    ],
+    "plannerSignals": {
+      "statisticsLevel": "smallest_available_region",
+      "candidateAreas": []
+    }
   },
   "selectedPlaces": [],
   "placeCandidates": [],
@@ -336,15 +347,18 @@ Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/
 `allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
 Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
 
-Planner MVP hiện dùng rule deterministic và không commit output văn bản của LLM.
-Số `selectedPlaces` được phân bổ bị giới hạn theo số activity block của pace và
-số ngày; phần vượt quá được trả với `reasonCode: "no_day_capacity"`. Khi catalog
-trống nhưng có Place đã xác nhận, Planner vẫn tạo DayBrief và cảnh báo Finder chỉ
-có thể dùng các Place đó. Khi cả hai nguồn đều trống, `dayBriefsReady` là
-`false`. `avoidPlaces` là constraint loại trừ: Place đã xác nhận nhưng xung đột
-được trả với `reasonCode: "avoided_by_user"` thay vì vẫn đưa vào DayBrief.
-`focusTags` giữ tối đa bốn interest/tag liên quan để chuyến đi ngắn không làm mất
-các interest đứng sau phần tử đầu tiên.
+Planner MVP dùng LLM với prompt version `macro_planner_v1` để sinh
+`PlannerMacroPlanDraft`. Model nhận intent, trip spec, selected places và
+statistics của các khu vực nhỏ nhất đang có. Code không tự sinh lại template khi
+LLM lỗi; thay vào đó validate structured output: đủ ngày liên tiếp, destination
+và root region không đổi, target region thuộc snapshot, và mọi `selectedPlace`
+phải được phân bổ đúng một lần hoặc nằm trong `unallocatedSelectedPlaces`.
+
+Statistics dùng riêng `plannerEligible` và `plannerSignals` từ Place active;
+metric catalog tổng vẫn được giữ để quan sát chất lượng dữ liệu. Khi catalog
+active trống nhưng có Place đã xác nhận, Planner vẫn có thể tạo DayBrief và cảnh
+báo Finder chỉ dùng các Place đó. Khi cả hai nguồn đều trống,
+`dayBriefsReady=false`.
 
 ## Finder
 
