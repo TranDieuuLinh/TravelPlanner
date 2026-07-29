@@ -14,6 +14,7 @@ from app.modules.places.model import Place
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.schema import MainPlanCreate
+from tests.modules.plans.test_planner_service import FakePlannerLLM
 
 
 def test_place_repository_imports_without_statistics_cycle() -> None:
@@ -35,7 +36,13 @@ def test_place_repository_imports_without_statistics_cycle() -> None:
     assert result.stdout.strip() == "SqlAlchemyPlaceRepository"
 
 
-def test_runtime_finder_uses_place_repository_and_fills_catalog_places() -> None:
+def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.dependencies.get_llm_client",
+        lambda: FakePlannerLLM(),
+    )
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -108,7 +115,12 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places() -> None
 def test_context_endpoint_builds_plan_from_normalized_input(
     client: TestClient,
     db_session: Session,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.dependencies.get_llm_client",
+        lambda: FakePlannerLLM(),
+    )
     db_session.add_all(
         [
             _place("context-museum", "Context Museum", "museum", ["culture"]),

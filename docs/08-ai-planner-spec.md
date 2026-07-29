@@ -25,15 +25,16 @@ yêu cầu của user.
 ## Luồng xử lý hiện tại
 
 1. `ExplorerService` chuẩn hóa ý định và tạo câu hỏi làm rõ.
-2. `PlannerService` tạo mô tả cấp cao cho từng ngày.
+2. `PlannerService` gọi LLM bằng structured output để tạo mô tả cấp cao cho
+   từng ngày từ Explorer context và snapshot thống kê khu vực nhỏ.
 3. `FinderService` điền khung giờ và địa điểm đã chọn.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-Planner và Finder hiện tạo cấu trúc plan bằng domain rule deterministic; không
-gọi LLM chỉ để bỏ kết quả. `StubLLMClient` vẫn phục vụ các luồng/provider khác
-đang cần gateway, nhưng output Main/Backup Plan hiện chưa phải output sinh bởi
-model.
+Planner hiện dùng LLM để tạo `MacroPlan`/`DayBriefs`; code ứng dụng validate số
+ngày, region key và việc phân bổ mọi `selectedPlace`. Finder vẫn tạo lịch chi
+tiết bằng domain rule deterministic. Khi không cấu hình LLM, runtime Planner
+không tự rơi về một kế hoạch template rule-based.
 
 ## Luồng mục tiêu của MVP
 
@@ -87,6 +88,7 @@ luôn ưu tiên hơn profile dài hạn.
 Planner tạo `MacroPlan` và `DayBriefs`:
 
 - mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
+- ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
 - ghi rõ địa điểm nào chưa thể phân bổ.
