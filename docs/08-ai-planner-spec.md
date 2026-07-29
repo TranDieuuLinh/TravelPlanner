@@ -48,28 +48,42 @@ Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch t
 Khi intake có URL video, Explorer dùng transcript STT, metadata và frame vision
 để trích từng stop theo thứ tự. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
-nguồn có nói rõ. Planner ưu tiên blueprint này; Finder tạo skeleton
+nguồn có nói rõ. STT chịu trách nhiệm chính cho day/order/activity và
+`searchRegion`; OCR chịu trách nhiệm chính cho chữ trên bảng hiệu, địa chỉ và
+giá; caption bổ sung bối cảnh. Evidence ngắn được giữ riêng trong
+`sourceEvidence.stt`, `sourceEvidence.ocr` và `sourceEvidence.caption`.
+Planner ưu tiên blueprint này; Finder tạo skeleton
 `source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
 của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
 `UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
 
 Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `high`.
-Frame được lấy thích nghi theo toàn bộ duration, tối đa 48 frame và xử lý theo
-batch 16 ảnh. Tối đa hai batch frame vision được gọi song song, nhưng kết quả
-được hợp nhất lại theo thứ tự frame gốc. STT và frame vision chạy song song;
-observation thành công được giữ lại nếu một batch khác lỗi. OCR ảnh/screenshot
-người dùng upload dùng cùng model cấu hình. TikTok photo post vẫn không được tải
-tự động và yêu cầu upload screenshot.
+Frame được lấy thích nghi theo toàn bộ duration, không quá một frame mỗi giây,
+tối đa 48 frame và xử lý theo
+batch tối đa 10 ảnh; frame được chia đều giữa các batch để giảm thời gian chờ
+batch lớn nhất. Tối đa năm batch frame vision được gọi song song bằng năm API key
+khác nhau, ưu tiên các key cuối trong pool `GEMINI_API_KEY`; mức song song tự
+giảm khi thiếu key hoặc batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
+STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
+một nguồn loại bỏ nguồn còn lại. Marker ngày rõ ràng trong STT được dùng để sửa
+day label OCR mâu thuẫn trong cùng chuỗi itinerary. Khi STT chuyển một ngày sang
+day trip vùng khác, vùng đó trở thành `searchRegion` cho các stop của ngày mà
+không thay đổi trip base. Observation thành công được
+giữ lại nếu một batch khác lỗi. OCR ảnh/screenshot người dùng upload dùng cùng
+model cấu hình. Không áp dụng giới hạn số place candidate có evidence sau bước
+gộp; giới hạn 48 chỉ áp dụng cho số frame video được lấy mẫu.
+TikTok photo post vẫn không được tải tự động và yêu cầu upload screenshot.
 
-Số ngày không còn nhận fallback UI như một ràng buộc của user:
+Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ:
 
 - nếu user nói rõ số ngày, số đó luôn thắng;
-- nếu user không nói số ngày và URL/OCR có `sourceDay`, dùng cấu trúc ngày của
-  nguồn;
-- nếu nguồn chỉ có danh sách stop theo thứ tự, suy ra số ngày tối thiểu theo
-  pace để xếp hết stop;
-- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, Finder chỉ được bổ
-  sung catalog vào các ngày trống; ngày đã có stop URL/OCR vẫn giữ nguyên nguồn;
+- nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và Finder bổ sung catalog vào
+  ngày trống hoặc ngày có ít stop hơn mức tối thiểu theo pace; stop URL/OCR vẫn
+  được giữ nguyên và địa điểm bổ sung phải mang source `finder_suggestion`;
+- nếu URL/OCR cần hơn 3 ngày, dùng cấu trúc `sourceDay` hoặc suy ra số ngày tối
+  thiểu theo pace để xếp hết stop;
+- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, áp dụng cùng quy tắc:
+  bổ sung catalog vào ngày trống hoặc ngày nguồn còn thưa;
 - nếu user yêu cầu ít ngày hơn, toàn bộ stop không có `sourceDay` được phân bổ
   lại theo thứ tự trong đúng số ngày user yêu cầu. Stop có ngày nguồn rõ ràng
   vượt ngoài phạm vi vẫn đi vào `UnscheduledPlace`, không bị âm thầm đổi ngày.
@@ -143,10 +157,11 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 
 Finder điền item cụ thể:
 
-- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder không
-  bổ sung catalog vào ngày đã có stop nguồn;
-- Finder được bổ sung catalog vào ngày trống khi user đã nói rõ số ngày và số
-  ngày đó dài hơn coverage của URL/OCR; prompt thuần vẫn cho phép đề xuất;
+- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder chỉ bổ
+  sung catalog khi ngày trống hoặc số stop nguồn thấp hơn mức tối thiểu theo
+  pace (`relaxed=2`, `balanced=3`, `packed=4`);
+- Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
+  địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
 - chọn khung giờ theo giờ hoạt động và timing claim;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
@@ -238,6 +253,12 @@ tuyến đường hoặc danh tính địa điểm.
   phải giải thích.
 - Candidate được tự động lưu theo lựa chọn sản phẩm no-interruption, nhưng phải
   giữ confidence và resolution status để Finder/Check có thể cảnh báo.
+- Không chuyển caption/câu quảng bá/danh sách nhiều venue thành một PlanItem.
+  URL place chưa resolve được danh tính cụ thể và tọa độ phải ở lại lớp
+  provenance, không xuất hiện trong plan; phần thiếu được Finder điền bằng Place
+  đã chuẩn hóa khi policy cho phép.
+- `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
+  nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
 - Phân biệt claim từ nguồn, dữ liệu provider xác minh và suy luận của model.
 - Plan dự phòng phải dùng được độc lập và được liên kết với plan chính.

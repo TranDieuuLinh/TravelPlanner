@@ -133,21 +133,9 @@ Input chính:
       "includeArrivalDeparture": true
     },
     "budget": {
-      "inputMode": "exact",
-      "minAmount": null,
       "targetAmount": 5000000,
-      "maxAmount": null,
       "currency": "VND",
-      "isHardCap": false,
-      "confidence": "high",
-      "calculationBasis": {
-        "partySize": 2,
-        "days": 3,
-        "nights": 2,
-        "destination": "Da Nang",
-        "priceTier": "medium"
-      },
-      "notes": "User gave an approximate total budget."
+      "level": "medium"
     }
   }
 }
@@ -176,15 +164,13 @@ loại stop nhưng phải trả reason/warning.
 
 Output chính:
 
-`intent.budgetLevel` và `tripSpec.budget.calculationBasis.priceTier` chỉ nhận
-`budget`, `medium` hoặc `high`. Giá trị `balanced` chỉ thuộc contract nhịp độ
-`pace`.
+Ngân sách chỉ nằm tại `tripSpec.budget`, gồm `targetAmount` gần đúng, `currency`
+và `level` nhận `low`, `medium` hoặc `high`. `intent` không lặp lại budget.
 
 ```json
 {
   "intent": {
     "destination": "Da Nang",
-    "budgetLevel": "medium",
     "travelStyle": "local",
     "pace": "balanced",
     "interests": ["food", "coffee"],
@@ -215,21 +201,9 @@ Output chính:
       "includeArrivalDeparture": true
     },
     "budget": {
-      "inputMode": "exact",
-      "minAmount": null,
       "targetAmount": 5000000,
-      "maxAmount": null,
       "currency": "VND",
-      "isHardCap": false,
-      "confidence": "high",
-      "calculationBasis": {
-        "partySize": 2,
-        "days": 3,
-        "nights": 2,
-        "destination": "Da Nang",
-        "priceTier": "medium"
-      },
-      "notes": "User gave an approximate total budget."
+      "level": "medium"
     }
   },
   "assumptions": ["Use medium budget because user did not specify exact amount."],

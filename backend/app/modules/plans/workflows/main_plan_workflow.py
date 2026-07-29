@@ -43,7 +43,10 @@ class MainPlanWorkflow:
         return await self._run_planning(
             intent=intent,
             planning_intent=self._planning_intent(intent),
-            trip_spec=TripPlanningSpec(days=intent.days),
+            trip_spec=TripPlanningSpec(
+                days=intent.days,
+                budget={"level": intent.budget},
+            ),
             explicit_region_key=payload.region_key,
             selected_places=[
                 self._selected_place_context(place)
@@ -61,7 +64,7 @@ class MainPlanWorkflow:
         intent = TravelIntent(
             destination=payload.intent.destination,
             days=payload.trip_spec.days,
-            budget=payload.intent.budget_level,
+            budget=payload.trip_spec.budget.level,
             travelStyle=payload.intent.travel_style,
             pace=payload.intent.pace,
             interests=payload.intent.interests,
@@ -92,7 +95,7 @@ class MainPlanWorkflow:
         intent = TravelIntent(
             destination=payload.intent.destination,
             days=payload.trip_spec.days,
-            budget=payload.intent.budget_level,
+            budget=payload.trip_spec.budget.level,
             travelStyle=payload.intent.travel_style,
             pace=payload.intent.pace,
             interests=payload.intent.interests,
@@ -208,7 +211,6 @@ class MainPlanWorkflow:
     def _planning_intent(self, intent: TravelIntent) -> PlanningIntent:
         return PlanningIntent(
             destination=intent.destination,
-            budgetLevel=intent.budget,
             travelStyle=intent.travel_style,
             pace=intent.pace,
             interests=intent.interests,

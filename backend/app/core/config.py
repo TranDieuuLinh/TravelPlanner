@@ -33,10 +33,19 @@ class Settings(BaseSettings):
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
     url_reel_max_frames: int = 48
-    url_reel_min_frame_interval_seconds: float = 0.5
-    url_reel_vision_batch_size: int = 16
-    url_reel_vision_max_concurrency: int = 2
+    url_reel_min_frame_interval_seconds: float = 1.0
+    url_reel_frame_width: int = 960
+    url_reel_vision_batch_size: int = 10
+    url_reel_vision_max_concurrency: int = 5
+    url_reel_vision_media_resolution: str = "MEDIA_RESOLUTION_MEDIUM"
     place_resolver_provider: str = "nominatim"
+    here_base_url: str = "https://discover.search.hereapi.com"
+    here_geocode_base_url: str = "https://geocode.search.hereapi.com"
+    here_api_key: str | None = None
+    here_timeout_seconds: float = 10.0
+    here_country_code: str = "VNM"
+    here_language: str = "vi-VN"
+    here_min_interval_seconds: float = 0.2
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"
     nominatim_timeout_seconds: float = 15.0
@@ -50,6 +59,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
+        if self.place_resolver_provider not in {
+            "here",
+            "nominatim",
+            "provisional",
+        }:
+            raise ValueError(
+                "PLACE_RESOLVER_PROVIDER must be here, nominatim, "
+                "or provisional"
+            )
         if not self.database_url.startswith(
             ("postgresql://", "postgresql+psycopg://")
         ):

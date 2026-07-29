@@ -1,7 +1,14 @@
 import asyncio
 from typing import Any
 
-from app.modules.places.resolver import NominatimPlaceResolver
+from app.modules.places.resolver import (
+    FallbackPlaceResolver,
+    HerePlaceResolver,
+    NominatimPlaceResolver,
+    PlaceResolution,
+    PlaceResolver,
+)
+from app.modules.plans import dependencies
 from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
 
 
@@ -12,9 +19,259 @@ class FakeNominatimResolver(NominatimPlaceResolver):
             user_agent="VSF-Travel-Test/1.0",
         )
         self.results = results
+        self.queries: list[str] = []
 
     async def _search(self, query: str) -> list[dict[str, Any]]:
+        self.queries.append(query)
         return self.results
+
+
+class FakeHereResolver(HerePlaceResolver):
+    def __init__(self, results: list[dict[str, Any]]) -> None:
+        super().__init__(
+            base_url="https://example.invalid",
+            api_key="test-key",
+        )
+        self.results = results
+        self.queries: list[str] = []
+
+    async def _search(
+        self,
+        query: str,
+        *,
+        search_region: str,
+    ) -> list[dict[str, Any]]:
+        self.queries.append(query)
+        return self.results
+
+
+class StaticPlaceResolver(PlaceResolver):
+    def __init__(self, result: PlaceResolution) -> None:
+        self.result = result
+        self.calls = 0
+
+    async def resolve(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution:
+        self.calls += 1
+        return self.result.model_copy(update={"candidate": candidate})
+
+
+def _candidate(name: str = "Mì Quảng Bà Mua") -> UnifiedPlaceCandidate:
+    return UnifiedPlaceCandidate(
+        name=name,
+        category="food",
+        sources=[{"type": "url", "url": "https://example.com/reel"}],
+        confidence=0.8,
+    )
+
+
+def test_here_resolver_maps_discover_result_to_place_contract() -> None:
+    resolver = FakeHereResolver(
+        [
+            {
+                "title": "Mì Quảng Bà Mua",
+                "id": "here:pds:place:704jx7ps-123",
+                "resultType": "place",
+                "address": {
+                    "label": "Mì Quảng Bà Mua, Đà Nẵng, Việt Nam",
+                    "countryCode": "VNM",
+                    "countryName": "Việt Nam",
+                    "city": "Đà Nẵng",
+                    "district": "Hải Châu",
+                },
+                "position": {"lat": 16.0592, "lng": 108.2131},
+                "categories": [
+                    {
+                        "id": "100-1000-0000",
+                        "name": "Restaurant",
+                        "primary": True,
+                    }
+                ],
+            }
+        ]
+    )
+
+    result = asyncio.run(
+        resolver.resolve(_candidate(), destination="Đà Nẵng")
+    )
+
+    assert resolver.queries == ["Mì Quảng Bà Mua, Đà Nẵng"]
+    assert result.status == "resolved"
+    assert result.provider == "here"
+    assert result.external_id == "here:pds:place:704jx7ps-123"
+    assert result.country_code == "VNM"
+    assert result.primary_area == "Hải Châu"
+    assert str(result.latitude) == "16.0592"
+    assert str(result.longitude) == "108.2131"
+    assert result.attribution == "© HERE"
+
+
+def test_here_resolver_rejects_a_locality_match_without_coordinates() -> None:
+    resolver = FakeHereResolver(
+        [
+            {
+                "title": "Hà Nội",
+                "id": "here:cm:namedplace:123",
+                "resultType": "locality",
+                "address": {
+                    "label": "Hà Nội, Việt Nam",
+                    "countryCode": "VNM",
+                    "city": "Hà Nội",
+                },
+            }
+        ]
+    )
+
+    result = asyncio.run(
+        resolver.resolve(
+            _candidate("Hà Nội"),
+            destination="Hà Nội",
+        )
+    )
+
+    assert result.status == "unresolved"
+    assert result.resolution_reason is not None
+    assert "not_a_place" in result.resolution_reason
+    assert "coordinates_missing" in result.resolution_reason
+
+
+def test_here_resolver_matches_bilingual_provider_title() -> None:
+    resolver = FakeHereResolver(
+        [
+            {
+                "title": (
+                    "Da Nang Museum Of Cham Sculpture "
+                    "(Bảo Tàng Điêu Khắc Chăm Đà Nẵng)"
+                ),
+                "id": "here:pds:place:704jx7ps-456",
+                "resultType": "place",
+                "address": {
+                    "label": "Quận Hải Châu, Đà Nẵng, Việt Nam",
+                    "countryCode": "VNM",
+                    "countryName": "Việt Nam",
+                    "city": "Đà Nẵng",
+                },
+                "position": {"lat": 16.0605, "lng": 108.2235},
+            }
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Bảo tàng Điêu khắc Chăm Đà Nẵng",
+        searchNames=["Da Nang Museum of Cham Sculpture"],
+        category="culture",
+        sources=[],
+        confidence=1.0,
+    )
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Đà Nẵng")
+    )
+
+    assert result.status == "resolved"
+    assert result.resolution_reason is None
+
+
+def test_fallback_resolver_uses_nominatim_after_here_miss() -> None:
+    candidate = _candidate()
+    here_result = PlaceResolution(
+        candidate=candidate,
+        status="unresolved",
+        resolutionReason="not_found",
+        provider="here",
+        name=candidate.name,
+    )
+    nominatim_result = PlaceResolution(
+        candidate=candidate,
+        status="resolved",
+        provider="nominatim",
+        externalId="node:123",
+        name=candidate.name,
+        latitude="16.0592",
+        longitude="108.2131",
+    )
+    primary = StaticPlaceResolver(here_result)
+    fallback = StaticPlaceResolver(nominatim_result)
+    resolver = FallbackPlaceResolver(primary, fallback)
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Đà Nẵng")
+    )
+
+    assert primary.calls == 1
+    assert fallback.calls == 1
+    assert result.status == "resolved"
+    assert result.provider == "nominatim"
+
+
+def test_fallback_resolver_skips_nominatim_for_usable_here_result() -> None:
+    candidate = _candidate()
+    here_result = PlaceResolution(
+        candidate=candidate,
+        status="resolved",
+        provider="here",
+        externalId="here:pds:place:123",
+        name=candidate.name,
+        latitude="16.0592",
+        longitude="108.2131",
+    )
+    fallback_result = PlaceResolution(
+        candidate=candidate,
+        status="unresolved",
+        resolutionReason="not_found",
+        provider="nominatim",
+        name=candidate.name,
+    )
+    primary = StaticPlaceResolver(here_result)
+    fallback = StaticPlaceResolver(fallback_result)
+    resolver = FallbackPlaceResolver(primary, fallback)
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Đà Nẵng")
+    )
+
+    assert primary.calls == 1
+    assert fallback.calls == 0
+    assert result.provider == "here"
+
+
+def test_runtime_wires_here_primary_with_nominatim_fallback(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        dependencies.settings,
+        "place_resolver_provider",
+        "here",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "here_api_key",
+        "test-key",
+    )
+
+    resolver = dependencies._get_place_resolver()
+
+    assert isinstance(resolver, FallbackPlaceResolver)
+    assert isinstance(resolver.primary, HerePlaceResolver)
+    assert isinstance(resolver.fallback, NominatimPlaceResolver)
+
+
+def test_runtime_uses_nominatim_when_here_key_is_missing(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        dependencies.settings,
+        "place_resolver_provider",
+        "here",
+    )
+    monkeypatch.setattr(dependencies.settings, "here_api_key", None)
+
+    resolver = dependencies._get_place_resolver()
+
+    assert isinstance(resolver, NominatimPlaceResolver)
 
 
 def test_nominatim_resolver_maps_provider_result_to_place_contract() -> None:
@@ -76,3 +333,145 @@ def test_nominatim_resolver_keeps_unmatched_candidate_without_question() -> None
     assert result.status == "unresolved"
     assert result.name == "Quán chưa xác định"
     assert result.latitude is None
+
+
+def test_nominatim_resolver_prefers_vietnamese_name_and_best_matching_result() -> None:
+    resolver = FakeNominatimResolver(
+        [
+            {
+                "name": "Hà Nội",
+                "display_name": "Hà Nội, Việt Nam",
+                "lat": "21.0285",
+                "lon": "105.8542",
+                "importance": 0.9,
+                "address": {
+                    "city": "Hà Nội",
+                    "country": "Việt Nam",
+                    "country_code": "vn",
+                },
+                "namedetails": {"name": "Hà Nội", "name:en": "Hanoi"},
+            },
+            {
+                "osm_type": "way",
+                "osm_id": 456,
+                "name": "Bảo tàng Dân tộc học Việt Nam",
+                "display_name": (
+                    "Bảo tàng Dân tộc học Việt Nam, đường Nguyễn Văn Huyên, "
+                    "Cầu Giấy, Hà Nội, Việt Nam"
+                ),
+                "lat": "21.0403",
+                "lon": "105.7980",
+                "importance": 0.4,
+                "address": {
+                    "city": "Hà Nội",
+                    "suburb": "Cầu Giấy",
+                    "country": "Việt Nam",
+                    "country_code": "vn",
+                },
+                "namedetails": {
+                    "name": "Bảo tàng Dân tộc học Việt Nam",
+                    "name:vi": "Bảo tàng Dân tộc học Việt Nam",
+                    "name:en": "Vietnam Museum of Ethnology",
+                },
+            },
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Vietnam Museum of Ethnology",
+        category="culture",
+        sources=[{"type": "url", "url": "https://example.com/tiktok"}],
+        confidence=0.9,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.name == "Bảo tàng Dân tộc học Việt Nam"
+    assert result.address is not None
+    assert "Nguyễn Văn Huyên" in result.address
+    assert str(result.latitude) == "21.0403"
+    assert str(result.longitude) == "105.7980"
+
+
+def test_nominatim_rejects_hang_mua_phone_shop_false_match() -> None:
+    resolver = FakeNominatimResolver(
+        [
+            {
+                "osm_type": "node",
+                "osm_id": 999,
+                "name": (
+                    "Cửa Hàng Mua Bán Sửa Chữa Chuyên Nghiệp "
+                    "ĐTDĐ Nokia"
+                ),
+                "display_name": (
+                    "Cửa Hàng Mua Bán Sửa Chữa Chuyên Nghiệp "
+                    "ĐTDĐ Nokia, Hà Nội, Việt Nam"
+                ),
+                "lat": "21.0747",
+                "lon": "105.7731",
+                "class": "shop",
+                "type": "mobile_phone",
+                "address": {
+                    "city": "Hà Nội",
+                    "country": "Việt Nam",
+                },
+            }
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Hang Múa",
+        category="nature",
+        searchRegion="Ninh Bình",
+        sources=[{"type": "url", "url": "https://example.com/reel"}],
+        confidence=0.9,
+    )
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Hà Nội")
+    )
+
+    assert resolver.queries == ["Hang Múa, Ninh Bình"]
+    assert result.status == "unresolved"
+    assert result.resolution_reason is not None
+    assert "region_mismatch" in result.resolution_reason
+    assert "category_mismatch" in result.resolution_reason
+
+
+def test_nominatim_resolves_day_trip_place_in_search_region() -> None:
+    resolver = FakeNominatimResolver(
+        [
+            {
+                "osm_type": "node",
+                "osm_id": 1000,
+                "name": "Hang Múa",
+                "display_name": (
+                    "Hang Múa, Hoa Lư, Ninh Bình, Việt Nam"
+                ),
+                "lat": "20.2298",
+                "lon": "105.9367",
+                "class": "tourism",
+                "type": "attraction",
+                "address": {
+                    "city": "Hoa Lư",
+                    "state": "Ninh Bình",
+                    "country": "Việt Nam",
+                },
+            }
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Hang Múa",
+        category="nature",
+        searchRegion="Ninh Bình",
+        sources=[{"type": "url", "url": "https://example.com/reel"}],
+        confidence=0.9,
+    )
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Hà Nội")
+    )
+
+    assert result.status == "resolved"
+    assert result.resolution_reason is None
+    assert result.city == "Hoa Lư"
+    assert str(result.latitude) == "20.2298"

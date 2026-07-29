@@ -57,7 +57,6 @@ export function PlannerMap({
   const markersRef = useRef(new Map<string, Marker>());
   const lastPlacesSignatureRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
-  const [connectPoints, setConnectPoints] = useState(true);
 
   const locatedPlaces = useMemo(() => places.filter(hasCoordinates), [places]);
 
@@ -146,12 +145,17 @@ export function PlannerMap({
       const detail = document.createElement("span");
       detail.textContent = place.address || "Địa điểm do Explorer đề xuất";
       popup.append(name, detail);
+      if (place.notes) {
+        const description = document.createElement("p");
+        description.textContent = place.notes;
+        popup.append(description);
+      }
       marker.bindPopup(popup);
       marker.on("click", () => onSelect(place.mapKey));
       markersRef.current.set(place.mapKey, marker);
     });
 
-    if (connectPoints && routes.length > 0 && routeLayerRef.current) {
+    if (routes.length > 0 && routeLayerRef.current) {
       routes.forEach((route) => {
         leaflet
           .polyline(route.coordinates, {
@@ -171,7 +175,7 @@ export function PlannerMap({
       fitPlaces();
       lastPlacesSignatureRef.current = signature;
     }
-  }, [connectPoints, locatedPlaces, mapReady, onSelect, routes, selectedKey]);
+  }, [locatedPlaces, mapReady, onSelect, routes, selectedKey]);
 
   useEffect(() => {
     if (!selectedKey || !mapReady) return;
@@ -231,28 +235,6 @@ export function PlannerMap({
         ) : null}
       </div>
 
-      <div className="plannerMapActions">
-        <button
-          disabled={routes.length === 0}
-          onClick={() => setConnectPoints((current) => !current)}
-          type="button"
-        >
-          {connectPoints && routes.length > 0
-            ? "Ẩn đường nối"
-            : "Nối các điểm"}
-        </button>
-        <button
-          disabled={locatedPlaces.length === 0}
-          onClick={fitPlaces}
-          type="button"
-        >
-          Vừa tất cả điểm
-        </button>
-      </div>
-      <p className="mapRouteNote">
-        Đường nét đứt màu cam là chặng ước tính từ tọa độ. Chỉ đường liền màu
-        xanh mới là tuyến đã được route provider xác minh.
-      </p>
     </section>
   );
 }

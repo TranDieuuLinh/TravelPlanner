@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import { copyPlanForBuyer, getOrderDetail } from "@/lib/orders";
 import type { OrderDetail, PlanCopyResult } from "@/types/orders";
@@ -61,6 +62,7 @@ export default function OrderResultPage() {
   if (error || !order) {
     return (
       <main className="pageWidth emptyState">
+        <PenguinMascot className="emptyPenguin" size={160} variant="search" />
         <h2>Không tìm thấy đơn hàng</h2>
         <p>{error || "Đơn hàng không tồn tại."}</p>
         <Link className="primaryBtn" href="/explore">

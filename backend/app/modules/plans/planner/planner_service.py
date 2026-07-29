@@ -128,7 +128,6 @@ class PlannerService:
         )
         planning_intent = PlanningIntent(
             destination=intent.destination,
-            budgetLevel=intent.budget,
             travelStyle=intent.travel_style,
             pace=intent.pace,
             interests=intent.interests,

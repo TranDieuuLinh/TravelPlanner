@@ -14,12 +14,13 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 
 - `TravelIntent`: điểm đến, số ngày, ngân sách, phong cách, nhịp độ, sở thích,
   địa điểm bắt buộc, địa điểm tránh, ràng buộc và câu hỏi làm rõ.
-- `BudgetEnvelope`: kiểu input ngân sách, khoảng min/target/max, đơn vị tiền tệ,
-  hard cap, độ tin cậy và cơ sở dùng để tính; mức chi tiêu `budget`, `medium`
-  hoặc `high` được giữ riêng trong `TravelIntent.budgetLevel`.
+- `BudgetEnvelope`: ngân sách đơn giản chỉ gồm số tiền gần đúng `targetAmount`,
+  `currency` và mức `low`, `medium` hoặc `high`. Budget chỉ xuất hiện tại
+  `tripSpec.budget`, không lặp lại trong `TravelIntent`.
 - `MacroPlan`: tên plan, điểm đến và mô tả cấp cao cho từng ngày.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
-- `PlanItem`: tên, khung giờ, loại địa điểm và ghi chú.
+- `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
+  địa điểm và ghi chú.
 - `CheckReport`: trạng thái, danh sách vấn đề và tóm tắt.
 - `Plan`: loại main/backup, trạng thái vòng đời, intent, macro plan, các ngày,
   liên kết plan cha và báo cáo kiểm tra.
@@ -61,18 +62,24 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   được phép lưu; không đồng nhất artifact với instruction cho model.
 - `SourceClaim`: một thông tin được trích xuất như địa điểm, hoạt động, thời điểm,
   giá hoặc mẹo, kèm evidence span, confidence và trạng thái xác nhận.
-- `PlaceCandidate`: tên thô từ nguồn và các kết quả chuẩn hóa có thể tương ứng.
+- `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
+  chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
+  chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
 - `UserMustPlace`: candidate của intake đã được tự động resolve/lưu với trạng
   thái `resolved`, `provisional` hoặc `unresolved`; giữ source URL, address,
-  latitude/longitude, description, provider và độ mới ngay trên record. Flow
-  Explorer không tạo hoặc cập nhật `Place`.
+  latitude/longitude, description, provider, `searchRegion`,
+  `sourceEvidence` tách theo `stt`/`ocr`/`caption`, lý do resolve bị từ chối và
+  độ mới ngay trên record. `candidateName` luôn là nhãn từ nguồn;
+  `resolvedName` là kết quả provider riêng, không tự ghi đè nhãn nguồn của stop
+  URL. Flow Explorer không tạo hoặc cập nhật `Place`.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
   ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
   nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
-  hành đã xác minh.
+  hành đã xác minh. Stop URL luôn giữ tên candidate đã tổng hợp từ evidence;
+  provider chỉ bổ sung identity, địa chỉ và tọa độ khi match đã resolve.
 - `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
   chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
   `sourceTypes`), không giữ raw prompt/OCR/transcript.
@@ -140,6 +147,10 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Intake hiện chạy ở chế độ không hỏi lại user: mọi candidate được commit vào
   `UserMustPlace`. Độ tin cậy thấp phải giữ trạng thái
   `provisional`/`unresolved`; không được mô tả như dữ liệu đã xác minh.
+- Candidate URL vẫn được lưu để giữ provenance, nhưng chỉ địa điểm đã resolve
+  tới một danh tính cụ thể kèm tọa độ mới được chuyển thành `SelectedPlace`.
+  Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
+  được đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa thay thế.
 - Planner downstream nhận trực tiếp Explorer context và không đọc
   `UserMustPlace`. Finder downstream dùng cả `intakeId + userId` để đọc đúng
   record `UserMustPlace`; Explorer không điều phối hai module này.

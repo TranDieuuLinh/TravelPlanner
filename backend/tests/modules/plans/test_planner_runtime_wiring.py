@@ -143,7 +143,6 @@ def test_context_endpoint_builds_plan_from_normalized_input(
         json={
             "intent": {
                 "destination": "Hà Nội",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["culture", "food", "coffee"],
@@ -151,6 +150,7 @@ def test_context_endpoint_builds_plan_from_normalized_input(
             "tripSpec": {
                 "days": 1,
                 "partySize": 2,
+                "budget": {"targetAmount": None, "level": "medium"},
             },
             "regionKey": "vn,ha-noi",
             "selectedPlaces": [],
@@ -186,7 +186,6 @@ def test_from_explorer_provider_error_keeps_cors_headers(
         json={
             "intent": {
                 "destination": "Ha Noi",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["culture"],
@@ -194,6 +193,7 @@ def test_from_explorer_provider_error_keeps_cors_headers(
             "tripSpec": {
                 "days": 1,
                 "partySize": 1,
+                "budget": {"targetAmount": None, "level": "medium"},
             },
             "selectedPlaces": [],
         },

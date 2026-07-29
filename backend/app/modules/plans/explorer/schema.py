@@ -4,9 +4,6 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from app.modules.plans.dto.agent_contracts import (
-    BudgetCalculationBasis,
-    BudgetConfidence,
-    BudgetInputMode,
     ItineraryItemCategory,
     PlaceCandidateHint,
     PlacePreferenceLevel,
@@ -14,6 +11,7 @@ from app.modules.plans.dto.agent_contracts import (
     TripPlanningSpec,
     UserPlanningState,
 )
+from app.modules.plans.domain.enums import BudgetLevel
 from app.modules.preferences.schema import PreferenceSnapshot
 
 
@@ -40,22 +38,11 @@ class ExploreTransportInput(BaseModel):
 
 
 class ExploreBudgetInput(BaseModel):
-    input_mode: Annotated[
-        BudgetInputMode | None, Field(default=None, alias="inputMode")
-    ]
-    min_amount: Annotated[int | None, Field(default=None, ge=0, alias="minAmount")]
     target_amount: Annotated[
         int | None, Field(default=None, ge=0, alias="targetAmount")
     ]
-    max_amount: Annotated[int | None, Field(default=None, ge=0, alias="maxAmount")]
-    currency: str | None = None
-    is_hard_cap: Annotated[bool | None, Field(default=None, alias="isHardCap")]
-    confidence: BudgetConfidence | None = None
-    calculation_basis: Annotated[
-        BudgetCalculationBasis | None,
-        Field(default=None, alias="calculationBasis"),
-    ]
-    notes: str | None = None
+    currency: str = "VND"
+    level: BudgetLevel = BudgetLevel.medium
 
     model_config = {"populate_by_name": True}
 
@@ -107,9 +94,21 @@ class PlaceCandidateSource(BaseModel):
 
 class UnifiedPlaceCandidate(BaseModel):
     name: str = Field(min_length=1)
+    search_names: Annotated[
+        list[str],
+        Field(default_factory=list, alias="searchNames"),
+    ]
     category: ItineraryItemCategory = ItineraryItemCategory.other
     address_hint: Annotated[str | None, Field(default=None, alias="addressHint")]
+    search_region: Annotated[
+        str | None,
+        Field(default=None, alias="searchRegion"),
+    ]
     sources: list[PlaceCandidateSource] = Field(default_factory=list)
+    source_evidence: Annotated[
+        dict[str, str],
+        Field(default_factory=dict, alias="sourceEvidence"),
+    ]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     priority: int = Field(default=1, ge=1, le=5)
     preference_level: Annotated[

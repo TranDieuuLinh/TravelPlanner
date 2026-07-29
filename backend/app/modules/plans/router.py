@@ -197,9 +197,9 @@ def _prepare_intake(
 
 
 def _default_trip_spec(raw_request: str) -> ExploreTripSpecInput:
-    # Keep a missing duration distinct from an explicit request. Explorer can
-    # then derive enough days from URL/OCR evidence instead of treating a UI
-    # fallback as a user constraint.
+    # Keep a missing duration distinct from an explicit request. The planning
+    # service applies the three-day product default while still expanding it
+    # when URL/OCR evidence needs more days.
     return ExploreTripSpecInput(days=_infer_days(raw_request))
 
 

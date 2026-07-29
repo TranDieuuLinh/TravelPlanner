@@ -1,7 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import {
   createPlanFromExplorer,
   exploreFullIntake,
@@ -23,17 +25,13 @@ type ChatMessage = {
 };
 
 type WorkflowStage = "idle" | "exploring" | "planning" | "ready" | "failed";
-
-type PlanProvenance = {
-  totalPlaces: number;
-  urlPlaces: number;
-  plannerPlaces: number;
-  otherPlaces: number;
-};
+type TimedWorkflowStage = Extract<WorkflowStage, "exploring" | "planning">;
+type IntakeKind = "prompt" | "image" | "url";
 
 type TripPlaceSummary = TravelPlan["days"][number]["items"][number] & {
   day: number;
   order: number;
+  mapKey: string | null;
 };
 
 const promptSuggestions = [
@@ -52,6 +50,15 @@ const workflowStages: Array<{
   { id: "ready", label: "Kết quả", description: "Hiển thị plan và nguồn dữ liệu" }
 ];
 
+const URL_PATTERN = /https?:\/\/[^\s]+/i;
+const SUPPORTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif"
+]);
+
 function formatBudget(result: ExplorerContext): string {
   const budget = result.tripSpec.budget;
   const formatter = new Intl.NumberFormat("vi-VN", {
@@ -60,14 +67,8 @@ function formatBudget(result: ExplorerContext): string {
     maximumFractionDigits: 0
   });
 
-  if (budget.minAmount != null && budget.maxAmount != null) {
-    return `${formatter.format(budget.minAmount)} – ${formatter.format(budget.maxAmount)}`;
-  }
   if (budget.targetAmount != null) {
-    return `${budget.isHardCap ? "Tối đa " : "Khoảng "}${formatter.format(budget.targetAmount)}`;
-  }
-  if (budget.maxAmount != null) {
-    return `${budget.isHardCap ? "Tối đa " : "Đến "}${formatter.format(budget.maxAmount)}`;
+    return `Khoảng ${formatter.format(budget.targetAmount)}`;
   }
   return "Chưa có số tiền ước tính";
 }
@@ -96,6 +97,12 @@ function Planner() {
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [intakeKind, setIntakeKind] = useState<IntakeKind>("prompt");
+  const [stageStartedAt, setStageStartedAt] = useState<number | null>(null);
+  const [stageElapsedSeconds, setStageElapsedSeconds] = useState(0);
+  const [stageDurations, setStageDurations] = useState<
+    Partial<Record<TimedWorkflowStage, number>>
+  >({});
 
   useEffect(() => {
     const messageList = messageListRef.current;
@@ -104,62 +111,55 @@ function Planner() {
     }
   }, [messages, workflowStage]);
 
-  const planProvenance = useMemo<PlanProvenance | null>(() => {
-    if (!plan) return null;
-    const places = plan.days.flatMap((day) =>
-      day.items.filter((item) => !isBreakPlanItem(item))
-    );
-    const urlPlaces = places.filter(isUrlPlanItem).length;
-    const plannerPlaces = places.filter(
-      (item) => !isUrlPlanItem(item) && item.source === "finder_suggestion"
-    ).length;
-
-    return {
-      totalPlaces: places.length,
-      urlPlaces,
-      plannerPlaces,
-      otherPlaces: places.length - urlPlaces - plannerPlaces
+  useEffect(() => {
+    if (!loading || stageStartedAt == null) return;
+    const updateElapsed = () => {
+      setStageElapsedSeconds(Math.max(0, Math.floor((Date.now() - stageStartedAt) / 1000)));
     };
-  }, [plan]);
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [loading, stageStartedAt]);
+
   const tripPlaces = useMemo<TripPlaceSummary[]>(() => {
     if (!plan) return [];
     const seen = new Set<string>();
     let order = 0;
 
     return plan.days.flatMap((day) =>
-      day.items.flatMap((item) => {
+      day.items.flatMap((item, itemIndex) => {
         if (isBreakPlanItem(item)) return [];
         const key = item.name.trim().toLocaleLowerCase("vi");
         if (seen.has(key)) return [];
         seen.add(key);
         order += 1;
-        return [{ ...item, day: day.day, order }];
+        return [{
+          ...item,
+          day: day.day,
+          order,
+          mapKey: hasPlanItemCoordinates(item)
+            ? planItemMapKey(day.day, itemIndex, item.name)
+            : null
+        }];
       })
     );
   }, [plan]);
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
-    if (plan) {
-      let order = 0;
-      return plan.days.flatMap((day) =>
-        day.items
-          .filter((item) => item.latitude != null && item.longitude != null)
-          .map((item, index) => {
-            order += 1;
-            return {
-              name: item.name,
-              category: categoryFromPlaceType(item.placeType),
-              address: item.timeWindow,
-              latitude: item.latitude ?? null,
-              longitude: item.longitude ?? null,
-              notes: item.notes,
-              mapKey: `plan-${day.day}-${index}-${item.name}`,
-              mapOrder: order
-            };
-          })
-      );
-    }
-    return [];
-  }, [plan]);
+    return tripPlaces.flatMap((item) =>
+      item.mapKey
+        ? [{
+            name: item.name,
+            category: categoryFromPlaceType(item.placeType),
+            address: item.address || `Ngày ${item.day} · ${item.timeWindow}`,
+            latitude: item.latitude ?? null,
+            longitude: item.longitude ?? null,
+            notes: item.notes,
+            mapKey: item.mapKey,
+            mapOrder: item.order
+          }]
+        : []
+    );
+  }, [tripPlaces]);
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
     if (!plan) return [];
     return plan.days.flatMap((day) =>
@@ -190,14 +190,29 @@ function Planner() {
     setMessages((current) => [...current, userMessage]);
     setPrompt("");
     setLoading(true);
+    setIntakeKind(URL_PATTERN.test(text) ? "url" : images.length > 0 ? "image" : "prompt");
+    setStageDurations({});
+    const exploringStartedAt = Date.now();
+    setStageStartedAt(exploringStartedAt);
+    setStageElapsedSeconds(0);
     setWorkflowStage("exploring");
     setError("");
+    let activeStage: TimedWorkflowStage = "exploring";
+    let activeStageStartedAt = exploringStartedAt;
     try {
       const nextExploreResult = await exploreFullIntake({
         rawRequest: text,
         images
       });
+      setStageDurations({
+        exploring: Math.max(0, Math.round((Date.now() - exploringStartedAt) / 1000))
+      });
       setExploreResult(nextExploreResult);
+      const planningStartedAt = Date.now();
+      activeStage = "planning";
+      activeStageStartedAt = planningStartedAt;
+      setStageStartedAt(planningStartedAt);
+      setStageElapsedSeconds(0);
       setWorkflowStage("planning");
       const nextPlan = await createPlanFromExplorer({
         context: nextExploreResult.explorer,
@@ -205,8 +220,14 @@ function Planner() {
         userId: nextExploreResult.userId,
         allowFinderSuggestions: nextExploreResult.allowFinderSuggestions
       });
+      setStageDurations((current) => ({
+        ...current,
+        planning: Math.max(0, Math.round((Date.now() - planningStartedAt) / 1000))
+      }));
       setPlan(nextPlan);
       setWorkflowStage("ready");
+      setStageStartedAt(null);
+      setStageElapsedSeconds(0);
       setSelectedMapPlaceKey(null);
       setMessages((current) => [
         ...current,
@@ -222,12 +243,53 @@ function Planner() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
+      setStageDurations((current) => ({
+        ...current,
+        [activeStage]: Math.max(0, Math.round((Date.now() - activeStageStartedAt) / 1000))
+      }));
       setWorkflowStage("failed");
+      setStageStartedAt(null);
       setError(message);
       setMessages((current) => [...current, { id: Date.now() + 1, role: "assistant", text: message }]);
     } finally {
       setLoading(false);
     }
+  }
+
+  function addImages(nextImages: File[]) {
+    if (nextImages.length === 0) return;
+
+    const supportedImages = nextImages.filter((image) =>
+      SUPPORTED_IMAGE_TYPES.has(image.type.toLowerCase())
+    );
+
+    if (supportedImages.length === 0) {
+      setError("Ảnh phải có định dạng JPEG, PNG, WebP, HEIC hoặc HEIF.");
+      return;
+    }
+
+    setImages((current) => [...current, ...supportedImages]);
+    setError(
+      supportedImages.length < nextImages.length
+        ? "Một số tệp không phải định dạng ảnh được hỗ trợ nên đã bị bỏ qua."
+        : ""
+    );
+  }
+
+  function handleComposerPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (loading) return;
+
+    const pastedImages = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .flatMap((item) => {
+        const image = item.getAsFile();
+        return image ? [image] : [];
+      });
+
+    if (pastedImages.length === 0) return;
+
+    event.preventDefault();
+    addImages(pastedImages);
   }
 
   function resetWorkflow() {
@@ -237,6 +299,9 @@ function Planner() {
     setPlan(null);
     setSelectedMapPlaceKey(null);
     setWorkflowStage("idle");
+    setStageStartedAt(null);
+    setStageElapsedSeconds(0);
+    setStageDurations({});
     setError("");
     setMessages([
       {
@@ -274,45 +339,79 @@ function Planner() {
 
   return (
     <main className="plannerPage">
-      <header className="plannerHeader pageWidth">
-        <div><span className="eyebrow">AI Planner</span><h1>{exploreResult?.explorer.intent.destination ?? "Chatbot VSF"}</h1><p>Gửi prompt, URL hoặc screenshot để Explorer chuẩn hóa dữ liệu.</p></div>
-        <div className="futureActions">
-          <button disabled={!exploreResult && messages.length === 1} onClick={resetWorkflow} type="button">Làm mới</button>
-          <button disabled type="button">Chia sẻ</button>
-        </div>
-      </header>
-
       <section className="plannerLayout pageWidth">
         <aside aria-busy={loading} className="plannerChat panel">
           <div className="panelHeading">
-            <span className="aiOrb">✦</span>
+            <span className="aiOrb">
+              <PenguinMascot className="assistantPenguin" priority size={64} variant="logo" />
+            </span>
             <div>
               <strong>Trợ lý VSF</strong>
               <small>{loading ? "Đang xử lý yêu cầu…" : "Sẵn sàng nhận yêu cầu"}</small>
             </div>
-            <span className={`assistantStatus ${loading ? "working" : ""}`} aria-hidden="true" />
+            <button
+              aria-label="Làm mới Planner"
+              className="resetWorkflowButton"
+              disabled={loading || (!exploreResult && messages.length === 1)}
+              onClick={resetWorkflow}
+              type="button"
+            >
+              <span aria-hidden="true">↻</span> Làm mới
+            </button>
+            <span className={`assistantStatus ${loading ? "working" : ""}`} aria-label={loading ? "Đang xử lý" : "Đang trực tuyến"} />
           </div>
           <ol className="chatWorkflow" aria-label="Tiến trình tạo lịch trình">
             {workflowStages.map((stage, index) => {
               const state = workflowStateFor(stage.id);
+              const duration = stage.id === "ready"
+                ? null
+                : state === "active"
+                  ? stageElapsedSeconds
+                  : stageDurations[stage.id];
               return (
                 <li className={state} key={stage.id}>
                   <span>{state === "complete" ? "✓" : index + 1}</span>
-                  <div><strong>{stage.label}</strong><small>{stage.description}</small></div>
+                  <div>
+                    <strong>{stage.label}</strong>
+                    <small>
+                      {duration == null
+                        ? stage.description
+                        : `${state === "active" ? "Đang chạy" : "Hoàn tất"} · ${formatElapsedTime(duration)}`}
+                    </small>
+                  </div>
                 </li>
               );
             })}
           </ol>
           <div className="chatMessages" aria-live="polite" ref={messageListRef}>
             {messages.map((message) => (
-              <div className={`chatBubble ${message.role}`} key={message.id}>{message.text}</div>
+              <div className={`chatMessageRow ${message.role}`} key={message.id}>
+                {message.role === "assistant" ? (
+                  <PenguinMascot className="chatPenguinAvatar" size={40} variant="chat" />
+                ) : null}
+                <div className={`chatBubble ${message.role}`}>{message.text}</div>
+              </div>
             ))}
             {loading ? (
-              <div className="chatBubble assistant processingMessage" role="status">
-                <span className="typingDots" aria-hidden="true"><i /><i /><i /></span>
-                {workflowStage === "exploring"
-                  ? "Explorer đang chuẩn hóa dữ liệu đầu vào"
-                  : "Planner và Finder đang dựng lịch trình"}
+              <div className="chatMessageRow assistant">
+                <PenguinMascot className="chatPenguinAvatar" size={40} variant="chat" />
+                <div className="chatBubble assistant processingMessage" role="status">
+                  <div className="processingMessageTitle">
+                    <span className="typingDots" aria-hidden="true"><i /><i /><i /></span>
+                    <strong>
+                      {workflowStage === "exploring"
+                        ? "Explorer đang chuẩn hóa dữ liệu"
+                        : "Planner và Finder đang dựng lịch trình"}
+                    </strong>
+                  </div>
+                  <span>{processingDescription(workflowStage, intakeKind)}</span>
+                  <small>
+                    Đã xử lý {formatElapsedTime(stageElapsedSeconds)}
+                    {stageElapsedSeconds >= 20 && workflowStage === "exploring" && intakeKind === "url"
+                      ? " · Video dài hoặc nguồn phản hồi chậm có thể cần thêm thời gian."
+                      : ""}
+                  </small>
+                </div>
               </div>
             ) : null}
           </div>
@@ -333,8 +432,9 @@ function Planner() {
                 disabled={loading}
                 onKeyDown={handleComposerKeyDown}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Nhập yêu cầu hoặc dán URL vào đây..."
-                rows={4}
+                onPaste={handleComposerPaste}
+                placeholder="Nhập yêu cầu, dán URL hoặc ảnh vào đây..."
+                rows={2}
                 value={prompt}
               />
               <input
@@ -342,7 +442,10 @@ function Planner() {
                 aria-label="Ảnh hoặc screenshot"
                 className="composerFileInput"
                 multiple
-                onChange={(event) => setImages(Array.from(event.target.files ?? []))}
+                onChange={(event) => {
+                  addImages(Array.from(event.target.files ?? []));
+                  event.target.value = "";
+                }}
                 ref={fileInputRef}
                 type="file"
               />
@@ -357,7 +460,7 @@ function Planner() {
                 </button>
                 {images.length ? (
                   <span className="attachmentChip">
-                    {images.length} ảnh
+                    {images.length} ảnh · OCR
                     <button
                       aria-label="Bỏ ảnh đã chọn"
                       onClick={() => {
@@ -369,14 +472,21 @@ function Planner() {
                       ×
                     </button>
                   </span>
-                ) : <small>Prompt · URL · Screenshot</small>}
+                ) : <small>Prompt · URL · Dán ảnh để OCR</small>}
+                <button
+                  aria-label={loading ? "Đang xử lý yêu cầu" : "Gửi yêu cầu"}
+                  className="sendButton"
+                  disabled={loading || (!prompt.trim() && images.length === 0)}
+                  type="submit"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M12 20V5" />
+                    <path d="m5.5 11.5 6.5-6.5 6.5 6.5" />
+                  </svg>
+                </button>
               </div>
             </div>
-            <button className="sendButton" disabled={loading || (!prompt.trim() && images.length === 0)} type="submit">
-              {loading ? "Đang đọc..." : "Gửi"}
-            </button>
           </form>
-          <small className="honestyNote">Enter để gửi · Shift + Enter để xuống dòng. Mỗi lần gửi tạo một intake mới.</small>
         </aside>
 
         <section className="itinerary panel">
@@ -385,7 +495,6 @@ function Planner() {
               <span className="eyebrow">Explorer</span>
               <h2>{exploreResult ? "Tổng quan chuyến đi" : "Kết quả Explorer"}</h2>
             </div>
-            <span className={`statusPill ${workflowStage}`}>{workflowStageLabel(workflowStage)}</span>
           </div>
           {exploreResult ? (
             <div className="exploreResult">
@@ -401,12 +510,11 @@ function Planner() {
                 <div className="tripQuickFacts" aria-label="Thông tin chuyến đi">
                   <div><span>Thời lượng</span><strong>{exploreResult.explorer.tripSpec.days} ngày</strong></div>
                   <div><span>Nhóm đi</span><strong>{exploreResult.explorer.tripSpec.partySize} người</strong></div>
-                  <div><span>Ngân sách</span><strong>{budgetLevelLabel(exploreResult.explorer.intent.budgetLevel)}</strong></div>
+                  <div><span>Mức ngân sách</span><strong>{budgetLevelLabel(exploreResult.explorer.tripSpec.budget.level)}</strong></div>
                 </div>
                 <div className="budgetSummary">
                   <span className="budgetIcon" aria-hidden="true">₫</span>
                   <div><span>Mức chi dự kiến</span><strong>{formatBudget(exploreResult.explorer)}</strong></div>
-                  <small>Độ tin cậy {confidenceLabel(exploreResult.explorer.tripSpec.budget.confidence)}</small>
                 </div>
                 {exploreResult.explorer.intent.interests.length ? (
                   <div className="interestGroup">
@@ -418,70 +526,9 @@ function Planner() {
                 ) : null}
               </section>
 
-              <div className={`finderNotice ${exploreResult.allowFinderSuggestions ? "" : "restricted"}`}>
-                <span aria-hidden="true">{exploreResult.allowFinderSuggestions ? "✦" : "✓"}</span>
-                <div>
-                  <strong>{exploreResult.allowFinderSuggestions ? "Có thêm gợi ý phù hợp" : "Giữ đúng nguồn bạn gửi"}</strong>
-                  <p>
-                    {exploreResult.allowFinderSuggestions
-                      ? "Ngoài các địa điểm từ nội dung của bạn, Planner có thể bổ sung điểm phù hợp để lịch trình trọn vẹn hơn."
-                      : "Lịch trình chỉ dùng các địa điểm lấy từ URL hoặc ảnh bạn đã gửi."}
-                  </p>
-                </div>
-              </div>
-
               {plan ? (
                 <>
-                  <section className="tripPlacesSection">
-                    <div className="explorerSectionHeading">
-                      <div>
-                        <span className="sectionMicroTitle">Đã sắp xếp vào chuyến đi</span>
-                        <h3>{tripPlaces.length} địa điểm</h3>
-                      </div>
-                      <span className="mapReadyBadge">Xem trên bản đồ →</span>
-                    </div>
-                    <div className="tripPlaceList">
-                      {tripPlaces.map((item) => {
-                        const sourceKind = planItemSourceKind(item);
-                        return (
-                          <article className="tripPlaceRow" key={`${item.day}-${item.order}-${item.name}`}>
-                            <span className={`placeOrder category-${categoryFromPlaceType(item.placeType)}`}>{item.order}</span>
-                            <div className="placeMain">
-                              <strong>{item.name}</strong>
-                              <span>Ngày {item.day} · {item.timeWindow} · {placeTypeLabel(item.placeType)}</span>
-                            </div>
-                            <span className={`sourceBadge ${sourceKind}`}>{planItemSourceLabel(sourceKind)}</span>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
-
                   <section className="tripPlanSection">
-                    <div className="explorerSectionHeading">
-                      <div>
-                        <span className="sectionMicroTitle">Lịch trình gợi ý</span>
-                        <h3>{plan.title}</h3>
-                      </div>
-                    </div>
-                  {planProvenance ? (
-                    <div className="planProvenance" aria-label="Nguồn địa điểm trong lịch trình">
-                      <div>
-                        <strong>{planProvenance.urlPlaces}</strong>
-                        <span>Từ nguồn của bạn</span>
-                      </div>
-                      <div>
-                        <strong>{planProvenance.plannerPlaces}</strong>
-                        <span>VSF gợi ý thêm</span>
-                      </div>
-                      {planProvenance.otherPlaces > 0 ? (
-                        <div>
-                          <strong>{planProvenance.otherPlaces}</strong>
-                          <span>Nguồn khác</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                   {plan.days.map((day) => (
                     <article className="explorerDayCard" key={day.day}>
                       <div className="dayCardHeading">
@@ -490,57 +537,90 @@ function Planner() {
                       </div>
                       <div className="dayTimeline">
                         {day.items.map((item, itemIndex) => {
-                          const sourceKind = planItemSourceKind(item);
+                          const mapKey = hasPlanItemCoordinates(item)
+                            ? planItemMapKey(day.day, itemIndex, item.name)
+                            : null;
+                          const transportLeg = transportLegAfterItem(day, item, itemIndex);
                           return (
-                            <div className={`dayTimelineItem ${isBreakPlanItem(item) ? "break" : ""}`} key={`${day.day}-${itemIndex}`}>
-                              <time>{item.timeWindow}</time>
-                              <span className="dayTimelineDot" aria-hidden="true" />
-                              <div>
-                                <strong>{item.name}</strong>
-                                {item.notes ? <p>{item.notes}</p> : null}
-                                {!isBreakPlanItem(item) ? <span className={`sourceBadge ${sourceKind}`}>{planItemSourceLabel(sourceKind)}</span> : null}
+                            <Fragment key={`${day.day}-${itemIndex}`}>
+                              <div className={`dayTimelineItem ${isBreakPlanItem(item) ? "break" : ""}`}>
+                                <time>{item.timeWindow}</time>
+                                <span className="dayTimelineDot" aria-hidden="true" />
+                                <div>
+                                  {!isBreakPlanItem(item) && mapKey ? (
+                                    <button
+                                      className="placeMapButton"
+                                      onClick={() => {
+                                        setSelectedMapPlaceKey(mapKey);
+                                        window.requestAnimationFrame(() => {
+                                          document.querySelector(".plannerMap")?.scrollIntoView({
+                                            behavior: "smooth",
+                                            block: "nearest"
+                                          });
+                                        });
+                                      }}
+                                      aria-label={`Hiển thị ${item.name} trên bản đồ`}
+                                      type="button"
+                                    >
+                                      <strong>{item.name}</strong>
+                                    </button>
+                                  ) : <strong>{item.name}</strong>}
+                                  {item.notes ? <p>{item.notes}</p> : null}
+                                </div>
                               </div>
-                            </div>
+                              {transportLeg ? (
+                                <div
+                                  className="timelineTransportLeg"
+                                  aria-label={`${transportModeLabel(transportLeg.mode)}, từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace}, khoảng ${transportLeg.estimatedDurationMinutes} phút`}
+                                  role="group"
+                                >
+                                  <span aria-hidden="true" />
+                                  <span className="transportModeIcon" aria-hidden="true">
+                                    <TransportModeIcon mode={transportLeg.mode} />
+                                  </span>
+                                  <details className="transportLegCard">
+                                    <summary className="transportLegSummary">
+                                      <strong>{transportModeLabel(transportLeg.mode)}</strong>
+                                      <span className="transportDuration">
+                                        <ClockIcon />
+                                        {transportLeg.estimatedDurationMinutes} phút
+                                      </span>
+                                    </summary>
+                                    <div className="transportLegDetails">
+                                      <p>
+                                        <span>{transportLeg.fromPlace}</span>
+                                        <b aria-hidden="true">→</b>
+                                        <span>{transportLeg.toPlace}</span>
+                                      </p>
+                                      {!transportLeg.verified ? <small>Thời gian ước tính</small> : null}
+                                    </div>
+                                  </details>
+                                </div>
+                              ) : null}
+                            </Fragment>
                           );
                         })}
                       </div>
-                      {day.transportLegs.length ? (
-                        <details className="transportDetails">
-                          <summary>{day.transportLegs.length} chặng di chuyển</summary>
-                          {day.transportLegs.map((leg, legIndex) => (
-                            <p key={`leg-${day.day}-${legIndex}`}>
-                              {transportModeLabel(leg.mode)} · {leg.fromPlace} → {leg.toPlace} · {leg.estimatedDurationMinutes} phút
-                            </p>
-                          ))}
-                        </details>
-                      ) : null}
                     </article>
                   ))}
                   </section>
                 </>
               ) : null}
-              {exploreResult.explorer.missingInfoQuestions.length ? (
-                <section className="clarificationSection">
-                  <span className="sectionMicroTitle">Giúp lịch trình sát ý bạn hơn</span>
-                  <h3>Mình cần hỏi thêm</h3>
-                  {exploreResult.explorer.missingInfoQuestions.map((question) => (
-                    <p className="questionItem" key={question}><span aria-hidden="true">?</span>{question}</p>
-                  ))}
-                </section>
-              ) : null}
-              {exploreResult.explorer.assumptions.length ? (
-                <details className="explorerDetails">
-                  <summary>Giả định và thông tin nguồn</summary>
-                  <div>
-                    {exploreResult.explorer.assumptions.map((assumption) => <p key={assumption}>{assumption}</p>)}
-                    <p>Mã dữ liệu: {exploreResult.intakeId}</p>
-                    <p>Place search data © OpenStreetMap contributors.</p>
-                  </div>
-                </details>
-              ) : null}
             </div>
           ) : (
-            <div className="emptyPlan"><span>⌖</span><h3>Chuyến đi của bạn bắt đầu ở đây</h3><p>Gửi điểm đến, URL hoặc ảnh. Explorer sẽ gom thông tin thành một bản tóm tắt dễ xem.</p></div>
+            <div className="emptyPlan">
+              <div className="explorerMascotCrew">
+                <Image
+                  alt=""
+                  aria-hidden="true"
+                  className="explorerMascotArt"
+                  height={1017}
+                  priority
+                  src="/images/explorer-crew-vietnam-v2-transparent.png"
+                  width={1546}
+                />
+              </div>
+            </div>
           )}
         </section>
 
@@ -566,49 +646,52 @@ function categoryFromPlaceType(placeType: string): PlaceCategory {
   return "other";
 }
 
-function isUrlPlanItem(item: TravelPlan["days"][number]["items"][number]): boolean {
-  return (
-    item.sourceOrder != null ||
-    item.sourceRefs.some((sourceRef) => /^https?:\/\//i.test(sourceRef))
-  );
-}
-
 function isBreakPlanItem(item: TravelPlan["days"][number]["items"][number]): boolean {
   const type = item.placeType.toLowerCase();
   return type.includes("break") || type.includes("free");
 }
 
-function planItemSourceKind(
+function hasPlanItemCoordinates(
   item: TravelPlan["days"][number]["items"][number]
-): "url" | "planner" | "other" {
-  if (isUrlPlanItem(item)) return "url";
-  if (item.source === "finder_suggestion") return "planner";
-  return "other";
+): boolean {
+  return (
+    typeof item.latitude === "number" &&
+    Number.isFinite(item.latitude) &&
+    item.latitude >= -90 &&
+    item.latitude <= 90 &&
+    typeof item.longitude === "number" &&
+    Number.isFinite(item.longitude) &&
+    item.longitude >= -180 &&
+    item.longitude <= 180
+  );
 }
 
-function planItemSourceLabel(source: "url" | "planner" | "other"): string {
-  if (source === "url") return "Nguồn của bạn";
-  if (source === "planner") return "VSF gợi ý";
-  return "Nguồn khác";
+function planItemMapKey(day: number, itemIndex: number, name: string): string {
+  return `plan-${day}-${itemIndex}-${name}`;
 }
 
-function workflowStageLabel(stage: WorkflowStage): string {
-  const labels: Record<WorkflowStage, string> = {
-    idle: "Chưa bắt đầu",
-    exploring: "Đang đọc",
-    planning: "Đang xếp lịch",
-    ready: "Sẵn sàng",
-    failed: "Cần thử lại"
-  };
-  return labels[stage];
+function formatElapsedTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds} giây`;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function budgetLevelLabel(level: ExplorerContext["intent"]["budgetLevel"]): string {
-  return { budget: "Tiết kiệm", medium: "Cân bằng", high: "Thoải mái" }[level];
+function processingDescription(stage: WorkflowStage, intakeKind: IntakeKind): string {
+  if (stage === "planning") {
+    return "Đang tạo khung chuyến đi, xếp địa điểm và kiểm tra lịch trình.";
+  }
+  if (intakeKind === "url") {
+    return "Đang đọc nguồn, tải nội dung được phép, phân tích âm thanh/khung hình và tổng hợp địa điểm.";
+  }
+  if (intakeKind === "image") {
+    return "Đang đọc nội dung ảnh, nhận diện địa điểm và chuẩn hóa yêu cầu.";
+  }
+  return "Đang hiểu điểm đến, thời lượng, ngân sách, sở thích và ràng buộc.";
 }
 
-function confidenceLabel(level: ExplorerContext["tripSpec"]["budget"]["confidence"]): string {
-  return { low: "thấp", medium: "vừa", high: "cao" }[level];
+function budgetLevelLabel(level: ExplorerContext["tripSpec"]["budget"]["level"]): string {
+  return { low: "Thấp", medium: "Trung bình", high: "Cao" }[level];
 }
 
 function paceLabel(pace: string): string {
@@ -645,7 +728,117 @@ function transportModeLabel(mode: string): string {
   const normalized = mode.toLowerCase();
   if (normalized.includes("walk")) return "Đi bộ";
   if (normalized.includes("bike") || normalized.includes("motor")) return "Xe máy";
+  if (normalized.includes("ride") || normalized.includes("hailing")) return "Xe công nghệ";
   if (normalized.includes("car") || normalized.includes("taxi")) return "Ô tô";
   if (normalized.includes("bus")) return "Xe buýt";
+  if (normalized.includes("train")) return "Tàu hỏa";
+  if (normalized.includes("flight") || normalized.includes("plane")) return "Máy bay";
+  if (normalized.includes("mixed")) return "Kết hợp";
+  if (normalized.includes("unknown")) return "Chưa xác định";
   return mode;
+}
+
+function transportLegAfterItem(
+  day: TravelPlan["days"][number],
+  item: TravelPlan["days"][number]["items"][number],
+  itemIndex: number
+) {
+  const nextItem = day.items[itemIndex + 1];
+  const exactLeg = day.transportLegs.find((leg) => {
+    const startsAtItem = item.itemId && leg.fromItemId
+      ? item.itemId === leg.fromItemId
+      : item.name.trim().toLocaleLowerCase("vi") === leg.fromPlace.trim().toLocaleLowerCase("vi");
+    if (!startsAtItem || !nextItem) return false;
+    return nextItem.itemId && leg.toItemId
+      ? nextItem.itemId === leg.toItemId
+      : nextItem.name.trim().toLocaleLowerCase("vi") === leg.toPlace.trim().toLocaleLowerCase("vi");
+  });
+
+  if (exactLeg) return exactLeg;
+  return day.transportLegs.find((leg) =>
+    item.itemId && leg.fromItemId
+      ? item.itemId === leg.fromItemId
+      : item.name.trim().toLocaleLowerCase("vi") === leg.fromPlace.trim().toLocaleLowerCase("vi")
+  );
+}
+
+function TransportModeIcon({ mode }: { mode: string }) {
+  const normalized = mode.toLowerCase();
+
+  if (normalized.includes("walk")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <circle cx="13" cy="4" r="2" />
+        <path d="m10 21 2-6-3-3 2-5 4 3 3 1M12 15l4 6M9 12l-4 3" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("bike") || normalized.includes("motor")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <circle cx="6" cy="17" r="3" />
+        <circle cx="18" cy="17" r="3" />
+        <path d="m6 17 4-7 3 7m-3-7h5l3 7M8 7h3" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("bus")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <rect x="5" y="3" width="14" height="16" rx="3" />
+        <path d="M7 12h10M8 19v2m8-2v2" />
+        <circle cx="9" cy="16" r="1" />
+        <circle cx="15" cy="16" r="1" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("train")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <rect x="6" y="3" width="12" height="15" rx="3" />
+        <path d="M8 10h8M9 21l3-3 3 3" />
+        <circle cx="9" cy="14" r="1" />
+        <circle cx="15" cy="14" r="1" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("flight") || normalized.includes("plane")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <path d="m3 15 18-9-7 14-3-6zM11 14l-4-3" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("mixed") || normalized.includes("unknown")) {
+    return (
+      <svg viewBox="0 0 24 24">
+        <circle cx="6" cy="17" r="2" />
+        <circle cx="18" cy="7" r="2" />
+        <path d="M8 17c5 0 3-10 8-10M12 5l2 2-2 2" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="m5 11 2-5h10l2 5" />
+      <path d="M4 12a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5H4zM6 17v2m12-2v2" />
+      <circle cx="8" cy="14" r="1" />
+      <circle cx="16" cy="14" r="1" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
 }

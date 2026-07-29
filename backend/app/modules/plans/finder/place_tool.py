@@ -135,6 +135,7 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
 class FinderPlace(BaseModel):
     place_id: str | None = Field(default=None, alias="placeId")
     name: str
+    address: str | None = None
     place_type: str = Field(alias="placeType")
     region_key: str = Field(alias="regionKey")
     description: str | None = None
@@ -328,6 +329,7 @@ class RepositoryFinderPlaceTool:
         return FinderPlace(
             placeId=place.id,
             name=place.name,
+            address=place.address,
             placeType=place.place_type,
             regionKey=place.region_key,
             description=(

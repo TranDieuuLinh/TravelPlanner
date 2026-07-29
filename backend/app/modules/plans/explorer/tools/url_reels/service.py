@@ -19,8 +19,10 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     SpeechToTextResult,
     UrlReelExtractionResult,
     UrlReelInput,
+    UrlMetadata,
 )
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import GeminiAudioSpeechToText
+from app.modules.plans.explorer.tools.url_reels.utils import canonicalize_url
 
 
 class UrlReelExtractionService:
@@ -58,14 +60,25 @@ class UrlReelExtractionService:
         work_dir.mkdir(parents=True, exist_ok=True)
         timings: dict[str, float] = {}
 
-        start = time.perf_counter()
-        metadata = self.loader.load_metadata(payload.url)
-        timings["loadMetadata"] = time.perf_counter() - start
+        source_start = time.perf_counter()
 
-        artifacts, media_timings = self.media.prepare(
-            metadata.canonical_url,
-            work_dir=work_dir,
-        )
+        def load_metadata() -> tuple[UrlMetadata, float]:
+            start = time.perf_counter()
+            metadata_result = self.loader.load_metadata(payload.url)
+            return metadata_result, time.perf_counter() - start
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            metadata_future = executor.submit(load_metadata)
+            media_future = executor.submit(
+                self.media.prepare,
+                canonicalize_url(payload.url),
+                work_dir=work_dir,
+            )
+            metadata, metadata_duration = metadata_future.result()
+            artifacts, media_timings = media_future.result()
+
+        timings["loadMetadata"] = metadata_duration
+        timings["prepareSourceWall"] = time.perf_counter() - source_start
         timings.update(media_timings)
 
         speech_result = SpeechToTextResult(

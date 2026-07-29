@@ -89,6 +89,7 @@ class PlanItem(BaseModel):
     item_id: str | None = Field(default=None, alias="itemId")
     place_id: str | None = Field(default=None, alias="placeId")
     name: str
+    address: str | None = None
     time_window: str = Field(alias="timeWindow")
     place_type: str = Field(alias="placeType")
     region_key: str | None = Field(default=None, alias="regionKey")

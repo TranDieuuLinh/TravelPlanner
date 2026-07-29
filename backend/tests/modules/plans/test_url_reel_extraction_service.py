@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import time
-from threading import Event, Lock
+from threading import Barrier, Event, Lock
 
+import httpx
 import pytest
 from yt_dlp.utils import DownloadError
 
@@ -13,12 +14,14 @@ from app.modules.plans.explorer.tools.url_reels.extractor import (
 )
 from app.modules.plans.explorer.tools.url_reels.frame_vision import (
     GeminiReelFrameVision,
+    _split_balanced_batches,
 )
 from app.modules.plans.explorer.tools.url_reels.media import (
     UrlReelMediaExtractor,
 )
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
+    FrameVisionObservation,
     FrameVisionResult,
     MediaArtifacts,
     SpeechToTextResult,
@@ -27,6 +30,9 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
 )
 from app.modules.plans.explorer.tools.url_reels.service import (
     UrlReelExtractionService,
+)
+from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
+    GeminiAudioSpeechToText,
 )
 
 
@@ -155,6 +161,41 @@ def test_cleans_media_inside_caller_owned_work_directory(tmp_path: Path) -> None
     assert result.artifacts == MediaArtifacts()
 
 
+def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
+    rendezvous = Barrier(2, timeout=1)
+
+    class ConcurrentLoader(FakeLoader):
+        def load_metadata(self, url: str) -> UrlMetadata:
+            rendezvous.wait()
+            return super().load_metadata(url)
+
+    class ConcurrentMedia(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            rendezvous.wait()
+            return super().prepare(url, work_dir)
+
+    service = UrlReelExtractionService(
+        loader=ConcurrentLoader(),
+        media=ConcurrentMedia(),
+        speech_to_text=FakeSpeechToText(),
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://example.com/video?tracking=ignored",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.speech_to_text.status == "ok"
+    assert result.timings["prepareSourceWall"] >= 0
+
+
 def test_photo_url_requires_uploaded_image() -> None:
     artifacts, timings = UrlReelMediaExtractor().prepare(
         "https://www.tiktok.com/@creator/photo/123",
@@ -212,6 +253,45 @@ def test_video_prepare_extracts_audio_and_frames(
     assert timings["sampledFrames"] == 2.0
 
 
+def test_video_frame_sampling_is_capped_at_one_frame_per_second(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"video")
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs):
+        commands.append(command)
+
+        class Result:
+            stdout = ""
+
+        return Result()
+
+    media = UrlReelMediaExtractor()
+    monkeypatch.setattr(media, "_probe_duration_seconds", lambda _: 30.0)
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.media.subprocess.run",
+        fake_run,
+    )
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.media.settings."
+        "url_reel_min_frame_interval_seconds",
+        1.0,
+    )
+
+    media.extract_frames(
+        video_path,
+        tmp_path,
+        "sampling",
+        maximum_frames=48,
+    )
+
+    filter_argument = commands[0][commands[0].index("-vf") + 1]
+    assert filter_argument.startswith("fps=1/1.000,")
+
+
 def test_video_frame_ocr_uses_gemini_35_flash_lite() -> None:
     assert (
         GeminiReelFrameVision(api_key="test-key").model_name
@@ -219,10 +299,91 @@ def test_video_frame_ocr_uses_gemini_35_flash_lite() -> None:
     )
 
 
-def test_frame_ocr_runs_two_batches_concurrently_and_preserves_order() -> None:
+def test_audio_stt_rotates_comma_separated_api_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted_keys: list[str] = []
+
+    class FakeHttpClient:
+        def __init__(self, *, timeout: int) -> None:
+            assert timeout == 90
+
+        def __enter__(self) -> "FakeHttpClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict,
+        ) -> httpx.Response:
+            api_key = headers["x-goog-api-key"]
+            attempted_keys.append(api_key)
+            request = httpx.Request("POST", url)
+            if api_key == "invalid-key":
+                return httpx.Response(401, request=request)
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [{"text": "Xin chào Hà Nội"}]
+                            }
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.speech_to_text.httpx.Client",
+        FakeHttpClient,
+    )
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"audio")
+
+    result = GeminiAudioSpeechToText(
+        api_key=" invalid-key, valid-key "
+    ).transcribe(audio_path)
+
+    assert attempted_keys == ["invalid-key", "valid-key"]
+    assert result.status == "ok"
+    assert result.text == "Xin chào Hà Nội"
+
+
+def test_frame_ocr_balances_frames_across_batches() -> None:
+    frames = [Path(f"frame_{index:03d}.jpg") for index in range(1, 26)]
+
+    batches = _split_balanced_batches(frames, maximum_batch_size=10)
+
+    assert [len(batch) for batch in batches] == [9, 8, 8]
+    assert [frame for batch in batches for frame in batch] == frames
+
+
+def test_frame_ocr_runs_five_batches_with_distinct_keys_from_pool_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.frame_vision.settings."
+        "url_reel_vision_batch_size",
+        10,
+    )
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.frame_vision.settings."
+        "url_reel_vision_max_concurrency",
+        5,
+    )
     overlap_detected = Event()
     state_lock = Lock()
     state = {"active": 0, "maximum": 0}
+    active_keys: set[str] = set()
+    batch_keys: dict[int, str] = {}
 
     class RecordingVision(GeminiReelFrameVision):
         def _analyze_batch(
@@ -230,15 +391,19 @@ def test_frame_ocr_runs_two_batches_concurrently_and_preserves_order() -> None:
             frame_paths: list[Path],
             *,
             destination: str | None,
+            api_key: str,
         ) -> FrameVisionResult:
             first_frame = int(frame_paths[0].stem.rsplit("_", 1)[-1])
             with state_lock:
                 state["active"] += 1
                 state["maximum"] = max(state["maximum"], state["active"])
-                if state["active"] >= 2:
+                assert api_key not in active_keys
+                active_keys.add(api_key)
+                batch_keys[first_frame] = api_key
+                if state["active"] >= 5:
                     overlap_detected.set()
             try:
-                if first_frame <= 17:
+                if first_frame <= 41:
                     assert overlap_detected.wait(timeout=1)
                 time.sleep(0.02)
                 return FrameVisionResult(
@@ -250,22 +415,58 @@ def test_frame_ocr_runs_two_batches_concurrently_and_preserves_order() -> None:
             finally:
                 with state_lock:
                     state["active"] -= 1
+                    active_keys.remove(api_key)
 
-    frames = [Path(f"frame_{index:03d}.jpg") for index in range(1, 41)]
+    frames = [Path(f"frame_{index:03d}.jpg") for index in range(1, 49)]
 
-    result = RecordingVision(api_key="test-key").analyze(
+    result = RecordingVision(
+        api_key=[
+            "unused-key",
+            "ocr-key-1",
+            "ocr-key-2",
+            "ocr-key-3",
+            "ocr-key-4",
+            "ocr-key-5",
+        ]
+    ).analyze(
         frames,
         destination="Hanoi",
     )
 
     assert overlap_detected.is_set()
-    assert state["maximum"] == 2
-    assert result.text.splitlines() == ["batch-1", "batch-17", "batch-33"]
-    assert result.places == ["Place 1", "Place 17", "Place 33"]
+    assert state["maximum"] == 5
+    assert set(batch_keys.values()) == {
+        "ocr-key-1",
+        "ocr-key-2",
+        "ocr-key-3",
+        "ocr-key-4",
+        "ocr-key-5",
+    }
+    assert result.text.splitlines() == [
+        "batch-1",
+        "batch-11",
+        "batch-21",
+        "batch-31",
+        "batch-40",
+    ]
+    assert result.places == [
+        "Place 1",
+        "Place 11",
+        "Place 21",
+        "Place 31",
+        "Place 40",
+    ]
     assert result.status == "ok"
 
 
-def test_frame_ocr_retries_failed_parallel_batch_and_keeps_other_results() -> None:
+def test_frame_ocr_retries_failed_parallel_batch_and_keeps_other_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.frame_vision.settings."
+        "url_reel_vision_batch_size",
+        16,
+    )
     attempts: dict[int, int] = {}
     attempts_lock = Lock()
 
@@ -275,11 +476,12 @@ def test_frame_ocr_retries_failed_parallel_batch_and_keeps_other_results() -> No
             frame_paths: list[Path],
             *,
             destination: str | None,
+            api_key: str,
         ) -> FrameVisionResult:
             first_frame = int(frame_paths[0].stem.rsplit("_", 1)[-1])
             with attempts_lock:
                 attempts[first_frame] = attempts.get(first_frame, 0) + 1
-            if first_frame == 17:
+            if first_frame == 15:
                 raise RuntimeError("middle batch failed")
             return FrameVisionResult(
                 text=f"batch-{first_frame}",
@@ -295,9 +497,9 @@ def test_frame_ocr_retries_failed_parallel_batch_and_keeps_other_results() -> No
         destination="Hanoi",
     )
 
-    assert attempts == {1: 1, 17: 2, 33: 1}
-    assert result.text.splitlines() == ["batch-1", "batch-33"]
-    assert result.places == ["Place 1", "Place 33"]
+    assert attempts == {1: 1, 15: 2, 28: 1}
+    assert result.text.splitlines() == ["batch-1", "batch-28"]
+    assert result.places == ["Place 1", "Place 28"]
     assert result.status == "partial"
     assert result.error == (
         "1 frame batch(es) failed; successful OCR evidence was preserved."
@@ -348,8 +550,117 @@ def test_service_combines_stt_and_frame_ocr(tmp_path: Path) -> None:
 
     assert result.speech_to_text.status == "ok"
     assert result.frame_vision.status == "ok"
+    assert "Hoan Kiem Lake" in result.extracted_context.extracted_places
     assert "Train Street" in result.extracted_context.extracted_places
     assert result.artifacts == MediaArtifacts()
+
+
+def test_context_extractor_does_not_cap_evidenced_places() -> None:
+    visual_places = [
+        f"Venue {index:02d} Museum"
+        for index in range(1, 61)
+    ]
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://example.com/reel",
+            canonicalUrl="https://example.com/reel",
+            platform="tiktok",
+            title="Hanoi itinerary",
+        ),
+        transcript=(
+            "This is a 7-day itinerary. On day two, take a day tour. "
+            "Finish at Spoken Only Lake."
+        ),
+        destination="Hanoi",
+        visual_places=visual_places,
+    )
+
+    assert context.extracted_places[:60] == visual_places
+    assert context.extracted_places[-1] == "Spoken Only Lake"
+    assert len(context.extracted_places) == 61
+    assert context.extracted_place_details[-1].source_day == 2
+
+
+def test_context_extractor_uses_stt_day_to_correct_frame_ocr_day() -> None:
+    places = ["Hanoi Shouten", "P. Ba Trieu", "Old Quarter"]
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://example.com/reel",
+            canonicalUrl="https://example.com/reel",
+            platform="tiktok",
+            title="7-day Hanoi itinerary",
+        ),
+        transcript=(
+            "On day one, I visited Hanoi Shoten. "
+            "I went around a nearby shopping street. "
+            "At night I explored Old Quarter. "
+            "On day two, I visited Trang An."
+        ),
+        destination="Hanoi",
+        visual_places=places,
+        visual_observations=[
+            FrameVisionObservation(
+                placeName=place,
+                evidence=place,
+                dayNumber=7,
+            )
+            for place in places
+        ],
+    )
+
+    assert [
+        detail.source_day
+        for detail in context.extracted_place_details[:3]
+    ] == [1, 1, 1]
+
+
+def test_context_extractor_assigns_day_trip_search_region_and_evidence() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://example.com/reel",
+            canonicalUrl="https://example.com/reel",
+            platform="tiktok",
+            title="7-day Hanoi itinerary",
+        ),
+        transcript=(
+            "On day one, I took a night bus tour to see the famous Hanoi spots. "
+            "I explored Old Quarter. "
+            "On day two, we went on a nature trip to Ninh Binh, "
+            "just a day tour. "
+            "We visited Hang Mua and Trang An. "
+            "On day three, we returned to Hanoi. "
+            "On day six, I went to Cem Studio."
+        ),
+        destination="Hanoi",
+        visual_text=(
+            "PLACE: Hang Mua | DAY 2\n"
+            "PLACE: Trang An | DAY 2"
+        ),
+        visual_places=["Old Quarter", "Hang Mua", "Trang An", "Cem Studio"],
+        visual_observations=[
+            FrameVisionObservation(
+                placeName="Hang Mua",
+                evidence="PLACE: Hang Mua | DAY 2",
+                dayNumber=2,
+            ),
+            FrameVisionObservation(
+                placeName="Trang An",
+                evidence="PLACE: Trang An | DAY 2",
+                dayNumber=2,
+            ),
+        ],
+    )
+
+    by_name = {
+        detail.name: detail
+        for detail in context.extracted_place_details
+    }
+    assert by_name["Old Quarter"].search_region == "Hanoi"
+    assert by_name["Hang Mua"].search_region == "Ninh Binh"
+    assert by_name["Trang An"].search_region == "Ninh Binh"
+    assert by_name["Cem Studio"].search_region == "Hanoi"
+    assert "stt" in by_name["Hang Mua"].source_evidence
+    assert "ocr" in by_name["Hang Mua"].source_evidence
 
 
 def test_tiktok_video_download_retries_with_browser_impersonation(
@@ -501,6 +812,45 @@ def test_context_extractor_preserves_hanoi_reel_stop_order() -> None:
     assert context.extracted_place_details[4].source_time_hint == "before lunch"
     assert context.extracted_place_details[8].source_time_hint == "after dinner"
     assert context.extracted_place_details[9].source_time_hint == "nightlife"
+
+
+def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity() -> None:
+    url = "https://example.com/hanoi-reel"
+    caption = (
+        "Don't skip these 4 spots in 📍Hanoi 🇻🇳 "
+        "📌 Cafe Pho Co ☕ 📌 Ethnology Museum 🛖 "
+        "📌 Train Street Southern Entrance 🚂 "
+        "📌 Dong Xuan St and Hang Ma St 🛍️ "
+        "For our Train Street guide, tap the link in bio."
+    )
+    metadata = UrlMetadata(
+        originalUrl=url,
+        canonicalUrl=url,
+        platform="tiktok",
+        title="Four places in Hanoi",
+        description=caption,
+    )
+
+    context = UrlReelContextExtractor().extract(
+        metadata=metadata,
+        transcript="",
+        destination="Hanoi",
+    )
+
+    assert context.extracted_places == [
+        "Cafe Pho Co",
+        "Ethnology Museum",
+        "Train Street Southern Entrance",
+        "Dong Xuan St and Hang Ma St",
+    ]
+    assert all(
+        detail.source_activity is None
+        for detail in context.extracted_place_details
+    )
+    assert all(
+        "Don't skip" not in detail.name
+        for detail in context.extracted_place_details
+    )
 
 
 class TemporaryDirectoryStub:

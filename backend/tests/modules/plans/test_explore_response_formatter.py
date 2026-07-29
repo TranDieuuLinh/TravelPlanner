@@ -99,6 +99,7 @@ def test_formatter_prioritizes_url_itinerary_and_excludes_raw_provider_payload(
 
     assert "primary planning blueprint" in llm.system_prompt
     assert "untrusted evidence" in llm.system_prompt
+    assert "established Vietnamese place name" in llm.system_prompt
     sent = json.loads(llm.user_payload)
     assert "raw" not in sent["urlReelResults"][0]["metadata"]
     assert "must-not-leak" not in llm.user_payload

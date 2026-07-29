@@ -9,6 +9,10 @@ from app.modules.plans.explorer.schema import (
     PlaceCandidateSourceType,
     UnifiedPlaceCandidate,
 )
+from app.modules.plans.explorer.place_policy import (
+    concise_source_activity,
+    is_credible_url_candidate,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelExtractionResult,
 )
@@ -35,14 +39,28 @@ class PlaceCandidateAggregator:
         merged: dict[str, UnifiedPlaceCandidate] = {}
         order: list[str] = []
         for candidate in candidates:
-            key = _dedupe_key(candidate.name)
-            if not key or key == destination_key:
+            if not is_credible_url_candidate(candidate):
+                continue
+            candidate = candidate.model_copy(
+                update={
+                    "source_activity": concise_source_activity(
+                        candidate.source_activity
+                    )
+                }
+            )
+            name_key = _dedupe_key(candidate.name)
+            key = _candidate_key(candidate) or name_key
+            if not name_key or name_key == destination_key:
                 continue
             if key not in merged:
                 merged[key] = candidate.model_copy(deep=True)
                 order.append(key)
                 continue
-            merged[key] = _merge(merged[key], candidate)
+            merged[key] = _merge(
+                merged[key],
+                candidate,
+                preserve_current_name=key.startswith("url-order:"),
+            )
         result = [merged[key] for key in order]
         result.sort(
             key=lambda candidate: (
@@ -61,6 +79,7 @@ class PlaceCandidateAggregator:
                 name=candidate.name,
                 category=candidate.category,
                 addressHint=candidate.address,
+                searchRegion=candidate.search_region,
                 sources=[
                     PlaceCandidateSource(
                         type=(
@@ -76,6 +95,7 @@ class PlaceCandidateAggregator:
                 preferenceLevel=candidate.preference_level,
                 attributes=candidate.attributes,
                 notes=candidate.notes,
+                sourceEvidence=candidate.source_evidence,
                 sourceOrder=candidate.source_order,
                 sourceDay=candidate.source_day,
                 sourceTimeHint=candidate.source_time_hint,
@@ -99,6 +119,7 @@ class PlaceCandidateAggregator:
                             name=detail.name,
                             category=detail.category,
                             addressHint=detail.address,
+                            searchRegion=detail.search_region,
                             sources=[
                                 PlaceCandidateSource(
                                     type=PlaceCandidateSourceType.url,
@@ -109,6 +130,7 @@ class PlaceCandidateAggregator:
                             preferenceLevel="preferred",
                             attributes=detail.attributes,
                             notes=detail.evidence,
+                            sourceEvidence=detail.source_evidence,
                             sourceOrder=detail.source_order,
                             sourceDay=detail.source_day,
                             sourceTimeHint=detail.source_time_hint,
@@ -136,6 +158,8 @@ class PlaceCandidateAggregator:
 def _merge(
     current: UnifiedPlaceCandidate,
     incoming: UnifiedPlaceCandidate,
+    *,
+    preserve_current_name: bool = False,
 ) -> UnifiedPlaceCandidate:
     sources = list(current.sources)
     seen_sources = {(source.type.value, source.url) for source in sources}
@@ -145,7 +169,31 @@ def _merge(
             sources.append(source)
             seen_sources.add(key)
 
-    preferred = incoming if incoming.confidence > current.confidence else current
+    preferred = (
+        current
+        if preserve_current_name
+        else incoming
+        if incoming.confidence > current.confidence
+        else current
+    )
+    search_names = list(
+        dict.fromkeys(
+            [
+                *current.search_names,
+                *incoming.search_names,
+                *(
+                    [incoming.name]
+                    if incoming.name != preferred.name
+                    else []
+                ),
+                *(
+                    [current.name]
+                    if current.name != preferred.name
+                    else []
+                ),
+            ]
+        )
+    )
     category = preferred.category
     if category.value == "other":
         category = (
@@ -155,9 +203,15 @@ def _merge(
         )
     return UnifiedPlaceCandidate(
         name=preferred.name,
+        searchNames=search_names,
         category=category,
         addressHint=current.address_hint or incoming.address_hint,
+        searchRegion=incoming.search_region or current.search_region,
         sources=sources,
+        sourceEvidence={
+            **current.source_evidence,
+            **incoming.source_evidence,
+        },
         confidence=max(current.confidence, incoming.confidence),
         priority=min(current.priority, incoming.priority),
         preferenceLevel=(
@@ -182,7 +236,9 @@ def _merge(
         sourceOrder=current.source_order or incoming.source_order,
         sourceDay=current.source_day or incoming.source_day,
         sourceTimeHint=current.source_time_hint or incoming.source_time_hint,
-        sourceActivity=current.source_activity or incoming.source_activity,
+        sourceActivity=concise_source_activity(
+            current.source_activity or incoming.source_activity
+        ),
         sourceDurationMinutes=(
             current.source_duration_minutes or incoming.source_duration_minutes
         ),
@@ -197,3 +253,19 @@ def _dedupe_key(value: str) -> str:
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "", without_marks)
+
+
+def _candidate_key(candidate: UnifiedPlaceCandidate) -> str:
+    if candidate.source_order is None:
+        return ""
+    source_url = next(
+        (
+            source.url
+            for source in candidate.sources
+            if source.type is PlaceCandidateSourceType.url and source.url
+        ),
+        None,
+    )
+    if source_url is None:
+        return ""
+    return f"url-order:{source_url}:{candidate.source_order}"

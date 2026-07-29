@@ -7,7 +7,11 @@ import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "VSF Travel",
-  description: "Khám phá plan du lịch và tạo lịch trình với AI."
+  description: "Khám phá plan du lịch và tạo lịch trình với AI.",
+  icons: {
+    icon: "/images/penguin-logo.png",
+    apple: "/images/penguin-logo.png",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

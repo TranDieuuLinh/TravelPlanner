@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div className="topbarInner">
           <Link aria-label="VSF Travel" className="brand" href="/explore">
-            <span>V</span>
+            <span aria-hidden="true" className="brandPenguin" />
             <strong>VSF Travel</strong>
           </Link>
           <nav aria-label="Điều hướng chính" className="desktopNav">
@@ -46,24 +46,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="shellActions">
-            <Link className="newTrip" href="/planner">
-              <span>✦</span>Tạo chuyến đi
-            </Link>
             {!loading && !user ? (
               <Link className="accountLink" href="/login">
                 Đăng nhập
               </Link>
             ) : null}
             {!loading && user ? (
-              <>
+              <div className="accountMenu">
                 <Link aria-label={`Hồ sơ của ${user.fullName}`} className="accountLink signedIn" href="/profile">
-                  <span>{user.fullName.charAt(0).toUpperCase()}</span>
-                  <strong>{user.fullName}</strong>
+                  <span className="shellAccountAvatar">{user.fullName.charAt(0).toUpperCase()}</span>
+                  <span className="accountCopy">
+                    <strong>{user.fullName}</strong>
+                  </span>
                 </Link>
-                <button className="logoutButton" onClick={() => void logout()} type="button">
-                  Đăng xuất
+                <button aria-label="Đăng xuất" className="logoutButton" onClick={() => void logout()} title="Đăng xuất" type="button">
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="M14.25 8.25V5.5A2.5 2.5 0 0 0 11.75 3h-5.5a2.5 2.5 0 0 0-2.5 2.5v13a2.5 2.5 0 0 0 2.5 2.5h5.5a2.5 2.5 0 0 0 2.5-2.5v-2.75M10 12h10.25m0 0-3.5-3.5m3.5 3.5-3.5 3.5" />
+                  </svg>
                 </button>
-              </>
+              </div>
             ) : null}
           </div>
         </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import { getAdminPendingListings, reviewListingVersion } from "@/lib/marketplace";
 import type { PendingListingVersion } from "@/types/marketplace";
@@ -93,6 +94,7 @@ export default function AdminListingsPage() {
 
       {pendingListings.length === 0 ? (
         <section className="emptyState">
+          <PenguinMascot className="emptyPenguin" size={160} variant="search" />
           <h2>Không có listing nào đang chờ duyệt</h2>
           <p>Tất cả sản phẩm gửi lên đã được xử lý.</p>
         </section>

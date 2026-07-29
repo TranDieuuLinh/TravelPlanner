@@ -78,7 +78,6 @@ def test_main_workflow_uses_canonical_hanoi_catalog_region() -> None:
         {
             "intent": {
                 "destination": "Hanoi, Vietnam",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["culture"],
@@ -593,7 +592,6 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
         {
             "intent": {
                 "destination": "Hà Nội",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["culture"],
@@ -602,10 +600,8 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
                 "days": 2,
                 "partySize": 3,
                 "budget": {
-                    "inputMode": "unknown",
-                    "currency": "VND",
-                    "isHardCap": False,
-                    "confidence": "low",
+                    "targetAmount": 6_000_000,
+                    "level": "medium",
                 },
             },
             "selectedPlaces": [
@@ -646,7 +642,6 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
             "userId": None,
             "intent": {
                 "destination": "Hà Nội",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["food"],
@@ -655,10 +650,8 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
                 "days": 1,
                 "partySize": 2,
                 "budget": {
-                    "inputMode": "unknown",
-                    "currency": "VND",
-                    "isHardCap": False,
-                    "confidence": "low",
+                    "targetAmount": None,
+                    "level": "medium",
                 },
             },
             "selectedPlaces": [],
@@ -684,7 +677,6 @@ def test_main_workflow_accepts_planning_context() -> None:
         {
             "intent": {
                 "destination": "Hà Nội",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": ["culture"],
@@ -693,10 +685,8 @@ def test_main_workflow_accepts_planning_context() -> None:
                 "days": 2,
                 "partySize": 2,
                 "budget": {
-                    "inputMode": "unknown",
-                    "currency": "VND",
-                    "isHardCap": False,
-                    "confidence": "low",
+                    "targetAmount": None,
+                    "level": "medium",
                 },
             },
             "regionKey": "vn,ha-noi",
