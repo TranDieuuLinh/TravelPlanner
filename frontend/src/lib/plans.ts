@@ -146,6 +146,8 @@ export async function exploreFull(
 
 export async function createPlanFromExplorer(input: {
   context: ExplorerContext;
+  intakeId?: string | null;
+  userId?: string | null;
   selectedPlaces: ExplorePlace[];
 }): Promise<TravelPlan> {
   return apiFetch<TravelPlan>("/plans/main/from-explorer", {
@@ -153,6 +155,8 @@ export async function createPlanFromExplorer(input: {
     body: JSON.stringify({
       intent: input.context.intent,
       tripSpec: input.context.tripSpec,
+      intakeId: input.intakeId ?? null,
+      userId: input.userId ?? null,
       selectedPlaces: input.selectedPlaces.map((place) => ({
         name: place.name,
         placeId: place.placeId ?? null,

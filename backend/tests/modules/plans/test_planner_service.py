@@ -25,7 +25,10 @@ from app.modules.plans.schema import (
     MainPlanCreate,
     MainPlanFromExplorerCreate,
     PlanningContextCreate,
+    SelectedPlaceCreate,
 )
+from app.modules.plans.repository import PlanRepository
+from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.shared.errors import AppError
@@ -286,6 +289,52 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
     assert plan.check_report is not None
     assert plan.check_report.status == "needs_backup"
     assert plan.days[0].items[0].name == "Văn Miếu"
+
+
+def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
+    main_workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=PlannerService(FakeStatisticsProvider(place_count=0)),
+        finder=FinderService(),
+    )
+    service = PlanService(
+        repository=PlanRepository(),
+        explore_formatter=object(),  # type: ignore[arg-type]
+        main_workflow=main_workflow,
+        backup_workflow=object(),  # type: ignore[arg-type]
+        explorer_persistence=FakeExplorerPersistence(),
+    )
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intakeId": "intake-tiktok",
+            "userId": None,
+            "intent": {
+                "destination": "Hà Nội",
+                "budgetLevel": "medium",
+                "travelStyle": "local",
+                "pace": "balanced",
+                "interests": ["food"],
+            },
+            "tripSpec": {
+                "days": 1,
+                "partySize": 2,
+                "budget": {
+                    "inputMode": "unknown",
+                    "currency": "VND",
+                    "isHardCap": False,
+                    "confidence": "low",
+                },
+            },
+            "selectedPlaces": [],
+        }
+    )
+
+    plan = asyncio.run(service.create_main_plan_from_explorer(payload))
+
+    assert plan.days[0].items[0].name == "Bún chả Hàng Quạt"
+    assert plan.days[0].items[0].source_refs == [
+        "https://www.tiktok.com/@brandneweats/video/7662905162960243989"
+    ]
 
 
 def test_main_workflow_accepts_planning_context() -> None:
@@ -563,6 +612,26 @@ class FakeStatisticsProvider:
             generated_at="2026-07-28T10:00:00+00:00",
             source_fingerprint="fingerprint",
         )
+
+
+class FakeExplorerPersistence:
+    def load_must_places(
+        self,
+        intake_id: str,
+        user_id: str | None,
+    ) -> list[SelectedPlaceCreate]:
+        assert intake_id == "intake-tiktok"
+        assert user_id is None
+        return [
+            SelectedPlaceCreate(
+                name="Bún chả Hàng Quạt",
+                mustVisit=True,
+                tags=["food"],
+                sourceRefs=[
+                    "https://www.tiktok.com/@brandneweats/video/7662905162960243989"
+                ],
+            )
+        ]
 
 
 def _intent() -> TravelIntent:

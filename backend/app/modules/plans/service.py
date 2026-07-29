@@ -29,6 +29,7 @@ from app.modules.plans.schema import (
     PlanBundleRead,
     PlanBundleRead,
     PlanningContextCreate,
+    SelectedPlaceCreate,
 )
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
@@ -188,7 +189,18 @@ class PlanService:
         self,
         payload: MainPlanFromExplorerCreate,
     ) -> Plan:
-        plan = await self.main_workflow.run_from_explorer(payload)
+        selected_places = list(payload.selected_places)
+        if payload.intake_id and self.explorer_persistence is not None:
+            selected_places = _merge_selected_places(
+                selected_places,
+                self.explorer_persistence.load_must_places(
+                    payload.intake_id,
+                    payload.user_id,
+                ),
+            )
+        plan = await self.main_workflow.run_from_explorer(
+            payload.model_copy(update={"selected_places": selected_places})
+        )
         self.repository.save(plan)
         return plan
 
@@ -205,3 +217,21 @@ class PlanService:
 
 async def _empty_list() -> list:
     return []
+
+
+def _merge_selected_places(
+    explicit: list[SelectedPlaceCreate],
+    persisted: list[SelectedPlaceCreate],
+) -> list[SelectedPlaceCreate]:
+    merged = list(explicit)
+    seen = {
+        (place.place_id or place.name).strip().casefold()
+        for place in merged
+    }
+    for place in persisted:
+        key = (place.place_id or place.name).strip().casefold()
+        if key in seen:
+            continue
+        merged.append(place)
+        seen.add(key)
+    return merged

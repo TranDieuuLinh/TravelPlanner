@@ -113,18 +113,17 @@ function Planner() {
         rawRequest: text,
         images
       });
+      const nextSelectedKeys = new Set(
+        [
+          ...(nextExploreResult.placeCandidates ?? []),
+          ...(nextExploreResult.foodPlaces ?? [])
+        ]
+          .map((place, index) => `${index}:${place.name}:${place.address ?? ""}`)
+      );
       setExploreResult(nextExploreResult);
       setPlan(null);
       setSelectedMapPlaceKey(null);
-      setSelectedPlaceKeys(
-        new Set(
-          [
-            ...(nextExploreResult.placeCandidates ?? []),
-            ...(nextExploreResult.foodPlaces ?? [])
-          ]
-            .map((place, index) => `${index}:${place.name}:${place.address ?? ""}`)
-        )
-      );
+      setSelectedPlaceKeys(nextSelectedKeys);
       setMessages((current) => [
         ...current,
         {
@@ -135,6 +134,17 @@ function Planner() {
       ]);
       setImages([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (nextSelectedKeys.size === 0) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: Date.now() + 2,
+            role: "assistant",
+            text: "Không có checkbox cần xác nhận trong response, mình sẽ tạo lịch trình từ dữ liệu Explorer đã lưu."
+          }
+        ]);
+        await createFromExplorer(nextExploreResult, nextSelectedKeys);
+      }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
       setError(message);
@@ -144,17 +154,25 @@ function Planner() {
     }
   }
 
-  async function createFromExplorer() {
-    if (!exploreResult) return;
-    const allPlaces = [...placeCandidates, ...foodPlaces];
+  async function createFromExplorer(
+    source: ExploreResponse | null = exploreResult,
+    keys: Set<string> = selectedPlaceKeys
+  ) {
+    if (!source) return;
+    const allPlaces = [
+      ...(source.placeCandidates ?? []),
+      ...(source.foodPlaces ?? [])
+    ];
     const confirmedPlaces = allPlaces.filter((place, index) =>
-      selectedPlaceKeys.has(`${index}:${place.name}:${place.address ?? ""}`)
+      keys.has(`${index}:${place.name}:${place.address ?? ""}`)
     );
     setLoading(true);
     setError("");
     try {
       setPlan(await createPlanFromExplorer({
-        context: exploreResult.explorer,
+        context: source.explorer,
+        intakeId: source.intakeId,
+        userId: source.userId,
         selectedPlaces: confirmedPlaces
       }));
     } catch (caught) {
@@ -298,11 +316,15 @@ function Planner() {
               </section>
               <button
                 className="generateButton"
-                disabled={loading || selectedPlaceKeys.size === 0}
+                disabled={loading}
                 onClick={() => void createFromExplorer()}
                 type="button"
               >
-                {loading ? "Đang tạo kế hoạch…" : `Xác nhận ${selectedPlaceKeys.size} địa điểm và tạo kế hoạch`}
+                {loading
+                  ? "Đang tạo kế hoạch…"
+                  : selectedPlaceKeys.size
+                    ? `Xác nhận ${selectedPlaceKeys.size} địa điểm và tạo kế hoạch`
+                    : "Tạo kế hoạch từ dữ liệu Explorer đã lưu"}
               </button>
               {plan ? (
                 <section>
