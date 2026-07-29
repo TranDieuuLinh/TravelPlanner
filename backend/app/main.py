@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-import logging
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -15,7 +14,6 @@ from app.core.security_headers import (
     rate_limit_middleware,
     security_headers_middleware,
 )
-from app.db.base import Base
 from app.db.models import Place, User, UserMustPlace  # noqa: F401
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
@@ -31,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         seed_demo_marketplace(db)
     if settings.preload_url_reel_models:

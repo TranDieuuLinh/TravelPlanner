@@ -32,6 +32,7 @@ from app.modules.plans.finder.skeleton_builder import (
     DayBlock,
     DaySkeletonBuilder,
 )
+from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
 INTENSITY_EFFECTS: dict[str, dict[str, int]] = {
@@ -50,12 +51,14 @@ class FinderService:
         *,
         max_candidates_per_block: int = 5,
         skeleton_builder: DaySkeletonBuilder | None = None,
+        route_optimizer: GeographicRouteOptimizer | None = None,
     ) -> None:
         if max_candidates_per_block < 1:
             raise ValueError("max_candidates_per_block must be at least 1")
         self.place_tool = place_tool or EmptyFinderPlaceTool()
         self.max_candidates_per_block = max_candidates_per_block
         self.skeleton_builder = skeleton_builder or DaySkeletonBuilder()
+        self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
 
     def fill_main_plan(
         self,
@@ -172,6 +175,7 @@ class FinderService:
         }
 
         for brief in macro_plan.day_briefs:
+            day_start_location = committed_user_status.location
             tentative_user_status = committed_user_status.model_copy(deep=True)
             tentative_plan_status = committed_plan_status.model_copy(deep=True)
             skeleton = self.skeleton_builder.build(
@@ -251,12 +255,45 @@ class FinderService:
             tentative_plan_status.current_slot = None
             committed_user_status = tentative_user_status
             committed_plan_status = tentative_plan_status
+            start_coordinate = (
+                (
+                    day_start_location.latitude,
+                    day_start_location.longitude,
+                )
+                if day_start_location is not None
+                and day_start_location.latitude is not None
+                and day_start_location.longitude is not None
+                else None
+            )
+            optimized_items, transport_legs = self.route_optimizer.optimize(
+                day_items,
+                start=start_coordinate,
+            )
+            travel_minutes = sum(
+                leg.estimated_duration_minutes for leg in transport_legs
+            )
+            walking_minutes = sum(
+                leg.estimated_duration_minutes
+                for leg in transport_legs
+                if leg.mode == "walk"
+            )
+            self._increment_usage(
+                tentative_plan_status.day_usage,
+                travel_minutes=travel_minutes,
+                walking_minutes=walking_minutes,
+            )
+            self._increment_usage(
+                tentative_plan_status.trip_usage,
+                travel_minutes=travel_minutes,
+                walking_minutes=walking_minutes,
+            )
             days.append(
                 PlanDay(
                     day=brief.day,
                     theme=brief.theme,
                     strategy=skeleton.strategy,
-                    items=day_items,
+                    items=optimized_items,
+                    transportLegs=transport_legs,
                 )
             )
 
@@ -650,10 +687,14 @@ class FinderService:
         activity_minutes: int = 0,
         rest_minutes: int = 0,
         place_count: int = 0,
+        travel_minutes: int = 0,
+        walking_minutes: int = 0,
     ) -> None:
         usage.activity_minutes += activity_minutes
         usage.rest_minutes += rest_minutes
         usage.place_count += place_count
+        usage.travel_minutes += travel_minutes
+        usage.walking_minutes += walking_minutes
 
     def _finish_day_location(self, user_status: UserStatus) -> None:
         accommodation_id = user_status.active_accommodation_place_id

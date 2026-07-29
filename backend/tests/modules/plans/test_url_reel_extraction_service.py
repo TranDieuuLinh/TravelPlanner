@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
+    FrameVisionResult,
     MediaArtifacts,
     SpeechToTextResult,
     UrlMetadata,
@@ -73,7 +75,9 @@ class FakeContextExtractor:
         metadata: UrlMetadata,
         transcript: str,
         destination: str | None = None,
+        visual_text: str = "",
     ) -> ExtractedContext:
+        assert visual_text in {"", "Frame OCR: Train Street"}
         return ExtractedContext(
             extractedPlaces=["Hoan Kiem Lake"],
             confidence=0.9,
@@ -139,6 +143,61 @@ def test_keeps_caller_owned_work_directory_for_debugging(tmp_path: Path) -> None
     assert work_dir.exists()
     assert result.artifacts.video_path == work_dir / "reel.mp4"
     assert result.artifacts.audio_path == work_dir / "audio.mp3"
+
+
+def test_frame_vision_runs_in_parallel_with_speech_to_text(
+    tmp_path: Path,
+) -> None:
+    barrier = Barrier(2, timeout=2)
+
+    class MediaWithFrame(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            artifacts, timings = super().prepare(url, work_dir)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            artifacts.frame_paths = [frame_path]
+            return artifacts, timings
+
+    class ParallelSpeech(FakeSpeechToText):
+        def transcribe(self, *args, **kwargs) -> SpeechToTextResult:
+            barrier.wait()
+            return super().transcribe(*args, **kwargs)
+
+    class ParallelVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            barrier.wait()
+            return FrameVisionResult(
+                text="Frame OCR: Train Street",
+                status="ok",
+                durationSeconds=0.1,
+            )
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=MediaWithFrame(),
+        speech_to_text=ParallelSpeech(),
+        frame_vision=ParallelVision(),  # type: ignore[arg-type]
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://example.com/video",
+            workDir=tmp_path / "parallel",
+        )
+    )
+
+    assert result.speech_to_text.status == "ok"
+    assert result.frame_vision.text == "Frame OCR: Train Street"
 
 
 class TemporaryDirectoryStub:

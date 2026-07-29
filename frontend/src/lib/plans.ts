@@ -6,7 +6,24 @@ export type PlanItem = {
   latitude?: number | null;
   longitude?: number | null;
 };
-export type PlanDay = { day: number; theme: string; items: PlanItem[] };
+export type TransportLeg = {
+  fromItemId?: string | null;
+  toItemId?: string | null;
+  fromPlace: string;
+  toPlace: string;
+  mode: string;
+  distanceMeters: number;
+  estimatedDurationMinutes: number;
+  geometryCoordinates: [number, number][];
+  source: string;
+  verified: boolean;
+};
+export type PlanDay = {
+  day: number;
+  theme: string;
+  items: PlanItem[];
+  transportLegs: TransportLeg[];
+};
 export type TravelPlan = {
   id: string;
   title: string;
@@ -35,6 +52,14 @@ export type PlaceCategory =
   | "hotel"
   | "transport"
   | "free_time"
+  | "nature"
+  | "culture"
+  | "shopping"
+  | "nightlife"
+  | "wellness"
+  | "adventure"
+  | "beach"
+  | "family"
   | "other";
 
 export type BudgetLevel = "budget" | "medium" | "high";
@@ -59,6 +84,36 @@ export type BudgetEnvelope = {
   notes?: string | null;
 };
 
+export type PreferenceSignal = {
+  dimension: string;
+  value: string;
+  score: number;
+  confidence: number;
+  scope: "trip" | "destination" | "global";
+  destination?: string | null;
+  sourceTypes: string[];
+};
+
+export type LongTermPreferenceProfile = {
+  version: number;
+  explicit: string[];
+  scores: Record<string, {
+    score: number;
+    confidence: number;
+    observations: number;
+    sourceTypes: string[];
+    lastObservedAt?: string | null;
+  }>;
+  observationCount: number;
+  updatedAt?: string | null;
+};
+
+export type PreferenceSnapshot = {
+  version: number;
+  signals: PreferenceSignal[];
+  effectiveProfile: LongTermPreferenceProfile;
+};
+
 export type ExplorerContext = {
   intent: {
     destination: string;
@@ -80,6 +135,7 @@ export type ExplorerContext = {
   };
   assumptions: string[];
   missingInfoQuestions: string[];
+  preferenceSnapshot: PreferenceSnapshot;
 };
 
 export type ExplorePlace = {
@@ -93,6 +149,8 @@ export type ExplorePlace = {
   sourceUrl?: string | null;
   confidence?: number;
   priority?: number;
+  preferenceLevel?: "mentioned" | "preferred" | "must_visit";
+  attributes?: string[];
   notes?: string | null;
 };
 
@@ -196,13 +254,15 @@ export async function createPlanFromExplorer(input: {
         name: place.name,
         placeId: place.placeId ?? null,
         priority: place.priority ?? 1,
-        mustVisit: true,
+        mustVisit: place.preferenceLevel === "must_visit",
+        preferenceLevel: place.preferenceLevel ?? "preferred",
         latitude: place.latitude ?? null,
         longitude: place.longitude ?? null,
-        tags: [place.category],
+        tags: [place.category, ...(place.attributes ?? [])],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
         notes: place.notes ?? null
-      }))
+      })),
+      preferenceProfile: input.context.preferenceSnapshot.effectiveProfile
     })
   });
 }

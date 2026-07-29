@@ -45,6 +45,7 @@ class ExplorerPersistenceRepository:
                         source.model_dump(mode="json")
                         for source in candidate.sources
                     ],
+                    attributes_json=list(candidate.attributes),
                     confidence=Decimal(str(candidate.confidence)),
                     notes=candidate.notes,
                     resolved_name=resolution.name,
@@ -62,6 +63,7 @@ class ExplorerPersistenceRepository:
                     fetched_at=resolution.fetched_at,
                     attribution=resolution.attribution,
                     resolution_status=resolution.status,
+                    preference_level=candidate.preference_level.value,
                 )
             )
         self.session.commit()
@@ -86,12 +88,17 @@ class ExplorerPersistenceRepository:
         return [
             SelectedPlaceCreate(
                 name=must_place.resolved_name,
-                priority=1,
-                mustVisit=True,
+                priority=_priority_from_confidence(must_place.confidence),
+                mustVisit=must_place.preference_level == "must_visit",
+                preferenceLevel=must_place.preference_level,
                 regionKey=normalize_region_key(
                     must_place.city or must_place.destination
                 ),
-                tags=[must_place.category],
+                tags=list(
+                    dict.fromkeys(
+                        [must_place.category, *(must_place.attributes_json or [])]
+                    )
+                ),
                 latitude=(
                     float(must_place.latitude)
                     if must_place.latitude is not None
@@ -109,11 +116,31 @@ class ExplorerPersistenceRepository:
                 notes=must_place.notes,
             )
             for must_place in rows
+            if _is_schedulable_must_place(must_place)
         ]
 
 
 def _candidate_key(name: str, destination: str) -> str:
     return f"{_slug(destination)}:{_slug(name)}"
+
+
+def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
+    return (
+        must_place.resolution_status in {"resolved", "provisional"}
+        and must_place.latitude is not None
+        and must_place.longitude is not None
+    )
+
+
+def _priority_from_confidence(confidence: Decimal) -> int:
+    value = float(confidence)
+    if value >= 0.85:
+        return 1
+    if value >= 0.7:
+        return 2
+    if value >= 0.5:
+        return 3
+    return 4
 
 
 def _slug(value: str) -> str:

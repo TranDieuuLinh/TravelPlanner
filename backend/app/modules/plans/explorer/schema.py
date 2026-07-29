@@ -9,10 +9,12 @@ from app.modules.plans.dto.agent_contracts import (
     BudgetInputMode,
     ItineraryItemCategory,
     PlaceCandidateHint,
+    PlacePreferenceLevel,
     PlanningIntent,
     TripPlanningSpec,
     UserPlanningState,
 )
+from app.modules.preferences.schema import PreferenceSnapshot
 
 
 class ExploreAccommodationInput(BaseModel):
@@ -110,6 +112,11 @@ class UnifiedPlaceCandidate(BaseModel):
     sources: list[PlaceCandidateSource] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     priority: int = Field(default=1, ge=1, le=5)
+    preference_level: Annotated[
+        PlacePreferenceLevel,
+        Field(default=PlacePreferenceLevel.preferred, alias="preferenceLevel"),
+    ]
+    attributes: list[str] = Field(default_factory=list)
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -120,6 +127,10 @@ class ExplorerContextResponse(BaseModel):
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(default_factory=list, alias="missingInfoQuestions")]
+    preference_snapshot: Annotated[
+        PreferenceSnapshot,
+        Field(default_factory=PreferenceSnapshot, alias="preferenceSnapshot"),
+    ]
 
     model_config = {"populate_by_name": True}
 

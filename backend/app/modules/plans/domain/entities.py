@@ -89,11 +89,38 @@ class PlanItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlanTransportLeg(BaseModel):
+    from_item_id: str | None = Field(default=None, alias="fromItemId")
+    to_item_id: str | None = Field(default=None, alias="toItemId")
+    from_place: str = Field(alias="fromPlace")
+    to_place: str = Field(alias="toPlace")
+    mode: str
+    distance_meters: int = Field(ge=0, alias="distanceMeters")
+    estimated_duration_minutes: int = Field(
+        ge=0,
+        alias="estimatedDurationMinutes",
+    )
+    geometry_coordinates: list[tuple[float, float]] = Field(
+        default_factory=list,
+        alias="geometryCoordinates",
+    )
+    source: str = "geodesic_estimate"
+    verified: bool = False
+
+    model_config = {"populate_by_name": True}
+
+
 class PlanDay(BaseModel):
     day: int
     theme: str
     strategy: str = "anchor_led"
     items: list[PlanItem]
+    transport_legs: list[PlanTransportLeg] = Field(
+        default_factory=list,
+        alias="transportLegs",
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class UserStatusMetrics(BaseModel):

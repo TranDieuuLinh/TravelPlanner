@@ -62,15 +62,21 @@ VSF_TravelPlanner/
 
 ## Chạy dự án trên máy cá nhân
 
-Khởi động PostgreSQL:
+Toàn bộ runtime (frontend, backend và PostgreSQL) chạy bằng Docker:
 
 ```bash
-docker compose up postgres
+docker compose up --build
 ```
 
-Khởi động backend:
+Frontend có tại `http://localhost:3000`; API và tài liệu API có tại
+`http://localhost:8000` và `http://localhost:8000/docs`. Backend tự chạy Alembic
+đến revision mới nhất trước khi nhận request. Dữ liệu PostgreSQL nằm trong
+volume `postgres_data`.
+
+Khi cần chạy backend trực tiếp trên host nhưng vẫn dùng PostgreSQL trong Docker:
 
 ```bash
+docker compose up -d postgres
 cd backend
 python -m venv .venv
 source .venv/bin/activate
@@ -80,9 +86,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Tài liệu API có tại `http://localhost:8000/docs`.
-
-Khởi động frontend:
+Sau đó có thể chạy frontend trực tiếp trên host:
 
 ```bash
 cd frontend
@@ -90,8 +94,6 @@ npm install
 cp .env.local.example .env.local
 npm run dev
 ```
-
-Frontend có tại `http://localhost:3000`.
 
 ## Kiểm thử
 

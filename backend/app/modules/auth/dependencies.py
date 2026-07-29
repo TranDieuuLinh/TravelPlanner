@@ -39,6 +39,31 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> User | None:
+    token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        return None
+    payload = decode_token(token, ACCESS_TOKEN_TYPE)
+    user = UserRepository(db).get_by_id(token_user_id(payload))
+    if not user:
+        raise AppError(401, "INVALID_SESSION", "Tài khoản không còn tồn tại.")
+    if user.status != "active":
+        raise AppError(
+            403,
+            "ACCOUNT_NOT_ACTIVE",
+            "Tài khoản không ở trạng thái hoạt động.",
+        )
+    validate_csrf(
+        payload,
+        request.cookies.get(CSRF_COOKIE),
+        request.headers.get(CSRF_HEADER),
+    )
+    return user
+
+
 def require_active_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     return user
 

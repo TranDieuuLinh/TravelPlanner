@@ -49,12 +49,22 @@ class SpeechToTextResult(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class FrameVisionResult(BaseModel):
+    text: str = ""
+    status: str = "skipped"
+    error: str | None = None
+    duration_seconds: float = Field(default=0.0, alias="durationSeconds")
+
+    model_config = {"populate_by_name": True}
+
+
 class ExtractedPlace(BaseModel):
     name: str
     category: ItineraryItemCategory = ItineraryItemCategory.other
     address: str | None = None
     source: str = "url_reel"
     evidence: str | None = None
+    attributes: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
@@ -77,6 +87,10 @@ class UrlReelExtractionResult(BaseModel):
     artifacts: MediaArtifacts
     needs_image_upload: bool = Field(default=False, alias="needsImageUpload")
     speech_to_text: SpeechToTextResult = Field(alias="speechToText")
+    frame_vision: FrameVisionResult = Field(
+        default_factory=FrameVisionResult,
+        alias="frameVision",
+    )
     extracted_context: ExtractedContext = Field(alias="extractedContext")
     timings: dict[str, float]
 

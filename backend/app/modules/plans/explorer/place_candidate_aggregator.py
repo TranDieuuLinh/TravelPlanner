@@ -62,6 +62,8 @@ class PlaceCandidateAggregator:
                 ],
                 confidence=candidate.confidence,
                 priority=candidate.priority,
+                preferenceLevel=candidate.preference_level,
+                attributes=candidate.attributes,
                 notes=candidate.notes,
             )
             for candidate in candidates
@@ -88,6 +90,8 @@ class PlaceCandidateAggregator:
                                 )
                             ],
                             confidence=result.extracted_context.confidence,
+                            preferenceLevel="preferred",
+                            attributes=detail.attributes,
                             notes=detail.evidence,
                         )
                     )
@@ -135,6 +139,24 @@ def _merge(
         sources=sources,
         confidence=max(current.confidence, incoming.confidence),
         priority=min(current.priority, incoming.priority),
+        preferenceLevel=(
+            "must_visit"
+            if "must_visit"
+            in {
+                current.preference_level.value,
+                incoming.preference_level.value,
+            }
+            else "preferred"
+            if "preferred"
+            in {
+                current.preference_level.value,
+                incoming.preference_level.value,
+            }
+            else "mentioned"
+        ),
+        attributes=list(
+            dict.fromkeys([*current.attributes, *incoming.attributes])
+        ),
         notes=current.notes or incoming.notes,
     )
 

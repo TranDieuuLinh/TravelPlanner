@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.shared.schemas import ORMBase
 
 
@@ -47,6 +48,11 @@ class UserRead(ORMBase):
     creator_status: CreatorStatus = Field(alias="creatorStatus")
     creator_portfolio_urls: list[str] = Field(alias="creatorPortfolioUrls")
     created_at: datetime = Field(alias="createdAt")
+
+    @field_validator("travel_preferences", mode="before")
+    @classmethod
+    def expose_readable_preferences(cls, value: object) -> list[str]:
+        return LongTermPreferenceProfile.from_storage(value).top_values()
 
 
 class ProfileUpdate(BaseModel):

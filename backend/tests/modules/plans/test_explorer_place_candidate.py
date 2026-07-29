@@ -23,9 +23,15 @@ def test_place_candidate_defaults_unknown_category_to_other() -> None:
     assert candidate.model_dump(mode="json", by_alias=True)["category"] == "other"
 
 
+def test_place_candidate_accepts_expanded_taxonomy_category() -> None:
+    candidate = PlaceCandidateHint(name="Chợ Bến Thành", category="shopping")
+
+    assert candidate.category.value == "shopping"
+
+
 def test_place_candidate_rejects_category_outside_contract() -> None:
     with pytest.raises(ValidationError):
-        PlaceCandidateHint(name="Địa điểm", category="shopping")
+        PlaceCandidateHint(name="Địa điểm", category="casino")
 
 
 def test_place_candidate_serializes_valid_coordinates() -> None:

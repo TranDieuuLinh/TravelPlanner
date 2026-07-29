@@ -19,6 +19,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
       BACKEND_CORS_ORIGINS: http://localhost:3000
@@ -31,8 +34,32 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:

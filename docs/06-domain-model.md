@@ -70,6 +70,12 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
   ghi chú; đây là đầu vào chính thức của Planner.
+- `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
+  chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
+  `sourceTypes`), không giữ raw prompt/OCR/transcript.
+- `LongTermPreferenceProfile`: hồ sơ có version được aggregate vào duy nhất cột
+  JSON `users.travel_preferences`; gồm explicit preference, score, confidence,
+  số lần quan sát và thời điểm cập nhật.
 - `ImportJob`: tiến độ, bước hiện tại, lỗi có thể retry và kết quả từng phần.
 
 Quan hệ chính:
@@ -88,6 +94,10 @@ SourceImport -> SourceArtifact -> SourceClaim -> PlaceCandidate
 Một `SelectedPlace` có thể có nhiều claim từ nhiều URL. Gộp trùng không được làm
 mất provenance. Xóa URL khỏi draft phải có chính sách rõ ràng với địa điểm đã
 được user xác nhận thay vì âm thầm xóa item khỏi plan.
+
+Địa điểm tự động từ Explorer mặc định có `preferenceLevel=preferred` và
+`mustVisit=false`. Chỉ input nói rõ hoặc thao tác xác nhận/khóa tương đương mới
+tạo `must_visit`.
 
 ### Chợ lịch trình
 

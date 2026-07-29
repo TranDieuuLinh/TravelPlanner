@@ -45,6 +45,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
+        if not self.database_url.startswith(
+            ("postgresql://", "postgresql+psycopg://")
+        ):
+            raise ValueError(
+                "DATABASE_URL must use PostgreSQL; SQLite is supported only "
+                "by isolated test engines"
+            )
         if self.app_env not in {"local", "test"}:
             if self.jwt_secret == "local-only-change-me":
                 raise ValueError("JWT_SECRET must be configured outside local/test environments")

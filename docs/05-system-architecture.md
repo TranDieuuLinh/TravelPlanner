@@ -9,7 +9,7 @@ Frontend Next.js
     v
 Router FastAPI
     |
-    +-- users: service -> SQLAlchemy repository -> SQLite/PostgreSQL
+    +-- users: service -> SQLAlchemy repository -> PostgreSQL
     |
     +-- plans: service -> workflow -> domain service
     |                         |             |
@@ -19,9 +19,11 @@ Router FastAPI
     +-- profiles/marketplace: endpoint placeholder
 ```
 
-Frontend và backend là hai ứng dụng riêng trong cùng một kho mã. PostgreSQL và
-backend được khai báo trong `docker-compose.yml`; khi chạy trên máy cá nhân,
-backend mặc định dùng SQLite.
+Frontend, backend và PostgreSQL là ba service trong `docker-compose.yml`.
+PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backend trực
+tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
+không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
+động FastAPI; ứng dụng không dùng `create_all()` để âm thầm thay đổi schema.
 
 `/api/plans/explore/full` và `/api/plans/explore/full/intake` chỉ hoạt động khi
 Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
