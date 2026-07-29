@@ -153,6 +153,27 @@ Input chính:
 }
 ```
 
+Mỗi phần tử `selectedPlaces` có thể mang hướng dẫn itinerary từ URL:
+
+```json
+{
+  "name": "Xôi Yến",
+  "sourceRefs": ["https://www.tiktok.com/..."],
+  "sourceOrder": 1,
+  "sourceDay": 1,
+  "sourceTimeHint": "breakfast",
+  "sourceActivity": "Order traditional topping turmeric sticky rice",
+  "sourceDurationMinutes": null
+}
+```
+
+`sourceTimeHint` là cue có provenance, không phải giờ mở cửa hoặc giờ chính xác
+đã xác minh. `sourceDurationMinutes` chỉ có giá trị khi nguồn nói rõ duration.
+Khi có `sourceOrder`, Planner ưu tiên các stop URL, cho phép blueprint có nhiều
+stop hơn capacity mặc định của pace, và Finder dùng strategy
+`source_itinerary`. Route optimizer giữ thứ tự nguồn; hard constraint vẫn có thể
+loại stop nhưng phải trả reason/warning.
+
 Output chính:
 
 `intent.budgetLevel` và `tripSpec.budget.calculationBasis.priceTier` chỉ nhận
@@ -337,8 +358,10 @@ Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/
 Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
 
 Planner MVP hiện dùng rule deterministic và không commit output văn bản của LLM.
-Số `selectedPlaces` được phân bổ bị giới hạn theo số activity block của pace và
-số ngày; phần vượt quá được trả với `reasonCode: "no_day_capacity"`. Khi catalog
+`selectedPlaces` thông thường bị giới hạn theo số activity block của pace và số
+ngày. URL stop có `sourceOrder` nhưng không có `sourceDay` được phân bổ dày theo
+thứ tự vào số ngày hiện hành và không bị loại chỉ vì capacity pace; `sourceDay`
+rõ ràng vẫn được giữ. Khi catalog
 trống nhưng có Place đã xác nhận, Planner vẫn tạo DayBrief và cảnh báo Finder chỉ
 có thể dùng các Place đó. Khi cả hai nguồn đều trống, `dayBriefsReady` là
 `false`. `avoidPlaces` là constraint loại trừ: Place đã xác nhận nhưng xung đột
@@ -375,9 +398,16 @@ Input chính:
     "travelPreferences": []
   },
   "userStatus": {},
-  "finderPlanStatus": {}
+  "finderPlanStatus": {},
+  "allowFinderSuggestions": true
 }
 ```
+
+`allowFinderSuggestions=false` được dùng khi intake URL/ảnh/OCR tự quyết định
+duration theo coverage của nguồn, hoặc khi nguồn đã phủ hết duration user yêu
+cầu. Nếu user nói rõ số ngày dài hơn coverage nguồn, giá trị là `true`, nhưng
+Finder chỉ gọi catalog cho ngày chưa có stop nguồn; không lấp thêm activity block
+trong ngày URL/OCR. Prompt thuần dùng giá trị `true` cho mọi ngày.
 
 Output chính:
 

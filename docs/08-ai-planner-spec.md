@@ -35,6 +35,35 @@ gọi LLM chỉ để bỏ kết quả. `StubLLMClient` vẫn phục vụ các l
 đang cần gateway, nhưng output Main/Backup Plan hiện chưa phải output sinh bởi
 model.
 
+Khi intake có URL video, Explorer dùng transcript STT, metadata và frame vision
+để trích từng stop theo thứ tự. Candidate URL giữ `sourceOrder`,
+`sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
+nguồn có nói rõ. Planner ưu tiên blueprint này; Finder tạo skeleton
+`source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
+của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
+`UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
+
+Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `high`.
+Frame được lấy thích nghi theo toàn bộ duration, tối đa 48 frame và xử lý theo
+batch 16 ảnh. Tối đa hai batch frame vision được gọi song song, nhưng kết quả
+được hợp nhất lại theo thứ tự frame gốc. STT và frame vision chạy song song;
+observation thành công được giữ lại nếu một batch khác lỗi. OCR ảnh/screenshot
+người dùng upload dùng cùng model cấu hình. TikTok photo post vẫn không được tải
+tự động và yêu cầu upload screenshot.
+
+Số ngày không còn nhận fallback UI như một ràng buộc của user:
+
+- nếu user nói rõ số ngày, số đó luôn thắng;
+- nếu user không nói số ngày và URL/OCR có `sourceDay`, dùng cấu trúc ngày của
+  nguồn;
+- nếu nguồn chỉ có danh sách stop theo thứ tự, suy ra số ngày tối thiểu theo
+  pace để xếp hết stop;
+- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, Finder chỉ được bổ
+  sung catalog vào các ngày trống; ngày đã có stop URL/OCR vẫn giữ nguyên nguồn;
+- nếu user yêu cầu ít ngày hơn, toàn bộ stop không có `sourceDay` được phân bổ
+  lại theo thứ tự trong đúng số ngày user yêu cầu. Stop có ngày nguồn rõ ràng
+  vượt ngoài phạm vi vẫn đi vào `UnscheduledPlace`, không bị âm thầm đổi ngày.
+
 ## Luồng mục tiêu của MVP
 
 ### Giai đoạn 1: Import
@@ -90,11 +119,17 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
 - ghi rõ địa điểm nào chưa thể phân bổ.
+- khi có URL itinerary, giữ thứ tự/ngày/timing cue của nguồn; không biến timing
+  cue mơ hồ thành giờ chính xác do nguồn xác nhận.
 
 ### Giai đoạn 6: Finder
 
 Finder điền item cụ thể:
 
+- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder không
+  bổ sung catalog vào ngày đã có stop nguồn;
+- Finder được bổ sung catalog vào ngày trống khi user đã nói rõ số ngày và số
+  ngày đó dài hơn coverage của URL/OCR; prompt thuần vẫn cho phép đề xuất;
 - chọn khung giờ theo giờ hoạt động và timing claim;
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;

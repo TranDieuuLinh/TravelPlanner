@@ -165,11 +165,28 @@ giữ `inputMode: "qualitative"` và để các amount là `null` thay vì bịa
 `budgetLevel` và `calculationBasis.priceTier` chỉ nhận `budget`, `medium` hoặc
 `high`; `balanced` chỉ dùng cho `pace`.
 
-`POST /api/plans/main/from-explorer` nối kết quả Explorer đã được user xác nhận
-vào Planner/Finder. Request gồm `intent`, `tripSpec` và `selectedPlaces`.
-`placeCandidates`/`foodPlaces` không tự động trở thành yêu cầu bắt buộc; frontend
-chỉ gửi các item user đã tick xác nhận. Planner phân bổ các item này trước và
-Finder thử chúng trước khi bổ sung địa điểm từ catalog chung.
+`POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
+Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces` và
+`allowFinderSuggestions`.
+Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
+đúng `intakeId + userId`. Candidate chưa được user xác nhận vẫn giữ
+`preferenceLevel=preferred`, confidence và provenance; không được đổi thành
+`mustVisit` ngầm.
+
+Explorer trả `allowFinderSuggestions=false` khi intake có URL/ảnh/OCR và nguồn
+đã phủ duration hiệu lực. Nếu user nói rõ số ngày dài hơn coverage nguồn,
+Explorer trả `true`; Finder vẫn chỉ tìm catalog cho ngày trống, không thêm vào
+ngày đã có stop URL/OCR. Prompt thuần trả `true` cho mọi ngày.
+
+Nếu intake URL/OCR không có `tripSpec.days` explicit, Explorer suy ra số ngày từ
+`sourceDay`; nếu nguồn không gán ngày, dùng số ngày tối thiểu theo số stop và
+pace để không làm mất stop. Giá trị user nói rõ luôn được giữ nguyên.
+
+Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrder`,
+`sourceDay`, `sourceTimeHint`, `sourceActivity` và
+`sourceDurationMinutes`. Planner/Finder ưu tiên blueprint URL và giữ thứ tự
+nguồn. Hard constraint explicit vẫn thắng; timing cue không được mô tả như giờ
+hoạt động đã xác minh.
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`

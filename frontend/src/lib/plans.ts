@@ -2,6 +2,9 @@ export type PlanItem = {
   name: string;
   timeWindow: string;
   placeType: string;
+  source: string;
+  sourceRefs: string[];
+  sourceOrder?: number | null;
   notes?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -158,6 +161,7 @@ export type ExploreResponse = {
   intakeId: string;
   userId?: string | null;
   explorer: ExplorerContext;
+  allowFinderSuggestions: boolean;
 };
 
 export type PlannerIntakeInput = {
@@ -216,7 +220,8 @@ export async function runPlannerIntake(
   const plan = await createPlanFromExplorer({
     context: explore.explorer,
     intakeId: explore.intakeId,
-    userId: explore.userId
+    userId: explore.userId,
+    allowFinderSuggestions: explore.allowFinderSuggestions
   });
 
   return { explore, plan };
@@ -240,6 +245,7 @@ export async function createPlanFromExplorer(input: {
   intakeId?: string | null;
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
+  allowFinderSuggestions?: boolean;
 }): Promise<TravelPlan> {
   const selectedPlaces = input.selectedPlaces ?? [];
 
@@ -250,6 +256,7 @@ export async function createPlanFromExplorer(input: {
       tripSpec: input.context.tripSpec,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
+      allowFinderSuggestions: input.allowFinderSuggestions ?? true,
       selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,
         placeId: place.placeId ?? null,

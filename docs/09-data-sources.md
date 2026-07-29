@@ -50,9 +50,9 @@ instruction.
 2. Nhận diện nguồn và chọn connector theo allowlist.
 3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
 4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
-5. Trích xuất artifact được phép: caption, transcript, frame video lấy mẫu,
-   OCR/vision từ Gemini hoặc văn bản trang. STT và frame vision chạy song song
-   sau khi media đã được chuẩn bị.
+5. Với URL video, trích xuất caption/metadata, transcript STT từ audio và OCR
+   trên frame lấy mẫu. STT và frame vision chạy song song. OCR cũng chạy trên
+   ảnh/screenshot do người dùng upload.
 6. Tạo claim/place candidate có evidence và confidence.
 7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
 8. Tự động lưu candidate và kết quả resolve vào `user_must_place`; không chặn
@@ -60,6 +60,17 @@ instruction.
 9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
    downstream đọc record theo cả `intakeId + userId`.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+
+TikTok video thử `yt-dlp` chuẩn trước, sau đó retry bằng desktop Chrome và
+Android Chrome impersonation qua dependency `curl_cffi` nếu challenge/TLS
+fingerprint làm request trước thất bại. Hệ thống không gọi TikWM. Photo carousel chưa có provider được duyệt nên
+trả trạng thái cần upload screenshot. Media video thành công vẫn chỉ được xử lý
+trong thư mục tạm và xoá sau request. Video OCR dùng
+`gemini-3.5-flash-lite`, tối đa 48 frame theo batch 16 và tối đa hai batch chạy
+song song. Kết quả vẫn được hợp nhất theo thứ tự frame gốc. Nếu một batch lỗi
+nhưng batch khác thành công, evidence thành công vẫn được giữ. Nếu URL không tạo
+được địa điểm có evidence, API trả lỗi có hướng dẫn retry/upload screenshot/dán
+caption thay vì trả itinerary `Ready` với 0 địa điểm.
 
 Preference learning chỉ lưu tín hiệu chuẩn hóa và source type. Không sao chép
 raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào

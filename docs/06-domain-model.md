@@ -69,7 +69,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
-  ghi chú; đây là đầu vào chính thức của Planner.
+  ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
+  URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
+  nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
+  hành đã xác minh.
 - `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
   chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
   `sourceTypes`), không giữ raw prompt/OCR/transcript.
