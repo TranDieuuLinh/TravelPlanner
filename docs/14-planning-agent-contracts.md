@@ -288,14 +288,25 @@ Input chính:
       "regionKey": "vn,ha-noi",
       "snapshotId": "snapshot_123",
       "catalogVersion": 3,
-      "algorithmVersion": "auto_statistics_v2_1",
+      "algorithmVersion": "auto_statistics_v3_0",
       "generatedAt": "2026-07-28T10:00:00+00:00"
     },
     "placeCount": 100,
+    "activePlaceCount": 90,
     "tagCounts": {},
     "timeOfDayCoverage": {},
-    "areaProfiles": [],
-    "plannerSignals": {}
+    "plannerEligible": {},
+    "areaProfiles": [
+      {
+        "regionKey": "vn,ha-noi,hoan-kiem",
+        "activePlaceCount": 25,
+        "topTags": ["culture", "food"]
+      }
+    ],
+    "plannerSignals": {
+      "statisticsLevel": "smallest_available_region",
+      "candidateAreas": []
+    }
   },
   "selectedPlaces": [],
   "placeCandidates": [],
@@ -355,19 +366,39 @@ Output chính:
 Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/log, không
 đưa vào `MacroPlan` hoặc Finder context. Mọi `selectedPlace` phải xuất hiện trong
 `allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
-Planner không nhận toàn bộ danh mục Place hay payload thô của provider.
+Planner không nhận toàn bộ danh mục Place hay payload thô của provider; research
+tool chỉ trả capability counts, region keys và tối đa một số sample Place làm
+evidence.
 
-Planner MVP hiện dùng rule deterministic và không commit output văn bản của LLM.
-`selectedPlaces` thông thường bị giới hạn theo số activity block của pace và số
-ngày. URL stop có `sourceOrder` nhưng không có `sourceDay` được phân bổ dày theo
-thứ tự vào số ngày hiện hành và không bị loại chỉ vì capacity pace; `sourceDay`
-rõ ràng vẫn được giữ. Khi catalog
-trống nhưng có Place đã xác nhận, Planner vẫn tạo DayBrief và cảnh báo Finder chỉ
-có thể dùng các Place đó. Khi cả hai nguồn đều trống, `dayBriefsReady` là
-`false`. `avoidPlaces` là constraint loại trừ: Place đã xác nhận nhưng xung đột
-được trả với `reasonCode: "avoided_by_user"` thay vì vẫn đưa vào DayBrief.
-`focusTags` giữ tối đa bốn interest/tag liên quan để chuyến đi ngắn không làm mất
-các interest đứng sau phần tử đầu tiên.
+Planner MVP dùng hai structured LLM call:
+
+1. `journey_research_v1` tạo `PlannerResearchDraft`: journey style, chiến lược
+   đa dạng, capability queries và yêu cầu mở rộng vùng.
+2. Backend chạy `RepositoryPlannerResearchTool` trên Place active. Capability
+   local được match theo taxonomy; region lân cận được xếp từ centroid và khoảng
+   cách địa lý, chưa phải route đã xác minh.
+3. `macro_planner_v2` nhận cả proposal và `PlannerVerifiedResearch`, sau đó sinh
+   `PlannerMacroPlanDraft`.
+
+`MacroPlan` có thêm `journeyStyle` và `journeyPhases` để biểu diễn local base,
+hub-and-spoke, multi-base hoặc road trip. Model nhận intent, trip spec, profile
+dài hạn, selected places và statistics khu vực nhỏ. Code không tự sinh template
+khi LLM lỗi; thay vào đó validate đủ ngày liên tiếp, target region thuộc snapshot
+hoặc verified nearby regions, journey phases hợp lệ, và mọi `selectedPlace` được
+phân bổ đúng một lần hoặc nằm trong `unallocatedSelectedPlaces`.
+
+Statistics dùng riêng `plannerEligible` và `plannerSignals` từ Place active;
+metric catalog tổng vẫn được giữ để quan sát chất lượng dữ liệu. Khi catalog
+active trống nhưng có Place đã xác nhận, Planner vẫn có thể tạo DayBrief và cảnh
+báo Finder chỉ dùng các Place đó. Khi cả hai nguồn đều trống,
+`dayBriefsReady=false`.
+
+`selectedPlaces` thông thường vẫn tuân theo số activity block của pace và số
+ngày. URL stop có `sourceOrder` nhưng không có `sourceDay` được phân bổ theo thứ
+tự vào số ngày hiện hành và không bị loại chỉ vì capacity pace; `sourceDay` rõ
+ràng được giữ. `avoidPlaces` và `constraintPolicy` vẫn thắng blueprint URL; stop
+xung đột hoặc có ngày nguồn vượt duration được giữ trong
+`unallocatedSelectedPlaces` với `reasonCode`, không bị bỏ hoặc đổi ngày ngầm.
 
 ## Finder
 
@@ -462,6 +493,21 @@ Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi a
 block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
 khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
 sinh số.
+
+Catalog retrieval của Finder dùng hai tầng. Tầng đầu rank mô tả Place theo query
+được tạo từ `DayBrief.theme`, `focusTags`, `dayPartGoals`, target area và
+`JourneyPhase` chứa ngày hiện tại, sau đó lấy shortlist. Tầng hai rerank bằng
+`placeType`, `placeGroup`, tags, region, data confidence và tọa độ. Khi target
+region nhỏ thiếu dữ liệu, tool có thể đọc dần region cha nhưng Place fallback
+phải có locality tương ứng trong tên hoặc mô tả. Finder không dùng accommodation
+cho activity thường và không dùng food/transport/shopping để lấp một theme
+không tương thích. Selected Place do user xác nhận vẫn được ưu tiên và không bị
+category guard tự động loại.
+
+`metadata.description`, `metadata.placeGroup` và minimum duration trong
+`metadata.recommendedDurationRange` được adapter đưa vào context nội bộ của
+Finder. Minimum duration cho phép một chuyến ghé ngắn hợp lệ khi typical duration
+lớn hơn slot; nếu minimum vẫn vượt slot thì candidate bị loại như trước.
 
 Runtime phải inject `RepositoryFinderPlaceTool`; `EmptyFinderPlaceTool` chỉ dùng
 cho test hoặc fallback cô lập. Service nhận/trả qua `FinderAgentInput` và

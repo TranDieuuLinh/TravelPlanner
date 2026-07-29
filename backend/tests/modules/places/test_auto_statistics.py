@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Iterator
 
 import pytest
@@ -142,6 +143,23 @@ def test_service_skips_refresh_when_source_is_unchanged(tmp_path: Path) -> None:
     assert payload["regions"][0]["regionKey"] == "vn,ha-noi"
 
 
+def test_planner_snapshot_refreshes_after_expiration(tmp_path: Path) -> None:
+    repository = FakeSnapshotRepository(
+        expires_at=datetime(2026, 7, 26, tzinfo=timezone.utc)
+    )
+    service = AutoPlaceStatisticsService(
+        repository,
+        tmp_path / "statistics.json",
+    )
+
+    result = service.get_for_planner("vn,ha-noi")
+
+    assert result.status == "refreshed"
+    assert repository.save_calls == 1
+    assert repository.saved_expires_at is not None
+    assert repository.saved_expires_at > repository.saved_generated_at
+
+
 def test_statistics_reject_invalid_region_key() -> None:
     place = _example_place(region_key="ha-noi")
 
@@ -150,6 +168,46 @@ def test_statistics_reject_invalid_region_key() -> None:
             [place],
             stale_before=datetime(2026, 6, 27, tzinfo=timezone.utc),
         )
+
+
+def test_planner_signals_use_active_places_at_smallest_available_area() -> None:
+    now = datetime(2026, 7, 27, tzinfo=timezone.utc)
+    active = _example_place(region_key="vn,da-nang,son-tra,an-hai")
+    active = PlaceStatisticsRecord(
+        **{
+            **active.__dict__,
+            "status": "active",
+            "metadata": {"tags": ["beach", "nature"]},
+        }
+    )
+    inactive = _example_place(region_key="vn,da-nang,hai-chau")
+    inactive = PlaceStatisticsRecord(
+        **{
+            **inactive.__dict__,
+            "id": "inactive-place",
+            "status": "inactive",
+            "metadata": {"tags": ["nightclub"]},
+        }
+    )
+
+    regions, _ = build_region_statistics(
+        [active, inactive],
+        stale_before=now - timedelta(days=30),
+    )
+
+    city = next(region for region in regions if region["regionKey"] == "vn,da-nang")
+    assert city["plannerSignals"]["statisticsLevel"] == (
+        "smallest_available_region"
+    )
+    assert city["plannerSignals"]["dominantTags"] == ["nature"]
+    assert city["plannerSignals"]["candidateAreas"] == [
+        {
+            "regionKey": "vn,da-nang,son-tra,an-hai",
+            "placeCount": 1,
+            "topTags": ["nature"],
+        }
+    ]
+    assert city["areaProfiles"][0]["geographicSummary"]["centroid"] is not None
 
 
 class FakePlaceStatisticsRepository:
@@ -179,6 +237,49 @@ class FakePlaceStatisticsRepository:
                 or place.region_key.startswith(f"{region_key},")
             ):
                 yield place
+
+
+class FakeSnapshotRepository(FakePlaceStatisticsRepository):
+    def __init__(self, *, expires_at: datetime) -> None:
+        super().__init__([_example_place()])
+        self.save_calls = 0
+        self.saved_generated_at = datetime.min.replace(tzinfo=timezone.utc)
+        self.saved_expires_at: datetime | None = None
+        self.current_snapshot = SimpleNamespace(
+            id="old-snapshot",
+            catalog_version=1,
+            algorithm_version="auto_statistics_v3_0",
+            source_fingerprint="fake-1",
+            generated_at=datetime(2026, 7, 25, tzinfo=timezone.utc),
+            expires_at=expires_at,
+            metrics_json={"regions": []},
+        )
+
+    def get_current_snapshot(self, region_key: str):
+        return self.current_snapshot
+
+    def save_region_snapshot(
+        self,
+        *,
+        region_key: str,
+        algorithm_version: str,
+        source_signature: dict[str, str | int],
+        regions: list[dict],
+        generated_at: datetime,
+        expires_at: datetime,
+    ):
+        self.save_calls += 1
+        self.saved_generated_at = generated_at
+        self.saved_expires_at = expires_at
+        return SimpleNamespace(
+            id="new-snapshot",
+            catalog_version=2,
+            algorithm_version=algorithm_version,
+            source_fingerprint=source_signature["fingerprint"],
+            generated_at=generated_at,
+            expires_at=expires_at,
+            metrics_json={"regions": regions},
+        )
 
 
 def _example_place(

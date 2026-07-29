@@ -115,7 +115,13 @@ async def create_main_plan_from_explorer(
     payload: MainPlanFromExplorerCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanRead:
-    return await service.create_main_plan_from_explorer(payload)
+    try:
+        return await service.create_main_plan_from_explorer(payload)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(

@@ -1,15 +1,20 @@
-from app.modules.plans.domain.entities import (
-    CheckReport,
-    DayBrief,
-    DayPartGoals,
-    MacroPlan,
-    TravelIntent,
-)
+from __future__ import annotations
+
+import logging
+
+from pydantic import ValidationError
+
+from app.integrations.llm.base import LLMClient
+from app.modules.plans.domain.entities import CheckReport, MacroPlan, TravelIntent
+from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
     AgentTrace,
     PlannerAgentInput,
     PlannerAgentOutput,
+    PlannerResearchDraft,
+    PlannerMacroPlanDraft,
+    PlannerVerifiedResearch,
     PlanningAgentName,
     PlanningAgentStatus,
     PlanningIntent,
@@ -18,6 +23,19 @@ from app.modules.plans.dto.agent_contracts import (
     SelectedPlaceContext,
     TripPlanningSpec,
     UnallocatedSelectedPlace,
+)
+from app.modules.plans.planner.prompt import (
+    PLANNER_PROMPT_VERSION,
+    PLANNER_RESEARCH_PROMPT_VERSION,
+    PLANNER_RESEARCH_SYSTEM_PROMPT,
+    PLANNER_SYSTEM_PROMPT,
+    build_planner_repair_payload,
+    build_planner_research_payload,
+    build_planner_user_payload,
+)
+from app.modules.plans.planner.research_tool import (
+    EmptyPlannerResearchTool,
+    PlannerResearchTool,
 )
 from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
@@ -28,13 +46,20 @@ from app.modules.preferences.schema import (
     PreferenceDimension,
 )
 
+logger = logging.getLogger(__name__)
+PLANNER_MAX_REPAIR_ATTEMPTS = 3
+
 
 class PlannerService:
     def __init__(
         self,
         statistics_provider: PlannerStatisticsProvider,
+        llm: LLMClient,
+        research_tool: PlannerResearchTool | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
+        self.llm = llm
+        self.research_tool = research_tool or EmptyPlannerResearchTool()
 
     async def create_main_macro_plan(
         self,
@@ -110,6 +135,7 @@ class PlannerService:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )
         return (
@@ -134,300 +160,637 @@ class PlannerService:
         planner_input: PlannerAgentInput,
         statistics_status: str,
     ) -> PlannerAgentOutput:
-        macro_plan, unallocated = self._build_macro_plan(planner_input)
-        warnings = self._statistics_warnings(planner_input)
         ready = (
-            planner_input.region_context.place_count > 0
+            planner_input.region_context.active_place_count > 0
             or bool(planner_input.selected_places)
         )
-        assumptions = [
-            "Planner used deterministic rules; no LLM-generated schedule was committed.",
-            "Finder will choose exact places and times.",
-            "Routes and costs remain unavailable until their providers are configured.",
-            f"Region statistics status: {statistics_status}.",
-        ]
+        statistics_warnings = self._statistics_warnings(planner_input)
+        if not ready:
+            return PlannerAgentOutput(
+                mode=planner_input.mode,
+                macroPlan=AgentMacroPlan(
+                    title=f"Kế hoạch cho {planner_input.intent.destination}",
+                    destination=planner_input.intent.destination,
+                    regionKey=planner_input.region_context.region_key,
+                    dayBriefs=[],
+                ),
+                tripSpec=planner_input.trip_spec,
+                dayBriefsReady=False,
+                warnings=statistics_warnings,
+                trace=AgentTrace(
+                    agent=PlanningAgentName.planner,
+                    status=PlanningAgentStatus.blocked,
+                    summary=(
+                        "Không có Place active hoặc địa điểm đã chọn để tạo "
+                        "MacroPlan."
+                    ),
+                    notes=[
+                        "generator=llm",
+                        f"promptVersion={PLANNER_PROMPT_VERSION}",
+                        (
+                            "snapshotId="
+                            f"{planner_input.region_context.snapshot_ref.snapshot_id}"
+                        ),
+                    ],
+                ),
+            )
+
+        try:
+            research_raw = await self.llm.generate_json(
+                system_prompt=PLANNER_RESEARCH_SYSTEM_PROMPT,
+                user_payload=build_planner_research_payload(planner_input),
+            )
+            research_draft = PlannerResearchDraft.model_validate_json(
+                research_raw
+            )
+            verified_research = self.research_tool.verify(
+                research_draft,
+                root_region_key=planner_input.region_context.region_key,
+            )
+        except ValidationError as exc:
+            raise RuntimeError(
+                "LLM Planner returned an invalid research contract."
+            ) from exc
+
+        raw = await self.llm.generate_json(
+            system_prompt=PLANNER_SYSTEM_PROMPT,
+            user_payload=build_planner_user_payload(
+                planner_input,
+                research_draft,
+                verified_research,
+            ),
+        )
+        repair_attempts = 0
+        while True:
+            try:
+                draft = self._parse_and_validate_macro_draft(
+                    planner_input,
+                    raw,
+                    research_draft,
+                    verified_research,
+                )
+                break
+            except (ValidationError, ValueError) as exc:
+                feedback = self._validation_feedback(exc)
+                if repair_attempts >= PLANNER_MAX_REPAIR_ATTEMPTS:
+                    logger.warning(
+                        "Planner MacroPlan contract remained invalid "
+                        "after %s repair attempts: %s",
+                        repair_attempts,
+                        feedback,
+                    )
+                    raise RuntimeError(
+                        "LLM Planner returned an invalid MacroPlan contract "
+                        f"after {repair_attempts} repair attempts."
+                    ) from exc
+
+                repair_attempts += 1
+                raw = await self.llm.generate_json(
+                    system_prompt=PLANNER_SYSTEM_PROMPT,
+                    user_payload=build_planner_repair_payload(
+                        planner_input,
+                        research_draft,
+                        verified_research,
+                        previous_output=raw,
+                        validation_feedback=feedback,
+                    ),
+                )
+
+        warnings = list(
+            dict.fromkeys(
+                [
+                    *draft.warnings,
+                    *verified_research.warnings,
+                    *statistics_warnings,
+                ]
+            )
+        )
         return PlannerAgentOutput(
             mode=planner_input.mode,
-            macroPlan=AgentMacroPlan.model_validate(macro_plan.model_dump()),
+            macroPlan=draft.macro_plan,
             tripSpec=planner_input.trip_spec,
-            dayBriefsReady=ready,
-            unallocatedSelectedPlaces=unallocated,
-            assumptions=assumptions,
+            dayBriefsReady=True,
+            unallocatedSelectedPlaces=draft.unallocated_selected_places,
+            assumptions=draft.assumptions,
             warnings=warnings,
             trace=AgentTrace(
                 agent=PlanningAgentName.planner,
-                status=(
-                    PlanningAgentStatus.completed
-                    if ready
-                    else PlanningAgentStatus.blocked
-                ),
-                summary=(
-                    "Created MacroPlan from the current region snapshot."
-                    if ready
-                    else "Region snapshot has no Places; DayBriefs need review."
-                ),
-                notes=[f"snapshotId={planner_input.region_context.snapshot_ref.snapshot_id}"],
+                status=PlanningAgentStatus.completed,
+                summary="AI đã tạo MacroPlan từ context và thống kê khu vực nhỏ.",
+                notes=[
+                    "generator=llm",
+                    f"repairAttempts={repair_attempts}",
+                    f"researchPromptVersion={PLANNER_RESEARCH_PROMPT_VERSION}",
+                    f"promptVersion={PLANNER_PROMPT_VERSION}",
+                    f"statisticsStatus={statistics_status}",
+                    (
+                        "capabilityEvidenceCount="
+                        f"{len(verified_research.capability_evidence)}"
+                    ),
+                    (
+                        "nearbyRegionCount="
+                        f"{len(verified_research.nearby_regions)}"
+                    ),
+                    (
+                        "snapshotId="
+                        f"{planner_input.region_context.snapshot_ref.snapshot_id}"
+                    ),
+                ],
             ),
         )
 
-    def _build_macro_plan(
+    def _parse_and_validate_macro_draft(
         self,
         planner_input: PlannerAgentInput,
-    ) -> tuple[MacroPlan, list[UnallocatedSelectedPlace]]:
-        intent = planner_input.intent
-        context = planner_input.region_context
-        dominant_tags = list(
-            context.planner_signals.get("dominantTags", [])
+        raw: str,
+        research_draft: PlannerResearchDraft,
+        verified_research: PlannerVerifiedResearch,
+    ) -> PlannerMacroPlanDraft:
+        draft = PlannerMacroPlanDraft.model_validate_json(raw)
+        return self._validate_and_normalize_draft(
+            planner_input,
+            draft,
+            research_draft,
+            verified_research,
         )
-        learned_focus = planner_input.preference_profile.top_values(
-            dimensions={
-                PreferenceDimension.category,
-                PreferenceDimension.attribute,
-                PreferenceDimension.cuisine,
-                PreferenceDimension.setting,
-            },
-            limit=10,
+
+    @staticmethod
+    def _validation_feedback(exc: ValidationError | ValueError) -> str:
+        if isinstance(exc, ValidationError):
+            fields = [
+                (
+                    ".".join(str(part) for part in error["loc"])
+                    + ":"
+                    + str(error["type"])
+                )
+                for error in exc.errors()[:10]
+            ]
+            return "Schema validation failed at " + ", ".join(fields)
+        return str(exc)
+
+    def _validate_and_normalize_draft(
+        self,
+        planner_input: PlannerAgentInput,
+        draft: PlannerMacroPlanDraft,
+        research_draft: PlannerResearchDraft,
+        verified_research: PlannerVerifiedResearch,
+    ) -> PlannerMacroPlanDraft:
+        macro = draft.macro_plan.model_copy(
+            update={
+                "destination": planner_input.intent.destination,
+                "region_key": planner_input.region_context.region_key,
+                "journey_style": research_draft.journey_style,
+            }
         )
-        focus = list(
-            dict.fromkeys(
-                [*intent.interests, *learned_focus, *dominant_tags]
+        draft = draft.model_copy(update={"macro_plan": macro})
+
+        expected_days = list(range(1, planner_input.trip_spec.days + 1))
+        actual_days = [brief.day for brief in macro.day_briefs]
+        if actual_days != expected_days:
+            raise ValueError("MacroPlan must contain consecutive requested days.")
+
+        allowed_regions = {
+            planner_input.region_context.region_key,
+            *(
+                str(area.get("regionKey"))
+                for area in planner_input.region_context.area_profiles
+                if area.get("regionKey")
+            ),
+            *(
+                str(area.get("regionKey"))
+                for area in planner_input.region_context.planner_signals.get(
+                    "candidateAreas",
+                    [],
+                )
+                if area.get("regionKey")
+            ),
+            *(
+                region.region_key
+                for region in verified_research.nearby_regions
+            ),
+            *(
+                region_key
+                for evidence in verified_research.capability_evidence
+                for region_key in evidence.region_keys
+            ),
+            *(
+                place.region_key
+                for place in planner_input.selected_places
+                if place.region_key
+            ),
+        }
+        for brief in macro.day_briefs:
+            if brief.target_region_key not in allowed_regions:
+                raise ValueError(
+                    f"Unknown targetRegionKey: {brief.target_region_key}"
+                )
+
+        self._validate_journey_phases(
+            macro,
+            allowed_regions=allowed_regions,
+            trip_days=planner_input.trip_spec.days,
+            research_draft=research_draft,
+        )
+
+        selected_by_ref = {
+            place.stable_ref: place for place in planner_input.selected_places
+        }
+        allocated_refs = [
+            ref
+            for brief in macro.day_briefs
+            for ref in brief.allocated_selected_place_refs
+        ]
+        unallocated_refs = [
+            item.place.stable_ref
+            for item in draft.unallocated_selected_places
+        ]
+        unknown_refs = (
+            set(allocated_refs) | set(unallocated_refs)
+        ) - set(selected_by_ref)
+        if unknown_refs:
+            normalized_briefs = [
+                brief.model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            ref
+                            for ref in brief.allocated_selected_place_refs
+                            if ref in selected_by_ref
+                        ]
+                    }
+                )
+                for brief in macro.day_briefs
+            ]
+            macro = macro.model_copy(
+                update={"day_briefs": normalized_briefs}
             )
-        ) or ["local highlights"]
-        candidate_areas = list(
-            context.planner_signals.get("candidateAreas", [])
+            draft = draft.model_copy(
+                update={
+                    "macro_plan": macro,
+                    "unallocated_selected_places": [
+                        item
+                        for item in draft.unallocated_selected_places
+                        if item.place.stable_ref in selected_by_ref
+                    ],
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Planner đã trả tham chiếu địa điểm không có trong "
+                            "selectedPlaces; backend đã loại bỏ tham chiếu này."
+                        ),
+                    ],
+                }
+            )
+            allocated_refs = [
+                ref
+                for brief in macro.day_briefs
+                for ref in brief.allocated_selected_place_refs
+            ]
+            unallocated_refs = [
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            ]
+
+        policy_rejections = {
+            ref: rejection
+            for ref in allocated_refs
+            if (
+                rejection := constraint_policy_rejection(
+                    planner_input.intent.constraint_policy,
+                    name=selected_by_ref[ref].name,
+                    place_type="selected_place",
+                    tags=selected_by_ref[ref].tags,
+                    region_key=selected_by_ref[ref].region_key,
+                )
+            )
+            is not None
+        }
+        if policy_rejections:
+            normalized_briefs = [
+                brief.model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            ref
+                            for ref in brief.allocated_selected_place_refs
+                            if ref not in policy_rejections
+                        ]
+                    }
+                )
+                for brief in macro.day_briefs
+            ]
+            existing_unallocated = {
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            }
+            policy_unallocated = [
+                UnallocatedSelectedPlace(
+                    place=selected_by_ref[ref],
+                    reasonCode=rejection[0],
+                    reason=rejection[1],
+                )
+                for ref, rejection in policy_rejections.items()
+                if ref not in existing_unallocated
+            ]
+            macro = macro.model_copy(update={"day_briefs": normalized_briefs})
+            draft = draft.model_copy(
+                update={
+                    "macro_plan": macro,
+                    "unallocated_selected_places": [
+                        *draft.unallocated_selected_places,
+                        *policy_unallocated,
+                    ],
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Một số địa điểm đã chọn vi phạm ràng buộc cứng và "
+                            "được giữ trong danh sách chưa xếp lịch."
+                        ),
+                    ],
+                }
+            )
+            allocated_refs = [
+                ref
+                for brief in macro.day_briefs
+                for ref in brief.allocated_selected_place_refs
+            ]
+            unallocated_refs = [
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            ]
+
+        draft = self._normalize_source_itinerary_allocations(
+            planner_input,
+            draft,
+            selected_by_ref=selected_by_ref,
         )
-        allocated_by_day: dict[int, list[str]] = {
-            day: [] for day in range(1, planner_input.trip_spec.days + 1)
-        }
-        unallocated: list[UnallocatedSelectedPlace] = []
-        excluded = {
-            name.casefold()
-            for name in planner_input.plan_state.excluded_place_names
-        }
-        avoided = {
-            name.casefold()
+        macro = draft.macro_plan
+        allocated_refs = [
+            ref
+            for brief in macro.day_briefs
+            for ref in brief.allocated_selected_place_refs
+        ]
+        unallocated_refs = [
+            item.place.stable_ref
+            for item in draft.unallocated_selected_places
+        ]
+
+        accounted_refs = [*allocated_refs, *unallocated_refs]
+        if len(accounted_refs) != len(set(accounted_refs)):
+            raise ValueError("A selected Place was allocated more than once.")
+
+        missing_refs = [
+            stable_ref
+            for stable_ref in selected_by_ref
+            if stable_ref not in set(accounted_refs)
+        ]
+        if missing_refs:
+            repaired_unallocated = [
+                *draft.unallocated_selected_places,
+                *[
+                    UnallocatedSelectedPlace(
+                        place=selected_by_ref[stable_ref],
+                        reasonCode="planner_omitted_selected_place",
+                        reason=(
+                            "Planner did not provide an allocation; the backend "
+                            "preserved this selected Place as unallocated."
+                        ),
+                    )
+                    for stable_ref in missing_refs
+                ],
+            ]
+            draft = draft.model_copy(
+                update={
+                    "unallocated_selected_places": repaired_unallocated,
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Một số địa điểm đã chọn chưa được Planner phân bổ; "
+                            "backend đã giữ chúng trong danh sách chưa xếp lịch."
+                        ),
+                    ],
+                }
+            )
+
+        avoided_names = {
+            name.strip().casefold()
             for name in planner_input.intent.avoid_places
         }
-        selected_places = sorted(
-            planner_input.selected_places,
+        excluded_names = {
+            name.strip().casefold()
+            for name in planner_input.plan_state.excluded_place_names
+        }
+        prohibited_names = avoided_names | excluded_names
+        for ref in allocated_refs:
+            place = selected_by_ref[ref]
+            if place.name.strip().casefold() in prohibited_names:
+                raise ValueError("An avoided or excluded Place was allocated.")
+
+        normalized_unallocated: list[UnallocatedSelectedPlace] = []
+        for item in draft.unallocated_selected_places:
+            source_place = selected_by_ref[item.place.stable_ref]
+            normalized = item.model_copy(update={"place": source_place})
+            normalized_name = source_place.name.strip().casefold()
+            if normalized_name in avoided_names:
+                normalized = normalized.model_copy(
+                    update={
+                        "reason_code": "avoided_by_user",
+                        "reason": "Place is explicitly avoided by the user.",
+                    }
+                )
+            elif normalized_name in excluded_names:
+                normalized = normalized.model_copy(
+                    update={
+                        "reason_code": "excluded_by_plan_state",
+                        "reason": "Place is excluded from this planning scope.",
+                    }
+                )
+            normalized_unallocated.append(normalized)
+        return draft.model_copy(
+            update={"unallocated_selected_places": normalized_unallocated}
+        )
+
+    def _normalize_source_itinerary_allocations(
+        self,
+        planner_input: PlannerAgentInput,
+        draft: PlannerMacroPlanDraft,
+        *,
+        selected_by_ref: dict[str, SelectedPlaceContext],
+    ) -> PlannerMacroPlanDraft:
+        source_places = sorted(
+            (
+                place
+                for place in planner_input.selected_places
+                if place.source_order is not None
+            ),
             key=lambda place: (
-                place.source_order is None,
                 place.source_order or 10_000,
-                not place.must_visit,
-                place.priority,
-                place.name,
+                place.name.casefold(),
             ),
         )
+        if not source_places:
+            return draft
+
+        prohibited_names = {
+            *(
+                name.strip().casefold()
+                for name in planner_input.intent.avoid_places
+            ),
+            *(
+                name.strip().casefold()
+                for name in planner_input.plan_state.excluded_place_names
+            ),
+        }
+        eligible_places = [
+            place
+            for place in source_places
+            if place.name.strip().casefold() not in prohibited_names
+            and constraint_policy_rejection(
+                planner_input.intent.constraint_policy,
+                name=place.name,
+                place_type="selected_place",
+                tags=place.tags,
+                region_key=place.region_key,
+            )
+            is None
+        ]
+        if not eligible_places:
+            return draft
+
+        trip_days = planner_input.trip_spec.days
+        undated_places = [
+            place for place in eligible_places if place.source_day is None
+        ]
         activity_capacity = {
             "relaxed": 2,
             "balanced": 3,
             "packed": 5,
-        }[intent.pace.value]
-        ordered_source_places = [
-            place
-            for place in selected_places
-            if place.source_order is not None
-            and place.source_day is None
-            and place.name.casefold() not in avoided
-            and place.name.casefold() not in excluded
-        ]
-        source_allocation: dict[str, int] = {}
-        if ordered_source_places:
-            source_used_days = min(
-                planner_input.trip_spec.days,
-                max(
-                    1,
-                    (
-                        len(ordered_source_places)
-                        + activity_capacity
-                        - 1
-                    )
-                    // activity_capacity,
-                ),
-            )
-            source_count = len(ordered_source_places)
-            source_allocation = {
-                place.stable_ref: min(
-                    source_used_days,
-                    (index * source_used_days) // source_count + 1,
+        }[planner_input.intent.pace.value]
+        used_days = min(
+            trip_days,
+            max(
+                1,
+                (
+                    len(undated_places)
+                    + activity_capacity
+                    - 1
                 )
-                for index, place in enumerate(ordered_source_places)
-            }
-        allocation_order = [
-            day
-            for _ in range(activity_capacity)
-            for day in range(1, planner_input.trip_spec.days + 1)
-        ]
-        allocation_index = 0
-        for place in selected_places:
-            if place.name.casefold() in avoided:
-                unallocated.append(
-                    UnallocatedSelectedPlace(
-                        place=place,
-                        reasonCode="avoided_by_user",
-                        reason=(
-                            "Place conflicts with the user's explicit "
-                            "avoidPlaces constraint."
-                        ),
-                    )
-                )
-                continue
-            if place.name.casefold() in excluded:
-                unallocated.append(
-                    UnallocatedSelectedPlace(
-                        place=place,
-                        reasonCode="excluded_by_plan_state",
-                        reason="Place is excluded from the current planning scope.",
-                    )
-                )
-                continue
-            if place.source_order is not None and place.source_day is not None:
-                if place.source_day > planner_input.trip_spec.days:
-                    unallocated.append(
-                        UnallocatedSelectedPlace(
-                            place=place,
-                            reasonCode="source_day_out_of_range",
-                            reason=(
-                                "The URL assigns this stop to day "
-                                f"{place.source_day}, outside the requested "
-                                f"{planner_input.trip_spec.days}-day trip."
-                            ),
-                        )
-                    )
-                    continue
-                allocated_by_day[place.source_day].append(place.stable_ref)
-                continue
-            if place.stable_ref in source_allocation:
-                allocated_by_day[
-                    source_allocation[place.stable_ref]
-                ].append(place.stable_ref)
-                continue
-            if allocation_index >= len(allocation_order):
-                unallocated.append(
-                    UnallocatedSelectedPlace(
-                        place=place,
-                        reasonCode="no_day_capacity",
-                        reason=(
-                            "Confirmed Place exceeds the activity-block capacity "
-                            "for the requested number of days and pace."
-                        ),
-                    )
-                )
-                continue
-            day = allocation_order[allocation_index]
-            allocated_by_day[day].append(place.stable_ref)
-            allocation_index += 1
-
-        mode_label = planner_input.mode.value.title()
-        briefs = [
-            DayBrief(
-                day=day,
-                theme=(
-                    f"{mode_label} day {day}: "
-                    f"{focus[(day - 1) % len(focus)].replace('_', ' ').title()}"
-                ),
-                targetArea=self._target_area_name(
-                    intent.destination,
-                    candidate_areas,
-                    day,
-                ),
-                targetRegionKey=self._target_region_key(
-                    context.region_key,
-                    candidate_areas,
-                    day,
-                ),
-                focusTags=self._focus_tags(focus, dominant_tags, day),
-                pace=intent.pace,
-                dayPartGoals=self._day_part_goals(
-                    focus[(day - 1) % len(focus)],
-                    context.planner_signals,
-                ),
-                allocatedSelectedPlaceRefs=allocated_by_day[day],
-                notes=[
-                    f"Budget level: {intent.budget_level.value}",
-                    "Exact schedule is delegated to Finder.",
-                    *(
-                        ["URL itinerary order is preserved unless a hard constraint blocks a stop."]
-                        if any(
-                            place.source_order is not None
-                            for place in planner_input.selected_places
-                            if place.stable_ref in allocated_by_day[day]
-                        )
-                        else []
-                    ),
-                ],
-            )
-            for day in range(1, planner_input.trip_spec.days + 1)
-        ]
-        return (
-            MacroPlan(
-                title=f"{mode_label} plan for {intent.destination}",
-                destination=intent.destination,
-                regionKey=context.region_key,
-                dayBriefs=briefs,
+                // activity_capacity,
             ),
-            unallocated,
         )
+        inferred_days = {
+            place.stable_ref: min(
+                used_days,
+                (index * used_days) // len(undated_places) + 1,
+            )
+            for index, place in enumerate(undated_places)
+        } if undated_places else {}
 
-    def _target_region_key(
-        self,
-        root_region_key: str,
-        candidate_areas: list[dict],
-        day: int,
-    ) -> str:
-        if not candidate_areas:
-            return root_region_key
-        area = candidate_areas[(day - 1) % len(candidate_areas)]
-        return str(area.get("regionKey") or root_region_key)
+        assigned_days: dict[str, int] = {}
+        out_of_range: list[SelectedPlaceContext] = []
+        for place in eligible_places:
+            if place.source_day is not None:
+                if place.source_day > trip_days:
+                    out_of_range.append(place)
+                    continue
+                assigned_days[place.stable_ref] = place.source_day
+            else:
+                assigned_days[place.stable_ref] = inferred_days[
+                    place.stable_ref
+                ]
 
-    def _target_area_name(
-        self,
-        destination: str,
-        candidate_areas: list[dict],
-        day: int,
-    ) -> str:
-        region_key = self._target_region_key("", candidate_areas, day)
-        if not region_key:
-            return destination
-        return region_key.split(",")[-1].replace("-", " ").title()
+        source_refs = {place.stable_ref for place in eligible_places}
+        refs_by_day: dict[int, list[str]] = {
+            day: [] for day in range(1, trip_days + 1)
+        }
+        for place in eligible_places:
+            assigned_day = assigned_days.get(place.stable_ref)
+            if assigned_day is not None:
+                refs_by_day[assigned_day].append(place.stable_ref)
 
-    def _focus_tags(
-        self,
-        focus: list[str],
-        dominant_tags: list[str],
-        day: int,
-    ) -> list[str]:
-        start_index = (day - 1) % len(focus)
-        rotated_focus = [
-            *focus[start_index:],
-            *focus[:start_index],
+        normalized_briefs = [
+            brief.model_copy(
+                update={
+                    "allocated_selected_place_refs": [
+                        ref
+                        for ref in brief.allocated_selected_place_refs
+                        if ref not in source_refs
+                    ]
+                    + refs_by_day[brief.day],
+                    "notes": list(
+                        dict.fromkeys(
+                            [
+                                *brief.notes,
+                                *(
+                                    [
+                                        "URL itinerary order is preserved unless "
+                                        "a hard constraint blocks a stop."
+                                    ]
+                                    if refs_by_day[brief.day]
+                                    else []
+                                ),
+                            ]
+                        )
+                    ),
+                }
+            )
+            for brief in draft.macro_plan.day_briefs
         ]
-        return list(
-            dict.fromkeys([*rotated_focus, *dominant_tags[:2]])
-        )[:4]
-
-    def _day_part_goals(
-        self,
-        focus: str,
-        planner_signals: dict,
-    ) -> DayPartGoals:
-        strong_parts = set(planner_signals.get("strongDayParts", []))
-        weak_parts = set(planner_signals.get("weakDayParts", []))
-
-        def goal(part: str) -> str:
-            label = focus.replace("_", " ")
-            if part in weak_parts:
-                return f"Keep {part} flexible; regional data coverage is weak."
-            if part in strong_parts:
-                return f"Prioritize {label} activities supported in the {part}."
-            return f"Use a balanced {label} block in the {part}."
-
-        return DayPartGoals(
-            morning=goal("morning"),
-            lunch=goal("lunch"),
-            afternoon=goal("afternoon"),
-            evening=goal("evening"),
+        out_of_range_refs = {place.stable_ref for place in out_of_range}
+        normalized_unallocated = [
+            item
+            for item in draft.unallocated_selected_places
+            if item.place.stable_ref not in source_refs
+        ]
+        normalized_unallocated.extend(
+            UnallocatedSelectedPlace(
+                place=selected_by_ref[place.stable_ref],
+                reasonCode="source_day_out_of_range",
+                reason=(
+                    f"The URL assigns this stop to day {place.source_day}, "
+                    f"outside the requested {trip_days}-day trip."
+                ),
+            )
+            for place in out_of_range
+            if place.stable_ref in out_of_range_refs
         )
+        return draft.model_copy(
+            update={
+                "macro_plan": draft.macro_plan.model_copy(
+                    update={"day_briefs": normalized_briefs}
+                ),
+                "unallocated_selected_places": normalized_unallocated,
+            }
+        )
+
+    def _validate_journey_phases(
+        self,
+        macro: MacroPlan,
+        *,
+        allowed_regions: set[str],
+        trip_days: int,
+        research_draft: PlannerResearchDraft,
+    ) -> None:
+        previous_end = 0
+        for phase in macro.journey_phases:
+            if phase.start_day > phase.end_day:
+                raise ValueError("Journey phase startDay must not exceed endDay.")
+            if phase.start_day <= previous_end:
+                raise ValueError("Journey phases must be ordered and non-overlapping.")
+            if phase.end_day > trip_days:
+                raise ValueError("Journey phase exceeds requested trip duration.")
+            if phase.base_region_key not in allowed_regions:
+                raise ValueError(
+                    f"Unknown journey phase regionKey: {phase.base_region_key}"
+                )
+            previous_end = phase.end_day
+
+        if (
+            trip_days >= 7
+            and research_draft.journey_style in {"multi_base", "road_trip"}
+            and len(macro.journey_phases) < 2
+        ):
+            raise ValueError(
+                "Long multi-base or road-trip plans require at least two phases."
+            )
 
     def _statistics_warnings(
         self,
@@ -435,21 +798,26 @@ class PlannerService:
     ) -> list[str]:
         context = planner_input.region_context
         warnings: list[str] = []
-        if context.place_count == 0:
+        if context.active_place_count == 0:
             warnings.append(
-                f"No catalog Places are available for {context.region_key}; "
-                "Finder is limited to confirmed selected Places."
+                f"Không có Place active cho {context.region_key}; Finder chỉ "
+                "có thể dùng các địa điểm người dùng đã chọn."
             )
             return warnings
-        missing_hours = int(context.data_quality.get("missingOpeningHours", 0))
-        if missing_hours > context.place_count / 2:
+
+        eligible_quality = context.planner_eligible.get(
+            "dataQuality",
+            context.data_quality,
+        )
+        missing_hours = int(eligible_quality.get("missingOpeningHours", 0))
+        if missing_hours > context.active_place_count / 2:
             warnings.append(
-                "More than half of regional Places have no opening-hours data; "
-                "Finder must verify time feasibility."
+                "Hơn một nửa Place active chưa có giờ mở cửa; Finder phải "
+                "xác minh tính khả thi theo thời gian."
             )
-        stale_data = int(context.data_quality.get("staleOperationalData", 0))
+        stale_data = int(eligible_quality.get("staleOperationalData", 0))
         if stale_data:
             warnings.append(
-                f"{stale_data} Places have stale operational data."
+                f"{stale_data} Place active có dữ liệu vận hành đã cũ."
             )
         return warnings

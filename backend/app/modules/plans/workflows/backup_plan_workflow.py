@@ -33,6 +33,7 @@ class BackupPlanWorkflow:
                 placeId=item.place_id,
                 name=item.name,
                 mustVisit=item.place_type == "must_visit",
+                regionKey=item.region_key,
                 sourceRefs=item.source_refs,
                 tags=item.tags,
             )
@@ -83,6 +84,7 @@ class BackupPlanWorkflow:
                     mustVisitPlaces=backup_intent.must_visit_places,
                     avoidPlaces=backup_intent.avoid_places,
                     constraints=backup_intent.constraints,
+                    constraintPolicy=backup_intent.constraint_policy,
                     clarifyingQuestions=backup_intent.clarifying_questions,
                 ),
                 tripSpec=planner_output.trip_spec,

@@ -7,6 +7,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
@@ -81,7 +82,7 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     day = result.days[0]
     assert [item.role for item in day.items] == [
         "main_activity",
-        "break_main_support",
+        "lunch_meal",
         "support_activity",
         "break_support_bonus",
     ]
@@ -142,7 +143,7 @@ def test_reference_only_mode_never_adds_catalog_places() -> None:
     activity_items = [
         item
         for item in result.days[0].items
-        if item.place_type != "break"
+        if item.source in {"selected_place", "finder_suggestion"}
     ]
     assert [item.name for item in activity_items] == ["Place from OCR"]
     assert all(item.source != "finder_suggestion" for item in activity_items)
@@ -200,6 +201,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         "Finder suggestion",
         tags=["food"],
         intensity="light",
+        place_type="restaurant",
     )
     finder = FinderService(
         FakeFinderPlaceTool(
@@ -279,7 +281,8 @@ def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
 
     assert result.days[0].strategy == "relaxed"
     assert [item.role for item in result.days[0].items] == [
-        "break_main_support"
+        "lunch_meal",
+        "break_main_support",
     ]
 
 
@@ -383,6 +386,141 @@ def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> N
     )
 
 
+def test_finder_rejects_place_outside_opening_hours() -> None:
+    closed_morning = _place(
+        "closed-morning",
+        "Late museum",
+        tags=["culture"],
+        intensity="light",
+        opening_hours=[{"openTime": "14:00", "closeTime": "22:00"}],
+    )
+    backup = _place(
+        "backup",
+        "Morning museum",
+        tags=["culture"],
+        intensity="light",
+        opening_hours=[{"openTime": "08:00", "closeTime": "18:00"}],
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"closed-morning": closed_morning, "backup": backup},
+            search_order=["closed-morning", "backup"],
+        )
+    )
+
+    result = finder.fill_main_plan(_macro_plan(), _intent(), [])
+
+    assert result.days[0].items[0].name == "Morning museum"
+    assert "closed-morning" in result.final_plan_status.rejected_candidate_ids
+
+
+def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
+    outdoor = _place(
+        "outdoor",
+        "Outdoor walk",
+        tags=["outdoor", "nature"],
+        intensity="light",
+        weather_sensitivity="high",
+    )
+    indoor = _place(
+        "indoor",
+        "Indoor gallery",
+        tags=["culture", "indoor"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"outdoor": outdoor, "indoor": indoor},
+            search_order=["outdoor", "indoor"],
+        )
+    )
+    intent = _intent().model_copy(update={"constraints": ["bad_weather"]})
+
+    result = finder.fill_main_plan(_macro_plan(), intent, [])
+
+    assert result.days[0].strategy == "indoor_safe"
+    assert result.days[0].items[0].name == "Indoor gallery"
+    assert "outdoor" in result.final_plan_status.rejected_candidate_ids
+
+
+def test_constraint_policy_rejects_cemetery_and_keeps_coastal_place() -> None:
+    cemetery = _place(
+        "cemetery",
+        "Nghĩa trang liệt sĩ Hải Phòng",
+        tags=["cemetery", "culture"],
+        intensity="light",
+        place_type="grave_yard",
+    )
+    coastal = _place(
+        "coastal",
+        "Điểm ngắm biển Đồ Sơn",
+        tags=["coastal", "culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"cemetery": cemetery, "coastal": coastal},
+            search_order=["cemetery", "coastal"],
+        )
+    )
+    intent = _intent().model_copy(
+        update={
+            "constraint_policy": ConstraintPolicy(
+                excludedPlaceTypes=["cemetery"],
+                geographicScope={"type": "coastal"},
+            )
+        }
+    )
+
+    result = finder.fill_main_plan(_macro_plan(), intent, [])
+
+    assert result.days[0].items[0].place_id == "coastal"
+    assert "cemetery" in result.final_plan_status.rejected_candidate_ids
+
+
+def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> None:
+    inland = _place(
+        "inland",
+        "Bảo tàng nội đô",
+        tags=["culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool({"inland": inland}, search_order=[]),
+    )
+    intent = _intent().model_copy(
+        update={
+            "constraint_policy": ConstraintPolicy(
+                geographicScope={"type": "coastal"},
+            )
+        }
+    )
+    macro = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={"allocated_selected_place_refs": ["inland"]}
+                )
+            ]
+        }
+    )
+
+    result = finder.fill_main_plan(
+        macro,
+        intent,
+        [
+            SelectedPlaceContext(
+                placeId="inland",
+                name="Bảo tàng nội đô",
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+    )
+
+    assert result.unscheduled_places[0].reason_code == "outside_geographic_scope"
+
+
 class FakeFinderPlaceTool:
     def __init__(
         self,
@@ -447,16 +585,23 @@ def _place(
     tags: list[str],
     intensity: str | None,
     duration: int = 60,
+    opening_hours: list[dict] | None = None,
+    weather_sensitivity: str | None = None,
+    price_level: str | None = None,
+    place_type: str = "attraction",
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
         name=name,
-        placeType="attraction",
+        placeType=place_type,
         regionKey="vn,ha-noi,hoan-kiem",
         tags=tags,
         latitude=21.03,
         longitude=105.85,
         typicalDurationMinutes=duration,
         activityIntensity=intensity,
+        openingHours=opening_hours or [],
+        weatherSensitivity=weather_sensitivity,
+        priceLevel=price_level,
         dataConfidence="high",
     )

@@ -13,6 +13,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
@@ -52,6 +53,7 @@ class ItineraryItemCategory(StrEnum):
     adventure = "adventure"
     beach = "beach"
     family = "family"
+    cemetery = "cemetery"
     other = "other"
 
 
@@ -202,6 +204,9 @@ class RegionStatisticsContext(BaseModel):
     geographic_summary: Annotated[
         dict[str, Any], Field(alias="geographicSummary")
     ] = Field(default_factory=dict)
+    planner_eligible: Annotated[
+        dict[str, Any], Field(alias="plannerEligible")
+    ] = Field(default_factory=dict)
     area_profiles: Annotated[list[dict[str, Any]], Field(alias="areaProfiles")] = (
         Field(default_factory=list)
     )
@@ -265,6 +270,10 @@ class PlanningIntent(BaseModel):
     must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
     avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+    constraint_policy: Annotated[
+        ConstraintPolicy,
+        Field(default_factory=ConstraintPolicy, alias="constraintPolicy"),
+    ]
     clarifying_questions: Annotated[list[str], Field(alias="clarifyingQuestions")] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -431,6 +440,92 @@ class ExplorerAgentOutput(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlannerThemeResearchQuery(BaseModel):
+    theme: str = Field(min_length=1, max_length=120)
+    capabilities: list[str] = Field(min_length=1, max_length=6)
+    preferred_region_key: Annotated[
+        str | None,
+        Field(default=None, alias="preferredRegionKey"),
+    ]
+    rationale: str = Field(min_length=1, max_length=500)
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerResearchDraft(BaseModel):
+    journey_style: Annotated[
+        Literal["local_base", "hub_and_spoke", "multi_base", "road_trip"],
+        Field(alias="journeyStyle"),
+    ] = "local_base"
+    variety_strategy: Annotated[
+        str,
+        Field(min_length=1, max_length=800, alias="varietyStrategy"),
+    ]
+    theme_queries: Annotated[
+        list[PlannerThemeResearchQuery],
+        Field(min_length=1, max_length=8, alias="themeQueries"),
+    ]
+    expand_beyond_root: Annotated[
+        bool,
+        Field(default=False, alias="expandBeyondRoot"),
+    ]
+    nearby_capabilities: Annotated[
+        list[str],
+        Field(default_factory=list, max_length=8, alias="nearbyCapabilities"),
+    ]
+    max_distance_km: Annotated[
+        float,
+        Field(default=120.0, ge=1, le=500, alias="maxDistanceKm"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerCapabilityEvidence(BaseModel):
+    theme: str
+    capability: str
+    supported: bool
+    active_place_count: Annotated[int, Field(ge=0, alias="activePlaceCount")]
+    region_keys: Annotated[list[str], Field(alias="regionKeys")] = Field(
+        default_factory=list
+    )
+    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = (
+        Field(default_factory=list)
+    )
+    confidence: Literal["none", "low", "medium", "high"] = "none"
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerNearbyRegionEvidence(BaseModel):
+    region_key: Annotated[str, Field(alias="regionKey")]
+    distance_km: Annotated[float, Field(ge=0, alias="distanceKm")]
+    active_place_count: Annotated[int, Field(ge=0, alias="activePlaceCount")]
+    matching_capabilities: Annotated[
+        list[str],
+        Field(alias="matchingCapabilities"),
+    ] = Field(default_factory=list)
+    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = (
+        Field(default_factory=list)
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerVerifiedResearch(BaseModel):
+    capability_evidence: Annotated[
+        list[PlannerCapabilityEvidence],
+        Field(alias="capabilityEvidence"),
+    ] = Field(default_factory=list)
+    nearby_regions: Annotated[
+        list[PlannerNearbyRegionEvidence],
+        Field(alias="nearbyRegions"),
+    ] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
 class PlannerAgentInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
     intent: PlanningIntent
@@ -462,6 +557,17 @@ class PlannerAgentOutput(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
+
+    model_config = {"populate_by_name": True}
+
+
+class PlannerMacroPlanDraft(BaseModel):
+    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
+    unallocated_selected_places: Annotated[
+        list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
+    ] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 

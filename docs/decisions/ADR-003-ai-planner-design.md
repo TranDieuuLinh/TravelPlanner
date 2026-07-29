@@ -23,7 +23,9 @@ bởi schema. Thêm pipeline trước Planner nhưng giữ ranh giới xác nh�
 3. Resolve đối chiếu candidate với place chuẩn hóa.
 4. User Confirm tạo `SelectedPlace`; candidate chưa xác nhận không phải intent.
 5. Explorer chuẩn hóa sở thích và xác định nhu cầu hỏi thêm.
-6. Planner tạo MacroPlan và DayBrief.
+6. Planner chạy một lượt research để đề xuất journey shape/capability query,
+   backend kiểm chứng bằng Place database, rồi lượt thứ hai tạo MacroPlan và
+   DayBrief từ evidence.
 7. Finder điền item chi tiết bằng địa điểm đã chuẩn hóa.
 8. Check áp dụng validation theo quy tắc và dữ liệu provider.
 9. Backup tạo một phương án riêng được liên kết khi user yêu cầu hoặc khi có rủi
@@ -41,6 +43,8 @@ phải có phạm vi rõ ràng và giữ nguyên item đã khóa.
 - Cần thêm UI review vì xác nhận của user là một bước nghiệp vụ bắt buộc.
 - UI có thể stream hoặc hiển thị tiến độ lập kế hoạch.
 - Nhiều call và bước điều phối hơn có thể tăng độ trễ và chi phí.
+- Capability tool chỉ xác minh coverage trong Place database. Khoảng cách vùng
+  lân cận hiện là địa lý theo centroid, không thay thế route provider.
 - Prompt, schema, tình huống đánh giá và hành vi thử lại có version trở thành yêu
   cầu vận hành.
 - Plan chính và plan dự phòng vẫn có thể được kiểm tra độc lập.

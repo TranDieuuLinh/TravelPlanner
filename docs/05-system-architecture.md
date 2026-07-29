@@ -19,7 +19,8 @@ Router FastAPI
     +-- profiles/marketplace: endpoint placeholder
 ```
 
-Frontend, backend và PostgreSQL là ba service trong `docker-compose.yml`.
+`docker-compose.yml` chỉ chạy backend và PostgreSQL. Frontend Next.js được chạy
+riêng trên host khi cần phát triển hoặc kiểm thử giao diện.
 PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backend trực
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi

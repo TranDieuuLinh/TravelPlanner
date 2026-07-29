@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 
 
@@ -13,6 +14,10 @@ class TravelIntent(BaseModel):
     must_visit_places: list[str] = Field(default_factory=list, alias="mustVisitPlaces")
     avoid_places: list[str] = Field(default_factory=list, alias="avoidPlaces")
     constraints: list[str] = Field(default_factory=list)
+    constraint_policy: ConstraintPolicy = Field(
+        default_factory=ConstraintPolicy,
+        alias="constraintPolicy",
+    )
     clarifying_questions: list[str] = Field(default_factory=list, alias="clarifyingQuestions")
 
     model_config = {"populate_by_name": True}
@@ -55,10 +60,26 @@ class DayBrief(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class JourneyPhase(BaseModel):
+    start_day: int = Field(ge=1, alias="startDay")
+    end_day: int = Field(ge=1, alias="endDay")
+    base_region_key: str = Field(alias="baseRegionKey")
+    theme: str
+    movement_goal: str | None = Field(default=None, alias="movementGoal")
+    stay_nights: int = Field(default=0, ge=0, alias="stayNights")
+
+    model_config = {"populate_by_name": True}
+
+
 class MacroPlan(BaseModel):
     title: str
     destination: str
     region_key: str | None = Field(default=None, alias="regionKey")
+    journey_style: str = Field(default="local_base", alias="journeyStyle")
+    journey_phases: list[JourneyPhase] = Field(
+        default_factory=list,
+        alias="journeyPhases",
+    )
     day_briefs: list[DayBrief] = Field(alias="dayBriefs")
 
     model_config = {"populate_by_name": True}
@@ -70,6 +91,7 @@ class PlanItem(BaseModel):
     name: str
     time_window: str = Field(alias="timeWindow")
     place_type: str = Field(alias="placeType")
+    region_key: str | None = Field(default=None, alias="regionKey")
     role: str | None = None
     source: str = "finder"
     duration_minutes: int | None = Field(default=None, alias="durationMinutes")

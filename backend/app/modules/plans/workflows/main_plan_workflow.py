@@ -68,6 +68,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
         return await self._run_planning(
@@ -98,6 +99,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
         return await self._run_planning(
@@ -150,13 +152,17 @@ class MainPlanWorkflow:
             )
 
         macro_plan = planner_output.macro_plan
+        finder_selected_places = self._filter_finder_selected_places(
+            selected_places,
+            planner_output,
+        )
         finder_output = self.finder.fill_agent_plan(
             FinderAgentInput(
                 mode=PlanningMode.main,
                 intent=planning_intent,
                 tripSpec=planner_output.trip_spec,
                 macroPlan=macro_plan,
-                selectedPlaces=selected_places,
+                selectedPlaces=finder_selected_places,
                 userStatus=user_status,
                 allowFinderSuggestions=allow_finder_suggestions,
             )
@@ -209,6 +215,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )
 
@@ -219,6 +226,23 @@ class MainPlanWorkflow:
         if isinstance(place, str):
             return SelectedPlaceContext(name=place, mustVisit=True)
         return SelectedPlaceContext.model_validate(place.model_dump())
+
+    def _filter_finder_selected_places(
+        self,
+        selected_places: list[SelectedPlaceContext],
+        planner_output: PlannerAgentOutput,
+    ) -> list[SelectedPlaceContext]:
+        unallocated_refs = {
+            item.place.stable_ref
+            for item in planner_output.unallocated_selected_places
+        }
+        if not unallocated_refs:
+            return selected_places
+        return [
+            place
+            for place in selected_places
+            if place.stable_ref not in unallocated_refs
+        ]
 
     def _merge_unscheduled_places(
         self,

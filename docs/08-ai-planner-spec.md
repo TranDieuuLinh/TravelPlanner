@@ -25,15 +25,25 @@ yêu cầu của user.
 ## Luồng xử lý hiện tại
 
 1. `ExplorerService` chuẩn hóa ý định và tạo câu hỏi làm rõ.
-2. `PlannerService` tạo mô tả cấp cao cho từng ngày.
+2. `PlannerService` gọi LLM bằng structured output để tạo mô tả cấp cao cho
+   từng ngày từ Explorer context và snapshot thống kê khu vực nhỏ.
 3. `FinderService` điền khung giờ và địa điểm đã chọn.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-Planner và Finder hiện tạo cấu trúc plan bằng domain rule deterministic; không
-gọi LLM chỉ để bỏ kết quả. `StubLLMClient` vẫn phục vụ các luồng/provider khác
-đang cần gateway, nhưng output Main/Backup Plan hiện chưa phải output sinh bởi
-model.
+Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
+capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
+lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
+dụng validate số ngày, region key, journey phase và việc phân bổ mọi
+`selectedPlace`. Nếu model bỏ sót một `selectedPlace`, backend giữ địa điểm đó
+trong danh sách chưa phân bổ kèm reason code và cảnh báo thay vì làm mất dữ liệu
+hoặc làm hỏng toàn bộ request. Với các lỗi contract khác, backend yêu cầu model
+sửa lại output tối đa ba lần với feedback validation mới ở từng lượt trước khi
+trả lỗi provider. Nếu model tạo `allocatedSelectedPlaceRef` không tồn tại trong
+input `selectedPlaces`, backend loại ref đó và thêm cảnh báo; ref do model bịa
+không được truyền sang Finder. Finder vẫn tạo lịch
+chi tiết bằng domain rule deterministic.
+Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
 Khi intake có URL video, Explorer dùng transcript STT, metadata và frame vision
 để trích từng stop theo thứ tự. Candidate URL giữ `sourceOrder`,
@@ -116,6 +126,13 @@ luôn ưu tiên hơn profile dài hạn.
 Planner tạo `MacroPlan` và `DayBriefs`:
 
 - mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
+- ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
+- hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
+  động cho mọi ngày;
+- chuyến dài có thể tạo `journeyPhases` và mở rộng sang region lân cận đã được
+  tool kiểm chứng;
+- theme sáng tạo như biển, hải sản, hiking hoặc camping phải có capability
+  evidence từ Place active trước khi được mô tả như một khả năng có thật;
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
 - ghi rõ địa điểm nào chưa thể phân bổ.
@@ -131,6 +148,10 @@ Finder điền item cụ thể:
 - Finder được bổ sung catalog vào ngày trống khi user đã nói rõ số ngày và số
   ngày đó dài hơn coverage của URL/OCR; prompt thuần vẫn cho phép đề xuất;
 - chọn khung giờ theo giờ hoạt động và timing claim;
+- rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
+  category, tags, region, confidence và các dữ liệu có cấu trúc;
+- fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
+  dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
@@ -255,7 +276,17 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 - Version hóa prompt và output schema.
 - Ghi model/provider/version và phiên bản evaluation, không ghi toàn bộ prompt
   riêng tư.
-- Đặt timeout, retry có giới hạn và circuit breaker.
+- Đặt timeout và retry có giới hạn. Gemini runtime hiện retry tối đa ba lần với
+  backoff cho lỗi mạng, `429`, `500`, `502`, `503` và `504`; lỗi provider được
+  chuyển thành lỗi API có kiểm soát mà không ghi response hoặc API key vào log.
+  Không áp dụng khoảng chờ cố định giữa các call thành công. Khi Gemini trả
+  `Retry-After` hoặc `google.rpc.RetryInfo.retryDelay`, limiter dùng thời gian
+  provider yêu cầu (tối đa 60 giây) trước khi retry. `GEMINI_API_KEY` nhận một
+  key hoặc nhiều key phân tách bằng dấu phẩy. Client dùng chung pool key trong
+  tiến trình; khi key hiện tại trả `429`, key đó được cooldown theo chỉ dẫn của
+  provider và call chuyển sang key kế tiếp ngay. Key trả `401/403` bị loại khỏi
+  pool cho đến khi tiến trình khởi động lại. API key không được ghi vào log.
+  Circuit breaker vẫn là phần chưa triển khai.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.

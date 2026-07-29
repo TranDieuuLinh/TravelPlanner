@@ -10,10 +10,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.main import app
 from app.modules.places.model import Place
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.planner.research_tool import (
+    RepositoryPlannerResearchTool,
+)
 from app.modules.plans.schema import MainPlanCreate
+from tests.modules.plans.test_planner_service import FakePlannerLLM
 
 
 def test_place_repository_imports_without_statistics_cycle() -> None:
@@ -35,7 +40,13 @@ def test_place_repository_imports_without_statistics_cycle() -> None:
     assert result.stdout.strip() == "SqlAlchemyPlaceRepository"
 
 
-def test_runtime_finder_uses_place_repository_and_fills_catalog_places() -> None:
+def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.dependencies.get_llm_client",
+        lambda: FakePlannerLLM(),
+    )
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -73,6 +84,10 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places() -> None
                 service.main_workflow.finder.place_tool,
                 RepositoryFinderPlaceTool,
             )
+            assert isinstance(
+                service.main_workflow.planner.research_tool,
+                RepositoryPlannerResearchTool,
+            )
 
             plan = asyncio.run(
                 service.create_main_plan(
@@ -108,7 +123,12 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places() -> None
 def test_context_endpoint_builds_plan_from_normalized_input(
     client: TestClient,
     db_session: Session,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.dependencies.get_llm_client",
+        lambda: FakePlannerLLM(),
+    )
     db_session.add_all(
         [
             _place("context-museum", "Context Museum", "museum", ["culture"]),
@@ -150,6 +170,40 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     ) == 3
     assert body["status"] == "locked"
     assert body["checkReport"]["status"] == "passed"
+
+
+def test_from_explorer_provider_error_keeps_cors_headers(
+    client: TestClient,
+) -> None:
+    class FailingPlanService:
+        async def create_main_plan_from_explorer(self, payload):
+            raise RuntimeError("Planner provider failed.")
+
+    app.dependency_overrides[get_plan_service] = lambda: FailingPlanService()
+    response = client.post(
+        "/api/plans/main/from-explorer",
+        headers={"Origin": "http://localhost:3000"},
+        json={
+            "intent": {
+                "destination": "Ha Noi",
+                "budgetLevel": "medium",
+                "travelStyle": "local",
+                "pace": "balanced",
+                "interests": ["culture"],
+            },
+            "tripSpec": {
+                "days": 1,
+                "partySize": 1,
+            },
+            "selectedPlaces": [],
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.headers["access-control-allow-origin"] == (
+        "http://localhost:3000"
+    )
+    assert response.json()["detail"] == "Planner provider failed."
 
 
 def _place(

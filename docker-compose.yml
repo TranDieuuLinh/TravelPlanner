@@ -27,6 +27,7 @@ services:
       BACKEND_CORS_ORIGINS: http://localhost:3000
       APP_ENV: local
       PLACE_RESOLVER_PROVIDER: nominatim
+      GEMINI_MIN_INTERVAL_SECONDS: "0.0"
       NOMINATIM_BASE_URL: https://nominatim.openstreetmap.org
       NOMINATIM_USER_AGENT: VSF-Travel-Planner/0.1 (local-development)
     ports:
@@ -46,20 +47,6 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api
-    ports:
-      - "3000:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
 
 volumes:
   postgres_data:

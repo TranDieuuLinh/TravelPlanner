@@ -7,7 +7,7 @@ from statistics import median
 from typing import Any, Iterable
 
 
-ALGORITHM_VERSION = "auto_statistics_v2_1"
+ALGORITHM_VERSION = "auto_statistics_v3_0"
 
 TIME_SLOTS: dict[str, tuple[int, int]] = {
     "morning": (5 * 60, 11 * 60),
@@ -83,6 +83,7 @@ class RegionAccumulator:
     def __init__(self, region_key: str) -> None:
         self.region_key = region_key
         self.place_count = 0
+        self.direct_place_count = 0
         self.active_place_count = 0
         self.counts_by_type: dict[str, int] = {}
         self.counts_by_status: dict[str, int] = {}
@@ -111,8 +112,16 @@ class RegionAccumulator:
         self.confidence_counts: dict[str, int] = {}
         self.coordinates: list[tuple[float, float]] = []
 
-    def add(self, place: PlaceStatisticsRecord, stale_before: datetime) -> None:
+    def add(
+        self,
+        place: PlaceStatisticsRecord,
+        stale_before: datetime,
+        *,
+        direct: bool = False,
+    ) -> None:
         self.place_count += 1
+        if direct:
+            self.direct_place_count += 1
         if place.status == "active":
             self.active_place_count += 1
         _increment(self.counts_by_type, place.place_type or "unknown")
@@ -229,6 +238,7 @@ class RegionAccumulator:
         return {
             "regionKey": self.region_key,
             "placeCount": self.place_count,
+            "directPlaceCount": self.direct_place_count,
             "activePlaceCount": self.active_place_count,
             "countsByType": dict(sorted(self.counts_by_type.items())),
             "countsByStatus": dict(sorted(self.counts_by_status.items())),
@@ -272,21 +282,40 @@ def build_region_statistics(
     stale_before: datetime,
 ) -> tuple[list[dict[str, Any]], int]:
     accumulators: dict[str, RegionAccumulator] = {}
+    planner_eligible_accumulators: dict[str, RegionAccumulator] = {}
     row_count = 0
 
     for place in places:
         row_count += 1
         for region_key in _region_rollups(place.region_key):
             accumulator = accumulators.setdefault(region_key, RegionAccumulator(region_key))
-            accumulator.add(place, stale_before)
+            accumulator.add(
+                place,
+                stale_before,
+                direct=region_key == place.region_key,
+            )
+            if place.status == "active":
+                planner_accumulator = planner_eligible_accumulators.setdefault(
+                    region_key,
+                    RegionAccumulator(region_key),
+                )
+                planner_accumulator.add(
+                    place,
+                    stale_before,
+                    direct=region_key == place.region_key,
+                )
 
-    regions = [
-        accumulators[region_key].to_dict()
-        for region_key in sorted(
-            accumulators,
-            key=lambda value: (value.count(","), value),
+    regions = []
+    for region_key in sorted(
+        accumulators,
+        key=lambda value: (value.count(","), value),
+    ):
+        region = accumulators[region_key].to_dict()
+        eligible = planner_eligible_accumulators.get(region_key)
+        region["plannerEligible"] = _planner_eligible_metrics(
+            eligible.to_dict() if eligible is not None else None
         )
-    ]
+        regions.append(region)
     _attach_planner_signals(regions)
     return regions, row_count
 
@@ -381,16 +410,19 @@ def _normalized_label(value: Any) -> str | None:
 def _attach_planner_signals(regions: list[dict[str, Any]]) -> None:
     for region in regions:
         region_key = region["regionKey"]
-        parent_depth = region_key.count(",")
-        direct_children = [
+        descendants = [
             candidate
             for candidate in regions
             if candidate["regionKey"].startswith(f"{region_key},")
-            and candidate["regionKey"].count(",") == parent_depth + 1
         ]
-        direct_children.sort(
+        smallest_areas = [
+            candidate
+            for candidate in descendants
+            if candidate["plannerEligible"]["directPlaceCount"] > 0
+        ]
+        smallest_areas.sort(
             key=lambda candidate: (
-                -candidate["placeCount"],
+                -candidate["plannerEligible"]["placeCount"],
                 candidate["regionKey"],
             )
         )
@@ -398,19 +430,35 @@ def _attach_planner_signals(regions: list[dict[str, Any]]) -> None:
             {
                 "regionKey": child["regionKey"],
                 "placeCount": child["placeCount"],
-                "activePlaceCount": child["activePlaceCount"],
-                "topTags": _top_count_keys(child["tagCounts"], limit=5),
-                "topPlaceTypes": _top_count_keys(
-                    child["countsByType"],
+                "activePlaceCount": child["plannerEligible"]["placeCount"],
+                "topTags": _top_count_keys(
+                    child["plannerEligible"]["tagCounts"],
                     limit=5,
                 ),
-                "timeOfDayCoverage": child["timeOfDayCoverage"],
-                "indoorOutdoorMix": child["indoorOutdoorMix"],
+                "topPlaceTypes": _top_count_keys(
+                    child["plannerEligible"]["countsByType"],
+                    limit=5,
+                ),
+                "timeOfDayCoverage": child["plannerEligible"][
+                    "timeOfDayCoverage"
+                ],
+                "typicalDurationByType": child["plannerEligible"][
+                    "typicalDurationByType"
+                ],
+                "indoorOutdoorMix": child["plannerEligible"][
+                    "indoorOutdoorMix"
+                ],
+                "dataQuality": child["plannerEligible"]["dataQuality"],
+                "geographicSummary": child["plannerEligible"][
+                    "geographicSummary"
+                ],
             }
-            for child in direct_children[:10]
-        ]
+            for child in smallest_areas
+            if child["plannerEligible"]["placeCount"] > 0
+        ][:20]
+        eligible = region["plannerEligible"]
         time_coverage = {
-            slot: int(region["timeOfDayCoverage"][slot])
+            slot: int(eligible["timeOfDayCoverage"][slot])
             for slot in TIME_SLOTS
         }
         maximum_coverage = max(time_coverage.values(), default=0)
@@ -429,7 +477,8 @@ def _attach_planner_signals(regions: list[dict[str, Any]]) -> None:
         ]
         region["areaProfiles"] = area_profiles
         region["plannerSignals"] = {
-            "dominantTags": _top_count_keys(region["tagCounts"], limit=8),
+            "statisticsLevel": "smallest_available_region",
+            "dominantTags": _top_count_keys(eligible["tagCounts"], limit=8),
             "strongDayParts": strong_day_parts,
             "weakDayParts": weak_day_parts,
             "candidateAreas": [
@@ -441,10 +490,32 @@ def _attach_planner_signals(regions: list[dict[str, Any]]) -> None:
                 for area in area_profiles
             ],
             "activityDiversity": {
-                "uniqueTagCount": len(region["tagCounts"]),
-                "uniquePlaceTypeCount": len(region["countsByType"]),
+                "uniqueTagCount": len(eligible["tagCounts"]),
+                "uniquePlaceTypeCount": len(eligible["countsByType"]),
             },
         }
+
+
+def _planner_eligible_metrics(region: dict[str, Any] | None) -> dict[str, Any]:
+    if region is None:
+        empty = RegionAccumulator("unused").to_dict()
+        region = empty
+    return {
+        "placeCount": region["placeCount"],
+        "directPlaceCount": region["directPlaceCount"],
+        "countsByType": region["countsByType"],
+        "tagCounts": region["tagCounts"],
+        "timeOfDayCoverage": region["timeOfDayCoverage"],
+        "typicalDurationByType": region["typicalDurationByType"],
+        "tagTimeCoverage": region["tagTimeCoverage"],
+        "tagDurationProfile": region["tagDurationProfile"],
+        "indoorOutdoorMix": region["indoorOutdoorMix"],
+        "weatherSensitivityCounts": region["weatherSensitivityCounts"],
+        "bookingRequirementCounts": region["bookingRequirementCounts"],
+        "dataQuality": region["dataQuality"],
+        "priceCoverage": region["priceCoverage"],
+        "geographicSummary": region["geographicSummary"],
+    }
 
 
 def _top_count_keys(values: dict[str, int], *, limit: int) -> list[str]:
