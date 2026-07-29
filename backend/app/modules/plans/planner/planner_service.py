@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
@@ -9,7 +11,9 @@ from app.modules.plans.dto.agent_contracts import (
     AgentTrace,
     PlannerAgentInput,
     PlannerAgentOutput,
+    PlannerResearchDraft,
     PlannerMacroPlanDraft,
+    PlannerVerifiedResearch,
     PlanningAgentName,
     PlanningAgentStatus,
     PlanningIntent,
@@ -21,8 +25,16 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.planner.prompt import (
     PLANNER_PROMPT_VERSION,
+    PLANNER_RESEARCH_PROMPT_VERSION,
+    PLANNER_RESEARCH_SYSTEM_PROMPT,
     PLANNER_SYSTEM_PROMPT,
+    build_planner_repair_payload,
+    build_planner_research_payload,
     build_planner_user_payload,
+)
+from app.modules.plans.planner.research_tool import (
+    EmptyPlannerResearchTool,
+    PlannerResearchTool,
 )
 from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
@@ -33,15 +45,20 @@ from app.modules.preferences.schema import (
     PreferenceDimension,
 )
 
+logger = logging.getLogger(__name__)
+PLANNER_MAX_REPAIR_ATTEMPTS = 3
+
 
 class PlannerService:
     def __init__(
         self,
         statistics_provider: PlannerStatisticsProvider,
         llm: LLMClient,
+        research_tool: PlannerResearchTool | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
+        self.research_tool = research_tool or EmptyPlannerResearchTool()
 
     async def create_main_macro_plan(
         self,
@@ -177,18 +194,75 @@ class PlannerService:
             )
 
         try:
-            raw = await self.llm.generate_json(
-                system_prompt=PLANNER_SYSTEM_PROMPT,
-                user_payload=build_planner_user_payload(planner_input),
+            research_raw = await self.llm.generate_json(
+                system_prompt=PLANNER_RESEARCH_SYSTEM_PROMPT,
+                user_payload=build_planner_research_payload(planner_input),
             )
-            draft = PlannerMacroPlanDraft.model_validate_json(raw)
-            draft = self._validate_and_normalize_draft(planner_input, draft)
-        except (ValidationError, ValueError) as exc:
+            research_draft = PlannerResearchDraft.model_validate_json(
+                research_raw
+            )
+            verified_research = self.research_tool.verify(
+                research_draft,
+                root_region_key=planner_input.region_context.region_key,
+            )
+        except ValidationError as exc:
             raise RuntimeError(
-                "LLM Planner returned an invalid MacroPlan contract."
+                "LLM Planner returned an invalid research contract."
             ) from exc
 
-        warnings = list(dict.fromkeys([*draft.warnings, *statistics_warnings]))
+        raw = await self.llm.generate_json(
+            system_prompt=PLANNER_SYSTEM_PROMPT,
+            user_payload=build_planner_user_payload(
+                planner_input,
+                research_draft,
+                verified_research,
+            ),
+        )
+        repair_attempts = 0
+        while True:
+            try:
+                draft = self._parse_and_validate_macro_draft(
+                    planner_input,
+                    raw,
+                    research_draft,
+                    verified_research,
+                )
+                break
+            except (ValidationError, ValueError) as exc:
+                feedback = self._validation_feedback(exc)
+                if repair_attempts >= PLANNER_MAX_REPAIR_ATTEMPTS:
+                    logger.warning(
+                        "Planner MacroPlan contract remained invalid "
+                        "after %s repair attempts: %s",
+                        repair_attempts,
+                        feedback,
+                    )
+                    raise RuntimeError(
+                        "LLM Planner returned an invalid MacroPlan contract "
+                        f"after {repair_attempts} repair attempts."
+                    ) from exc
+
+                repair_attempts += 1
+                raw = await self.llm.generate_json(
+                    system_prompt=PLANNER_SYSTEM_PROMPT,
+                    user_payload=build_planner_repair_payload(
+                        planner_input,
+                        research_draft,
+                        verified_research,
+                        previous_output=raw,
+                        validation_feedback=feedback,
+                    ),
+                )
+
+        warnings = list(
+            dict.fromkeys(
+                [
+                    *draft.warnings,
+                    *verified_research.warnings,
+                    *statistics_warnings,
+                ]
+            )
+        )
         return PlannerAgentOutput(
             mode=planner_input.mode,
             macroPlan=draft.macro_plan,
@@ -203,8 +277,18 @@ class PlannerService:
                 summary="AI đã tạo MacroPlan từ context và thống kê khu vực nhỏ.",
                 notes=[
                     "generator=llm",
+                    f"repairAttempts={repair_attempts}",
+                    f"researchPromptVersion={PLANNER_RESEARCH_PROMPT_VERSION}",
                     f"promptVersion={PLANNER_PROMPT_VERSION}",
                     f"statisticsStatus={statistics_status}",
+                    (
+                        "capabilityEvidenceCount="
+                        f"{len(verified_research.capability_evidence)}"
+                    ),
+                    (
+                        "nearbyRegionCount="
+                        f"{len(verified_research.nearby_regions)}"
+                    ),
                     (
                         "snapshotId="
                         f"{planner_input.region_context.snapshot_ref.snapshot_id}"
@@ -213,16 +297,50 @@ class PlannerService:
             ),
         )
 
+    def _parse_and_validate_macro_draft(
+        self,
+        planner_input: PlannerAgentInput,
+        raw: str,
+        research_draft: PlannerResearchDraft,
+        verified_research: PlannerVerifiedResearch,
+    ) -> PlannerMacroPlanDraft:
+        draft = PlannerMacroPlanDraft.model_validate_json(raw)
+        return self._validate_and_normalize_draft(
+            planner_input,
+            draft,
+            research_draft,
+            verified_research,
+        )
+
+    @staticmethod
+    def _validation_feedback(exc: ValidationError | ValueError) -> str:
+        if isinstance(exc, ValidationError):
+            fields = [
+                (
+                    ".".join(str(part) for part in error["loc"])
+                    + ":"
+                    + str(error["type"])
+                )
+                for error in exc.errors()[:10]
+            ]
+            return "Schema validation failed at " + ", ".join(fields)
+        return str(exc)
+
     def _validate_and_normalize_draft(
         self,
         planner_input: PlannerAgentInput,
         draft: PlannerMacroPlanDraft,
+        research_draft: PlannerResearchDraft,
+        verified_research: PlannerVerifiedResearch,
     ) -> PlannerMacroPlanDraft:
-        macro = draft.macro_plan
-        if macro.destination != planner_input.intent.destination:
-            raise ValueError("MacroPlan destination must match Planner input.")
-        if macro.region_key != planner_input.region_context.region_key:
-            raise ValueError("MacroPlan regionKey must match the statistics root.")
+        macro = draft.macro_plan.model_copy(
+            update={
+                "destination": planner_input.intent.destination,
+                "region_key": planner_input.region_context.region_key,
+                "journey_style": research_draft.journey_style,
+            }
+        )
+        draft = draft.model_copy(update={"macro_plan": macro})
 
         expected_days = list(range(1, planner_input.trip_spec.days + 1))
         actual_days = [brief.day for brief in macro.day_briefs]
@@ -244,12 +362,33 @@ class PlannerService:
                 )
                 if area.get("regionKey")
             ),
+            *(
+                region.region_key
+                for region in verified_research.nearby_regions
+            ),
+            *(
+                region_key
+                for evidence in verified_research.capability_evidence
+                for region_key in evidence.region_keys
+            ),
+            *(
+                place.region_key
+                for place in planner_input.selected_places
+                if place.region_key
+            ),
         }
         for brief in macro.day_briefs:
             if brief.target_region_key not in allowed_regions:
                 raise ValueError(
                     f"Unknown targetRegionKey: {brief.target_region_key}"
                 )
+
+        self._validate_journey_phases(
+            macro,
+            allowed_regions=allowed_regions,
+            trip_days=planner_input.trip_spec.days,
+            research_draft=research_draft,
+        )
 
         selected_by_ref = {
             place.stable_ref: place for place in planner_input.selected_places
@@ -263,12 +402,87 @@ class PlannerService:
             item.place.stable_ref
             for item in draft.unallocated_selected_places
         ]
+        unknown_refs = (
+            set(allocated_refs) | set(unallocated_refs)
+        ) - set(selected_by_ref)
+        if unknown_refs:
+            normalized_briefs = [
+                brief.model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            ref
+                            for ref in brief.allocated_selected_place_refs
+                            if ref in selected_by_ref
+                        ]
+                    }
+                )
+                for brief in macro.day_briefs
+            ]
+            macro = macro.model_copy(
+                update={"day_briefs": normalized_briefs}
+            )
+            draft = draft.model_copy(
+                update={
+                    "macro_plan": macro,
+                    "unallocated_selected_places": [
+                        item
+                        for item in draft.unallocated_selected_places
+                        if item.place.stable_ref in selected_by_ref
+                    ],
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Planner đã trả tham chiếu địa điểm không có trong "
+                            "selectedPlaces; backend đã loại bỏ tham chiếu này."
+                        ),
+                    ],
+                }
+            )
+            allocated_refs = [
+                ref
+                for brief in macro.day_briefs
+                for ref in brief.allocated_selected_place_refs
+            ]
+            unallocated_refs = [
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            ]
+
         accounted_refs = [*allocated_refs, *unallocated_refs]
         if len(accounted_refs) != len(set(accounted_refs)):
             raise ValueError("A selected Place was allocated more than once.")
-        if set(accounted_refs) != set(selected_by_ref):
-            raise ValueError(
-                "Every selected Place must be allocated or explicitly unallocated."
+
+        missing_refs = [
+            stable_ref
+            for stable_ref in selected_by_ref
+            if stable_ref not in set(accounted_refs)
+        ]
+        if missing_refs:
+            repaired_unallocated = [
+                *draft.unallocated_selected_places,
+                *[
+                    UnallocatedSelectedPlace(
+                        place=selected_by_ref[stable_ref],
+                        reasonCode="planner_omitted_selected_place",
+                        reason=(
+                            "Planner did not provide an allocation; the backend "
+                            "preserved this selected Place as unallocated."
+                        ),
+                    )
+                    for stable_ref in missing_refs
+                ],
+            ]
+            draft = draft.model_copy(
+                update={
+                    "unallocated_selected_places": repaired_unallocated,
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Một số địa điểm đã chọn chưa được Planner phân bổ; "
+                            "backend đã giữ chúng trong danh sách chưa xếp lịch."
+                        ),
+                    ],
+                }
             )
 
         avoided_names = {
@@ -308,6 +522,37 @@ class PlannerService:
         return draft.model_copy(
             update={"unallocated_selected_places": normalized_unallocated}
         )
+
+    def _validate_journey_phases(
+        self,
+        macro: MacroPlan,
+        *,
+        allowed_regions: set[str],
+        trip_days: int,
+        research_draft: PlannerResearchDraft,
+    ) -> None:
+        previous_end = 0
+        for phase in macro.journey_phases:
+            if phase.start_day > phase.end_day:
+                raise ValueError("Journey phase startDay must not exceed endDay.")
+            if phase.start_day <= previous_end:
+                raise ValueError("Journey phases must be ordered and non-overlapping.")
+            if phase.end_day > trip_days:
+                raise ValueError("Journey phase exceeds requested trip duration.")
+            if phase.base_region_key not in allowed_regions:
+                raise ValueError(
+                    f"Unknown journey phase regionKey: {phase.base_region_key}"
+                )
+            previous_end = phase.end_day
+
+        if (
+            trip_days >= 7
+            and research_draft.journey_style in {"multi_base", "road_trip"}
+            and len(macro.journey_phases) < 2
+        ):
+            raise ValueError(
+                "Long multi-base or road-trip plans require at least two phases."
+            )
 
     def _statistics_warnings(
         self,

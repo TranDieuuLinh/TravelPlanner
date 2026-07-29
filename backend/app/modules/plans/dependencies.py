@@ -23,6 +23,9 @@ from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtraction
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.planner.planner_service import PlannerService
+from app.modules.plans.planner.research_tool import (
+    RepositoryPlannerResearchTool,
+)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
@@ -41,7 +44,11 @@ def get_plan_service(
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     llm_client = get_llm_client()
-    planner = PlannerService(statistics, llm_client)
+    planner = PlannerService(
+        statistics,
+        llm_client,
+        RepositoryPlannerResearchTool(place_repository),
+    )
     finder = FinderService(RepositoryFinderPlaceTool(place_repository))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),

@@ -28,6 +28,9 @@ from app.modules.plans.finder.place_tool import (
     EmptyFinderPlaceTool,
     FinderPlace,
     FinderPlaceTool,
+    place_category,
+    place_matches_categories,
+    semantic_categories,
 )
 from app.modules.plans.finder.skeleton_builder import (
     DayBlock,
@@ -222,6 +225,7 @@ class FinderService:
                     continue
 
                 candidate = self._choose_candidate(
+                    macro_plan=macro_plan,
                     brief=brief,
                     block=block,
                     selected_by_ref=selected_by_ref,
@@ -349,6 +353,7 @@ class FinderService:
     def _choose_candidate(
         self,
         *,
+        macro_plan: MacroPlan,
         brief,
         block: DayBlock,
         selected_by_ref: dict[str, SelectedPlaceContext],
@@ -360,6 +365,13 @@ class FinderService:
         rejected_selected_places: dict[str, CandidateRejection],
     ) -> FinderPlace | None:
         candidates: list[FinderPlace] = []
+        search_terms = self._search_terms(macro_plan, brief, block)
+        query_categories = self._query_categories(
+            macro_plan,
+            brief,
+            block,
+            fallback_terms=search_terms,
+        )
         preferred_refs = [
             ref
             for ref in brief.allocated_selected_place_refs
@@ -384,7 +396,7 @@ class FinderService:
             candidates.extend(
                 self.place_tool.search(
                     region_key=region_key,
-                    target_tags=brief.focus_tags,
+                    target_tags=search_terms,
                     excluded_place_ids=(
                         set(plan_status.used_place_ids) | selected_place_ids
                     ),
@@ -412,6 +424,8 @@ class FinderService:
                 candidate,
                 block,
                 user_status,
+                is_selected=candidate_ref in selected_by_ref,
+                query_categories=query_categories,
                 avoided_place_names=avoided_place_names,
                 intent_constraints=intent_constraints,
                 budget_level=budget_level,
@@ -426,6 +440,113 @@ class FinderService:
                 continue
             return candidate
         return None
+
+    def _search_terms(
+        self,
+        macro_plan: MacroPlan,
+        brief,
+        block: DayBlock,
+    ) -> list[str]:
+        day_goal = (
+            brief.day_part_goals.morning
+            if block.role in {"main_activity", "late_main_activity"}
+            else brief.day_part_goals.evening
+            if block.role == "bonus_activity"
+            else brief.day_part_goals.afternoon
+        )
+        phase = next(
+            (
+                candidate
+                for candidate in macro_plan.journey_phases
+                if candidate.start_day <= brief.day <= candidate.end_day
+            ),
+            None,
+        )
+        primary_values = [
+            value
+            for value in (
+                brief.theme,
+                day_goal,
+                phase.theme if phase is not None else None,
+                phase.movement_goal if phase is not None else None,
+            )
+            if value
+        ]
+        primary_categories = semantic_categories(set(primary_values))
+        strict_theme_block = block.role in {
+            "main_activity",
+            "late_main_activity",
+            "light_support_activity",
+        }
+        compatible_focus_tags = [
+            tag
+            for tag in brief.focus_tags
+            if (
+                not strict_theme_block
+                or not primary_categories
+                or not semantic_categories({tag})
+                or bool(
+                    semantic_categories({tag}).intersection(
+                        primary_categories
+                    )
+                )
+            )
+        ]
+        return list(
+            dict.fromkeys(
+                value
+                for value in (
+                    *compatible_focus_tags,
+                    *primary_values,
+                    brief.target_area,
+                )
+                if value
+            )
+        )
+
+    def _query_categories(
+        self,
+        macro_plan: MacroPlan,
+        brief,
+        block: DayBlock,
+        *,
+        fallback_terms: list[str],
+    ) -> set[str]:
+        day_goal = (
+            brief.day_part_goals.morning
+            if block.role in {"main_activity", "late_main_activity"}
+            else brief.day_part_goals.evening
+            if block.role == "bonus_activity"
+            else brief.day_part_goals.afternoon
+        )
+        phase = next(
+            (
+                candidate
+                for candidate in macro_plan.journey_phases
+                if candidate.start_day <= brief.day <= candidate.end_day
+            ),
+            None,
+        )
+        primary_categories = semantic_categories(
+            {
+                value
+                for value in (
+                    brief.theme,
+                    day_goal,
+                    phase.theme if phase is not None else None,
+                    phase.movement_goal if phase is not None else None,
+                )
+                if value
+            }
+        )
+        focus_categories = semantic_categories(set(brief.focus_tags))
+        if block.role not in {
+            "main_activity",
+            "late_main_activity",
+            "light_support_activity",
+        }:
+            primary_categories.update(focus_categories)
+        return primary_categories or semantic_categories(set(fallback_terms))
 
     def _selected_to_candidate(
         self,
@@ -480,6 +601,8 @@ class FinderService:
         block: DayBlock,
         user_status: UserStatus,
         *,
+        is_selected: bool,
+        query_categories: set[str],
         avoided_place_names: set[str],
         intent_constraints: list[str],
         budget_level: str,
@@ -489,6 +612,13 @@ class FinderService:
                 "avoided_by_user",
                 "Place is explicitly avoided by the user.",
             )
+        semantic_rejection = self._semantic_category_rejection(
+            candidate,
+            is_selected=is_selected,
+            query_categories=query_categories,
+        )
+        if semantic_rejection is not None:
+            return semantic_rejection
         normalized_constraints = {
             constraint.strip().casefold().replace("-", "_").replace(" ", "_")
             for constraint in intent_constraints
@@ -519,10 +649,7 @@ class FinderService:
                 "budget_mismatch",
                 "Place price level is too high for the trip budget.",
             )
-        duration = (
-            candidate.typical_duration_minutes
-            or block.duration_minutes
-        )
+        duration = self._candidate_duration(candidate, block)
         if not self._opening_hours_cover_block(candidate, block.time_window, duration):
             return CandidateRejection(
                 "opening_hours_mismatch",
@@ -567,6 +694,41 @@ class FinderService:
             return CandidateRejection(
                 "activity_intensity_not_allowed",
                 "Place intensity is outside the user's allowed activity intensities.",
+            )
+        return None
+
+    def _semantic_category_rejection(
+        self,
+        candidate: FinderPlace,
+        *,
+        is_selected: bool,
+        query_categories: set[str],
+    ) -> CandidateRejection | None:
+        if is_selected:
+            return None
+        category = place_category(candidate)
+        if (
+            category == "accommodation"
+            and "accommodation" not in query_categories
+        ):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                "Accommodation cannot fill a regular activity block.",
+            )
+        if not query_categories:
+            return None
+        if category is None:
+            return CandidateRejection(
+                "activity_category_mismatch",
+                "Place has no category evidence matching the activity goal.",
+            )
+        if not place_matches_categories(candidate, query_categories):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                (
+                    f"Place category {category} does not match the "
+                    "day theme or activity goal."
+                ),
             )
         return None
 
@@ -672,8 +834,7 @@ class FinderService:
                 else "finder_suggestion"
             ),
             durationMinutes=(
-                candidate.typical_duration_minutes
-                or block.duration_minutes
+                self._candidate_duration(candidate, block)
             ),
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
@@ -853,10 +1014,7 @@ class FinderService:
         plan_status.visited_region_counts[candidate.region_key] = (
             plan_status.visited_region_counts.get(candidate.region_key, 0) + 1
         )
-        duration = (
-            candidate.typical_duration_minutes
-            or block.duration_minutes
-        )
+        duration = self._candidate_duration(candidate, block)
         self._increment_usage(
             plan_status.day_usage,
             activity_minutes=duration,
@@ -878,6 +1036,21 @@ class FinderService:
             latitude=candidate.latitude,
             longitude=candidate.longitude,
         )
+
+    def _candidate_duration(
+        self,
+        candidate: FinderPlace,
+        block: DayBlock,
+    ) -> int:
+        typical = candidate.typical_duration_minutes
+        if typical is None:
+            return block.duration_minutes
+        if typical <= block.duration_minutes:
+            return typical
+        minimum = candidate.minimum_duration_minutes
+        if minimum is not None and minimum <= block.duration_minutes:
+            return block.duration_minutes
+        return typical
 
     def _apply_break(
         self,

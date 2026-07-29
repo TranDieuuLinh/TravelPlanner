@@ -25,6 +25,9 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.planner.planner_service import PlannerService
+from app.modules.plans.planner.research_tool import (
+    RepositoryPlannerResearchTool,
+)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
@@ -210,7 +213,11 @@ def _plan_service(session: Session) -> PlanService:
         place_repository,
         BACKEND_DIR.parent / "database" / "generated" / "place_region_statistics.json",
     )
-    planner = PlannerService(statistics, llm)
+    planner = PlannerService(
+        statistics,
+        llm,
+        RepositoryPlannerResearchTool(place_repository),
+    )
     finder = FinderService(RepositoryFinderPlaceTool(place_repository))
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -240,6 +247,47 @@ class DeterministicPlannerLLM:
         intent = planner_input["intent"]
         trip_spec = planner_input["tripSpec"]
         context = planner_input["regionContext"]
+        if envelope["stage"] == "research":
+            controlled_capabilities = {
+                "beach",
+                "camping",
+                "coffee",
+                "culture",
+                "food",
+                "hiking",
+                "mountain",
+                "nature",
+                "nightlife",
+                "seafood",
+                "shopping",
+                "wellness",
+            }
+            capabilities = [
+                interest
+                for interest in intent["interests"]
+                if interest in controlled_capabilities
+            ] or ["culture"]
+            return json.dumps(
+                {
+                    "journeyStyle": "local_base",
+                    "varietyStrategy": (
+                        "Use deterministic verified themes for evaluation."
+                    ),
+                    "themeQueries": [
+                        {
+                            "theme": capability,
+                            "capabilities": [capability],
+                            "preferredRegionKey": context["regionKey"],
+                            "rationale": "Verify the evaluator theme.",
+                        }
+                        for capability in capabilities[:4]
+                    ],
+                    "expandBeyondRoot": False,
+                    "nearbyCapabilities": [],
+                    "maxDistanceKm": 120,
+                },
+                ensure_ascii=False,
+            )
         selected = sorted(
             planner_input["selectedPlaces"],
             key=lambda place: (
@@ -425,7 +473,7 @@ def _activity_items(plan: Plan):
         item
         for day in plan.days
         for item in day.items
-        if item.place_type != "break"
+        if item.place_type not in {"break", "meal"}
     ]
 
 

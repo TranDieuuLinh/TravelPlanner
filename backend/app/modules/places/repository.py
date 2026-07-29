@@ -101,7 +101,7 @@ class SqlAlchemyPlaceRepository:
         self,
         region_key: str,
         *,
-        limit: int = 200,
+        limit: int = 10000,
     ) -> list[Place]:
         _validate_region_key(region_key)
         query = (
@@ -118,6 +118,23 @@ class SqlAlchemyPlaceRepository:
             .limit(limit)
         )
         return list(self.session.scalars(query))
+
+    def list_active_for_planner_research(
+        self,
+        region_key: str | None = None,
+        *,
+        limit: int = 5000,
+    ) -> list[Place]:
+        query = select(Place).where(
+            Place.deleted_at.is_(None),
+            Place.status == "active",
+        )
+        query = self._scope_query(query, region_key)
+        return list(
+            self.session.scalars(
+                query.order_by(Place.region_key, Place.id).limit(limit)
+            )
+        )
 
     def add(self, place: Place) -> Place:
         self.session.add(place)
