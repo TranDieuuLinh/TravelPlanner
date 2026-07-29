@@ -6,6 +6,7 @@ import mimetypes
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from queue import Queue
 
 import httpx
 
@@ -25,10 +26,47 @@ PROMOTIONAL_EVIDENCE_CUES = (
 )
 
 
+def _split_balanced_batches(
+    frame_paths: list[Path],
+    maximum_batch_size: int,
+) -> list[list[Path]]:
+    if not frame_paths:
+        return []
+    batch_count = (
+        len(frame_paths) + maximum_batch_size - 1
+    ) // maximum_batch_size
+    base_size, larger_batch_count = divmod(
+        len(frame_paths),
+        batch_count,
+    )
+    batches: list[list[Path]] = []
+    start = 0
+    for batch_index in range(batch_count):
+        batch_size = base_size + (
+            1 if batch_index < larger_batch_count else 0
+        )
+        batches.append(frame_paths[start : start + batch_size])
+        start += batch_size
+    return batches
+
+
 class GeminiReelFrameVision:
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | list[str] | tuple[str, ...] | None = None,
+    ) -> None:
         self.model_name = settings.gemini_image_ocr_model
-        self.api_key = api_key or settings.gemini_api_key
+        configured_keys = api_key or settings.gemini_api_key or ""
+        raw_keys = (
+            configured_keys.split(",")
+            if isinstance(configured_keys, str)
+            else list(configured_keys)
+        )
+        self.api_keys = tuple(
+            key.strip()
+            for key in raw_keys
+            if key.strip()
+        )
 
     def analyze(
         self,
@@ -38,7 +76,7 @@ class GeminiReelFrameVision:
     ) -> FrameVisionResult:
         if not frame_paths:
             return FrameVisionResult()
-        if not self.api_key:
+        if not self.api_keys:
             raise RuntimeError(
                 "GEMINI_API_KEY is required for URL reel frame vision."
             )
@@ -47,25 +85,41 @@ class GeminiReelFrameVision:
             return self._analyze_batch(
                 frame_paths,
                 destination=destination,
+                api_key=self.api_keys[-1],
             )
 
         start = time.perf_counter()
-        batches = [
-            frame_paths[index : index + batch_size]
-            for index in range(0, len(frame_paths), batch_size)
-        ]
-        maximum_concurrency = max(
-            1,
-            settings.url_reel_vision_max_concurrency,
+        batches = _split_balanced_batches(frame_paths, batch_size)
+        maximum_concurrency = min(
+            max(1, settings.url_reel_vision_max_concurrency),
+            len(self.api_keys),
+            len(batches),
         )
+        # Prefer keys at the end of GEMINI_API_KEY as requested for the OCR
+        # pool. A leased key is returned only after its batch (including retry)
+        # completes, so simultaneous OCR calls always use different keys.
+        key_pool: Queue[str] = Queue()
+        for api_key in reversed(self.api_keys[-maximum_concurrency:]):
+            key_pool.put(api_key)
+
+        def analyze_with_leased_key(batch: list[Path]) -> FrameVisionResult:
+            api_key = key_pool.get()
+            try:
+                return self._analyze_batch_with_retry(
+                    batch,
+                    destination=destination,
+                    api_key=api_key,
+                )
+            finally:
+                key_pool.put(api_key)
+
         with ThreadPoolExecutor(
-            max_workers=min(maximum_concurrency, len(batches))
+            max_workers=maximum_concurrency
         ) as executor:
             futures = [
                 executor.submit(
-                    self._analyze_batch_with_retry,
+                    analyze_with_leased_key,
                     batch,
-                    destination=destination,
                 )
                 for batch in batches
             ]
@@ -125,6 +179,7 @@ class GeminiReelFrameVision:
         frame_paths: list[Path],
         *,
         destination: str | None,
+        api_key: str,
     ) -> FrameVisionResult:
         last_error: RuntimeError | httpx.HTTPError | None = None
         for _attempt in range(2):
@@ -132,6 +187,7 @@ class GeminiReelFrameVision:
                 return self._analyze_batch(
                     frame_paths,
                     destination=destination,
+                    api_key=api_key,
                 )
             except (RuntimeError, httpx.HTTPError) as exc:
                 last_error = exc
@@ -142,6 +198,7 @@ class GeminiReelFrameVision:
         frame_paths: list[Path],
         *,
         destination: str | None,
+        api_key: str,
     ) -> FrameVisionResult:
         start = time.perf_counter()
         prompt = (
@@ -187,11 +244,13 @@ class GeminiReelFrameVision:
         with httpx.Client(timeout=90) as client:
             response = client.post(
                 endpoint,
-                params={"key": self.api_key},
+                params={"key": api_key},
                 json={
                     "contents": [{"parts": parts}],
                     "generationConfig": {
-                        "mediaResolution": "MEDIA_RESOLUTION_HIGH",
+                        "mediaResolution": (
+                            settings.url_reel_vision_media_resolution
+                        ),
                         "maxOutputTokens": 8192,
                         "responseMimeType": "application/json",
                         "responseJsonSchema": {

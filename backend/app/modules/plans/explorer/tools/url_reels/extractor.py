@@ -47,8 +47,15 @@ PLACE_KEYWORDS = [
 ]
 
 GENERIC_PLACE_TERMS = {
+    "ban quan",
+    "banh cuon",
+    "banh mi",
+    "bun cha",
     "coffee",
     "cafe",
+    "kem xoi",
+    "night bus tour",
+    "pho",
     "restaurant",
     "star restaurant",
     "michelin star restaurant",
@@ -118,6 +125,58 @@ ADDRESS_CUE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
+DAY_NUMBER_BY_WORD = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+# A plain "went to X" often names a venue, not a new routing region. Keep that
+# weaker cue limited to well-known Vietnamese trip regions. Explicit
+# "day trip/tour to X" wording remains usable for destinations outside this set.
+VIETNAM_SEARCH_REGIONS = {
+    "an giang",
+    "bac ninh",
+    "ca mau",
+    "can tho",
+    "cao bang",
+    "da nang",
+    "dak lak",
+    "dien bien",
+    "dong nai",
+    "dong thap",
+    "gia lai",
+    "ha noi",
+    "hai phong",
+    "ho chi minh",
+    "hue",
+    "hung yen",
+    "khanh hoa",
+    "lai chau",
+    "lam dong",
+    "lang son",
+    "lao cai",
+    "ninh binh",
+    "nghe an",
+    "phu tho",
+    "quang ngai",
+    "quang ninh",
+    "quang tri",
+    "son la",
+    "tay ninh",
+    "thanh hoa",
+    "thai nguyen",
+    "tuyen quang",
+    "vinh long",
+}
+
 
 class UrlReelContextExtractor:
     def extract(
@@ -146,9 +205,8 @@ class UrlReelContextExtractor:
             destination=destination,
             metadata=metadata,
             metadata_text=metadata_text,
-            transcript="\n".join(
-                part for part in [transcript, visual_text] if part
-            ),
+            transcript=transcript,
+            visual_text=visual_text,
             visual_observations=visual_observations or [],
         )
         interests = self._extract_interests(combined)
@@ -188,20 +246,28 @@ class UrlReelContextExtractor:
             if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
                 candidates.append((cleaned, 150))
 
-        if visual_places:
-            return self._dedupe_in_order(candidates)[:12]
-
+        known_places = [
+            candidate
+            for candidate, _score in candidates
+        ]
         for phrase in self._keyword_phrases(metadata_text, transcript):
             if any(
                 self._same_place_name(phrase, known)
-                for known in metadata_phrases
+                for known in known_places
             ):
                 continue
             score = self._score_place_candidate(phrase, source="speech")
             if score > 0:
                 candidates.append((phrase, score))
+                known_places.append(phrase)
 
-        return self._dedupe_in_order(candidates)[:12]
+        places = self._dedupe_in_order(candidates)
+        destination_key = self._dedupe_key(destination or "")
+        return [
+            place
+            for place in places
+            if self._dedupe_key(place) != destination_key
+        ]
 
     def _same_place_name(self, left: str, right: str) -> bool:
         left_key = self._dedupe_key(left)
@@ -209,6 +275,8 @@ class UrlReelContextExtractor:
         if not left_key or not right_key:
             return False
         if left_key in right_key or right_key in left_key:
+            return True
+        if SequenceMatcher(None, left_key, right_key).ratio() >= 0.82:
             return True
         left_first = self._dedupe_key(left.split()[0]) if left.split() else ""
         right_first = self._dedupe_key(right.split()[0]) if right.split() else ""
@@ -219,7 +287,10 @@ class UrlReelContextExtractor:
 
     def _metadata_itinerary_phrases(self, metadata_text: str) -> list[str]:
         phrases: list[str] = []
-        for match in re.finditer(r"(?:📍|🚂|🧑‍🍳)\s*([^📍🚂🧑#\n]+)", metadata_text):
+        for match in re.finditer(
+            r"(?:📍|📌|🚂|🧑‍🍳)\s*([^📍📌🚂🧑#\n]+)",
+            metadata_text,
+        ):
             phrase = re.split(
                 r"\s+(?:if you|for more|tap the|check out|send us)\b",
                 match.group(1),
@@ -332,6 +403,12 @@ class UrlReelContextExtractor:
         return [candidate for candidate, _score in ordered.values()]
 
     def _normalize_candidate(self, candidate: str) -> str:
+        candidate = "".join(
+            " "
+            if unicodedata.category(character) == "So" or character == "\ufe0f"
+            else character
+            for character in candidate
+        )
         cleaned = re.sub(r"\s+", " ", candidate).strip(" .,;:-")
         cleaned = re.sub(
             r"^(?:at|in|on|to|visit)\s+",
@@ -343,7 +420,7 @@ class UrlReelContextExtractor:
         cleaned = re.split(r"\s*,\s*(?:cheapest|world|michelin)", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
         cleaned = re.sub(r"\b(?:from|spot|historical|world's|cheapest)\b", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.split(
-            r"\s+(?:if|guide|or our|find video info)\b",
+            r"\s+(?:if|guide|for our|or our|find video info)\b",
             cleaned,
             maxsplit=1,
             flags=re.IGNORECASE,
@@ -369,19 +446,32 @@ class UrlReelContextExtractor:
         metadata: UrlMetadata,
         metadata_text: str,
         transcript: str,
+        visual_text: str,
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> list[ExtractedPlace]:
+        combined_evidence_text = "\n".join(
+            part for part in (transcript, visual_text) if part
+        )
         address_hints = self._address_hints(
             places=places,
             metadata=metadata,
             metadata_text=metadata_text,
-            transcript=transcript,
+            transcript=combined_evidence_text,
         )
         destination_key = self._dedupe_key(destination or "")
-        single_day = bool(
+        source_text = f"{metadata_text}\n{combined_evidence_text}"
+        multi_day = bool(
+            re.search(
+                r"\b(?:[2-9]|[12]\d|30)\s*[- ]day\b"
+                r"|\bday\s+(?:two|three|four|five|six|seven|eight|nine|ten|[2-9]|[12]\d|30)\b",
+                source_text,
+                flags=re.IGNORECASE,
+            )
+        )
+        single_day = not multi_day and bool(
             re.search(
                 r"\b(?:perfect|first|one)\s+day\b|\bday\s+trip\b",
-                f"{metadata_text}\n{transcript}",
+                source_text,
                 flags=re.IGNORECASE,
             )
         )
@@ -390,16 +480,81 @@ class UrlReelContextExtractor:
             self._dedupe_key(observation.place_name): observation
             for observation in visual_observations or []
         }
+        transcript_days = [
+            self._transcript_day_for_place(place, transcript)
+            for place in places
+        ]
+        for index, day in enumerate(transcript_days):
+            if day is not None:
+                continue
+            previous_day = next(
+                (
+                    known_day
+                    for known_day in reversed(transcript_days[:index])
+                    if known_day is not None
+                ),
+                None,
+            )
+            next_day = next(
+                (
+                    known_day
+                    for known_day in transcript_days[index + 1 :]
+                    if known_day is not None
+                ),
+                None,
+            )
+            if previous_day is not None and previous_day == next_day:
+                transcript_days[index] = previous_day
+        day_regions = self._day_region_hints(
+            transcript,
+            destination=destination,
+        )
         for order, place in enumerate(places, start=1):
             observation = observations_by_place.get(self._dedupe_key(place))
             address = address_hints.get(self._dedupe_key(place))
-            evidence = self._evidence_for_place(
+            speech_evidence = self._evidence_for_place(
                 place=place,
-                metadata_text=metadata_text,
+                metadata_text="",
                 transcript=transcript,
                 prefer_address=bool(address),
             )
-            local_evidence = evidence or place
+            visual_evidence = (
+                observation.evidence
+                if observation is not None and observation.evidence
+                else self._evidence_for_place(
+                    place=place,
+                    metadata_text="",
+                    transcript=visual_text,
+                )
+            )
+            caption_evidence = self._evidence_for_place(
+                place=place,
+                metadata_text=metadata_text,
+                transcript="",
+            )
+            evidence = (
+                visual_evidence
+                or speech_evidence
+                or caption_evidence
+            )
+            source_evidence = {
+                source: value
+                for source, value in (
+                    ("ocr", visual_evidence),
+                    ("stt", speech_evidence),
+                    ("caption", caption_evidence),
+                )
+                if value
+            }
+            local_evidence = " ".join(source_evidence.values()) or place
+            source_day = (
+                transcript_days[order - 1]
+                if transcript_days[order - 1] is not None
+                else observation.day_number
+                if observation is not None
+                and observation.day_number is not None
+                else 1 if single_day else None
+            )
             details.append(
                 ExtractedPlace(
                     name=place,
@@ -409,35 +564,175 @@ class UrlReelContextExtractor:
                         if self._dedupe_key(place) == destination_key
                         else address
                     ),
+                    searchRegion=(
+                        day_regions.get(source_day)
+                        if source_day is not None
+                        else destination
+                    )
+                    or destination,
                     source="url_reel",
                     evidence=evidence,
+                    sourceEvidence=source_evidence,
                     attributes=self._attributes_for_place(
                         place,
                         local_evidence,
                         "",
                     ),
                     sourceOrder=order,
-                    sourceDay=(
-                        observation.day_number
-                        if observation is not None
-                        and observation.day_number is not None
-                        else 1 if single_day else None
-                    ),
+                    sourceDay=source_day,
                     sourceTimeHint=(
-                        observation.time_hint
+                        self._time_hint(speech_evidence or "")
+                        or observation.time_hint
                         if observation is not None
-                        and observation.time_hint
-                        else self._time_hint(local_evidence)
+                        else self._time_hint(speech_evidence or "")
+                        or self._time_hint(local_evidence)
                     ),
                     sourceActivity=(
                         observation.activity
                         if observation is not None
                         and observation.activity
-                        else evidence
+                        else None
                     ),
                 )
             )
         return details
+
+    def _day_region_hints(
+        self,
+        transcript: str,
+        *,
+        destination: str | None,
+    ) -> dict[int, str]:
+        current_day: int | None = None
+        regions: dict[int, str] = {}
+        for sentence in self._sentences(transcript):
+            marker = re.search(
+                r"\b(?:on\s+)?day\s+"
+                r"(?P<day>one|two|three|four|five|six|seven|eight|nine|ten|[1-9]|[12]\d|30)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+            if marker:
+                raw_day = marker.group("day").casefold()
+                current_day = (
+                    int(raw_day)
+                    if raw_day.isdigit()
+                    else DAY_NUMBER_BY_WORD[raw_day]
+                )
+            if current_day is None:
+                continue
+            region = self._region_from_sentence(sentence)
+            if (
+                region
+                and self._dedupe_key(region)
+                != self._dedupe_key(destination or "")
+            ):
+                regions[current_day] = region
+        return regions
+
+    def _region_from_sentence(self, sentence: str) -> str | None:
+        for pattern, require_known_region in (
+            (
+                r"\b(?:day|nature|overnight|weekend)?\s*"
+                r"(?:trip|tour)\s+to\s+(?P<region>.+)$",
+                False,
+            ),
+            (
+                r"\b(?:went|go|headed|travelled|traveled)\s+to\s+"
+                r"(?P<region>.+)$",
+                True,
+            ),
+        ):
+            match = re.search(pattern, sentence, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            region = re.split(
+                r",|\s+(?:for|where|and|then|but|which|that|to see)\b",
+                match.group("region"),
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0].strip(" ,.;:-")
+            words = region.split()
+            if not 1 <= len(words) <= 5:
+                continue
+            normalized_words = " ".join(words).casefold()
+            if normalized_words.startswith(("see ", "visit ")):
+                continue
+            region_key = re.sub(
+                r"[^a-z0-9]+",
+                " ",
+                "".join(
+                    character
+                    for character in unicodedata.normalize(
+                        "NFD",
+                        region.casefold(),
+                    )
+                    if unicodedata.category(character) != "Mn"
+                ).replace("đ", "d"),
+            ).strip()
+            if (
+                require_known_region
+                and region_key not in VIETNAM_SEARCH_REGIONS
+            ):
+                continue
+            if region:
+                return region
+        return None
+
+    def _transcript_day_for_place(
+        self,
+        place: str,
+        transcript: str,
+    ) -> int | None:
+        current_day: int | None = None
+        for sentence in self._sentences(transcript):
+            marker = re.search(
+                r"\b(?:on\s+)?day\s+"
+                r"(?P<day>one|two|three|four|five|six|seven|eight|nine|ten|[1-9]|[12]\d|30)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            )
+            if marker:
+                raw_day = marker.group("day").casefold()
+                current_day = (
+                    int(raw_day)
+                    if raw_day.isdigit()
+                    else DAY_NUMBER_BY_WORD[raw_day]
+                )
+            if (
+                current_day is not None
+                and self._sentence_mentions_place(sentence, place)
+            ):
+                return current_day
+        return None
+
+    def _sentence_mentions_place(self, sentence: str, place: str) -> bool:
+        place_key = self._dedupe_key(place)
+        sentence_key = self._dedupe_key(sentence)
+        if not place_key:
+            return False
+        if place_key in sentence_key:
+            return True
+
+        place_words = re.findall(r"[A-Za-zÀ-ỹĐđ0-9]+", place)
+        sentence_words = re.findall(r"[A-Za-zÀ-ỹĐđ0-9]+", sentence)
+        if not place_words or not sentence_words:
+            return False
+        for width in {
+            max(1, len(place_words) - 1),
+            len(place_words),
+            len(place_words) + 1,
+        }:
+            for start in range(0, len(sentence_words) - width + 1):
+                window_key = self._dedupe_key(
+                    " ".join(sentence_words[start : start + width])
+                )
+                if (
+                    SequenceMatcher(None, place_key, window_key).ratio()
+                    >= 0.82
+                ):
+                    return True
+        return False
 
     def _time_hint(self, evidence: str) -> str | None:
         lowered = evidence.casefold()

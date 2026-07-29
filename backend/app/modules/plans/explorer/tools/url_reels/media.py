@@ -126,7 +126,10 @@ class UrlReelMediaExtractor:
                 "-i",
                 str(video_path),
                 "-vf",
-                f"fps=1/{frame_interval:.3f},scale=1280:-2",
+                (
+                    f"fps=1/{frame_interval:.3f},"
+                    f"scale={settings.url_reel_frame_width}:-2"
+                ),
                 "-frames:v",
                 str(maximum_frames),
                 "-q:v",

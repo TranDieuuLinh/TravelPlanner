@@ -7,6 +7,10 @@ from app.modules.places.resolver import PlaceResolver, ProvisionalPlaceResolver
 from app.modules.plans.explorer.place_candidate_aggregator import (
     PlaceCandidateAggregator,
 )
+from app.modules.plans.explorer.place_policy import (
+    has_url_source,
+    is_schedulable_place,
+)
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.schema import (
@@ -29,7 +33,6 @@ from app.modules.plans.schema import (
     MainPlanCreate,
     MainPlanFromExplorerCreate,
     PlanBundleRead,
-    PlanBundleRead,
     PlanningContextCreate,
     SelectedPlaceCreate,
 )
@@ -38,6 +41,9 @@ from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.users.repository import UserRepository
+
+
+DEFAULT_TRIP_DAYS = 3
 
 
 class PlanService:
@@ -170,7 +176,10 @@ class PlanService:
         )
         if payload.trip_spec.days is None and has_reference_input:
             payload = payload.model_copy(deep=True)
-            payload.trip_spec.days = provisional_reference_days or 3
+            payload.trip_spec.days = max(
+                DEFAULT_TRIP_DAYS,
+                provisional_reference_days,
+            )
         draft = await self.explore_formatter.format(
             payload,
             url_reel_results=url_reel_results,
@@ -193,18 +202,43 @@ class PlanService:
                 "of generating an empty itinerary."
             )
         draft.places = PlaceCandidatesResponse(placeCandidates=candidates)
-        source_coverage_days = _candidate_coverage_days(
+        resolutions = await self.place_resolver.resolve_many(
             candidates,
+            destination=draft.explorer.intent.destination,
+        )
+        schedulable_candidates = [
+            resolution.candidate
+            for resolution in resolutions
+            if is_schedulable_place(
+                is_url_source=has_url_source(resolution.candidate),
+                resolution_status=resolution.status,
+                latitude=resolution.latitude,
+                longitude=resolution.longitude,
+                resolved_name=resolution.name,
+                city=resolution.city,
+                destination=draft.explorer.intent.destination,
+                country=resolution.country,
+            )
+        ]
+        source_coverage_days = _candidate_coverage_days(
+            schedulable_candidates,
             pace=draft.explorer.intent.pace.value,
         )
         effective_days = (
             explicitly_requested_days
-            or source_coverage_days
+            or (
+                max(DEFAULT_TRIP_DAYS, source_coverage_days)
+                if has_reference_input
+                else None
+            )
             or draft.explorer.trip_spec.days
-            or 3
+            or DEFAULT_TRIP_DAYS
         )
         draft.explorer.trip_spec.days = effective_days
-        if explicitly_requested_days is None and source_coverage_days:
+        if (
+            explicitly_requested_days is None
+            and source_coverage_days > DEFAULT_TRIP_DAYS
+        ):
             draft.explorer.assumptions = [
                 *draft.explorer.assumptions,
                 (
@@ -213,10 +247,19 @@ class PlanService:
                     "not specify a duration."
                 ),
             ]
+        elif explicitly_requested_days is None and has_reference_input:
+            draft.explorer.assumptions = [
+                *draft.explorer.assumptions,
+                (
+                    f"The default {DEFAULT_TRIP_DAYS}-day duration was kept. "
+                    "Finder may add catalog Places to empty or sparse days "
+                    "in the URL/OCR itinerary."
+                ),
+            ]
         preference_snapshot = self.preference_learning.enrich_snapshot(
             draft.explorer.preference_snapshot,
             destination=draft.explorer.intent.destination,
-            candidates=candidates,
+            candidates=schedulable_candidates,
             interests=draft.explorer.intent.interests,
         )
         stored_profile: object = payload.user_state.preference_profile
@@ -240,10 +283,6 @@ class PlanService:
         draft.explorer = draft.explorer.model_copy(
             update={"preference_snapshot": preference_snapshot}
         )
-        resolutions = await self.place_resolver.resolve_many(
-            candidates,
-            destination=draft.explorer.intent.destination,
-        )
         intake_id = str(uuid4())
         if self.explorer_persistence is not None:
             self.explorer_persistence.save(
@@ -264,10 +303,10 @@ class PlanService:
             explorer=draft.explorer,
             allowFinderSuggestions=(
                 not has_reference_input
-                or (
-                    explicitly_requested_days is not None
-                    and source_coverage_days > 0
-                    and explicitly_requested_days > source_coverage_days
+                or _source_days_need_finder(
+                    schedulable_candidates,
+                    days=effective_days,
+                    pace=draft.explorer.intent.pace.value,
                 )
             ),
         )
@@ -378,6 +417,46 @@ def _candidate_coverage_days(
         return max(source_days)
     inferred = math.ceil(len(source_candidates) / capacity)
     return max([inferred, *source_days])
+
+
+def _source_days_need_finder(
+    candidates,
+    *,
+    days: int,
+    pace: str,
+) -> bool:
+    source_candidates = [
+        candidate
+        for candidate in candidates
+        if any(
+            source.type in {
+                PlaceCandidateSourceType.url,
+                PlaceCandidateSourceType.ocr,
+            }
+            for source in candidate.sources
+        )
+    ]
+    minimum_activity_count = {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 4,
+    }.get(pace, 3)
+    explicit_counts = {day: 0 for day in range(1, days + 1)}
+    unassigned_count = 0
+    for candidate in source_candidates:
+        if (
+            candidate.source_day is None
+            or candidate.source_day not in explicit_counts
+        ):
+            unassigned_count += 1
+            continue
+        explicit_counts[candidate.source_day] += 1
+
+    missing_slots = sum(
+        max(0, minimum_activity_count - count)
+        for count in explicit_counts.values()
+    )
+    return unassigned_count < missing_slots
 
 
 def _merge_selected_places(

@@ -33,11 +33,20 @@
 
 Map provider chưa được lựa chọn. Xem ADR-002.
 
-Explorer place resolution hiện có adapter Nominatim cấu hình được cho local/MVP;
-đây không phải lựa chọn map/route provider cuối cùng. Khi dùng public endpoint,
-adapter phải gửi User-Agent nhận diện ứng dụng, tối đa một request/giây, cache
-response, hiển thị attribution OpenStreetMap và có khả năng đổi endpoint bằng
-cấu hình. Tải lớn phải chuyển sang hosted provider hoặc Nominatim tự vận hành.
+Explorer place resolution có adapter HERE Discover thử nghiệm đặt trước
+Nominatim. Khi `PLACE_RESOLVER_PROVIDER=here` và có `HERE_API_KEY`, HERE tìm POI
+trong quốc gia cấu hình; kết quả chỉ được nhận khi là `place`, khớp tên/vùng và
+có tọa độ. Timeout, lỗi quota, not-found hoặc kết quả yếu tự động chuyển sang
+Nominatim. Nếu thiếu HERE key, runtime tiếp tục dùng Nominatim thay vì làm hỏng
+intake. Đây chỉ là lựa chọn cho Explorer place resolution, chưa phải lựa chọn
+map/route provider cuối cùng và chưa được mô tả như production SLA.
+
+Khi dùng public Nominatim, adapter phải gửi User-Agent nhận diện ứng dụng, tối
+đa một request/giây, cache response, hiển thị attribution OpenStreetMap và có
+khả năng đổi endpoint bằng cấu hình. Adapter yêu cầu kết quả tiếng Việt trước,
+đối chiếu cả tên tiếng Anh và tên thay thế trong `namedetails`, rồi chỉ dùng tên
+tiếng Việt làm nhãn plan khi match được resolve; địa chỉ và tọa độ được chuyển
+tiếp riêng. Tải lớn phải chuyển sang hosted provider hoặc Nominatim tự vận hành.
 
 ## Nhập dữ liệu từ URL
 
@@ -55,8 +64,16 @@ instruction.
    ảnh/screenshot do người dùng upload.
 6. Tạo claim/place candidate có evidence và confidence.
 7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
+   Query dùng `searchRegion` của stop thay vì luôn nối trip base. Kết quả chỉ
+   được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
+   không mâu thuẫn rõ với category nguồn. `candidateName` và `resolvedName`
+   được lưu riêng; mismatch giữ `resolutionReason` để truy vết.
 8. Tự động lưu candidate và kết quả resolve vào `user_must_place`; không chặn
    để hỏi user. Kết quả yếu giữ trạng thái `provisional` hoặc `unresolved`.
+   Candidate URL chỉ được bàn giao vào plan khi provider resolve tới địa điểm cụ
+   thể có tọa độ. Match rộng tới thành phố, caption bị hiểu nhầm thành tên hoặc
+   candidate chưa resolve vẫn được giữ làm provenance nhưng không hiển thị như
+   một điểm dừng; Finder có thể bù phần còn thiếu.
 9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
    downstream đọc record theo cả `intakeId + userId`.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
@@ -66,11 +83,24 @@ Android Chrome impersonation qua dependency `curl_cffi` nếu challenge/TLS
 fingerprint làm request trước thất bại. Hệ thống không gọi TikWM. Photo carousel chưa có provider được duyệt nên
 trả trạng thái cần upload screenshot. Media video thành công vẫn chỉ được xử lý
 trong thư mục tạm và xoá sau request. Video OCR dùng
-`gemini-3.5-flash-lite`, tối đa 48 frame theo batch 16 và tối đa hai batch chạy
-song song. Kết quả vẫn được hợp nhất theo thứ tự frame gốc. Nếu một batch lỗi
-nhưng batch khác thành công, evidence thành công vẫn được giữ. Nếu URL không tạo
-được địa điểm có evidence, API trả lỗi có hướng dẫn retry/upload screenshot/dán
-caption thay vì trả itinerary `Ready` với 0 địa điểm.
+`gemini-3.5-flash-lite`, mặc định không quá một frame mỗi giây, tối đa 48 frame
+rộng 960 px theo batch tối đa 10 ảnh ở media resolution medium. Candidate từ
+STT và frame vision được gộp; một nguồn không loại bỏ candidate chỉ xuất hiện ở
+nguồn còn lại. Marker ngày rõ ràng trong STT sửa day label OCR mâu thuẫn trong
+cùng itinerary. STT cung cấp day/order/activity/search region; OCR cung cấp tên
+hiển thị, địa chỉ và giá; evidence ngắn của hai nguồn được giữ tách biệt. Không
+giới hạn số place candidate có evidence được giữ sau bước
+gộp; giới hạn 48 chỉ là số frame video lấy mẫu. Frame được
+chia đều giữa các batch để giảm latency của batch lớn nhất; tối đa năm batch
+chạy song song bằng các API key khác nhau lấy từ cuối pool `GEMINI_API_KEY`.
+STT parse cùng pool thành từng key riêng, ưu tiên key từ đầu pool và chuyển sang
+key kế tiếp khi key hiện tại trả `401`, `403` hoặc `429`; chuỗi nhiều key không
+được gửi nguyên dạng như một credential.
+Mức song song tự giảm khi thiếu key hoặc batch. Kết quả vẫn được hợp nhất theo
+thứ tự frame gốc. Nếu một batch lỗi nhưng batch khác thành công, evidence thành
+công vẫn được giữ. Nếu URL không tạo được địa điểm có evidence, API trả lỗi có
+hướng dẫn retry/upload screenshot/dán caption thay vì trả itinerary `Ready` với
+0 địa điểm.
 
 Preference learning chỉ lưu tín hiệu chuẩn hóa và source type. Không sao chép
 raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào

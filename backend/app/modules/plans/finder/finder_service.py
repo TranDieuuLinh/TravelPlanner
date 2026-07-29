@@ -141,7 +141,7 @@ class FinderService:
             intent_constraints=finder_input.intent.constraints,
             allow_finder_suggestions=finder_input.allow_finder_suggestions,
             constraint_policy=finder_input.intent.constraint_policy,
-            budget_level=finder_input.intent.budget_level.value,
+            budget_level=finder_input.trip_spec.budget.level.value,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -220,11 +220,18 @@ class FinderService:
                 for ref in brief.allocated_selected_place_refs
                 if ref in selected_by_ref
             ]
+            minimum_activity_count = (
+                self.skeleton_builder.minimum_activity_count(brief.pace)
+            )
+            sparse_reference_day = (
+                has_reference_places
+                and len(allocated_places) < minimum_activity_count
+            )
             allow_suggestions_for_day = (
                 allow_finder_suggestions
                 and (
                     not has_reference_places
-                    or not allocated_places
+                    or sparse_reference_day
                 )
             )
             if not allow_finder_suggestions and not allocated_places:
@@ -245,6 +252,7 @@ class FinderService:
                 self.skeleton_builder.build_source_itinerary(
                     brief,
                     allocated_places,
+                    supplement_sparse_day=allow_suggestions_for_day,
                 )
                 if has_source_itinerary
                 else self.skeleton_builder.build(
@@ -645,6 +653,7 @@ class FinderService:
             if stored_place is not None:
                 return stored_place.model_copy(
                     update={
+                        "description": selected.notes or stored_place.description,
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
                         "tags": list(
@@ -662,12 +671,14 @@ class FinderService:
         return FinderPlace(
             placeId=selected.place_id,
             name=selected.name,
+            address=selected.address,
             placeType="selected_place",
             regionKey=(
                 selected.region_key
                 or brief.target_region_key
                 or brief.target_area
             ),
+            description=selected.notes,
             tags=selected.tags,
             latitude=selected.latitude,
             longitude=selected.longitude,
@@ -748,7 +759,7 @@ class FinderService:
                 "Place is weather-sensitive and the plan has bad-weather constraints.",
             )
         if (
-            budget_level == "budget"
+            budget_level == "low"
             and candidate.price_level
             and candidate.price_level.casefold() in {"premium", "luxury", "high"}
         ):
@@ -922,6 +933,7 @@ class FinderService:
             itemId=str(uuid4()),
             placeId=candidate.place_id,
             name=candidate.name,
+            address=candidate.address,
             timeWindow=block.time_window,
             placeType=(
                 "must_visit"
@@ -949,7 +961,12 @@ class FinderService:
             longitude=candidate.longitude,
             notes=(
                 candidate.source_activity
-                or "Selected by deterministic Finder candidate loop."
+                or candidate.description
+                or (
+                    "Địa điểm được thêm từ nguồn bạn cung cấp."
+                    if selected_source
+                    else "Địa điểm phù hợp với lịch trình và sở thích của bạn."
+                )
             ),
             sourceOrder=candidate.source_order,
             sourceTimeHint=candidate.source_time_hint,

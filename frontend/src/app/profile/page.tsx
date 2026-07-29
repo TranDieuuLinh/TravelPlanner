@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth, type CreatorStatus } from "@/components/AuthProvider";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import { getUserFavorites } from "@/lib/marketplace";
 import { getUserOrders } from "@/lib/orders";
@@ -267,6 +268,7 @@ export default function ProfilePage() {
               <div className="routeLoading">Đang tải lịch sử đơn hàng...</div>
             ) : orders.length === 0 ? (
               <div className="emptyState">
+                <PenguinMascot className="emptyPenguin" size={160} variant="search" />
                 <h3>Bạn chưa mua plan nào</h3>
                 <p>Khám phá các hành trình chất lượng trên Marketplace và sở hữu plan riêng.</p>
                 <Link className="secondaryBtn" href="/explore">
@@ -391,6 +393,7 @@ export default function ProfilePage() {
               <div className="routeLoading">Đang tải danh sách yêu thích...</div>
             ) : favorites.length === 0 ? (
               <div className="emptyState">
+                <PenguinMascot className="emptyPenguin" size={160} variant="search" />
                 <h3>Chưa có chuyến đi yêu thích nào</h3>
                 <p>Khám phá Marketplace và thả tim các lịch trình bạn yêu thích.</p>
                 <Link className="secondaryBtn" href="/explore">

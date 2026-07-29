@@ -81,13 +81,6 @@ class BudgetConfidence(StrEnum):
     high = "high"
 
 
-class BudgetInputMode(StrEnum):
-    qualitative = "qualitative"
-    exact = "exact"
-    range = "range"
-    unknown = "unknown"
-
-
 class AgentTrace(BaseModel):
     agent: PlanningAgentName
     status: PlanningAgentStatus = PlanningAgentStatus.completed
@@ -100,6 +93,10 @@ class PlaceCandidateHint(BaseModel):
     category: ItineraryItemCategory = ItineraryItemCategory.other
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
     address: str | None = None
+    search_region: Annotated[
+        str | None,
+        Field(default=None, alias="searchRegion"),
+    ]
     latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
     longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
     source: str = "url_reel"
@@ -112,6 +109,10 @@ class PlaceCandidateHint(BaseModel):
     ]
     attributes: list[str] = Field(default_factory=list)
     notes: str | None = None
+    source_evidence: Annotated[
+        dict[str, str],
+        Field(default_factory=dict, alias="sourceEvidence"),
+    ]
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
     source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
@@ -133,6 +134,7 @@ class PlaceCandidateHint(BaseModel):
 class SelectedPlaceContext(BaseModel):
     name: str
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    address: str | None = None
     priority: int = Field(default=1, ge=1, le=5)
     must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
     preference_level: Annotated[
@@ -263,7 +265,6 @@ class PlanWorkingState(BaseModel):
 
 class PlanningIntent(BaseModel):
     destination: str
-    budget_level: Annotated[BudgetLevel, Field(alias="budgetLevel")] = BudgetLevel.medium
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)
@@ -286,33 +287,12 @@ class MoneyEstimate(BaseModel):
     notes: str | None = None
 
 
-class BudgetCalculationBasis(BaseModel):
-    party_size: Annotated[int, Field(ge=1, alias="partySize")]
-    days: int = Field(ge=1, le=30)
-    nights: int = Field(ge=0, le=30)
-    destination: str = Field(min_length=1)
-    price_tier: Annotated[BudgetLevel, Field(alias="priceTier")]
-
-    model_config = {"populate_by_name": True}
-
-
 class BudgetEnvelope(BaseModel):
-    input_mode: Annotated[BudgetInputMode, Field(alias="inputMode")] = (
-        BudgetInputMode.unknown
-    )
-    min_amount: Annotated[int | None, Field(default=None, ge=0, alias="minAmount")]
     target_amount: Annotated[
         int | None, Field(default=None, ge=0, alias="targetAmount")
     ]
-    max_amount: Annotated[int | None, Field(default=None, ge=0, alias="maxAmount")]
     currency: str = "VND"
-    is_hard_cap: Annotated[bool, Field(default=False, alias="isHardCap")]
-    confidence: BudgetConfidence = BudgetConfidence.medium
-    calculation_basis: Annotated[
-        BudgetCalculationBasis | None,
-        Field(default=None, alias="calculationBasis"),
-    ]
-    notes: str | None = None
+    level: BudgetLevel = BudgetLevel.medium
 
     model_config = {"populate_by_name": True}
 
@@ -323,21 +303,6 @@ class BudgetEnvelope(BaseModel):
         if len(normalized) != 3 or not normalized.isalpha():
             raise ValueError("currency must be a three-letter ISO 4217 code.")
         return normalized
-
-    @model_validator(mode="after")
-    def validate_amount_order(self) -> "BudgetEnvelope":
-        ordered_amounts = [
-            amount
-            for amount in (self.min_amount, self.target_amount, self.max_amount)
-            if amount is not None
-        ]
-        if ordered_amounts != sorted(ordered_amounts):
-            raise ValueError(
-                "budget amounts must satisfy minAmount <= targetAmount <= maxAmount."
-            )
-        if self.is_hard_cap and self.max_amount is None:
-            raise ValueError("maxAmount is required when isHardCap is true.")
-        return self
 
 
 class AccommodationRequirement(BaseModel):

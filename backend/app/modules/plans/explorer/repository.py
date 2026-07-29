@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.model import UserMustPlace
+from app.modules.plans.explorer.place_policy import (
+    concise_source_activity,
+    is_schedulable_place,
+)
 from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
 
@@ -41,11 +45,13 @@ class ExplorerPersistenceRepository:
                     candidate_name=candidate.name,
                     category=candidate.category.value,
                     address_hint=candidate.address_hint,
+                    search_region=candidate.search_region,
                     sources_json=[
                         source.model_dump(mode="json")
                         for source in candidate.sources
                     ],
                     attributes_json=list(candidate.attributes),
+                    source_evidence_json=dict(candidate.source_evidence),
                     confidence=Decimal(str(candidate.confidence)),
                     notes=candidate.notes,
                     resolved_name=resolution.name,
@@ -63,6 +69,7 @@ class ExplorerPersistenceRepository:
                     fetched_at=resolution.fetched_at,
                     attribution=resolution.attribution,
                     resolution_status=resolution.status,
+                    resolution_reason=resolution.resolution_reason,
                     preference_level=candidate.preference_level.value,
                     source_order=candidate.source_order,
                     source_day=candidate.source_day,
@@ -109,6 +116,7 @@ class ExplorerPersistenceRepository:
                     if must_place.source_order is not None
                     else must_place.resolved_name
                 ),
+                address=must_place.address,
                 priority=_priority_from_confidence(must_place.confidence),
                 mustVisit=must_place.preference_level == "must_visit",
                 preferenceLevel=must_place.preference_level,
@@ -134,11 +142,15 @@ class ExplorerPersistenceRepository:
                     source.get("url") or source.get("type", "unknown")
                     for source in (must_place.sources_json or [])
                 ],
-                notes=must_place.notes,
+                # Extraction evidence is retained on UserMustPlace for
+                # provenance, but raw captions are not user-facing plan notes.
+                notes=must_place.description,
                 sourceOrder=must_place.source_order,
                 sourceDay=must_place.source_day,
                 sourceTimeHint=must_place.source_time_hint,
-                sourceActivity=must_place.source_activity,
+                sourceActivity=concise_source_activity(
+                    must_place.source_activity
+                ),
                 sourceDurationMinutes=must_place.source_duration_minutes,
             )
             for must_place in rows
@@ -151,20 +163,20 @@ def _candidate_key(name: str, destination: str) -> str:
 
 
 def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
-    has_resolved_coordinates = (
-        must_place.resolution_status in {"resolved", "provisional"}
-        and must_place.latitude is not None
-        and must_place.longitude is not None
+    is_url_source = any(
+        source.get("type") == "url" and source.get("url")
+        for source in (must_place.sources_json or [])
     )
-    is_evidenced_url_stop = (
-        must_place.source_order is not None
-        and float(must_place.confidence) >= 0.7
-        and any(
-            source.get("type") == "url" and source.get("url")
-            for source in (must_place.sources_json or [])
-        )
+    return is_schedulable_place(
+        is_url_source=is_url_source,
+        resolution_status=must_place.resolution_status,
+        latitude=must_place.latitude,
+        longitude=must_place.longitude,
+        resolved_name=must_place.resolved_name,
+        city=must_place.city,
+        destination=must_place.destination,
+        country=must_place.country,
     )
-    return has_resolved_coordinates or is_evidenced_url_stop
 
 
 def _priority_from_confidence(confidence: Decimal) -> int:

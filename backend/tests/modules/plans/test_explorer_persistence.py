@@ -28,6 +28,11 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
                     }
                 ],
                 "confidence": 0.85,
+                "searchRegion": "Đà Nẵng",
+                "sourceEvidence": {
+                    "ocr": "Mì Quảng Bà Mua",
+                    "stt": "Order mì Quảng here.",
+                },
                 "sourceOrder": 2,
                 "sourceDay": 1,
                 "sourceTimeHint": "lunch",
@@ -35,6 +40,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
                 "sourceDurationMinutes": 60,
             },
             "status": "resolved",
+            "resolutionReason": None,
             "provider": "fake_places",
             "externalId": "place-123",
             "name": "Mì Quảng Bà Mua",
@@ -65,6 +71,9 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert must_place.resolution_status == "resolved"
         assert must_place.sources_json[0]["url"] == "https://example.com/reel"
         assert must_place.category == "food"
+        assert must_place.search_region == "Đà Nẵng"
+        assert must_place.source_evidence_json["ocr"] == "Mì Quảng Bà Mua"
+        assert must_place.resolution_reason is None
         assert must_place.description == "Nhà hàng chuyên món mì Quảng."
         assert must_place.latitude == Decimal("16.0592000")
         assert must_place.external_id == "place-123"
@@ -76,6 +85,8 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert selected_places[0].preference_level.value == "preferred"
         assert selected_places[0].place_id is None
         assert selected_places[0].name == "Mì Quảng Bà Mua"
+        assert selected_places[0].address == "Đà Nẵng"
+        assert selected_places[0].notes == "Nhà hàng chuyên món mì Quảng."
         assert selected_places[0].latitude == 16.0592
         assert selected_places[0].longitude == 108.2131
         assert selected_places[0].source_order == 2
@@ -90,7 +101,63 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
     engine.dispose()
 
 
-def test_url_itinerary_keeps_source_name_when_provider_match_is_broad() -> None:
+def test_url_itinerary_preserves_source_name_after_provider_resolution() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[UserMustPlace.__table__],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Museum of Ethnology",
+                "category": "culture",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/tiktok",
+                    }
+                ],
+                "confidence": 0.9,
+                "sourceOrder": 2,
+            },
+            "status": "resolved",
+            "provider": "nominatim",
+            "name": "Bảo tàng Dân tộc học Việt Nam",
+            "address": "Đường Nguyễn Văn Huyên, Cầu Giấy, Hà Nội, Việt Nam",
+            "city": "Hà Nội",
+            "country": "Việt Nam",
+            "latitude": "21.0403000",
+            "longitude": "105.7980000",
+            "dataConfidence": "high",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-localized-name",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        selected = repository.load_must_places(
+            "intake-localized-name",
+            None,
+        )
+
+        assert selected[0].name == "Museum of Ethnology"
+        assert selected[0].address == (
+            "Đường Nguyễn Văn Huyên, Cầu Giấy, Hà Nội, Việt Nam"
+        )
+        assert selected[0].latitude == 21.0403
+        assert selected[0].longitude == 105.798
+
+    engine.dispose()
+
+
+def test_url_itinerary_drops_source_name_when_provider_match_is_only_city() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
@@ -134,7 +201,7 @@ def test_url_itinerary_keeps_source_name_when_provider_match_is_broad() -> None:
             None,
         )
 
-        assert selected[0].name == "Văn Miếu - Quốc Tử Giám"
+        assert selected == []
 
     engine.dispose()
 
@@ -201,7 +268,7 @@ def test_explorer_does_not_schedule_unresolved_candidates_without_coordinates() 
     engine.dispose()
 
 
-def test_explorer_keeps_high_confidence_url_stop_without_coordinates() -> None:
+def test_explorer_drops_high_confidence_url_stop_without_verified_identity() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
@@ -242,10 +309,6 @@ def test_explorer_keeps_high_confidence_url_stop_without_coordinates() -> None:
 
         selected = repository.load_must_places("intake-url", None)
 
-        assert len(selected) == 1
-        assert selected[0].name == "Cooking Class"
-        assert selected[0].source_order == 5
-        assert selected[0].latitude is None
-        assert selected[0].longitude is None
+        assert selected == []
 
     engine.dispose()

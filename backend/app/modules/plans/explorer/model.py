@@ -41,6 +41,7 @@ class UserMustPlace(Base):
     candidate_name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(64), nullable=False)
     address_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    search_region: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resolved_name: Mapped[str] = mapped_column(String(255), nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     city: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -64,6 +65,12 @@ class UserMustPlace(Base):
         nullable=False,
         default=list,
     )
+    source_evidence_json: Mapped[dict[str, str]] = mapped_column(
+        "source_evidence",
+        JSON,
+        nullable=False,
+        default=dict,
+    )
     confidence: Mapped[Decimal] = mapped_column(
         Numeric(4, 3),
         nullable=False,
@@ -84,6 +91,10 @@ class UserMustPlace(Base):
         String(24),
         nullable=False,
         server_default="unresolved",
+    )
+    resolution_reason: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
     )
     preference_level: Mapped[str] = mapped_column(
         String(24),

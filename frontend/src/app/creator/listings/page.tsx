@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import {
   getCreatorListings,
@@ -99,6 +100,7 @@ export default function CreatorListingsPage() {
 
       {listings.length === 0 ? (
         <section className="emptyState">
+          <PenguinMascot className="emptyPenguin" size={160} variant="search" />
           <h2>Bạn chưa có listing nào</h2>
           <p>Hãy bắt đầu bằng cách chọn một plan hợp lệ từ Planner để xuất bản lên Marketplace.</p>
           <Link className="newTrip" href="/creator/listings/new">

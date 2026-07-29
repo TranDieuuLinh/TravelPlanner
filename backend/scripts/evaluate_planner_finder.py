@@ -416,7 +416,6 @@ def _context(
         {
             "intent": {
                 "destination": "Hà Nội",
-                "budgetLevel": "medium",
                 "travelStyle": "local",
                 "pace": "balanced",
                 "interests": interests,
@@ -425,6 +424,10 @@ def _context(
             "tripSpec": {
                 "days": days,
                 "partySize": 2,
+                "budget": {
+                    "targetAmount": None,
+                    "level": "medium",
+                },
             },
             "regionKey": "vn,ha-noi",
             "selectedPlaces": selected_places or [],

@@ -25,6 +25,18 @@ class DaySkeleton:
 
 
 class DaySkeletonBuilder:
+    _MIN_ACTIVITY_COUNT = {
+        TravelPace.relaxed: 2,
+        TravelPace.balanced: 3,
+        TravelPace.packed: 4,
+    }
+    _SUPPLEMENTAL_WINDOWS = (
+        ("09:30-11:00", 90),
+        ("13:30-15:00", 90),
+        ("15:30-17:00", 90),
+        ("19:00-20:30", 90),
+        ("11:15-12:45", 90),
+    )
     _SOURCE_START_MINUTES = {
         "breakfast": 8 * 60,
         "early morning": 7 * 60,
@@ -136,6 +148,8 @@ class DaySkeletonBuilder:
         self,
         brief: DayBrief,
         selected_places: list[SelectedPlaceContext],
+        *,
+        supplement_sparse_day: bool = False,
     ) -> DaySkeleton:
         ordered = sorted(
             selected_places,
@@ -161,7 +175,69 @@ class DaySkeletonBuilder:
                 )
             )
             cursor = end + 10
-        return DaySkeleton(strategy="source_itinerary", blocks=tuple(blocks))
+        if not supplement_sparse_day:
+            return DaySkeleton(
+                strategy="source_itinerary",
+                blocks=tuple(blocks),
+            )
+
+        target_count = self.minimum_activity_count(brief.pace)
+        missing_count = max(0, target_count - len(blocks))
+        source_intervals = [
+            self._window_interval(block.time_window)
+            for block in blocks
+        ]
+        supplemental_blocks: list[DayBlock] = []
+        for time_window, duration in self._SUPPLEMENTAL_WINDOWS:
+            if len(supplemental_blocks) >= missing_count:
+                break
+            interval = self._window_interval(time_window)
+            if any(
+                self._intervals_overlap(interval, source_interval, buffer=10)
+                for source_interval in source_intervals
+            ):
+                continue
+            supplemental_blocks.append(
+                DayBlock(
+                    role=f"finder_support_{len(supplemental_blocks) + 1}",
+                    time_window=time_window,
+                    duration_minutes=duration,
+                    activity=True,
+                )
+            )
+
+        combined = sorted(
+            [*blocks, *supplemental_blocks],
+            key=lambda block: self._window_interval(block.time_window)[0],
+        )
+        return DaySkeleton(
+            strategy=(
+                "source_itinerary_supplemented"
+                if supplemental_blocks
+                else "source_itinerary"
+            ),
+            blocks=tuple(combined),
+        )
+
+    def minimum_activity_count(self, pace: TravelPace) -> int:
+        return self._MIN_ACTIVITY_COUNT[pace]
+
+    def _window_interval(self, time_window: str) -> tuple[int, int]:
+        start, end = time_window.split("-", maxsplit=1)
+        return self._clock_minutes(start), self._clock_minutes(end)
+
+    def _clock_minutes(self, value: str) -> int:
+        hours, minutes = value.split(":", maxsplit=1)
+        return int(hours) * 60 + int(minutes)
+
+    def _intervals_overlap(
+        self,
+        left: tuple[int, int],
+        right: tuple[int, int],
+        *,
+        buffer: int = 0,
+    ) -> bool:
+        return left[0] < right[1] + buffer and right[0] < left[1] + buffer
 
     def _source_start(self, hint: str | None) -> int | None:
         if not hint:

@@ -96,6 +96,7 @@ Candidate có thể có `attributes` chuẩn hóa và mặc định
   "name": "Bánh mì Phượng",
   "category": "food",
   "addressHint": "Hội An",
+  "searchRegion": "Hội An",
   "sources": [
     {
       "type": "url",
@@ -106,9 +107,19 @@ Candidate có thể có `attributes` chuẩn hóa và mặc định
   "priority": 1,
   "preferenceLevel": "preferred",
   "attributes": ["local", "budget"],
-  "notes": "Được nhắc trong transcript"
+  "notes": "Được nhắc trong transcript",
+  "sourceEvidence": {
+    "stt": "On day two, we ate here.",
+    "ocr": "Bánh mì Phượng"
+  }
 }
 ```
+
+`destination`/trip base và `searchRegion` có nghĩa khác nhau. Một itinerary có
+thể giữ trip base là Hà Nội nhưng gán `searchRegion=Ninh Bình` cho toàn bộ stop
+Day 2 sau khi STT nói rõ đây là day trip Ninh Bình. Resolver tìm theo
+`candidateName + addressHint + searchRegion`, lưu riêng `resolvedName` và
+`resolutionReason`; tên provider không ghi đè tên nguồn của stop URL.
 
 Response tổng quát:
 
@@ -135,35 +146,21 @@ Response tổng quát:
 }
 ```
 
-`explorer.tripSpec.budget` dùng một envelope thống nhất cho cả mô tả định tính
-và số tiền cụ thể. Các field include theo từng hạng mục không nằm trong contract
-này:
+`explorer.tripSpec.budget` là vị trí duy nhất chứa ngân sách:
 
 ```json
 {
-  "inputMode": "qualitative",
-  "minAmount": 4300000,
-  "targetAmount": 4800000,
-  "maxAmount": 5400000,
+  "targetAmount": 6000000,
   "currency": "VND",
-  "isHardCap": false,
-  "confidence": "medium",
-  "calculationBasis": {
-    "partySize": 2,
-    "days": 3,
-    "nights": 2,
-    "destination": "Đà Nẵng",
-    "priceTier": "budget"
-  },
-  "notes": "Ước tính từ mức chi tiêu thấp."
+  "level": "medium"
 }
 ```
 
-Nếu user chỉ nói thấp/trung bình/cao mà chưa có nguồn giá đủ tin cậy, Explorer
-giữ `inputMode: "qualitative"` và để các amount là `null` thay vì bịa giá.
-`isHardCap: true` bắt buộc có `maxAmount`.
-`budgetLevel` và `calculationBasis.priceTier` chỉ nhận `budget`, `medium` hoặc
-`high`; `balanced` chỉ dùng cho `pace`.
+`targetAmount` luôn là số tiền gần đúng; khi user không nêu số tiền, giá trị là
+`null`. `currency` là mã ISO 4217 gồm ba chữ cái viết hoa. `level` chỉ nhận
+`low`, `medium` hoặc `high`. Contract không có `inputMode`, khoảng min/max,
+hard-cap, confidence hay calculation
+basis, và không lặp `budgetLevel` trong `intent`.
 
 `POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
 Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces` và
@@ -184,9 +181,10 @@ pace để không làm mất stop. Giá trị user nói rõ luôn được giữ
 
 Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
-`sourceDurationMinutes`. Planner/Finder ưu tiên blueprint URL và giữ thứ tự
-nguồn. Hard constraint explicit vẫn thắng; timing cue không được mô tả như giờ
-hoạt động đã xác minh.
+`sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
+`longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
+Planner/Finder ưu tiên blueprint URL và giữ thứ tự nguồn. Hard constraint
+explicit vẫn thắng; timing cue không được mô tả như giờ hoạt động đã xác minh.
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`
@@ -217,7 +215,6 @@ phần context mà không chạy lại Explorer qua
 {
   "intent": {
     "destination": "Hà Nội",
-    "budgetLevel": "medium",
     "travelStyle": "local",
     "pace": "balanced",
     "interests": ["food", "culture"],
@@ -228,7 +225,12 @@ phần context mà không chạy lại Explorer qua
   },
   "tripSpec": {
     "days": 3,
-    "partySize": 2
+    "partySize": 2,
+    "budget": {
+      "targetAmount": 6000000,
+      "currency": "VND",
+      "level": "medium"
+    }
   },
   "regionKey": "vn,ha-noi",
   "selectedPlaces": [

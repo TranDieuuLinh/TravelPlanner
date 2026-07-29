@@ -74,8 +74,13 @@ class ExtractedPlace(BaseModel):
     name: str
     category: ItineraryItemCategory = ItineraryItemCategory.other
     address: str | None = None
+    search_region: str | None = Field(default=None, alias="searchRegion")
     source: str = "url_reel"
     evidence: str | None = None
+    source_evidence: dict[str, str] = Field(
+        default_factory=dict,
+        alias="sourceEvidence",
+    )
     attributes: list[str] = Field(default_factory=list)
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")

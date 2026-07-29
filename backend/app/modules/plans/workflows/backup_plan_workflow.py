@@ -32,8 +32,11 @@ class BackupPlanWorkflow:
             SelectedPlaceContext(
                 placeId=item.place_id,
                 name=item.name,
+                address=item.address,
                 mustVisit=item.place_type == "must_visit",
                 regionKey=item.region_key,
+                latitude=item.latitude,
+                longitude=item.longitude,
                 sourceRefs=item.source_refs,
                 tags=item.tags,
             )
@@ -62,7 +65,10 @@ class BackupPlanWorkflow:
         planner_output = await self.planner.create_backup_macro_plan(
             backup_intent,
             payload.reason,
-            trip_spec=TripPlanningSpec(days=main_plan.intent.days),
+            trip_spec=TripPlanningSpec(
+                days=main_plan.intent.days,
+                budget={"level": backup_intent.budget},
+            ),
             region_key=(
                 main_plan.macro_plan.region_key
                 or normalize_region_key(main_plan.destination)
@@ -77,7 +83,6 @@ class BackupPlanWorkflow:
                 mode=PlanningMode.backup,
                 intent=PlanningIntent(
                     destination=backup_intent.destination,
-                    budgetLevel=backup_intent.budget,
                     travelStyle=backup_intent.travel_style,
                     pace=backup_intent.pace,
                     interests=backup_intent.interests,

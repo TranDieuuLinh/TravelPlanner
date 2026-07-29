@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import { addFavorite, getPublicListingDetail, removeFavorite } from "@/lib/marketplace";
 import { createCheckoutSession } from "@/lib/orders";
@@ -88,6 +89,7 @@ export default function ListingDetailPage() {
   if (error || !listing || !listing.currentVersion) {
     return (
       <main className="pageWidth emptyState">
+        <PenguinMascot className="emptyPenguin" size={160} variant="search" />
         <h2>Không tìm thấy chuyến đi</h2>
         <p>{error || "Listing không tồn tại hoặc đã bị gỡ bỏ."}</p>
         <Link className="primaryBtn" href="/explore">

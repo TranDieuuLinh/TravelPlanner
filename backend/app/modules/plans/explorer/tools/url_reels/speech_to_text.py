@@ -11,9 +11,22 @@ from app.modules.plans.explorer.tools.url_reels.schema import SpeechToTextResult
 
 
 class GeminiAudioSpeechToText:
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | list[str] | tuple[str, ...] | None = None,
+    ) -> None:
         self.model_name = settings.gemini_audio_model
-        self.api_key = api_key or settings.gemini_api_key
+        configured_keys = api_key or settings.gemini_api_key or ""
+        raw_keys = (
+            configured_keys.split(",")
+            if isinstance(configured_keys, str)
+            else list(configured_keys)
+        )
+        self.api_keys = tuple(
+            key.strip()
+            for key in raw_keys
+            if key.strip()
+        )
 
     def transcribe(
         self,
@@ -21,7 +34,7 @@ class GeminiAudioSpeechToText:
         language: str | None = None,
         initial_prompt: str | None = None,
     ) -> SpeechToTextResult:
-        if not self.api_key:
+        if not self.api_keys:
             raise RuntimeError("GEMINI_API_KEY is required for URL reel audio transcription.")
 
         start = time.perf_counter()
@@ -39,32 +52,48 @@ class GeminiAudioSpeechToText:
             prompt_parts.append(initial_prompt)
 
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
-        with httpx.Client(timeout=90) as client:
-            response = client.post(
-                endpoint,
-                params={"key": self.api_key},
-                json={
-                    "contents": [
+        request_payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "\n".join(prompt_parts)},
                         {
-                            "parts": [
-                                {"text": "\n".join(prompt_parts)},
-                                {
-                                    "inline_data": {
-                                        "mime_type": mime_type,
-                                        "data": base64.b64encode(audio_bytes).decode("ascii"),
-                                    }
-                                },
-                            ]
-                        }
-                    ],
-                    "generationConfig": {
-                        "temperature": 0.0,
-                    },
-                },
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": base64.b64encode(audio_bytes).decode("ascii"),
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.0,
+            },
+        }
+        data: dict | None = None
+        last_status: int | None = None
+        with httpx.Client(timeout=90) as client:
+            for api_key in self.api_keys:
+                response = client.post(
+                    endpoint,
+                    headers={"x-goog-api-key": api_key},
+                    json=request_payload,
+                )
+                last_status = response.status_code
+                if response.status_code in {401, 403, 429}:
+                    continue
+                if response.is_error:
+                    raise RuntimeError(
+                        "Gemini audio transcription failed with status "
+                        f"{response.status_code}."
+                    )
+                data = response.json()
+                break
+        if data is None:
+            raise RuntimeError(
+                "Gemini audio transcription could not use any configured "
+                f"API key (last status {last_status or 'unknown'})."
             )
-            if response.is_error:
-                raise RuntimeError(f"Gemini audio transcription failed with status {response.status_code}: {response.text[:500]}")
-            data = response.json()
 
         text = self._extract_text(data)
         return SpeechToTextResult(

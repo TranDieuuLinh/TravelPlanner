@@ -220,3 +220,91 @@ def test_explorer_keeps_url_stops_omitted_by_formatter() -> None:
     assert candidates[0].confidence == 0.9
     assert candidates[1].source_order == 2
     assert candidates[1].sources[0].url == url
+
+
+def test_explorer_merges_localized_url_stop_by_source_order() -> None:
+    url = "https://example.com/hanoi-reel"
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Bảo tàng Dân tộc học Việt Nam",
+                category="culture",
+                sources=[{"type": "url", "url": url}],
+                confidence=0.8,
+                sourceOrder=2,
+                sourceActivity="Khám phá nhà truyền thống và hiện vật.",
+            )
+        ],
+        explicit=[],
+        url_results=[
+            UrlReelExtractionResult(
+                url=url,
+                platform="tiktok",
+                metadata=UrlMetadata(
+                    originalUrl=url,
+                    canonicalUrl=url,
+                    platform="tiktok",
+                ),
+                artifacts=MediaArtifacts(),
+                speechToText=SpeechToTextResult(
+                    text="Visit the Museum of Ethnology.",
+                    durationSeconds=1,
+                ),
+                extractedContext=ExtractedContext(
+                    extractedPlaces=["Museum of Ethnology"],
+                    extractedPlaceDetails=[
+                        ExtractedPlace(
+                            name="Museum of Ethnology",
+                            category="culture",
+                            sourceOrder=2,
+                        )
+                    ],
+                    confidence=0.95,
+                ),
+                timings={},
+            )
+        ],
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].name == "Bảo tàng Dân tộc học Việt Nam"
+    assert candidates[0].confidence == 0.95
+    assert candidates[0].search_names == ["Museum of Ethnology"]
+    assert candidates[0].source_activity == (
+        "Khám phá nhà truyền thống và hiện vật."
+    )
+
+
+def test_explorer_rejects_caption_or_multi_place_list_as_one_url_candidate() -> None:
+    url = "https://example.com/hanoi-reel"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name=(
+                    "Hanoi 🇻🇳 📌 Cafe Pho Co ☕ 📌 Ethnology Museum "
+                    "🛖 📌 Train Street Southern Entrance"
+                ),
+                sources=[{"type": "url", "url": url}],
+                confidence=0.95,
+                sourceOrder=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Train Street",
+                sources=[{"type": "url", "url": url}],
+                confidence=0.9,
+                sourceOrder=2,
+                sourceActivity=(
+                    "Don't skip these 4 spots in Hanoi. For our Train Street "
+                    "guide, tap the link in bio and comment link."
+                ),
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert [candidate.name for candidate in candidates] == ["Train Street"]
+    assert candidates[0].source_activity is None

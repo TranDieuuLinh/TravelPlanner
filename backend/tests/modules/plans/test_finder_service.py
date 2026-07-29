@@ -9,12 +9,6 @@ from app.modules.plans.domain.entities import (
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.dto.agent_contracts import (
-    AgentMacroPlan,
-    FinderAgentInput,
-    PlanningIntent,
-    TripPlanningSpec,
-)
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import FinderPlace
 
@@ -88,6 +82,9 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     ]
     assert day.items[0].source == "selected_place"
     assert day.items[2].source == "finder_suggestion"
+    assert day.items[2].notes == (
+        "Địa điểm phù hợp với lịch trình và sở thích của bạn."
+    )
     assert result.final_plan_status.used_place_ids == [
         "selected-main",
         "support",
@@ -102,6 +99,63 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     assert result.final_user_status.location is not None
     assert result.final_user_status.location.place_id == "hotel-a"
     assert result.unscheduled_places == []
+
+
+def test_finder_uses_place_descriptions_for_url_and_suggested_items() -> None:
+    source = _place(
+        "selected-main",
+        "Place from URL",
+        tags=["culture"],
+        intensity="light",
+        description="Không gian trưng bày nghệ thuật Việt Nam.",
+    )
+    suggestion = _place(
+        "suggestion",
+        "Suggested café",
+        tags=["food"],
+        intensity="light",
+        place_type="restaurant",
+        description="Quán cà phê yên tĩnh với không gian xanh.",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"selected-main": source, "suggestion": suggestion},
+            search_order=["suggestion"],
+        )
+    )
+
+    source_result = finder.fill_main_plan(
+        _macro_plan(),
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="selected-main",
+                name="Place from URL",
+                sourceRefs=["https://example.com/video"],
+                notes="Gợi ý xem bộ sưu tập mỹ thuật hiện đại.",
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=False,
+    )
+    source_item = next(
+        item
+        for item in source_result.days[0].items
+        if item.source == "selected_place"
+    )
+    assert source_item.notes == (
+        "Gợi ý xem bộ sưu tập mỹ thuật hiện đại."
+    )
+
+    suggestion_result = finder.fill_main_plan(_macro_plan(), _intent(), [])
+    suggestion_item = next(
+        item
+        for item in suggestion_result.days[0].items
+        if item.source == "finder_suggestion"
+    )
+    assert suggestion_item.notes == (
+        "Quán cà phê yên tĩnh với không gian xanh."
+    )
 
 
 def test_reference_only_mode_never_adds_catalog_places() -> None:
@@ -189,7 +243,7 @@ def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
     assert result.days[0].items == []
 
 
-def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
+def test_reference_intake_supplements_empty_and_sparse_requested_days() -> None:
     source = _place(
         "source-place",
         "Place from video",
@@ -203,13 +257,31 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         intensity="light",
         place_type="restaurant",
     )
+    second_catalog = _place(
+        "catalog-place-2",
+        "Second Finder suggestion",
+        tags=["culture"],
+        intensity="light",
+    )
+    third_catalog = _place(
+        "catalog-place-3",
+        "Third Finder suggestion",
+        tags=["culture"],
+        intensity="light",
+    )
     finder = FinderService(
         FakeFinderPlaceTool(
             {
                 "source-place": source,
                 "catalog-place": catalog,
+                "catalog-place-2": second_catalog,
+                "catalog-place-3": third_catalog,
             },
-            search_order=["catalog-place"],
+            search_order=[
+                "catalog-place",
+                "catalog-place-2",
+                "catalog-place-3",
+            ],
         )
     )
     macro_plan = MacroPlan(
@@ -250,14 +322,93 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         allow_finder_suggestions=True,
     )
 
-    assert [
-        item.name
+    source_day_activities = [
+        item
         for item in result.days[0].items
-        if item.source != "break"
-    ] == ["Place from video"]
+        if item.place_id is not None
+    ]
+    assert source_day_activities[0].name == "Place from video"
+    assert len(source_day_activities) == 3
+    assert sum(
+        item.source == "finder_suggestion"
+        for item in source_day_activities
+    ) == 2
+    assert result.days[0].strategy == "source_itinerary_supplemented"
     assert any(
         item.source == "finder_suggestion"
         for item in result.days[1].items
+    )
+
+
+def test_reference_intake_does_not_supplement_a_full_source_day() -> None:
+    source_places = [
+        _place(
+            f"source-{index}",
+            f"Source place {index}",
+            tags=["culture"],
+            intensity="light",
+        )
+        for index in range(1, 4)
+    ]
+    catalog = _place(
+        "catalog-place",
+        "Finder suggestion",
+        tags=["culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {
+                **{
+                    place.place_id: place
+                    for place in source_places
+                    if place.place_id is not None
+                },
+                "catalog-place": catalog,
+            },
+            search_order=["catalog-place"],
+        )
+    )
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Full source day",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture"],
+                allocatedSelectedPlaceRefs=[
+                    "source-1",
+                    "source-2",
+                    "source-3",
+                ],
+            )
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId=f"source-{index}",
+                name=f"Source place {index}",
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=index,
+                tags=["culture"],
+            )
+            for index in range(1, 4)
+        ],
+        allow_finder_suggestions=True,
+    )
+
+    assert result.days[0].strategy == "source_itinerary"
+    assert all(
+        item.source != "finder_suggestion"
+        for item in result.days[0].items
     )
 
 
@@ -589,12 +740,14 @@ def _place(
     weather_sensitivity: str | None = None,
     price_level: str | None = None,
     place_type: str = "attraction",
+    description: str | None = None,
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
         name=name,
         placeType=place_type,
         regionKey="vn,ha-noi,hoan-kiem",
+        description=description,
         tags=tags,
         latitude=21.03,
         longitude=105.85,

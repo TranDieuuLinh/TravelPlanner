@@ -9,6 +9,8 @@ from app.db.session import get_db
 from app.integrations.llm.factory import get_llm_client
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.resolver import (
+    FallbackPlaceResolver,
+    HerePlaceResolver,
     NominatimPlaceResolver,
     PlaceResolver,
     ProvisionalPlaceResolver,
@@ -75,11 +77,25 @@ def get_plan_service(
 
 
 def _get_place_resolver() -> PlaceResolver:
-    if settings.place_resolver_provider == "nominatim":
-        return NominatimPlaceResolver(
-            base_url=settings.nominatim_base_url,
-            user_agent=settings.nominatim_user_agent,
-            timeout_seconds=settings.nominatim_timeout_seconds,
-            min_interval_seconds=settings.nominatim_min_interval_seconds,
+    nominatim = NominatimPlaceResolver(
+        base_url=settings.nominatim_base_url,
+        user_agent=settings.nominatim_user_agent,
+        timeout_seconds=settings.nominatim_timeout_seconds,
+        min_interval_seconds=settings.nominatim_min_interval_seconds,
+    )
+    if settings.place_resolver_provider == "here" and settings.here_api_key:
+        return FallbackPlaceResolver(
+            HerePlaceResolver(
+                base_url=settings.here_base_url,
+                geocode_base_url=settings.here_geocode_base_url,
+                api_key=settings.here_api_key,
+                timeout_seconds=settings.here_timeout_seconds,
+                country_code=settings.here_country_code,
+                language=settings.here_language,
+                min_interval_seconds=settings.here_min_interval_seconds,
+            ),
+            nominatim,
         )
+    if settings.place_resolver_provider in {"here", "nominatim"}:
+        return nominatim
     return ProvisionalPlaceResolver()

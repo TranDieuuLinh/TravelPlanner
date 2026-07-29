@@ -2,7 +2,7 @@ from enum import StrEnum
 
 
 class BudgetLevel(StrEnum):
-    budget = "budget"
+    low = "low"
     medium = "medium"
     high = "high"
 

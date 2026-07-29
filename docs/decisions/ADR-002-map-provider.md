@@ -16,6 +16,12 @@ benchmark ngắn với các provider ứng viên trên các chuyến đi đại 
 Nam; sau đó ghi provider chính và fallback được chọn trong phiên bản đã chấp nhận
 mới của ADR này.
 
+Trong thời gian benchmark, Explorer được phép dùng HERE Discover như adapter
+POI thử nghiệm với Nominatim làm fallback. Việc này không chấp nhận HERE làm
+provider bản đồ hoặc định tuyến chính thức. Cấu hình phải cho phép quay về
+Nominatim mà không đổi contract domain; thiếu HERE credential cũng phải dùng
+Nominatim an toàn.
+
 Gateway của provider phải cung cấp:
 
 - tìm kiếm/chi tiết địa điểm và ánh xạ tới place nội bộ ổn định;
@@ -36,3 +42,5 @@ năng tiếp cận, độ trễ và chất lượng SDK.
 - Cần thực hiện benchmark trước khi triển khai bản đồ.
 - Tính năng riêng của provider có thể tồn tại trong adapter nhưng không được rò
   rỉ vào plan entity hoặc contract API công khai.
+- Hạn mức và pricing của plan provider là dữ liệu vận hành có thể thay đổi,
+  không được hard-code quota thương mại vào domain hoặc tuyên bố thành SLA.

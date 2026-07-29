@@ -90,7 +90,19 @@ class RecordingResolver:
         *,
         destination: str,
     ) -> list[PlaceResolution]:
-        return []
+        return [
+            PlaceResolution(
+                candidate=candidate,
+                status="resolved",
+                provider="fake_places",
+                name=candidate.name,
+                city=destination,
+                latitude="21.0285",
+                longitude="105.8542",
+                dataConfidence="high",
+            )
+            for candidate in candidates
+        ]
 
 
 def build_service(
@@ -166,7 +178,8 @@ def test_url_is_extracted_before_formatter_runs() -> None:
 
     result = asyncio.run(service.explore_full(payload))
 
-    assert result.allow_finder_suggestions is False
+    assert result.explorer.trip_spec.days == 3
+    assert result.allow_finder_suggestions is True
     assert [item.url for item in url_reels.inputs] == [
         "https://example.com/reel"
     ]
@@ -196,7 +209,8 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     )
 
     assert len(image_ocr.calls) == 1
-    assert result.allow_finder_suggestions is False
+    assert result.explorer.trip_spec.days == 3
+    assert result.allow_finder_suggestions is True
     assert formatter.payload is not None
     assert formatter.payload.image_contexts[0].ocr_text == (
         "Bánh mì Phượng, Hội An"
@@ -205,7 +219,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     assert image.data == b""
 
 
-def test_url_without_requested_duration_infers_enough_days_for_all_stops() -> None:
+def test_url_without_requested_duration_allows_sparse_last_day_fill() -> None:
     formatter = RecordingFormatter()
     formatter.response.places.place_candidates = _url_candidates(10)
     url_reels = RecordingUrlReels()
@@ -222,9 +236,38 @@ def test_url_without_requested_duration_infers_enough_days_for_all_stops() -> No
     )
 
     assert result.explorer.trip_spec.days == 4
-    assert result.allow_finder_suggestions is False
+    assert result.allow_finder_suggestions is True
     assert any(
         "inferred as 4 days" in assumption
+        for assumption in result.explorer.assumptions
+    )
+
+
+def test_url_with_two_day_coverage_keeps_default_and_allows_empty_day_fill() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(5)
+    for index, candidate in enumerate(
+        formatter.response.places.place_candidates,
+        start=1,
+    ):
+        candidate.source_day = 1 if index <= 3 else 2
+    url_reels = RecordingUrlReels()
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo lịch trình từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 3
+    assert result.allow_finder_suggestions is True
+    assert any(
+        "default 3-day duration was kept" in assumption
         for assumption in result.explorer.assumptions
     )
 
@@ -247,6 +290,80 @@ def test_url_with_more_requested_days_allows_finder_for_empty_days() -> None:
     )
 
     assert result.explorer.trip_spec.days == 10
+    assert result.allow_finder_suggestions is True
+
+
+def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(12)
+    source_days = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 6, 7]
+    for candidate, source_day in zip(
+        formatter.response.places.place_candidates,
+        source_days,
+        strict=True,
+    ):
+        candidate.source_day = source_day
+    service = build_service(
+        formatter,
+        RecordingUrlReels(),
+        RecordingImageOcr(),
+    )
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo lịch trình Hà Nội 7 ngày từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+                tripSpec={"days": 7},
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 7
+    assert result.allow_finder_suggestions is True
+
+
+def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(10)
+    service = build_service(
+        formatter,
+        RecordingUrlReels(),
+        RecordingImageOcr(),
+    )
+
+    class UnresolvedResolver:
+        async def resolve_many(
+            self,
+            candidates: list[Any],
+            *,
+            destination: str,
+        ) -> list[PlaceResolution]:
+            return [
+                PlaceResolution(
+                    candidate=candidate,
+                    status="unresolved",
+                    name=candidate.name,
+                    city=destination,
+                    dataConfidence="low",
+                )
+                for candidate in candidates
+            ]
+
+    service.place_resolver = UnresolvedResolver()  # type: ignore[assignment]
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo lịch trình từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 3
     assert result.allow_finder_suggestions is True
 
 

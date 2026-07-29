@@ -1,5 +1,7 @@
 export type PlanItem = {
+  itemId?: string | null;
   name: string;
+  address?: string | null;
   timeWindow: string;
   placeType: string;
   source: string;
@@ -65,26 +67,12 @@ export type PlaceCategory =
   | "family"
   | "other";
 
-export type BudgetLevel = "budget" | "medium" | "high";
-export type BudgetInputMode = "qualitative" | "exact" | "range" | "unknown";
-export type BudgetConfidence = "low" | "medium" | "high";
+export type BudgetLevel = "low" | "medium" | "high";
 
 export type BudgetEnvelope = {
-  inputMode: BudgetInputMode;
-  minAmount?: number | null;
   targetAmount?: number | null;
-  maxAmount?: number | null;
   currency: string;
-  isHardCap: boolean;
-  confidence: BudgetConfidence;
-  calculationBasis?: {
-    partySize: number;
-    days: number;
-    nights: number;
-    destination: string;
-    priceTier: BudgetLevel;
-  } | null;
-  notes?: string | null;
+  level: BudgetLevel;
 };
 
 export type PreferenceSignal = {
@@ -120,7 +108,6 @@ export type PreferenceSnapshot = {
 export type ExplorerContext = {
   intent: {
     destination: string;
-    budgetLevel: BudgetLevel;
     travelStyle: string;
     pace: string;
     interests: string[];
@@ -260,6 +247,7 @@ export async function createPlanFromExplorer(input: {
       selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,
         placeId: place.placeId ?? null,
+        address: place.address ?? null,
         priority: place.priority ?? 1,
         mustVisit: place.preferenceLevel === "must_visit",
         preferenceLevel: place.preferenceLevel ?? "preferred",

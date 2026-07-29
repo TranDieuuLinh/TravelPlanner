@@ -35,6 +35,7 @@ class ExplorerRequest(BaseModel):
 class SelectedPlaceCreate(BaseModel):
     name: str
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    address: str | None = None
     priority: Annotated[int, Field(default=1, ge=1, le=5)]
     must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
     preference_level: Annotated[
