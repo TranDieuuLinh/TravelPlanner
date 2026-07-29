@@ -81,7 +81,7 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     day = result.days[0]
     assert [item.role for item in day.items] == [
         "main_activity",
-        "break_main_support",
+        "lunch_meal",
         "support_activity",
         "break_support_bonus",
     ]
@@ -123,7 +123,8 @@ def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
 
     assert result.days[0].strategy == "relaxed"
     assert [item.role for item in result.days[0].items] == [
-        "break_main_support"
+        "lunch_meal",
+        "break_main_support",
     ]
 
 
@@ -227,6 +228,63 @@ def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> N
     )
 
 
+def test_finder_rejects_place_outside_opening_hours() -> None:
+    closed_morning = _place(
+        "closed-morning",
+        "Late museum",
+        tags=["culture"],
+        intensity="light",
+        opening_hours=[{"openTime": "14:00", "closeTime": "22:00"}],
+    )
+    backup = _place(
+        "backup",
+        "Morning museum",
+        tags=["culture"],
+        intensity="light",
+        opening_hours=[{"openTime": "08:00", "closeTime": "18:00"}],
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"closed-morning": closed_morning, "backup": backup},
+            search_order=["closed-morning", "backup"],
+        )
+    )
+
+    result = finder.fill_main_plan(_macro_plan(), _intent(), [])
+
+    assert result.days[0].items[0].name == "Morning museum"
+    assert "closed-morning" in result.final_plan_status.rejected_candidate_ids
+
+
+def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
+    outdoor = _place(
+        "outdoor",
+        "Outdoor walk",
+        tags=["outdoor", "nature"],
+        intensity="light",
+        weather_sensitivity="high",
+    )
+    indoor = _place(
+        "indoor",
+        "Indoor gallery",
+        tags=["culture", "indoor"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"outdoor": outdoor, "indoor": indoor},
+            search_order=["outdoor", "indoor"],
+        )
+    )
+    intent = _intent().model_copy(update={"constraints": ["bad_weather"]})
+
+    result = finder.fill_main_plan(_macro_plan(), intent, [])
+
+    assert result.days[0].strategy == "indoor_safe"
+    assert result.days[0].items[0].name == "Indoor gallery"
+    assert "outdoor" in result.final_plan_status.rejected_candidate_ids
+
+
 class FakeFinderPlaceTool:
     def __init__(
         self,
@@ -291,6 +349,9 @@ def _place(
     tags: list[str],
     intensity: str | None,
     duration: int = 60,
+    opening_hours: list[dict] | None = None,
+    weather_sensitivity: str | None = None,
+    price_level: str | None = None,
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
@@ -302,5 +363,8 @@ def _place(
         longitude=105.85,
         typicalDurationMinutes=duration,
         activityIntensity=intensity,
+        openingHours=opening_hours or [],
+        weatherSensitivity=weather_sensitivity,
+        priceLevel=price_level,
         dataConfidence="high",
     )

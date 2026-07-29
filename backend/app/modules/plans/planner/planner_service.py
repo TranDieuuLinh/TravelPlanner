@@ -271,16 +271,15 @@ class PlannerService:
                 "Every selected Place must be allocated or explicitly unallocated."
             )
 
-        prohibited_names = {
-            *(
-                name.strip().casefold()
-                for name in planner_input.intent.avoid_places
-            ),
-            *(
-                name.strip().casefold()
-                for name in planner_input.plan_state.excluded_place_names
-            ),
+        avoided_names = {
+            name.strip().casefold()
+            for name in planner_input.intent.avoid_places
         }
+        excluded_names = {
+            name.strip().casefold()
+            for name in planner_input.plan_state.excluded_place_names
+        }
+        prohibited_names = avoided_names | excluded_names
         for ref in allocated_refs:
             place = selected_by_ref[ref]
             if place.name.strip().casefold() in prohibited_names:
@@ -289,9 +288,23 @@ class PlannerService:
         normalized_unallocated: list[UnallocatedSelectedPlace] = []
         for item in draft.unallocated_selected_places:
             source_place = selected_by_ref[item.place.stable_ref]
-            normalized_unallocated.append(
-                item.model_copy(update={"place": source_place})
-            )
+            normalized = item.model_copy(update={"place": source_place})
+            normalized_name = source_place.name.strip().casefold()
+            if normalized_name in avoided_names:
+                normalized = normalized.model_copy(
+                    update={
+                        "reason_code": "avoided_by_user",
+                        "reason": "Place is explicitly avoided by the user.",
+                    }
+                )
+            elif normalized_name in excluded_names:
+                normalized = normalized.model_copy(
+                    update={
+                        "reason_code": "excluded_by_plan_state",
+                        "reason": "Place is excluded from this planning scope.",
+                    }
+                )
+            normalized_unallocated.append(normalized)
         return draft.model_copy(
             update={"unallocated_selected_places": normalized_unallocated}
         )

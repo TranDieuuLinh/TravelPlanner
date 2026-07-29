@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import (
@@ -44,6 +45,12 @@ INTENSITY_EFFECTS: dict[str, dict[str, int]] = {
 BREAK_EFFECTS = {"energy": 5, "mental": 3}
 
 
+@dataclass(frozen=True)
+class CandidateRejection:
+    reason_code: str
+    reason: str
+
+
 class FinderService:
     def __init__(
         self,
@@ -79,6 +86,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            budget_level=intent.budget.value,
         )
 
     def fill_backup_plan(
@@ -100,6 +108,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            budget_level=intent.budget.value,
         )
 
     def fill_agent_plan(
@@ -117,6 +126,7 @@ class FinderService:
                 for name in finder_input.intent.avoid_places
             },
             intent_constraints=finder_input.intent.constraints,
+            budget_level=finder_input.intent.budget_level.value,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -160,6 +170,7 @@ class FinderService:
         plan_status: FinderPlanStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        budget_level: str,
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -170,6 +181,7 @@ class FinderService:
 
         days: list[PlanDay] = []
         warnings: list[str] = []
+        rejected_selected_places: dict[str, CandidateRejection] = {}
         selected_by_ref = {
             place.stable_ref: place for place in selected_places
         }
@@ -181,6 +193,7 @@ class FinderService:
             skeleton = self.skeleton_builder.build(
                 brief,
                 tentative_user_status,
+                intent_constraints=intent_constraints,
             )
             tentative_plan_status.current_day = brief.day
             tentative_plan_status.current_strategy = skeleton.strategy
@@ -200,7 +213,7 @@ class FinderService:
                         tentative_plan_status.warnings.append(message)
                     continue
                 if not block.activity:
-                    day_items.append(self._build_break_item(block))
+                    day_items.append(self._build_non_activity_item(block))
                     self._apply_break(
                         tentative_user_status,
                         tentative_plan_status,
@@ -216,6 +229,8 @@ class FinderService:
                     user_status=tentative_user_status,
                     avoided_place_names=avoided_place_names,
                     intent_constraints=intent_constraints,
+                    budget_level=budget_level,
+                    rejected_selected_places=rejected_selected_places,
                 )
                 if candidate is None:
                     message = (
@@ -243,12 +258,6 @@ class FinderService:
                     tentative_plan_status,
                 )
 
-            self._append_constraint_warnings(
-                day=brief.day,
-                user_status=tentative_user_status,
-                plan_status=tentative_plan_status,
-                warnings=warnings,
-            )
             self._finish_day_location(tentative_user_status)
             tentative_user_status.available_at = None
             tentative_user_status.after_committed_day = brief.day
@@ -269,6 +278,13 @@ class FinderService:
                 day_items,
                 start=start_coordinate,
             )
+            optimized_items = self._fit_timeline_after_routing(
+                optimized_items,
+                transport_legs,
+                day=brief.day,
+                warnings=warnings,
+                plan_status=tentative_plan_status,
+            )
             travel_minutes = sum(
                 leg.estimated_duration_minutes for leg in transport_legs
             )
@@ -287,6 +303,12 @@ class FinderService:
                 travel_minutes=travel_minutes,
                 walking_minutes=walking_minutes,
             )
+            self._append_constraint_warnings(
+                day=brief.day,
+                user_status=tentative_user_status,
+                plan_status=tentative_plan_status,
+                warnings=warnings,
+            )
             days.append(
                 PlanDay(
                     day=brief.day,
@@ -297,17 +319,25 @@ class FinderService:
                 )
             )
 
-        unscheduled = [
-            UnscheduledPlace(
-                placeId=place.place_id,
-                name=place.name,
-                reasonCode="no_available_slot",
-                reason="Finder could not allocate this selected Place.",
+        unscheduled = []
+        for place in selected_places:
+            if place.stable_ref not in committed_plan_status.remaining_selected_place_ids:
+                continue
+            rejection = rejected_selected_places.get(
+                place.stable_ref,
+                CandidateRejection(
+                    "no_available_slot",
+                    "Finder could not allocate this selected Place.",
+                ),
             )
-            for place in selected_places
-            if place.stable_ref
-            in committed_plan_status.remaining_selected_place_ids
-        ]
+            unscheduled.append(
+                UnscheduledPlace(
+                    placeId=place.place_id,
+                    name=place.name,
+                    reasonCode=rejection.reason_code,
+                    reason=rejection.reason,
+                )
+            )
         return FinderResult(
             days=days,
             finalUserStatus=committed_user_status,
@@ -326,6 +356,8 @@ class FinderService:
         user_status: UserStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        budget_level: str,
+        rejected_selected_places: dict[str, CandidateRejection],
     ) -> FinderPlace | None:
         candidates: list[FinderPlace] = []
         preferred_refs = [
@@ -376,17 +408,21 @@ class FinderService:
             candidate_ref = candidate.stable_ref
             if candidate_ref in plan_status.used_place_ids:
                 continue
-            if not self._candidate_allowed(
+            rejection = self._candidate_rejection(
                 candidate,
                 block,
                 user_status,
                 avoided_place_names=avoided_place_names,
                 intent_constraints=intent_constraints,
-            ):
+                budget_level=budget_level,
+            )
+            if rejection is not None:
                 if candidate_ref not in plan_status.rejected_candidate_ids:
                     plan_status.rejected_candidate_ids.append(
                         candidate_ref
                     )
+                if candidate_ref in selected_by_ref:
+                    rejected_selected_places[candidate_ref] = rejection
                 continue
             return candidate
         return None
@@ -424,6 +460,7 @@ class FinderService:
             longitude=selected.longitude,
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
+            openingHours=[],
             dataConfidence="user_confirmed",
         )
 
@@ -437,7 +474,7 @@ class FinderService:
             return True
         return candidate.activity_intensity in allowed
 
-    def _candidate_allowed(
+    def _candidate_rejection(
         self,
         candidate: FinderPlace,
         block: DayBlock,
@@ -445,29 +482,71 @@ class FinderService:
         *,
         avoided_place_names: set[str],
         intent_constraints: list[str],
-    ) -> bool:
+        budget_level: str,
+    ) -> CandidateRejection | None:
         if candidate.name.casefold() in avoided_place_names:
-            return False
+            return CandidateRejection(
+                "avoided_by_user",
+                "Place is explicitly avoided by the user.",
+            )
         normalized_constraints = {
             constraint.strip().casefold().replace("-", "_").replace(" ", "_")
             for constraint in intent_constraints
         }
         if (
-            "avoid_outdoor" in normalized_constraints
+            normalized_constraints.intersection({"avoid_outdoor", "bad_weather", "rain", "indoor_only"})
             and self._is_outdoor(candidate)
         ):
-            return False
+            return CandidateRejection(
+                "avoid_outdoor_constraint",
+                "Place is outdoor but the plan requires avoiding outdoor activities.",
+            )
+        if (
+            normalized_constraints.intersection({"bad_weather", "rain"})
+            and candidate.weather_sensitivity
+            and candidate.weather_sensitivity.casefold() in {"high", "outdoor"}
+        ):
+            return CandidateRejection(
+                "weather_sensitivity",
+                "Place is weather-sensitive and the plan has bad-weather constraints.",
+            )
+        if (
+            budget_level == "budget"
+            and candidate.price_level
+            and candidate.price_level.casefold() in {"premium", "luxury", "high"}
+        ):
+            return CandidateRejection(
+                "budget_mismatch",
+                "Place price level is too high for the trip budget.",
+            )
         duration = (
             candidate.typical_duration_minutes
             or block.duration_minutes
         )
+        if not self._opening_hours_cover_block(candidate, block.time_window, duration):
+            return CandidateRejection(
+                "opening_hours_mismatch",
+                "Place opening hours do not cover the planned time window.",
+            )
         if duration > block.duration_minutes:
-            return False
+            return CandidateRejection(
+                "duration_exceeds_slot",
+                (
+                    f"Typical duration {duration} minutes exceeds "
+                    f"the {block.duration_minutes}-minute slot."
+                ),
+            )
         max_consecutive = (
             user_status.constraints.max_consecutive_active_minutes
         )
         if max_consecutive is not None and duration > max_consecutive:
-            return False
+            return CandidateRejection(
+                "max_consecutive_active_minutes",
+                (
+                    f"Activity duration {duration} minutes exceeds the user's "
+                    f"{max_consecutive}-minute consecutive activity limit."
+                ),
+            )
         accessibility_needs = {
             need.casefold()
             for need in user_status.constraints.accessibility_needs
@@ -480,8 +559,16 @@ class FinderService:
             accessibility_needs
             and not accessibility_needs.issubset(accessibility_features)
         ):
-            return False
-        return self._intensity_allowed(candidate, user_status)
+            return CandidateRejection(
+                "accessibility_unmet",
+                "Place does not satisfy the user's accessibility needs.",
+            )
+        if not self._intensity_allowed(candidate, user_status):
+            return CandidateRejection(
+                "activity_intensity_not_allowed",
+                "Place intensity is outside the user's allowed activity intensities.",
+            )
+        return None
 
     def _is_outdoor(self, candidate: FinderPlace) -> bool:
         outdoor_markers = {
@@ -537,11 +624,20 @@ class FinderService:
             )
             warnings.append(message)
             plan_status.warnings.append(message)
-        if user_status.constraints.max_walking_minutes_per_day is not None:
-            message = (
-                f"Day {day} walking-limit feasibility cannot be verified "
-                "until route data is available."
-            )
+        max_walking = user_status.constraints.max_walking_minutes_per_day
+        if max_walking is not None:
+            if plan_status.day_usage.walking_minutes > max_walking:
+                message = (
+                    f"Day {day} estimated walking time "
+                    f"{plan_status.day_usage.walking_minutes} minutes exceeds "
+                    f"the {max_walking}-minute limit."
+                )
+            else:
+                message = (
+                    f"Day {day} estimated walking time is "
+                    f"{plan_status.day_usage.walking_minutes} minutes; "
+                    "route provider verification is still unavailable."
+                )
             warnings.append(message)
             plan_status.warnings.append(message)
 
@@ -587,7 +683,22 @@ class FinderService:
             notes="Selected by deterministic Finder candidate loop.",
         )
 
-    def _build_break_item(self, block: DayBlock) -> PlanItem:
+    def _build_non_activity_item(self, block: DayBlock) -> PlanItem:
+        if block.kind == "meal":
+            return PlanItem(
+                itemId=str(uuid4()),
+                name=(
+                    "Lunch break"
+                    if "lunch" in block.role
+                    else "Meal break"
+                ),
+                timeWindow=block.time_window,
+                placeType="meal",
+                role=block.role,
+                source="finder_rule",
+                durationMinutes=block.duration_minutes,
+                notes="Meal/rest block inserted by Finder day skeleton.",
+            )
         return PlanItem(
             itemId=str(uuid4()),
             name=(
@@ -604,6 +715,125 @@ class FinderService:
             durationMinutes=block.duration_minutes,
             notes="No Place is required for this break block.",
         )
+
+    def _fit_timeline_after_routing(
+        self,
+        items: list[PlanItem],
+        transport_legs,
+        *,
+        day: int,
+        warnings: list[str],
+        plan_status: FinderPlanStatus,
+    ) -> list[PlanItem]:
+        if not items:
+            return items
+        leg_by_pair = {
+            (leg.from_item_id, leg.to_item_id): leg
+            for leg in transport_legs
+        }
+        fitted: list[PlanItem] = []
+        previous: PlanItem | None = None
+        previous_end: int | None = None
+        shifted = False
+        for item in items:
+            start = self._extract_clock_minutes(item.time_window)
+            duration = item.duration_minutes or self._window_duration_minutes(item.time_window)
+            if start is None or duration is None:
+                fitted.append(item)
+                previous = item
+                previous_end = None
+                continue
+            required_start = start
+            if previous is not None and previous_end is not None:
+                leg = leg_by_pair.get((previous.item_id, item.item_id))
+                if leg is not None:
+                    required_start = max(
+                        required_start,
+                        previous_end + leg.estimated_duration_minutes,
+                    )
+                else:
+                    required_start = max(required_start, previous_end)
+            if required_start > start:
+                shifted = True
+                item = item.model_copy(
+                    update={
+                        "time_window": self._format_clock_window(
+                            required_start,
+                            duration,
+                        )
+                    }
+                )
+            fitted.append(item)
+            previous = item
+            previous_end = required_start + duration
+        if shifted:
+            message = (
+                f"Day {day} timeline was shifted to account for estimated "
+                "travel time between scheduled places."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
+        last_end = previous_end
+        if last_end is not None and last_end > 21 * 60:
+            message = (
+                f"Day {day} ends after 21:00 after route-aware timeline fitting."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
+        return fitted
+
+    def _window_duration_minutes(self, value: str) -> int | None:
+        parts = value.split("-", 1)
+        if len(parts) != 2:
+            return None
+        start = self._extract_clock_minutes(parts[0])
+        end = self._extract_clock_minutes(parts[1])
+        if start is None or end is None:
+            return None
+        return max(0, end - start)
+
+    def _format_clock_window(self, start: int, duration: int) -> str:
+        return f"{self._format_clock(start)}-{self._format_clock(start + duration)}"
+
+    def _format_clock(self, minutes: int) -> str:
+        hour = minutes // 60
+        minute = minutes % 60
+        return f"{hour:02d}:{minute:02d}"
+
+    def _opening_hours_cover_block(
+        self,
+        candidate: FinderPlace,
+        time_window: str,
+        duration_minutes: int,
+    ) -> bool:
+        if not candidate.opening_hours:
+            return True
+        start = self._extract_clock_minutes(time_window)
+        if start is None:
+            return True
+        end = start + duration_minutes
+        for hours in candidate.opening_hours:
+            if hours.get("is24Hours"):
+                return True
+            open_minutes = self._parse_hour_value(hours.get("openTime"))
+            close_minutes = self._parse_hour_value(hours.get("closeTime"))
+            if open_minutes is None or close_minutes is None:
+                continue
+            if close_minutes <= open_minutes:
+                close_minutes += 24 * 60
+            adjusted_start = start
+            adjusted_end = end
+            if adjusted_start < open_minutes and adjusted_end <= close_minutes - 24 * 60:
+                adjusted_start += 24 * 60
+                adjusted_end += 24 * 60
+            if open_minutes <= adjusted_start and adjusted_end <= close_minutes:
+                return True
+        return False
+
+    def _parse_hour_value(self, value: object) -> int | None:
+        if not isinstance(value, str):
+            return None
+        return self._extract_clock_minutes(value)
 
     def _apply_activity(
         self,

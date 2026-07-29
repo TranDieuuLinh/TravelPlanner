@@ -29,6 +29,9 @@ class FinderPlace(BaseModel):
         default_factory=list,
         alias="accessibilityFeatures",
     )
+    opening_hours: list[dict] = Field(default_factory=list, alias="openingHours")
+    weather_sensitivity: str | None = Field(default=None, alias="weatherSensitivity")
+    price_level: str | None = Field(default=None, alias="priceLevel")
     data_confidence: str = Field(default="low", alias="dataConfidence")
 
     model_config = {"populate_by_name": True}
@@ -137,5 +140,16 @@ class RepositoryFinderPlaceTool:
                 for feature in metadata.get("accessibilityFeatures", [])
                 if isinstance(feature, str)
             ],
+            openingHours=list(place.opening_hours or []),
+            weatherSensitivity=(
+                str(metadata.get("weatherSensitivity"))
+                if metadata.get("weatherSensitivity") is not None
+                else None
+            ),
+            priceLevel=(
+                str(metadata.get("priceLevel"))
+                if metadata.get("priceLevel") is not None
+                else None
+            ),
             dataConfidence=place.data_confidence,
         )

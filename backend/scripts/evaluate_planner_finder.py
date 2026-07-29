@@ -17,7 +17,18 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.modules.places.model import Place
-from app.modules.plans.dependencies import get_plan_service
+from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
+from app.modules.places.repository import SqlAlchemyPlaceRepository
+from app.modules.plans.checks.backup_validator import BackupValidator
+from app.modules.plans.explorer.explorer_service import ExplorerService
+from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
+from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.planner.planner_service import PlannerService
+from app.modules.plans.repository import PlanRepository
+from app.modules.plans.service import PlanService
+from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
+from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.schema import BackupPlanCreate, PlanningContextCreate
 
@@ -52,7 +63,7 @@ async def run_evaluation() -> dict[str, Any]:
         with Session(engine) as session:
             session.add_all(_catalog_places())
             session.commit()
-            service = get_plan_service(session)
+            service = _plan_service(session)
 
             catalog_plan = await service.create_main_plan_from_context(
                 _context(
@@ -190,6 +201,159 @@ async def run_evaluation() -> dict[str, Any]:
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+def _plan_service(session: Session) -> PlanService:
+    place_repository = SqlAlchemyPlaceRepository(session)
+    llm = DeterministicPlannerLLM()
+    statistics = AutoPlaceStatisticsService(
+        place_repository,
+        BACKEND_DIR.parent / "database" / "generated" / "place_region_statistics.json",
+    )
+    planner = PlannerService(statistics, llm)
+    finder = FinderService(RepositoryFinderPlaceTool(place_repository))
+    main_workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=planner,
+        finder=finder,
+    )
+    backup_workflow = BackupPlanWorkflow(
+        planner=planner,
+        finder=finder,
+        validator=BackupValidator(),
+    )
+    return PlanService(
+        repository=PlanRepository(),
+        explore_formatter=ExploreResponseFormatter(llm),
+        main_workflow=main_workflow,
+        backup_workflow=backup_workflow,
+    )
+
+
+class DeterministicPlannerLLM:
+    async def generate_profile_plan(self, prompt: str) -> str:
+        return json.dumps({"summary": prompt}, ensure_ascii=False)
+
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        envelope = json.loads(user_payload)
+        planner_input = envelope["plannerInput"]
+        intent = planner_input["intent"]
+        trip_spec = planner_input["tripSpec"]
+        context = planner_input["regionContext"]
+        selected = sorted(
+            planner_input["selectedPlaces"],
+            key=lambda place: (
+                not place["mustVisit"],
+                place["priority"],
+                place["name"],
+            ),
+        )
+        capacity = {
+            "relaxed": 2,
+            "balanced": 3,
+            "packed": 5,
+        }[intent["pace"]]
+        allocation_order = [
+            day
+            for _ in range(capacity)
+            for day in range(1, trip_spec["days"] + 1)
+        ]
+        allocated_by_day = {
+            day: [] for day in range(1, trip_spec["days"] + 1)
+        }
+        unallocated = []
+        avoided = {name.casefold() for name in intent["avoidPlaces"]}
+        excluded = {
+            name.casefold()
+            for name in planner_input["planState"]["excludedPlaceNames"]
+        }
+        allocation_index = 0
+        for place in selected:
+            stable_ref = place.get("placeId") or place["name"]
+            normalized_name = place["name"].casefold()
+            if normalized_name in avoided:
+                unallocated.append(
+                    {
+                        "place": place,
+                        "reasonCode": "avoided_by_user",
+                        "reason": "Place is explicitly avoided.",
+                    }
+                )
+                continue
+            if normalized_name in excluded:
+                unallocated.append(
+                    {
+                        "place": place,
+                        "reasonCode": "excluded_by_plan_state",
+                        "reason": "Place is excluded from this planning scope.",
+                    }
+                )
+                continue
+            if allocation_index >= len(allocation_order):
+                unallocated.append(
+                    {
+                        "place": place,
+                        "reasonCode": "no_day_capacity",
+                        "reason": "No remaining macro-plan capacity.",
+                    }
+                )
+                continue
+            day = allocation_order[allocation_index]
+            allocated_by_day[day].append(stable_ref)
+            allocation_index += 1
+
+        candidate_areas = context["plannerSignals"].get("candidateAreas", [])
+        target_region = (
+            candidate_areas[0]["regionKey"]
+            if candidate_areas
+            else context["regionKey"]
+        )
+        focus = (
+            intent["interests"]
+            or context["plannerSignals"].get("dominantTags", [])
+            or ["local"]
+        )
+        day_briefs = [
+            {
+                "day": day,
+                "theme": f"Ngày {day}: {focus[(day - 1) % len(focus)]}",
+                "targetArea": target_region.split(",")[-1],
+                "targetRegionKey": target_region,
+                "focusTags": list(
+                    dict.fromkeys(
+                        [
+                            focus[(day - 1) % len(focus)],
+                            *focus,
+                            *context["plannerSignals"].get("dominantTags", [])[:2],
+                        ]
+                    )
+                ),
+                "pace": intent["pace"],
+                "dayPartGoals": {
+                    "morning": "Khám phá theo chủ đề.",
+                    "lunch": "Ăn trưa linh hoạt.",
+                    "afternoon": "Tiếp tục trong cùng khu vực.",
+                    "evening": "Giữ lịch linh hoạt.",
+                },
+                "allocatedSelectedPlaceRefs": allocated_by_day[day],
+                "notes": ["Finder sẽ chọn địa điểm và giờ cụ thể."],
+            }
+            for day in range(1, trip_spec["days"] + 1)
+        ]
+        return json.dumps(
+            {
+                "macroPlan": {
+                    "title": f"Kế hoạch {intent['destination']}",
+                    "destination": intent["destination"],
+                    "regionKey": context["regionKey"],
+                    "dayBriefs": day_briefs,
+                },
+                "unallocatedSelectedPlaces": unallocated,
+                "assumptions": ["Generated by deterministic evaluator LLM."],
+                "warnings": [],
+            },
+            ensure_ascii=False,
+        )
 
 
 def _context(
