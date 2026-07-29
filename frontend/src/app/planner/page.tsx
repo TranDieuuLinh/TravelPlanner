@@ -11,7 +11,8 @@ import {
 } from "@/lib/plans";
 import {
   PlannerMap,
-  type PlannerMapPlace
+  type PlannerMapPlace,
+  type PlannerMapRoute
 } from "@/components/PlannerMap";
 
 type ChatMessage = {
@@ -84,6 +85,18 @@ function Planner() {
       );
     }
     return [];
+  }, [plan]);
+  const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
+    if (!plan) return [];
+    return plan.days.flatMap((day) =>
+      day.transportLegs
+        .filter((leg) => leg.geometryCoordinates.length >= 2)
+        .map((leg, index) => ({
+          key: `day-${day.day}-leg-${index}`,
+          coordinates: leg.geometryCoordinates,
+          verified: leg.verified
+        }))
+    );
   }, [plan]);
 
   async function sendMessage() {
@@ -210,6 +223,10 @@ function Planner() {
                 <div className="tagRow">
                   {exploreResult.explorer.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
                 </div>
+                <p className="mutedText">
+                  {exploreResult.explorer.preferenceSnapshot.signals.length} tín hiệu sở thích trong intake ·{" "}
+                  {exploreResult.explorer.preferenceSnapshot.effectiveProfile.observationCount} quan sát dài hạn
+                </p>
               </section>
               <section>
                 <h3>Workflow hiện tại</h3>
@@ -229,6 +246,11 @@ function Planner() {
                       <strong>Ngày {day.day}: {day.theme}</strong>
                       {day.items.map((item, itemIndex) => (
                         <p key={`${day.day}-${itemIndex}`}>{item.timeWindow} · {item.name}</p>
+                      ))}
+                      {day.transportLegs.map((leg, legIndex) => (
+                        <p className="mutedText" key={`leg-${day.day}-${legIndex}`}>
+                          {leg.fromPlace} → {leg.toPlace} · {leg.estimatedDurationMinutes} phút · {leg.mode}
+                        </p>
                       ))}
                     </article>
                   ))}
@@ -252,6 +274,7 @@ function Planner() {
         <PlannerMap
           onSelect={setSelectedMapPlaceKey}
           places={mapPlaces}
+          routes={mapRoutes}
           selectedKey={selectedMapPlaceKey}
         />
       </section>

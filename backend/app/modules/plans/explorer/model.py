@@ -58,6 +58,12 @@ class UserMustPlace(Base):
         nullable=False,
         default=list,
     )
+    attributes_json: Mapped[list[str]] = mapped_column(
+        "attributes",
+        JSON,
+        nullable=False,
+        default=list,
+    )
     confidence: Mapped[Decimal] = mapped_column(
         Numeric(4, 3),
         nullable=False,
@@ -78,6 +84,11 @@ class UserMustPlace(Base):
         String(24),
         nullable=False,
         server_default="unresolved",
+    )
+    preference_level: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        server_default="preferred",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -1,7 +1,7 @@
 """create places table
 
 Revision ID: 20260727_0002
-Revises: 20260727_0001
+Revises: 20260727_0003_market
 Create Date: 2026-07-27 17:00:00
 """
 
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "20260727_0002"
-down_revision: str | None = "20260727_0001"
+down_revision: str | None = "20260727_0003_market"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

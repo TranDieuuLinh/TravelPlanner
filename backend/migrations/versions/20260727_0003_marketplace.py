@@ -1,7 +1,7 @@
 """add person c marketplace tables
 
-Revision ID: 20260727_0003
-Revises: 20260727_0002
+Revision ID: 20260727_0003_market
+Revises: 20260727_0002_auth
 Create Date: 2026-07-27 17:55:00
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "20260727_0003"
-down_revision: str | None = "20260727_0002"
+revision: str = "20260727_0003_market"
+down_revision: str | None = "20260727_0002_auth"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

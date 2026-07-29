@@ -8,7 +8,7 @@
 Sản phẩm bao gồm Planner, Marketplace, thanh toán, cộng tác và vận hành, nhưng
 kho mã và đội ngũ cần khả năng phát triển nhanh cùng transaction nhất
 quán. Backend hiện đã sử dụng FastAPI, Pydantic, SQLAlchemy, Alembic và
-PostgreSQL/SQLite.
+PostgreSQL. SQLite chỉ còn được dùng cho test cô lập trong bộ nhớ.
 
 ## Quyết định
 
@@ -17,6 +17,8 @@ Tiếp tục sử dụng modular monolith Python FastAPI với PostgreSQL.
 - Tổ chức code theo module nghiệp vụ.
 - Giữ ranh giới router, service/workflow, domain, repository và integration.
 - Sử dụng SQLAlchemy và Alembic cho lưu trữ và migration.
+- Chỉ PostgreSQL được chấp nhận trong `DATABASE_URL` của runtime. Container
+  backend phải chạy Alembic thành công trước khi khởi động FastAPI.
 - Thêm cơ chế background job trong cùng hệ thống deploy trước khi cân nhắc tách
   service.
 - Đặt integration với provider sau interface.

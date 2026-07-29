@@ -23,6 +23,10 @@ from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
     load_region_statistics_context,
 )
+from app.modules.preferences.schema import (
+    LongTermPreferenceProfile,
+    PreferenceDimension,
+)
 
 
 class PlannerService:
@@ -40,6 +44,7 @@ class PlannerService:
         region_key: str,
         selected_places: list[SelectedPlaceContext],
         plan_state: PlanWorkingState | None = None,
+        preference_profile: LongTermPreferenceProfile | None = None,
     ) -> PlannerAgentOutput:
         planner_input, statistics_status = self._build_input(
             mode=PlanningMode.main,
@@ -48,6 +53,7 @@ class PlannerService:
             region_key=region_key,
             selected_places=selected_places,
             plan_state=plan_state,
+            preference_profile=preference_profile,
         )
         return await self._create_plan(planner_input, statistics_status)
 
@@ -61,6 +67,7 @@ class PlannerService:
         selected_places: list[SelectedPlaceContext],
         original_macro_plan: MacroPlan,
         check_report: CheckReport | None = None,
+        preference_profile: LongTermPreferenceProfile | None = None,
     ) -> PlannerAgentOutput:
         planner_input, statistics_status = self._build_input(
             mode=PlanningMode.backup,
@@ -73,6 +80,7 @@ class PlannerService:
             ),
             check_report=check_report,
             plan_state=PlanWorkingState(warnings=[reason]),
+            preference_profile=preference_profile,
         )
         return await self._create_plan(planner_input, statistics_status)
 
@@ -87,6 +95,7 @@ class PlannerService:
         plan_state: PlanWorkingState | None = None,
         original_macro_plan: AgentMacroPlan | None = None,
         check_report: CheckReport | None = None,
+        preference_profile: LongTermPreferenceProfile | None = None,
     ) -> tuple[PlannerAgentInput, str]:
         region_context, statistics_status = load_region_statistics_context(
             self.statistics_provider,
@@ -110,6 +119,9 @@ class PlannerService:
                 tripSpec=trip_spec,
                 regionContext=region_context,
                 selectedPlaces=selected_places,
+                preferenceProfile=(
+                    preference_profile or LongTermPreferenceProfile()
+                ),
                 planState=plan_state or PlanWorkingState(),
                 originalMacroPlan=original_macro_plan,
                 checkReport=check_report,
@@ -167,7 +179,20 @@ class PlannerService:
         dominant_tags = list(
             context.planner_signals.get("dominantTags", [])
         )
-        focus = intent.interests or dominant_tags or ["local highlights"]
+        learned_focus = planner_input.preference_profile.top_values(
+            dimensions={
+                PreferenceDimension.category,
+                PreferenceDimension.attribute,
+                PreferenceDimension.cuisine,
+                PreferenceDimension.setting,
+            },
+            limit=10,
+        )
+        focus = list(
+            dict.fromkeys(
+                [*intent.interests, *learned_focus, *dominant_tags]
+            )
+        ) or ["local highlights"]
         candidate_areas = list(
             context.planner_signals.get("candidateAreas", [])
         )

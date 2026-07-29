@@ -67,11 +67,74 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert inspect(engine).get_table_names() == ["user_must_place"]
         selected_places = repository.load_must_places("intake-1", None)
         assert len(selected_places) == 1
-        assert selected_places[0].must_visit is True
+        assert selected_places[0].must_visit is False
+        assert selected_places[0].preference_level.value == "preferred"
         assert selected_places[0].place_id is None
         assert selected_places[0].name == "Mì Quảng Bà Mua"
         assert selected_places[0].latitude == 16.0592
         assert selected_places[0].longitude == 108.2131
         assert repository.load_must_places("intake-1", "another-user") == []
+
+    engine.dispose()
+
+
+def test_explorer_does_not_schedule_unresolved_candidates_without_coordinates() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[UserMustPlace.__table__],
+    )
+    unresolved = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Find Video Info",
+                "category": "other",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                "confidence": 0.2,
+            },
+            "status": "unresolved",
+            "name": "Find Video Info",
+            "city": "Hà Nội",
+            "dataConfidence": "low",
+        }
+    )
+    no_coordinates = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Dong Xuan St and Hang Ma",
+                "category": "attraction",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                "confidence": 0.55,
+            },
+            "status": "provisional",
+            "provider": "fake_places",
+            "name": "Dong Xuan St and Hang Ma",
+            "address": "Hà Nội",
+            "city": "Hà Nội",
+            "dataConfidence": "low",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-1",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[unresolved, no_coordinates],
+        )
+
+        assert session.scalar(select(UserMustPlace)) is not None
+        assert repository.load_must_places("intake-1", None) == []
 
     engine.dispose()

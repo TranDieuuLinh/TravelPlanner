@@ -13,7 +13,7 @@ migration và model trong các bước tiếp theo.
 | `auth_sessions` | Implemented | `backend/app/modules/auth/model.py`, migration `20260727_0002_add_auth_and_profile.py` |
 | `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
-| `user_must_place` | Implemented | Candidate và dữ liệu resolve đầy đủ theo `intakeId`, migration `20260728_0004` |
+| `user_must_place` | Implemented | Candidate, attributes và dữ liệu resolve đầy đủ theo `intakeId`, migrations `20260728_0004` và `20260729_0007` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
 | `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
 | `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
@@ -48,7 +48,7 @@ Lưu người dùng hệ thống.
 | `full_name` | varchar(255) | Tên hiển thị |
 | `role` | varchar(32) | `traveler`, `host`, `creator`, `admin` |
 | `avatar_url` | varchar(500), nullable | Ảnh đại diện |
-| `travel_preferences` | json | Sở thích du lịch |
+| `travel_preferences` | json | Profile có version: explicit preferences, aggregate scores, confidence, observation count và updatedAt |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
 
@@ -97,7 +97,9 @@ Không có FK hoặc thao tác ghi sang `places`.
 | `destination` | varchar | Điểm đến của intake |
 | `candidate_key` | varchar | Khóa gộp trùng trong intake |
 | `candidate_name` | varchar | Tên được trích xuất |
-| `category` | varchar | food, cafe, attraction, hotel, transport, free_time, other |
+| `category` | varchar | Taxonomy mở rộng: food, cafe, attraction, nature, culture, shopping, nightlife, wellness, adventure, beach, family, hotel, transport, free_time, other |
+| `attributes` | json | Tag chuẩn hóa như local, hidden_gem, photogenic, budget |
+| `preference_level` | varchar | mentioned, preferred hoặc must_visit |
 | `address_hint` | text, nullable | Gợi ý từ prompt/OCR/URL |
 | `resolved_name` | varchar | Tên sau resolve |
 | `address`, `city`, `country`, `country_code` | text/varchar, nullable | Địa chỉ chuẩn hóa khi tìm được |

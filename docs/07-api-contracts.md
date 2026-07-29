@@ -65,7 +65,8 @@ Form fields:
   `rawRequest` và backend tự trích xuất.
 - `tripSpec`: tùy chọn; JSON object theo shape của Explorer `tripSpec`.
 - `userState`: tùy chọn; JSON object gồm locale, timezone, travelStyle và
-  travelPreferences.
+  travelPreferences. Khi đã đăng nhập, backend tự lấy `userId` và preference
+  profile từ session/database, không tin `userId` do client khai báo.
 - `images`: tùy chọn; nhiều file ảnh JPEG, PNG, WebP, HEIC hoặc HEIF.
 
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
@@ -73,7 +74,9 @@ du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc m�
 tả khác. Giá trị mặc định hiện tại là `local`.
 
 Output công khai chỉ chứa `intakeId`, `userId` và JSON `explorer` với intent,
-tripSpec, assumptions và missingInfoQuestions. `placeCandidates` là contract
+tripSpec, assumptions, missingInfoQuestions và `preferenceSnapshot`.
+`preferenceSnapshot.signals` là tín hiệu ngắn hạn của intake;
+`effectiveProfile` là profile đã merge để Planner dùng. `placeCandidates` là contract
 nội bộ giữa extractor, aggregator, resolver và repository; không trả cho client.
 
 Không công khai raw OCR, transcript, URL result hoặc debug. Backend tự động gộp
@@ -82,7 +85,10 @@ vào PostgreSQL table `user_must_place`. Flow này không ghi vào `places` và 
 lưu Explorer context.
 
 Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
-`food`, `cafe`, `hotel`, `transport`, `free_time`, `other`. Khi evidence không
+`food`, `cafe`, `hotel`, `transport`, `free_time`, `nature`, `culture`,
+`shopping`, `nightlife`, `wellness`, `adventure`, `beach`, `family`, `other`.
+Candidate có thể có `attributes` chuẩn hóa và mặc định
+`preferenceLevel=preferred`. Khi evidence không
 đủ để phân loại, backend dùng `other`:
 
 ```json
@@ -98,6 +104,8 @@ Mỗi phần tử địa điểm có `category` với một trong các giá tr�
   ],
   "confidence": 0.88,
   "priority": 1,
+  "preferenceLevel": "preferred",
+  "attributes": ["local", "budget"],
   "notes": "Được nhắc trong transcript"
 }
 ```
@@ -112,7 +120,17 @@ Response tổng quát:
     "intent": {},
     "tripSpec": {},
     "assumptions": [],
-    "missingInfoQuestions": []
+    "missingInfoQuestions": [],
+    "preferenceSnapshot": {
+      "version": 1,
+      "signals": [],
+      "effectiveProfile": {
+        "version": 1,
+        "explicit": [],
+        "scores": {},
+        "observationCount": 0
+      }
+    }
   }
 }
 ```
@@ -152,6 +170,12 @@ vào Planner/Finder. Request gồm `intent`, `tripSpec` và `selectedPlaces`.
 `placeCandidates`/`foodPlaces` không tự động trở thành yêu cầu bắt buộc; frontend
 chỉ gửi các item user đã tick xác nhận. Planner phân bổ các item này trước và
 Finder thử chúng trước khi bổ sung địa điểm từ catalog chung.
+
+Request còn nhận `preferenceProfile` từ
+`explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`
+với thứ tự đã tối ưu nearest-neighbour + 2-opt. Khi chưa có route provider, leg
+có `source=geodesic_estimate`, `verified=false`; duration/distance này không
+được mô tả là dữ liệu giao thông live.
 
 Request tạo plan chính:
 

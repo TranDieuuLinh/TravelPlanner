@@ -4,6 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
+from app.modules.auth.dependencies import get_optional_current_user
+from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
@@ -22,6 +24,7 @@ from app.modules.plans.schema import (
     PlanningContextCreate,
 )
 from app.modules.plans.service import PlanService
+from app.modules.users.model import User
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -34,9 +37,15 @@ def feature_map(service: Annotated[PlanService, Depends(get_plan_service)]) -> l
 
 
 @router.post("/explore/full", response_model=ExploreIntakeResponse)
-async def explore_full(payload: FullExploreRequest, service: Annotated[PlanService, Depends(get_plan_service)]) -> ExploreIntakeResponse:
+async def explore_full(
+    payload: FullExploreRequest,
+    service: Annotated[PlanService, Depends(get_plan_service)],
+    current_user: Annotated[User | None, Depends(get_optional_current_user)],
+) -> ExploreIntakeResponse:
     try:
-        return await service.explore_full(payload)
+        return await service.explore_full(
+            _attach_authenticated_preference(payload, current_user)
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -44,6 +53,10 @@ async def explore_full(payload: FullExploreRequest, service: Annotated[PlanServi
 @router.post("/explore/full/intake", response_model=ExploreIntakeResponse)
 async def explore_full_intake(
     service: Annotated[PlanService, Depends(get_plan_service)],
+    current_user: Annotated[
+        User | None,
+        Depends(get_optional_current_user),
+    ],
     raw_request: Annotated[str, Form(alias="rawRequest")] = "",
     destination: Annotated[str | None, Form()] = None,
     urls: Annotated[list[str] | None, Form()] = None,
@@ -63,7 +76,10 @@ async def explore_full_intake(
         trip_spec = _parse_trip_spec(trip_spec_json) or _default_trip_spec(
             effective_request
         )
-        user_state = _parse_user_state(user_state_json)
+        user_state = _authenticated_user_state(
+            _parse_user_state(user_state_json),
+            current_user,
+        )
         uploaded_images = await _read_and_close_images(images or [])
         return await service.explore_from_intake(
             raw_request=effective_request,
@@ -97,6 +113,18 @@ async def create_main_plan_from_explorer(
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanRead:
     return await service.create_main_plan_from_explorer(payload)
+
+
+@router.post(
+    "/main/from-context",
+    response_model=PlanRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_main_plan_from_context(
+    payload: PlanningContextCreate,
+    service: Annotated[PlanService, Depends(get_plan_service)],
+) -> PlanRead:
+    return await service.create_main_plan_from_context(payload)
 
 
 @router.post("/{plan_id}/backup", response_model=PlanBundleRead, status_code=status.HTTP_201_CREATED)
@@ -218,6 +246,37 @@ def _parse_user_state(value: str | None) -> UserPlanningState | None:
     except json.JSONDecodeError as exc:
         raise ValueError("userState must be valid JSON.") from exc
     return UserPlanningState.model_validate(raw)
+
+
+def _authenticated_user_state(
+    state: UserPlanningState | None,
+    user: User | None,
+) -> UserPlanningState:
+    effective = state or UserPlanningState()
+    if user is None:
+        return effective.model_copy(update={"user_id": None})
+    return effective.model_copy(
+        update={
+            "user_id": str(user.id),
+            "travel_preferences": LongTermPreferenceProfile.from_storage(
+                user.travel_preferences
+            ).explicit,
+            "preference_profile": LongTermPreferenceProfile.from_storage(
+                user.travel_preferences
+            ),
+        }
+    )
+
+
+def _attach_authenticated_preference(
+    payload: FullExploreRequest,
+    user: User | None,
+) -> FullExploreRequest:
+    return payload.model_copy(
+        update={
+            "user_state": _authenticated_user_state(payload.user_state, user)
+        }
+    )
 
 
 def _infer_destination(raw_request: str) -> str:

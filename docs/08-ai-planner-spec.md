@@ -76,6 +76,12 @@ thông tin thiếu hoặc mâu thuẫn và chỉ hỏi câu có tác động cao
 `TravelIntent` đã chuẩn hóa, hard constraints, soft preferences và unresolved
 questions.
 
+Explorer còn tạo `PreferenceSnapshot` cho intake hiện tại. Nếu có authenticated
+user, signal đủ confidence được aggregate vào cột JSON
+`users.travel_preferences`; raw prompt, OCR và transcript không đi vào profile.
+Planner nhận `effectiveProfile`, nhưng explicit constraint của chuyến hiện tại
+luôn ưu tiên hơn profile dài hạn.
+
 ### Giai đoạn 5: Planner
 
 Planner tạo `MacroPlan` và `DayBriefs`:
@@ -92,6 +98,9 @@ Finder điền item cụ thể:
 - chọn khung giờ theo giờ hoạt động và timing claim;
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
+- tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
+- đánh dấu route leg ước tính địa lý là `verified=false` cho đến khi provider
+  route thật được cấu hình;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.

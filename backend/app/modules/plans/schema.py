@@ -10,6 +10,8 @@ from app.modules.plans.domain.entities import (
 )
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
+from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
+from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
 class FeatureMapItem(BaseModel):
@@ -35,6 +37,10 @@ class SelectedPlaceCreate(BaseModel):
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
     priority: Annotated[int, Field(default=1, ge=1, le=5)]
     must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
+    preference_level: Annotated[
+        PlacePreferenceLevel,
+        Field(default=PlacePreferenceLevel.preferred, alias="preferenceLevel"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
     longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
@@ -71,6 +77,10 @@ class MainPlanFromExplorerCreate(BaseModel):
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
     )
+    preference_profile: Annotated[
+        LongTermPreferenceProfile,
+        Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
+    ]
 
     model_config = {"populate_by_name": True}
 

@@ -34,6 +34,8 @@ from app.modules.plans.schema import (
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.dto.agent_contracts import UserPlanningState
+from app.modules.preferences.service import PreferenceLearningService
+from app.modules.users.repository import UserRepository
 
 
 class PlanService:
@@ -48,6 +50,8 @@ class PlanService:
         place_candidate_aggregator: PlaceCandidateAggregator | None = None,
         place_resolver: PlaceResolver | None = None,
         explorer_persistence: ExplorerPersistenceRepository | None = None,
+        preference_learning: PreferenceLearningService | None = None,
+        user_repository: UserRepository | None = None,
     ) -> None:
         self.repository = repository
         self.explore_formatter = explore_formatter
@@ -60,6 +64,10 @@ class PlanService:
         )
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
         self.explorer_persistence = explorer_persistence
+        self.preference_learning = (
+            preference_learning or PreferenceLearningService()
+        )
+        self.user_repository = user_repository
 
     def feature_map(self) -> list[FeatureMapItem]:
         return [
@@ -162,6 +170,33 @@ class PlanService:
             url_results=url_reel_results,
         )
         draft.places = PlaceCandidatesResponse(placeCandidates=candidates)
+        preference_snapshot = self.preference_learning.enrich_snapshot(
+            draft.explorer.preference_snapshot,
+            destination=draft.explorer.intent.destination,
+            candidates=candidates,
+            interests=draft.explorer.intent.interests,
+        )
+        stored_profile: object = payload.user_state.preference_profile
+        preference_user = None
+        if payload.user_state.user_id and self.user_repository is not None:
+            try:
+                preference_user = self.user_repository.get_by_id(
+                    int(payload.user_state.user_id)
+                )
+            except ValueError:
+                preference_user = None
+            if preference_user is not None:
+                stored_profile = preference_user.travel_preferences
+        effective_profile = self.preference_learning.merge(
+            stored_profile,
+            preference_snapshot,
+        )
+        preference_snapshot = preference_snapshot.model_copy(
+            update={"effective_profile": effective_profile}
+        )
+        draft.explorer = draft.explorer.model_copy(
+            update={"preference_snapshot": preference_snapshot}
+        )
         resolutions = await self.place_resolver.resolve_many(
             candidates,
             destination=draft.explorer.intent.destination,
@@ -174,6 +209,12 @@ class PlanService:
                 destination=draft.explorer.intent.destination,
                 resolutions=resolutions,
             )
+        if preference_user is not None and self.user_repository is not None:
+            preference_user.travel_preferences = effective_profile.model_dump(
+                mode="json",
+                by_alias=True,
+            )
+            self.user_repository.commit()
         return ExploreIntakeResponse(
             intakeId=intake_id,
             userId=payload.user_state.user_id,
@@ -201,6 +242,14 @@ class PlanService:
         plan = await self.main_workflow.run_from_explorer(
             payload.model_copy(update={"selected_places": selected_places})
         )
+        self.repository.save(plan)
+        return plan
+
+    async def create_main_plan_from_context(
+        self,
+        payload: PlanningContextCreate,
+    ) -> Plan:
+        plan = await self.main_workflow.run_from_context(payload)
         self.repository.save(plan)
         return plan
 

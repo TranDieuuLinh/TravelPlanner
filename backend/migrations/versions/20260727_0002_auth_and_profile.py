@@ -1,6 +1,6 @@
 """add authentication sessions and profile fields
 
-Revision ID: 20260727_0002
+Revision ID: 20260727_0002_auth
 Revises: 20260727_0001
 Create Date: 2026-07-27 00:02:00
 """
@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "20260727_0002"
+revision: str = "20260727_0002_auth"
 down_revision: str | None = "20260727_0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

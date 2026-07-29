@@ -4,8 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   LayerGroup,
   Map as LeafletMap,
-  Marker,
-  Polyline
+  Marker
 } from "leaflet";
 import type { ExplorePlace } from "@/lib/plans";
 
@@ -14,8 +13,15 @@ export type PlannerMapPlace = ExplorePlace & {
   mapOrder: number;
 };
 
+export type PlannerMapRoute = {
+  key: string;
+  coordinates: [number, number][];
+  verified: boolean;
+};
+
 type PlannerMapProps = {
   places: PlannerMapPlace[];
+  routes: PlannerMapRoute[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
 };
@@ -37,12 +43,17 @@ function hasCoordinates(
   );
 }
 
-export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
+export function PlannerMap({
+  places,
+  routes,
+  selectedKey,
+  onSelect
+}: PlannerMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markerLayerRef = useRef<LayerGroup | null>(null);
-  const routeLayerRef = useRef<Polyline | null>(null);
+  const routeLayerRef = useRef<LayerGroup | null>(null);
   const markersRef = useRef(new Map<string, Marker>());
   const lastPlacesSignatureRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
@@ -102,7 +113,7 @@ export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
     markerLayer.clearLayers();
     markersRef.current.clear();
     routeLayerRef.current?.remove();
-    routeLayerRef.current = null;
+    routeLayerRef.current = leaflet.layerGroup().addTo(map);
 
     locatedPlaces.forEach((place) => {
       const isSelected = place.mapKey === selectedKey;
@@ -140,18 +151,17 @@ export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
       markersRef.current.set(place.mapKey, marker);
     });
 
-    if (connectPoints && locatedPlaces.length > 1) {
-      routeLayerRef.current = leaflet
-        .polyline(
-          locatedPlaces.map((place) => [place.latitude, place.longitude]),
-          {
-            color: "#167c68",
-            dashArray: "8 9",
-            opacity: 0.76,
+    if (connectPoints && routes.length > 0 && routeLayerRef.current) {
+      routes.forEach((route) => {
+        leaflet
+          .polyline(route.coordinates, {
+            color: route.verified ? "#167c68" : "#b36b24",
+            dashArray: route.verified ? undefined : "8 9",
+            opacity: 0.82,
             weight: 4
-          }
-        )
-        .addTo(map);
+          })
+          .addTo(routeLayerRef.current!);
+      });
     }
 
     const signature = locatedPlaces
@@ -161,7 +171,7 @@ export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
       fitPlaces();
       lastPlacesSignatureRef.current = signature;
     }
-  }, [connectPoints, locatedPlaces, mapReady, onSelect, selectedKey]);
+  }, [connectPoints, locatedPlaces, mapReady, onSelect, routes, selectedKey]);
 
   useEffect(() => {
     if (!selectedKey || !mapReady) return;
@@ -223,11 +233,11 @@ export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
 
       <div className="plannerMapActions">
         <button
-          disabled={locatedPlaces.length < 2}
+          disabled={routes.length === 0}
           onClick={() => setConnectPoints((current) => !current)}
           type="button"
         >
-          {connectPoints && locatedPlaces.length > 1
+          {connectPoints && routes.length > 0
             ? "Ẩn đường nối"
             : "Nối các điểm"}
         </button>
@@ -240,8 +250,8 @@ export function PlannerMap({ places, selectedKey, onSelect }: PlannerMapProps) {
         </button>
       </div>
       <p className="mapRouteNote">
-        Đường nét đứt chỉ thể hiện thứ tự đề xuất, chưa phải tuyến giao thông đã
-        kiểm tra.
+        Đường nét đứt màu cam là chặng ước tính từ tọa độ. Chỉ đường liền màu
+        xanh mới là tuyến đã được route provider xác minh.
       </p>
     </section>
   );

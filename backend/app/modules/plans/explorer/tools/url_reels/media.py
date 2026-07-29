@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
@@ -66,6 +67,41 @@ class UrlReelMediaExtractor:
         )
         return audio_path
 
+    def extract_frames(
+        self,
+        video_path: Path,
+        work_dir: Path,
+        key: str,
+        *,
+        maximum_frames: int = 10,
+    ) -> list[Path]:
+        frame_dir = work_dir / f"frames_{key}"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        existing = sorted(frame_dir.glob("frame_*.jpg"))
+        if existing:
+            return existing[:maximum_frames]
+        output_pattern = frame_dir / "frame_%03d.jpg"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(video_path),
+                "-vf",
+                "fps=1/4,scale=1280:-2",
+                "-frames:v",
+                str(maximum_frames),
+                "-q:v",
+                "3",
+                str(output_pattern),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return sorted(frame_dir.glob("frame_*.jpg"))[:maximum_frames]
+
     def prepare(
         self,
         url: str,
@@ -84,13 +120,33 @@ class UrlReelMediaExtractor:
         key = artifact_key(url)
 
         start = time.perf_counter()
-        try:
-            audio_path = self.extract_audio(video_path, work_dir, key)
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            timings["extractAudio"] = time.perf_counter() - start
-            timings["audioUnavailable"] = 1.0
-            return MediaArtifacts(videoPath=video_path, framePaths=[]), timings
-        timings["extractAudio"] = time.perf_counter() - start
-        timings["prepareSignalsWall"] = timings["extractAudio"]
+        audio_path: Path | None = None
+        frame_paths: list[Path] = []
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            audio_future = executor.submit(
+                self.extract_audio,
+                video_path,
+                work_dir,
+                key,
+            )
+            frames_future = executor.submit(
+                self.extract_frames,
+                video_path,
+                work_dir,
+                key,
+            )
+            try:
+                audio_path = audio_future.result()
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                timings["audioUnavailable"] = 1.0
+            try:
+                frame_paths = frames_future.result()
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                timings["framesUnavailable"] = 1.0
+        timings["prepareSignalsWall"] = time.perf_counter() - start
 
-        return MediaArtifacts(videoPath=video_path, audioPath=audio_path, framePaths=[]), timings
+        return MediaArtifacts(
+            videoPath=video_path,
+            audioPath=audio_path,
+            framePaths=frame_paths,
+        ), timings

@@ -50,8 +50,9 @@ instruction.
 2. Nhận diện nguồn và chọn connector theo allowlist.
 3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
 4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
-5. Trích xuất artifact được phép: caption, transcript, frame reference hoặc văn
-   bản trang.
+5. Trích xuất artifact được phép: caption, transcript, frame video lấy mẫu,
+   OCR/vision từ Gemini hoặc văn bản trang. STT và frame vision chạy song song
+   sau khi media đã được chuẩn bị.
 6. Tạo claim/place candidate có evidence và confidence.
 7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
 8. Tự động lưu candidate và kết quả resolve vào `user_must_place`; không chặn
@@ -59,6 +60,10 @@ instruction.
 9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
    downstream đọc record theo cả `intakeId + userId`.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+
+Preference learning chỉ lưu tín hiệu chuẩn hóa và source type. Không sao chép
+raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào
+`users.travel_preferences`.
 
 ### Ma trận trạng thái nguồn
 

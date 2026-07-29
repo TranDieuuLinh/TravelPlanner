@@ -22,6 +22,7 @@ from app.modules.plans.schema import (
     SelectedPlaceCreate,
 )
 from app.shared.errors import AppError
+from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
 class MainPlanWorkflow:
@@ -49,6 +50,7 @@ class MainPlanWorkflow:
                 for place in payload.selected_places
             ],
             user_status=payload.user_status,
+            preference_profile=LongTermPreferenceProfile(),
         )
 
     async def run_from_explorer(
@@ -77,6 +79,7 @@ class MainPlanWorkflow:
                 for place in payload.selected_places
             ],
             user_status=payload.user_status,
+            preference_profile=payload.preference_profile,
         )
 
     async def run_from_context(
@@ -105,6 +108,7 @@ class MainPlanWorkflow:
                 for place in payload.selected_places
             ],
             user_status=payload.user_status,
+            preference_profile=LongTermPreferenceProfile(),
         )
 
     async def _run_planning(
@@ -116,6 +120,7 @@ class MainPlanWorkflow:
         explicit_region_key: str | None,
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
+        preference_profile: LongTermPreferenceProfile,
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
         planner_output = await self.planner.create_main_macro_plan(
@@ -123,6 +128,7 @@ class MainPlanWorkflow:
             trip_spec=trip_spec,
             region_key=region_key,
             selected_places=selected_places,
+            preference_profile=preference_profile,
         )
         if not planner_output.day_briefs_ready:
             raise AppError(

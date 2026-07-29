@@ -27,6 +27,8 @@ from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
+from app.modules.preferences.service import PreferenceLearningService
+from app.modules.users.repository import UserRepository
 
 
 def get_plan_service(
@@ -60,6 +62,8 @@ def get_plan_service(
         url_reels=UrlReelExtractionService(),
         place_resolver=_get_place_resolver(),
         explorer_persistence=ExplorerPersistenceRepository(db),
+        preference_learning=PreferenceLearningService(),
+        user_repository=UserRepository(db),
     )
 
 

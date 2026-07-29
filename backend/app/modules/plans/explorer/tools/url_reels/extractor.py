@@ -24,6 +24,17 @@ PLACE_KEYWORDS = [
     "bahn",
     "mi",
     "pho",
+    "biển",
+    "beach",
+    "núi",
+    "mountain",
+    "chợ",
+    "night market",
+    "spa",
+    "bar",
+    "club",
+    "gallery",
+    "art",
 ]
 
 GENERIC_PLACE_TERMS = {
@@ -64,6 +75,28 @@ INTEREST_KEYWORDS = {
     "food": ["food", "restaurant", "michelin", "banh", "pho", "bun", "street food"],
     "shopping": ["shopping", "market", "vintage"],
     "history": ["temple", "museum", "literature", "old quarter"],
+    "nature": ["nature", "park", "waterfall", "mountain", "hiking", "thiên nhiên", "núi", "thác"],
+    "beach": ["beach", "coast", "island", "biển", "đảo"],
+    "culture": ["culture", "heritage", "gallery", "art", "văn hóa", "di sản"],
+    "nightlife": ["nightlife", "night market", "bar", "club", "chợ đêm"],
+    "wellness": ["spa", "massage", "wellness", "yoga"],
+    "adventure": ["adventure", "hiking", "trekking", "kayak", "mạo hiểm"],
+    "family": ["family", "kids", "children", "gia đình", "trẻ em"],
+}
+
+ATTRIBUTE_KEYWORDS = {
+    "local": ["local", "địa phương", "bản địa"],
+    "hidden_gem": ["hidden gem", "ít người biết", "bí mật"],
+    "photogenic": ["photogenic", "check-in", "instagrammable", "sống ảo"],
+    "quiet": ["quiet", "yên tĩnh", "chill"],
+    "crowded": ["crowded", "đông", "xếp hàng", "queue"],
+    "budget": ["budget", "cheap", "affordable", "giá rẻ", "bình dân"],
+    "premium": ["premium", "luxury", "fine dining", "cao cấp", "sang trọng"],
+    "family_friendly": ["family friendly", "kids", "gia đình", "trẻ em"],
+    "outdoor": ["outdoor", "ngoài trời", "hiking", "beach", "park"],
+    "late_night": ["late night", "night market", "mở khuya", "chợ đêm"],
+    "romantic": ["romantic", "date night", "lãng mạn", "hẹn hò"],
+    "accessible": ["wheelchair", "accessible", "xe lăn", "thang máy"],
 }
 
 ADDRESS_CUE_RE = re.compile(
@@ -74,12 +107,24 @@ ADDRESS_CUE_RE = re.compile(
 
 
 class UrlReelContextExtractor:
-    def extract(self, metadata: UrlMetadata, transcript: str, destination: str | None = None) -> ExtractedContext:
+    def extract(
+        self,
+        metadata: UrlMetadata,
+        transcript: str,
+        destination: str | None = None,
+        visual_text: str = "",
+    ) -> ExtractedContext:
         metadata_text = "\n".join(part for part in [metadata.title, metadata.description] if part)
-        combined = "\n".join(part for part in [metadata_text, transcript, destination] if part)
+        combined = "\n".join(
+            part
+            for part in [metadata_text, transcript, visual_text, destination]
+            if part
+        )
         places = self._extract_places(
             metadata_text=metadata_text,
-            transcript=transcript,
+            transcript="\n".join(
+                part for part in [transcript, visual_text] if part
+            ),
             destination=destination,
         )
         place_details = self._place_details(
@@ -87,12 +132,16 @@ class UrlReelContextExtractor:
             destination=destination,
             metadata=metadata,
             metadata_text=metadata_text,
-            transcript=transcript,
+            transcript="\n".join(
+                part for part in [transcript, visual_text] if part
+            ),
         )
         interests = self._extract_interests(combined)
         confidence = 0.3
         if transcript:
             confidence += 0.25
+        if visual_text:
+            confidence += 0.15
         if places:
             confidence += 0.15
         return ExtractedContext(
@@ -101,7 +150,9 @@ class UrlReelContextExtractor:
             interests=interests,
             constraints=[],
             confidence=min(confidence, 1.0),
-            notes=["extracted from metadata and audio transcript signals"],
+            notes=[
+                "extracted from metadata, audio transcript, and sampled frame vision signals"
+            ],
         )
 
     def _extract_places(
@@ -240,6 +291,11 @@ class UrlReelContextExtractor:
                     transcript=transcript,
                     prefer_address=bool(address_hints.get(self._dedupe_key(place))),
                 ),
+                attributes=self._attributes_for_place(
+                    place,
+                    metadata_text,
+                    transcript,
+                ),
             )
             for place in places
         ]
@@ -283,15 +339,45 @@ class UrlReelContextExtractor:
                 "temple",
                 "museum",
                 "bridge",
-                "market",
                 "quarter",
                 "prison",
-                "park",
-                "beach",
             )
         ):
-            return "attraction"
+            return "culture"
+        if any(term in text for term in ("beach", "coast", "island", "biển", "đảo")):
+            return "beach"
+        if any(
+            term in text
+            for term in ("park", "waterfall", "mountain", "forest", "núi", "thác")
+        ):
+            return "nature"
+        if any(term in text for term in ("market", "shopping", "mall", "chợ")):
+            return "shopping"
+        if any(
+            term in text
+            for term in ("nightlife", "night market", "bar", "club", "chợ đêm")
+        ):
+            return "nightlife"
+        if any(term in text for term in ("spa", "massage", "wellness", "yoga")):
+            return "wellness"
+        if any(term in text for term in ("hiking", "trekking", "kayak", "adventure")):
+            return "adventure"
+        if any(term in text for term in ("family", "kids", "children", "gia đình")):
+            return "family"
         return "other"
+
+    def _attributes_for_place(
+        self,
+        place: str,
+        metadata_text: str,
+        transcript: str,
+    ) -> list[str]:
+        text = " ".join((place, metadata_text, transcript)).casefold()
+        return [
+            attribute
+            for attribute, keywords in ATTRIBUTE_KEYWORDS.items()
+            if any(keyword in text for keyword in keywords)
+        ]
 
     def _address_hints(
         self,

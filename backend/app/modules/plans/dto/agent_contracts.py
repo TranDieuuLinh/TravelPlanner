@@ -13,6 +13,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
 class PlanningAgentName(StrEnum):
@@ -43,7 +44,21 @@ class ItineraryItemCategory(StrEnum):
     hotel = "hotel"
     transport = "transport"
     free_time = "free_time"
+    nature = "nature"
+    culture = "culture"
+    shopping = "shopping"
+    nightlife = "nightlife"
+    wellness = "wellness"
+    adventure = "adventure"
+    beach = "beach"
+    family = "family"
     other = "other"
+
+
+class PlacePreferenceLevel(StrEnum):
+    mentioned = "mentioned"
+    preferred = "preferred"
+    must_visit = "must_visit"
 
 
 class TransportMode(StrEnum):
@@ -89,6 +104,11 @@ class PlaceCandidateHint(BaseModel):
     source_url: Annotated[str | None, Field(default=None, alias="sourceUrl")]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     priority: int = Field(default=1, ge=1, le=5)
+    preference_level: Annotated[
+        PlacePreferenceLevel,
+        Field(default=PlacePreferenceLevel.preferred, alias="preferenceLevel"),
+    ]
+    attributes: list[str] = Field(default_factory=list)
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -105,6 +125,10 @@ class SelectedPlaceContext(BaseModel):
     place_id: Annotated[str | None, Field(default=None, alias="placeId")]
     priority: int = Field(default=1, ge=1, le=5)
     must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
+    preference_level: Annotated[
+        PlacePreferenceLevel,
+        Field(default=PlacePreferenceLevel.preferred, alias="preferenceLevel"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
     longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
@@ -199,6 +223,10 @@ class UserPlanningState(BaseModel):
     timezone: str = "Asia/Ho_Chi_Minh"
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     travel_preferences: Annotated[list[str], Field(alias="travelPreferences")] = Field(default_factory=list)
+    preference_profile: Annotated[
+        LongTermPreferenceProfile,
+        Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -396,6 +424,10 @@ class PlannerAgentInput(BaseModel):
         list[SelectedPlaceContext], Field(alias="selectedPlaces")
     ] = Field(default_factory=list)
     place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
+    preference_profile: Annotated[
+        LongTermPreferenceProfile,
+        Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
+    ]
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
     check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
