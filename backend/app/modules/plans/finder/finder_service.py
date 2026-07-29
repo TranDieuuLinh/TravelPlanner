@@ -383,6 +383,8 @@ class FinderService:
                 or brief.target_area
             ),
             tags=selected.tags,
+            latitude=selected.latitude,
+            longitude=selected.longitude,
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
             dataConfidence="user_confirmed",
@@ -543,6 +545,8 @@ class FinderService:
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
             tags=candidate.tags,
+            latitude=candidate.latitude,
+            longitude=candidate.longitude,
             notes="Selected by deterministic Finder candidate loop.",
         )
 

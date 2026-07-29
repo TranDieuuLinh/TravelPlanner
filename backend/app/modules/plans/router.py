@@ -43,8 +43,8 @@ async def explore_full(payload: FullExploreRequest, service: Annotated[PlanServi
 
 @router.post("/explore/full/intake", response_model=ExploreIntakeResponse)
 async def explore_full_intake(
-    raw_request: Annotated[str, Form(alias="rawRequest")],
     service: Annotated[PlanService, Depends(get_plan_service)],
+    raw_request: Annotated[str, Form(alias="rawRequest")] = "",
     destination: Annotated[str | None, Form()] = None,
     urls: Annotated[list[str] | None, Form()] = None,
     trip_spec_json: Annotated[str | None, Form(alias="tripSpec")] = None,
@@ -55,11 +55,14 @@ async def explore_full_intake(
         effective_request, normalized_urls = _prepare_intake(
             raw_request,
             explicit_urls=urls or [],
+            has_images=bool(images),
         )
         normalized_destination = (
             destination or _infer_destination(_remove_urls(effective_request))
         ).strip()
-        trip_spec = _parse_trip_spec(trip_spec_json)
+        trip_spec = _parse_trip_spec(trip_spec_json) or _default_trip_spec(
+            effective_request
+        )
         user_state = _parse_user_state(user_state_json)
         uploaded_images = await _read_and_close_images(images or [])
         return await service.explore_from_intake(
@@ -139,17 +142,39 @@ def _prepare_intake(
     raw_request: str,
     *,
     explicit_urls: list[str],
+    has_images: bool = False,
 ) -> tuple[str, list[str]]:
     cleaned_request = raw_request.strip()
     if not cleaned_request:
-        raise ValueError(
-            "Provide a travel prompt or URL before attaching optional images."
-        )
+        normalized_urls = list(dict.fromkeys(_normalize_urls(explicit_urls)))
+        if normalized_urls:
+            return "Tạo lịch trình từ URL đã cung cấp.", normalized_urls
+        if has_images:
+            return "Tạo lịch trình từ ảnh đính kèm.", []
+        raise ValueError("Provide a travel prompt, URL, or image.")
 
     normalized_urls = list(
         dict.fromkeys(_normalize_urls(explicit_urls) + _extract_urls(cleaned_request))
     )
     return cleaned_request, normalized_urls
+
+
+def _default_trip_spec(raw_request: str) -> ExploreTripSpecInput:
+    return ExploreTripSpecInput(days=_infer_days(raw_request) or 3)
+
+
+def _infer_days(raw_request: str) -> int | None:
+    match = re.search(
+        r"(?<!\d)(\d{1,2})\s*(?:ngày|day|days)\b",
+        raw_request,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    days = int(match.group(1))
+    if 1 <= days <= 30:
+        return days
+    return None
 
 
 async def _read_and_close_images(

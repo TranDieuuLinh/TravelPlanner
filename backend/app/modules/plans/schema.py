@@ -36,6 +36,8 @@ class SelectedPlaceCreate(BaseModel):
     priority: Annotated[int, Field(default=1, ge=1, le=5)]
     must_visit: Annotated[bool, Field(default=False, alias="mustVisit")]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
+    longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
     tags: list[str] = Field(default_factory=list)
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list

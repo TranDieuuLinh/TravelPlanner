@@ -92,6 +92,16 @@ class ExplorerPersistenceRepository:
                     must_place.city or must_place.destination
                 ),
                 tags=[must_place.category],
+                latitude=(
+                    float(must_place.latitude)
+                    if must_place.latitude is not None
+                    else None
+                ),
+                longitude=(
+                    float(must_place.longitude)
+                    if must_place.longitude is not None
+                    else None
+                ),
                 sourceRefs=[
                     source.get("url") or source.get("type", "unknown")
                     for source in (must_place.sources_json or [])

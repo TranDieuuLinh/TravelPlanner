@@ -1,4 +1,11 @@
-export type PlanItem = { name: string; timeWindow: string; placeType: string; notes?: string | null };
+export type PlanItem = {
+  name: string;
+  timeWindow: string;
+  placeType: string;
+  notes?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
 export type PlanDay = { day: number; theme: string; items: PlanItem[] };
 export type TravelPlan = {
   id: string;
@@ -93,8 +100,17 @@ export type ExploreResponse = {
   intakeId: string;
   userId?: string | null;
   explorer: ExplorerContext;
-  placeCandidates?: ExplorePlace[];
-  foodPlaces?: ExplorePlace[];
+};
+
+export type PlannerIntakeInput = {
+  rawRequest: string;
+  urls?: string[];
+  images?: File[];
+};
+
+export type PlannerIntakeResult = {
+  explore: ExploreResponse;
+  plan: TravelPlan;
 };
 
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
@@ -117,11 +133,15 @@ export async function createPlan(input: { destination: string; days: number; int
 
 export async function exploreFullIntake(input: {
   rawRequest: string;
-  images: File[];
+  urls?: string[];
+  images?: File[];
 }): Promise<ExploreResponse> {
   const form = new FormData();
   form.append("rawRequest", input.rawRequest);
-  for (const image of input.images) {
+  for (const url of input.urls ?? []) {
+    form.append("urls", url);
+  }
+  for (const image of input.images ?? []) {
     form.append("images", image);
   }
 
@@ -129,6 +149,19 @@ export async function exploreFullIntake(input: {
     method: "POST",
     body: form
   });
+}
+
+export async function runPlannerIntake(
+  input: PlannerIntakeInput
+): Promise<PlannerIntakeResult> {
+  const explore = await exploreFullIntake(input);
+  const plan = await createPlanFromExplorer({
+    context: explore.explorer,
+    intakeId: explore.intakeId,
+    userId: explore.userId
+  });
+
+  return { explore, plan };
 }
 
 export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
@@ -148,8 +181,10 @@ export async function createPlanFromExplorer(input: {
   context: ExplorerContext;
   intakeId?: string | null;
   userId?: string | null;
-  selectedPlaces: ExplorePlace[];
+  selectedPlaces?: ExplorePlace[];
 }): Promise<TravelPlan> {
+  const selectedPlaces = input.selectedPlaces ?? [];
+
   return apiFetch<TravelPlan>("/plans/main/from-explorer", {
     method: "POST",
     body: JSON.stringify({
@@ -157,11 +192,13 @@ export async function createPlanFromExplorer(input: {
       tripSpec: input.context.tripSpec,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
-      selectedPlaces: input.selectedPlaces.map((place) => ({
+      selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,
         placeId: place.placeId ?? null,
         priority: place.priority ?? 1,
         mustVisit: true,
+        latitude: place.latitude ?? null,
+        longitude: place.longitude ?? null,
         tags: [place.category],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
         notes: place.notes ?? null

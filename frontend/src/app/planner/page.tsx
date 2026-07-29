@@ -3,8 +3,7 @@
 import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  createPlanFromExplorer,
-  exploreFullIntake,
+  runPlannerIntake,
   type ExplorerContext,
   type ExploreResponse,
   type PlaceCategory,
@@ -19,16 +18,6 @@ type ChatMessage = {
   id: number;
   role: "assistant" | "user";
   text: string;
-};
-
-const categoryLabels: Record<PlaceCategory, string> = {
-  attraction: "Tham quan",
-  food: "Ẩm thực",
-  cafe: "Cà phê",
-  hotel: "Khách sạn",
-  transport: "Di chuyển",
-  free_time: "Tự do",
-  other: "Khác"
 };
 
 function formatBudget(result: ExplorerContext): string {
@@ -69,34 +58,41 @@ function Planner() {
     }
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
-  const [selectedPlaceKeys, setSelectedPlaceKeys] = useState<Set<string>>(new Set());
   const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const placeCandidates = exploreResult?.placeCandidates ?? [];
-  const foodPlaces = exploreResult?.foodPlaces ?? [];
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
-    const places = [
-      ...(exploreResult?.placeCandidates ?? []),
-      ...(exploreResult?.foodPlaces ?? [])
-    ];
-
-    return places.map((place, index) => ({
-      ...place,
-      mapKey:
-        place.placeId ??
-        `${place.category}-${place.name}-${place.address ?? "unknown"}-${index}`,
-      mapOrder: index + 1
-    }));
-  }, [exploreResult]);
+    if (plan) {
+      let order = 0;
+      return plan.days.flatMap((day) =>
+        day.items
+          .filter((item) => item.latitude != null && item.longitude != null)
+          .map((item, index) => {
+            order += 1;
+            return {
+              name: item.name,
+              category: categoryFromPlaceType(item.placeType),
+              address: item.timeWindow,
+              latitude: item.latitude ?? null,
+              longitude: item.longitude ?? null,
+              notes: item.notes,
+              mapKey: `plan-${day.day}-${index}-${item.name}`,
+              mapOrder: order
+            };
+          })
+      );
+    }
+    return [];
+  }, [plan]);
 
   async function sendMessage() {
-    const text = prompt.trim();
-    if (!text) {
-      setError("Nhập yêu cầu hoặc dán URL trước khi gửi. Ảnh là nội dung bổ sung.");
+    const typedText = prompt.trim();
+    if (!typedText && images.length === 0) {
+      setError("Nhập yêu cầu, dán URL hoặc đính kèm ảnh trước khi gửi.");
       return;
     }
+    const text = typedText || "Tạo lịch trình từ ảnh đính kèm.";
 
     const attachmentSummary = images.length ? `📎 ${images.length} ảnh` : "";
     const userMessage: ChatMessage = {
@@ -109,74 +105,28 @@ function Planner() {
     setLoading(true);
     setError("");
     try {
-      const nextExploreResult = await exploreFullIntake({
+      const result = await runPlannerIntake({
         rawRequest: text,
         images
       });
-      const nextSelectedKeys = new Set(
-        [
-          ...(nextExploreResult.placeCandidates ?? []),
-          ...(nextExploreResult.foodPlaces ?? [])
-        ]
-          .map((place, index) => `${index}:${place.name}:${place.address ?? ""}`)
-      );
+      const nextExploreResult = result.explore;
       setExploreResult(nextExploreResult);
-      setPlan(null);
+      setPlan(result.plan);
       setSelectedMapPlaceKey(null);
-      setSelectedPlaceKeys(nextSelectedKeys);
       setMessages((current) => [
         ...current,
         {
           id: Date.now() + 1,
           role: "assistant",
-          text: `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.intent.destination}. Các địa điểm trích xuất đã được lưu nội bộ cho Finder.`
+          text: `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.intent.destination}. Planner và Finder đã tạo lịch trình từ Explorer context cùng dữ liệu đã lưu.`
         }
       ]);
       setImages([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      if (nextSelectedKeys.size === 0) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: Date.now() + 2,
-            role: "assistant",
-            text: "Không có checkbox cần xác nhận trong response, mình sẽ tạo lịch trình từ dữ liệu Explorer đã lưu."
-          }
-        ]);
-        await createFromExplorer(nextExploreResult, nextSelectedKeys);
-      }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
       setError(message);
       setMessages((current) => [...current, { id: Date.now() + 1, role: "assistant", text: message }]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function createFromExplorer(
-    source: ExploreResponse | null = exploreResult,
-    keys: Set<string> = selectedPlaceKeys
-  ) {
-    if (!source) return;
-    const allPlaces = [
-      ...(source.placeCandidates ?? []),
-      ...(source.foodPlaces ?? [])
-    ];
-    const confirmedPlaces = allPlaces.filter((place, index) =>
-      keys.has(`${index}:${place.name}:${place.address ?? ""}`)
-    );
-    setLoading(true);
-    setError("");
-    try {
-      setPlan(await createPlanFromExplorer({
-        context: source.explorer,
-        intakeId: source.intakeId,
-        userId: source.userId,
-        selectedPlaces: confirmedPlaces
-      }));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Không thể tạo kế hoạch.");
     } finally {
       setLoading(false);
     }
@@ -242,7 +192,7 @@ function Planner() {
                 ) : <small>Prompt · URL · Screenshot</small>}
               </div>
             </div>
-            <button className="sendButton" disabled={loading || !prompt.trim()} type="submit">
+            <button className="sendButton" disabled={loading || (!prompt.trim() && images.length === 0)} type="submit">
               {loading ? "Đang đọc..." : "Gửi"}
             </button>
           </form>
@@ -262,70 +212,15 @@ function Planner() {
                 </div>
               </section>
               <section>
-                <h3>Địa điểm tham quan</h3>
-                {placeCandidates.length ? placeCandidates.map((place, index) => {
-                  const key = `${index}:${place.name}:${place.address ?? ""}`;
-                  return (
-                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
-                    <div className="candidateHeading">
-                      <label>
-                        <input
-                          checked={selectedPlaceKeys.has(key)}
-                          onChange={(event) => {
-                            const next = new Set(selectedPlaceKeys);
-                            if (event.target.checked) next.add(key); else next.delete(key);
-                            setSelectedPlaceKeys(next);
-                          }}
-                          type="checkbox"
-                        />
-                        <strong>{place.name}</strong>
-                      </label>
-                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
-                    </div>
-                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
-                  </article>
-                  );
-                }) : <p className="mutedText">Chưa có địa điểm tham quan.</p>}
+                <h3>Workflow hiện tại</h3>
+                <p className="workflowStep"><strong>1. Explorer</strong><span>Chuẩn hóa yêu cầu, URL và ảnh thành intent/trip spec.</span></p>
+                <p className="workflowStep"><strong>2. Place intake</strong><span>Candidate được resolve và lưu nội bộ theo intakeId để giữ provenance.</span></p>
+                <p className="workflowStep"><strong>3. Planner + Finder</strong><span>Tạo macro plan, xếp địa điểm đã lưu và kiểm tra kết quả.</span></p>
               </section>
               <section>
-                <h3>Địa điểm ăn uống</h3>
-                {foodPlaces.length ? foodPlaces.map((place, index) => {
-                  const offset = placeCandidates.length;
-                  const key = `${offset + index}:${place.name}:${place.address ?? ""}`;
-                  return (
-                  <article className="candidateItem" key={`${place.name}-${place.address ?? ""}`}>
-                    <div className="candidateHeading">
-                      <label>
-                        <input
-                          checked={selectedPlaceKeys.has(key)}
-                          onChange={(event) => {
-                            const next = new Set(selectedPlaceKeys);
-                            if (event.target.checked) next.add(key); else next.delete(key);
-                            setSelectedPlaceKeys(next);
-                          }}
-                          type="checkbox"
-                        />
-                        <strong>{place.name}</strong>
-                      </label>
-                      <span className={`categoryBadge category-${place.category}`}>{categoryLabels[place.category]}</span>
-                    </div>
-                    <p>{place.address || place.notes || "Chưa có địa chỉ xác nhận."}</p>
-                  </article>
-                  );
-                }) : <p className="mutedText">Chưa có địa điểm ăn uống.</p>}
+                <h3>Giả định Explorer</h3>
+                {exploreResult.explorer.assumptions.length ? exploreResult.explorer.assumptions.map((assumption) => <p className="questionItem" key={assumption}>{assumption}</p>) : <p className="mutedText">Không có giả định bổ sung.</p>}
               </section>
-              <button
-                className="generateButton"
-                disabled={loading}
-                onClick={() => void createFromExplorer()}
-                type="button"
-              >
-                {loading
-                  ? "Đang tạo kế hoạch…"
-                  : selectedPlaceKeys.size
-                    ? `Xác nhận ${selectedPlaceKeys.size} địa điểm và tạo kế hoạch`
-                    : "Tạo kế hoạch từ dữ liệu Explorer đã lưu"}
-              </button>
               {plan ? (
                 <section>
                   <h3>{plan.title}</h3>
@@ -362,4 +257,15 @@ function Planner() {
       </section>
     </main>
   );
+}
+
+function categoryFromPlaceType(placeType: string): PlaceCategory {
+  const normalized = placeType.toLowerCase();
+  if (normalized.includes("food") || normalized.includes("restaurant")) return "food";
+  if (normalized.includes("cafe") || normalized.includes("coffee")) return "cafe";
+  if (normalized.includes("hotel")) return "hotel";
+  if (normalized.includes("transport")) return "transport";
+  if (normalized.includes("break") || normalized.includes("free")) return "free_time";
+  if (normalized.includes("attraction") || normalized.includes("visit") || normalized.includes("place")) return "attraction";
+  return "other";
 }

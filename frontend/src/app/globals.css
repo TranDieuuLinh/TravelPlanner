@@ -202,6 +202,9 @@ h1, h2, h3, p { margin-top: 0; }
 .exploreResult section:last-child { border-bottom: 0; padding-bottom: 0; }
 .exploreResult h3 { margin: 0; font-size: .95rem; }
 .exploreResult p { margin: 0; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.workflowStep { display: grid; gap: 3px; border-radius: 8px; padding: 10px 12px; background: var(--canvas); }
+.workflowStep strong { color: var(--ink); font-size: .68rem; }
+.workflowStep span { color: var(--muted); font-size: .66rem; line-height: 1.45; }
 .tagRow { display: flex; flex-wrap: wrap; gap: 7px; }
 .tagRow span { border-radius: 999px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .62rem; font-weight: 800; }
 .candidateItem { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
@@ -1148,7 +1151,6 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   text-decoration: none;
   padding: 8px;
 }
-
 
 
 

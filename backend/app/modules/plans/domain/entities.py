@@ -82,6 +82,8 @@ class PlanItem(BaseModel):
         alias="sourceRefs",
     )
     tags: list[str] = Field(default_factory=list)
+    latitude: float | None = None
+    longitude: float | None = None
     notes: str | None = None
 
     model_config = {"populate_by_name": True}

@@ -70,6 +70,8 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert selected_places[0].must_visit is True
         assert selected_places[0].place_id is None
         assert selected_places[0].name == "Mì Quảng Bà Mua"
+        assert selected_places[0].latitude == 16.0592
+        assert selected_places[0].longitude == 108.2131
         assert repository.load_must_places("intake-1", "another-user") == []
 
     engine.dispose()
