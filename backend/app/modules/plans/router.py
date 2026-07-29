@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Annotated
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
@@ -71,7 +72,9 @@ async def explore_full_intake(
             has_images=bool(images),
         )
         normalized_destination = (
-            destination or _infer_destination(_remove_urls(effective_request))
+            destination
+            or _infer_destination(_remove_urls(effective_request))
+            or _infer_destination_from_urls(normalized_urls)
         ).strip()
         trip_spec = _parse_trip_spec(trip_spec_json) or _default_trip_spec(
             effective_request
@@ -188,7 +191,10 @@ def _prepare_intake(
 
 
 def _default_trip_spec(raw_request: str) -> ExploreTripSpecInput:
-    return ExploreTripSpecInput(days=_infer_days(raw_request) or 3)
+    # Keep a missing duration distinct from an explicit request. Explorer can
+    # then derive enough days from URL/OCR evidence instead of treating a UI
+    # fallback as a user constraint.
+    return ExploreTripSpecInput(days=_infer_days(raw_request))
 
 
 def _infer_days(raw_request: str) -> int | None:
@@ -293,3 +299,17 @@ def _infer_destination(raw_request: str) -> str:
     destination = re.split(r",|\.|\n", destination)[0]
     destination = re.sub(r"\b(đi|di|ở|o|tại|tai|cho|trong)\b", "", destination, flags=re.IGNORECASE)
     return destination.strip()
+
+
+def _infer_destination_from_urls(urls: list[str]) -> str:
+    for url in urls:
+        query = parse_qs(urlsplit(url).query)
+        for value in query.get("q", []):
+            match = re.search(
+                r"(?:what\s+to\s+do|things\s+to\s+do)\s+in\s+(.+?)(?:[?!]|$)",
+                value,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip().title()
+    return ""

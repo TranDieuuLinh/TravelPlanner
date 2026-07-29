@@ -68,6 +68,7 @@ class FinderService:
         *,
         user_status: UserStatus | None = None,
         plan_status: FinderPlanStatus | None = None,
+        allow_finder_suggestions: bool = True,
     ) -> FinderResult:
         return self._fill_days(
             macro_plan,
@@ -79,6 +80,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            allow_finder_suggestions=allow_finder_suggestions,
         )
 
     def fill_backup_plan(
@@ -89,6 +91,7 @@ class FinderService:
         *,
         user_status: UserStatus | None = None,
         plan_status: FinderPlanStatus | None = None,
+        allow_finder_suggestions: bool = True,
     ) -> FinderResult:
         return self._fill_days(
             macro_plan,
@@ -100,6 +103,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            allow_finder_suggestions=allow_finder_suggestions,
         )
 
     def fill_agent_plan(
@@ -117,6 +121,7 @@ class FinderService:
                 for name in finder_input.intent.avoid_places
             },
             intent_constraints=finder_input.intent.constraints,
+            allow_finder_suggestions=finder_input.allow_finder_suggestions,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -160,6 +165,7 @@ class FinderService:
         plan_status: FinderPlanStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        allow_finder_suggestions: bool,
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -173,14 +179,55 @@ class FinderService:
         selected_by_ref = {
             place.stable_ref: place for place in selected_places
         }
+        has_reference_places = any(
+            place.source_order is not None
+            or any(
+                ref == "ocr" or ref.startswith(("http://", "https://"))
+                for ref in place.source_refs
+            )
+            for place in selected_places
+        )
 
         for brief in macro_plan.day_briefs:
             day_start_location = committed_user_status.location
             tentative_user_status = committed_user_status.model_copy(deep=True)
             tentative_plan_status = committed_plan_status.model_copy(deep=True)
-            skeleton = self.skeleton_builder.build(
-                brief,
-                tentative_user_status,
+            allocated_places = [
+                selected_by_ref[ref]
+                for ref in brief.allocated_selected_place_refs
+                if ref in selected_by_ref
+            ]
+            allow_suggestions_for_day = (
+                allow_finder_suggestions
+                and (
+                    not has_reference_places
+                    or not allocated_places
+                )
+            )
+            if not allow_finder_suggestions and not allocated_places:
+                days.append(
+                    PlanDay(
+                        day=brief.day,
+                        theme=brief.theme,
+                        strategy="reference_only",
+                        items=[],
+                        transportLegs=[],
+                    )
+                )
+                continue
+            has_source_itinerary = any(
+                place.source_order is not None for place in allocated_places
+            )
+            skeleton = (
+                self.skeleton_builder.build_source_itinerary(
+                    brief,
+                    allocated_places,
+                )
+                if has_source_itinerary
+                else self.skeleton_builder.build(
+                    brief,
+                    tentative_user_status,
+                )
             )
             tentative_plan_status.current_day = brief.day
             tentative_plan_status.current_strategy = skeleton.strategy
@@ -216,6 +263,7 @@ class FinderService:
                     user_status=tentative_user_status,
                     avoided_place_names=avoided_place_names,
                     intent_constraints=intent_constraints,
+                    allow_finder_suggestions=allow_suggestions_for_day,
                 )
                 if candidate is None:
                     message = (
@@ -268,6 +316,7 @@ class FinderService:
             optimized_items, transport_legs = self.route_optimizer.optimize(
                 day_items,
                 start=start_coordinate,
+                preserve_order=has_source_itinerary,
             )
             travel_minutes = sum(
                 leg.estimated_duration_minutes for leg in transport_legs
@@ -326,8 +375,28 @@ class FinderService:
         user_status: UserStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        allow_finder_suggestions: bool,
     ) -> FinderPlace | None:
         candidates: list[FinderPlace] = []
+        if block.preferred_ref is not None:
+            selected = selected_by_ref.get(block.preferred_ref)
+            if (
+                selected is None
+                or block.preferred_ref not in plan_status.remaining_selected_place_ids
+            ):
+                return None
+            candidate = self._selected_to_candidate(selected, brief)
+            if self._candidate_allowed(
+                candidate,
+                block,
+                user_status,
+                avoided_place_names=avoided_place_names,
+                intent_constraints=intent_constraints,
+            ):
+                return candidate
+            if candidate.stable_ref not in plan_status.rejected_candidate_ids:
+                plan_status.rejected_candidate_ids.append(candidate.stable_ref)
+            return None
         preferred_refs = [
             ref
             for ref in brief.allocated_selected_place_refs
@@ -343,7 +412,7 @@ class FinderService:
             brief.target_region_key
             or brief.target_area
         )
-        if region_key.startswith("vn,"):
+        if allow_finder_suggestions and region_key.startswith("vn,"):
             selected_place_ids = {
                 place.place_id
                 for place in selected_by_ref.values()
@@ -408,6 +477,11 @@ class FinderService:
                                 [*selected.tags, *stored_place.tags]
                             )
                         ),
+                        "source_order": selected.source_order,
+                        "source_day": selected.source_day,
+                        "source_time_hint": selected.source_time_hint,
+                        "source_activity": selected.source_activity,
+                        "source_duration_minutes": selected.source_duration_minutes,
                     }
                 )
         return FinderPlace(
@@ -425,6 +499,11 @@ class FinderService:
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
             dataConfidence="user_confirmed",
+            sourceOrder=selected.source_order,
+            sourceDay=selected.source_day,
+            sourceTimeHint=selected.source_time_hint,
+            sourceActivity=selected.source_activity,
+            sourceDurationMinutes=selected.source_duration_minutes,
         )
 
     def _intensity_allowed(
@@ -458,7 +537,8 @@ class FinderService:
         ):
             return False
         duration = (
-            candidate.typical_duration_minutes
+            candidate.source_duration_minutes
+            or candidate.typical_duration_minutes
             or block.duration_minutes
         )
         if duration > block.duration_minutes:
@@ -576,7 +656,8 @@ class FinderService:
                 else "finder_suggestion"
             ),
             durationMinutes=(
-                candidate.typical_duration_minutes
+                candidate.source_duration_minutes
+                or candidate.typical_duration_minutes
                 or block.duration_minutes
             ),
             activityIntensity=candidate.activity_intensity,
@@ -584,7 +665,13 @@ class FinderService:
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,
-            notes="Selected by deterministic Finder candidate loop.",
+            notes=(
+                candidate.source_activity
+                or "Selected by deterministic Finder candidate loop."
+            ),
+            sourceOrder=candidate.source_order,
+            sourceTimeHint=candidate.source_time_hint,
+            sourceActivity=candidate.source_activity,
         )
 
     def _build_break_item(self, block: DayBlock) -> PlanItem:
@@ -624,7 +711,8 @@ class FinderService:
             plan_status.visited_region_counts.get(candidate.region_key, 0) + 1
         )
         duration = (
-            candidate.typical_duration_minutes
+            candidate.source_duration_minutes
+            or candidate.typical_duration_minutes
             or block.duration_minutes
         )
         self._increment_usage(

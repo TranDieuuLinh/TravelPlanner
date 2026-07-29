@@ -64,6 +64,11 @@ class ExplorerPersistenceRepository:
                     attribution=resolution.attribution,
                     resolution_status=resolution.status,
                     preference_level=candidate.preference_level.value,
+                    source_order=candidate.source_order,
+                    source_day=candidate.source_day,
+                    source_time_hint=candidate.source_time_hint,
+                    source_activity=candidate.source_activity,
+                    source_duration_minutes=candidate.source_duration_minutes,
                 )
             )
         self.session.commit()
@@ -73,7 +78,7 @@ class ExplorerPersistenceRepository:
         intake_id: str,
         user_id: str | None,
     ) -> list[SelectedPlaceCreate]:
-        rows = self.session.scalars(
+        rows = list(self.session.scalars(
             select(UserMustPlace)
             .where(
                 UserMustPlace.intake_id == intake_id,
@@ -84,10 +89,26 @@ class ExplorerPersistenceRepository:
                 ),
             )
             .order_by(UserMustPlace.created_at, UserMustPlace.id)
-        ).all()
+        ).all())
+        rows.sort(
+            key=lambda row: (
+                row.source_order is None,
+                row.source_order or 10_000,
+                row.created_at,
+                row.id,
+            )
+        )
         return [
             SelectedPlaceCreate(
-                name=must_place.resolved_name,
+                # Preserve the source label in URL itineraries. Provider
+                # resolution contributes coordinates/address, but a broad
+                # match such as "Hà Nội" must not replace "Văn Miếu" in the
+                # plan or collapse two distinct source stops.
+                name=(
+                    must_place.candidate_name
+                    if must_place.source_order is not None
+                    else must_place.resolved_name
+                ),
                 priority=_priority_from_confidence(must_place.confidence),
                 mustVisit=must_place.preference_level == "must_visit",
                 preferenceLevel=must_place.preference_level,
@@ -114,6 +135,11 @@ class ExplorerPersistenceRepository:
                     for source in (must_place.sources_json or [])
                 ],
                 notes=must_place.notes,
+                sourceOrder=must_place.source_order,
+                sourceDay=must_place.source_day,
+                sourceTimeHint=must_place.source_time_hint,
+                sourceActivity=must_place.source_activity,
+                sourceDurationMinutes=must_place.source_duration_minutes,
             )
             for must_place in rows
             if _is_schedulable_must_place(must_place)
@@ -125,11 +151,20 @@ def _candidate_key(name: str, destination: str) -> str:
 
 
 def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
-    return (
+    has_resolved_coordinates = (
         must_place.resolution_status in {"resolved", "provisional"}
         and must_place.latitude is not None
         and must_place.longitude is not None
     )
+    is_evidenced_url_stop = (
+        must_place.source_order is not None
+        and float(must_place.confidence) >= 0.7
+        and any(
+            source.get("type") == "url" and source.get("url")
+            for source in (must_place.sources_json or [])
+        )
+    )
+    return has_resolved_coordinates or is_evidenced_url_stop
 
 
 def _priority_from_confidence(confidence: Decimal) -> int:

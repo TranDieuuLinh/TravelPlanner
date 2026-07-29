@@ -90,6 +90,11 @@ class UserMustPlace(Base):
         nullable=False,
         server_default="preferred",
     )
+    source_order: Mapped[int | None] = mapped_column(nullable=True)
+    source_day: Mapped[int | None] = mapped_column(nullable=True)
+    source_time_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_activity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_duration_minutes: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -103,6 +103,162 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     assert result.unscheduled_places == []
 
 
+def test_reference_only_mode_never_adds_catalog_places() -> None:
+    places = {
+        "selected-main": _place(
+            "selected-main",
+            "Place from OCR",
+            tags=["culture"],
+            intensity="light",
+        ),
+        "catalog-support": _place(
+            "catalog-support",
+            "Planner catalog suggestion",
+            tags=["food"],
+            intensity="light",
+        ),
+    }
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            places,
+            search_order=["catalog-support"],
+        )
+    )
+
+    result = finder.fill_main_plan(
+        _macro_plan(),
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="selected-main",
+                name="Place from OCR",
+                sourceRefs=["ocr"],
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=False,
+    )
+
+    activity_items = [
+        item
+        for item in result.days[0].items
+        if item.place_type != "break"
+    ]
+    assert [item.name for item in activity_items] == ["Place from OCR"]
+    assert all(item.source != "finder_suggestion" for item in activity_items)
+
+
+def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {
+                "catalog-support": _place(
+                    "catalog-support",
+                    "Planner catalog suggestion",
+                    tags=["food"],
+                    intensity="light",
+                )
+            },
+            search_order=["catalog-support"],
+        )
+    )
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Reference only",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+                focusTags=["food"],
+            )
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [],
+        allow_finder_suggestions=False,
+    )
+
+    assert result.days[0].strategy == "reference_only"
+    assert result.days[0].items == []
+
+
+def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
+    source = _place(
+        "source-place",
+        "Place from video",
+        tags=["culture"],
+        intensity="light",
+    )
+    catalog = _place(
+        "catalog-place",
+        "Finder suggestion",
+        tags=["food"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {
+                "source-place": source,
+                "catalog-place": catalog,
+            },
+            search_order=["catalog-place"],
+        )
+    )
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="From video",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture"],
+                allocatedSelectedPlaceRefs=["source-place"],
+            ),
+            DayBrief(
+                day=2,
+                theme="Finder fill",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["food"],
+            ),
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="source-place",
+                name="Place from video",
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=1,
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=True,
+    )
+
+    assert [
+        item.name
+        for item in result.days[0].items
+        if item.source != "break"
+    ] == ["Place from video"]
+    assert any(
+        item.source == "finder_suggestion"
+        for item in result.days[1].items
+    )
+
+
 def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
     finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
     user_status = UserStatus.model_validate(

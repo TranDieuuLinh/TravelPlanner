@@ -11,6 +11,23 @@ from app.modules.plans.domain.entities import RegionSnapshotReference
 from app.modules.plans.dto.agent_contracts import RegionStatisticsContext
 
 
+_HANOI_CORE_SLUGS = {
+    "ha-noi",
+    "hanoi",
+    "hn",
+}
+_VIETNAM_QUALIFIERS = (
+    "viet-nam",
+    "vietnam",
+    "vn",
+)
+_CITY_QUALIFIERS = (
+    "thanh-pho",
+    "city",
+    "tp",
+)
+
+
 class PlannerStatisticsProvider(Protocol):
     def get_for_planner(
         self,
@@ -22,20 +39,63 @@ class PlannerStatisticsProvider(Protocol):
 
 def normalize_region_key(destination: str, explicit_region_key: str | None = None) -> str:
     if explicit_region_key:
-        region_key = explicit_region_key.strip().lower()
+        region_key = _canonicalize_explicit_region_key(
+            explicit_region_key.strip().lower()
+        )
         _validate_region_key(region_key)
         return region_key
 
-    normalized = unicodedata.normalize("NFD", destination.strip().lower())
+    slug = _slugify(destination)
+    if not slug:
+        raise ValueError("destination cannot be normalized to a region_key")
+    if _is_hanoi_alias(slug):
+        return "vn,ha-noi"
+    return f"vn,{slug}"
+
+
+def _canonicalize_explicit_region_key(region_key: str) -> str:
+    parts = region_key.split(",")
+    if len(parts) >= 2 and parts[0] == "vn" and _is_hanoi_alias(parts[1]):
+        parts[1] = "ha-noi"
+    return ",".join(parts)
+
+
+def _is_hanoi_alias(slug: str) -> bool:
+    candidate = slug
+    previous = None
+    while candidate != previous:
+        previous = candidate
+        candidate = _strip_prefix(candidate, _VIETNAM_QUALIFIERS)
+        candidate = _strip_suffix(candidate, _VIETNAM_QUALIFIERS)
+        candidate = _strip_prefix(candidate, _CITY_QUALIFIERS)
+        candidate = _strip_suffix(candidate, _CITY_QUALIFIERS)
+    return candidate in _HANOI_CORE_SLUGS
+
+
+def _strip_prefix(value: str, qualifiers: tuple[str, ...]) -> str:
+    for qualifier in qualifiers:
+        prefix = f"{qualifier}-"
+        if value.startswith(prefix):
+            return value[len(prefix) :]
+    return value
+
+
+def _strip_suffix(value: str, qualifiers: tuple[str, ...]) -> str:
+    for qualifier in qualifiers:
+        suffix = f"-{qualifier}"
+        if value.endswith(suffix):
+            return value[: -len(suffix)]
+    return value
+
+
+def _slugify(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.strip().lower())
     ascii_text = "".join(
         character
         for character in normalized
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
-    if not slug:
-        raise ValueError("destination cannot be normalized to a region_key")
-    return f"vn,{slug}"
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
 
 
 def load_region_statistics_context(

@@ -85,6 +85,9 @@ class PlanItem(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     notes: str | None = None
+    source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
+    source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
+    source_activity: str | None = Field(default=None, alias="sourceActivity")
 
     model_config = {"populate_by_name": True}
 

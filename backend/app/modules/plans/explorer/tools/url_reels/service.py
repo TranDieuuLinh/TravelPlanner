@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import httpx
+
 from app.modules.plans.explorer.tools.url_reels.extractor import UrlReelContextExtractor
 from app.modules.plans.explorer.tools.url_reels.frame_vision import (
     GeminiReelFrameVision,
@@ -12,8 +14,8 @@ from app.modules.plans.explorer.tools.url_reels.frame_vision import (
 from app.modules.plans.explorer.tools.url_reels.loader import UrlReelLoader
 from app.modules.plans.explorer.tools.url_reels.media import UrlReelMediaExtractor
 from app.modules.plans.explorer.tools.url_reels.schema import (
-    MediaArtifacts,
     FrameVisionResult,
+    MediaArtifacts,
     SpeechToTextResult,
     UrlReelExtractionResult,
     UrlReelInput,
@@ -37,10 +39,13 @@ class UrlReelExtractionService:
         self.frame_vision = frame_vision
 
     def extract(self, payload: UrlReelInput) -> UrlReelExtractionResult:
-        if payload.work_dir is not None:
-            return self._extract_in_work_dir(payload, payload.work_dir)
-
-        with TemporaryDirectory(prefix="vsf_url_reel_") as temporary_dir:
+        temporary_parent = payload.work_dir
+        if temporary_parent is not None:
+            temporary_parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(
+            prefix="vsf_url_reel_",
+            dir=temporary_parent,
+        ) as temporary_dir:
             result = self._extract_in_work_dir(payload, Path(temporary_dir))
             result.artifacts = MediaArtifacts()
             return result
@@ -112,7 +117,7 @@ class UrlReelExtractionService:
             if vision_future is not None:
                 try:
                     vision_result = vision_future.result()
-                except RuntimeError as exc:
+                except (RuntimeError, httpx.HTTPError) as exc:
                     timings["frameVisionFailed"] = 1.0
                     vision_result = FrameVisionResult(
                         status="failed",
@@ -131,6 +136,12 @@ class UrlReelExtractionService:
         }
         if vision_result.text:
             context_arguments["visual_text"] = vision_result.text
+        if vision_result.places:
+            context_arguments["visual_places"] = vision_result.places
+        if vision_result.observations:
+            context_arguments["visual_observations"] = (
+                vision_result.observations
+            )
         context = self.context_extractor.extract(**context_arguments)
 
         result = UrlReelExtractionResult(
@@ -138,7 +149,9 @@ class UrlReelExtractionService:
             platform=metadata.platform,
             metadata=metadata,
             artifacts=artifacts,
-            needsImageUpload=artifacts.audio_path is None and not artifacts.frame_paths,
+            needsImageUpload=(
+                artifacts.audio_path is None and not artifacts.frame_paths
+            ),
             speechToText=speech_result,
             frameVision=vision_result,
             extractedContext=context,

@@ -110,6 +110,14 @@ class PlaceCandidateHint(BaseModel):
     ]
     attributes: list[str] = Field(default_factory=list)
     notes: str | None = None
+    source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
+    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
+    source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
+    source_duration_minutes: Annotated[
+        int | None,
+        Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -137,6 +145,14 @@ class SelectedPlaceContext(BaseModel):
         default_factory=list
     )
     notes: str | None = None
+    source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
+    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
+    source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
+    source_duration_minutes: Annotated[
+        int | None,
+        Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
+    ]
 
     @property
     def stable_ref(self) -> str:
@@ -467,6 +483,10 @@ class FinderAgentInput(BaseModel):
     finder_plan_status: Annotated[
         FinderPlanStatus, Field(alias="finderPlanStatus")
     ] = Field(default_factory=FinderPlanStatus)
+    allow_finder_suggestions: Annotated[
+        bool,
+        Field(default=True, alias="allowFinderSuggestions"),
+    ]
 
     model_config = {"populate_by_name": True}
 

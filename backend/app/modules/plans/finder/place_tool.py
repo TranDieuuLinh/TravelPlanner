@@ -30,6 +30,16 @@ class FinderPlace(BaseModel):
         alias="accessibilityFeatures",
     )
     data_confidence: str = Field(default="low", alias="dataConfidence")
+    source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
+    source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
+    source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
+    source_activity: str | None = Field(default=None, alias="sourceActivity")
+    source_duration_minutes: int | None = Field(
+        default=None,
+        ge=15,
+        le=720,
+        alias="sourceDurationMinutes",
+    )
 
     model_config = {"populate_by_name": True}
 

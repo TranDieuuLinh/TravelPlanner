@@ -25,6 +25,10 @@ class PlaceCandidateAggregator:
     ) -> list[UnifiedPlaceCandidate]:
         candidates = list(generated)
         candidates.extend(self._from_explicit(explicit))
+        # The formatter may return only a subset of a URL itinerary. Always
+        # merge deterministic extraction results at candidate level instead of
+        # treating one generated URL candidate as proof that the whole source
+        # was covered.
         candidates.extend(self._from_url_results(url_results))
 
         destination_key = _dedupe_key(destination)
@@ -39,7 +43,14 @@ class PlaceCandidateAggregator:
                 order.append(key)
                 continue
             merged[key] = _merge(merged[key], candidate)
-        return [merged[key] for key in order]
+        result = [merged[key] for key in order]
+        result.sort(
+            key=lambda candidate: (
+                candidate.source_order is None,
+                candidate.source_order or 10_000,
+            )
+        )
+        return result
 
     def _from_explicit(
         self,
@@ -65,6 +76,11 @@ class PlaceCandidateAggregator:
                 preferenceLevel=candidate.preference_level,
                 attributes=candidate.attributes,
                 notes=candidate.notes,
+                sourceOrder=candidate.source_order,
+                sourceDay=candidate.source_day,
+                sourceTimeHint=candidate.source_time_hint,
+                sourceActivity=candidate.source_activity,
+                sourceDurationMinutes=candidate.source_duration_minutes,
             )
             for candidate in candidates
         ]
@@ -93,6 +109,11 @@ class PlaceCandidateAggregator:
                             preferenceLevel="preferred",
                             attributes=detail.attributes,
                             notes=detail.evidence,
+                            sourceOrder=detail.source_order,
+                            sourceDay=detail.source_day,
+                            sourceTimeHint=detail.source_time_hint,
+                            sourceActivity=detail.source_activity,
+                            sourceDurationMinutes=detail.source_duration_minutes,
                         )
                     )
                 continue
@@ -158,6 +179,13 @@ def _merge(
             dict.fromkeys([*current.attributes, *incoming.attributes])
         ),
         notes=current.notes or incoming.notes,
+        sourceOrder=current.source_order or incoming.source_order,
+        sourceDay=current.source_day or incoming.source_day,
+        sourceTimeHint=current.source_time_hint or incoming.source_time_hint,
+        sourceActivity=current.source_activity or incoming.source_activity,
+        sourceDurationMinutes=(
+            current.source_duration_minutes or incoming.source_duration_minutes
+        ),
     )
 
 

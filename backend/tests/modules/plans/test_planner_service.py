@@ -34,9 +34,63 @@ from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.shared.errors import AppError
 
 
-def test_normalize_region_key_from_vietnamese_destination() -> None:
-    assert normalize_region_key("Hà Nội") == "vn,ha-noi"
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "Hanoi",
+        "Ha Noi",
+        "Hà Nội",
+        "HaNoi",
+        "HN",
+        "Hanoi, Vietnam",
+        "Hanoi, Viet Nam",
+        "Ha Noi, Vietnam",
+        "Hà Nội, Việt Nam",
+        "Vietnam, Hanoi",
+        "Việt Nam - Hà Nội",
+        "Hanoi City, Vietnam",
+        "Thành phố Hà Nội, Việt Nam",
+        "TP. Hà Nội",
+    ],
+)
+def test_normalize_region_key_from_hanoi_aliases(destination: str) -> None:
+    assert normalize_region_key(destination) == "vn,ha-noi"
+
+
+def test_normalize_region_key_canonicalizes_explicit_hanoi_alias() -> None:
+    assert normalize_region_key("ignored", "vn,hanoi") == "vn,ha-noi"
+    assert (
+        normalize_region_key("ignored", "vn,hanoi-vietnam,hoan-kiem")
+        == "vn,ha-noi,hoan-kiem"
+    )
     assert normalize_region_key("ignored", "vn,hai-phong") == "vn,hai-phong"
+
+
+def test_main_workflow_uses_canonical_hanoi_catalog_region() -> None:
+    statistics = FakeStatisticsProvider()
+    workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=PlannerService(statistics),
+        finder=FinderService(),
+    )
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hanoi, Vietnam",
+                "budgetLevel": "medium",
+                "travelStyle": "local",
+                "pace": "balanced",
+                "interests": ["culture"],
+            },
+            "tripSpec": {"days": 1},
+            "selectedPlaces": [],
+        }
+    )
+
+    plan = asyncio.run(workflow.run_from_explorer(payload))
+
+    assert statistics.requested_region_keys == ["vn,ha-noi"]
+    assert plan.macro_plan.region_key == "vn,ha-noi"
 
 
 def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
@@ -89,6 +143,117 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert output.assumptions[0].startswith(
         "Planner used deterministic rules"
     )
+
+
+def test_url_itinerary_bypasses_pace_capacity_and_keeps_source_order() -> None:
+    statistics = FakeStatisticsProvider(place_count=0)
+    workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=PlannerService(statistics),
+        finder=FinderService(),
+    )
+    source_places = [
+        SelectedPlaceCreate(
+            name=name,
+            latitude=21.02 + index / 1000,
+            longitude=105.82 + index / 1000,
+            sourceRefs=["https://example.com/hanoi-reel"],
+            sourceOrder=index,
+            sourceDay=1,
+            sourceTimeHint=time_hint,
+            sourceActivity=activity,
+            sourceDurationMinutes=45,
+        )
+        for index, (name, time_hint, activity) in enumerate(
+            [
+                ("Xôi Yến", "breakfast", "Order turmeric sticky rice."),
+                ("Cafe Phố Cổ", "morning", "Order an egg coffee."),
+                ("Hoàn Kiếm Lake", "morning", "Walk around the lake."),
+                ("Ngọc Sơn Temple", "morning", "Visit the temple."),
+                ("Cooking class", "before lunch", "Join the market visit."),
+                ("Hỏa Lò Prison", "afternoon", "Learn about its history."),
+                ("Train Street", "after dinner", "Visit a valid entrance."),
+            ],
+            start=1,
+        )
+    ]
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hà Nội",
+                "pace": "balanced",
+                "interests": ["food", "culture"],
+            },
+            "tripSpec": {"days": 1},
+            "selectedPlaces": [
+                place.model_dump(mode="json", by_alias=True)
+                for place in reversed(source_places)
+            ],
+        }
+    )
+
+    plan = asyncio.run(workflow.run_from_explorer(payload))
+
+    assert plan.days[0].strategy == "source_itinerary"
+    assert [item.name for item in plan.days[0].items] == [
+        place.name for place in source_places
+    ]
+    assert [item.source_order for item in plan.days[0].items] == list(range(1, 8))
+    assert plan.days[0].items[0].time_window == "08:00-08:45"
+    assert plan.days[0].items[-1].time_window == "19:30-20:15"
+    assert plan.days[0].items[1].notes == "Order an egg coffee."
+    assert len(plan.days[0].transport_legs) == 6
+
+
+@pytest.mark.parametrize(
+    ("stop_count", "requested_days"),
+    [(10, 4), (20, 6)],
+)
+def test_url_itinerary_without_source_days_fills_every_stop(
+    stop_count: int,
+    requested_days: int,
+) -> None:
+    workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=PlannerService(FakeStatisticsProvider(place_count=0)),
+        finder=FinderService(),
+    )
+    places = [
+        SelectedPlaceCreate(
+            name=f"URL stop {index}",
+            sourceRefs=["https://example.com/hanoi-reel"],
+            sourceOrder=index,
+            sourceDurationMinutes=45,
+        )
+        for index in range(1, stop_count + 1)
+    ]
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hà Nội",
+                "pace": "balanced",
+            },
+            "tripSpec": {"days": requested_days},
+            "selectedPlaces": [
+                place.model_dump(mode="json", by_alias=True)
+                for place in places
+            ],
+            "allowFinderSuggestions": False,
+        }
+    )
+
+    plan = asyncio.run(workflow.run_from_explorer(payload))
+
+    scheduled = [
+        item
+        for day in plan.days
+        for item in day.items
+        if item.source == "selected_place"
+    ]
+    assert [item.name for item in scheduled] == [
+        place.name for place in places
+    ]
+    assert plan.unscheduled_places == []
 
 
 def test_planner_marks_day_briefs_not_ready_when_region_is_empty() -> None:

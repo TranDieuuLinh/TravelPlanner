@@ -1,6 +1,11 @@
 import pytest
 
-from app.modules.plans.router import _default_trip_spec, _prepare_intake, _remove_urls
+from app.modules.plans.router import (
+    _default_trip_spec,
+    _infer_destination_from_urls,
+    _prepare_intake,
+    _remove_urls,
+)
 
 
 def test_intake_extracts_urls_from_the_chat_message() -> None:
@@ -60,7 +65,18 @@ def test_default_trip_spec_uses_requested_days_when_present() -> None:
     assert trip_spec.days == 5
 
 
-def test_default_trip_spec_uses_three_days_when_duration_is_missing() -> None:
+def test_default_trip_spec_keeps_missing_duration_unset() -> None:
     trip_spec = _default_trip_spec("https://example.com/reel?q=what+to+do+hanoi")
 
-    assert trip_spec.days == 3
+    assert trip_spec.days is None
+
+
+def test_destination_can_be_inferred_from_tiktok_search_query() -> None:
+    destination = _infer_destination_from_urls(
+        [
+            "https://www.tiktok.com/@creator/video/123"
+            "?q=what%20to%20do%20in%20hanoi%3F"
+        ]
+    )
+
+    assert destination == "Hanoi"

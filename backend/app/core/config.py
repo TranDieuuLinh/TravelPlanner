@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
+    url_reel_max_frames: int = 48
+    url_reel_min_frame_interval_seconds: float = 0.5
+    url_reel_vision_batch_size: int = 16
+    url_reel_vision_max_concurrency: int = 2
     place_resolver_provider: str = "nominatim"
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"

@@ -26,6 +26,29 @@ def test_route_optimizer_reorders_slots_and_builds_unverified_legs() -> None:
     assert all(leg.estimated_duration_minutes > 0 for leg in legs)
 
 
+def test_route_optimizer_preserves_url_itinerary_order_when_requested() -> None:
+    items = [
+        _item("Far east", "09:00-10:00", 21.03, 105.90),
+        _item("Near west", "10:30-11:30", 21.03, 105.81),
+        _item("Middle", "13:00-14:00", 21.03, 105.85),
+    ]
+
+    optimized, legs = GeographicRouteOptimizer().optimize(
+        items,
+        preserve_order=True,
+    )
+
+    assert [item.name for item in optimized] == [
+        "Far east",
+        "Near west",
+        "Middle",
+    ]
+    assert [(leg.from_place, leg.to_place) for leg in legs] == [
+        ("Far east", "Near west"),
+        ("Near west", "Middle"),
+    ]
+
+
 def _item(
     name: str,
     time_window: str,

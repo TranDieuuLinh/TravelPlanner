@@ -1,4 +1,5 @@
 import asyncio
+import math
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import Plan
@@ -10,6 +11,7 @@ from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
+    PlaceCandidateSourceType,
     ExploreTripSpecInput,
     FullExploreRequest,
     PlaceCandidatesResponse,
@@ -159,6 +161,16 @@ class PlanService:
         *,
         url_reel_results: list[UrlReelExtractionResult],
     ) -> ExploreIntakeResponse:
+        explicitly_requested_days = payload.trip_spec.days
+        has_reference_input = bool(
+            payload.urls or payload.image_contexts
+        )
+        provisional_reference_days = _url_result_coverage_days(
+            url_reel_results
+        )
+        if payload.trip_spec.days is None and has_reference_input:
+            payload = payload.model_copy(deep=True)
+            payload.trip_spec.days = provisional_reference_days or 3
         draft = await self.explore_formatter.format(
             payload,
             url_reel_results=url_reel_results,
@@ -169,7 +181,38 @@ class PlanService:
             explicit=payload.place_candidates,
             url_results=url_reel_results,
         )
+        if (
+            payload.urls
+            and not candidates
+            and url_reel_results
+        ):
+            raise RuntimeError(
+                "No evidenced locations could be extracted from the URL. "
+                "The media may be unavailable or OCR/STT may have failed. "
+                "Retry later, upload screenshots, or paste the caption instead "
+                "of generating an empty itinerary."
+            )
         draft.places = PlaceCandidatesResponse(placeCandidates=candidates)
+        source_coverage_days = _candidate_coverage_days(
+            candidates,
+            pace=draft.explorer.intent.pace.value,
+        )
+        effective_days = (
+            explicitly_requested_days
+            or source_coverage_days
+            or draft.explorer.trip_spec.days
+            or 3
+        )
+        draft.explorer.trip_spec.days = effective_days
+        if explicitly_requested_days is None and source_coverage_days:
+            draft.explorer.assumptions = [
+                *draft.explorer.assumptions,
+                (
+                    f"Trip duration was inferred as {effective_days} days "
+                    "from URL/OCR itinerary coverage because the user did "
+                    "not specify a duration."
+                ),
+            ]
         preference_snapshot = self.preference_learning.enrich_snapshot(
             draft.explorer.preference_snapshot,
             destination=draft.explorer.intent.destination,
@@ -219,6 +262,14 @@ class PlanService:
             intakeId=intake_id,
             userId=payload.user_state.user_id,
             explorer=draft.explorer,
+            allowFinderSuggestions=(
+                not has_reference_input
+                or (
+                    explicitly_requested_days is not None
+                    and source_coverage_days > 0
+                    and explicitly_requested_days > source_coverage_days
+                )
+            ),
         )
 
     async def create_main_plan(self, payload: MainPlanCreate) -> Plan:
@@ -266,6 +317,67 @@ class PlanService:
 
 async def _empty_list() -> list:
     return []
+
+
+def _url_result_coverage_days(
+    results: list[UrlReelExtractionResult],
+) -> int:
+    details = [
+        detail
+        for result in results
+        for detail in (
+            result.extracted_context.extracted_place_details
+            if isinstance(result, UrlReelExtractionResult)
+            else []
+        )
+    ]
+    if not details:
+        return 0
+    source_days = [
+        detail.source_day
+        for detail in details
+        if detail.source_day is not None
+    ]
+    if source_days and len(source_days) == len(details):
+        return max(source_days)
+    return max(
+        math.ceil(len(details) / 3),
+        max(source_days, default=0),
+    )
+
+
+def _candidate_coverage_days(
+    candidates,
+    *,
+    pace: str,
+) -> int:
+    source_candidates = [
+        candidate
+        for candidate in candidates
+        if any(
+            source.type in {
+                PlaceCandidateSourceType.url,
+                PlaceCandidateSourceType.ocr,
+            }
+            for source in candidate.sources
+        )
+    ]
+    if not source_candidates:
+        return 0
+    capacity = {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
+    source_days = [
+        candidate.source_day
+        for candidate in source_candidates
+        if candidate.source_day is not None
+    ]
+    if source_days and len(source_days) == len(source_candidates):
+        return max(source_days)
+    inferred = math.ceil(len(source_candidates) / capacity)
+    return max([inferred, *source_days])
 
 
 def _merge_selected_places(

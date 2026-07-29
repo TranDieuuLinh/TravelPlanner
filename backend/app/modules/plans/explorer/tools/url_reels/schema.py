@@ -49,8 +49,20 @@ class SpeechToTextResult(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class FrameVisionObservation(BaseModel):
+    place_name: str = Field(alias="placeName")
+    evidence: str = ""
+    day_number: int | None = Field(default=None, ge=1, le=30, alias="dayNumber")
+    time_hint: str | None = Field(default=None, alias="timeHint")
+    activity: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class FrameVisionResult(BaseModel):
     text: str = ""
+    places: list[str] = Field(default_factory=list)
+    observations: list[FrameVisionObservation] = Field(default_factory=list)
     status: str = "skipped"
     error: str | None = None
     duration_seconds: float = Field(default=0.0, alias="durationSeconds")
@@ -65,6 +77,16 @@ class ExtractedPlace(BaseModel):
     source: str = "url_reel"
     evidence: str | None = None
     attributes: list[str] = Field(default_factory=list)
+    source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
+    source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
+    source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
+    source_activity: str | None = Field(default=None, alias="sourceActivity")
+    source_duration_minutes: int | None = Field(
+        default=None,
+        ge=15,
+        le=720,
+        alias="sourceDurationMinutes",
+    )
 
     model_config = {"populate_by_name": True}
 

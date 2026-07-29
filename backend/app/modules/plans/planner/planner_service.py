@@ -210,13 +210,49 @@ class PlannerService:
         }
         selected_places = sorted(
             planner_input.selected_places,
-            key=lambda place: (not place.must_visit, place.priority, place.name),
+            key=lambda place: (
+                place.source_order is None,
+                place.source_order or 10_000,
+                not place.must_visit,
+                place.priority,
+                place.name,
+            ),
         )
         activity_capacity = {
             "relaxed": 2,
             "balanced": 3,
             "packed": 5,
         }[intent.pace.value]
+        ordered_source_places = [
+            place
+            for place in selected_places
+            if place.source_order is not None
+            and place.source_day is None
+            and place.name.casefold() not in avoided
+            and place.name.casefold() not in excluded
+        ]
+        source_allocation: dict[str, int] = {}
+        if ordered_source_places:
+            source_used_days = min(
+                planner_input.trip_spec.days,
+                max(
+                    1,
+                    (
+                        len(ordered_source_places)
+                        + activity_capacity
+                        - 1
+                    )
+                    // activity_capacity,
+                ),
+            )
+            source_count = len(ordered_source_places)
+            source_allocation = {
+                place.stable_ref: min(
+                    source_used_days,
+                    (index * source_used_days) // source_count + 1,
+                )
+                for index, place in enumerate(ordered_source_places)
+            }
         allocation_order = [
             day
             for _ in range(activity_capacity)
@@ -244,6 +280,27 @@ class PlannerService:
                         reason="Place is excluded from the current planning scope.",
                     )
                 )
+                continue
+            if place.source_order is not None and place.source_day is not None:
+                if place.source_day > planner_input.trip_spec.days:
+                    unallocated.append(
+                        UnallocatedSelectedPlace(
+                            place=place,
+                            reasonCode="source_day_out_of_range",
+                            reason=(
+                                "The URL assigns this stop to day "
+                                f"{place.source_day}, outside the requested "
+                                f"{planner_input.trip_spec.days}-day trip."
+                            ),
+                        )
+                    )
+                    continue
+                allocated_by_day[place.source_day].append(place.stable_ref)
+                continue
+            if place.stable_ref in source_allocation:
+                allocated_by_day[
+                    source_allocation[place.stable_ref]
+                ].append(place.stable_ref)
                 continue
             if allocation_index >= len(allocation_order):
                 unallocated.append(
@@ -289,6 +346,15 @@ class PlannerService:
                 notes=[
                     f"Budget level: {intent.budget_level.value}",
                     "Exact schedule is delegated to Finder.",
+                    *(
+                        ["URL itinerary order is preserved unless a hard constraint blocks a stop."]
+                        if any(
+                            place.source_order is not None
+                            for place in planner_input.selected_places
+                            if place.stable_ref in allocated_by_day[day]
+                        )
+                        else []
+                    ),
                 ],
             )
             for day in range(1, planner_input.trip_spec.days + 1)

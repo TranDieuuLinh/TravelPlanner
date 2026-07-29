@@ -78,6 +78,7 @@ class GeminiLLMClient(LLMClient):
                     "contents": [{"role": "user", "parts": parts}],
                     "generationConfig": {
                         "temperature": 0.0,
+                        "mediaResolution": "MEDIA_RESOLUTION_HIGH",
                     },
                 },
             )

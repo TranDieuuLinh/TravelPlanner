@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from types import SimpleNamespace
+
+import pytest
 
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.schema import (
     ExploreBundleDraft,
     ExploreImageContext,
     FullExploreRequest,
+    UnifiedPlaceCandidate,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.repository import PlanRepository
@@ -103,6 +107,24 @@ def build_service(
     )
 
 
+def _url_candidates(count: int) -> list[UnifiedPlaceCandidate]:
+    return [
+        UnifiedPlaceCandidate.model_validate(
+            {
+                "name": f"URL stop {index}",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                "sourceOrder": index,
+            }
+        )
+        for index in range(1, count + 1)
+    ]
+
+
 def test_plain_prompt_goes_directly_to_formatter() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels()
@@ -119,6 +141,7 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     assert result.explorer is formatter.response.explorer
     assert result.intake_id
     assert result.user_id == "user-1"
+    assert result.allow_finder_suggestions is True
     assert not hasattr(result, "places")
     assert not hasattr(result, "persistence_status")
     assert url_reels.inputs == []
@@ -128,6 +151,7 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
 
 def test_url_is_extracted_before_formatter_runs() -> None:
     formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(1)
     url_reels = RecordingUrlReels()
     image_ocr = RecordingImageOcr()
     service = build_service(formatter, url_reels, image_ocr)
@@ -137,8 +161,9 @@ def test_url_is_extracted_before_formatter_runs() -> None:
         urls=["https://example.com/reel"],
     )
 
-    asyncio.run(service.explore_full(payload))
+    result = asyncio.run(service.explore_full(payload))
 
+    assert result.allow_finder_suggestions is False
     assert [item.url for item in url_reels.inputs] == [
         "https://example.com/reel"
     ]
@@ -158,7 +183,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
         data=b"image",
     )
 
-    asyncio.run(
+    result = asyncio.run(
         service.explore_from_intake(
             raw_request="Đọc ảnh này và tạo chuyến đi Hội An",
             destination="Hội An",
@@ -168,9 +193,134 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     )
 
     assert len(image_ocr.calls) == 1
+    assert result.allow_finder_suggestions is False
     assert formatter.payload is not None
     assert formatter.payload.image_contexts[0].ocr_text == (
         "Bánh mì Phượng, Hội An"
     )
     assert formatter.url_reel_results == []
     assert image.data == b""
+
+
+def test_url_without_requested_duration_infers_enough_days_for_all_stops() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(10)
+    url_reels = RecordingUrlReels()
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo lịch trình từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 4
+    assert result.allow_finder_suggestions is False
+    assert any(
+        "inferred as 4 days" in assumption
+        for assumption in result.explorer.assumptions
+    )
+
+
+def test_url_with_more_requested_days_allows_finder_for_empty_days() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(5)
+    url_reels = RecordingUrlReels()
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Hà Nội 10 ngày từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+                tripSpec={"days": 10},
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 10
+    assert result.allow_finder_suggestions is True
+
+
+def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.places.place_candidates = _url_candidates(20)
+    url_reels = RecordingUrlReels()
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Hà Nội 6 ngày từ URL",
+                destination="Hà Nội",
+                urls=["https://example.com/reel"],
+                tripSpec={"days": 6},
+            )
+        )
+    )
+
+    assert result.explorer.trip_spec.days == 6
+    assert result.allow_finder_suggestions is False
+
+
+def test_unavailable_url_media_does_not_generate_empty_ready_plan() -> None:
+    formatter = RecordingFormatter()
+
+    class UnavailableUrlReels(RecordingUrlReels):
+        def extract(self, payload: Any) -> Any:
+            self.inputs.append(payload)
+            return SimpleNamespace(
+                url=payload.url,
+                needs_image_upload=True,
+            )
+
+    service = build_service(
+        formatter,
+        UnavailableUrlReels(),
+        RecordingImageOcr(),
+    )
+
+    with pytest.raises(RuntimeError, match="upload screenshots"):
+        asyncio.run(
+            service.explore_full(
+                FullExploreRequest(
+                    rawRequest="Tạo lịch trình từ URL",
+                    destination="Hà Nội",
+                    urls=["https://example.com/reel"],
+                )
+            )
+        )
+
+
+def test_failed_url_ocr_does_not_generate_empty_ready_plan() -> None:
+    formatter = RecordingFormatter()
+
+    class FailedOcrUrlReels(RecordingUrlReels):
+        def extract(self, payload: Any) -> Any:
+            self.inputs.append(payload)
+            return SimpleNamespace(
+                url=payload.url,
+                needs_image_upload=False,
+            )
+
+    service = build_service(
+        formatter,
+        FailedOcrUrlReels(),
+        RecordingImageOcr(),
+    )
+
+    with pytest.raises(RuntimeError, match="OCR/STT may have failed"):
+        asyncio.run(
+            service.explore_full(
+                FullExploreRequest(
+                    rawRequest="Tạo lịch trình từ URL",
+                    destination="Hà Nội",
+                    urls=["https://example.com/reel"],
+                )
+            )
+        )

@@ -51,6 +51,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
+            allow_finder_suggestions=True,
         )
 
     async def run_from_explorer(
@@ -80,6 +81,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=payload.preference_profile,
+            allow_finder_suggestions=payload.allow_finder_suggestions,
         )
 
     async def run_from_context(
@@ -109,6 +111,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
+            allow_finder_suggestions=True,
         )
 
     async def _run_planning(
@@ -121,6 +124,7 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
+        allow_finder_suggestions: bool,
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
         planner_output = await self.planner.create_main_macro_plan(
@@ -154,6 +158,7 @@ class MainPlanWorkflow:
                 macroPlan=macro_plan,
                 selectedPlaces=selected_places,
                 userStatus=user_status,
+                allowFinderSuggestions=allow_finder_suggestions,
             )
         )
         unscheduled_places = self._merge_unscheduled_places(

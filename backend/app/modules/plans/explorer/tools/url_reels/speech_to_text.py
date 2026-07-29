@@ -31,6 +31,7 @@ class GeminiAudioSpeechToText:
             "Transcribe the speech in this travel reel audio accurately.",
             "Return only the transcript text.",
             "Prefer real travel place names over similar-sounding generic words.",
+            "Preserve sequence words, day references, time-of-day cues, recommended activities, dishes, prices, durations, and alternatives exactly when spoken.",
         ]
         if language:
             prompt_parts.append(f"The expected speech languages are: {language}. Preserve the language that is actually spoken.")

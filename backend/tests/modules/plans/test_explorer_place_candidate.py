@@ -9,6 +9,14 @@ from app.modules.plans.explorer.schema import (
     FullExploreRequest,
     UnifiedPlaceCandidate,
 )
+from app.modules.plans.explorer.tools.url_reels.schema import (
+    ExtractedContext,
+    ExtractedPlace,
+    MediaArtifacts,
+    SpeechToTextResult,
+    UrlMetadata,
+    UrlReelExtractionResult,
+)
 
 
 def test_place_candidate_serializes_category_in_api_shape() -> None:
@@ -154,3 +162,61 @@ def test_explorer_merges_duplicate_candidates_and_preserves_sources() -> None:
         "ocr",
         "url",
     }
+
+
+def test_explorer_keeps_url_stops_omitted_by_formatter() -> None:
+    url = "https://example.com/hanoi-reel"
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Xôi Yến",
+                category="food",
+                sources=[{"type": "url", "url": url}],
+                confidence=0.8,
+                sourceOrder=1,
+            )
+        ],
+        explicit=[],
+        url_results=[
+            UrlReelExtractionResult(
+                url=url,
+                platform="tiktok",
+                metadata=UrlMetadata(
+                    originalUrl=url,
+                    canonicalUrl=url,
+                    platform="tiktok",
+                ),
+                artifacts=MediaArtifacts(),
+                speechToText=SpeechToTextResult(
+                    text="Xôi Yến, then Cafe Phố Cổ.",
+                    durationSeconds=1,
+                ),
+                extractedContext=ExtractedContext(
+                    extractedPlaces=["Xôi Yến", "Cafe Phố Cổ"],
+                    extractedPlaceDetails=[
+                        ExtractedPlace(
+                            name="Xôi Yến",
+                            category="food",
+                            sourceOrder=1,
+                        ),
+                        ExtractedPlace(
+                            name="Cafe Phố Cổ",
+                            category="cafe",
+                            sourceOrder=2,
+                        ),
+                    ],
+                    confidence=0.9,
+                ),
+                timings={},
+            )
+        ],
+    )
+
+    assert [candidate.name for candidate in candidates] == [
+        "Xôi Yến",
+        "Cafe Phố Cổ",
+    ]
+    assert candidates[0].confidence == 0.9
+    assert candidates[1].source_order == 2
+    assert candidates[1].sources[0].url == url

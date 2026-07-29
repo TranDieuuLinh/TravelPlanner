@@ -15,6 +15,7 @@ class GeographicRouteOptimizer:
         items: list[PlanItem],
         *,
         start: tuple[float, float] | None = None,
+        preserve_order: bool = False,
     ) -> tuple[list[PlanItem], list[PlanTransportLeg]]:
         located_positions = [
             index
@@ -25,6 +26,8 @@ class GeographicRouteOptimizer:
             return list(items), []
 
         located = [items[index] for index in located_positions]
+        if preserve_order:
+            return list(items), self._build_legs(located)
         order = self._best_nearest_neighbour_order(located, start=start)
         order = self._two_opt(located, order, start=start)
         ordered_items = [located[index] for index in order]
