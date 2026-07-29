@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 
 
@@ -13,6 +14,10 @@ class TravelIntent(BaseModel):
     must_visit_places: list[str] = Field(default_factory=list, alias="mustVisitPlaces")
     avoid_places: list[str] = Field(default_factory=list, alias="avoidPlaces")
     constraints: list[str] = Field(default_factory=list)
+    constraint_policy: ConstraintPolicy = Field(
+        default_factory=ConstraintPolicy,
+        alias="constraintPolicy",
+    )
     clarifying_questions: list[str] = Field(default_factory=list, alias="clarifyingQuestions")
 
     model_config = {"populate_by_name": True}
@@ -86,6 +91,7 @@ class PlanItem(BaseModel):
     name: str
     time_window: str = Field(alias="timeWindow")
     place_type: str = Field(alias="placeType")
+    region_key: str | None = Field(default=None, alias="regionKey")
     role: str | None = None
     source: str = "finder"
     duration_minutes: int | None = Field(default=None, alias="durationMinutes")

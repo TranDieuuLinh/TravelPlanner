@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+import re
 
 from pydantic import ValidationError
 
 from app.core.config import settings
 from app.integrations.llm.base import LLMClient
+from app.modules.plans.domain.constraint_policy import (
+    ConstraintPolicy,
+    GeographicScopePolicy,
+    GeographicScopeType,
+    normalize_constraint_value,
+)
 from app.modules.plans.dto.agent_contracts import (
     BudgetCalculationBasis,
     BudgetInputMode,
@@ -50,11 +57,12 @@ class ExploreResponseFormatter:
             "Use request.userState.travelStyle as the user's explicit travel style and preserve it in intent.travelStyle unless stronger user input says otherwise. "
             "Use request.userState.preferenceProfile as long-term context, but let explicit rawRequest constraints override it for this trip. "
             "The explorer object must contain only intent, tripSpec, assumptions, missingInfoQuestions, and preferenceSnapshot. Never include places, URL results, transcripts, OCR text, or debug data in explorer. "
+            "Normalize hard exclusions into intent.constraintPolicy. Use excludedPlaceTypes for categories the user rejects, for example cemetery when the user says they do not want cemeteries. Use geographicScope.type=coastal when the user restricts the trip to coastal areas. Keep the original concise wording in intent.constraints for explanation. Use avoidPlaces only for specifically named places, not generic categories. "
             "Also produce explorer.preferenceSnapshot.signals for short-term preferences evidenced by this intake. Each signal needs dimension, normalized value, score from -1 to 1, confidence, scope, destination, and sourceTypes. Never copy raw prompt, OCR, transcript, or evidence excerpts into preference signals. "
             "Put concrete places from rawRequest and image OCR in places.placeCandidates. URL place extraction is already normalized by the URL adapter and will be merged after this formatter, so use URL results for intent/interests/constraints but do not copy URL places into places.placeCandidates. "
             "Do not create separate foodPlaces or urlReelSignals arrays. "
-            "For every candidate, set category to exactly one of attraction, food, cafe, hotel, transport, free_time, nature, culture, shopping, nightlife, wellness, adventure, beach, family, or other. "
-            "Add normalized candidate attributes when supported, such as local, hidden_gem, photogenic, quiet, crowded, budget, premium, family_friendly, outdoor, late_night, romantic, or accessible. "
+            "For every candidate, set category to exactly one of attraction, food, cafe, hotel, transport, free_time, nature, culture, shopping, nightlife, wellness, adventure, beach, family, cemetery, or other. "
+            "Add normalized candidate attributes when supported, such as local, hidden_gem, photogenic, quiet, crowded, budget, premium, family_friendly, outdoor, coastal, late_night, romantic, or accessible. Use coastal only when the evidence supports a coastal location; do not infer it merely from the trip-wide constraint. "
             "Every candidate produced here must preserve its evidence source: use user_prompt for a place from rawRequest and ocr for a place from image OCR. Set source URL to null. "
             "Set preferenceLevel=preferred for an automatically extracted place. Use must_visit only when rawRequest explicitly says the place is mandatory; never infer must_visit from a Reel mention alone. "
             "If the same place appears in multiple inputs, return one candidate with all sources. "
@@ -84,7 +92,9 @@ class ExploreResponseFormatter:
 
         try:
             raw = await self.llm.generate_json(system_prompt=system_prompt, user_payload=user_payload)
-            return _complete_budget_basis(ExploreBundleDraft.model_validate_json(raw))
+            response = ExploreBundleDraft.model_validate_json(raw)
+            response = _complete_constraint_policy(response, payload.raw_request)
+            return _complete_budget_basis(response)
         except (RuntimeError, ValidationError, json.JSONDecodeError, KeyError) as exc:
             raise RuntimeError(
                 "Gemini failed to generate a valid ExploreBundleDraft JSON."
@@ -108,3 +118,49 @@ def _complete_budget_basis(response: ExploreBundleDraft) -> ExploreBundleDraft:
         priceTier=response.explorer.intent.budget_level,
     )
     return response
+
+
+def _complete_constraint_policy(
+    response: ExploreBundleDraft,
+    raw_request: str,
+) -> ExploreBundleDraft:
+    normalized_request = normalize_constraint_value(raw_request).replace("_", " ")
+    policy = response.explorer.intent.constraint_policy.model_copy(deep=True)
+    excluded_types = list(policy.excluded_place_types)
+
+    cemetery_exclusion_patterns = (
+        r"\bkhong(?: muon| thich)?(?: di| den| ghe)?(?: cac)? nghia trang\b",
+        r"\btranh(?: cac)? nghia trang\b",
+        r"\b(?:do not|don't|avoid|dislike)(?: visit(?:ing)?| go(?:ing)? to)? cemeter(?:y|ies)\b",
+        r"\bavoid graveyards?\b",
+    )
+    if any(
+        re.search(pattern, normalized_request)
+        for pattern in cemetery_exclusion_patterns
+    ):
+        excluded_types.append("cemetery")
+
+    coastal_only_patterns = (
+        r"\bchi(?: di| o| tham quan| chon)?(?: khu vuc)? ven bien\b",
+        r"\bchi(?: di| o| tham quan| chon)?(?: khu vuc)? bo bien\b",
+        r"\b(?:coastal|coast|seaside) only\b",
+        r"\bonly(?: visit| stay in| choose)?(?: the)? coastal\b",
+    )
+    geographic_scope = policy.geographic_scope
+    if any(
+        re.search(pattern, normalized_request)
+        for pattern in coastal_only_patterns
+    ):
+        geographic_scope = GeographicScopePolicy(
+            type=GeographicScopeType.coastal
+        )
+
+    completed_policy = ConstraintPolicy(
+        excludedPlaceTypes=excluded_types,
+        geographicScope=geographic_scope,
+    )
+    intent = response.explorer.intent.model_copy(
+        update={"constraint_policy": completed_policy}
+    )
+    explorer = response.explorer.model_copy(update={"intent": intent})
+    return response.model_copy(update={"explorer": explorer})

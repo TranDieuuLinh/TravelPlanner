@@ -76,9 +76,12 @@ Planning rules:
    otherwise name) exactly once, either in a DayBrief or in
    unallocatedSelectedPlaces. Never silently omit one.
 9. Never allocate a place listed in avoidPlaces or planState.excludedPlaceNames.
-10. Base concrete claims on supplied context or verified tool evidence. Clearly
+10. Treat intent.constraintPolicy as deterministic hard constraints. Never
+    allocate a selected Place whose type is excluded or whose structured
+    location evidence falls outside geographicScope.
+11. Base concrete claims on supplied context or verified tool evidence. Clearly
     label uncertainty instead of presenting an unsupported claim as fact.
-11. For backup mode, use originalMacroPlan and checkReport to produce a distinct
+12. For backup mode, use originalMacroPlan and checkReport to produce a distinct
     safer journey without mutating the original.
 """.strip()
 

@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
 from app.modules.plans.domain.entities import CheckReport, MacroPlan, TravelIntent
+from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
     AgentTrace,
@@ -134,6 +135,7 @@ class PlannerService:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )
         return (
@@ -434,6 +436,73 @@ class PlannerService:
                         (
                             "Planner đã trả tham chiếu địa điểm không có trong "
                             "selectedPlaces; backend đã loại bỏ tham chiếu này."
+                        ),
+                    ],
+                }
+            )
+            allocated_refs = [
+                ref
+                for brief in macro.day_briefs
+                for ref in brief.allocated_selected_place_refs
+            ]
+            unallocated_refs = [
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            ]
+
+        policy_rejections = {
+            ref: rejection
+            for ref in allocated_refs
+            if (
+                rejection := constraint_policy_rejection(
+                    planner_input.intent.constraint_policy,
+                    name=selected_by_ref[ref].name,
+                    place_type="selected_place",
+                    tags=selected_by_ref[ref].tags,
+                    region_key=selected_by_ref[ref].region_key,
+                )
+            )
+            is not None
+        }
+        if policy_rejections:
+            normalized_briefs = [
+                brief.model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            ref
+                            for ref in brief.allocated_selected_place_refs
+                            if ref not in policy_rejections
+                        ]
+                    }
+                )
+                for brief in macro.day_briefs
+            ]
+            existing_unallocated = {
+                item.place.stable_ref
+                for item in draft.unallocated_selected_places
+            }
+            policy_unallocated = [
+                UnallocatedSelectedPlace(
+                    place=selected_by_ref[ref],
+                    reasonCode=rejection[0],
+                    reason=rejection[1],
+                )
+                for ref, rejection in policy_rejections.items()
+                if ref not in existing_unallocated
+            ]
+            macro = macro.model_copy(update={"day_briefs": normalized_briefs})
+            draft = draft.model_copy(
+                update={
+                    "macro_plan": macro,
+                    "unallocated_selected_places": [
+                        *draft.unallocated_selected_places,
+                        *policy_unallocated,
+                    ],
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Một số địa điểm đã chọn vi phạm ràng buộc cứng và "
+                            "được giữ trong danh sách chưa xếp lịch."
                         ),
                     ],
                 }

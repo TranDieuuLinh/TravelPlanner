@@ -7,6 +7,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
@@ -285,6 +286,84 @@ def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
     assert "outdoor" in result.final_plan_status.rejected_candidate_ids
 
 
+def test_constraint_policy_rejects_cemetery_and_keeps_coastal_place() -> None:
+    cemetery = _place(
+        "cemetery",
+        "Nghĩa trang liệt sĩ Hải Phòng",
+        tags=["cemetery", "culture"],
+        intensity="light",
+        place_type="grave_yard",
+    )
+    coastal = _place(
+        "coastal",
+        "Điểm ngắm biển Đồ Sơn",
+        tags=["coastal", "culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"cemetery": cemetery, "coastal": coastal},
+            search_order=["cemetery", "coastal"],
+        )
+    )
+    intent = _intent().model_copy(
+        update={
+            "constraint_policy": ConstraintPolicy(
+                excludedPlaceTypes=["cemetery"],
+                geographicScope={"type": "coastal"},
+            )
+        }
+    )
+
+    result = finder.fill_main_plan(_macro_plan(), intent, [])
+
+    assert result.days[0].items[0].place_id == "coastal"
+    assert "cemetery" in result.final_plan_status.rejected_candidate_ids
+
+
+def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> None:
+    inland = _place(
+        "inland",
+        "Bảo tàng nội đô",
+        tags=["culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool({"inland": inland}, search_order=[]),
+    )
+    intent = _intent().model_copy(
+        update={
+            "constraint_policy": ConstraintPolicy(
+                geographicScope={"type": "coastal"},
+            )
+        }
+    )
+    macro = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={"allocated_selected_place_refs": ["inland"]}
+                )
+            ]
+        }
+    )
+
+    result = finder.fill_main_plan(
+        macro,
+        intent,
+        [
+            SelectedPlaceContext(
+                placeId="inland",
+                name="Bảo tàng nội đô",
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+    )
+
+    assert result.unscheduled_places[0].reason_code == "outside_geographic_scope"
+
+
 class FakeFinderPlaceTool:
     def __init__(
         self,
@@ -352,11 +431,12 @@ def _place(
     opening_hours: list[dict] | None = None,
     weather_sensitivity: str | None = None,
     price_level: str | None = None,
+    place_type: str = "attraction",
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
         name=name,
-        placeType="attraction",
+        placeType=place_type,
         regionKey="vn,ha-noi,hoan-kiem",
         tags=tags,
         latitude=21.03,

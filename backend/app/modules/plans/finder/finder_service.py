@@ -16,6 +16,10 @@ from app.modules.plans.domain.entities import (
     UserStatus,
     UserStatusLocation,
 )
+from app.modules.plans.domain.constraint_policy import (
+    ConstraintPolicy,
+    constraint_policy_rejection,
+)
 from app.modules.plans.dto.agent_contracts import (
     AgentTrace,
     FinderAgentInput,
@@ -89,6 +93,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
         )
 
@@ -111,6 +116,7 @@ class FinderService:
                 name.casefold() for name in intent.avoid_places
             },
             intent_constraints=intent.constraints,
+            constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
         )
 
@@ -129,6 +135,7 @@ class FinderService:
                 for name in finder_input.intent.avoid_places
             },
             intent_constraints=finder_input.intent.constraints,
+            constraint_policy=finder_input.intent.constraint_policy,
             budget_level=finder_input.intent.budget_level.value,
         )
         committed_place_count = sum(
@@ -173,6 +180,7 @@ class FinderService:
         plan_status: FinderPlanStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        constraint_policy: ConstraintPolicy,
         budget_level: str,
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
@@ -233,6 +241,7 @@ class FinderService:
                     user_status=tentative_user_status,
                     avoided_place_names=avoided_place_names,
                     intent_constraints=intent_constraints,
+                    constraint_policy=constraint_policy,
                     budget_level=budget_level,
                     rejected_selected_places=rejected_selected_places,
                 )
@@ -361,6 +370,7 @@ class FinderService:
         user_status: UserStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        constraint_policy: ConstraintPolicy,
         budget_level: str,
         rejected_selected_places: dict[str, CandidateRejection],
     ) -> FinderPlace | None:
@@ -428,6 +438,7 @@ class FinderService:
                 query_categories=query_categories,
                 avoided_place_names=avoided_place_names,
                 intent_constraints=intent_constraints,
+                constraint_policy=constraint_policy,
                 budget_level=budget_level,
             )
             if rejection is not None:
@@ -605,6 +616,7 @@ class FinderService:
         query_categories: set[str],
         avoided_place_names: set[str],
         intent_constraints: list[str],
+        constraint_policy: ConstraintPolicy,
         budget_level: str,
     ) -> CandidateRejection | None:
         if candidate.name.casefold() in avoided_place_names:
@@ -612,6 +624,15 @@ class FinderService:
                 "avoided_by_user",
                 "Place is explicitly avoided by the user.",
             )
+        policy_rejection = constraint_policy_rejection(
+            constraint_policy,
+            name=candidate.name,
+            place_type=candidate.place_type,
+            tags=candidate.tags,
+            region_key=candidate.region_key,
+        )
+        if policy_rejection is not None:
+            return CandidateRejection(*policy_rejection)
         semantic_rejection = self._semantic_category_rejection(
             candidate,
             is_selected=is_selected,
@@ -827,6 +848,7 @@ class FinderService:
                 if mode == "backup"
                 else candidate.place_type
             ),
+            regionKey=candidate.region_key,
             role=block.role,
             source=(
                 "selected_place"

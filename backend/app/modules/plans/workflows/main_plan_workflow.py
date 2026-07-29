@@ -67,6 +67,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
         return await self._run_planning(
@@ -96,6 +97,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
         return await self._run_planning(
@@ -208,6 +210,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )
 

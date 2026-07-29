@@ -13,6 +13,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
@@ -52,6 +53,7 @@ class ItineraryItemCategory(StrEnum):
     adventure = "adventure"
     beach = "beach"
     family = "family"
+    cemetery = "cemetery"
     other = "other"
 
 
@@ -252,6 +254,10 @@ class PlanningIntent(BaseModel):
     must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
     avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+    constraint_policy: Annotated[
+        ConstraintPolicy,
+        Field(default_factory=ConstraintPolicy, alias="constraintPolicy"),
+    ]
     clarifying_questions: Annotated[list[str], Field(alias="clarifyingQuestions")] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}

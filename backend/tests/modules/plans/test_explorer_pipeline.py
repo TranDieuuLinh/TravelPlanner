@@ -10,6 +10,9 @@ from app.modules.plans.explorer.schema import (
     FullExploreRequest,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
+from app.modules.plans.explorer.response_formatter import (
+    _complete_constraint_policy,
+)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 
@@ -174,3 +177,19 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     )
     assert formatter.url_reel_results == []
     assert image.data == b""
+
+
+def test_constraint_policy_is_completed_from_vietnamese_request() -> None:
+    formatter = RecordingFormatter()
+
+    completed = _complete_constraint_policy(
+        formatter.response,
+        (
+            "Giúp tôi lên kế hoạch đi Hải Phòng trong 5 ngày. "
+            "Tôi không thích đi nghĩa trang, chỉ đi ven biển."
+        ),
+    )
+
+    policy = completed.explorer.intent.constraint_policy
+    assert policy.excluded_place_types == ["cemetery"]
+    assert policy.geographic_scope.type.value == "coastal"
