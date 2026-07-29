@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY . .
 
-RUN chmod +x /app/scripts/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh \
+    && chmod +x /app/scripts/docker-entrypoint.sh
 
 CMD ["/app/scripts/docker-entrypoint.sh"]
