@@ -2152,3 +2152,915 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
     width: min(350px, 100%);
   }
 }
+
+
+/* Lovable Explore port */
+.marketExplorePage {
+  min-height: 100%;
+  background: #f8faf7;
+}
+
+.marketExploreHero {
+  margin-top: 40px;
+  padding-block: 0;
+}
+
+.marketExploreHero > div {
+  overflow: hidden;
+  border-radius: 28px;
+  padding: 50px 40px 48px;
+  background: linear-gradient(135deg, #1d806b, #075f4e);
+  color: white;
+}
+
+.marketExploreHero h1 {
+  max-width: 720px;
+  margin: 0;
+  font-size: 2.45rem;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.marketExploreHero p {
+  max-width: 700px;
+  margin: 16px 0 0;
+  color: rgba(255,255,255,.78);
+  font-size: .96rem;
+  line-height: 1.6;
+}
+
+.marketHeroSearch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(580px, 100%);
+  margin-top: 30px;
+  border-radius: 999px;
+  padding: 7px;
+  background: white;
+  box-shadow: 0 18px 45px rgba(5, 54, 45, .2);
+}
+
+.marketHeroSearch svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-left: 13px;
+  color: var(--muted);
+}
+
+.marketHeroSearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 12px 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: .9rem;
+}
+
+.marketHeroSearch input::placeholder {
+  color: #7c8784;
+}
+
+.marketHeroSearch:focus-within {
+  box-shadow: 0 0 0 3px rgba(167, 229, 210, .42), 0 18px 45px rgba(5, 54, 45, .2);
+}
+
+.marketHeroSearch button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 23px;
+  background: linear-gradient(135deg, #1d806b, #075f4e);
+  color: white;
+  font-size: .82rem;
+  font-weight: 850;
+}
+
+.marketExploreContent {
+  padding-top: 30px;
+  padding-bottom: 96px;
+}
+
+.marketCategoryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 16px;
+}
+
+.marketChip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: white;
+  color: #5e6b68;
+  font-size: .82rem;
+  font-weight: 750;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.marketChip:hover,
+.marketChip:focus-visible {
+  border-color: #c6d8d2;
+  background: #eef6f2;
+  color: var(--brand-dark);
+}
+
+.marketChip.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, #1d806b, #075f4e);
+  color: white;
+  box-shadow: 0 10px 20px rgba(12, 96, 79, .16);
+}
+
+.marketFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  padding: 12px;
+  background: white;
+}
+
+.marketFilterLabel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 850;
+}
+
+.marketFilterLabel svg {
+  width: 16px;
+  height: 16px;
+}
+
+.marketFilterBar select,
+.marketRatingChip {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 13px;
+  background: #fbfcfb;
+  color: var(--ink);
+  font-size: .73rem;
+  font-weight: 650;
+}
+
+.marketFilterBar select:focus-visible,
+.marketRatingChip:focus-visible {
+  outline: 3px solid rgba(22,124,104,.16);
+  outline-offset: 2px;
+}
+
+.marketRatingChip {
+  color: var(--muted);
+}
+
+.marketRatingChip:disabled {
+  opacity: .72;
+  cursor: help;
+}
+
+.marketResultCount {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: .76rem;
+  white-space: nowrap;
+}
+
+.marketPlanGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.marketPlanCard {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(20,35,35,.12);
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(24,54,48,.035);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.marketPlanCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(22,124,104,.22);
+  box-shadow: 0 18px 40px rgba(24,54,48,.1);
+}
+
+.marketCoverLink {
+  display: block;
+}
+
+.marketCover {
+  position: relative;
+  height: 208px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #77a68f, #225c52);
+}
+
+.marketCover::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(4, 22, 19, .02) 35%, rgba(4, 22, 19, .55) 100%);
+  content: "";
+}
+
+.marketCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .28s ease;
+}
+
+.marketPlanCard:hover .marketCover img {
+  transform: scale(1.035);
+}
+
+.marketCoverFallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.marketCoverFallback span {
+  color: rgba(255,255,255,.26);
+  font-size: 5rem;
+  font-weight: 950;
+}
+
+.marketCategoryBadge,
+.marketPreviewBadge,
+.marketFavorite {
+  position: absolute;
+  z-index: 2;
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.marketCategoryBadge {
+  top: 12px;
+  left: 12px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: rgba(229, 249, 242, .82);
+  color: var(--brand-dark);
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.marketPreviewBadge {
+  bottom: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: linear-gradient(135deg, #d11f78, #fb7254);
+  color: white;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.marketPreviewBadge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.marketFavorite {
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(229, 249, 242, .82);
+  color: var(--brand-dark);
+}
+
+.marketFavorite svg {
+  width: 18px;
+  height: 18px;
+}
+
+.marketFavorite.saved {
+  color: #c52f4d;
+}
+
+.marketCardBody {
+  padding: 18px 17px 16px;
+}
+
+.marketCardTitle {
+  display: -webkit-box;
+  min-height: 48px;
+  overflow: hidden;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.45;
+  letter-spacing: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.marketCardTitle:hover,
+.marketCardTitle:focus-visible {
+  color: var(--brand-dark);
+}
+
+.marketMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 13px;
+  margin-top: 8px;
+  color: #687573;
+  font-size: .74rem;
+}
+
+.marketMetaRow span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.marketMetaRow svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.marketCardBody > p {
+  display: -webkit-box;
+  min-height: 40px;
+  margin: 12px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.marketCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.marketPrice {
+  color: #bf166b;
+  font-size: 1.08rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.marketDetailLink {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: .75rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.marketDetailLink svg {
+  width: 15px;
+  height: 15px;
+}
+
+.marketDetailLink:hover,
+.marketDetailLink:focus-visible {
+  background: #d2efe5;
+}
+
+.marketCreatorLine {
+  margin-top: 12px;
+  color: #7c8784;
+  font-size: .7rem;
+}
+
+.marketCreatorLine strong {
+  color: var(--ink);
+}
+
+.marketSkeleton {
+  pointer-events: none;
+}
+
+.marketSkeletonCover {
+  height: 208px;
+  background: #e7ece8;
+}
+
+.marketSkeletonBody {
+  display: grid;
+  gap: 11px;
+  padding: 18px;
+}
+
+.marketSkeletonBody span,
+.marketSkeletonBody strong,
+.marketSkeletonBody p {
+  display: block;
+  height: 12px;
+  margin: 0;
+  border-radius: 999px;
+  background: #e7ece8;
+  animation: skeletonPulse 1.4s ease-in-out infinite;
+}
+
+.marketSkeletonBody span { width: 42%; }
+.marketSkeletonBody strong { width: 82%; height: 18px; }
+.marketSkeletonBody p { width: 100%; }
+.marketSkeletonBody p:last-child { width: 66%; }
+
+.marketPagination {
+  margin-top: 34px;
+}
+
+.marketCreatorCallout {
+  margin-top: 70px;
+}
+
+@media (max-width: 1120px) {
+  .marketPlanGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .marketExploreHero {
+    margin-top: 22px;
+  }
+
+  .marketExploreHero > div {
+    border-radius: 22px;
+    padding: 36px 22px;
+  }
+
+  .marketExploreHero h1 {
+    font-size: 2rem;
+    line-height: 1.22;
+  }
+
+  .marketHeroSearch {
+    align-items: stretch;
+    flex-wrap: wrap;
+    border-radius: 22px;
+    padding: 8px;
+  }
+
+  .marketHeroSearch svg {
+    margin-top: 12px;
+  }
+
+  .marketHeroSearch input {
+    min-width: calc(100% - 48px);
+  }
+
+  .marketHeroSearch button {
+    width: 100%;
+  }
+
+  .marketFilterBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .marketFilterBar select,
+  .marketRatingChip,
+  .marketResultCount {
+    width: 100%;
+  }
+
+  .marketResultCount {
+    margin-left: 0;
+  }
+
+  .marketPlanGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketCardFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .marketDetailLink {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+
+/* Travel Reels page */
+.reelsPage {
+  padding-top: 40px;
+  padding-bottom: 96px;
+}
+
+.reelsHeader {
+  margin-bottom: 30px;
+}
+
+.reelsHeader > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: linear-gradient(135deg, #d11f78, #fb7254);
+  color: white;
+  font-size: .74rem;
+  font-weight: 850;
+}
+
+.reelsHeader svg {
+  width: 14px;
+  height: 14px;
+}
+
+.reelsHeader h1 {
+  margin: 16px 0 0;
+  font-size: 2.35rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.reelsHeader p {
+  max-width: 780px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: .92rem;
+  line-height: 1.65;
+}
+
+.reelsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.reelCard {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(20,35,35,.12);
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(24,54,48,.045);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.reelCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(22,124,104,.22);
+  box-shadow: 0 18px 42px rgba(24,54,48,.12);
+}
+
+.reelPoster {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  min-height: 620px;
+  overflow: hidden;
+  background: #102a27;
+}
+
+.reelPoster > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .28s ease;
+}
+
+.reelCard:hover .reelPoster > img {
+  transform: scale(1.03);
+}
+
+.reelShade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(5,12,12,.42), rgba(5,12,12,.08) 30%, rgba(5,12,12,.92));
+}
+
+.reelPlayButton {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.78);
+  color: var(--brand-dark);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.reelPlayButton svg {
+  width: 28px;
+  height: 28px;
+  margin-left: 3px;
+}
+
+.reelActions {
+  position: absolute;
+  z-index: 3;
+  top: 32%;
+  right: 13px;
+  display: grid;
+  gap: 14px;
+}
+
+.reelAction {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: white;
+}
+
+.reelAction > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,.74);
+  color: var(--brand-dark);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.reelAction.active > span {
+  color: #d11f78;
+}
+
+.reelAction svg {
+  width: 20px;
+  height: 20px;
+}
+
+.reelAction small {
+  color: white;
+  font-size: .63rem;
+  font-weight: 850;
+  text-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+
+.reelTags {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reelTags button {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(255,255,255,.72);
+  color: var(--brand-dark);
+  font-size: .66rem;
+  font-weight: 850;
+  backdrop-filter: blur(16px) saturate(150%);
+}
+
+.reelTags button.active {
+  background: linear-gradient(135deg, #1d806b, #075f4e);
+  color: white;
+}
+
+.reelTags svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.reelCaption {
+  position: absolute;
+  z-index: 3;
+  right: 13px;
+  bottom: 13px;
+  left: 13px;
+  color: white;
+}
+
+.reelTitle {
+  margin: 0;
+  font-size: .96rem;
+  font-weight: 900;
+  line-height: 1.35;
+  text-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+
+.reelText {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.76);
+  font-size: .72rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.reelPlanPanel {
+  margin-top: 13px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 18px;
+  padding: 13px;
+  background: rgba(255,255,255,.74);
+  color: var(--ink);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+.reelCreator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand-dark);
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.reelCreator svg {
+  width: 14px;
+  height: 14px;
+  color: var(--brand);
+}
+
+.reelPlanTitle {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  font-size: .83rem;
+  font-weight: 950;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.reelPlanTitle:hover,
+.reelPlanTitle:focus-visible {
+  color: var(--brand-dark);
+}
+
+.reelPlanFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.reelPlanFooter > span {
+  color: #bf166b;
+  font-size: .98rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.reelPlanFooter button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #bf166b, #7f1d58);
+  color: white;
+  font-size: .68rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.reelPlanFooter button:disabled {
+  opacity: .7;
+}
+
+.reelPlanFooter svg {
+  width: 14px;
+  height: 14px;
+}
+
+.reelActiveNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: .74rem;
+  line-height: 1.45;
+}
+
+.reelActiveNote svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.reelActiveNote span {
+  min-width: 0;
+  flex: 1;
+}
+
+.reelActiveNote a {
+  flex: 0 0 auto;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.reelSkeletonPoster {
+  aspect-ratio: 9 / 16;
+  min-height: 620px;
+  background: linear-gradient(90deg, #e7ece8, #f3f6f4, #e7ece8);
+  background-size: 220% 100%;
+  animation: skeletonPulse 1.4s ease-in-out infinite;
+}
+
+@media (max-width: 1120px) {
+  .reelsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .mobileNav {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(76px, 1fr);
+    overflow-x: auto;
+  }
+
+  .reelsPage {
+    padding-top: 28px;
+  }
+
+  .reelsHeader h1 {
+    font-size: 2rem;
+  }
+
+  .reelsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reelPoster,
+  .reelSkeletonPoster {
+    min-height: min(680px, calc(100vh - 140px));
+  }
+}
+
+@media (max-width: 500px) {
+  .mobileItem {
+    font-size: .52rem;
+  }
+
+  .reelPlanFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reelPlanFooter button {
+    justify-content: center;
+    width: 100%;
+  }
+}

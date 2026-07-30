@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
@@ -14,9 +14,13 @@ import {
 } from "@/lib/marketplace";
 import type { ListingSummary } from "@/types/marketplace";
 
+const defaultCategories = ["food", "nature", "family", "budget", "balanced", "comfortable", "creator-picks"];
+
 const categoryLabels: Record<string, string> = {
   budget: "Tiết kiệm",
+  balanced: "Cân bằng",
   medium: "Cân bằng",
+  comfortable: "Thoải mái",
   high: "Cao cấp",
   food: "Ẩm thực",
   nature: "Thiên nhiên",
@@ -24,13 +28,18 @@ const categoryLabels: Record<string, string> = {
   "creator-picks": "Creator chọn"
 };
 
-const sortOptions = [
-  { id: "newest", label: "Mới cập nhật" },
-  { id: "priceAsc", label: "Giá thấp trước" },
-  { id: "priceDesc", label: "Giá cao trước" },
+const durationOptions = ["Mọi thời lượng", "1-3 ngày", "4-7 ngày"];
+
+const budgetOptions = [
+  { id: "all", label: "Mọi ngân sách" },
+  { id: "under100", label: "Dưới 100.000 đ", maxPrice: 99999 },
+  { id: "100to200", label: "100.000 - 200.000 đ", minPrice: 100000, maxPrice: 200000 },
+  { id: "over200", label: "Trên 200.000 đ", minPrice: 200001 },
 ];
 
 const coverTones = ["sunset", "forest", "berry", "mist", "lime", "ocean"];
+
+type IconProps = { filled?: boolean };
 
 function SearchIcon() {
   return (
@@ -49,10 +58,46 @@ function ArrowIcon() {
   );
 }
 
-function HeartIcon({ filled = false }: { filled?: boolean }) {
+function HeartIcon({ filled = false }: IconProps) {
   return (
     <svg aria-hidden="true" fill={filled ? "currentColor" : "none"} viewBox="0 0 24 24">
       <path d="M20.8 4.7a5.6 5.6 0 0 0-7.9 0L12 5.6l-.9-.9a5.6 5.6 0 0 0-7.9 7.9l.9.9L12 21.4l7.9-7.9.9-.9a5.6 5.6 0 0 0 0-7.9Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="M12 21s6.5-5.5 6.5-11A6.5 6.5 0 0 0 5.5 10C5.5 15.5 12 21 12 21Z" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7.5v5l3.2 1.9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg aria-hidden="true" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M6.3 4.7v10.6c0 .8.9 1.2 1.5.8l7.4-5.3a1 1 0 0 0 0-1.6L7.8 3.9c-.6-.4-1.5 0-1.5.8Z" />
+    </svg>
+  );
+}
+
+function SlidersIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="M4 7h9m4 0h3M4 17h3m4 0h9" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+      <circle cx="15" cy="7" r="2" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="17" r="2" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }
@@ -65,10 +110,10 @@ function getCoverTone(id: string) {
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Mới cập nhật";
-  return `Cập nhật ${new Intl.DateTimeFormat("vi-VN", {
+  return new Intl.DateTimeFormat("vi-VN", {
     month: "short",
     year: "numeric"
-  }).format(date)}`;
+  }).format(date);
 }
 
 function formatPrice(amount: number, currency: string) {
@@ -83,6 +128,13 @@ function formatPrice(amount: number, currency: string) {
   }
 }
 
+function matchesDuration(item: ListingSummary, duration: string) {
+  const days = item.currentVersion.durationDays;
+  if (duration === "1-3 ngày") return days <= 3;
+  if (duration === "4-7 ngày") return days >= 4 && days <= 7;
+  return true;
+}
+
 export default function ExplorePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -90,8 +142,9 @@ export default function ExplorePage() {
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [category, setCategory] = useState("Tất cả");
-  const [categories, setCategories] = useState<string[]>([]);
-  const [sort, setSort] = useState("newest");
+  const [categories, setCategories] = useState<string[]>(defaultCategories);
+  const [duration, setDuration] = useState(durationOptions[0]);
+  const [budget, setBudget] = useState(budgetOptions[0].id);
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -100,6 +153,8 @@ export default function ExplorePage() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const selectedBudget = budgetOptions.find((option) => option.id === budget) ?? budgetOptions[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +168,9 @@ export default function ExplorePage() {
           pageSize: 12,
           query: appliedQuery || undefined,
           category: category !== "Tất cả" ? category : undefined,
-          sort,
+          minPrice: selectedBudget.minPrice,
+          maxPrice: selectedBudget.maxPrice,
+          sort: "newest",
         });
         if (!cancelled) {
           setListings(data.items);
@@ -133,13 +190,18 @@ export default function ExplorePage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedQuery, category, page, refreshKey, sort, user]);
+  }, [appliedQuery, category, page, refreshKey, selectedBudget.maxPrice, selectedBudget.minPrice, user]);
 
   useEffect(() => {
     void getMarketplaceCategories()
-      .then(setCategories)
-      .catch(() => setCategories([]));
+      .then((items) => setCategories(items.length ? items : defaultCategories))
+      .catch(() => setCategories(defaultCategories));
   }, []);
+
+  const visibleListings = useMemo(
+    () => listings.filter((listing) => matchesDuration(listing, duration)),
+    [duration, listings]
+  );
 
   function handleSearchSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -151,6 +213,8 @@ export default function ExplorePage() {
     setQuery("");
     setAppliedQuery("");
     setCategory("Tất cả");
+    setDuration(durationOptions[0]);
+    setBudget(budgetOptions[0].id);
     setPage(1);
   }
 
@@ -183,136 +247,81 @@ export default function ExplorePage() {
   }
 
   return (
-    <main className="explorePage">
-      <section className="exploreHero">
-        <div className="heroGlow heroGlowOne" />
-        <div className="heroGlow heroGlowTwo" />
-        <div className="pageWidth heroGrid">
-          <div className="heroCopy">
-            <span className="eyebrow light">Marketplace hành trình</span>
-            <h1>Một chuyến đi hay bắt đầu từ một plan tốt.</h1>
-            <p>
-              Khám phá lịch trình từ creator, nhận bản sao của riêng bạn và tiếp tục
-              cá nhân hóa cùng AI Planner.
-            </p>
+    <main className="explorePage marketExplorePage">
+      <section className="pageWidth marketExploreHero">
+        <div>
+          <h1>Tìm hành trình đã được kiểm chứng bởi Creator</h1>
+          <p>Mỗi Plan đều kèm Backup Plan, dự toán chi phí và bằng chứng nguồn từ video gốc.</p>
 
-            <form className="heroSearch" onSubmit={handleSearchSubmit}>
-              <SearchIcon />
-              <input
-                aria-label="Tìm theo điểm đến hoặc phong cách"
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Bạn muốn đi đâu?"
-                value={query}
-              />
-              <button type="submit">
-                Khám phá
-                <ArrowIcon />
-              </button>
-            </form>
-
-            <div className="heroSuggestions" aria-label="Tìm kiếm gợi ý">
-              <span>Gợi ý:</span>
-              {["Đà Nẵng", "Food tour", "Cuối tuần"].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => {
-                    setQuery(suggestion);
-                    setAppliedQuery(suggestion);
-                    setPage(1);
-                  }}
-                  type="button"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="heroJourney" aria-label="Cách Marketplace hoạt động">
-            <div className="journeyStamp">
-              <span>VSF</span>
-              <small>TRAVEL<br />PLANS</small>
-            </div>
-            <p className="journeyQuote">“Đi theo trải nghiệm thật, nhưng vẫn là chuyến đi của bạn.”</p>
-            <ol>
-              <li>
-                <span>01</span>
-                <div><strong>Chọn cảm hứng</strong><small>Xem preview trước khi quyết định</small></div>
-              </li>
-              <li>
-                <span>02</span>
-                <div><strong>Nhận plan cá nhân</strong><small>Bản creator luôn được giữ nguyên</small></div>
-              </li>
-              <li>
-                <span>03</span>
-                <div><strong>Tinh chỉnh với AI</strong><small>Đổi ngày, ngân sách và sở thích</small></div>
-              </li>
-            </ol>
-          </div>
+          <form className="marketHeroSearch" onSubmit={handleSearchSubmit}>
+            <SearchIcon />
+            <input
+              aria-label="Tìm địa điểm hoặc hành trình"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Phú Quốc, chụp ảnh, đi gia đình..."
+              value={query}
+            />
+            <button type="submit">Tìm kiếm</button>
+          </form>
         </div>
       </section>
 
-      <section className="pageWidth exploreContent">
-        <div className="exploreToolbar">
-          <div className="filterScroll" aria-label="Danh mục hành trình">
-            {["Tất cả", ...categories].map((item) => (
-              <button
-                aria-pressed={category === item}
-                className={category === item ? "filter active" : "filter"}
-                key={item}
-                onClick={() => {
-                  setCategory(item);
-                  setPage(1);
-                }}
-                type="button"
-              >
-                {item === "Tất cả" ? item : (categoryLabels[item] ?? item)}
-              </button>
-            ))}
-          </div>
-
-          <div className="sortSelectBox">
-            <label htmlFor="sort-select">Sắp xếp</label>
-            <select
-              id="sort-select"
-              onChange={(event) => {
-                setSort(event.target.value);
+      <section className="pageWidth marketExploreContent">
+        <div className="marketCategoryRow" aria-label="Danh mục hành trình">
+          {["Tất cả", ...categories].map((item) => (
+            <button
+              aria-pressed={category === item}
+              className={category === item ? "marketChip active" : "marketChip"}
+              key={item}
+              onClick={() => {
+                setCategory(item);
                 setPage(1);
               }}
-              value={sort}
+              type="button"
             >
-              {sortOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+              {item === "Tất cả" ? item : (categoryLabels[item] ?? item)}
+            </button>
+          ))}
         </div>
 
-        <div className="sectionTitle exploreTitle">
-          <div>
-            <span className="eyebrow">Tuyển chọn cho bạn</span>
-            <h2>
-              {appliedQuery
-                ? `Kết quả cho “${appliedQuery}”`
-                : "Những hành trình đáng khám phá"}
-            </h2>
-            {!loading && !error ? <p>{total} plan đang sẵn sàng để xem preview</p> : null}
-          </div>
-          <Link className="plannerTextLink" href="/planner">
-            <span>Không thấy plan phù hợp?</span>
-            Tạo chuyến đi mới
-            <ArrowIcon />
-          </Link>
+        <div className="marketFilterBar">
+          <span className="marketFilterLabel"><SlidersIcon /> Bộ lọc</span>
+          <select
+            aria-label="Lọc theo thời lượng"
+            onChange={(event) => {
+              setDuration(event.target.value);
+              setPage(1);
+            }}
+            value={duration}
+          >
+            {durationOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+          <select
+            aria-label="Lọc theo ngân sách"
+            onChange={(event) => {
+              setBudget(event.target.value);
+              setPage(1);
+            }}
+            value={budget}
+          >
+            {budgetOptions.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+          <button className="marketRatingChip" disabled title="Danh sách hiện chưa trả điểm đánh giá để lọc chính xác" type="button">
+            Đánh giá 4.7★ trở lên
+          </button>
+          <span className="marketResultCount">
+            {loading ? "Đang tải..." : `${duration === durationOptions[0] ? total : visibleListings.length} kết quả`}
+          </span>
         </div>
 
         {loading ? (
-          <div aria-label="Đang tải danh sách hành trình" className="planGrid">
+          <div aria-label="Đang tải danh sách hành trình" className="marketPlanGrid">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div aria-hidden="true" className="planCard planSkeleton" key={index}>
-                <div className="skeletonCover" />
-                <div className="skeletonBody">
+              <div aria-hidden="true" className="marketPlanCard marketSkeleton" key={index}>
+                <div className="marketSkeletonCover" />
+                <div className="marketSkeletonBody">
                   <span /><strong /><p /><p />
                 </div>
               </div>
@@ -326,7 +335,7 @@ export default function ExplorePage() {
             </div>
             <button onClick={() => setRefreshKey((key) => key + 1)} type="button">Thử lại</button>
           </div>
-        ) : listings.length === 0 ? (
+        ) : visibleListings.length === 0 ? (
           <div className="emptyState exploreEmpty">
             <PenguinMascot className="emptyPenguin" size={180} variant="search" />
             <h2>Chưa có hành trình khớp với bạn</h2>
@@ -334,80 +343,56 @@ export default function ExplorePage() {
             <button onClick={clearFilters} type="button">Xem tất cả hành trình</button>
           </div>
         ) : (
-          <div className="planGrid">
-            {listings.map((plan) => {
+          <div className="marketPlanGrid">
+            {visibleListings.map((plan) => {
               const version = plan.currentVersion;
               const creatorName = plan.creator?.fullName || "Creator";
               const coverUrl = version.mediaUrls?.[0] || "";
               const categoryName = categoryLabels[version.category] ?? version.category;
 
               return (
-                <article className="planCard" key={plan.id}>
-                  <Link
-                    aria-label={`Xem ${version.title}`}
-                    className="planCoverLink"
-                    href={`/listings/${plan.id}`}
-                  >
-                    <div className={`planCover flexCover ${getCoverTone(plan.id)}`}>
+                <article className="marketPlanCard" key={plan.id}>
+                  <Link aria-label={`Xem ${version.title}`} className="marketCoverLink" href={`/listings/${plan.id}`}>
+                    <div className={`marketCover ${getCoverTone(plan.id)}`}>
                       {coverUrl ? (
-                        <img alt="" className="coverImg" src={coverUrl} />
+                        <img alt={version.title} loading="lazy" src={coverUrl} />
                       ) : (
-                        <div className="coverFallback">
+                        <div className="marketCoverFallback">
                           <span>{version.destination.slice(0, 2).toUpperCase()}</span>
                         </div>
                       )}
-                      <div className="coverShade" />
-                      <span className="planTag">{categoryName}</span>
-                      <span className="coverDays">{version.durationDays} ngày</span>
-                      <div className="coverDestination">
-                        <small>Điểm đến</small>
-                        <strong>{version.destination}</strong>
-                      </div>
+                      <span className="marketCategoryBadge">{categoryName}</span>
+                      {coverUrl ? (
+                        <span className="marketPreviewBadge"><PlayIcon /> Có preview</span>
+                      ) : null}
                     </div>
                   </Link>
 
-                  <div className="planInfo">
-                    <div className="creatorLine">
-                      {plan.creator?.avatarUrl ? (
-                        <img alt="" className="creatorAvatar image" src={plan.creator.avatarUrl} />
-                      ) : (
-                        <span className="creatorAvatar">{creatorName.charAt(0).toUpperCase()}</span>
-                      )}
-                      <span>Plan bởi <strong>{creatorName}</strong></span>
-                      <span className="freshness">{formatUpdatedAt(version.updatedAt)}</span>
-                    </div>
+                  <button
+                    aria-label={plan.isFavorited ? `Bỏ lưu ${version.title}` : `Lưu ${version.title}`}
+                    aria-pressed={Boolean(plan.isFavorited)}
+                    className={plan.isFavorited ? "marketFavorite saved" : "marketFavorite"}
+                    onClick={() => void toggleFavorite(plan)}
+                    type="button"
+                  >
+                    <HeartIcon filled={plan.isFavorited} />
+                  </button>
 
-                    <Link className="planTitle textLink" href={`/listings/${plan.id}`}>
-                      {version.title}
-                    </Link>
+                  <div className="marketCardBody">
+                    <Link className="marketCardTitle" href={`/listings/${plan.id}`}>{version.title}</Link>
+                    <div className="marketMetaRow">
+                      <span><MapPinIcon /> {version.destination}</span>
+                      <span><ClockIcon /> {version.durationDays} ngày</span>
+                      <span>Cập nhật {formatUpdatedAt(version.updatedAt)}</span>
+                    </div>
                     <p>{version.description}</p>
-
-                    <div className="planMeta">
-                      <span>
-                        <small>Thời lượng</small>
-                        <strong>{version.durationDays} ngày</strong>
-                      </span>
-                      <span>
-                        <small>Giá plan</small>
-                        <strong>{formatPrice(version.priceAmount, version.priceCurrency)}</strong>
-                      </span>
-                    </div>
-
-                    <div className="cardActions">
-                      <button
-                        aria-label={plan.isFavorited ? `Bỏ lưu ${version.title}` : `Lưu ${version.title}`}
-                        aria-pressed={Boolean(plan.isFavorited)}
-                        className={plan.isFavorited ? "saveButton saved" : "saveButton"}
-                        onClick={() => void toggleFavorite(plan)}
-                        type="button"
-                      >
-                        <HeartIcon filled={plan.isFavorited} />
-                      </button>
-                      <Link className="viewButton" href={`/listings/${plan.id}`}>
-                        Xem hành trình
-                        <ArrowIcon />
+                    <div className="marketCardFooter">
+                      <span className="marketPrice">{formatPrice(version.priceAmount, version.priceCurrency)}</span>
+                      <Link className="marketDetailLink" href={`/listings/${plan.id}`}>
+                        Xem chi tiết <ArrowIcon />
                       </Link>
                     </div>
+                    <div className="marketCreatorLine">Plan bởi <strong>{creatorName}</strong></div>
                   </div>
                 </article>
               );
@@ -416,7 +401,7 @@ export default function ExplorePage() {
         )}
 
         {totalPages > 1 && !loading ? (
-          <nav aria-label="Phân trang" className="paginationRow">
+          <nav aria-label="Phân trang" className="paginationRow marketPagination">
             <button disabled={page <= 1} onClick={() => setPage((current) => current - 1)} type="button">
               <span aria-hidden="true">←</span> Trang trước
             </button>
@@ -429,7 +414,7 @@ export default function ExplorePage() {
           </nav>
         ) : null}
 
-        <section className="creatorCallout">
+        <section className="creatorCallout marketCreatorCallout">
           <div className="creatorCalloutCopy">
             <span className="eyebrow light">Góc dành cho creator</span>
             <h2>Chuyến đi của bạn có thể truyền cảm hứng cho người khác.</h2>
