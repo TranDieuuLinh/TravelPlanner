@@ -31,6 +31,7 @@ __all__ = [
 ]
 from app.modules.places.model import Place, PlaceRegionCatalogState, PlaceRegionSnapshot
 from app.modules.plans.explorer.model import UserMustPlace
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
 from app.modules.users.model import User
 
 __all__ = [
@@ -39,4 +40,7 @@ __all__ = [
     "PlaceRegionSnapshot",
     "User",
     "UserMustPlace",
+    "TripChat",
+    "TripChatMessage",
+    "TripChatPlanRevision",
 ]

@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api";
+
 export type PlanItem = {
   itemId?: string | null;
   name: string;
@@ -11,17 +13,26 @@ export type PlanItem = {
   latitude?: number | null;
   longitude?: number | null;
 };
-export type TransportLeg = {
-  fromItemId?: string | null;
-  toItemId?: string | null;
-  fromPlace: string;
-  toPlace: string;
+export type TransportOption = {
   mode: string;
   distanceMeters: number;
   estimatedDurationMinutes: number;
   geometryCoordinates: [number, number][];
   source: string;
   verified: boolean;
+  fetchedAt?: string | null;
+  details?: {
+    transitModes?: string[];
+    lines?: string[];
+  };
+};
+
+export type TransportLeg = TransportOption & {
+  fromItemId?: string | null;
+  toItemId?: string | null;
+  fromPlace: string;
+  toPlace: string;
+  alternatives?: TransportOption[];
 };
 export type PlanDay = {
   day: number;
@@ -121,6 +132,12 @@ export type ExplorerContext = {
     partySize: number;
     startDate?: string | null;
     endDate?: string | null;
+    transport?: {
+      preferredModes: string[];
+      avoidModes: string[];
+      includeBetweenPlaces: boolean;
+      includeArrivalDeparture: boolean;
+    };
     budget: BudgetEnvelope;
   };
   assumptions: string[];
@@ -160,6 +177,31 @@ export type PlannerIntakeInput = {
 export type PlannerIntakeResult = {
   explore: ExploreResponse;
   plan: TravelPlan;
+};
+
+export type TripChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+  attachmentNames: string[];
+  planRevision: number | null;
+  createdAt: string;
+};
+
+export type TripChatSummary = {
+  id: string;
+  title: string;
+  destination: string | null;
+  revision: number;
+  hasPlan: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TripChat = TripChatSummary & {
+  currentPlan: TravelPlan | null;
+  currentExplorer: ExplorerContext | null;
+  messages: TripChatMessage[];
 };
 
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
@@ -276,4 +318,36 @@ export async function createBackupPlan(
     body: JSON.stringify(input)
   });
 }
-import { apiFetch } from "@/lib/api";
+
+export async function createTripChat(title?: string): Promise<TripChat> {
+  return apiFetch<TripChat>("/trip-chats", {
+    method: "POST",
+    body: JSON.stringify({ title: title || null })
+  });
+}
+
+export async function listTripChats(): Promise<TripChatSummary[]> {
+  return apiFetch<TripChatSummary[]>("/trip-chats");
+}
+
+export async function getTripChat(chatId: string): Promise<TripChat> {
+  return apiFetch<TripChat>(`/trip-chats/${chatId}`);
+}
+
+export async function amendTripChat(input: {
+  chatId: string;
+  content: string;
+  expectedRevision: number;
+  images?: File[];
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("content", input.content);
+  form.append("expectedRevision", String(input.expectedRevision));
+  for (const image of input.images ?? []) {
+    form.append("images", image);
+  }
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/messages`, {
+    method: "POST",
+    body: form
+  });
+}

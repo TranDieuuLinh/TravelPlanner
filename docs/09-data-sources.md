@@ -31,7 +31,22 @@
 - UI bản đồ dễ tiếp cận và ràng buộc offline;
 - ảnh hưởng đến quyền riêng tư và vị trí lưu dữ liệu.
 
-Map provider chưa được lựa chọn. Xem ADR-002.
+HERE Routing API v8 đã được chọn cho route từng leg của Finder. Finder gọi
+pedestrian trước để áp ngưỡng đi bộ 1.500 m và gọi car khi tuyến đi bộ dài hơn.
+Summary distance/duration cùng flexible polyline được chuẩn hóa vào
+`PlanTransportLeg`; lỗi provider fallback theo từng leg. Do plan chưa có ngày
+đi, request dùng `departureTime=any` và không được mô tả là traffic live.
+
+HERE Public Transit API v8 được gọi riêng khi trip có `startDate`. Request dùng
+ngày của plan và giờ kết thúc item, giới hạn đi bộ tới/trong trạm 1.500 m, rồi
+nhận polyline và `travelSummary` cho từng section. Duration tổng ưu tiên chênh
+lệch departure–arrival để gồm cả thời gian chờ; bus/rail line được giữ trong
+`details`. Transit response không có transit section không được coi là phương
+tiện công cộng khả thi.
+
+Provider bản đồ nền và tối ưu thứ tự route toàn cục chưa được lựa chọn. UI hiện
+dùng Leaflet/OpenStreetMap; nearest-neighbour + 2-opt vẫn chạy theo tọa độ trước
+khi HERE xác minh các leg. Xem ADR-002.
 
 Explorer place resolution có adapter HERE Discover thử nghiệm đặt trước
 Nominatim. Khi `PLACE_RESOLVER_PROVIDER=here` và có `HERE_API_KEY`, HERE tìm POI

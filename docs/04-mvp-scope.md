@@ -50,7 +50,9 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
   phí, nguồn và ghi chú.
 - Finder ưu tiên `SelectedPlaces`, gom khu vực hợp lý và đưa địa điểm chưa xếp
   được vào danh sách có lý do.
-- Hiển thị marker, route, khoảng cách, thời gian và phương tiện giữa các item.
+- Hiển thị marker, route, khoảng cách, thời gian và phương tiện giữa các item;
+  khi public transit khả thi, hiển thị cạnh phương tiện chính như một phương án
+  dự phòng thay vì trộn vào Backup Plan của toàn hành trình.
 - Thêm khoảng đệm, bữa ăn/nghỉ và timezone địa phương.
 - Structured output, schema validation và không dùng văn bản tự do làm dữ liệu
   vận hành duy nhất.

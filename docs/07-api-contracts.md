@@ -50,6 +50,60 @@ client không được tự chọn role.
 - `POST /api/plans/main/from-context`
 - `POST /api/plans/{planId}/backup`
 
+### Trip chat và lịch sử chỉnh sửa
+
+Các endpoint sau yêu cầu đăng nhập; thao tác POST yêu cầu CSRF:
+
+- `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
+- `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
+- `GET /api/trip-chats/{chatId}`: lấy message history, Explorer context và plan
+  hiện tại.
+- `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
+  hiện tại.
+
+Request gửi message dùng `multipart/form-data`:
+
+- `content`: yêu cầu mới của user;
+- `expectedRevision`: revision client đang hiển thị;
+- `urls`: URL lặp lại tùy chọn; URL trong `content` cũng được tự trích xuất;
+- `images`: ảnh tùy chọn.
+
+Lần gửi đầu tạo plan revision 1. Các lần sau cung cấp lịch sử user request và
+Explorer context hiện tại cho Planner, giữ các yêu cầu cũ trừ khi message mới
+thay đổi chúng, và dùng item của plan hiện tại làm đầu vào cho revision. Kết quả
+ghi đè con trỏ `currentPlan` nhưng giữ nguyên `currentPlan.id`; snapshot cũ vẫn
+ở `trip_chat_plan_revisions`.
+
+Response detail:
+
+```json
+{
+  "id": "chat_uuid",
+  "title": "Chuyến đi Hà Nội",
+  "destination": "Hà Nội",
+  "revision": 2,
+  "hasPlan": true,
+  "currentPlan": {},
+  "currentExplorer": {},
+  "messages": [
+    {
+      "id": "message_uuid",
+      "role": "user",
+      "content": "Thêm cà phê vào ngày 2",
+      "attachmentNames": [],
+      "planRevision": 2,
+      "createdAt": "2026-07-30T07:00:00Z"
+    }
+  ],
+  "createdAt": "2026-07-30T06:00:00Z",
+  "updatedAt": "2026-07-30T07:00:00Z"
+}
+```
+
+Nếu `expectedRevision` đã cũ, backend trả HTTP 409 với code
+`VERSION_CONFLICT`. Lookup luôn lọc đồng thời `chatId + currentUser.id`; tài
+khoản khác nhận `TRIP_CHAT_NOT_FOUND`.
+
 Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
 composer duy nhất: người dùng nhập prompt hoặc dán URL vào cùng trường nội dung,
 và đính kèm ảnh ngay trong composer. Backend chọn nhánh xử lý dựa trên dữ liệu
@@ -188,9 +242,21 @@ explicit vẫn thắng; timing cue không được mô tả như giờ hoạt đ
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`
-với thứ tự đã tối ưu nearest-neighbour + 2-opt. Khi chưa có route provider, leg
-có `source=geodesic_estimate`, `verified=false`; duration/distance này không
-được mô tả là dữ liệu giao thông live.
+với thứ tự đã tối ưu nearest-neighbour + 2-opt. Finder lấy route pedestrian/car
+từ HERE Routing v8 cho từng cặp stop. Leg thành công có
+`source=here_routing_v8`, `verified=true`, `fetchedAt` và geometry theo đường;
+provider lỗi hoặc thiếu credential fallback thành `source=geodesic_estimate`,
+`verified=false`. Route HERE hiện dùng `departureTime=any`, vì vậy
+`verified=true` không được mô tả là dữ liệu traffic live.
+
+Khi `tripSpec.startDate` có giá trị, Finder còn gọi HERE Public Transit theo
+ngày của `PlanDay` và giờ kết thúc item đầu. Route có ít nhất một transit section
+mới được nhận; route chỉ đi bộ do Transit API trả thêm bị loại. Nếu
+`tripSpec.transport.preferredModes` chứa `bus` hoặc `train`, transit khả thi trở
+thành leg chính. Nếu không, nó xuất hiện trong `transportLeg.alternatives`.
+`avoidModes` loại mode tương ứng trước khi chọn. Transit option có
+`source=here_transit_v8`, geometry, duration gồm cả thời gian chờ và
+`details.transitModes`/`details.lines`.
 
 Request tạo plan chính:
 
@@ -253,8 +319,9 @@ Nếu cả catalog vùng và `selectedPlaces` đều trống, endpoint trả l�
 `CheckOverall.status` là `passed`; khi có warning cần backup, plan giữ trạng thái
 `draft`; lỗi kiểm tra mức `error` tạo plan `failed`.
 
-Plan hiện bị mất khi tiến trình backend khởi động lại. Request tạo plan dự phòng
-chỉ hoạt động khi plan chính vẫn còn trong bộ nhớ của cùng tiến trình.
+Plan tạo qua trip chat và lịch sử revision không bị mất khi tiến trình backend
+khởi động lại. Plan tạo qua các endpoint `/plans/main*` độc lập và request tạo
+backup vẫn chỉ hoạt động khi plan chính còn trong bộ nhớ của cùng tiến trình.
 
 ### Điểm cuối minh họa/tạm thời
 

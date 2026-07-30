@@ -23,7 +23,9 @@ Tầm nhìn sản phẩm rộng hơn phần đã được triển khai.
   luồng lập kế hoạch, kiểm tra plan, endpoint tạo plan dự phòng, health check và
   giao diện người dùng tối giản.
 - Đang giả lập: phản hồi AI thông qua `StubLLMClient`.
-- Tạm thời: plan được lưu trong bộ nhớ của tiến trình và mất khi khởi động lại.
+- Tạm thời: plan tạo qua trip chat đã được lưu trong PostgreSQL cùng lịch sử
+  revision; các endpoint plan độc lập và backup vẫn dùng repository trong bộ
+  nhớ của tiến trình.
 - Placeholder: Marketplace chỉ có endpoint danh mục.
 - Chưa triển khai: nhập URL, bản đồ, chỉnh sửa cộng tác, đồng bộ offline,
   listing, order, payment, review, achievement, notification, creator analytics

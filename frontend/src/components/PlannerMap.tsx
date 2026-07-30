@@ -6,17 +6,22 @@ import type {
   Map as LeafletMap,
   Marker
 } from "leaflet";
+import { createDayColorMap } from "@/lib/day-colors";
 import type { ExplorePlace } from "@/lib/plans";
 
 export type PlannerMapPlace = ExplorePlace & {
   mapKey: string;
   mapOrder: number;
+  dayColorKey: string;
+  dayLabel: string;
 };
 
 export type PlannerMapRoute = {
   key: string;
   coordinates: [number, number][];
   verified: boolean;
+  source: string;
+  dayColorKey: string;
 };
 
 type PlannerMapProps = {
@@ -27,6 +32,7 @@ type PlannerMapProps = {
 };
 
 const VIETNAM_CENTER: [number, number] = [16.2, 106.2];
+const HERE_ROUTING_ATTRIBUTION = "Routing &copy; HERE";
 
 function hasCoordinates(
   place: PlannerMapPlace
@@ -59,6 +65,14 @@ export function PlannerMap({
   const [mapReady, setMapReady] = useState(false);
 
   const locatedPlaces = useMemo(() => places.filter(hasCoordinates), [places]);
+  const dayColors = useMemo(
+    () =>
+      createDayColorMap([
+        ...locatedPlaces.map((place) => place.dayColorKey),
+        ...routes.map((route) => route.dayColorKey)
+      ]),
+    [locatedPlaces, routes]
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -113,18 +127,19 @@ export function PlannerMap({
     markersRef.current.clear();
     routeLayerRef.current?.remove();
     routeLayerRef.current = leaflet.layerGroup().addTo(map);
+    map.attributionControl.removeAttribution(HERE_ROUTING_ATTRIBUTION);
 
     locatedPlaces.forEach((place) => {
       const isSelected = place.mapKey === selectedKey;
+      const markerColor = dayColors.get(place.dayColorKey) ?? "#167c68";
       const icon = leaflet.divIcon({
         className: [
           "candidateMapMarker",
-          `category-${place.category}`,
           isSelected ? "is-selected" : ""
         ]
           .filter(Boolean)
           .join(" "),
-        html: `<span>${place.mapOrder}</span>`,
+        html: `<span style="--marker-color: ${markerColor}">${place.mapOrder}</span>`,
         iconAnchor: [18, 38],
         iconSize: [36, 38],
         popupAnchor: [0, -34]
@@ -144,7 +159,9 @@ export function PlannerMap({
       name.textContent = `${place.mapOrder}. ${place.name}`;
       const detail = document.createElement("span");
       detail.textContent = place.address || "Địa điểm do Explorer đề xuất";
-      popup.append(name, detail);
+      const day = document.createElement("small");
+      day.textContent = place.dayLabel;
+      popup.append(name, day, detail);
       if (place.notes) {
         const description = document.createElement("p");
         description.textContent = place.notes;
@@ -159,13 +176,16 @@ export function PlannerMap({
       routes.forEach((route) => {
         leaflet
           .polyline(route.coordinates, {
-            color: route.verified ? "#167c68" : "#b36b24",
+            color: dayColors.get(route.dayColorKey) ?? "#167c68",
             dashArray: route.verified ? undefined : "8 9",
             opacity: 0.82,
             weight: 4
           })
           .addTo(routeLayerRef.current!);
       });
+    }
+    if (routes.some((route) => route.source.startsWith("here_"))) {
+      map.attributionControl.addAttribution(HERE_ROUTING_ATTRIBUTION);
     }
 
     const signature = locatedPlaces
@@ -175,7 +195,7 @@ export function PlannerMap({
       fitPlaces();
       lastPlacesSignatureRef.current = signature;
     }
-  }, [locatedPlaces, mapReady, onSelect, routes, selectedKey]);
+  }, [dayColors, locatedPlaces, mapReady, onSelect, routes, selectedKey]);
 
   useEffect(() => {
     if (!selectedKey || !mapReady) return;
@@ -214,7 +234,11 @@ export function PlannerMap({
     <section className="plannerMap panel" aria-label="Bản đồ địa điểm đề xuất">
       <div className="plannerMapHeader">
         <div>
-          <span className="eyebrow">OpenStreetMap</span>
+          <span className="eyebrow">
+            {routes.some((route) => route.source.startsWith("here_"))
+              ? "OpenStreetMap + HERE Routing"
+              : "OpenStreetMap"}
+          </span>
           <h2>Bản đồ địa điểm</h2>
         </div>
         <span className="mapCount">

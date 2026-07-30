@@ -21,11 +21,34 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
   địa điểm và ghi chú.
+- `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
+  `source`, `verified` và `fetchedAt`. Leg HERE có provenance
+  `here_routing_v8` hoặc `here_transit_v8`; fallback địa lý phải giữ
+  `verified=false`. `alternatives` chứa các `PlanTransportOption` khả thi khác
+  với cùng shape route và `details` có mode/tuyến public transit khi có.
 - `CheckReport`: trạng thái, danh sách vấn đề và tóm tắt.
 - `Plan`: loại main/backup, trạng thái vòng đời, intent, macro plan, các ngày,
   liên kết plan cha và báo cáo kiểm tra.
 
-Plan hiện chỉ là object Pydantic được giữ trong bộ nhớ, chưa phải entity database.
+Plan từ các endpoint độc lập hiện vẫn là object Pydantic được giữ trong bộ nhớ.
+Plan tạo qua trip chat được lưu dưới dạng snapshot JSON có version trong
+`trip_chat_plan_revisions`; `trip_chats.current_plan` luôn trỏ tới snapshot mới
+nhất và giữ nguyên plan ID khi user yêu cầu AI sửa tiếp.
+
+### Lịch sử hội thoại chuyến đi đã triển khai
+
+- `TripChat`: thuộc đúng một user, đại diện cho một chuyến đi/điểm đến, giữ
+  Explorer context hiện tại, plan hiện tại và số revision.
+- `TripChatMessage`: tin nhắn user/assistant theo thứ tự, attachment chỉ lưu tên
+  file; không lưu bytes ảnh.
+- `TripChatPlanRevision`: snapshot plan và Explorer context bất biến sau mỗi lần
+  tạo hoặc sửa thành công.
+
+Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-up trong
+cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;
+không tạo một trip chat hay plan identity mới. Request sửa dùng optimistic
+`expectedRevision`; client cũ nhận `VERSION_CONFLICT` thay vì ghi đè thay đổi
+mới hơn.
 
 ## Cụm thực thể nghiệp vụ mục tiêu của MVP
 
@@ -144,6 +167,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Số thứ tự ngày trong một version phải duy nhất và có thứ tự.
 - Plan dự phòng có đúng một plan chính làm cha và không được tự động thay thế nó.
 - AI không được thay đổi `TripItem` đã khóa khi chỉnh sửa theo phạm vi.
+- Mỗi trip chat chỉ thuộc một user; user khác không được đọc hoặc sửa chat.
+- Revision của trip chat tăng đúng một đơn vị sau mỗi lần Planner hoàn thành.
+- Follow-up giữ nguyên plan ID hiện tại; snapshot revision trước không bị sửa.
 - Intake hiện chạy ở chế độ không hỏi lại user: mọi candidate được commit vào
   `UserMustPlace`. Độ tin cậy thấp phải giữ trạng thái
   `provisional`/`unresolved`; không được mô tả như dữ liệu đã xác minh.

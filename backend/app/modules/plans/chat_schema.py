@@ -1,0 +1,44 @@
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+from app.modules.plans.domain.entities import Plan
+from app.modules.plans.explorer.schema import ExplorerContextResponse
+
+
+class TripChatCreate(BaseModel):
+    title: Annotated[str | None, Field(default=None, max_length=255)]
+
+
+class TripChatMessageRead(BaseModel):
+    id: str
+    role: str
+    content: str
+    attachment_names: Annotated[list[str], Field(alias="attachmentNames")]
+    plan_revision: Annotated[int | None, Field(alias="planRevision")]
+    created_at: Annotated[datetime, Field(alias="createdAt")]
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class TripChatSummaryRead(BaseModel):
+    id: str
+    title: str
+    destination: str | None
+    revision: int
+    has_plan: Annotated[bool, Field(alias="hasPlan")]
+    created_at: Annotated[datetime, Field(alias="createdAt")]
+    updated_at: Annotated[datetime, Field(alias="updatedAt")]
+
+    model_config = {"populate_by_name": True}
+
+
+class TripChatRead(TripChatSummaryRead):
+    current_plan: Annotated[Plan | None, Field(alias="currentPlan")]
+    current_explorer: Annotated[
+        ExplorerContextResponse | None,
+        Field(alias="currentExplorer"),
+    ]
+    messages: list[TripChatMessageRead]
+
