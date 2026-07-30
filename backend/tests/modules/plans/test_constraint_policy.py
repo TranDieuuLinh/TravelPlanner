@@ -75,3 +75,81 @@ def test_overall_checker_fails_plan_that_violates_constraint_policy() -> None:
         and issue.affected_item_ids == ["cemetery-item"]
         for issue in report.issues
     )
+
+
+def test_overall_checker_rejects_time_windows_beyond_local_day() -> None:
+    plan = _plan_with_items(
+        [
+            PlanItem(
+                itemId="overflow",
+                name="Late stop",
+                timeWindow="24:07-25:07",
+                placeType="attraction",
+            )
+        ]
+    )
+
+    report = OverallChecker().check(plan)
+
+    assert report.status == "failed"
+    assert any(
+        issue.code == "invalid_time_window"
+        and issue.affected_item_ids == ["overflow"]
+        for issue in report.issues
+    )
+
+
+def test_overall_checker_rejects_day_above_pace_capacity() -> None:
+    plan = _plan_with_items(
+        [
+            PlanItem(
+                itemId=f"activity-{index}",
+                name=f"Activity {index}",
+                timeWindow=f"{8 + index:02d}:00-{9 + index:02d}:00",
+                placeType="attraction",
+            )
+            for index in range(4)
+        ]
+    )
+
+    report = OverallChecker().check(plan)
+
+    assert report.status == "failed"
+    assert any(
+        issue.code == "day_activity_capacity_exceeded"
+        and issue.affected_item_ids == ["activity-3"]
+        for issue in report.issues
+    )
+
+
+def _plan_with_items(items: list[PlanItem]) -> Plan:
+    intent = TravelIntent(
+        destination="Hà Nội",
+        days=1,
+        budget=BudgetLevel.medium,
+        travelStyle="local",
+        pace=TravelPace.balanced,
+    )
+    macro = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Khám phá",
+                targetArea="Hoàn Kiếm",
+                targetRegionKey="vn,ha-noi,hoan-kiem",
+            )
+        ],
+    )
+    return Plan(
+        id="plan-check",
+        kind=PlanKind.main,
+        status=PlanStatus.checking,
+        title="Hà Nội",
+        destination="Hà Nội",
+        intent=intent,
+        macroPlan=macro,
+        days=[PlanDay(day=1, theme="Khám phá", items=items)],
+    )

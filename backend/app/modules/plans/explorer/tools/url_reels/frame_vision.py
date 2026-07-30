@@ -333,6 +333,12 @@ class GeminiReelFrameVision:
                     place_names.append(place_name)
                     structured_observations.append(
                         FrameVisionObservation(
+                            order=(
+                                observation.get("order")
+                                if isinstance(observation.get("order"), int)
+                                and observation["order"] >= 1
+                                else None
+                            ),
                             placeName=place_name,
                             evidence=evidence,
                             dayNumber=day_number,

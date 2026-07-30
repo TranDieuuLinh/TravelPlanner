@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import UserMustPlace
+from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
@@ -30,7 +30,19 @@ class ExplorerPersistenceRepository:
         destination: str,
         resolutions: list[PlaceResolution],
     ) -> None:
+        self.session.add(
+            ExplorerIntake(
+                id=intake_id,
+                user_id=user_id,
+                destination=destination,
+            )
+        )
         for resolution in resolutions:
+            if not _is_persistable_resolution(
+                resolution,
+                destination=destination,
+            ):
+                continue
             candidate = resolution.candidate
             self.session.add(
                 UserMustPlace(
@@ -176,6 +188,28 @@ def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
         city=must_place.city,
         destination=must_place.destination,
         country=must_place.country,
+    )
+
+
+def _is_persistable_resolution(
+    resolution: PlaceResolution,
+    *,
+    destination: str,
+) -> bool:
+    if resolution.status != "resolved":
+        return False
+    return is_schedulable_place(
+        is_url_source=any(
+            source.type.value == "url" and source.url
+            for source in resolution.candidate.sources
+        ),
+        resolution_status=resolution.status,
+        latitude=resolution.latitude,
+        longitude=resolution.longitude,
+        resolved_name=resolution.name,
+        city=resolution.city,
+        destination=destination,
+        country=resolution.country,
     )
 
 

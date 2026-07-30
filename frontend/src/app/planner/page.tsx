@@ -1,6 +1,14 @@
 "use client";
 
-import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties
+} from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
@@ -9,11 +17,13 @@ import {
   amendTripChat,
   createTripChat,
   createPlanFromExplorer,
+  deleteTripChat,
   exploreFullIntake,
   getTripChat,
   listTripChats,
   type ExplorerContext,
   type ExploreResponse,
+  type ExplorerTimingReport,
   type PlaceCategory,
   type TransportOption,
   type TripChat,
@@ -25,6 +35,7 @@ import {
   type PlannerMapPlace,
   type PlannerMapRoute
 } from "@/components/PlannerMap";
+import { createDayColorMap } from "@/lib/day-colors";
 
 type ChatMessage = {
   id: number | string;
@@ -101,7 +112,11 @@ function Planner() {
     }
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
+  const [explorerTiming, setExplorerTiming] = useState<
+    ExplorerTimingReport | null
+  >(null);
   const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
+  const [activePlanDay, setActivePlanDay] = useState<number | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
@@ -115,6 +130,7 @@ function Planner() {
   const [tripChats, setTripChats] = useState<TripChatSummary[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [chatRevision, setChatRevision] = useState(0);
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
 
   useEffect(() => {
@@ -135,6 +151,7 @@ function Planner() {
         setActiveChatId(null);
         setChatRevision(0);
         setExploreResult(null);
+        setExplorerTiming(null);
         setPlan(null);
         setWorkflowStage("idle");
         setMessages([{
@@ -149,6 +166,7 @@ function Planner() {
     setActiveChatId(null);
     setChatRevision(0);
     setExploreResult(null);
+    setExplorerTiming(null);
     setPlan(null);
     void listTripChats()
       .then(async (chats) => {
@@ -186,12 +204,39 @@ function Planner() {
     return () => window.clearInterval(timer);
   }, [loading, stageStartedAt]);
 
+  const displayedExploreResult = exploreResult;
+  const displayedPlan = plan;
+  const planDayColorKeys = useMemo(() => {
+    const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
+    return displayedPlan?.days.map(
+      (day) => dateKeyForTripDay(startDate, day.day)
+    ) ?? [];
+  }, [displayedExploreResult?.explorer.tripSpec.startDate, displayedPlan]);
+  const planDayColors = useMemo(
+    () => createDayColorMap(planDayColorKeys),
+    [planDayColorKeys]
+  );
+  const displayedPlanDay = useMemo(
+    () =>
+      displayedPlan?.days.find((day) => day.day === activePlanDay)
+      ?? displayedPlan?.days[0]
+      ?? null,
+    [activePlanDay, displayedPlan]
+  );
+
+  useEffect(() => {
+    setActivePlanDay((current) => {
+      if (displayedPlan?.days.some((day) => day.day === current)) return current;
+      return displayedPlan?.days[0]?.day ?? null;
+    });
+  }, [displayedPlan]);
+
   const tripPlaces = useMemo<TripPlaceSummary[]>(() => {
-    if (!plan) return [];
+    if (!displayedPlan) return [];
     const seen = new Set<string>();
     let order = 0;
 
-    return plan.days.flatMap((day) =>
+    return displayedPlan.days.flatMap((day) =>
       day.items.flatMap((item, itemIndex) => {
         if (isBreakPlanItem(item)) return [];
         const key = item.name.trim().toLocaleLowerCase("vi");
@@ -208,9 +253,9 @@ function Planner() {
         }];
       })
     );
-  }, [plan]);
+  }, [displayedPlan]);
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
-    const startDate = exploreResult?.explorer.tripSpec.startDate;
+    const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
     return tripPlaces.flatMap((item) =>
       item.mapKey
         ? [{
@@ -227,11 +272,11 @@ function Planner() {
           }]
         : []
     );
-  }, [exploreResult?.explorer.tripSpec.startDate, tripPlaces]);
+  }, [displayedExploreResult?.explorer.tripSpec.startDate, tripPlaces]);
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
-    if (!plan) return [];
-    const startDate = exploreResult?.explorer.tripSpec.startDate;
-    return plan.days.flatMap((day) =>
+    if (!displayedPlan) return [];
+    const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
+    return displayedPlan.days.flatMap((day) =>
       day.transportLegs
         .filter((leg) => leg.geometryCoordinates.length >= 2)
         .map((leg, index) => ({
@@ -242,7 +287,7 @@ function Planner() {
           dayColorKey: dateKeyForTripDay(startDate, day.day)
         }))
     );
-  }, [exploreResult?.explorer.tripSpec.startDate, plan]);
+  }, [displayedExploreResult?.explorer.tripSpec.startDate, displayedPlan]);
 
   async function sendMessage() {
     const typedText = prompt.trim();
@@ -263,6 +308,7 @@ function Planner() {
     setLoading(true);
     setIntakeKind(URL_PATTERN.test(text) ? "url" : images.length > 0 ? "image" : "prompt");
     setStageDurations({});
+    setExplorerTiming(null);
     const exploringStartedAt = Date.now();
     setStageStartedAt(exploringStartedAt);
     setStageElapsedSeconds(0);
@@ -287,9 +333,19 @@ function Planner() {
           images
         });
         applyTripChat(updated);
+        const totalWallSeconds = Math.max(
+          0,
+          (Date.now() - exploringStartedAt) / 1000
+        );
+        const explorerSeconds = (
+          updated.latestExplorerTiming?.totalSeconds
+          ?? totalWallSeconds
+        );
         setStageDurations({
-          exploring: Math.max(0, Math.round((Date.now() - exploringStartedAt) / 1000)),
-          planning: 0
+          exploring: Math.round(explorerSeconds),
+          planning: Math.round(
+            Math.max(0, totalWallSeconds - explorerSeconds)
+          )
         });
         setWorkflowStage("ready");
         setStageStartedAt(null);
@@ -304,8 +360,12 @@ function Planner() {
         rawRequest: text,
         images
       });
+      setExplorerTiming(nextExploreResult.timingReport ?? null);
       setStageDurations({
-        exploring: Math.max(0, Math.round((Date.now() - exploringStartedAt) / 1000))
+        exploring: Math.round(
+          nextExploreResult.timingReport?.totalSeconds
+          ?? Math.max(0, (Date.now() - exploringStartedAt) / 1000)
+        )
       });
       setExploreResult(nextExploreResult);
       const planningStartedAt = Date.now();
@@ -396,6 +456,7 @@ function Planner() {
     setPrompt("");
     setImages([]);
     setExploreResult(null);
+    setExplorerTiming(null);
     setPlan(null);
     setSelectedMapPlaceKey(null);
     setWorkflowStage("idle");
@@ -427,10 +488,32 @@ function Planner() {
     }
   }
 
+  async function handleDeleteTripChat(chat: TripChatSummary) {
+    if (loading || deletingChatId) return;
+    if (!window.confirm(`Xóa toàn bộ lịch sử chat “${chat.title}”? Hành động này không thể hoàn tác.`)) {
+      return;
+    }
+
+    setDeletingChatId(chat.id);
+    setError("");
+    try {
+      await deleteTripChat(chat.id);
+      setTripChats((current) => current.filter((item) => item.id !== chat.id));
+      if (chat.id === activeChatId) {
+        resetWorkflow();
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Không thể xóa lịch sử chat.");
+    } finally {
+      setDeletingChatId(null);
+    }
+  }
+
   function applyTripChat(chat: TripChat) {
     setActiveChatId(chat.id);
     setChatRevision(chat.revision);
     setPlan(chat.currentPlan);
+    setExplorerTiming(chat.latestExplorerTiming ?? null);
     setExploreResult(
       chat.currentExplorer
         ? {
@@ -541,27 +624,41 @@ function Planner() {
               {tripChats.length ? (
                 <nav aria-label="Lịch sử dự án chuyến đi">
                   {tripChats.map((chat) => (
-                    <button
-                      aria-current={chat.id === activeChatId ? "page" : undefined}
-                      className={chat.id === activeChatId ? "active" : ""}
-                      disabled={loading}
+                    <div
+                      className={`tripProjectItem ${chat.id === activeChatId ? "active" : ""}`}
                       key={chat.id}
-                      onClick={() => {
-                        setHistoryCollapsed(true);
-                        void openTripChat(chat.id);
-                      }}
-                      title={chat.title}
-                      type="button"
                     >
-                      <ProjectIcon />
-                      <span>
-                        <strong>{chat.title}</strong>
-                        <small>
-                          {chat.destination || "Chưa chọn điểm đến"}
-                          {chat.revision ? ` · Bản ${chat.revision}` : ""}
-                        </small>
-                      </span>
-                    </button>
+                      <button
+                        aria-current={chat.id === activeChatId ? "page" : undefined}
+                        className="tripProjectOpen"
+                        disabled={loading || deletingChatId === chat.id}
+                        onClick={() => {
+                          setHistoryCollapsed(true);
+                          void openTripChat(chat.id);
+                        }}
+                        title={chat.title}
+                        type="button"
+                      >
+                        <ProjectIcon />
+                        <span>
+                          <strong>{chat.title}</strong>
+                          <small>
+                            {chat.destination || "Chưa chọn điểm đến"}
+                            {chat.revision ? ` · Bản ${chat.revision}` : ""}
+                          </small>
+                        </span>
+                      </button>
+                      <button
+                        aria-label={`Xóa lịch sử chat ${chat.title}`}
+                        className="tripProjectDelete"
+                        disabled={loading || deletingChatId !== null}
+                        onClick={() => void handleDeleteTripChat(chat)}
+                        title="Xóa lịch sử chat"
+                        type="button"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
                   ))}
                 </nav>
               ) : (
@@ -575,6 +672,14 @@ function Planner() {
         <section className="plannerLayout">
         <aside aria-busy={loading} className="plannerChat panel">
           <div className="panelHeading">
+            <span className="aiOrb">
+              <PenguinMascot className="assistantPenguin" priority size={64} variant="logo" />
+            </span>
+            <div>
+              <strong>Trợ lý VSF</strong>
+              <small>{loading ? "Đang xử lý yêu cầu…" : "Sẵn sàng nhận yêu cầu"}</small>
+            </div>
+            <span className={`assistantStatus ${loading ? "working" : ""}`} aria-label={loading ? "Đang xử lý" : "Đang trực tuyến"} />
             {user ? (
               <button
                 aria-expanded={!historyCollapsed}
@@ -586,27 +691,7 @@ function Planner() {
               >
                 <MenuIcon />
               </button>
-            ) : (
-              <span className="aiOrb">
-                <PenguinMascot className="assistantPenguin" priority size={64} variant="logo" />
-              </span>
-            )}
-            <div>
-              <strong>Trợ lý VSF</strong>
-              <small>{loading ? "Đang xử lý yêu cầu…" : "Sẵn sàng nhận yêu cầu"}</small>
-            </div>
-            {!user ? (
-              <button
-                aria-label="Làm mới Planner"
-                className="resetWorkflowButton"
-                disabled={loading || (!exploreResult && messages.length === 1)}
-                onClick={resetWorkflow}
-                type="button"
-              >
-                <span aria-hidden="true">↻</span> Làm mới
-              </button>
             ) : null}
-            <span className={`assistantStatus ${loading ? "working" : ""}`} aria-label={loading ? "Đang xử lý" : "Đang trực tuyến"} />
           </div>
           <ol className="chatWorkflow" aria-label="Tiến trình tạo lịch trình">
             {workflowStages.map((stage, index) => {
@@ -631,18 +716,88 @@ function Planner() {
               );
             })}
           </ol>
+          {explorerTiming ? (
+            <details className="explorerTimingPanel">
+              <summary>
+                <span>Chi tiết thời gian Explorer</span>
+                <strong>{formatTimingSeconds(explorerTiming.totalSeconds)}</strong>
+              </summary>
+              <div className="explorerTimingBody">
+                <div className="explorerTimingCounts">
+                  <span>{explorerTiming.candidateCount} candidate</span>
+                  <span>{explorerTiming.resolvedCount} resolved</span>
+                  <span>{explorerTiming.persistedCount} đã lưu</span>
+                  {Object.entries(explorerTiming.providerCounts).map(
+                    ([provider, count]) => (
+                      <span key={provider}>{provider}: {count}</span>
+                    )
+                  )}
+                </div>
+                <ol className="explorerTimingStages">
+                  {explorerTiming.stages.map((stage) => (
+                    <li key={stage.key}>
+                      <span>{stage.label}</span>
+                      <strong>{formatTimingSeconds(stage.durationSeconds)}</strong>
+                      <i
+                        aria-hidden="true"
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            Math.min(
+                              100,
+                              (stage.durationSeconds / Math.max(
+                                explorerTiming.totalSeconds,
+                                0.001
+                              )) * 100
+                            )
+                          )}%`
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ol>
+                {explorerTiming.sources.map((source) => (
+                  <section
+                    className="explorerSourceTiming"
+                    key={`${source.sourceIndex}-${source.platform}`}
+                  >
+                    <header>
+                      <strong>URL {source.sourceIndex} · {source.platform}</strong>
+                      <span>{formatTimingSeconds(source.totalSeconds)}</span>
+                    </header>
+                    <small>
+                      {source.sampledFrames} frame · STT {source.speechStatus}
+                      {" · "}Vision {source.visionStatus}
+                      {" · "}{source.extractedPlaceCount} địa điểm
+                    </small>
+                    <ul>
+                      {source.stages.map((stage) => (
+                        <li key={stage.key}>
+                          <span>{stage.label}</span>
+                          <strong>{formatTimingSeconds(stage.durationSeconds)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+                <p>
+                  STT và vision chạy song song; Formatter và resolve cũng chạy
+                  song song. Vì vậy không cộng các dòng con để tính tổng.
+                </p>
+                {explorerTiming.logFile ? (
+                  <code>{explorerTiming.logFile}</code>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
           <div className="chatMessages" aria-live="polite" ref={messageListRef}>
             {messages.map((message) => (
               <div className={`chatMessageRow ${message.role}`} key={message.id}>
-                {message.role === "assistant" ? (
-                  <PenguinMascot className="chatPenguinAvatar" size={40} variant="chat" />
-                ) : null}
                 <div className={`chatBubble ${message.role}`}>{message.text}</div>
               </div>
             ))}
             {loading ? (
               <div className="chatMessageRow assistant">
-                <PenguinMascot className="chatPenguinAvatar" size={40} variant="chat" />
                 <div className="chatBubble assistant processingMessage" role="status">
                   <div className="processingMessageTitle">
                     <span className="typingDots" aria-hidden="true"><i /><i /><i /></span>
@@ -740,59 +895,116 @@ function Planner() {
         </aside>
 
         <section className="itinerary panel">
-          <div className="itineraryTop">
+          <header className="panelHeading itineraryHeading">
+            <span className="planHeaderIcon" aria-hidden="true">
+              <Image
+                alt=""
+                height={52}
+                src="/images/penguin-globe-logo.png"
+                width={52}
+              />
+            </span>
             <div>
-              <span className="eyebrow">Explorer</span>
-              <h2>{exploreResult ? "Tổng quan chuyến đi" : "Kết quả Explorer"}</h2>
+              <strong>Kế hoạch chi tiết</strong>
+              {loading || displayedPlan ? (
+                <small>
+                  {loading
+                    ? "Đang chuẩn bị lịch trình của bạn…"
+                    : displayedExploreResult
+                      ? `${displayedExploreResult.explorer.intent.destination} · ${displayedPlan?.days.length} ngày`
+                      : `${displayedPlan?.days.length} ngày · Lịch trình theo từng điểm đến`}
+                </small>
+              ) : null}
             </div>
-          </div>
-          {exploreResult ? (
+          </header>
+          {displayedPlan && displayedExploreResult ? (
             <div className="exploreResult">
               <section className="tripSummaryCard">
                 <div className="tripSummaryIntro">
                   <span className="destinationPin" aria-hidden="true">⌖</span>
                   <div>
                     <span className="tripSummaryLabel">Điểm đến của bạn</span>
-                    <h3>{exploreResult.explorer.intent.destination}</h3>
-                    <p>{exploreResult.explorer.intent.travelStyle} · Nhịp độ {paceLabel(exploreResult.explorer.intent.pace)}</p>
+                    <h3>{displayedExploreResult.explorer.intent.destination}</h3>
+                    <p>{displayedExploreResult.explorer.intent.travelStyle} · Nhịp độ {paceLabel(displayedExploreResult.explorer.intent.pace)}</p>
                   </div>
                 </div>
                 <div className="tripQuickFacts" aria-label="Thông tin chuyến đi">
-                  <div><span>Thời lượng</span><strong>{exploreResult.explorer.tripSpec.days} ngày</strong></div>
-                  <div><span>Nhóm đi</span><strong>{exploreResult.explorer.tripSpec.partySize} người</strong></div>
-                  <div><span>Mức ngân sách</span><strong>{budgetLevelLabel(exploreResult.explorer.tripSpec.budget.level)}</strong></div>
+                  <div><span>Thời lượng</span><strong>{displayedExploreResult.explorer.tripSpec.days} ngày</strong></div>
+                  <div><span>Nhóm đi</span><strong>{displayedExploreResult.explorer.tripSpec.partySize} người</strong></div>
+                  <div><span>Mức ngân sách</span><strong>{budgetLevelLabel(displayedExploreResult.explorer.tripSpec.budget.level)}</strong></div>
                 </div>
                 <div className="budgetSummary">
                   <span className="budgetIcon" aria-hidden="true">₫</span>
-                  <div><span>Mức chi dự kiến</span><strong>{formatBudget(exploreResult.explorer)}</strong></div>
+                  <div><span>Mức chi dự kiến</span><strong>{formatBudget(displayedExploreResult.explorer)}</strong></div>
                 </div>
-                {exploreResult.explorer.intent.interests.length ? (
+                {displayedExploreResult.explorer.intent.interests.length ? (
                   <div className="interestGroup">
                     <span className="sectionMicroTitle">Bạn muốn trải nghiệm</span>
                     <div className="tagRow">
-                      {exploreResult.explorer.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
+                      {displayedExploreResult.explorer.intent.interests.map((interest) => <span key={interest}>{interest}</span>)}
                     </div>
                   </div>
                 ) : null}
               </section>
 
-              {plan ? (
-                <>
-                  <section className="tripPlanSection">
-                  {plan.days.map((day) => (
-                    <article className="explorerDayCard" key={day.day}>
+              <section className="tripPlanSection">
+                <div
+                  aria-label="Chọn ngày trong lịch trình"
+                  className="dayTabList"
+                  role="tablist"
+                >
+                  {displayedPlan.days.map((day) => {
+                    const dateKey = dateKeyForTripDay(
+                      displayedExploreResult.explorer.tripSpec.startDate,
+                      day.day
+                    );
+                    const color = planDayColors.get(dateKey) ?? "#167c68";
+                    const isActive = day.day === displayedPlanDay?.day;
+                    return (
+                      <button
+                        aria-controls={`plan-day-panel-${day.day}`}
+                        aria-selected={isActive}
+                        className={isActive ? "active" : ""}
+                        id={`plan-day-tab-${day.day}`}
+                        key={day.day}
+                        onClick={() => setActivePlanDay(day.day)}
+                        role="tab"
+                        style={{ "--day-color": color } as CSSProperties}
+                        tabIndex={isActive ? 0 : -1}
+                        type="button"
+                      >
+                        <i aria-hidden="true">Ngày {day.day}</i>
+                      </button>
+                    );
+                  })}
+                </div>
+                {displayedPlanDay ? (
+                    <article
+                      aria-labelledby={`plan-day-tab-${displayedPlanDay.day}`}
+                      className="explorerDayCard"
+                      id={`plan-day-panel-${displayedPlanDay.day}`}
+                      key={displayedPlanDay.day}
+                      role="tabpanel"
+                      style={{
+                        "--day-color": planDayColors.get(
+                          dateKeyForTripDay(
+                            displayedExploreResult.explorer.tripSpec.startDate,
+                            displayedPlanDay.day
+                          )
+                        ) ?? "#167c68"
+                      } as CSSProperties}
+                    >
                       <div className="dayCardHeading">
-                        <span><small>Ngày</small>{day.day}</span>
-                        <div><strong>{day.theme}</strong><small>{day.items.length} hoạt động</small></div>
+                        <strong>{displayedPlanDay.theme}</strong>
                       </div>
                       <div className="dayTimeline">
-                        {day.items.map((item, itemIndex) => {
+                        {displayedPlanDay.items.map((item, itemIndex) => {
                           const mapKey = hasPlanItemCoordinates(item)
-                            ? planItemMapKey(day.day, itemIndex, item.name)
+                            ? planItemMapKey(displayedPlanDay.day, itemIndex, item.name)
                             : null;
-                          const transportLeg = transportLegAfterItem(day, item, itemIndex);
+                          const transportLeg = transportLegAfterItem(displayedPlanDay, item, itemIndex);
                           return (
-                            <Fragment key={`${day.day}-${itemIndex}`}>
+                            <Fragment key={`${displayedPlanDay.day}-${itemIndex}`}>
                               <div className={`dayTimelineItem ${isBreakPlanItem(item) ? "break" : ""}`}>
                                 <time>{item.timeWindow}</time>
                                 <span className="dayTimelineDot" aria-hidden="true" />
@@ -835,14 +1047,27 @@ function Planner() {
                                       primary
                                       toPlace={transportLeg.toPlace}
                                     />
-                                    {(transportLeg.alternatives ?? []).map((option) => (
-                                      <TransportOptionCard
-                                        fromPlace={transportLeg.fromPlace}
-                                        key={`${option.mode}-${option.source}`}
-                                        option={option}
-                                        toPlace={transportLeg.toPlace}
-                                      />
-                                    ))}
+                                    {(transportLeg.alternatives ?? []).length ? (
+                                      <details className="transportAlternatives">
+                                        <summary>
+                                          <span className="transportAlternativesLabel">
+                                            <span className="whenClosed">Xem phương án dự phòng</span>
+                                            <span className="whenOpen">Ẩn phương án dự phòng</span>
+                                          </span>
+                                          <ChevronDownIcon />
+                                        </summary>
+                                        <div className="transportAlternativesList">
+                                          {(transportLeg.alternatives ?? []).map((option) => (
+                                            <TransportOptionCard
+                                              fromPlace={transportLeg.fromPlace}
+                                              key={`${option.mode}-${option.source}`}
+                                              option={option}
+                                              toPlace={transportLeg.toPlace}
+                                            />
+                                          ))}
+                                        </div>
+                                      </details>
+                                    ) : null}
                                   </div>
                                 </div>
                               ) : null}
@@ -851,13 +1076,15 @@ function Planner() {
                         })}
                       </div>
                     </article>
-                  ))}
-                  </section>
-                </>
-              ) : null}
+                ) : null}
+              </section>
             </div>
           ) : (
-            <div className="emptyPlan">
+            <div
+              aria-label={loading ? "Đang tạo lịch trình" : "Chưa có lịch trình"}
+              className="emptyPlan"
+              role="status"
+            >
               <div className="explorerMascotCrew">
                 <Image
                   alt=""
@@ -874,6 +1101,7 @@ function Planner() {
         </section>
 
         <PlannerMap
+          dayColorKeys={planDayColorKeys}
           onSelect={setSelectedMapPlaceKey}
           places={mapPlaces}
           routes={mapRoutes}
@@ -918,6 +1146,14 @@ function ProjectIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
       <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
     </svg>
   );
 }
@@ -982,11 +1218,28 @@ function dateLabelForTripDay(
   return `Ngày ${day} · ${date}/${month}/${year}`;
 }
 
+function shortDateLabelForTripDay(
+  startDate: string | null | undefined,
+  day: number
+): string | null {
+  const dateKey = dateKeyForTripDay(startDate, day);
+  if (dateKey.startsWith("day-")) return null;
+
+  const [, month, date] = dateKey.split("-");
+  return `${date}/${month}`;
+}
+
 function formatElapsedTime(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   if (minutes === 0) return `${seconds} giây`;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatTimingSeconds(seconds: number): string {
+  return seconds < 10
+    ? `${seconds.toFixed(2)} giây`
+    : `${seconds.toFixed(1)} giây`;
 }
 
 function processingDescription(stage: WorkflowStage, intakeKind: IntakeKind): string {
@@ -1194,6 +1447,14 @@ function ClockIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m7 10 5 5 5-5" />
     </svg>
   );
 }

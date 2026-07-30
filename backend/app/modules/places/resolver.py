@@ -124,6 +124,51 @@ class FallbackPlaceResolver(PlaceResolver):
             update={"resolution_reason": ";".join(reasons)}
         )
 
+    async def resolve_many(
+        self,
+        candidates: list[UnifiedPlaceCandidate],
+        *,
+        destination: str,
+    ) -> list[PlaceResolution]:
+        primary_results = await self.primary.resolve_many(
+            candidates,
+            destination=destination,
+        )
+        fallback_indexes = [
+            index
+            for index, result in enumerate(primary_results)
+            if not _is_usable_resolution(result)
+        ]
+        if not fallback_indexes:
+            return primary_results
+
+        fallback_results = await self.fallback.resolve_many(
+            [candidates[index] for index in fallback_indexes],
+            destination=destination,
+        )
+        combined_results = list(primary_results)
+        for index, fallback_result in zip(
+            fallback_indexes,
+            fallback_results,
+            strict=True,
+        ):
+            if _is_usable_resolution(fallback_result):
+                combined_results[index] = fallback_result
+                continue
+            primary_result = primary_results[index]
+            reasons = [
+                reason
+                for reason in (
+                    _provider_reason(primary_result, "primary_unresolved"),
+                    _provider_reason(fallback_result, "fallback_unresolved"),
+                )
+                if reason
+            ]
+            combined_results[index] = fallback_result.model_copy(
+                update={"resolution_reason": ";".join(reasons)}
+            )
+        return combined_results
+
 
 class HerePlaceResolver(PlaceResolver):
     provider_name = "here"
@@ -138,6 +183,7 @@ class HerePlaceResolver(PlaceResolver):
         country_code: str = "VNM",
         language: str = "vi-VN",
         min_interval_seconds: float = 0.2,
+        max_concurrency: int = 4,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.geocode_base_url = geocode_base_url.rstrip("/")
@@ -146,10 +192,35 @@ class HerePlaceResolver(PlaceResolver):
         self.country_code = country_code.strip().upper()
         self.language = language
         self.min_interval_seconds = max(min_interval_seconds, 0.2)
+        self.max_concurrency = max(1, min(max_concurrency, 4))
         self._request_lock = asyncio.Lock()
+        self._region_lock = asyncio.Lock()
         self._last_request_at = 0.0
         self._response_cache: dict[str, list[dict[str, Any]]] = {}
         self._region_cache: dict[str, tuple[float, float]] = {}
+
+    async def resolve_many(
+        self,
+        candidates: list[UnifiedPlaceCandidate],
+        *,
+        destination: str,
+    ) -> list[PlaceResolution]:
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        async def resolve_one(
+            candidate: UnifiedPlaceCandidate,
+        ) -> PlaceResolution:
+            async with semaphore:
+                return await self.resolve(
+                    candidate,
+                    destination=destination,
+                )
+
+        return list(
+            await asyncio.gather(
+                *(resolve_one(candidate) for candidate in candidates)
+            )
+        )
 
     async def resolve(
         self,
@@ -305,34 +376,42 @@ class HerePlaceResolver(PlaceResolver):
         cached = self._region_cache.get(cache_key)
         if cached is not None:
             return cached
-        query = search_region
-        if self.country_code == "VNM":
-            query = f"{search_region}, Việt Nam"
-        data = await self._request_json(
-            f"{self.geocode_base_url}/v1/geocode",
-            params={
-                "q": query,
-                "limit": 1,
-                "lang": self.language,
-                "apiKey": self.api_key,
-            },
-        )
-        items = data.get("items") if isinstance(data, dict) else None
-        if not isinstance(items, list) or not items:
-            raise ValueError("HERE geocode response did not resolve the region.")
-        first = items[0] if isinstance(items[0], dict) else {}
-        position = (
-            first.get("position")
-            if isinstance(first.get("position"), dict)
-            else {}
-        )
-        latitude = _as_float_or_none(position.get("lat"))
-        longitude = _as_float_or_none(position.get("lng"))
-        if latitude is None or longitude is None:
-            raise ValueError("HERE geocode response is missing coordinates.")
-        result = (latitude, longitude)
-        self._region_cache[cache_key] = result
-        return result
+        async with self._region_lock:
+            cached = self._region_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            query = search_region
+            if self.country_code == "VNM":
+                query = f"{search_region}, Việt Nam"
+            data = await self._request_json(
+                f"{self.geocode_base_url}/v1/geocode",
+                params={
+                    "q": query,
+                    "limit": 1,
+                    "lang": self.language,
+                    "apiKey": self.api_key,
+                },
+            )
+            items = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(items, list) or not items:
+                raise ValueError(
+                    "HERE geocode response did not resolve the region."
+                )
+            first = items[0] if isinstance(items[0], dict) else {}
+            position = (
+                first.get("position")
+                if isinstance(first.get("position"), dict)
+                else {}
+            )
+            latitude = _as_float_or_none(position.get("lat"))
+            longitude = _as_float_or_none(position.get("lng"))
+            if latitude is None or longitude is None:
+                raise ValueError(
+                    "HERE geocode response is missing coordinates."
+                )
+            result = (latitude, longitude)
+            self._region_cache[cache_key] = result
+            return result
 
     async def _request_json(
         self,
@@ -345,9 +424,9 @@ class HerePlaceResolver(PlaceResolver):
             wait_for = self.min_interval_seconds - elapsed
             if wait_for > 0:
                 await asyncio.sleep(wait_for)
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                response = await client.get(url, params=params)
             self._last_request_at = time.monotonic()
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 

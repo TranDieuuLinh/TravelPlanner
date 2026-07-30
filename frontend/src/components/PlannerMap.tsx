@@ -27,6 +27,7 @@ export type PlannerMapRoute = {
 type PlannerMapProps = {
   places: PlannerMapPlace[];
   routes: PlannerMapRoute[];
+  dayColorKeys?: string[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
 };
@@ -52,6 +53,7 @@ function hasCoordinates(
 export function PlannerMap({
   places,
   routes,
+  dayColorKeys = [],
   selectedKey,
   onSelect
 }: PlannerMapProps) {
@@ -68,12 +70,12 @@ export function PlannerMap({
   const dayColors = useMemo(
     () =>
       createDayColorMap([
+        ...dayColorKeys,
         ...locatedPlaces.map((place) => place.dayColorKey),
         ...routes.map((route) => route.dayColorKey)
       ]),
-    [locatedPlaces, routes]
+    [dayColorKeys, locatedPlaces, routes]
   );
-
   useEffect(() => {
     let disposed = false;
 
@@ -87,9 +89,11 @@ export function PlannerMap({
       const map = leaflet
         .map(containerRef.current, {
           attributionControl: true,
-          zoomControl: true
+          zoomControl: false
         })
         .setView(VIETNAM_CENTER, 5);
+
+      leaflet.control.zoom({ position: "topright" }).addTo(map);
 
       leaflet
         .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -139,10 +143,10 @@ export function PlannerMap({
         ]
           .filter(Boolean)
           .join(" "),
-        html: `<span style="--marker-color: ${markerColor}">${place.mapOrder}</span>`,
-        iconAnchor: [18, 38],
-        iconSize: [36, 38],
-        popupAnchor: [0, -34]
+        html: `<span style="--marker-color: ${markerColor}"><b>${place.mapOrder}</b></span>`,
+        iconAnchor: [21, 48],
+        iconSize: [42, 48],
+        popupAnchor: [0, -43]
       });
 
       const marker = leaflet
@@ -176,10 +180,20 @@ export function PlannerMap({
       routes.forEach((route) => {
         leaflet
           .polyline(route.coordinates, {
+            color: "rgba(255, 255, 255, .92)",
+            dashArray: route.verified ? undefined : "8 9",
+            opacity: 1,
+            weight: 8
+          })
+          .addTo(routeLayerRef.current!);
+        leaflet
+          .polyline(route.coordinates, {
             color: dayColors.get(route.dayColorKey) ?? "#167c68",
             dashArray: route.verified ? undefined : "8 9",
-            opacity: 0.82,
-            weight: 4
+            lineCap: "round",
+            lineJoin: "round",
+            opacity: 0.94,
+            weight: 4.5
           })
           .addTo(routeLayerRef.current!);
       });
@@ -232,22 +246,19 @@ export function PlannerMap({
 
   return (
     <section className="plannerMap panel" aria-label="Bản đồ địa điểm đề xuất">
-      <div className="plannerMapHeader">
-        <div>
-          <span className="eyebrow">
-            {routes.some((route) => route.source.startsWith("here_"))
-              ? "OpenStreetMap + HERE Routing"
-              : "OpenStreetMap"}
-          </span>
-          <h2>Bản đồ địa điểm</h2>
-        </div>
-        <span className="mapCount">
-          {locatedPlaces.length}/{places.length} đã định vị
-        </span>
-      </div>
-
       <div className="plannerMapCanvasWrap">
         <div className="plannerMapCanvas" ref={containerRef} />
+        {locatedPlaces.length > 0 ? (
+          <button
+            aria-label="Hiển thị toàn bộ địa điểm trên bản đồ"
+            className="mapFitButton"
+            onClick={fitPlaces}
+            type="button"
+          >
+            <FitMapIcon />
+            <span>Vừa khung</span>
+          </button>
+        ) : null}
         {places.length > 0 && locatedPlaces.length === 0 ? (
           <div className="mapEmptyNotice">
             <strong>Chưa có tọa độ để đặt marker</strong>
@@ -260,5 +271,13 @@ export function PlannerMap({
       </div>
 
     </section>
+  );
+}
+
+function FitMapIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </svg>
   );
 }

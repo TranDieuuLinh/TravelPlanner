@@ -26,12 +26,14 @@ services:
       DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
       BACKEND_CORS_ORIGINS: http://localhost:3000
       APP_ENV: local
-      PLACE_RESOLVER_PROVIDER: nominatim
       GEMINI_MIN_INTERVAL_SECONDS: "0.0"
+      HERE_MAX_CONCURRENCY: "4"
       NOMINATIM_BASE_URL: https://nominatim.openstreetmap.org
       NOMINATIM_USER_AGENT: VSF-Travel-Planner/0.1 (local-development)
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/var:/app/var
     depends_on:
       postgres:
         condition: service_healthy

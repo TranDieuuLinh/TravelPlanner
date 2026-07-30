@@ -24,6 +24,7 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     FrameVisionObservation,
     FrameVisionResult,
     MediaArtifacts,
+    SpeechToTextObservation,
     SpeechToTextResult,
     UrlMetadata,
     UrlReelInput,
@@ -82,6 +83,18 @@ class FakeSpeechToText:
     ) -> SpeechToTextResult:
         return SpeechToTextResult(
             text="Hoan Kiem Lake",
+            observations=[
+                SpeechToTextObservation(
+                    order=1,
+                    placeName="Hoan Kiem Lake",
+                    evidence="visit Hoan Kiem Lake",
+                    dayNumber=None,
+                    timeHint="",
+                    activity="",
+                    durationMinutes=None,
+                    confidence=0.95,
+                )
+            ],
             status="ok",
             durationSeconds=0.1,
         )
@@ -92,6 +105,7 @@ class FakeContextExtractor:
         self,
         metadata: UrlMetadata,
         transcript: str,
+        speech_observations: list[SpeechToTextObservation] | None = None,
         destination: str | None = None,
     ) -> ExtractedContext:
         return ExtractedContext(
@@ -334,7 +348,14 @@ def test_audio_stt_rotates_comma_separated_api_keys(
                     "candidates": [
                         {
                             "content": {
-                                "parts": [{"text": "Xin chào Hà Nội"}]
+                                "parts": [
+                                    {
+                                        "text": (
+                                            '{"transcript":"Xin chào Hà Nội",'
+                                            '"observations":[]}'
+                                        )
+                                    }
+                                ]
                             }
                         }
                     ]
@@ -355,6 +376,133 @@ def test_audio_stt_rotates_comma_separated_api_keys(
     assert attempted_keys == ["invalid-key", "valid-key"]
     assert result.status == "ok"
     assert result.text == "Xin chào Hà Nội"
+    assert result.observations == []
+
+
+def test_audio_stt_requests_and_validates_structured_observations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_payload: dict = {}
+
+    class FakeHttpClient:
+        def __init__(self, *, timeout: int) -> None:
+            assert timeout == 90
+
+        def __enter__(self) -> "FakeHttpClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict,
+        ) -> httpx.Response:
+            captured_payload.update(json)
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": (
+                                            '{"transcript":"On day two, visit '
+                                            'Cafe Dinh for egg coffee.",'
+                                            '"observations":[{"order":1,'
+                                            '"placeName":"Cafe Dinh",'
+                                            '"evidence":"visit Cafe Dinh for '
+                                            'egg coffee","dayNumber":2,'
+                                            '"timeHint":"","activity":"Drink '
+                                            'egg coffee","durationMinutes":null,'
+                                            '"confidence":0.92}]}'
+                                        )
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.speech_to_text.httpx.Client",
+        FakeHttpClient,
+    )
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"audio")
+
+    result = GeminiAudioSpeechToText(api_key="test-key").transcribe(audio_path)
+
+    config = captured_payload["generationConfig"]
+    assert config["responseMimeType"] == "application/json"
+    assert set(config["responseJsonSchema"]["required"]) == {
+        "transcript",
+        "observations",
+    }
+    assert result.text == "On day two, visit Cafe Dinh for egg coffee."
+    assert result.observations[0].model_dump(by_alias=True) == {
+        "order": 1,
+        "placeName": "Cafe Dinh",
+        "evidence": "visit Cafe Dinh for egg coffee",
+        "dayNumber": 2,
+            "timeHint": "",
+            "activity": "Drink egg coffee",
+            "searchRegion": "",
+            "durationMinutes": None,
+        "confidence": 0.92,
+    }
+
+
+def test_context_extractor_merges_structured_stt_and_ocr_provenance() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://example.com/reel",
+            canonicalUrl="https://example.com/reel",
+            platform="tiktok",
+            title="Hanoi",
+        ),
+        # This deliberately conflicts with the structured result. Python must
+        # not infer another candidate or day from free-form transcript text.
+        transcript="On day nine, visit Wrong Place Museum.",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Cafe Dinh",
+                evidence="visit Cafe Dinh for egg coffee",
+                dayNumber=2,
+                timeHint="",
+                activity="Drink egg coffee",
+                durationMinutes=None,
+                confidence=0.92,
+            )
+        ],
+        destination="Hanoi",
+        visual_places=["Cafe Dinh"],
+        visual_observations=[
+            FrameVisionObservation(
+                order=15,
+                placeName="Cafe Dinh",
+                evidence="Cafe Dinh (Egg Coffee)",
+            )
+        ],
+    )
+
+    assert context.extracted_places == ["Cafe Dinh"]
+    merged = context.extracted_place_details[0]
+    assert merged.source_order == 15
+    assert merged.source_day == 2
+    assert merged.source_activity == "Drink egg coffee"
+    assert merged.source_evidence == {
+        "stt": "visit Cafe Dinh for egg coffee",
+        "ocr": "Cafe Dinh (Egg Coffee)",
+    }
 
 
 def test_frame_ocr_balances_frames_across_batches() -> None:

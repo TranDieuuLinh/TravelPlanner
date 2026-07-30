@@ -521,6 +521,11 @@ class PlannerService:
             draft,
             selected_by_ref=selected_by_ref,
         )
+        draft = self._enforce_day_activity_capacity(
+            planner_input,
+            draft,
+            selected_by_ref=selected_by_ref,
+        )
         macro = draft.macro_plan
         allocated_refs = [
             ref
@@ -607,6 +612,68 @@ class PlannerService:
             update={"unallocated_selected_places": normalized_unallocated}
         )
 
+    def _enforce_day_activity_capacity(
+        self,
+        planner_input: PlannerAgentInput,
+        draft: PlannerMacroPlanDraft,
+        *,
+        selected_by_ref: dict[str, SelectedPlaceContext],
+    ) -> PlannerMacroPlanDraft:
+        capacity = {
+            "relaxed": 2,
+            "balanced": 3,
+            "packed": 5,
+        }[planner_input.intent.pace.value]
+        overflow_refs: list[str] = []
+        normalized_briefs = []
+        for brief in draft.macro_plan.day_briefs:
+            allocated = brief.allocated_selected_place_refs
+            overflow_refs.extend(allocated[capacity:])
+            normalized_briefs.append(
+                brief.model_copy(
+                    update={
+                        "allocated_selected_place_refs": allocated[:capacity]
+                    }
+                )
+            )
+        if not overflow_refs:
+            return draft
+
+        existing_unallocated_refs = {
+            item.place.stable_ref
+            for item in draft.unallocated_selected_places
+        }
+        overflow_unallocated = [
+            UnallocatedSelectedPlace(
+                place=selected_by_ref[ref],
+                reasonCode="no_day_capacity",
+                reason=(
+                    f"The selected {planner_input.intent.pace.value} pace "
+                    f"allows at most {capacity} activities per day."
+                ),
+            )
+            for ref in overflow_refs
+            if ref in selected_by_ref and ref not in existing_unallocated_refs
+        ]
+        return draft.model_copy(
+            update={
+                "macro_plan": draft.macro_plan.model_copy(
+                    update={"day_briefs": normalized_briefs}
+                ),
+                "unallocated_selected_places": [
+                    *draft.unallocated_selected_places,
+                    *overflow_unallocated,
+                ],
+                "warnings": [
+                    *draft.warnings,
+                    (
+                        "Một số địa điểm vượt sức chứa hoạt động theo pace và "
+                        "được giữ trong danh sách chưa xếp lịch."
+                    ),
+                ],
+            }
+        )
+
     def _normalize_source_itinerary_allocations(
         self,
         planner_input: PlannerAgentInput,
@@ -655,48 +722,56 @@ class PlannerService:
             return draft
 
         trip_days = planner_input.trip_spec.days
-        undated_places = [
-            place for place in eligible_places if place.source_day is None
-        ]
         activity_capacity = {
             "relaxed": 2,
             "balanced": 3,
             "packed": 5,
         }[planner_input.intent.pace.value]
-        used_days = min(
-            trip_days,
-            max(
-                1,
-                (
-                    len(undated_places)
-                    + activity_capacity
-                    - 1
-                )
-                // activity_capacity,
-            ),
-        )
-        inferred_days = {
-            place.stable_ref: min(
-                used_days,
-                (index * used_days) // len(undated_places) + 1,
-            )
-            for index, place in enumerate(undated_places)
-        } if undated_places else {}
-
         assigned_days: dict[str, int] = {}
         out_of_range: list[SelectedPlaceContext] = []
+        over_capacity: list[SelectedPlaceContext] = []
+        source_refs = {place.stable_ref for place in eligible_places}
+        base_refs_by_day = {
+            brief.day: [
+                ref
+                for ref in brief.allocated_selected_place_refs
+                if ref not in source_refs
+            ]
+            for brief in draft.macro_plan.day_briefs
+        }
+        remaining_capacity = {
+            day: max(0, activity_capacity - len(refs))
+            for day, refs in base_refs_by_day.items()
+        }
+
         for place in eligible_places:
             if place.source_day is not None:
                 if place.source_day > trip_days:
                     out_of_range.append(place)
                     continue
+                if remaining_capacity[place.source_day] <= 0:
+                    over_capacity.append(place)
+                    continue
                 assigned_days[place.stable_ref] = place.source_day
-            else:
-                assigned_days[place.stable_ref] = inferred_days[
-                    place.stable_ref
-                ]
+                remaining_capacity[place.source_day] -= 1
 
-        source_refs = {place.stable_ref for place in eligible_places}
+        for place in eligible_places:
+            if place.source_day is not None:
+                continue
+            assigned_day = next(
+                (
+                    day
+                    for day in range(1, trip_days + 1)
+                    if remaining_capacity[day] > 0
+                ),
+                None,
+            )
+            if assigned_day is None:
+                over_capacity.append(place)
+                continue
+            assigned_days[place.stable_ref] = assigned_day
+            remaining_capacity[assigned_day] -= 1
+
         refs_by_day: dict[int, list[str]] = {
             day: [] for day in range(1, trip_days + 1)
         }
@@ -709,9 +784,7 @@ class PlannerService:
             brief.model_copy(
                 update={
                     "allocated_selected_place_refs": [
-                        ref
-                        for ref in brief.allocated_selected_place_refs
-                        if ref not in source_refs
+                        *base_refs_by_day[brief.day],
                     ]
                     + refs_by_day[brief.day],
                     "notes": list(
@@ -750,6 +823,23 @@ class PlannerService:
             )
             for place in out_of_range
             if place.stable_ref in out_of_range_refs
+        )
+        normalized_unallocated.extend(
+            UnallocatedSelectedPlace(
+                place=selected_by_ref[place.stable_ref],
+                reasonCode="no_day_capacity",
+                reason=(
+                    f"Day {place.source_day} exceeds the "
+                    f"{activity_capacity}-activity capacity for the selected "
+                    "pace."
+                    if place.source_day is not None
+                    else (
+                        f"The requested {trip_days}-day trip has no remaining "
+                        "activity capacity for this URL stop."
+                    )
+                ),
+            )
+            for place in over_capacity
         )
         return draft.model_copy(
             update={

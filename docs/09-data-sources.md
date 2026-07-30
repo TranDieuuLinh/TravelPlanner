@@ -56,6 +56,15 @@ Nominatim. Nếu thiếu HERE key, runtime tiếp tục dùng Nominatim thay vì
 intake. Đây chỉ là lựa chọn cho Explorer place resolution, chưa phải lựa chọn
 map/route provider cuối cùng và chưa được mô tả như production SLA.
 
+HERE resolve nhiều candidate chạy với bounded concurrency tối đa bốn tác vụ
+(`HERE_MAX_CONCURRENCY`, không cho cấu hình vượt quá 4). Rate limiter
+`HERE_MIN_INTERVAL_SECONDS` điều tiết thời điểm bắt đầu request nhưng không giữ
+lock trong lúc chờ network, nên request được phép overlap trong giới hạn trên.
+Kết quả được trả đúng thứ tự candidate đầu vào. Chỉ candidate HERE không resolve
+được mới đi qua fallback; public Nominatim vẫn xử lý tuần tự để tuân thủ giới
+hạn một request/giây. Docker Compose không ép `PLACE_RESOLVER_PROVIDER` về
+Nominatim mà đọc lựa chọn và HERE key từ `backend/.env`.
+
 Khi dùng public Nominatim, adapter phải gửi User-Agent nhận diện ứng dụng, tối
 đa một request/giây, cache response, hiển thị attribution OpenStreetMap và có
 khả năng đổi endpoint bằng cấu hình. Adapter yêu cầu kết quả tiếng Việt trước,
@@ -74,24 +83,31 @@ instruction.
 2. Nhận diện nguồn và chọn connector theo allowlist.
 3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
 4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
-5. Với URL video, trích xuất caption/metadata, transcript STT từ audio và OCR
-   trên frame lấy mẫu. STT và frame vision chạy song song. OCR cũng chạy trên
-   ảnh/screenshot do người dùng upload.
-6. Tạo claim/place candidate có evidence và confidence.
+5. Với URL video, Gemini Audio trả `transcript` và structured STT observations
+   bằng `responseJsonSchema`; frame vision trả structured OCR observations trên
+   frame lấy mẫu. Hai call chạy song song. OCR cũng chạy trên ảnh/screenshot do
+   người dùng upload.
+6. Validate JSON, gộp/dedupe STT + OCR + caption, giữ evidence theo từng nguồn
+   rồi chuyển thành place candidate. Khi structured STT đã có, Python không
+   suy diễn place/day/activity từ transcript tự do.
 7. Chuẩn hóa địa điểm qua place provider và gộp trùng.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Kết quả chỉ
    được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
    không mâu thuẫn rõ với category nguồn. `candidateName` và `resolvedName`
    được lưu riêng; mismatch giữ `resolutionReason` để truy vết.
-8. Tự động lưu candidate và kết quả resolve vào `user_must_place`; không chặn
-   để hỏi user. Kết quả yếu giữ trạng thái `provisional` hoặc `unresolved`.
-   Candidate URL chỉ được bàn giao vào plan khi provider resolve tới địa điểm cụ
-   thể có tọa độ. Match rộng tới thành phố, caption bị hiểu nhầm thành tên hoặc
-   candidate chưa resolve vẫn được giữ làm provenance nhưng không hiển thị như
-   một điểm dừng; Finder có thể bù phần còn thiếu.
+8. Tự động lưu vào `user_must_place` chỉ khi provider trả kết quả `resolved` cho
+   địa điểm cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
+   tới thành phố/quốc gia, caption bị hiểu nhầm thành tên, candidate
+   provisional/unresolved hoặc thiếu tọa độ không được lưu; Finder có thể bù
+   phần còn thiếu.
 9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
    downstream đọc record theo cả `intakeId + userId`.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+
+Với URL, Extractor là nguồn duy nhất tạo `UnifiedPlaceCandidate`. Formatter nhận
+summary gọn của extraction để tạo intent/trip spec/constraint/preference và
+không sinh lại candidate. Resolver có thể chạy song song với Formatter ngay sau
+khi candidate được chuẩn hóa và gộp trùng.
 
 TikTok video thử `yt-dlp` chuẩn trước, sau đó retry bằng desktop Chrome và
 Android Chrome impersonation qua dependency `curl_cffi` nếu challenge/TLS
@@ -99,11 +115,12 @@ fingerprint làm request trước thất bại. Hệ thống không gọi TikWM.
 trả trạng thái cần upload screenshot. Media video thành công vẫn chỉ được xử lý
 trong thư mục tạm và xoá sau request. Video OCR dùng
 `gemini-3.5-flash-lite`, mặc định không quá một frame mỗi giây, tối đa 48 frame
-rộng 960 px theo batch tối đa 10 ảnh ở media resolution medium. Candidate từ
-STT và frame vision được gộp; một nguồn không loại bỏ candidate chỉ xuất hiện ở
-nguồn còn lại. Marker ngày rõ ràng trong STT sửa day label OCR mâu thuẫn trong
-cùng itinerary. STT cung cấp day/order/activity/search region; OCR cung cấp tên
-hiển thị, địa chỉ và giá; evidence ngắn của hai nguồn được giữ tách biệt. Không
+rộng 960 px theo batch tối đa 10 ảnh ở media resolution medium. Gemini Audio
+trả transcript cùng observation gồm order/place/evidence/day/time/activity/
+duration/confidence và search region explicit. Candidate từ STT và frame vision
+được gộp; một nguồn không loại bỏ candidate chỉ xuất hiện ở nguồn còn lại. OCR
+ưu tiên tên hiển thị và thứ tự frame; STT ưu tiên day/time/activity/duration/
+search region; evidence ngắn của hai nguồn được giữ tách biệt. Không
 giới hạn số place candidate có evidence được giữ sau bước
 gộp; giới hạn 48 chỉ là số frame video lấy mẫu. Frame được
 chia đều giữa các batch để giảm latency của batch lớn nhất; tối đa năm batch

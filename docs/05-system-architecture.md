@@ -75,24 +75,23 @@ PlanService
                                                         | user_must_place
                                                         v
                                                   ExplorerIntakeResponse
-                                                  (intakeId + userId + explorer)
+                                        (intakeId + userId + explorer + timing)
 ```
 
 `ExploreResponseFormatter` chỉ tổng hợp raw prompt và context đã được các
-extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Nếu request
-chỉ có raw prompt, `PlanService` bỏ qua cả hai extractor và gọi formatter trực
-tiếp. Kết quả Explorer hiện được trả thẳng về client, chưa được lưu thành draft
-trong database. Sau khi user xác nhận candidate trên UI, client gọi
-`POST /api/plans/main/from-explorer` với `intent`, `tripSpec` và
-`selectedPlaces`. Đây hiện là handoff theo request; persistence theo trip cho
-`SelectedPlace` vẫn chưa được triển khai.
-tiếp. Output được tách thành Explorer context và một mảng `placeCandidates`.
-Aggregator gộp trùng nhưng giữ mọi source URL. Resolver chạy tự động sau
-extraction; không dừng luồng để hỏi user. Kết quả được lưu đầy đủ chỉ vào
-`user_must_place`; Explorer intake không ghi vào `places` và không lưu Explorer
-context. Response chỉ trả `intakeId`, `userId` cùng Explorer context. Explorer
-không tự gọi Planner/Finder. Planner downstream đọc context và chuyển tiếp hai
-khóa; Finder downstream đọc `user_must_place` bằng `intakeId + userId`.
+extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Với URL,
+Extractor là nguồn duy nhất tạo candidate; Formatter chỉ tạo intent/trip spec/
+preference và chạy song song với Resolver. Aggregator gộp trùng nhưng giữ
+provenance. Resolver chạy tự động, không dừng luồng để hỏi user. Chỉ kết quả
+resolved có tọa độ hợp lệ được lưu vào `user_must_place`; Explorer intake không
+ghi vào `places` và không lưu raw transcript/OCR.
+
+Response trả `intakeId`, `userId`, Explorer context và `timingReport`.
+`timingReport` dùng cho debug latency trên UI và được append dạng JSONL vào
+`backend/var/explorer-timings.jsonl`. Log chỉ giữ duration/status/count, không
+giữ prompt, URL đầy đủ, transcript, OCR text hoặc credential. Explorer không tự
+gọi Planner/Finder. Planner downstream đọc context và chuyển tiếp hai khóa;
+Finder downstream đọc `user_must_place` bằng `intakeId + userId`.
 
 ## Ranh giới backend
 

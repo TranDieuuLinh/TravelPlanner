@@ -1,5 +1,6 @@
 import { apiFetch } from "@/lib/api";
 import type { CurrentUser } from "@/components/AuthProvider";
+import type { ProfileShowcase } from "@/types/profile";
 
 export async function listUsers(): Promise<CurrentUser[]> {
   return apiFetch<CurrentUser[]>("/users");
@@ -31,4 +32,8 @@ export async function getPlannerPreview(input: {
   return apiFetch<{ draft: string }>(`/me/planner-preview?${search}`, {
     method: "POST"
   });
+}
+
+export async function getProfileShowcase(): Promise<ProfileShowcase> {
+  return apiFetch<ProfileShowcase>("/me/showcase");
 }

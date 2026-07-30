@@ -57,6 +57,7 @@ class UrlReelExtractionService:
         payload: UrlReelInput,
         work_dir: Path,
     ) -> UrlReelExtractionResult:
+        extraction_start = time.perf_counter()
         work_dir.mkdir(parents=True, exist_ok=True)
         timings: dict[str, float] = {}
 
@@ -145,6 +146,7 @@ class UrlReelExtractionService:
         context_arguments = {
             "metadata": metadata,
             "transcript": speech_result.text,
+            "speech_observations": speech_result.observations,
             "destination": payload.destination,
         }
         if vision_result.text:
@@ -155,7 +157,14 @@ class UrlReelExtractionService:
             context_arguments["visual_observations"] = (
                 vision_result.observations
             )
+        context_start = time.perf_counter()
         context = self.context_extractor.extract(**context_arguments)
+        timings["contextExtraction"] = (
+            time.perf_counter() - context_start
+        )
+        timings["totalExtraction"] = (
+            time.perf_counter() - extraction_start
+        )
 
         result = UrlReelExtractionResult(
             url=payload.url,

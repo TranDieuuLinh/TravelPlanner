@@ -94,6 +94,10 @@ class MainPlanFromExplorerCreate(BaseModel):
         bool,
         Field(default=True, alias="allowFinderSuggestions"),
     ]
+    expand_days_to_fit_selected_places: Annotated[
+        bool,
+        Field(default=False, alias="expandDaysToFitSelectedPlaces"),
+    ]
 
     model_config = {"populate_by_name": True}
 

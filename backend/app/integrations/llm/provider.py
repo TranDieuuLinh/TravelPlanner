@@ -88,6 +88,25 @@ class GeminiLLMClient(LLMClient):
         )
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        return await self.generate_structured_json(
+            system_prompt,
+            user_payload,
+            response_schema={},
+        )
+
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        generation_config = {
+            "responseMimeType": "application/json",
+            "temperature": 0.1,
+        }
+        if response_schema:
+            generation_config["responseJsonSchema"] = response_schema
         data = await self._generate_content(
             model=self.model,
             payload={
@@ -95,10 +114,7 @@ class GeminiLLMClient(LLMClient):
                 "contents": [
                     {"role": "user", "parts": [{"text": user_payload}]}
                 ],
-                "generationConfig": {
-                    "responseMimeType": "application/json",
-                    "temperature": 0.1,
-                },
+                "generationConfig": generation_config,
             },
         )
         return self._extract_text(data)

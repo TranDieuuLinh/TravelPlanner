@@ -8,6 +8,7 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
     ExtractedPlace,
     FrameVisionObservation,
+    SpeechToTextObservation,
     UrlMetadata,
 )
 
@@ -183,15 +184,30 @@ class UrlReelContextExtractor:
         self,
         metadata: UrlMetadata,
         transcript: str,
+        speech_observations: list[SpeechToTextObservation] | None = None,
         destination: str | None = None,
         visual_text: str = "",
         visual_places: list[str] | None = None,
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> ExtractedContext:
         metadata_text = "\n".join(part for part in [metadata.title, metadata.description] if part)
+        structured_stt_text = "\n".join(
+            observation.evidence
+            for observation in speech_observations or []
+            if observation.evidence
+        )
         combined = "\n".join(
             part
-            for part in [metadata_text, transcript, visual_text, destination]
+            for part in [
+                metadata_text,
+                (
+                    structured_stt_text
+                    if speech_observations is not None
+                    else transcript
+                ),
+                visual_text,
+                destination,
+            ]
             if part
         )
         places = self._extract_places(
@@ -199,6 +215,8 @@ class UrlReelContextExtractor:
             transcript=transcript,
             destination=destination,
             visual_places=visual_places or [],
+            speech_observations=speech_observations,
+            visual_observations=visual_observations or [],
         )
         place_details = self._place_details(
             places=places,
@@ -206,9 +224,11 @@ class UrlReelContextExtractor:
             metadata=metadata,
             metadata_text=metadata_text,
             transcript=transcript,
+            speech_observations=speech_observations,
             visual_text=visual_text,
             visual_observations=visual_observations or [],
         )
+        places = [detail.name for detail in place_details]
         interests = self._extract_interests(combined)
         confidence = 0.3
         if transcript:
@@ -217,6 +237,15 @@ class UrlReelContextExtractor:
             confidence += 0.15
         if places:
             confidence += 0.15
+        if speech_observations:
+            confidence = max(
+                confidence,
+                sum(
+                    observation.confidence
+                    for observation in speech_observations
+                )
+                / len(speech_observations),
+            )
         return ExtractedContext(
             extractedPlaces=places,
             extractedPlaceDetails=place_details,
@@ -235,22 +264,55 @@ class UrlReelContextExtractor:
         transcript: str,
         destination: str | None,
         visual_places: list[str] | None = None,
+        speech_observations: list[SpeechToTextObservation] | None = None,
+        visual_observations: list[FrameVisionObservation] | None = None,
     ) -> list[str]:
         candidates: list[tuple[str, int]] = []
         metadata_phrases = self._metadata_itinerary_phrases(metadata_text)
         for phrase in metadata_phrases:
             candidates.append((phrase, 120))
 
+        for observation in sorted(
+            speech_observations or [],
+            key=lambda item: item.order,
+        ):
+            cleaned = self._normalize_candidate(observation.place_name)
+            if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
+                candidates.append((cleaned, 140))
+
+        ordered_visual_observations = sorted(
+            visual_observations or [],
+            key=lambda item: item.order or 10_000,
+        )
+        observed_visual_names: set[str] = set()
+        for observation in ordered_visual_observations:
+            cleaned = self._normalize_candidate(observation.place_name)
+            if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
+                candidates.append((cleaned, 150))
+                observed_visual_names.add(self._dedupe_key(cleaned))
+
         for phrase in visual_places or []:
             cleaned = self._normalize_candidate(phrase)
-            if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
+            if (
+                cleaned
+                and cleaned.lower() not in GENERIC_PLACE_TERMS
+                and self._dedupe_key(cleaned) not in observed_visual_names
+            ):
                 candidates.append((cleaned, 150))
 
         known_places = [
             candidate
             for candidate, _score in candidates
         ]
-        for phrase in self._keyword_phrases(metadata_text, transcript):
+        transcript_fallback = (
+            transcript
+            if speech_observations is None
+            else ""
+        )
+        for phrase in self._keyword_phrases(
+            metadata_text,
+            transcript_fallback,
+        ):
             if any(
                 self._same_place_name(phrase, known)
                 for known in known_places
@@ -447,10 +509,21 @@ class UrlReelContextExtractor:
         metadata_text: str,
         transcript: str,
         visual_text: str,
+        speech_observations: list[SpeechToTextObservation] | None = None,
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> list[ExtractedPlace]:
+        structured_stt_text = "\n".join(
+            observation.evidence
+            for observation in speech_observations or []
+            if observation.evidence
+        )
+        stt_evidence_text = (
+            structured_stt_text
+            if speech_observations is not None
+            else transcript
+        )
         combined_evidence_text = "\n".join(
-            part for part in (transcript, visual_text) if part
+            part for part in (stt_evidence_text, visual_text) if part
         )
         address_hints = self._address_hints(
             places=places,
@@ -459,7 +532,11 @@ class UrlReelContextExtractor:
             transcript=combined_evidence_text,
         )
         destination_key = self._dedupe_key(destination or "")
-        source_text = f"{metadata_text}\n{combined_evidence_text}"
+        source_text = (
+            metadata_text
+            if speech_observations is not None
+            else f"{metadata_text}\n{combined_evidence_text}"
+        )
         multi_day = bool(
             re.search(
                 r"\b(?:[2-9]|[12]\d|30)\s*[- ]day\b"
@@ -480,10 +557,18 @@ class UrlReelContextExtractor:
             self._dedupe_key(observation.place_name): observation
             for observation in visual_observations or []
         }
-        transcript_days = [
-            self._transcript_day_for_place(place, transcript)
-            for place in places
-        ]
+        speech_observations_by_place = {
+            self._dedupe_key(observation.place_name): observation
+            for observation in speech_observations or []
+        }
+        transcript_days = (
+            [None for _place in places]
+            if speech_observations is not None
+            else [
+                self._transcript_day_for_place(place, transcript)
+                for place in places
+            ]
+        )
         for index, day in enumerate(transcript_days):
             if day is not None:
                 continue
@@ -505,18 +590,35 @@ class UrlReelContextExtractor:
             )
             if previous_day is not None and previous_day == next_day:
                 transcript_days[index] = previous_day
-        day_regions = self._day_region_hints(
-            transcript,
-            destination=destination,
+        day_regions = (
+            {}
+            if speech_observations is not None
+            else self._day_region_hints(
+                transcript,
+                destination=destination,
+            )
         )
         for order, place in enumerate(places, start=1):
-            observation = observations_by_place.get(self._dedupe_key(place))
+            observation = self._matching_observation(
+                place,
+                observations_by_place,
+            )
+            speech_observation = self._matching_observation(
+                place,
+                speech_observations_by_place,
+            )
             address = address_hints.get(self._dedupe_key(place))
-            speech_evidence = self._evidence_for_place(
-                place=place,
-                metadata_text="",
-                transcript=transcript,
-                prefer_address=bool(address),
+            speech_evidence = (
+                speech_observation.evidence
+                if speech_observation is not None
+                else self._evidence_for_place(
+                    place=place,
+                    metadata_text="",
+                    transcript=transcript,
+                    prefer_address=bool(address),
+                )
+                if speech_observations is None
+                else ""
             )
             visual_evidence = (
                 observation.evidence
@@ -547,13 +649,61 @@ class UrlReelContextExtractor:
                 if value
             }
             local_evidence = " ".join(source_evidence.values()) or place
-            source_day = (
-                transcript_days[order - 1]
-                if transcript_days[order - 1] is not None
-                else observation.day_number
-                if observation is not None
+            source_day = transcript_days[order - 1]
+            if (
+                speech_observation is not None
+                and speech_observation.day_number is not None
+            ):
+                source_day = speech_observation.day_number
+            elif (
+                source_day is None
+                and observation is not None
                 and observation.day_number is not None
-                else 1 if single_day else None
+            ):
+                source_day = observation.day_number
+            elif source_day is None and single_day:
+                source_day = 1
+
+            source_order = order
+            if (
+                speech_observation is not None
+                and speech_observation.order is not None
+            ):
+                source_order = speech_observation.order
+            if observation is not None and observation.order is not None:
+                source_order = observation.order
+
+            source_time_hint = self._time_hint(speech_evidence or "")
+            if speech_observation is not None and speech_observation.time_hint:
+                source_time_hint = speech_observation.time_hint
+            elif (
+                not source_time_hint
+                and observation is not None
+                and observation.time_hint
+            ):
+                source_time_hint = observation.time_hint
+            if not source_time_hint:
+                source_time_hint = self._time_hint(local_evidence)
+
+            source_activity = None
+            if speech_observation is not None and speech_observation.activity:
+                source_activity = speech_observation.activity
+            elif observation is not None and observation.activity:
+                source_activity = observation.activity
+
+            search_region = destination
+            if source_day is not None:
+                search_region = day_regions.get(source_day) or destination
+            if (
+                speech_observation is not None
+                and speech_observation.search_region
+            ):
+                search_region = speech_observation.search_region
+
+            source_duration_minutes = (
+                speech_observation.duration_minutes
+                if speech_observation is not None
+                else None
             )
             details.append(
                 ExtractedPlace(
@@ -564,12 +714,7 @@ class UrlReelContextExtractor:
                         if self._dedupe_key(place) == destination_key
                         else address
                     ),
-                    searchRegion=(
-                        day_regions.get(source_day)
-                        if source_day is not None
-                        else destination
-                    )
-                    or destination,
+                    searchRegion=search_region,
                     source="url_reel",
                     evidence=evidence,
                     sourceEvidence=source_evidence,
@@ -578,24 +723,41 @@ class UrlReelContextExtractor:
                         local_evidence,
                         "",
                     ),
-                    sourceOrder=order,
+                    sourceOrder=source_order,
                     sourceDay=source_day,
-                    sourceTimeHint=(
-                        self._time_hint(speech_evidence or "")
-                        or observation.time_hint
-                        if observation is not None
-                        else self._time_hint(speech_evidence or "")
-                        or self._time_hint(local_evidence)
-                    ),
-                    sourceActivity=(
-                        observation.activity
-                        if observation is not None
-                        and observation.activity
-                        else None
-                    ),
+                    sourceTimeHint=source_time_hint,
+                    sourceActivity=source_activity,
+                    sourceDurationMinutes=source_duration_minutes,
                 )
             )
-        return details
+        return sorted(
+            details,
+            key=lambda detail: (
+                detail.source_order is None,
+                detail.source_order or 10_000,
+                detail.source_day or 10_000,
+            ),
+        )
+
+    def _matching_observation(
+        self,
+        place: str,
+        observations_by_place: dict[
+            str,
+            FrameVisionObservation | SpeechToTextObservation,
+        ],
+    ) -> FrameVisionObservation | SpeechToTextObservation | None:
+        exact = observations_by_place.get(self._dedupe_key(place))
+        if exact is not None:
+            return exact
+        return next(
+            (
+                observation
+                for observation in observations_by_place.values()
+                if self._same_place_name(place, observation.place_name)
+            ),
+            None,
+        )
 
     def _day_region_hints(
         self,

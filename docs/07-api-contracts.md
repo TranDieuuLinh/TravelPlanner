@@ -20,7 +20,39 @@ Base URL: `/api`. Các field trong JSON response sử dụng camelCase.
 - `POST /api/auth/logout`: thu hồi refresh session và xóa cookie.
 - `GET /api/me`: lấy user hiện tại.
 - `PATCH /api/me/profile`: sửa hồ sơ; yêu cầu CSRF header.
+- `GET /api/me/showcase`: lấy các địa điểm đã đi và bài viết của user hiện tại.
+- `POST /api/me/visited-places`: đánh dấu hoặc cập nhật một `placeId` đã đi; yêu
+  cầu CSRF header và Place phải có tọa độ hợp lệ.
 - `POST /api/me/creator-application`: gửi yêu cầu creator; yêu cầu CSRF header.
+
+Response showcase:
+
+```json
+{
+  "visitedPlaces": [
+    {
+      "id": "visit_uuid",
+      "placeId": "place_uuid",
+      "name": "Phố cổ Hội An",
+      "city": "Hội An",
+      "country": "Việt Nam",
+      "latitude": 15.8800584,
+      "longitude": 108.3380469,
+      "visitedAt": "2026-06-14",
+      "note": "Một chiều trong phố cổ."
+    }
+  ],
+  "posts": [
+    {
+      "id": "post_uuid",
+      "caption": "Hội An ngày nắng",
+      "mediaUrl": "https://example.com/hoi-an.jpg",
+      "locationName": "Phố cổ Hội An",
+      "createdAt": "2026-06-15T02:30:00Z"
+    }
+  ]
+}
+```
 
 Request đăng ký:
 
@@ -52,12 +84,14 @@ client không được tự chọn role.
 
 ### Trip chat và lịch sử chỉnh sửa
 
-Các endpoint sau yêu cầu đăng nhập; thao tác POST yêu cầu CSRF:
+Các endpoint sau yêu cầu đăng nhập; thao tác POST/DELETE yêu cầu CSRF:
 
 - `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
 - `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
 - `GET /api/trip-chats/{chatId}`: lấy message history, Explorer context và plan
   hiện tại.
+- `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
+  message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
   hiện tại.
 
@@ -138,6 +172,15 @@ candidate trùng, giữ mọi source URL, resolve place và lưu toàn bộ kế
 vào PostgreSQL table `user_must_place`. Flow này không ghi vào `places` và không
 lưu Explorer context.
 
+Explorer response có thêm `timingReport` để debug latency. Report dùng cùng
+`intakeId`, gồm `totalSeconds`, các stage cấp Explorer, timing chi tiết theo từng
+URL và số candidate/resolved/persisted. Các stage chạy song song giữ duration
+riêng và phải so theo wall time, không cộng STT với frame vision hoặc Formatter
+với place resolution. Report không chứa raw prompt, URL đầy đủ, transcript, OCR
+text hay credential. Runtime nối mỗi report thành một dòng JSON tại
+`backend/var/explorer-timings.jsonl`; dùng
+`cd backend && python scripts/show_explorer_timing.py` để xem lần gần nhất.
+
 Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
 `food`, `cafe`, `hotel`, `transport`, `free_time`, `nature`, `culture`,
 `shopping`, `nightlife`, `wellness`, `adventure`, `beach`, `family`, `other`.
@@ -217,8 +260,10 @@ hard-cap, confidence hay calculation
 basis, và không lặp `budgetLevel` trong `intent`.
 
 `POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
-Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces` và
-`allowFinderSuggestions`.
+Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
+`allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
+chỉ bật cờ mở rộng khi amendment yêu cầu thêm ngày; số ngày được giới hạn tối đa
+30 và được tính lại sau khi merge địa điểm cũ với intake mới.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
 đúng `intakeId + userId`. Candidate chưa được user xác nhận vẫn giữ
 `preferenceLevel=preferred`, confidence và provenance; không được đổi thành
@@ -237,8 +282,15 @@ Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrde
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
 `longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
+`PlanItem` cũng trả lại `sourceDay` để lần sửa tiếp theo không làm mất phân ngày
+của nguồn.
 Planner/Finder ưu tiên blueprint URL và giữ thứ tự nguồn. Hard constraint
 explicit vẫn thắng; timing cue không được mô tả như giờ hoạt động đã xác minh.
+
+Sức chứa activity tối đa theo pace hiện là 2 cho `relaxed`, 3 cho `balanced` và
+5 cho `packed`. Stop vượt sức chứa hoặc khiến timeline đạt/vượt `24:00` được
+trả trong `unscheduledPlaces` với reason code tương ứng; API không trả khung giờ
+như `24:07-25:07`.
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`

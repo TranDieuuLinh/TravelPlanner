@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     url_reel_vision_batch_size: int = 10
     url_reel_vision_max_concurrency: int = 5
     url_reel_vision_media_resolution: str = "MEDIA_RESOLUTION_MEDIUM"
+    explorer_timing_log_path: Path = (
+        BACKEND_ROOT / "var" / "explorer-timings.jsonl"
+    )
     place_resolver_provider: str = "nominatim"
     here_base_url: str = "https://discover.search.hereapi.com"
     here_geocode_base_url: str = "https://geocode.search.hereapi.com"
@@ -48,6 +51,7 @@ class Settings(BaseSettings):
     here_country_code: str = "VNM"
     here_language: str = "vi-VN"
     here_min_interval_seconds: float = 0.2
+    here_max_concurrency: int = Field(default=4, ge=1, le=4)
     route_provider: str = "here"
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"

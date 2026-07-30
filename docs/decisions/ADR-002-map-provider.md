@@ -50,6 +50,13 @@ Nominatim mà không đổi contract domain; thiếu HERE credential cũng phả
 Nominatim an toàn. Bản đồ nền UI tiếp tục dùng OpenStreetMap/Leaflet và hiển thị
 attribution HERE khi có geometry route HERE.
 
+Khi resolve một batch, HERE được chạy đồng thời có giới hạn tối đa bốn request
+đang xử lý. Khoảng cách tối thiểu giữa thời điểm bắt đầu request tiếp tục được
+cấu hình để khớp quota của deployment; network I/O không giữ rate-limit lock.
+Batch giữ thứ tự đầu vào. Chỉ các candidate HERE thất bại mới được chuyển sang
+public Nominatim và nhánh Nominatim vẫn tuần tự, tối đa một request/giây. Docker
+Compose lấy lựa chọn provider từ `backend/.env` thay vì ghi đè thành Nominatim.
+
 Gateway của provider phải cung cấp:
 
 - tìm kiếm/chi tiết địa điểm và ánh xạ tới place nội bộ ổn định;

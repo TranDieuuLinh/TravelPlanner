@@ -156,6 +156,53 @@ class ExploreBundleDraft(BaseModel):
     places: PlaceCandidatesResponse
 
 
+class ExplorerTimingStage(BaseModel):
+    key: str
+    label: str
+    duration_seconds: Annotated[float, Field(alias="durationSeconds")]
+    details: dict[str, str | int | float | bool | None] = Field(
+        default_factory=dict
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class ExplorerSourceTiming(BaseModel):
+    source_index: Annotated[int, Field(alias="sourceIndex")]
+    platform: str
+    total_seconds: Annotated[float, Field(alias="totalSeconds")]
+    stages: list[ExplorerTimingStage] = Field(default_factory=list)
+    sampled_frames: Annotated[int, Field(default=0, alias="sampledFrames")]
+    speech_status: Annotated[str, Field(alias="speechStatus")]
+    vision_status: Annotated[str, Field(alias="visionStatus")]
+    extracted_place_count: Annotated[
+        int,
+        Field(default=0, alias="extractedPlaceCount"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
+class ExplorerTimingReport(BaseModel):
+    intake_id: Annotated[str, Field(alias="intakeId")]
+    status: str
+    total_seconds: Annotated[float, Field(alias="totalSeconds")]
+    stages: list[ExplorerTimingStage] = Field(default_factory=list)
+    sources: list[ExplorerSourceTiming] = Field(default_factory=list)
+    url_count: Annotated[int, Field(default=0, alias="urlCount")]
+    image_count: Annotated[int, Field(default=0, alias="imageCount")]
+    candidate_count: Annotated[int, Field(default=0, alias="candidateCount")]
+    resolved_count: Annotated[int, Field(default=0, alias="resolvedCount")]
+    persisted_count: Annotated[int, Field(default=0, alias="persistedCount")]
+    provider_counts: Annotated[
+        dict[str, int],
+        Field(default_factory=dict, alias="providerCounts"),
+    ]
+    log_file: Annotated[str | None, Field(default=None, alias="logFile")]
+
+    model_config = {"populate_by_name": True}
+
+
 class ExploreIntakeResponse(BaseModel):
     intake_id: Annotated[str, Field(alias="intakeId")]
     user_id: Annotated[str | None, Field(default=None, alias="userId")]
@@ -163,6 +210,10 @@ class ExploreIntakeResponse(BaseModel):
     allow_finder_suggestions: Annotated[
         bool,
         Field(default=True, alias="allowFinderSuggestions"),
+    ]
+    timing_report: Annotated[
+        ExplorerTimingReport | None,
+        Field(default=None, alias="timingReport"),
     ]
 
     model_config = {"populate_by_name": True}

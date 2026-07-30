@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     DateTime,
+    ForeignKey,
     Index,
     JSON,
     Numeric,
@@ -16,6 +17,26 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class ExplorerIntake(Base):
+    __tablename__ = "explorer_intakes"
+    __table_args__ = (
+        Index(
+            "ix_explorer_intakes_user_created",
+            "user_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    destination: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class UserMustPlace(Base):
@@ -34,7 +55,10 @@ class UserMustPlace(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    intake_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    intake_id: Mapped[str] = mapped_column(
+        ForeignKey("explorer_intakes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
     candidate_key: Mapped[str] = mapped_column(String(255), nullable=False)
