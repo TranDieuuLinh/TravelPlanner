@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
 
 const nav = [
+  { href: "/reels", label: "Video Quảng Bá", icon: "▶" },
   { href: "/explore", label: "Khám phá", icon: "⌕" },
   { href: "/planner", label: "AI Planner", icon: "✦" },
   { href: "/profile", label: "Hồ sơ", icon: "○" },

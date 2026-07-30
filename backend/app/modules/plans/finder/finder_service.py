@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from math import asin, cos, radians, sin, sqrt
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import (
@@ -50,6 +51,7 @@ INTENSITY_EFFECTS: dict[str, dict[str, int]] = {
 }
 
 BREAK_EFFECTS = {"energy": 5, "mental": 3}
+MEAL_EFFECTS = {"energy": 5, "mental": 2, "satiety": 20}
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,8 @@ class FinderService:
             trip_start_date=None,
             preferred_modes=set(),
             avoid_modes=set(),
+            intent_interests=intent.interests,
+            travel_style=intent.travel_style,
         )
 
     def fill_backup_plan(
@@ -128,6 +132,8 @@ class FinderService:
             trip_start_date=None,
             preferred_modes=set(),
             avoid_modes=set(),
+            intent_interests=intent.interests,
+            travel_style=intent.travel_style,
         )
 
     def fill_agent_plan(
@@ -157,6 +163,8 @@ class FinderService:
                 mode.value
                 for mode in finder_input.trip_spec.transport.avoid_modes
             },
+            intent_interests=finder_input.intent.interests,
+            travel_style=finder_input.intent.travel_style,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -206,6 +214,8 @@ class FinderService:
         trip_start_date: str | None,
         preferred_modes: set[str],
         avoid_modes: set[str],
+        intent_interests: list[str],
+        travel_style: str,
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -238,18 +248,11 @@ class FinderService:
                 for ref in brief.allocated_selected_place_refs
                 if ref in selected_by_ref
             ]
-            minimum_activity_count = (
-                self.skeleton_builder.minimum_activity_count(brief.pace)
-            )
-            sparse_reference_day = (
-                has_reference_places
-                and len(allocated_places) < minimum_activity_count
-            )
             allow_suggestions_for_day = (
                 allow_finder_suggestions
                 and (
                     not has_reference_places
-                    or sparse_reference_day
+                    or not allocated_places
                 )
             )
             if not allow_finder_suggestions and not allocated_places:
@@ -270,7 +273,6 @@ class FinderService:
                 self.skeleton_builder.build_source_itinerary(
                     brief,
                     allocated_places,
-                    supplement_sparse_day=allow_suggestions_for_day,
                 )
                 if has_source_itinerary
                 else self.skeleton_builder.build(
@@ -284,6 +286,7 @@ class FinderService:
             tentative_plan_status.day_usage = FinderUsage()
             day_items: list[PlanItem] = []
             committed_activities: dict[str, tuple[FinderPlace, DayBlock]] = {}
+            deferred_slot_warnings: list[str] = []
 
             for block in skeleton.blocks:
                 tentative_plan_status.current_slot = block.role
@@ -297,13 +300,14 @@ class FinderService:
                         warnings.append(message)
                         tentative_plan_status.warnings.append(message)
                     continue
-                if not block.activity:
+                if not block.activity and block.kind != "meal":
                     day_items.append(self._build_non_activity_item(block))
-                    self._apply_break(
-                        tentative_user_status,
-                        tentative_plan_status,
-                        block,
-                    )
+                    if block.kind != "social_activity":
+                        self._apply_break(
+                            tentative_user_status,
+                            tentative_plan_status,
+                            block,
+                        )
                     continue
 
                 candidate = self._choose_candidate(
@@ -319,15 +323,35 @@ class FinderService:
                     constraint_policy=constraint_policy,
                     budget_level=budget_level,
                     rejected_selected_places=rejected_selected_places,
+                    intent_interests=intent_interests,
+                    travel_style=travel_style,
                 )
                 if candidate is None:
                     message = (
                         f"Day {brief.day} has no valid candidate for "
                         f"{block.role}."
                     )
-                    if not block.optional:
-                        warnings.append(message)
-                        tentative_plan_status.warnings.append(message)
+                    if block.kind == "meal":
+                        day_items.append(self._build_non_activity_item(block))
+                        self._apply_break(
+                            tentative_user_status,
+                            tentative_plan_status,
+                            block,
+                        )
+                        if allow_suggestions_for_day:
+                            meal_message = (
+                                f"Day {brief.day} uses an unresolved meal "
+                                f"placeholder for {block.role}; no verified "
+                                "food place matched the slot."
+                            )
+                            warnings.append(meal_message)
+                            tentative_plan_status.warnings.append(meal_message)
+                    elif not block.optional:
+                        if block.role.startswith("support_activity"):
+                            deferred_slot_warnings.append(message)
+                        else:
+                            warnings.append(message)
+                            tentative_plan_status.warnings.append(message)
                     continue
 
                 selected_source = candidate.stable_ref in selected_by_ref
@@ -350,6 +374,22 @@ class FinderService:
                     tentative_plan_status,
                 )
 
+            minimum_place_count = (
+                4
+                if skeleton.strategy == "multi_stop"
+                else 2
+                if skeleton.strategy in {"relaxed", "recovery"}
+                else 3
+            )
+            if (
+                deferred_slot_warnings
+                and tentative_plan_status.day_usage.place_count
+                < minimum_place_count
+            ):
+                warnings.extend(deferred_slot_warnings)
+                tentative_plan_status.warnings.extend(
+                    deferred_slot_warnings
+                )
             self._finish_day_location(tentative_user_status)
             tentative_user_status.available_at = None
             tentative_user_status.after_committed_day = brief.day
@@ -369,7 +409,10 @@ class FinderService:
             optimized_items, transport_legs = self.route_optimizer.optimize(
                 day_items,
                 start=start_coordinate,
-                preserve_order=has_source_itinerary,
+                preserve_order=(
+                    has_source_itinerary
+                    or any(item.role and "meal" in item.role for item in day_items)
+                ),
                 day=brief.day,
                 trip_start_date=trip_start_date,
                 preferred_modes=preferred_modes,
@@ -497,9 +540,17 @@ class FinderService:
         constraint_policy: ConstraintPolicy,
         budget_level: str,
         rejected_selected_places: dict[str, CandidateRejection],
+        intent_interests: list[str],
+        travel_style: str,
     ) -> FinderPlace | None:
         candidates: list[FinderPlace] = []
-        search_terms = self._search_terms(macro_plan, brief, block)
+        search_terms = self._search_terms(
+            macro_plan,
+            brief,
+            block,
+            intent_interests=intent_interests,
+            travel_style=travel_style,
+        )
         query_categories = self._query_categories(
             macro_plan,
             brief,
@@ -553,14 +604,18 @@ class FinderService:
                 for place in selected_by_ref.values()
                 if place.place_id is not None
             }
-            candidates.extend(
-                self.place_tool.search(
+            catalog_candidates = self.place_tool.search(
                     region_key=region_key,
                     target_tags=search_terms,
                     excluded_place_ids=(
                         set(plan_status.used_place_ids) | selected_place_ids
                     ),
                     limit=self.max_candidates_per_block,
+                )
+            candidates.extend(
+                self._rerank_for_proximity(
+                    catalog_candidates,
+                    user_status,
                 )
             )
 
@@ -592,6 +647,8 @@ class FinderService:
                 budget_level=budget_level,
             )
             if rejection is not None:
+                if rejection.reason_code == "slot_category_mismatch":
+                    continue
                 if candidate_ref not in plan_status.rejected_candidate_ids:
                     plan_status.rejected_candidate_ids.append(
                         candidate_ref
@@ -602,12 +659,97 @@ class FinderService:
             return candidate
         return None
 
+    def _rerank_for_proximity(
+        self,
+        candidates: list[FinderPlace],
+        user_status: UserStatus,
+    ) -> list[FinderPlace]:
+        location = user_status.location
+        if (
+            location is None
+            or location.latitude is None
+            or location.longitude is None
+        ):
+            return candidates
+        origin = (location.latitude, location.longitude)
+        ranked: list[tuple[float, float, FinderPlace]] = []
+        for relevance_rank, candidate in enumerate(candidates):
+            if candidate.latitude is None or candidate.longitude is None:
+                distance = float("inf")
+                combined_rank = relevance_rank + 4
+            else:
+                distance = self._haversine_meters(
+                    origin,
+                    (candidate.latitude, candidate.longitude),
+                )
+                combined_rank = relevance_rank + min(
+                    distance / 2_000,
+                    3,
+                )
+            ranked.append((combined_rank, distance, candidate))
+        return [
+            candidate
+            for _, _, candidate in sorted(
+                ranked,
+                key=lambda entry: (
+                    entry[0],
+                    entry[1],
+                    entry[2].name.casefold(),
+                ),
+            )
+        ]
+
+    def _haversine_meters(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+    ) -> float:
+        latitude_1, longitude_1 = map(radians, origin)
+        latitude_2, longitude_2 = map(radians, destination)
+        delta_latitude = latitude_2 - latitude_1
+        delta_longitude = longitude_2 - longitude_1
+        value = (
+            sin(delta_latitude / 2) ** 2
+            + cos(latitude_1)
+            * cos(latitude_2)
+            * sin(delta_longitude / 2) ** 2
+        )
+        return 6_371_000 * 2 * asin(sqrt(value))
+
     def _search_terms(
         self,
         macro_plan: MacroPlan,
         brief,
         block: DayBlock,
+        *,
+        intent_interests: list[str],
+        travel_style: str,
     ) -> list[str]:
+        if block.kind == "meal":
+            meal_goal = (
+                brief.day_part_goals.lunch
+                if "lunch" in block.role
+                else brief.day_part_goals.evening
+            )
+            return list(
+                dict.fromkeys(
+                    value
+                    for value in (
+                        "food",
+                        "local food",
+                        "local cuisine",
+                        "món địa phương",
+                        "ăn trưa" if "lunch" in block.role else "ăn tối",
+                        meal_goal,
+                        *intent_interests,
+                        travel_style,
+                        brief.theme,
+                        *brief.focus_tags,
+                        brief.target_area,
+                    )
+                    if value
+                )
+            )
         day_goal = (
             brief.day_part_goals.morning
             if block.role in {"main_activity", "late_main_activity"}
@@ -634,17 +776,11 @@ class FinderService:
             if value
         ]
         primary_categories = semantic_categories(set(primary_values))
-        strict_theme_block = block.role in {
-            "main_activity",
-            "late_main_activity",
-            "light_support_activity",
-        }
         compatible_focus_tags = [
             tag
             for tag in brief.focus_tags
             if (
-                not strict_theme_block
-                or not primary_categories
+                not primary_categories
                 or not semantic_categories({tag})
                 or bool(
                     semantic_categories({tag}).intersection(
@@ -673,6 +809,8 @@ class FinderService:
         *,
         fallback_terms: list[str],
     ) -> set[str]:
+        if block.candidate_category is not None:
+            return {block.candidate_category}
         day_goal = (
             brief.day_part_goals.morning
             if block.role in {"main_activity", "late_main_activity"}
@@ -701,13 +839,11 @@ class FinderService:
             }
         )
         focus_categories = semantic_categories(set(brief.focus_tags))
-        if block.role not in {
-            "main_activity",
-            "late_main_activity",
-            "light_support_activity",
-        }:
-            primary_categories.update(focus_categories)
-        return primary_categories or semantic_categories(set(fallback_terms))
+        return (
+            primary_categories
+            or focus_categories
+            or semantic_categories(set(fallback_terms))
+        )
 
     def _selected_to_candidate(
         self,
@@ -719,7 +855,6 @@ class FinderService:
             if stored_place is not None:
                 return stored_place.model_copy(
                     update={
-                        "description": selected.notes or stored_place.description,
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
                         "tags": list(
@@ -737,14 +872,12 @@ class FinderService:
         return FinderPlace(
             placeId=selected.place_id,
             name=selected.name,
-            address=selected.address,
             placeType="selected_place",
             regionKey=(
                 selected.region_key
                 or brief.target_region_key
                 or brief.target_area
             ),
-            description=selected.notes,
             tags=selected.tags,
             latitude=selected.latitude,
             longitude=selected.longitude,
@@ -796,6 +929,33 @@ class FinderService:
         )
         if policy_rejection is not None:
             return CandidateRejection(*policy_rejection)
+        category = place_category(candidate)
+        if (
+            block.candidate_category is not None
+            and not place_matches_categories(
+                candidate,
+                {block.candidate_category},
+            )
+        ):
+            return CandidateRejection(
+                "slot_category_mismatch",
+                (
+                    f"Place category {category or 'unknown'} cannot fill "
+                    f"the {block.candidate_category} slot."
+                ),
+            )
+        if (
+            not is_selected
+            and category in {"accommodation", "transport"}
+            and category not in query_categories
+        ):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                (
+                    f"Place category {category} cannot fill a regular "
+                    "activity block."
+                ),
+            )
         semantic_rejection = self._semantic_category_rejection(
             candidate,
             is_selected=is_selected,
@@ -999,7 +1159,6 @@ class FinderService:
             itemId=str(uuid4()),
             placeId=candidate.place_id,
             name=candidate.name,
-            address=candidate.address,
             timeWindow=block.time_window,
             placeType=(
                 "must_visit"
@@ -1027,12 +1186,7 @@ class FinderService:
             longitude=candidate.longitude,
             notes=(
                 candidate.source_activity
-                or candidate.description
-                or (
-                    "Địa điểm được thêm từ nguồn bạn cung cấp."
-                    if selected_source
-                    else "Địa điểm phù hợp với lịch trình và sở thích của bạn."
-                )
+                or None
             ),
             sourceOrder=candidate.source_order,
             sourceDay=candidate.source_day,
@@ -1047,6 +1201,8 @@ class FinderService:
                 name=(
                     "Lunch break"
                     if "lunch" in block.role
+                    else "Dinner break"
+                    if "dinner" in block.role
                     else "Meal break"
                 ),
                 timeWindow=block.time_window,
@@ -1054,7 +1210,21 @@ class FinderService:
                 role=block.role,
                 source="finder_rule",
                 durationMinutes=block.duration_minutes,
-                notes="Meal/rest block inserted by Finder day skeleton.",
+                notes=(
+                    "Chưa tìm được địa điểm ăn uống phù hợp đã được xác minh "
+                    "cho khung giờ này."
+                ),
+            )
+        if block.kind == "social_activity" or block.role == "group_social_activity":
+            return PlanItem(
+                itemId=str(uuid4()),
+                name="Group social activity",
+                timeWindow=block.time_window,
+                placeType="group_activity",
+                role=block.role,
+                source="finder_rule",
+                durationMinutes=block.duration_minutes,
+                notes="Tính năng gợi ý hoạt động nhóm sẽ sớm ra mắt.",
             )
         return PlanItem(
             itemId=str(uuid4()),
@@ -1229,17 +1399,22 @@ class FinderService:
             plan_status.visited_region_counts.get(candidate.region_key, 0) + 1
         )
         duration = self._candidate_duration(candidate, block)
+        is_meal = block.kind == "meal"
         self._increment_usage(
             plan_status.day_usage,
-            activity_minutes=duration,
+            activity_minutes=0 if is_meal else duration,
+            rest_minutes=duration if is_meal else 0,
             place_count=1,
         )
         self._increment_usage(
             plan_status.trip_usage,
-            activity_minutes=duration,
+            activity_minutes=0 if is_meal else duration,
+            rest_minutes=duration if is_meal else 0,
             place_count=1,
         )
-        if candidate.activity_intensity:
+        if is_meal:
+            self._apply_metric_delta(user_status, MEAL_EFFECTS)
+        elif candidate.activity_intensity:
             self._apply_metric_delta(
                 user_status,
                 INTENSITY_EFFECTS.get(candidate.activity_intensity, {}),

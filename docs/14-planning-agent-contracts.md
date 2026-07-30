@@ -177,6 +177,12 @@ và `level` nhận `low`, `medium` hoặc `high`. `intent` không lặp lại bu
     "mustVisitPlaces": ["Son Tra"],
     "avoidPlaces": [],
     "constraints": [],
+    "constraintPolicy": {
+      "excludedPlaceTypes": [],
+      "geographicScope": {
+        "type": "unrestricted"
+      }
+    },
     "clarifyingQuestions": []
   },
   "tripSpec": {
@@ -491,11 +497,29 @@ cho test hoặc fallback cô lập. Service nhận/trả qua `FinderAgentInput` 
 Trước khi commit candidate, Finder kiểm tra:
 
 - tên Place không nằm trong `avoidPlaces`;
+- `placeType`/tag/tên không khớp `constraintPolicy.excludedPlaceTypes`;
+- `placeType`, tag hoặc `regionKey` có bằng chứng phù hợp
+  `constraintPolicy.geographicScope`; phạm vi `coastal` không được suy luận chỉ
+  từ tên hiển thị;
 - duration không vượt quá activity block;
 - intensity và `maxConsecutiveActiveMinutes`;
 - `availableAt`;
 - accessibility feature đáp ứng toàn bộ `accessibilityNeeds`;
 - constraint `avoid_outdoor` dựa trên type/tag, không suy luận chỉ từ tên.
+
+Meal block là slot có candidate category `food_drink`, không còn mặc định luôn
+tạo `Lunch break`/`Dinner break`. Finder đưa `local food`, `local cuisine`, sở
+thích, theme và mục tiêu của ngày vào truy vấn. Nếu không có Place hợp lệ,
+Finder giữ meal placeholder có `source=finder_rule` và trả planning warning để
+không mô tả plan như đã hoàn thiện.
+
+Trong shortlist đã được rank theo relevance, Finder dùng khoảng cách tới
+`UserStatus.location` làm tín hiệu phụ để tránh chọn các Place đúng chủ đề nhưng
+rời rạc. Candidate thiếu tọa độ vẫn được giữ nhưng chịu penalty có giới hạn.
+
+`Group social activity` vẫn có trong skeleton dưới dạng `Coming soon`. Item này
+không phải Place đã commit, không được tính vào usage hoặc provenance count và
+không làm thay đổi timeline/UserStatus.
 
 Khi chưa có route data, `maxWalkingMinutesPerDay` được trả thành warning thay vì
 giả vờ đã kiểm tra. `requiredRestMinutes` cũng tạo warning nếu skeleton không đủ

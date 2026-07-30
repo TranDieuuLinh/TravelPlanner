@@ -339,6 +339,12 @@ phần context mà không chạy lại Explorer qua
     "mustVisitPlaces": [],
     "avoidPlaces": [],
     "constraints": [],
+    "constraintPolicy": {
+      "excludedPlaceTypes": ["cemetery"],
+      "geographicScope": {
+        "type": "coastal"
+      }
+    },
     "clarifyingQuestions": []
   },
   "tripSpec": {
