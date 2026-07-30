@@ -370,6 +370,12 @@ export async function getTripChat(chatId: string): Promise<TripChat> {
   return apiFetch<TripChat>(`/trip-chats/${chatId}`);
 }
 
+export async function deleteTripChat(chatId: string): Promise<void> {
+  return apiFetch<void>(`/trip-chats/${chatId}`, {
+    method: "DELETE"
+  });
+}
+
 export async function amendTripChat(input: {
   chatId: string;
   content: string;

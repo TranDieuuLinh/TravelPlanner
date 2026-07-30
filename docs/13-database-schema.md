@@ -1,9 +1,8 @@
 # Database schema
 
 Tài liệu này mô tả database mục tiêu cho VSF Travel dựa trên codebase hiện tại và
-danh sách bảng chính đã chốt. Trạng thái hiện tại: codebase mới triển khai thật
-bảng `users` qua SQLAlchemy/Alembic; các bảng còn lại là schema mục tiêu để thêm
-migration và model trong các bước tiếp theo.
+danh sách bảng chính đã chốt. Bảng trạng thái bên dưới phân biệt phần đã có
+model/migration với schema mục tiêu chưa triển khai.
 
 ## Trạng thái triển khai
 
@@ -34,6 +33,8 @@ migration và model trong các bước tiếp theo.
 | `reports` | Implemented | Báo cáo listing cho admin xử lý, migration `20260727_0003_add_person_c_marketplace.py` |
 | `audit_events` | Implemented | Nhật ký hành động quan trọng, migration `20260727_0003_add_person_c_marketplace.py` |
 | `favorites` | Implemented | User lưu marketplace plan yêu thích, migration `20260727_0003_add_person_c_marketplace.py` |
+| `user_visited_places` | Implemented | FK user/place cho bản đồ thành tựu, migration `20260730_0013_add_profile_showcase.py` |
+| `user_posts` | Implemented | Bài viết/media trên hồ sơ, migration `20260730_0013_add_profile_showcase.py` |
 | `achievements` | Planned | Danh mục thành tựu |
 | `user_achievements` | Planned | Tiến độ/thời điểm user đạt thành tựu |
 
@@ -491,6 +492,35 @@ Liên kết user với achievement.
 | `progress` | integer | Tiến độ hiện tại |
 | `achieved_at` | timestamptz, nullable | Thời điểm đạt được |
 
+### `user_visited_places`
+
+Đánh dấu các địa điểm user xác nhận đã đi. Tọa độ hiển thị luôn lấy từ
+`places`, không sao chép sang bảng liên kết.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | string PK | Opaque ID |
+| `user_id` | FK `users.id` | Chủ sở hữu dấu mốc |
+| `place_id` | FK `places.id` | Địa điểm chuẩn hóa |
+| `visited_at` | date | Ngày user đã đến |
+| `note` | text, nullable | Ghi chú ngắn |
+| `created_at` | timestamptz | Tạo lúc |
+
+Unique `(user_id, place_id)`.
+
+### `user_posts`
+
+Bài viết dạng ảnh trên hồ sơ.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | string PK | Opaque ID |
+| `user_id` | FK `users.id` | Tác giả |
+| `caption` | text | Nội dung bài viết |
+| `media_url` | varchar | URL media |
+| `location_name` | varchar, nullable | Nhãn địa điểm hiển thị |
+| `created_at` | timestamptz | Tạo lúc |
+
 ### `order_items`
 
 Liên kết order với marketplace plan version đã mua. Đây là nơi khóa giá và
@@ -548,6 +578,8 @@ users 1--N reports
 users 1--N audit_events
 
 users N--N achievements through user_achievements
+users N--N places through user_visited_places
+users 1--N user_posts
 ```
 
 ## Index và constraint nên có

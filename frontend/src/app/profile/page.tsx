@@ -2,44 +2,44 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
-import { useAuth, type CreatorStatus } from "@/components/AuthProvider";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
+import {
+  ProfileVisitedMap,
+  type ProvinceFootprint,
+} from "@/components/ProfileVisitedMap";
 import { APIError } from "@/lib/api";
-import { getUserFavorites } from "@/lib/marketplace";
-import { getUserOrders } from "@/lib/orders";
-import type { ListingSummary } from "@/types/marketplace";
-import type { OrderDetail } from "@/types/orders";
+import { getPurchasedPlans, getUserFavorites } from "@/lib/marketplace";
+import { getProfileShowcase } from "@/lib/users";
+import type { BuyerPlan, ListingSummary } from "@/types/marketplace";
+import type { ProfileShowcase } from "@/types/profile";
 
-const creatorStatusLabels: Record<CreatorStatus, string> = {
-  none: "Chưa đăng ký",
-  pending: "Đang chờ duyệt",
-  verified: "Đã xác minh",
-  rejected: "Cần gửi lại",
-};
+type ProfileTab = "achievements" | "posts" | "saved" | "purchased";
+
+const emptyShowcase: ProfileShowcase = { visitedPlaces: [], posts: [] };
 
 export default function ProfilePage() {
   const router = useRouter();
   const { loading, submitCreatorApplication, updateProfile, user } = useAuth();
-
-  const [activeTab, setActiveTab] = useState<"profile" | "creator" | "favorites" | "orders">("profile");
-
+  const [activeTab, setActiveTab] = useState<ProfileTab>("achievements");
+  const [showcase, setShowcase] = useState<ProfileShowcase>(emptyShowcase);
+  const [favorites, setFavorites] = useState<ListingSummary[]>([]);
+  const [purchased, setPurchased] = useState<BuyerPlan[]>([]);
+  const [contentBusy, setContentBusy] = useState(true);
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState<string | null>(null);
+  const [provinceFootprints, setProvinceFootprints] = useState<ProvinceFootprint[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileMessage, setProfileMessage] = useState("");
+  const [creatorPanelOpen, setCreatorPanelOpen] = useState(false);
+  const [creatorBusy, setCreatorBusy] = useState(false);
+  const [creatorMessage, setCreatorMessage] = useState("");
+  const [portfolioUrls, setPortfolioUrls] = useState("");
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [bio, setBio] = useState("");
   const [preferences, setPreferences] = useState("");
-  const [portfolioUrls, setPortfolioUrls] = useState("");
-
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [applicationBusy, setApplicationBusy] = useState(false);
-  const [profileMessage, setProfileMessage] = useState("");
-  const [applicationMessage, setApplicationMessage] = useState("");
-
-  const [favorites, setFavorites] = useState<ListingSummary[]>([]);
-  const [loadingFavs, setLoadingFavs] = useState(false);
-
-  const [orders, setOrders] = useState<OrderDetail[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login?next=/profile");
@@ -51,28 +51,50 @@ export default function ProfilePage() {
     setAvatarUrl(user.avatarUrl ?? "");
     setBio(user.bio ?? "");
     setPreferences(user.travelPreferences.join(", "));
-    setPortfolioUrls(user.creatorPortfolioUrls.join("\n"));
   }, [user]);
 
   useEffect(() => {
-    if (activeTab === "favorites" && user) {
-      setLoadingFavs(true);
-      getUserFavorites()
-        .then(setFavorites)
-        .catch(() => setFavorites([]))
-        .finally(() => setLoadingFavs(false));
-    } else if (activeTab === "orders" && user) {
-      setLoadingOrders(true);
-      getUserOrders()
-        .then(setOrders)
-        .catch(() => setOrders([]))
-        .finally(() => setLoadingOrders(false));
-    }
-  }, [activeTab, user]);
+    if (!user) return;
+    let cancelled = false;
+    setContentBusy(true);
+    Promise.allSettled([
+      getProfileShowcase(),
+      getUserFavorites(),
+      getPurchasedPlans(),
+    ]).then(([showcaseResult, favoriteResult, purchasedResult]) => {
+      if (cancelled) return;
+      setShowcase(showcaseResult.status === "fulfilled" ? showcaseResult.value : emptyShowcase);
+      setFavorites(favoriteResult.status === "fulfilled" ? favoriteResult.value : []);
+      setPurchased(purchasedResult.status === "fulfilled" ? purchasedResult.value : []);
+      setContentBusy(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
-  if (loading || !user) {
-    return <div className="routeLoading">Đang tải hồ sơ...</div>;
-  }
+  const selectProvince = useCallback((code: string) => setSelectedProvinceCode(code), []);
+  const updateProvinceFootprints = useCallback((summaries: ProvinceFootprint[]) => {
+    setProvinceFootprints(summaries);
+    setSelectedProvinceCode((current) => {
+      if (current && summaries.some((province) => province.code === current)) return current;
+      return summaries.find((province) => province.status === "visited")?.code ?? summaries[0]?.code ?? null;
+    });
+  }, []);
+  const visitedProvinceCount = useMemo(
+    () => provinceFootprints.filter((province) => province.status === "visited").length,
+    [provinceFootprints],
+  );
+  const visitCount = useMemo(
+    () => new Set(showcase.visitedPlaces.map((place) => place.visitedAt)).size,
+    [showcase.visitedPlaces],
+  );
+  const unlockedAchievements = useMemo(
+    () => getFootprintAchievements(provinceFootprints),
+    [provinceFootprints],
+  );
+
+  if (loading || !user) return <div className="routeLoading">Đang tải hồ sơ...</div>;
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -85,7 +107,8 @@ export default function ProfilePage() {
         bio: bio.trim() || null,
         travelPreferences: preferences.split(",").map((item) => item.trim()).filter(Boolean),
       });
-      setProfileMessage("Đã cập nhật hồ sơ thành công.");
+      setProfileMessage("Đã cập nhật hồ sơ.");
+      setEditing(false);
     } catch (reason) {
       setProfileMessage(reason instanceof APIError ? reason.message : "Không thể lưu hồ sơ.");
     } finally {
@@ -96,330 +119,355 @@ export default function ProfilePage() {
   async function applyForCreator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (bio.trim().length < 20) {
-      setApplicationMessage("Mô tả giới thiệu phải có tối thiểu 20 ký tự.");
+      setCreatorMessage("Phần giới thiệu kinh nghiệm cần tối thiểu 20 ký tự.");
       return;
     }
-    setApplicationBusy(true);
-    setApplicationMessage("");
+    setCreatorBusy(true);
+    setCreatorMessage("");
     try {
       await submitCreatorApplication(
         bio,
-        portfolioUrls.split("\n").map((item) => item.trim()).filter(Boolean)
+        portfolioUrls.split("\n").map((url) => url.trim()).filter(Boolean),
       );
-      setApplicationMessage("Đã gửi yêu cầu đăng ký Creator. Vui lòng chờ admin duyệt.");
+      setCreatorMessage("Đã gửi hồ sơ Creator. Vui lòng chờ quản trị viên duyệt.");
     } catch (reason) {
-      setApplicationMessage(reason instanceof APIError ? reason.message : "Không thể gửi yêu cầu.");
+      setCreatorMessage(reason instanceof APIError ? reason.message : "Không thể gửi hồ sơ Creator.");
     } finally {
-      setApplicationBusy(false);
+      setCreatorBusy(false);
     }
   }
 
   const initial = user.fullName.charAt(0).toUpperCase();
-  const canApply =
-    user.role !== "admin" && user.role !== "creator" && ["none", "rejected"].includes(user.creatorStatus);
+  const canApplyForCreator =
+    user.role !== "admin" &&
+    user.role !== "creator" &&
+    ["none", "rejected"].includes(user.creatorStatus);
 
   return (
-    <main className="pageWidth profilePage">
-      {/* Sleek Profile Hero Banner */}
-      <section className="profileHeroCard">
-        <div className="profileHeroMain">
+    <main className="pageWidth instagramProfilePage">
+      <section className="instagramProfileHeader">
+        <div className="instagramAvatarRing">
           {user.avatarUrl ? (
-            <img alt={user.fullName} className="profileAvatarImg" src={user.avatarUrl} />
+            <img alt={user.fullName} src={user.avatarUrl} />
           ) : (
-            <div className="profileAvatarFallback">{initial}</div>
+            <span>{initial}</span>
           )}
-          <div className="profileHeroInfo">
-            <div className="profileTagRow">
-              <span className={`roleBadge role-${user.role}`}>
-                {user.role === "creator" ? "✦ Creator" : user.role === "admin" ? "🛡 Admin" : "Traveler"}
-              </span>
-              <span className={`statusBadge status-${user.status}`}>
-                {user.status === "active" ? "Đang hoạt động" : user.status}
-              </span>
-            </div>
-            <h1>{user.fullName}</h1>
-            <p className="userEmail">{user.email}</p>
-          </div>
         </div>
 
-        <div className="profileHeroActions">
-          {user.role === "creator" ? (
-            <Link className="primaryBtn" href="/creator/listings">
-              ✎ Vào Creator Studio
-            </Link>
-          ) : null}
-          {user.role === "admin" ? (
-            <Link className="primaryBtn adminBtn" href="/admin/listings">
-              🛡 Trang Duyệt Admin
-            </Link>
-          ) : null}
-          <Link className="secondaryBtn" href="/planner">
-            ✦ Tạo plan mới
-          </Link>
+        <div className="instagramProfileMeta">
+          <div className="instagramProfileTitle">
+            <h1>{user.fullName}</h1>
+            <button className="profileEditButton" onClick={() => setEditing((value) => !value)} type="button">
+              Chỉnh sửa hồ sơ
+            </button>
+            <Link className="profileCreateButton" href="/planner">Tạo plan</Link>
+            {user.role === "creator" ? (
+              <Link className="profileUtilityLink" href="/creator/listings/new">Đăng bài viết</Link>
+            ) : null}
+            {user.role === "admin" ? (
+              <Link className="profileUtilityLink" href="/admin/listings">Quản trị</Link>
+            ) : null}
+            {canApplyForCreator ? (
+              <button className="profileUtilityLink" onClick={() => setCreatorPanelOpen((value) => !value)} type="button">
+                Đăng ký Creator
+              </button>
+            ) : null}
+          </div>
+
+          <div className="instagramStats" aria-label="Thống kê hồ sơ">
+            <div><strong>{showcase.visitedPlaces.length}</strong><span>địa điểm đã đi</span></div>
+            <div><strong>{showcase.posts.length}</strong><span>bài viết</span></div>
+            <div><strong>{favorites.length}</strong><span>đã lưu</span></div>
+            <div><strong>{purchased.length}</strong><span>đã mua</span></div>
+          </div>
+
+          <div className="instagramBio">
+            <strong>{user.role === "creator" ? "Travel Creator" : "Traveler"}</strong>
+            <p>{user.bio || "Ghi lại những nơi đã đi và những hành trình muốn khám phá."}</p>
+          </div>
         </div>
       </section>
 
-      {/* Tab Controls */}
-      <nav className="profileTabNav">
-        <button
-          className={activeTab === "profile" ? "tabBtn active" : "tabBtn"}
-          onClick={() => setActiveTab("profile")}
-          type="button"
-        >
-          👤 Thông tin cá nhân
+      {editing ? (
+        <section className="instagramEditPanel">
+          <div>
+            <h2>Chỉnh sửa hồ sơ</h2>
+            <p>Thông tin này được hiển thị trên trang cá nhân của bạn.</p>
+          </div>
+          <form onSubmit={saveProfile}>
+            <label htmlFor="profile-name">Họ và tên</label>
+            <input id="profile-name" minLength={2} onChange={(event) => setFullName(event.target.value)} required value={fullName} />
+            <label htmlFor="profile-avatar">URL ảnh đại diện</label>
+            <input id="profile-avatar" onChange={(event) => setAvatarUrl(event.target.value)} placeholder="https://..." type="url" value={avatarUrl} />
+            <label htmlFor="profile-bio">Giới thiệu</label>
+            <textarea id="profile-bio" maxLength={1000} onChange={(event) => setBio(event.target.value)} rows={3} value={bio} />
+            <label htmlFor="profile-preferences">Sở thích du lịch</label>
+            <input id="profile-preferences" onChange={(event) => setPreferences(event.target.value)} value={preferences} />
+            {profileMessage ? <p className="profileFormMessage">{profileMessage}</p> : null}
+            <div className="instagramEditActions">
+              <button className="profileEditButton" onClick={() => setEditing(false)} type="button">Hủy</button>
+              <button className="profileCreateButton" disabled={profileBusy} type="submit">
+                {profileBusy ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      {creatorPanelOpen && canApplyForCreator ? (
+        <section className="instagramCreatorPanel">
+          <div>
+            <span className="eyebrow">Creator</span>
+            <h2>Chia sẻ hành trình của bạn</h2>
+            <p>Đăng ký để đóng gói và xuất bản plan trên Marketplace.</p>
+          </div>
+          <form onSubmit={applyForCreator}>
+            <label htmlFor="creator-bio">Kinh nghiệm du lịch</label>
+            <textarea id="creator-bio" minLength={20} onChange={(event) => setBio(event.target.value)} required rows={3} value={bio} />
+            <label htmlFor="creator-links">Portfolio / mạng xã hội</label>
+            <textarea id="creator-links" onChange={(event) => setPortfolioUrls(event.target.value)} placeholder={"https://instagram.com/...\nhttps://facebook.com/..."} rows={2} value={portfolioUrls} />
+            {creatorMessage ? <p>{creatorMessage}</p> : null}
+            <button className="profileCreateButton" disabled={creatorBusy} type="submit">
+              {creatorBusy ? "Đang gửi..." : "Gửi đăng ký"}
+            </button>
+          </form>
+        </section>
+      ) : null}
+
+      <nav className="instagramTabs" aria-label="Nội dung hồ sơ">
+        <button className={activeTab === "achievements" ? "active" : ""} onClick={() => setActiveTab("achievements")} type="button">
+          <span aria-hidden="true">⌖</span> Thành tựu
         </button>
-        <button
-          className={activeTab === "orders" ? "tabBtn active" : "tabBtn"}
-          onClick={() => setActiveTab("orders")}
-          type="button"
-        >
-          📦 Đơn hàng của tôi
+        <button className={activeTab === "posts" ? "active" : ""} onClick={() => setActiveTab("posts")} type="button">
+          <span aria-hidden="true">▦</span> Bài viết
         </button>
-        <button
-          className={activeTab === "creator" ? "tabBtn active" : "tabBtn"}
-          onClick={() => setActiveTab("creator")}
-          type="button"
-        >
-          ✦ {user.role === "creator" ? "Hồ sơ Creator" : "Đăng ký Creator"}
+        <button className={activeTab === "saved" ? "active" : ""} onClick={() => setActiveTab("saved")} type="button">
+          <span aria-hidden="true">♡</span> Đã lưu
         </button>
-        <button
-          className={activeTab === "favorites" ? "tabBtn active" : "tabBtn"}
-          onClick={() => setActiveTab("favorites")}
-          type="button"
-        >
-          ♥ Đã lưu yêu thích
+        <button className={activeTab === "purchased" ? "active" : ""} onClick={() => setActiveTab("purchased")} type="button">
+          <span aria-hidden="true">◇</span> Đã mua
         </button>
       </nav>
 
-      {/* Tab Content Container */}
-      <div className="profileTabContainer">
-        {/* Tab 1: Profile Form */}
-        {activeTab === "profile" ? (
-          <section className="profileCardSection">
-            <div className="sectionHeader">
-              <h2>Thông tin cá nhân</h2>
-              <p>Cập nhật thông tin hiển thị và sở thích du lịch của bạn.</p>
+      {contentBusy ? <div className="routeLoading">Đang tải hành trình của bạn...</div> : null}
+
+      {!contentBusy && activeTab === "achievements" ? (
+        <section className="achievementPanel">
+          <div className="achievementHeading">
+            <div>
+              <span className="eyebrow">Hành trình của tôi</span>
+              <h2>Dấu chân Việt Nam</h2>
+              <p>
+                {visitedProvinceCount} vùng đất đã ghé · {visitCount} lần ghé ·{" "}
+                {showcase.visitedPlaces.length} địa điểm
+              </p>
             </div>
-
-            <form className="profileCompactForm" onSubmit={saveProfile}>
-              <div className="formGrid2">
-                <div>
-                  <label htmlFor="profile-name">Họ và tên</label>
-                  <input
-                    autoComplete="name"
-                    id="profile-name"
-                    minLength={2}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                    value={fullName}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="profile-avatar">URL Ảnh đại diện</label>
-                  <input
-                    id="profile-avatar"
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://..."
-                    type="url"
-                    value={avatarUrl}
-                  />
-                </div>
-              </div>
-
-              <label htmlFor="profile-bio">Giới thiệu bản thân</label>
-              <textarea
-                id="profile-bio"
-                maxLength={1000}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Viết một vài dòng ngắn về phong cách du lịch của bạn..."
-                rows={3}
-                value={bio}
-              />
-
-              <label htmlFor="profile-preferences">Sở thích du lịch</label>
-              <input
-                id="profile-preferences"
-                onChange={(e) => setPreferences(e.target.value)}
-                placeholder="Ẩm thực, biển, mạo hiểm, chụp ảnh"
-                value={preferences}
-              />
-              <span className="fieldHint">Phân tách các sở thích bằng dấu phẩy.</span>
-
-              {profileMessage ? <div className="formAlertInfo">{profileMessage}</div> : null}
-
-              <div className="formFooter">
-                <button className="primaryBtn" disabled={profileBusy} type="submit">
-                  {profileBusy ? "Đang lưu..." : "Lưu thay đổi"}
-                </button>
-              </div>
-            </form>
-          </section>
-        ) : null}
-
-        {/* Tab 2: Orders */}
-        {activeTab === "orders" ? (
-          <section className="profileCardSection">
-            <div className="sectionHeader">
-              <h2>Lịch sử Đơn hàng MoMo</h2>
-              <p>Danh sách các plan bạn đã mua và trạng thái đơn hàng.</p>
+            <div className="achievementMiniStats">
+              <div><strong>{visitedProvinceCount}</strong><span>tỉnh/thành</span></div>
+              <div><strong>{showcase.visitedPlaces.length}</strong><span>địa điểm</span></div>
             </div>
+          </div>
 
-            {loadingOrders ? (
-              <div className="routeLoading">Đang tải lịch sử đơn hàng...</div>
-            ) : orders.length === 0 ? (
-              <div className="emptyState">
-                <PenguinMascot className="emptyPenguin" size={160} variant="search" />
-                <h3>Bạn chưa mua plan nào</h3>
-                <p>Khám phá các hành trình chất lượng trên Marketplace và sở hữu plan riêng.</p>
-                <Link className="secondaryBtn" href="/explore">
-                  Khám phá Marketplace →
-                </Link>
-              </div>
-            ) : (
-              <div className="listingTableWrapper">
-                <table className="listingTable">
-                  <thead>
-                    <tr>
-                      <th>Mã Đơn hàng</th>
-                      <th>Tổng tiền</th>
-                      <th>Trạng thái</th>
-                      <th>Ngày mua</th>
-                      <th>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map((ord) => (
-                      <tr key={ord.id}>
-                        <td><code>{ord.id}</code></td>
-                        <td><strong>{ord.totalAmount.toLocaleString("vi-VN")} {ord.currency}</strong></td>
-                        <td>
-                          <span className={`badge status-${ord.status}`}>
-                            {ord.status === "paid" ? "Đã thanh toán" : ord.status === "failed" ? "Thất bại" : "Đang chờ"}
-                          </span>
-                        </td>
-                        <td>{new Date(ord.createdAt).toLocaleDateString("vi-VN")}</td>
-                        <td>
-                          <Link className="actionBtn" href={`/orders/${ord.id}/result`}>
-                            Chi tiết & Tạo copy →
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        ) : null}
+          <div className="footprintProgressBlock">
+            <div>
+              <span>Đã khám phá {visitedProvinceCount}/34 tỉnh, thành</span>
+              <strong>{Math.round((visitedProvinceCount / 34) * 100)}%</strong>
+            </div>
+            <div
+              aria-label={`Tiến độ khám phá ${visitedProvinceCount} trên 34 tỉnh, thành`}
+              aria-valuemax={34}
+              aria-valuemin={0}
+              aria-valuenow={visitedProvinceCount}
+              className="footprintProgressTrack"
+              role="progressbar"
+            >
+              <span style={{ width: `${(visitedProvinceCount / 34) * 100}%` }} />
+            </div>
+          </div>
 
-        {/* Tab 3: Creator Application / Info */}
-        {activeTab === "creator" ? (
-          <section className="profileCardSection">
-            <div className="creatorHeaderBox">
+          <div className="achievementMapLayout">
+            <ProfileVisitedMap
+              onSelect={selectProvince}
+              onSummariesChange={updateProvinceFootprints}
+              places={showcase.visitedPlaces}
+              selectedProvinceCode={selectedProvinceCode}
+            />
+          </div>
+
+          <div className="footprintLegend" aria-label="Chú thích trạng thái bản đồ">
+            <span><i className="unvisited" /> Chưa đi</span>
+            <span><i className="planned" /> Đang lên kế hoạch</span>
+            <span><i className="visited" /> Đã đi</span>
+          </div>
+
+          <section className="footprintAchievements" aria-labelledby="footprint-achievement-title">
+            <div className="footprintSectionHeading">
               <div>
-                <h2>Hồ sơ Creator</h2>
-                <p>Trở thành Creator để đóng gói và chia sẻ lịch trình lên Marketplace.</p>
+                <span className="eyebrow">Cột mốc</span>
+                <h3 id="footprint-achievement-title">Thành tựu hành trình</h3>
               </div>
-              <span className={`creatorStatusBadge status-${user.creatorStatus}`}>
-                {creatorStatusLabels[user.creatorStatus]}
+              <span>
+                {unlockedAchievements.filter((achievement) => achievement.unlocked).length}/
+                {unlockedAchievements.length} đã mở khóa
               </span>
             </div>
-
-            {canApply ? (
-              <form className="profileCompactForm" onSubmit={applyForCreator}>
-                <div className="infoNotice">
-                  💡 <strong>Yêu cầu đăng ký:</strong> Phần giới thiệu kinh nghiệm cần tối thiểu 20 ký tự. Mọi liên kết portfolio phải là URL đầy đủ (dạng <code>https://...</code>).
-                </div>
-
-                <label htmlFor="creator-bio">Giới thiệu kinh nghiệm Creator (*)</label>
-                <textarea
-                  id="creator-bio"
-                  minLength={20}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Chia sẻ kinh nghiệm đi lại, am hiểu địa phương hoặc phong cách lên lịch trình của bạn (tối thiểu 20 ký tự)..."
-                  required
-                  rows={4}
-                  value={bio}
-                />
-
-                <label htmlFor="creator-portfolio">Liên kết Portfolio / Mạng xã hội</label>
-                <textarea
-                  id="creator-portfolio"
-                  onChange={(e) => setPortfolioUrls(e.target.value)}
-                  placeholder={"https://instagram.com/p/...\nhttps://facebook.com/..."}
-                  rows={3}
-                  value={portfolioUrls}
-                />
-                <span className="fieldHint">Nhập tối đa 5 đường dẫn URL công khai (mỗi dòng 1 URL).</span>
-
-                {applicationMessage ? <div className="formAlertInfo">{applicationMessage}</div> : null}
-
-                <div className="formFooter">
-                  <button className="primaryBtn" disabled={applicationBusy} type="submit">
-                    {applicationBusy ? "Đang gửi..." : "Gửi đăng ký Creator →"}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="creatorVerifiedBox">
-                {user.role === "creator" ? (
-                  <>
-                    <div className="verifiedBadgeBig">✓ Tài khoản Creator đã xác minh</div>
-                    <p>Bạn có thể truy cập <strong>Creator Studio</strong> để tạo listing, thiết lập giá và nộp duyệt bản hành trình.</p>
-                    <Link className="primaryBtn" href="/creator/listings">
-                      Vào Creator Studio →
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <div className="pendingBadgeBig">⏳ Yêu cầu của bạn đang chờ Admin duyệt</div>
-                    <p>Ban quản trị đang xem xét hồ sơ của bạn. Quyền Creator sẽ được cập nhật tự động ngay sau khi duyệt.</p>
-                  </>
-                )}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {/* Tab 4: Favorites */}
-        {activeTab === "favorites" ? (
-          <section className="profileCardSection">
-            <div className="sectionHeader">
-              <h2>Lịch trình yêu thích đã lưu</h2>
-              <p>Danh sách các chuyến đi bạn đã thả tim trên Marketplace.</p>
+            <div className="footprintBadgeGrid">
+              {unlockedAchievements.map((achievement) => (
+                <article className={achievement.unlocked ? "is-unlocked" : "is-locked"} key={achievement.title}>
+                  <span aria-hidden="true" className="footprintBadgeIcon">{achievement.icon}</span>
+                  <div>
+                    <strong>{achievement.title}</strong>
+                    <p>{achievement.description}</p>
+                    <small>{achievement.unlocked ? "Đã mở khóa" : achievement.progress}</small>
+                  </div>
+                </article>
+              ))}
             </div>
-
-            {loadingFavs ? (
-              <div className="routeLoading">Đang tải danh sách yêu thích...</div>
-            ) : favorites.length === 0 ? (
-              <div className="emptyState">
-                <PenguinMascot className="emptyPenguin" size={160} variant="search" />
-                <h3>Chưa có chuyến đi yêu thích nào</h3>
-                <p>Khám phá Marketplace và thả tim các lịch trình bạn yêu thích.</p>
-                <Link className="secondaryBtn" href="/explore">
-                  Khám phá ngay →
-                </Link>
-              </div>
-            ) : (
-              <div className="favGrid">
-                {favorites.map((fav) => (
-                  <article className="favCard" key={fav.id}>
-                    <div className="favCardInfo">
-                      <span className="badge category">{fav.currentVersion.category}</span>
-                      <h3>{fav.currentVersion.title}</h3>
-                      <p>{fav.currentVersion.destination} ({fav.currentVersion.durationDays} ngày)</p>
-                      <strong>{fav.currentVersion.priceAmount.toLocaleString("vi-VN")} VND</strong>
-                    </div>
-                    <Link className="secondaryBtn" href={`/listings/${fav.id}`}>
-                      Xem chuyến đi
-                    </Link>
-                  </article>
-                ))}
-              </div>
-            )}
           </section>
-        ) : null}
-      </div>
+        </section>
+      ) : null}
+
+      {!contentBusy && activeTab === "posts" ? (
+        showcase.posts.length === 0 ? (
+          <EmptyProfileState title="Chưa có bài viết" description="Những khoảnh khắc du lịch bạn chia sẻ sẽ xuất hiện tại đây." />
+        ) : (
+          <section className="instagramPostGrid" aria-label="Bài viết đã đăng">
+            {showcase.posts.map((post) => (
+              <article className="instagramPostCard" key={post.id}>
+                <img alt={post.locationName || post.caption} src={post.mediaUrl} />
+                <div className="instagramPostOverlay">
+                  {post.locationName ? <strong>⌖ {post.locationName}</strong> : null}
+                  <p>{post.caption}</p>
+                </div>
+              </article>
+            ))}
+          </section>
+        )
+      ) : null}
+
+      {!contentBusy && activeTab === "saved" ? (
+        favorites.length === 0 ? (
+          <EmptyProfileState title="Chưa lưu hành trình nào" description="Thả tim một plan trong Khám phá để xem lại tại đây." linkLabel="Đi tới Khám phá" />
+        ) : (
+          <MarketplaceProfileGrid items={favorites} />
+        )
+      ) : null}
+
+      {!contentBusy && activeTab === "purchased" ? (
+        purchased.length === 0 ? (
+          <EmptyProfileState title="Chưa mua hành trình nào" description="Plan bạn mua từ Khám phá sẽ được giữ riêng tại đây để tiếp tục cá nhân hóa." linkLabel="Khám phá plan" />
+        ) : (
+          <section className="purchasedPlanGrid">
+            {purchased.map((plan) => (
+              <article key={plan.entitlementId}>
+                <span className="purchasedPlanBadge">Đã sở hữu</span>
+                <div>
+                  <small>{plan.destination} · {plan.durationDays} ngày</small>
+                  <h3>{plan.title}</h3>
+                  <p>Mua ngày {new Date(plan.createdAt).toLocaleDateString("vi-VN")}</p>
+                </div>
+                <Link href={`/listings/${plan.marketplacePlanId}`}>Xem plan →</Link>
+              </article>
+            ))}
+          </section>
+        )
+      ) : null}
     </main>
+  );
+}
+
+function getFootprintAchievements(provinces: ProvinceFootprint[]) {
+  const visitedNames = new Set(
+    provinces
+      .filter((province) => province.status === "visited")
+      .map((province) => province.name),
+  );
+  const visitedCount = visitedNames.size;
+  const coastalNames = new Set([
+    "Quảng Ninh", "Hải Phòng", "Hưng Yên", "Ninh Bình", "Thanh Hóa", "Nghệ An",
+    "Hà Tĩnh", "Quảng Trị", "Huế", "Đà Nẵng", "Quảng Ngãi", "Gia Lai", "Đắk Lắk",
+    "Khánh Hòa", "Lâm Đồng", "Hồ Chí Minh", "Đồng Tháp", "Vĩnh Long", "Cần Thơ",
+    "Cà Mau", "An Giang",
+  ]);
+  const coastalCount = [...visitedNames].filter((name) => coastalNames.has(name)).length;
+  const northwestNames = ["Điện Biên", "Lai Châu", "Sơn La", "Lào Cai"];
+  const northwestCount = northwestNames.filter((name) => visitedNames.has(name)).length;
+
+  return [
+    {
+      title: "Chuyến đi đầu tiên",
+      description: "Hoàn thành chuyến đầu tiên có liên kết với Planner.",
+      icon: "✦",
+      unlocked: false,
+      progress: "Chưa có chuyến hoàn thành từ Planner",
+    },
+    {
+      title: "Khám phá 5 tỉnh/thành",
+      description: "Để lại dấu chân tại năm vùng đất.",
+      icon: "5",
+      unlocked: visitedCount >= 5,
+      progress: `${Math.min(visitedCount, 5)}/5 tỉnh, thành`,
+    },
+    {
+      title: "Người yêu biển",
+      description: "Ghé thăm ba tỉnh, thành ven biển.",
+      icon: "≈",
+      unlocked: coastalCount >= 3,
+      progress: `${Math.min(coastalCount, 3)}/3 vùng biển`,
+    },
+    {
+      title: "Dấu chân Tây Bắc",
+      description: "Khám phá Điện Biên, Lai Châu, Sơn La và Lào Cai.",
+      icon: "⌁",
+      unlocked: northwestCount === northwestNames.length,
+      progress: `${northwestCount}/${northwestNames.length} vùng đất`,
+    },
+    {
+      title: "Xuyên Việt",
+      description: "Hoàn thiện bản đồ 34 tỉnh, thành Việt Nam.",
+      icon: "VN",
+      unlocked: visitedCount === 34,
+      progress: `${visitedCount}/34 tỉnh, thành`,
+    },
+  ];
+}
+
+function EmptyProfileState({
+  title,
+  description,
+  linkLabel,
+}: {
+  title: string;
+  description: string;
+  linkLabel?: string;
+}) {
+  return (
+    <section className="instagramEmptyState">
+      <PenguinMascot size={128} variant="search" />
+      <h2>{title}</h2>
+      <p>{description}</p>
+      {linkLabel ? <Link href="/explore">{linkLabel} →</Link> : null}
+    </section>
+  );
+}
+
+function MarketplaceProfileGrid({ items }: { items: ListingSummary[] }) {
+  return (
+    <section className="profileMarketplaceGrid">
+      {items.map((item) => {
+        const image = item.currentVersion.mediaUrls[0];
+        return (
+          <article key={item.id}>
+            {image ? <img alt={item.currentVersion.title} src={image} /> : <div className="profileListingPlaceholder">VSF</div>}
+            <div>
+              <small>{item.currentVersion.destination} · {item.currentVersion.durationDays} ngày</small>
+              <h3>{item.currentVersion.title}</h3>
+              <strong>{item.currentVersion.priceAmount.toLocaleString("vi-VN")} {item.currentVersion.priceCurrency}</strong>
+              <Link href={`/listings/${item.id}`}>Xem hành trình →</Link>
+            </div>
+          </article>
+        );
+      })}
+    </section>
   );
 }

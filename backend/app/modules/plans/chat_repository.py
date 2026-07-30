@@ -37,6 +37,11 @@ class TripChatRepository:
             raise AppError(404, "TRIP_CHAT_NOT_FOUND", "Không tìm thấy cuộc trò chuyện chuyến đi.")
         return chat
 
+    def delete(self, chat_id: str, user_id: int) -> None:
+        chat = self.get(chat_id, user_id)
+        self.db.delete(chat)
+        self.db.commit()
+
     def save_revision(
         self,
         chat: TripChat,

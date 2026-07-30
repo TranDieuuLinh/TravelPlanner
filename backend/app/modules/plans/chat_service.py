@@ -40,6 +40,9 @@ class TripChatService:
     def get(self, chat_id: str, user: User) -> TripChatRead:
         return self._read(self.repository.get(chat_id, user.id))
 
+    def delete(self, chat_id: str, user: User) -> None:
+        self.repository.delete(chat_id, user.id)
+
     async def amend(
         self,
         chat_id: str,

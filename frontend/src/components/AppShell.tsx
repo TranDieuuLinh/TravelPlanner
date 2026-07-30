@@ -31,7 +31,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <div className="topbarInner">
           <Link aria-label="VSF Travel" className="brand" href="/explore">
-            <span aria-hidden="true" className="brandPenguin" />
             <strong>VSF Travel</strong>
           </Link>
           <nav aria-label="Điều hướng chính" className="desktopNav">

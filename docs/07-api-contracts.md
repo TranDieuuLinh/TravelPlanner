@@ -20,7 +20,39 @@ Base URL: `/api`. Các field trong JSON response sử dụng camelCase.
 - `POST /api/auth/logout`: thu hồi refresh session và xóa cookie.
 - `GET /api/me`: lấy user hiện tại.
 - `PATCH /api/me/profile`: sửa hồ sơ; yêu cầu CSRF header.
+- `GET /api/me/showcase`: lấy các địa điểm đã đi và bài viết của user hiện tại.
+- `POST /api/me/visited-places`: đánh dấu hoặc cập nhật một `placeId` đã đi; yêu
+  cầu CSRF header và Place phải có tọa độ hợp lệ.
 - `POST /api/me/creator-application`: gửi yêu cầu creator; yêu cầu CSRF header.
+
+Response showcase:
+
+```json
+{
+  "visitedPlaces": [
+    {
+      "id": "visit_uuid",
+      "placeId": "place_uuid",
+      "name": "Phố cổ Hội An",
+      "city": "Hội An",
+      "country": "Việt Nam",
+      "latitude": 15.8800584,
+      "longitude": 108.3380469,
+      "visitedAt": "2026-06-14",
+      "note": "Một chiều trong phố cổ."
+    }
+  ],
+  "posts": [
+    {
+      "id": "post_uuid",
+      "caption": "Hội An ngày nắng",
+      "mediaUrl": "https://example.com/hoi-an.jpg",
+      "locationName": "Phố cổ Hội An",
+      "createdAt": "2026-06-15T02:30:00Z"
+    }
+  ]
+}
+```
 
 Request đăng ký:
 
@@ -52,12 +84,14 @@ client không được tự chọn role.
 
 ### Trip chat và lịch sử chỉnh sửa
 
-Các endpoint sau yêu cầu đăng nhập; thao tác POST yêu cầu CSRF:
+Các endpoint sau yêu cầu đăng nhập; thao tác POST/DELETE yêu cầu CSRF:
 
 - `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
 - `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
 - `GET /api/trip-chats/{chatId}`: lấy message history, Explorer context và plan
   hiện tại.
+- `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
+  message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
   hiện tại.
 

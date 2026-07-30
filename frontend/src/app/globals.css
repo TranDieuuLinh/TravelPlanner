@@ -47,13 +47,6 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 0 28px;
 }
 .brand { display: flex; align-items: center; gap: 9px; width: fit-content; font-size: 1.05rem; }
-.brand .brandPenguin {
-  display: block;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 auto;
-  background: transparent url("/images/penguin-logo.png") center / contain no-repeat;
-}
 .brand strong { font-weight: 900; letter-spacing: -0.03em; }
 .desktopNav { display: flex; align-items: center; gap: 5px; }
 .navItem { border-radius: 999px; padding: 10px 17px; color: var(--muted); font-size: 0.82rem; font-weight: 750; }
@@ -270,8 +263,6 @@ h1, h2, h3, p { margin-top: 0; }
 .chatComposer .sendButton:disabled { background: #a7bbb5; color: white; }
 .chatBubble { white-space: pre-wrap; }
 .itinerary { min-height: 680px; }
-.itineraryTop { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding: 20px; }
-.itineraryTop h2 { margin-bottom: 0; font-size: 1.35rem; letter-spacing: -.035em; }
 .statusPill { border-radius: 999px; padding: 7px 10px; background: var(--brand-soft); color: var(--brand-dark); font-size: .6rem; font-weight: 850; text-transform: capitalize; }
 .statusPill.idle { background: #edf1ef; color: var(--muted); }
 .statusPill.exploring, .statusPill.planning { background: #fff1d7; color: #7c581c; }
@@ -321,20 +312,30 @@ h1, h2, h3, p { margin-top: 0; }
 .finderNotice p { color: #826d48; }
 .explorerSectionHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .explorerSectionHeading .sectionMicroTitle { margin-bottom: 4px; }
-.tripPlanSection { gap: 14px !important; }
-.explorerDayCard { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: white; }
-.dayCardHeading { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #edf0ee; padding: 12px; background: #fbfcfb; }
-.dayCardHeading > span { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #c9e8df; border-radius: 11px; background: var(--brand-soft); color: var(--brand-dark); font-size: .95rem; font-weight: 900; line-height: 1; }
-.dayCardHeading > span small { font-size: .42rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.dayCardHeading > div { display: grid; min-width: 0; gap: 3px; }
-.dayCardHeading strong { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.dayCardHeading small { color: var(--muted); font-size: .54rem; }
+.exploreResult .tripPlanSection {
+  align-content: start;
+  gap: 10px !important;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.dayTabList { display: flex; width: fit-content; max-width: 100%; gap: 4px; overflow-x: auto; scrollbar-color: #cbd8d3 transparent; scrollbar-width: thin; }
+.dayTabList button { display: grid; width: 72px; min-width: 72px; height: 36px; flex: 0 0 72px; place-items: center; border: 1px solid transparent; border-radius: 8px; padding: 0; background: rgba(255,255,255,.72); color: var(--muted); cursor: pointer; transition: border-color .18s ease, background .18s ease; }
+.dayTabList button > i { display: grid; min-width: 54px; height: 26px; place-items: center; border-radius: 7px; background: transparent; color: #61706b; font-size: .55rem; font-style: normal; font-weight: 900; white-space: nowrap; }
+.dayTabList button:hover { border-color: color-mix(in srgb, var(--day-color) 22%, white); background: white; }
+.dayTabList button:focus-visible { outline: 2px solid var(--day-color); outline-offset: 2px; }
+.dayTabList button.active { border-color: var(--day-color); background: var(--day-color); }
+.dayTabList button.active > i { color: white; }
+.explorerDayCard { overflow: hidden; border: 1px solid #dbe5e1; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgba(24,54,48,.06); }
+.dayCardHeading { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e5ebe8; padding: 12px; background: white; }
+.dayCardHeading strong { min-width: 0; overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .dayTimeline { padding: 12px; }
 .dayTimelineItem { position: relative; display: grid; grid-template-columns: 58px 10px 1fr; gap: 7px; padding-bottom: 15px; }
 .dayTimelineItem:last-child { padding-bottom: 0; }
 .dayTimelineItem:not(:last-child)::before { position: absolute; top: 12px; bottom: 0; left: 69px; width: 1px; background: #dce5e1; content: ""; }
 .dayTimelineItem time { padding-top: 2px; color: var(--muted); font-size: .53rem; font-weight: 750; }
-.dayTimelineDot { z-index: 1; width: 9px; height: 9px; margin-top: 3px; border: 2px solid white; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.dayTimelineDot { z-index: 1; width: 9px; height: 9px; margin-top: 3px; border: 2px solid white; border-radius: 50%; background: var(--day-color, var(--brand)); box-shadow: 0 0 0 1px var(--day-color, var(--brand)); }
 .dayTimelineItem.break .dayTimelineDot { background: #a8b1ae; box-shadow: 0 0 0 1px #a8b1ae; }
 .dayTimelineItem > div { display: grid; gap: 4px; min-width: 0; }
 .dayTimelineItem strong { font-size: .66rem; line-height: 1.35; }
@@ -346,7 +347,7 @@ h1, h2, h3, p { margin-top: 0; }
 .timelineTransportLeg::before { position: absolute; top: -5px; bottom: 0; left: 69px; width: 1px; background: #dce5e1; content: ""; }
 .transportModeIcon { z-index: 2; display: grid; width: 22px; height: 22px; margin-left: -6px; place-items: center; border: 1px solid #bcded4; border-radius: 50%; background: #f3faf7; color: var(--brand-dark); }
 .transportModeIcon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-.transportOptionGrid { display: grid; min-width: 0; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 7px; }
+.transportOptionGrid { display: grid; min-width: 0; grid-template-columns: minmax(0,1fr); gap: 7px; }
 .transportOptionCard { display: grid; min-width: 0; gap: 6px; border: 1px solid #dce9e5; border-radius: 10px; padding: 9px 10px; background: #f8fbfa; }
 .transportOptionCard.primary { border-color: #bcded4; background: #f3faf7; }
 .transportOptionCard.backup { border-color: #efd8b7; background: #fffaf2; }
@@ -388,23 +389,31 @@ h1, h2, h3, p { margin-top: 0; }
 .category-transport { background: #e7f0ff; color: #315f9d; }
 .mutedText { border-radius: 8px; padding: 10px 12px; background: var(--canvas); }
 .plannerMap { position: sticky; top: 92px; display: flex; width: 100%; height: 680px; min-height: 680px; flex-direction: column; }
-.plannerMapHeader { display: flex; min-height: 82px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 18px; }
-.plannerMapHeader .eyebrow { margin-bottom: 5px; }
-.plannerMapHeader h2 { margin: 0; font-size: 1.16rem; letter-spacing: -.035em; }
-.mapCount { flex: 0 0 auto; border-radius: 999px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .58rem; font-weight: 850; }
-.plannerMapCanvasWrap { position: relative; min-height: 0; flex: 1; background: #e8eee9; }
+.plannerMapCanvasWrap { position: relative; min-height: 0; flex: 1; overflow: hidden; background: #dcebe5; }
 .plannerMapCanvas { position: absolute; inset: 0; z-index: 1; }
-.plannerMapCanvas .leaflet-control-zoom { overflow: hidden; border: 1px solid rgba(20,35,35,.12); border-radius: 10px; box-shadow: 0 6px 18px rgba(20,35,35,.12); }
-.plannerMapCanvas .leaflet-control-zoom a { color: var(--ink); }
-.plannerMapCanvas .leaflet-control-attribution { background: rgba(255,255,255,.9); font-size: 9px; }
+.plannerMapCanvas .leaflet-tile-pane { filter: saturate(.88) contrast(.96) brightness(1.035); }
+.plannerMapCanvas .leaflet-control-zoom { overflow: hidden; border: 1px solid rgba(20,35,35,.1); border-radius: 14px; box-shadow: 0 10px 26px rgba(20,35,35,.16); }
+.plannerMapCanvas .leaflet-control-zoom a { display: grid; width: 38px; height: 38px; place-items: center; border-bottom-color: rgba(20,35,35,.08); background: rgba(255,255,255,.94); color: var(--ink); font-size: 1.1rem; line-height: 1; backdrop-filter: blur(10px); }
+.plannerMapCanvas .leaflet-control-zoom a:hover { background: white; color: var(--brand); }
+.plannerMapCanvas .leaflet-control-attribution { border-radius: 7px 0 0; background: rgba(255,255,255,.86); font-size: 9px; backdrop-filter: blur(8px); }
+.mapFitButton { position: absolute; z-index: 500; bottom: 12px; left: 12px; display: flex; min-height: 38px; align-items: center; gap: 7px; border: 1px solid rgba(255,255,255,.75); border-radius: 13px; padding: 0 12px; background: rgba(255,255,255,.93); color: var(--ink); box-shadow: 0 8px 24px rgba(20,35,35,.14); cursor: pointer; font-size: .57rem; font-weight: 850; backdrop-filter: blur(12px); }
+.mapFitButton:hover { background: white; color: var(--brand-dark); transform: translateY(-1px); }
+.mapFitButton:focus-visible { outline: 3px solid rgba(22,124,104,.25); outline-offset: 2px; }
+.mapFitButton svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .mapEmptyNotice { position: absolute; z-index: 500; right: 18px; bottom: 18px; left: 18px; display: grid; gap: 4px; border: 1px solid rgba(20,35,35,.09); border-radius: 12px; padding: 12px 14px; background: rgba(255,255,255,.93); box-shadow: 0 8px 24px rgba(20,35,35,.12); backdrop-filter: blur(8px); }
 .mapEmptyNotice strong { font-size: .7rem; }
 .mapEmptyNotice span { color: var(--muted); font-size: .61rem; line-height: 1.45; }
 .candidateMapMarker { border: 0 !important; background: transparent !important; }
-.candidateMapMarker > span { position: relative; display: grid; width: 34px; height: 34px; place-items: center; border: 3px solid white; border-radius: 50%; background: var(--marker-color,var(--brand)); color: white; font-size: .66rem; font-weight: 900; box-shadow: 0 5px 15px rgba(20,35,35,.28); transition: transform .18s ease; }
-.candidateMapMarker > span::after { position: absolute; bottom: -7px; left: 50%; width: 0; height: 0; transform: translateX(-50%); border-top: 9px solid var(--marker-color,var(--brand)); border-right: 6px solid transparent; border-left: 6px solid transparent; content: ""; }
-.candidateMapMarker.is-selected > span { transform: scale(1.16); box-shadow: 0 0 0 4px rgba(22,124,104,.2), 0 7px 20px rgba(20,35,35,.34); }
+.candidateMapMarker > span { position: relative; display: grid; width: 38px; height: 38px; place-items: center; transform: rotate(-45deg); border: 3px solid white; border-radius: 50% 50% 50% 9px; background: var(--marker-color,var(--brand)); color: white; box-shadow: -5px 7px 16px rgba(20,35,35,.28); transition: filter .18s ease, transform .18s ease; }
+.candidateMapMarker > span::after { position: absolute; inset: 5px; border: 1px solid rgba(255,255,255,.3); border-radius: 50%; content: ""; }
+.candidateMapMarker > span b { z-index: 1; transform: rotate(45deg); font-size: .67rem; font-weight: 900; }
+.candidateMapMarker:hover > span { filter: brightness(1.06); transform: rotate(-45deg) scale(1.08); }
+.candidateMapMarker.is-selected { z-index: 1000 !important; }
+.candidateMapMarker.is-selected > span { transform: rotate(-45deg) scale(1.18); box-shadow: -2px 3px 0 4px rgba(255,255,255,.88), -7px 10px 22px rgba(20,35,35,.36); }
 .candidateMapPopup { display: grid; min-width: 160px; gap: 4px; color: var(--ink); }
+.plannerMapCanvas .leaflet-popup-content-wrapper { border: 1px solid rgba(20,35,35,.08); border-radius: 15px; box-shadow: 0 14px 36px rgba(20,35,35,.2); }
+.plannerMapCanvas .leaflet-popup-content { margin: 14px 16px; }
+.plannerMapCanvas .leaflet-popup-tip { box-shadow: 3px 3px 8px rgba(20,35,35,.08); }
 .candidateMapPopup strong { font-size: .72rem; }
 .candidateMapPopup small { color: var(--brand-dark); font-size: .56rem; font-weight: 800; }
 .candidateMapPopup span { color: var(--muted); font-size: .62rem; line-height: 1.4; }
@@ -543,7 +552,8 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
 
 @media (max-width: 780px) {
   .pageWidth { padding-inline: 18px; }
-  .topbarInner { display: flex; justify-content: space-between; height: 62px; padding: 0 18px; }
+  .topbarInner { display: flex; justify-content: center; height: 62px; padding: 0 18px; }
+  .topbarInner .brand { margin-inline: auto; }
   .desktopNav, .newTrip, .shellActions { display: none; }
   .appBody { min-height: calc(100vh - 62px); padding-bottom: 66px; }
   .mobileNav { position: fixed; z-index: 50; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3,1fr); border-top: 1px solid var(--line); padding: 5px 8px; background: rgba(255,255,255,.95); backdrop-filter: blur(14px); }
@@ -1092,6 +1102,815 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   margin-bottom: 8px;
 }
 
+/* Instagram-inspired traveler profile */
+.instagramProfilePage {
+  max-width: 1080px;
+  padding-top: 54px;
+  padding-bottom: 100px;
+}
+
+.instagramProfileHeader {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+  padding: 12px 44px 48px;
+}
+
+.instagramAvatarRing {
+  display: grid;
+  width: 168px;
+  height: 168px;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background:
+    linear-gradient(white, white) padding-box,
+    linear-gradient(145deg, #f6c35b, #dc4d7b 43%, #4d8dcc 72%, #167c68) border-box;
+  padding: 6px;
+  box-shadow: 0 14px 40px rgba(20, 35, 35, .08);
+}
+
+.instagramAvatarRing img,
+.instagramAvatarRing > span {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.instagramAvatarRing img {
+  object-fit: cover;
+}
+
+.instagramAvatarRing > span {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #24967f, #0d574a);
+  color: white;
+  font-size: 4.2rem;
+  font-weight: 800;
+}
+
+.instagramProfileMeta {
+  min-width: 0;
+}
+
+.instagramProfileTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.instagramProfileTitle h1 {
+  overflow: hidden;
+  margin: 0 12px 0 0;
+  font-size: 1.65rem;
+  font-weight: 650;
+  letter-spacing: -.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileEditButton,
+.profileCreateButton {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 0 16px;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.profileEditButton {
+  border: 1px solid var(--line);
+  background: #f3f6f5;
+  color: var(--ink);
+}
+
+.profileEditButton:hover {
+  border-color: #aec4bd;
+  background: #eaf1ef;
+}
+
+.profileCreateButton {
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: white;
+}
+
+.profileCreateButton:hover {
+  background: var(--brand-dark);
+  color: white;
+}
+
+.profileUtilityLink {
+  border: 0;
+  padding: 7px 5px;
+  background: transparent;
+  color: var(--brand-dark);
+  font-size: .7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.profileUtilityLink:hover {
+  color: var(--brand);
+}
+
+.instagramStats {
+  display: flex;
+  gap: 38px;
+  margin: 28px 0 24px;
+}
+
+.instagramStats div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.instagramStats strong {
+  font-size: 1.02rem;
+}
+
+.instagramStats span {
+  color: #4e5a57;
+  font-size: .82rem;
+}
+
+.instagramBio strong {
+  font-size: .88rem;
+}
+
+.instagramBio p {
+  max-width: 620px;
+  margin: 5px 0 0;
+  color: #46524f;
+  font-size: .82rem;
+  line-height: 1.55;
+}
+
+.instagramEditPanel {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 34px;
+  margin: 0 24px 34px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px 30px;
+  background: white;
+  box-shadow: 0 16px 40px rgba(20, 35, 35, .05);
+}
+
+.instagramEditPanel h2 {
+  margin-bottom: 5px;
+  font-size: 1.15rem;
+}
+
+.instagramEditPanel > div p {
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.instagramEditPanel form {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr);
+  gap: 13px 16px;
+  align-items: center;
+}
+
+.instagramEditPanel label {
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.instagramEditPanel input,
+.instagramEditPanel textarea {
+  width: 100%;
+  border: 1px solid #cbd6d2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: white;
+  font: inherit;
+  font-size: .82rem;
+}
+
+.instagramEditPanel textarea {
+  resize: vertical;
+}
+
+.profileFormMessage,
+.instagramEditActions {
+  grid-column: 2;
+}
+
+.profileFormMessage {
+  margin: 0;
+  color: var(--brand-dark);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.instagramEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.instagramCreatorPanel {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 32px;
+  margin: 0 24px 34px;
+  border: 1px solid #cfe4dd;
+  border-radius: 18px;
+  padding: 27px 30px;
+  background: linear-gradient(135deg, #f6fbf9, white);
+}
+
+.instagramCreatorPanel .eyebrow {
+  color: var(--brand);
+  font-size: .65rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.instagramCreatorPanel h2 {
+  margin: 5px 0;
+  font-size: 1.15rem;
+}
+
+.instagramCreatorPanel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1.5;
+}
+
+.instagramCreatorPanel form {
+  display: grid;
+  gap: 8px;
+}
+
+.instagramCreatorPanel label {
+  font-size: .74rem;
+  font-weight: 850;
+}
+
+.instagramCreatorPanel textarea {
+  width: 100%;
+  border: 1px solid #cbd6d2;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: white;
+  font: inherit;
+  font-size: .8rem;
+  resize: vertical;
+}
+
+.instagramCreatorPanel button {
+  width: fit-content;
+  justify-self: end;
+}
+
+.instagramTabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+}
+
+.instagramTabs button {
+  display: flex;
+  height: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: transparent;
+  color: #7d8885;
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.instagramTabs button span {
+  font-size: 1rem;
+}
+
+.instagramTabs button.active {
+  border-top-color: var(--ink);
+  color: var(--ink);
+}
+
+.achievementPanel {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: white;
+  box-shadow: 0 16px 45px rgba(20, 35, 35, .055);
+}
+
+.achievementHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px 32px 26px;
+}
+
+.achievementHeading .eyebrow {
+  color: var(--brand);
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.achievementHeading h2 {
+  margin: 6px 0 5px;
+  font-size: 1.55rem;
+  letter-spacing: -.04em;
+}
+
+.achievementHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.achievementMiniStats {
+  display: flex;
+  gap: 8px;
+}
+
+.achievementMiniStats div {
+  display: grid;
+  min-width: 82px;
+  gap: 2px;
+  border: 1px solid #dce8e4;
+  border-radius: 13px;
+  padding: 9px 12px;
+  background: #f4faf8;
+  text-align: center;
+}
+
+.achievementMiniStats strong {
+  color: var(--brand-dark);
+  font-size: 1.15rem;
+}
+
+.achievementMiniStats span {
+  color: var(--muted);
+  font-size: .62rem;
+}
+
+.footprintProgressBlock {
+  display: grid;
+  gap: 9px;
+  padding: 0 32px 26px;
+}
+
+.footprintProgressBlock > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.footprintProgressBlock strong {
+  color: var(--brand-dark);
+  font-size: .72rem;
+}
+
+.footprintProgressTrack {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: #e7eeeb;
+}
+
+.footprintProgressTrack span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #43b69b, var(--brand-dark));
+  transition: width .5s cubic-bezier(.16, 1, .3, 1);
+}
+
+.achievementMapLayout {
+  min-height: clamp(620px, 78vh, 900px);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #f7faf8;
+}
+
+.profileMapShell {
+  position: relative;
+  min-width: 0;
+  min-height: clamp(620px, 78vh, 900px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 48% 42%, rgba(73, 169, 146, .11), transparent 38%),
+    linear-gradient(155deg, #f7fbf9, #eaf1ee);
+}
+
+.profileMapCanvas {
+  z-index: 0;
+  min-height: clamp(620px, 78vh, 900px);
+  background: transparent;
+}
+
+.profileMapCanvas::before {
+  position: absolute;
+  inset: 24px;
+  border: 1px solid rgba(22, 124, 104, .08);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.profileMapCanvas .leaflet-container {
+  background: transparent;
+}
+
+.footprintProvince {
+  cursor: pointer;
+  outline: none;
+  transition: filter .2s ease, fill-opacity .2s ease;
+}
+
+.footprintProvince:hover,
+.footprintProvince.is-selected {
+  filter: drop-shadow(0 5px 7px rgba(15, 93, 80, .3));
+}
+
+.footprintProvince.is-planned {
+  stroke-linecap: round;
+}
+
+.footprintLeafletTooltip {
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  background: rgba(20, 35, 35, .95);
+  box-shadow: 0 9px 24px rgba(20, 35, 35, .22);
+  color: white;
+}
+
+.footprintLeafletTooltip::before {
+  border-top-color: rgba(20, 35, 35, .95);
+}
+
+.footprintTooltip {
+  display: grid;
+  min-width: 155px;
+  gap: 2px;
+  padding: 9px 11px;
+}
+
+.footprintTooltip strong {
+  font-size: .72rem;
+}
+
+.footprintTooltip span {
+  color: #bce9dc;
+  font-size: .6rem;
+}
+
+.profileMapStatus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 500;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, .9);
+  color: var(--muted);
+  font-size: .66rem;
+  font-weight: 800;
+  transform: translate(-50%, -50%);
+}
+
+.profileMapStatus.is-error {
+  color: #9b3c2e;
+}
+
+.footprintSectionHeading .eyebrow {
+  color: var(--brand);
+  font-size: .61rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.footprintLegend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 15px 20px;
+  background: #fbfcfb;
+}
+
+.footprintLegend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 750;
+}
+
+.footprintLegend i {
+  width: 16px;
+  height: 12px;
+  border: 1px solid white;
+  border-radius: 4px;
+  background: #e6ece9;
+  box-shadow: 0 0 0 1px #dfe6e3;
+}
+
+.footprintLegend i.planned {
+  border: 1px dashed var(--brand);
+  background: #f7faf8;
+  box-shadow: none;
+}
+
+.footprintLegend i.visited {
+  background: var(--brand);
+  box-shadow: none;
+}
+
+.footprintAchievements {
+  padding: 26px 32px 32px;
+}
+
+.footprintSectionHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 17px;
+}
+
+.footprintSectionHeading h3 {
+  margin: 6px 0 0;
+  font-size: 1.18rem;
+}
+
+.footprintSectionHeading > span {
+  color: var(--muted);
+  font-size: .64rem;
+  font-weight: 750;
+}
+
+.footprintBadgeGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+.footprintBadgeGrid article {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 14px;
+  background: #f8faf9;
+}
+
+.footprintBadgeGrid article.is-locked {
+  opacity: .64;
+  filter: grayscale(.65);
+}
+
+.footprintBadgeGrid article.is-unlocked {
+  border-color: #c7e3da;
+  background: linear-gradient(145deg, #f4fbf8, white);
+  box-shadow: 0 8px 22px rgba(22, 124, 104, .07);
+}
+
+.footprintBadgeIcon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #d7dfdc;
+  border-radius: 50%;
+  background: white;
+  color: #8b9693;
+  font-size: .78rem;
+  font-weight: 950;
+}
+
+.is-unlocked .footprintBadgeIcon {
+  border-color: #92cdbd;
+  background: var(--brand);
+  box-shadow: 0 5px 12px rgba(22, 124, 104, .2);
+  color: white;
+}
+
+.footprintBadgeGrid article > div {
+  display: grid;
+  gap: 5px;
+}
+
+.footprintBadgeGrid strong {
+  font-size: .69rem;
+  line-height: 1.35;
+}
+
+.footprintBadgeGrid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .59rem;
+  line-height: 1.45;
+}
+
+.footprintBadgeGrid small {
+  color: var(--brand-dark);
+  font-size: .56rem;
+  font-weight: 850;
+}
+
+.instagramPostGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.instagramPostCard {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  background: #e9efed;
+}
+
+.instagramPostCard img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .35s ease;
+}
+
+.instagramPostOverlay {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 52px 18px 16px;
+  background: linear-gradient(transparent, rgba(9, 25, 22, .82));
+  color: white;
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+
+.instagramPostCard:hover img {
+  transform: scale(1.04);
+}
+
+.instagramPostCard:hover .instagramPostOverlay {
+  opacity: 1;
+}
+
+.instagramPostOverlay strong {
+  font-size: .72rem;
+}
+
+.instagramPostOverlay p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 5px 0 0;
+  font-size: .72rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.profileMarketplaceGrid,
+.purchasedPlanGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding-top: 14px;
+}
+
+.profileMarketplaceGrid article,
+.purchasedPlanGrid article {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: white;
+  box-shadow: 0 10px 28px rgba(20, 35, 35, .045);
+}
+
+.profileMarketplaceGrid article > img,
+.profileListingPlaceholder {
+  width: 100%;
+  aspect-ratio: 1.55;
+  object-fit: cover;
+}
+
+.profileListingPlaceholder {
+  display: grid;
+  place-items: center;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.profileMarketplaceGrid article > div {
+  display: grid;
+  gap: 7px;
+  padding: 17px;
+}
+
+.profileMarketplaceGrid small,
+.purchasedPlanGrid small {
+  color: var(--brand);
+  font-size: .66rem;
+  font-weight: 800;
+}
+
+.profileMarketplaceGrid h3,
+.purchasedPlanGrid h3 {
+  margin: 0;
+  font-size: .92rem;
+  line-height: 1.4;
+}
+
+.profileMarketplaceGrid strong {
+  font-size: .78rem;
+}
+
+.profileMarketplaceGrid a,
+.purchasedPlanGrid a,
+.instagramEmptyState a {
+  color: var(--brand-dark);
+  font-size: .72rem;
+  font-weight: 850;
+}
+
+.purchasedPlanGrid article {
+  position: relative;
+  display: grid;
+  min-height: 220px;
+  align-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(169, 230, 215, .42), transparent 38%),
+    white;
+}
+
+.purchasedPlanBadge {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: .63rem;
+  font-weight: 900;
+}
+
+.purchasedPlanGrid p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: .68rem;
+}
+
+.instagramEmptyState {
+  display: grid;
+  min-height: 390px;
+  place-items: center;
+  align-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.instagramEmptyState h2 {
+  margin: 10px 0 6px;
+  font-size: 1.25rem;
+}
+
+.instagramEmptyState p {
+  max-width: 460px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.55;
+}
+
 @media (max-width: 780px) {
   .profileHeroCard {
     flex-direction: column;
@@ -1114,6 +1933,138 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   }
   .profileTabNav {
     overflow-x: auto;
+  }
+  .instagramProfilePage {
+    padding-top: 28px;
+  }
+  .instagramProfileHeader {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 20px;
+    padding: 4px 0 30px;
+  }
+  .instagramAvatarRing {
+    width: 96px;
+    height: 96px;
+    padding: 4px;
+  }
+  .instagramAvatarRing > span {
+    font-size: 2.5rem;
+  }
+  .instagramProfileTitle {
+    flex-wrap: wrap;
+  }
+  .instagramProfileTitle h1 {
+    width: 100%;
+    font-size: 1.25rem;
+  }
+  .instagramStats {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    margin: 24px -120px 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .instagramStats div {
+    display: grid;
+    gap: 1px;
+    text-align: center;
+  }
+  .instagramStats span {
+    font-size: .62rem;
+  }
+  .instagramBio {
+    margin-left: -120px;
+    padding-top: 7px;
+  }
+  .instagramEditPanel {
+    grid-template-columns: 1fr;
+    margin-inline: 0;
+    padding: 22px;
+  }
+  .instagramCreatorPanel {
+    grid-template-columns: 1fr;
+    margin-inline: 0;
+    padding: 22px;
+  }
+  .instagramEditPanel form {
+    grid-template-columns: 1fr;
+  }
+  .profileFormMessage,
+  .instagramEditActions {
+    grid-column: 1;
+  }
+  .instagramTabs {
+    overflow-x: auto;
+    grid-template-columns: repeat(4, minmax(105px, 1fr));
+  }
+  .instagramTabs button {
+    font-size: .62rem;
+  }
+  .achievementHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 23px 20px;
+  }
+  .achievementMiniStats {
+    width: 100%;
+  }
+  .achievementMiniStats div {
+    min-width: 0;
+    flex: 1;
+  }
+  .footprintProgressBlock {
+    padding: 0 20px 22px;
+  }
+  .achievementMapLayout,
+  .profileMapShell,
+  .profileMapCanvas {
+    min-height: min(72vh, 620px);
+  }
+  .footprintAchievements {
+    padding: 24px 20px;
+  }
+  .footprintBadgeGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .instagramPostGrid {
+    gap: 2px;
+  }
+  .instagramPostOverlay {
+    padding: 35px 9px 9px;
+    opacity: 1;
+  }
+  .instagramPostOverlay p {
+    display: none;
+  }
+  .profileMarketplaceGrid,
+  .purchasedPlanGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .footprintLegend {
+    align-items: flex-start;
+    gap: 11px;
+    justify-content: space-between;
+    padding-inline: 14px;
+  }
+  .footprintLegend span {
+    align-items: flex-start;
+    font-size: .56rem;
+  }
+  .footprintLegend i {
+    flex: 0 0 auto;
+  }
+  .footprintSectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .footprintBadgeGrid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1360,9 +2311,11 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 /* AI Planner — travel studio */
 .plannerPage {
+  --planner-assistant-background:
+    linear-gradient(180deg, #edf8f3 0%, #f8fcfa 46%, #ffffff 100%);
   min-height: calc(100vh - 68px);
   min-height: calc(100dvh - 64px);
-  padding: 34px 0 72px;
+  padding: 0;
   background:
     radial-gradient(circle at 8% 4%, rgba(255, 144, 103, .12), transparent 25rem),
     radial-gradient(circle at 92% 12%, rgba(22, 124, 104, .12), transparent 28rem),
@@ -1373,7 +2326,11 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: none;
   height: 100%;
+  margin: 0;
+  padding-inline: 0;
 }
 
 .tripProjectSidebar {
@@ -1390,7 +2347,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   flex-direction: column;
   overflow: hidden;
   border: 1px solid rgba(20, 35, 35, .09);
-  border-radius: 22px;
+  border-radius: 0 0 22px 22px;
   padding: 14px 11px;
   background: rgba(255, 255, 255, .92);
   box-shadow: 0 18px 46px rgba(24, 54, 48, .07);
@@ -1467,7 +2424,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .tripSidebarToggle svg,
 .sidebarNewChat svg,
-.tripProjectList nav button > svg {
+.tripProjectOpen > svg,
+.tripProjectDelete svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -1542,48 +2500,81 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   scrollbar-width: thin;
 }
 
-.tripProjectList nav button {
+.tripProjectItem {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  border-radius: 12px;
+  background: transparent;
+  color: #31413e;
+}
+
+.tripProjectOpen {
+  display: grid;
+  min-width: 0;
   grid-template-columns: 21px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   border: 0;
   border-radius: 12px;
-  padding: 10px;
+  padding: 10px 4px 10px 10px;
   background: transparent;
-  color: #31413e;
+  color: inherit;
   text-align: left;
 }
 
-.tripProjectList nav button:hover {
+.tripProjectItem:hover {
   background: #f1f4f2;
 }
 
-.tripProjectList nav button.active {
+.tripProjectItem.active {
   background: #e8eeeb;
   color: var(--ink);
 }
 
-.tripProjectList nav button > span {
+.tripProjectOpen > span {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.tripProjectList nav button strong,
-.tripProjectList nav button small {
+.tripProjectOpen strong,
+.tripProjectOpen small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tripProjectList nav button strong {
+.tripProjectOpen strong {
   font-size: .66rem;
 }
 
-.tripProjectList nav button small {
+.tripProjectOpen small {
   color: var(--muted);
   font-size: .52rem;
+}
+
+.tripProjectDelete {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  padding: 0;
+  background: transparent;
+  color: #84918d;
+}
+
+.tripProjectDelete svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tripProjectDelete:hover,
+.tripProjectDelete:focus-visible {
+  background: #fbe8e5;
+  color: #ad3b31;
 }
 
 .tripProjectEmpty {
@@ -1595,23 +2586,22 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .plannerLayout {
   min-width: 0;
-  grid-template-columns: minmax(270px, .78fr) minmax(350px, 1.03fr) minmax(350px, 1.19fr);
-  gap: 16px;
+  grid-template-columns: minmax(270px, .78fr) minmax(350px, 1.37fr) minmax(320px, .85fr);
+  gap: 0;
 }
 
 .plannerLayout .panel {
+  border-top: 0;
   border-color: rgba(20, 35, 35, .09);
-  border-radius: 24px;
-  box-shadow: 0 18px 46px rgba(24, 54, 48, .075);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .plannerChat {
   position: relative;
   min-height: 720px;
   padding: 0;
-  background:
-    linear-gradient(180deg, rgba(235, 246, 241, .7), transparent 155px),
-    white;
+  background: var(--planner-assistant-background);
 }
 
 .plannerChat .panelHeading {
@@ -1682,24 +2672,6 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .plannerChat .panelHeading small {
   font-size: .61rem;
-}
-
-.resetWorkflowButton {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(20, 35, 35, .1);
-  border-radius: 999px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, .78);
-  color: var(--ink);
-  font-size: .58rem;
-  font-weight: 800;
-}
-
-.resetWorkflowButton:disabled {
-  opacity: .4;
 }
 
 .assistantStatus {
@@ -1914,19 +2886,9 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   justify-content: flex-end;
 }
 
-.plannerChat .chatPenguinAvatar {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  padding: 0;
-  background: transparent url("/images/penguin-chat.png") center / contain no-repeat;
-  filter: drop-shadow(0 3px 5px rgba(20, 35, 35, .12));
-}
-
 .plannerChat .chatBubble {
   min-width: 0;
-  max-width: calc(91% - 43px);
+  max-width: 91%;
   border: 1px solid transparent;
   padding: 12px 14px;
   font-size: .73rem;
@@ -2076,23 +3038,49 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .itinerary {
+  display: flex;
   min-height: 720px;
-  background: #fafbf9;
+  flex-direction: column;
+  background: var(--planner-assistant-background);
 }
 
-.itineraryTop {
-  min-height: 82px;
-  padding: 18px 20px;
-  background: white;
+.itineraryHeading {
+  min-height: 64px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 9px 20px;
+  background: transparent;
 }
 
-.itineraryTop .eyebrow {
-  margin-bottom: 4px;
-  font-size: .58rem;
+.itineraryHeading > div {
+  min-width: 0;
 }
 
-.itineraryTop h2 {
-  font-size: 1.28rem;
+.itineraryHeading strong {
+  font-size: .84rem;
+  letter-spacing: -.015em;
+}
+
+.itineraryHeading small {
+  overflow: hidden;
+  font-size: .61rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planHeaderIcon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.planHeaderIcon img {
+  display: block;
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
 }
 
 .statusPill {
@@ -2113,10 +3101,16 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .exploreResult {
+  min-height: 0;
+  flex: 1;
   max-height: 638px;
-  gap: 12px;
-  padding: 12px;
-  background: #f5f7f4;
+  gap: 8px;
+  padding: 6px 12px 12px;
+  background: transparent;
+}
+
+.exploreResult .tripSummaryCard {
+  display: none;
 }
 
 .tripSummaryIntro {
@@ -2149,11 +3143,6 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   min-height: 720px;
 }
 
-.plannerMapHeader {
-  min-height: 82px;
-  background: white;
-}
-
 .plannerMapCanvasWrap {
   background: #e8eee9;
 }
@@ -2173,11 +3162,10 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .emptyPlan {
+  flex: 1;
   min-height: 636px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 48%, rgba(119, 196, 174, .13), transparent 31%),
-    #fafbf9;
+  background: transparent;
 }
 
 .explorerMascotCrew {
@@ -2206,11 +3194,11 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   .plannerPage {
     min-height: calc(100vh - 128px);
     min-height: calc(100dvh - 128px);
-    padding-block: 16px;
+    padding-block: 0;
   }
 
   .plannerLayout {
-    gap: 14px;
+    gap: 0;
   }
 
   .tripProjectSidebar {
@@ -2239,12 +3227,32 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 @media (min-width: 1241px) {
+  .plannerLayout {
+    grid-template-areas: "assistant map explorer";
+  }
+
+  .plannerChat {
+    grid-area: assistant;
+  }
+
+  .plannerMap {
+    grid-area: map;
+  }
+
+  .itinerary {
+    grid-area: explorer;
+  }
+
+  .plannerLayout .panel + .panel {
+    border-left: 0;
+  }
+
   .plannerPage {
     height: calc(100vh - 64px);
     height: calc(100dvh - 64px);
     min-height: 0;
     overflow: hidden;
-    padding-block: 16px;
+    padding-block: 0;
   }
 
   .plannerLayout,
@@ -2263,11 +3271,12 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
   .exploreResult {
     max-height: none;
-    height: calc(100% - 82px);
+    height: auto;
+    padding-right: 0;
   }
 
   .emptyPlan {
-    height: calc(100% - 82px);
+    height: auto;
   }
 }
 
@@ -2295,6 +3304,10 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
   .emptyPlan {
     padding-inline: 18px;
+  }
+
+  .itineraryHeading {
+    padding-inline: 16px;
   }
 
   .explorerMascotCrew {

@@ -53,7 +53,8 @@ Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-
 cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;
 không tạo một trip chat hay plan identity mới. Request sửa dùng optimistic
 `expectedRevision`; client cũ nhận `VERSION_CONFLICT` thay vì ghi đè thay đổi
-mới hơn.
+mới hơn. Khi user xóa một `TripChat`, các `TripChatMessage` và
+`TripChatPlanRevision` thuộc chat đó cũng bị xóa theo.
 
 ## Cụm thực thể nghiệp vụ mục tiêu của MVP
 
@@ -165,6 +166,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 
 - `Notification`
 - `Achievement` và `UserAchievement`
+- `UserVisitedPlace`: dấu mốc riêng của user cho một `Place` đã chuẩn hóa, gồm
+  ngày đi và ghi chú; một user chỉ có một dấu mốc hiện tại trên mỗi place.
+- `UserPost`: bài viết/media do user đăng và hiển thị trong lưới hồ sơ cá nhân.
 - `CreatorMetric` hoặc analytics event được tổng hợp
 - `AuditEvent`
 

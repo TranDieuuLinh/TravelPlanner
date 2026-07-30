@@ -12,6 +12,10 @@ from app.modules.marketplace.model import (
     Report,
     Review,
 )
+from app.modules.places.model import Place, PlaceRegionCatalogState, PlaceRegionSnapshot
+from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.users.model import User
 
 __all__ = [
@@ -25,23 +29,17 @@ __all__ = [
     "OrderItem",
     "Payment",
     "PaymentEvent",
-    "Report",
-    "Review",
-    "User",
-]
-from app.modules.places.model import Place, PlaceRegionCatalogState, PlaceRegionSnapshot
-from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
-from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
-from app.modules.users.model import User
-
-__all__ = [
     "Place",
     "PlaceRegionCatalogState",
     "PlaceRegionSnapshot",
-    "User",
+    "Report",
+    "Review",
     "ExplorerIntake",
-    "UserMustPlace",
     "TripChat",
     "TripChatMessage",
     "TripChatPlanRevision",
+    "User",
+    "UserMustPlace",
+    "UserPost",
+    "UserVisitedPlace",
 ]

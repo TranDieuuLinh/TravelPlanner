@@ -54,6 +54,15 @@ def get_trip_chat(
     return service.get(chat_id, current_user)
 
 
+@router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_trip_chat(
+    chat_id: str,
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> None:
+    service.delete(chat_id, current_user)
+
+
 @router.post("/{chat_id}/messages", response_model=TripChatRead)
 async def amend_trip_chat(
     chat_id: str,
