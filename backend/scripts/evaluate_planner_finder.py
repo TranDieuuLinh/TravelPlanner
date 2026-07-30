@@ -476,7 +476,7 @@ def _activity_items(plan: Plan):
         item
         for day in plan.days
         for item in day.items
-        if item.place_type not in {"break", "meal"}
+        if item.source in {"selected_place", "finder_suggestion"}
     ]
 
 

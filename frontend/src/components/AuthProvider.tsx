@@ -56,7 +56,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setUser(await apiFetch<CurrentUser>("/me"));
     } catch (error) {
-      if (!(error instanceof APIError) || ![401, 403].includes(error.status)) throw error;
+      if (
+        !(error instanceof APIError) ||
+        ![0, 401, 403].includes(error.status)
+      ) {
+        throw error;
+      }
       setUser(null);
     } finally {
       setLoading(false);

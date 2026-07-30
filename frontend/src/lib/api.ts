@@ -24,6 +24,13 @@ export class APIError extends Error {
   }
 }
 
+function networkError(): APIError {
+  return new APIError(0, {
+    code: "NETWORK_ERROR",
+    message: "Không thể kết nối tới máy chủ. Vui lòng kiểm tra backend đang chạy."
+  });
+}
+
 function getCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
   const prefix = `${encodeURIComponent(name)}=`;
@@ -80,11 +87,16 @@ export async function apiFetch<T>(
     if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
   }
 
-  const response = await fetch(`${apiBase}${path}`, {
-    ...init,
-    credentials: "include",
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}${path}`, {
+      ...init,
+      credentials: "include",
+      headers
+    });
+  } catch {
+    throw networkError();
+  }
 
   const isAuthRoute = path.startsWith("/auth/");
   if (response.status === 401 && retryAuth && !isAuthRoute && await refreshSession()) {

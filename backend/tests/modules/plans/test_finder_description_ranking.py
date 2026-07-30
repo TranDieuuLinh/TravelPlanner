@@ -63,7 +63,7 @@ def test_description_retrieval_then_structured_reranking_prefers_nature() -> Non
     ]
 
 
-def test_nature_day_does_not_fill_activity_with_hotel_or_restaurant() -> None:
+def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
     repository = FakeFinderRepository(
         [
             _place(
@@ -123,9 +123,14 @@ def test_nature_day_does_not_fill_activity_with_hotel_or_restaurant() -> None:
         for item in result.days[0].items
         if item.place_id is not None
     ]
-    assert scheduled_place_ids == ["national-park"]
+    assert scheduled_place_ids == ["national-park", "restaurant"]
     assert "hotel" not in scheduled_place_ids
-    assert "restaurant" not in scheduled_place_ids
+    restaurant_item = next(
+        item
+        for item in result.days[0].items
+        if item.place_id == "restaurant"
+    )
+    assert restaurant_item.role == "lunch_meal"
 
 
 class FakeFinderRepository:
