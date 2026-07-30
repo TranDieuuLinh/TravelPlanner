@@ -1,5 +1,10 @@
 # Place development data
 
+## Vietnam festivals
+
+Xem [`FESTIVALS.md`](FESTIVALS.md) cho danh mục lễ hội có tổ chức trên toàn
+quốc, quy tắc provenance và lệnh cập nhật dữ liệu.
+
 Thư mục này chứa dữ liệu phát triển theo schema mục tiêu trong
 `docs/13-database-schema.md`.
 

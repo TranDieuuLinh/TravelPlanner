@@ -1,0 +1,22 @@
+{
+  "dataset": "festivals.csv",
+  "recordCount": 11124,
+  "festivalTypeCounts": {
+    "Lễ hội có nguồn gốc từ nước ngoài": 4,
+    "Lễ hội ngành nghề": 79,
+    "Lễ hội truyền thống": 10354,
+    "Lễ hội văn hóa": 687
+  },
+  "source": "https://lehoi.com.vn",
+  "sourcePublisher": "Cục Văn hóa cơ sở, Gia đình và Thư viện",
+  "generatedAt": "2026-07-30T07:59:43.323090+00:00",
+  "detailEnrichment": false,
+  "dataQuality": {
+    "missingNameCount": 3,
+    "missingProvinceCount": 0,
+    "missingVenueCount": 338,
+    "duplicateSourceIdCount": 0
+  },
+  "licenseNote": "Publicly accessible government portal; verify reuse and attribution requirements before redistribution.",
+  "freshnessNote": "This is a festival inventory. schedule_text is a customary schedule, not confirmation that an occurrence will run in a specific year."
+}
