@@ -14,6 +14,7 @@ Router FastAPI
     +-- plans: service -> workflow -> domain service
     |                         |             |
     |                         |             +-- LLM gateway (Stub/Gemini)
+    |                         |             +-- route gateway (HERE/fallback)
     |                         +-- PlanRepository trong bộ nhớ
     |
     +-- profiles/marketplace: endpoint placeholder
@@ -29,6 +30,14 @@ không phải cấu hình ứng dụng. Container backend chạy Alembic trướ
 `/api/plans/explore/full` và `/api/plans/explore/full/intake` chỉ hoạt động khi
 Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
 có thể dùng `StubLLMClient` khi không có provider.
+
+Finder dùng HERE Routing API v8 qua interface route provider khi
+`ROUTE_PROVIDER=here` và có `HERE_API_KEY`. Adapter lấy route pedestrian/car,
+summary và flexible polyline; lỗi theo từng leg fallback về ước tính địa lý.
+Khi trip có `startDate`, adapter HERE Public Transit v8 bổ sung route theo lịch
+chạy và đưa vào lựa chọn chính hoặc `transportLeg.alternatives` theo
+`preferredModes`/`avoidModes`.
+Leaflet/OpenStreetMap vẫn là bản đồ nền, không phải HERE Maps.
 
 ### Pipeline Explorer intake hiện tại
 

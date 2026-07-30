@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
@@ -115,6 +117,25 @@ class PlanItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlanTransportOption(BaseModel):
+    mode: str
+    distance_meters: int = Field(ge=0, alias="distanceMeters")
+    estimated_duration_minutes: int = Field(
+        ge=0,
+        alias="estimatedDurationMinutes",
+    )
+    geometry_coordinates: list[tuple[float, float]] = Field(
+        default_factory=list,
+        alias="geometryCoordinates",
+    )
+    source: str
+    verified: bool
+    fetched_at: datetime | None = Field(default=None, alias="fetchedAt")
+    details: dict = Field(default_factory=dict)
+
+    model_config = {"populate_by_name": True}
+
+
 class PlanTransportLeg(BaseModel):
     from_item_id: str | None = Field(default=None, alias="fromItemId")
     to_item_id: str | None = Field(default=None, alias="toItemId")
@@ -132,6 +153,9 @@ class PlanTransportLeg(BaseModel):
     )
     source: str = "geodesic_estimate"
     verified: bool = False
+    fetched_at: datetime | None = Field(default=None, alias="fetchedAt")
+    details: dict = Field(default_factory=dict)
+    alternatives: list[PlanTransportOption] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 

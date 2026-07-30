@@ -41,11 +41,14 @@ class Settings(BaseSettings):
     place_resolver_provider: str = "nominatim"
     here_base_url: str = "https://discover.search.hereapi.com"
     here_geocode_base_url: str = "https://geocode.search.hereapi.com"
+    here_routing_base_url: str = "https://router.hereapi.com"
+    here_transit_base_url: str = "https://transit.router.hereapi.com"
     here_api_key: str | None = None
     here_timeout_seconds: float = 10.0
     here_country_code: str = "VNM"
     here_language: str = "vi-VN"
     here_min_interval_seconds: float = 0.2
+    route_provider: str = "here"
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"
     nominatim_timeout_seconds: float = 15.0
@@ -68,6 +71,8 @@ class Settings(BaseSettings):
                 "PLACE_RESOLVER_PROVIDER must be here, nominatim, "
                 "or provisional"
             )
+        if self.route_provider not in {"here", "geodesic"}:
+            raise ValueError("ROUTE_PROVIDER must be here or geodesic")
         if not self.database_url.startswith(
             ("postgresql://", "postgresql+psycopg://")
         ):

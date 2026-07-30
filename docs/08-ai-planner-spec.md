@@ -31,6 +31,14 @@ yêu cầu của user.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
+UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ một Explorer context
+và plan hiện tại. Message đầu tạo plan; follow-up gửi context hiện tại cùng tối
+đa tám user request gần nhất vào Explorer, sau đó Planner/Finder tạo revision
+hoàn chỉnh. Backend giữ nguyên plan ID, tăng revision và lưu snapshot cũ thay vì
+trả một plan identity mới. Các địa điểm của plan hiện tại được chuyển thành
+`SelectedPlace` cho lần sửa, còn địa điểm user yêu cầu tránh được loại qua
+`avoidPlaces`/constraint của Explorer.
+
 Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
 capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
 lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
@@ -170,8 +178,12 @@ Finder điền item cụ thể:
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
-- đánh dấu route leg ước tính địa lý là `verified=false` cho đến khi provider
-  route thật được cấu hình;
+- lấy route pedestrian/car từ HERE Routing v8 sau khi xếp stop; leg HERE có
+  geometry, `fetchedAt`, `source=here_routing_v8`, `verified=true`, còn lỗi
+  provider fallback về ước tính địa lý `verified=false`;
+- với trip có `startDate`, lấy thêm HERE Public Transit theo giờ kết thúc stop;
+  chọn transit khi user ưu tiên bus/train, nếu không giữ làm alternative; không
+  gọi timetable hiện tại cho trip chưa có ngày;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
@@ -195,8 +207,9 @@ Issue không chỉ là chuỗi văn bản; phải có code, severity, affected i
 evidence, `canAutoFix` và phạm vi sửa.
 
 Trong implementation hiện tại, các check schema/allocation deterministic được
-chạy thật. Route, giờ hoạt động, availability và thời tiết live chưa có provider
-thì được trả thành issue `info`, không được mô tả như đã xác minh. Warning làm
+chạy thật. Check route chỉ báo issue `info` cho leg fallback chưa xác minh.
+Giờ hoạt động, availability và thời tiết live chưa có provider thì vẫn được trả
+thành issue `info`, không được mô tả như đã xác minh. Warning làm
 Main Plan ở trạng thái `draft` để sửa hoặc tạo backup; chỉ report `passed` mới
 khóa plan.
 

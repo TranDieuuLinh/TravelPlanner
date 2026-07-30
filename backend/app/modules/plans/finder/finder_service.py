@@ -97,6 +97,9 @@ class FinderService:
             allow_finder_suggestions=allow_finder_suggestions,
             constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
+            trip_start_date=None,
+            preferred_modes=set(),
+            avoid_modes=set(),
         )
 
     def fill_backup_plan(
@@ -122,6 +125,9 @@ class FinderService:
             allow_finder_suggestions=allow_finder_suggestions,
             constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
+            trip_start_date=None,
+            preferred_modes=set(),
+            avoid_modes=set(),
         )
 
     def fill_agent_plan(
@@ -142,6 +148,15 @@ class FinderService:
             allow_finder_suggestions=finder_input.allow_finder_suggestions,
             constraint_policy=finder_input.intent.constraint_policy,
             budget_level=finder_input.trip_spec.budget.level.value,
+            trip_start_date=finder_input.trip_spec.start_date,
+            preferred_modes={
+                mode.value
+                for mode in finder_input.trip_spec.transport.preferred_modes
+            },
+            avoid_modes={
+                mode.value
+                for mode in finder_input.trip_spec.transport.avoid_modes
+            },
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -188,6 +203,9 @@ class FinderService:
         allow_finder_suggestions: bool,
         constraint_policy: ConstraintPolicy,
         budget_level: str,
+        trip_start_date: str | None,
+        preferred_modes: set[str],
+        avoid_modes: set[str],
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -347,6 +365,10 @@ class FinderService:
                 day_items,
                 start=start_coordinate,
                 preserve_order=has_source_itinerary,
+                day=brief.day,
+                trip_start_date=trip_start_date,
+                preferred_modes=preferred_modes,
+                avoid_modes=avoid_modes,
             )
             optimized_items = self._fit_timeline_after_routing(
                 optimized_items,

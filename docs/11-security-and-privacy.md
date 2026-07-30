@@ -68,6 +68,9 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 - Chỉ thu thập dữ liệu cần thiết cho tính năng.
 - Giải thích lý do cần vị trí, contact, media hoặc URL được nhập.
 - Mặc định plan và thành viên nhóm ở trạng thái riêng tư.
+- Trip chat luôn được query bằng cả chat ID và authenticated user ID. Message
+  history và plan snapshot là dữ liệu riêng tư; ảnh upload chỉ xử lý trong
+  request, database chỉ lưu tên attachment chứ không lưu bytes.
 - Xác định thời gian lưu prompt, nội dung nguồn, log, lịch sử trip và hồ sơ tài
   chính.
 - Hỗ trợ export và xóa dữ liệu khi pháp luật cho phép.

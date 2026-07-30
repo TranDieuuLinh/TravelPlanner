@@ -22,9 +22,9 @@ tốt hơn trước khi ADR-002 chọn route provider chính thức.
    `must_visit`.
 5. Planner nhận effective preference profile; explicit constraint của trip có
    quyền ưu tiên cao hơn.
-6. Khi chưa có route provider, Finder dùng tọa độ để chạy nearest-neighbour và
-   2-opt. Các transport leg sinh ra phải có `source=geodesic_estimate` và
-   `verified=false`.
+6. Finder dùng tọa độ để chạy nearest-neighbour và 2-opt. Theo ADR-002 cập nhật,
+   từng transport leg sau đó được HERE Routing v8 xác minh; leg provider lỗi
+   phải fallback với `source=geodesic_estimate` và `verified=false`.
 
 ## Hệ quả
 
@@ -32,6 +32,6 @@ tốt hơn trước khi ADR-002 chọn route provider chính thức.
 - Dữ liệu cũ dạng `string[]` được nâng cấp khi đọc/ghi mà không cần thêm cột
   user.
 - Một Reel đơn lẻ chỉ tạo tín hiệu yếu; tín hiệu lặp lại mới tăng confidence.
-- Route hiện tại giảm đi vòng theo tọa độ nhưng chưa phản ánh đường thật, traffic
-  hoặc phương tiện. ADR-002 vẫn phải chọn provider trước khi tuyên bố route đã
-  được xác minh.
+- Thứ tự route hiện tại giảm đi vòng theo tọa độ nhưng chưa được tối ưu toàn cục
+  bằng road-time matrix. Leg HERE phản ánh mạng đường và phương tiện nhưng chưa
+  traffic-aware vì plan chưa có ngày đi.

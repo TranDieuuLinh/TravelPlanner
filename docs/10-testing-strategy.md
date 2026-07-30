@@ -16,6 +16,8 @@ Sử dụng pytest cho domain và service:
 - điều phối luồng tạo plan;
 - mọi selected place được xếp hoặc có lý do chưa xếp;
 - bảo toàn item đã khóa và tính độc lập của plan dự phòng;
+- trip chat giữ nguyên plan ID qua nhiều revision, nhớ user request trước và
+  từ chối optimistic revision đã cũ;
 - quy tắc thời gian, mật độ và validation;
 - bất biến của order, entitlement, review và payment;
 - chuyển đổi lỗi từ provider.
@@ -27,6 +29,7 @@ Chạy test FastAPI với database cô lập:
 - validation request và contract camelCase;
 - khả năng lưu trữ của repository và migration;
 - ma trận authentication và authorization;
+- isolation của trip chat theo user và contract camelCase của chat history;
 - xử lý idempotent khi generate/checkout/webhook;
 - vòng đời import job, retry từng bước và giữ kết quả từng phần;
 - source connector, place resolution và provenance persistence;

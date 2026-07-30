@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.integrations.llm.factory import get_llm_client
+from app.integrations.routing import HereRouteProvider, HereTransitRouteProvider
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.resolver import (
     FallbackPlaceResolver,
@@ -28,6 +29,7 @@ from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
+from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
@@ -51,7 +53,10 @@ def get_plan_service(
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
     )
-    finder = FinderService(RepositoryFinderPlaceTool(place_repository))
+    finder = FinderService(
+        RepositoryFinderPlaceTool(place_repository),
+        route_optimizer=_get_route_optimizer(),
+    )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=planner,
@@ -99,3 +104,23 @@ def _get_place_resolver() -> PlaceResolver:
     if settings.place_resolver_provider in {"here", "nominatim"}:
         return nominatim
     return ProvisionalPlaceResolver()
+
+
+def _get_route_optimizer() -> GeographicRouteOptimizer:
+    if settings.route_provider == "here" and settings.here_api_key:
+        return GeographicRouteOptimizer(
+            HereRouteProvider(
+                base_url=settings.here_routing_base_url,
+                api_key=settings.here_api_key,
+                timeout_seconds=settings.here_timeout_seconds,
+                min_interval_seconds=settings.here_min_interval_seconds,
+            ),
+            HereTransitRouteProvider(
+                base_url=settings.here_transit_base_url,
+                api_key=settings.here_api_key,
+                timeout_seconds=settings.here_timeout_seconds,
+                min_interval_seconds=settings.here_min_interval_seconds,
+                language=settings.here_language,
+            ),
+        )
+    return GeographicRouteOptimizer()

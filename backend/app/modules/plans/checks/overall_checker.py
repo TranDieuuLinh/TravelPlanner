@@ -61,27 +61,35 @@ class OverallChecker:
                     canAutoFix=False,
                 )
             )
-        issues.extend(
-            [
+        route_legs = [
+            leg for day in plan.days for leg in day.transport_legs
+        ]
+        unverified_route_legs = [
+            leg for leg in route_legs if not leg.verified
+        ]
+        if unverified_route_legs:
+            issues.append(
                 CheckIssue(
                     code="route_check_unavailable",
                     severity="info",
                     message=(
-                        "Route duration and transport feasibility were not checked "
-                        "because no route provider is configured."
+                        f"{len(unverified_route_legs)} route leg(s) use a "
+                        "geographic estimate because provider routing was "
+                        "unavailable."
                     ),
                     canAutoFix=False,
+                )
+            )
+        issues.append(
+            CheckIssue(
+                code="operational_data_check_unavailable",
+                severity="info",
+                message=(
+                    "Opening hours and live availability were not checked "
+                    "against an external provider."
                 ),
-                CheckIssue(
-                    code="operational_data_check_unavailable",
-                    severity="info",
-                    message=(
-                        "Opening hours and live availability were not checked "
-                        "against an external provider."
-                    ),
-                    canAutoFix=False,
-                ),
-            ]
+                canAutoFix=False,
+            )
         )
         status = (
             "failed"
@@ -90,10 +98,18 @@ class OverallChecker:
             if any(issue.severity == "warning" for issue in issues)
             else "passed"
         )
+        route_summary = (
+            "All generated route legs were verified by the configured provider. "
+            if route_legs and not unverified_route_legs
+            else "Some route legs still require provider verification. "
+            if unverified_route_legs
+            else "No route legs required verification. "
+        )
         summary = (
             "Deterministic schema and allocation checks completed. "
-            "External route, opening-hours, availability, and live weather "
-            "verification remain unavailable."
+            f"{route_summary}"
+            "Opening-hours, availability, and live weather verification "
+            "remain unavailable."
         )
         return CheckReport(status=status, issues=issues, summary=summary)
 
