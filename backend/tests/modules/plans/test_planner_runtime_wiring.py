@@ -176,7 +176,7 @@ def test_from_explorer_provider_error_keeps_cors_headers(
     client: TestClient,
 ) -> None:
     class FailingPlanService:
-        async def create_main_plan_from_explorer(self, payload):
+        async def create_main_plan_from_explorer_with_timing(self, payload):
             raise RuntimeError("Planner provider failed.")
 
     app.dependency_overrides[get_plan_service] = lambda: FailingPlanService()

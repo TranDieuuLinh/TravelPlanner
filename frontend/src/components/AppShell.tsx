@@ -6,8 +6,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
 
 const nav = [
-  { href: "/reels", label: "Video Quảng Bá", icon: "▶" },
-  { href: "/explore", label: "Khám phá", icon: "⌕" },
+  { href: "/reels", label: "Khám phá", icon: "▶" },
   { href: "/planner", label: "AI Planner", icon: "✦" },
   { href: "/profile", label: "Hồ sơ", icon: "○" },
 ];
@@ -18,9 +17,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const dynamicNav = [...nav];
   if (user?.role === "creator") {
-    dynamicNav.splice(2, 0, { href: "/creator/listings", label: "Creator Studio", icon: "✎" });
+    dynamicNav.splice(1, 0, { href: "/creator/listings", label: "Creator Studio", icon: "✎" });
   } else if (user?.role === "admin") {
-    dynamicNav.splice(2, 0, { href: "/admin/listings", label: "Admin Duyệt", icon: "✓" });
+    dynamicNav.splice(1, 0, { href: "/admin/listings", label: "Admin Duyệt", icon: "✓" });
   }
 
   const mobileNav = dynamicNav.map((item) =>
@@ -31,7 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       <header className="topbar">
         <div className="topbarInner">
-          <Link aria-label="VSF Travel" className="brand" href="/explore">
+          <Link aria-label="VSF Travel" className="brand" href="/reels">
             <strong>VSF Travel</strong>
           </Link>
           <nav aria-label="Điều hướng chính" className="desktopNav">

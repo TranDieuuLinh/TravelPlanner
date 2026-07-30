@@ -31,6 +31,7 @@ from app.modules.plans.explorer.timing import (
     ExplorerTimingTrace,
 )
 from app.modules.plans.repository import PlanRepository
+from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.schema import (
     BackupPlanCreate,
     FeatureMapItem,
@@ -506,6 +507,13 @@ class PlanService:
         self,
         payload: MainPlanFromExplorerCreate,
     ) -> Plan:
+        plan, _ = await self.create_main_plan_from_explorer_with_timing(payload)
+        return plan
+
+    async def create_main_plan_from_explorer_with_timing(
+        self,
+        payload: MainPlanFromExplorerCreate,
+    ) -> tuple[Plan, PlanTimingReport]:
         selected_places = list(payload.selected_places)
         if payload.intake_id and self.explorer_persistence is not None:
             selected_places = _merge_selected_places(
@@ -528,11 +536,11 @@ class PlanService:
                         )
                     }
                 )
-        plan = await self.main_workflow.run_from_explorer(
+        plan, timing_report = await self.main_workflow.run_from_explorer_with_timing(
             payload.model_copy(update={"selected_places": selected_places})
         )
         self.repository.save(plan)
-        return plan
+        return plan, timing_report
 
     async def create_main_plan_from_context(
         self,

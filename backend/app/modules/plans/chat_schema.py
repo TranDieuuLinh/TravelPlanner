@@ -8,6 +8,7 @@ from app.modules.plans.explorer.schema import (
     ExplorerContextResponse,
     ExplorerTimingReport,
 )
+from app.modules.plans.timing import PlanTimingReport
 
 
 class TripChatCreate(BaseModel):
@@ -46,5 +47,9 @@ class TripChatRead(TripChatSummaryRead):
     latest_explorer_timing: Annotated[
         ExplorerTimingReport | None,
         Field(default=None, alias="latestExplorerTiming"),
+    ]
+    latest_planner_timing: Annotated[
+        PlanTimingReport | None,
+        Field(default=None, alias="latestPlannerTiming"),
     ]
     messages: list[TripChatMessageRead]

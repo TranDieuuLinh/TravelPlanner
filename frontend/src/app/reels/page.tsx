@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { APIError } from "@/lib/api";
 import { searchListings } from "@/lib/marketplace";
@@ -114,6 +114,13 @@ function getCover(version: ListingVersion) {
   return version.mediaUrls?.[0] || "https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=900&q=80";
 }
 
+type PromotionType = "video" | "post";
+
+function getPromotionType(version: ListingVersion): PromotionType {
+  const mediaUrl = version.mediaUrls?.[0] ?? "";
+  return /\.(mp4|webm|ogg|mov|m4v)(?:[?#]|$)/i.test(mediaUrl) ? "video" : "post";
+}
+
 function buildLocationTags(version: ListingVersion) {
   const fromDays = version.previewSnapshot?.daySummaries?.slice(0, 3).map((day, index) => ({
     name: day.theme || `${version.destination} ngày ${day.day}`,
@@ -134,9 +141,13 @@ export default function ReelsPage() {
   const [liked, setLiked] = useState<Record<string, boolean>>({});
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [cartIds, setCartIds] = useState<string[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
   const [listings, setListings] = useState<ListingSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const touchStartY = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +159,7 @@ export default function ReelsPage() {
         const data = await searchListings({ page: 1, pageSize: 12, sort: "newest" });
         if (!cancelled) setListings(data.items);
       } catch (err) {
-        if (!cancelled) setError(err instanceof APIError ? err.message : "Không thể tải video quảng bá.");
+        if (!cancelled) setError(err instanceof APIError ? err.message : "Không thể tải nội dung quảng bá.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -160,10 +171,76 @@ export default function ReelsPage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("vsf-promotion-cart") ?? "[]");
+      if (Array.isArray(saved)) setCartIds(saved.filter((id): id is string => typeof id === "string"));
+    } catch {
+      setCartIds([]);
+    }
+  }, []);
+
   const reels = useMemo(
-    () => listings.map((listing) => ({ listing, stats: reelStats(listing.id), tags: buildLocationTags(listing.currentVersion) })),
+    () => listings.map((listing) => ({
+      listing,
+      stats: reelStats(listing.id),
+      tags: buildLocationTags(listing.currentVersion),
+      type: getPromotionType(listing.currentVersion),
+    })),
     [listings]
   );
+
+  const visibleReels = reels;
+
+  const cartListings = useMemo(
+    () => cartIds.map((id) => listings.find((listing) => listing.id === id)).filter((item): item is ListingSummary => Boolean(item)),
+    [cartIds, listings]
+  );
+
+  const activeViewer = viewerIndex === null ? null : visibleReels[viewerIndex];
+
+  useEffect(() => {
+    if (viewerIndex === null) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewerIndex(null);
+      if (event.key === "ArrowDown") setViewerIndex((current) => current === null ? null : Math.min(current + 1, visibleReels.length - 1));
+      if (event.key === "ArrowUp") setViewerIndex((current) => current === null ? null : Math.max(current - 1, 0));
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [viewerIndex, visibleReels.length]);
+
+  function persistCart(nextIds: string[]) {
+    setCartIds(nextIds);
+    window.localStorage.setItem("vsf-promotion-cart", JSON.stringify(nextIds));
+  }
+
+  function toggleCart(planId: string) {
+    const nextIds = cartIds.includes(planId)
+      ? cartIds.filter((id) => id !== planId)
+      : [...cartIds, planId];
+    persistCart(nextIds);
+  }
+
+  function moveViewer(direction: -1 | 1) {
+    setViewerIndex((current) => {
+      if (current === null) return null;
+      return Math.min(Math.max(current + direction, 0), visibleReels.length - 1);
+    });
+  }
+
+  function handleTouchEnd(event: React.TouchEvent) {
+    if (touchStartY.current === null) return;
+    const distance = touchStartY.current - event.changedTouches[0].clientY;
+    if (Math.abs(distance) > 50) moveViewer(distance > 0 ? 1 : -1);
+    touchStartY.current = null;
+  }
 
   async function handleBuy(plan: ListingSummary) {
     if (!user) {
@@ -193,16 +270,11 @@ export default function ReelsPage() {
   return (
     <main className="pageWidth reelsPage">
       <header className="reelsHeader">
-        <span><PlayIcon /> Travel Reels Marketplace</span>
-        <h1>Video quảng bá gắn Plan</h1>
-        <p>
-          Mỗi video là một trải nghiệm thật của Creator. Bấm vào địa điểm trên video để xem vị trí
-          tương ứng trong lịch trình, và mua Plan ngay không cần rời trình phát.
-        </p>
+        <h1>Khám phá</h1>
       </header>
 
       {loading ? (
-        <div className="reelsGrid" aria-label="Đang tải video quảng bá">
+        <div className="reelsGrid" aria-label="Đang tải nội dung quảng bá">
           {Array.from({ length: 6 }).map((_, index) => (
             <div aria-hidden="true" className="reelCard reelSkeleton" key={index}>
               <div className="reelSkeletonPoster" />
@@ -212,20 +284,20 @@ export default function ReelsPage() {
       ) : error ? (
         <div className="exploreFeedback errorBanner" role="alert">
           <div>
-            <strong>Chưa tải được video quảng bá</strong>
+            <strong>Chưa tải được nội dung quảng bá</strong>
             <span>{error}</span>
           </div>
           <Link href="/explore">Về Khám phá</Link>
         </div>
       ) : reels.length === 0 ? (
         <div className="emptyState">
-          <h2>Chưa có Plan để dựng video quảng bá</h2>
-          <p>Khi Marketplace có listing published, tab này sẽ tự lấy Plan và hiển thị dạng video card.</p>
+          <h2>Chưa có Plan để tạo nội dung quảng bá</h2>
+          <p>Khi Marketplace có listing published, tab này sẽ tự lấy Plan và hiển thị dạng card dọc.</p>
           <Link className="primaryBtn" href="/explore">Xem Marketplace</Link>
         </div>
       ) : (
         <div className="reelsGrid">
-          {reels.map(({ listing, stats, tags }) => {
+          {visibleReels.map(({ listing, stats, tags, type }, index) => {
             const version = listing.currentVersion;
             const creatorName = listing.creator?.fullName || "Creator";
             const cover = getCover(version);
@@ -238,8 +310,15 @@ export default function ReelsPage() {
                   <img alt={version.title} loading="lazy" src={cover} />
                   <div className="reelShade" />
 
-                  <button className="reelPlayButton" type="button" aria-label={`Phát video ${version.title}`}>
-                    <PlayIcon />
+                  <span className={`reelContentType ${type}`}>{type === "video" ? "Video" : "Bài post"}</span>
+
+                  <button
+                    className="reelPlayButton"
+                    onClick={() => setViewerIndex(index)}
+                    type="button"
+                    aria-label={`${type === "video" ? "Xem video" : "Mở bài post"} ${version.title}`}
+                  >
+                    {type === "video" ? <PlayIcon /> : <span>↗</span>}
                   </button>
 
                   <div className="reelActions" aria-label="Tương tác video">
@@ -278,8 +357,12 @@ export default function ReelsPage() {
                       <Link className="reelPlanTitle" href={`/listings/${listing.id}`}>{version.title}</Link>
                       <div className="reelPlanFooter">
                         <span>{vnd(version.priceAmount, version.priceCurrency)}</span>
-                        <button disabled={buyingId === listing.id} onClick={() => void handleBuy(listing)} type="button">
-                          <CartIcon /> {buyingId === listing.id ? "Đang mở MoMo" : "Mua ngay Plan"}
+                        <button
+                          className={cartIds.includes(listing.id) ? "inCart" : ""}
+                          onClick={() => toggleCart(listing.id)}
+                          type="button"
+                        >
+                          <CartIcon /> {cartIds.includes(listing.id) ? "Đã thêm" : "Thêm vào giỏ"}
                         </button>
                       </div>
                     </div>
@@ -298,6 +381,99 @@ export default function ReelsPage() {
           })}
         </div>
       )}
+
+      {cartIds.length ? (
+        <button className="promotionCartButton" onClick={() => setCartOpen(true)} type="button">
+          <CartIcon />
+          <span>Giỏ Plan</span>
+          <strong>{cartIds.length}</strong>
+        </button>
+      ) : null}
+
+      {activeViewer ? (
+        <div
+          aria-label="Trình xem nội dung quảng bá"
+          aria-modal="true"
+          className="promotionViewer"
+          onTouchEnd={handleTouchEnd}
+          onTouchStart={(event) => {
+            touchStartY.current = event.touches[0].clientY;
+          }}
+          role="dialog"
+        >
+          <button aria-label="Đóng trình xem" className="promotionViewerClose" onClick={() => setViewerIndex(null)} type="button">×</button>
+          <button aria-label="Nội dung trước" className="promotionViewerNav previous" disabled={viewerIndex === 0} onClick={() => moveViewer(-1)} type="button">↑</button>
+          <button aria-label="Nội dung tiếp theo" className="promotionViewerNav next" disabled={viewerIndex === visibleReels.length - 1} onClick={() => moveViewer(1)} type="button">↓</button>
+
+          <article className="promotionViewerStage" key={activeViewer.listing.id}>
+            {activeViewer.type === "video" ? (
+              <video autoPlay controls loop muted playsInline poster={getCover(activeViewer.listing.currentVersion)}>
+                <source src={activeViewer.listing.currentVersion.mediaUrls[0]} />
+              </video>
+            ) : (
+              <img alt={activeViewer.listing.currentVersion.title} src={getCover(activeViewer.listing.currentVersion)} />
+            )}
+            <div className="promotionViewerShade" />
+            <span className={`reelContentType viewerType ${activeViewer.type}`}>
+              {activeViewer.type === "video" ? "Video" : "Bài post"}
+            </span>
+            <div className="promotionViewerCopy">
+              <span>@{activeViewer.listing.creator?.fullName || "Creator"}</span>
+              <h2>{activeViewer.listing.currentVersion.title}</h2>
+              <p>{activeViewer.listing.currentVersion.description}</p>
+            </div>
+            <div className="promotionViewerCommerce">
+              <div>
+                <small>Plan đính kèm</small>
+                <strong>{vnd(activeViewer.listing.currentVersion.priceAmount, activeViewer.listing.currentVersion.priceCurrency)}</strong>
+              </div>
+              <button
+                className={cartIds.includes(activeViewer.listing.id) ? "inCart" : ""}
+                onClick={() => toggleCart(activeViewer.listing.id)}
+                type="button"
+              >
+                <CartIcon />
+                {cartIds.includes(activeViewer.listing.id) ? "Đã có trong giỏ" : "Thêm vào giỏ"}
+              </button>
+              <Link href={`/listings/${activeViewer.listing.id}`}>Xem Plan</Link>
+            </div>
+          </article>
+          <span className="promotionViewerHint">Vuốt dọc để xem nội dung tiếp theo</span>
+        </div>
+      ) : null}
+
+      {cartOpen ? (
+        <div aria-modal="true" className="promotionCartOverlay" role="dialog">
+          <button aria-label="Đóng giỏ hàng" className="promotionCartBackdrop" onClick={() => setCartOpen(false)} type="button" />
+          <aside className="promotionCartDrawer">
+            <header>
+              <div>
+                <small>Marketplace</small>
+                <h2>Giỏ Plan ({cartListings.length})</h2>
+              </div>
+              <button aria-label="Đóng giỏ hàng" onClick={() => setCartOpen(false)} type="button">×</button>
+            </header>
+            <div className="promotionCartItems">
+              {cartListings.map((listing) => (
+                <article key={listing.id}>
+                  <img alt="" src={getCover(listing.currentVersion)} />
+                  <div>
+                    <strong>{listing.currentVersion.title}</strong>
+                    <span>{vnd(listing.currentVersion.priceAmount, listing.currentVersion.priceCurrency)}</span>
+                    <div>
+                      <button onClick={() => persistCart(cartIds.filter((id) => id !== listing.id))} type="button">Xóa</button>
+                      <button disabled={buyingId === listing.id} onClick={() => void handleBuy(listing)} type="button">
+                        {buyingId === listing.id ? "Đang mở MoMo" : "Thanh toán"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <p>Checkout hiện xử lý từng Plan để mỗi đơn luôn gắn đúng một phiên bản đã xuất bản.</p>
+          </aside>
+        </div>
+      ) : null}
     </main>
   );
 }

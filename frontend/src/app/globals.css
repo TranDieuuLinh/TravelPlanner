@@ -327,16 +327,220 @@ h1, h2, h3, p { margin-top: 0; }
 .dayTabList button:focus-visible { outline: 2px solid var(--day-color); outline-offset: 2px; }
 .dayTabList button.active { border-color: var(--day-color); background: var(--day-color); }
 .dayTabList button.active > i { color: white; }
-.explorerDayCard { overflow: hidden; border: 1px solid #dbe5e1; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgba(24,54,48,.06); }
-.dayCardHeading { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e5ebe8; padding: 12px; background: white; }
-.dayCardHeading strong { min-width: 0; overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.planDayPanels { display: grid; gap: 12px; }
+.explorerDayCard { overflow: visible; border: 1px solid #dbe5e1; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgba(24,54,48,.06); }
+.dayCardHeading { display: flex; min-width: 0; align-items: center; padding: 15px 16px; background: white; }
+.dayCardHeading strong { min-width: 0; overflow-wrap: anywhere; font-size: .76rem; line-height: 1.35; }
+.itineraryStops {
+  position: relative;
+  display: grid;
+  padding: 14px 12px 18px;
+}
+.itineraryStops::before {
+  position: absolute;
+  top: 18px;
+  bottom: 24px;
+  left: 29px;
+  border-left: 2px dotted #d5dbe0;
+  content: "";
+}
+.itineraryStop {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+}
+.itineraryStop:not(.hasRoute) {
+  margin-bottom: 16px;
+}
+.itineraryStopPin {
+  display: grid;
+  width: 12px;
+  height: 12px;
+  margin: 12px 0 0 11px;
+  place-items: center;
+  border: 3px solid #e8f6fd;
+  border-radius: 50%;
+  background: #69b9e8;
+  box-shadow: 0 0 0 1px #4da4d8, 0 3px 8px rgba(77, 164, 216, .18);
+}
+.itineraryPlaceCard {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  border-radius: 13px;
+  padding: 14px;
+  background: #f1f2f3;
+}
+.itineraryPlaceCard header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.itineraryPlaceCard header > strong,
+.itineraryPlaceCard header .placeMapButton strong {
+  color: #23272b;
+  font-size: .78rem;
+  line-height: 1.3;
+}
+.itineraryPlaceCard header > strong,
+.itineraryPlaceCard header .placeMapButton {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.itineraryPlaceCard header .placeMapButton {
+  width: auto;
+}
+.itineraryPlaceCard time {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: white;
+  color: #69737a;
+  font-size: .48rem;
+  font-weight: 800;
+}
+.exploreResult .itineraryPlaceCard p {
+  color: #727b83;
+  font-size: .62rem;
+  line-height: 1.55;
+}
+.itineraryRoute {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  margin-left: 44px;
+  padding: 12px 4px 16px;
+  color: #69737a;
+  font-size: .55rem;
+  font-weight: 750;
+}
+.itineraryRouteIcon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+}
+.itineraryRouteIcon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.itineraryRouteDetails {
+  position: relative;
+}
+.itineraryRouteDetails summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #59636b;
+  cursor: pointer;
+  font-weight: 850;
+  list-style: none;
+  white-space: nowrap;
+}
+.itineraryRouteDetails summary::-webkit-details-marker {
+  display: none;
+}
+.itineraryRouteDetails summary svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform .18s ease;
+}
+.itineraryRouteDetails[open] summary svg {
+  transform: rotate(180deg);
+}
+.itineraryRouteDetails[open] {
+  display: grid;
+  grid-column: 1 / -1;
+  width: 100%;
+  gap: 7px;
+}
+.itineraryRouteDetails[open] summary {
+  justify-self: end;
+}
+.itineraryRouteDetails > p,
+.itineraryRouteAlternatives {
+  position: static;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid #dfe3e5;
+  border-radius: 10px;
+  padding: 9px;
+  background: white;
+  box-shadow: 0 6px 16px rgba(28, 36, 40, .08);
+}
+.itineraryRouteDetails > p {
+  color: #69737a;
+  font-size: .52rem;
+  line-height: 1.45;
+}
+.itineraryRouteAlternatives {
+  display: grid;
+  gap: 7px;
+}
+.itineraryBreakCard {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 8px;
+  margin: 0 0 16px 44px;
+  border: 1px dashed #cbd6dc;
+  border-radius: 13px;
+  padding: 12px 14px;
+  background: #fbfcfd;
+}
+.itineraryBreakCard time {
+  color: #7a848a;
+  font-size: .5rem;
+  font-weight: 800;
+}
+.itineraryBreakCard div {
+  display: grid;
+  gap: 3px;
+}
+.itineraryBreakCard strong {
+  font-size: .6rem;
+}
+.exploreResult .itineraryBreakCard p {
+  font-size: .54rem;
+}
 .dayTimeline { padding: 12px; }
 .dayTimelineItem { position: relative; display: grid; grid-template-columns: 58px 10px 1fr; gap: 7px; padding-bottom: 15px; }
 .dayTimelineItem:last-child { padding-bottom: 0; }
 .dayTimelineItem:not(:last-child)::before { position: absolute; top: 12px; bottom: 0; left: 69px; width: 1px; background: #dce5e1; content: ""; }
 .dayTimelineItem time { padding-top: 2px; color: var(--muted); font-size: .53rem; font-weight: 750; }
-.dayTimelineDot { z-index: 1; width: 9px; height: 9px; margin-top: 3px; border: 2px solid white; border-radius: 50%; background: var(--day-color, var(--brand)); box-shadow: 0 0 0 1px var(--day-color, var(--brand)); }
-.dayTimelineItem.break .dayTimelineDot { background: #a8b1ae; box-shadow: 0 0 0 1px #a8b1ae; }
+.dayTimelineDot {
+  z-index: 1;
+  display: grid;
+  width: 12px;
+  height: 12px;
+  margin: 5px 0 0 -1px;
+  place-items: center;
+  border: 3px solid #e8f6fd;
+  border-radius: 50%;
+  background: #69b9e8;
+  box-shadow: 0 0 0 1px #4da4d8, 0 3px 8px rgba(77, 164, 216, .18);
+}
+.dayTimelineItem.break .dayTimelineDot {
+  background: #a8b1ae;
+  box-shadow: none;
+}
 .dayTimelineItem > div { display: grid; gap: 4px; min-width: 0; }
 .dayTimelineItem strong { font-size: .66rem; line-height: 1.35; }
 .dayTimelineItem p { font-size: .57rem; }
@@ -350,7 +554,7 @@ h1, h2, h3, p { margin-top: 0; }
 .transportOptionGrid { display: grid; min-width: 0; grid-template-columns: minmax(0,1fr); gap: 7px; }
 .transportOptionCard { display: grid; min-width: 0; gap: 6px; border: 1px solid #dce9e5; border-radius: 10px; padding: 9px 10px; background: #f8fbfa; }
 .transportOptionCard.primary { border-color: #bcded4; background: #f3faf7; }
-.transportOptionCard.backup { border-color: #efd8b7; background: #fffaf2; }
+.transportOptionCard.alternative { border-color: #efd8b7; background: #fffaf2; }
 .transportAlternatives { min-width: 0; }
 .transportAlternatives summary { display: flex; width: fit-content; align-items: center; gap: 4px; border-radius: 7px; padding: 4px 6px; color: #83551d; cursor: pointer; font-size: .5rem; font-weight: 800; list-style: none; }
 .transportAlternatives summary::-webkit-details-marker { display: none; }
@@ -363,7 +567,7 @@ h1, h2, h3, p { margin-top: 0; }
 .transportAlternatives[open] .whenOpen { display: inline; }
 .transportAlternativesList { display: grid; gap: 7px; padding-top: 5px; }
 .transportOptionKind { width: fit-content; border-radius: 999px; padding: 3px 6px; background: #e3f3ed; color: var(--brand-dark); font-size: .43rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
-.transportOptionCard.backup .transportOptionKind { background: #f8e7cb; color: #83551d; }
+.transportOptionCard.alternative .transportOptionKind { background: #f8e7cb; color: #83551d; }
 .transportOptionHeading { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 5px; }
 .transportOptionHeading strong { overflow: hidden; color: var(--brand-dark); font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .transportOptionInlineIcon { display: grid; width: 18px; height: 18px; place-items: center; color: var(--brand-dark); }
@@ -3848,36 +4052,11 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   margin-bottom: 30px;
 }
 
-.reelsHeader > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 999px;
-  padding: 7px 12px;
-  background: linear-gradient(135deg, #d11f78, #fb7254);
-  color: white;
-  font-size: .74rem;
-  font-weight: 850;
-}
-
-.reelsHeader svg {
-  width: 14px;
-  height: 14px;
-}
-
 .reelsHeader h1 {
-  margin: 16px 0 0;
+  margin: 0;
   font-size: 2.35rem;
   line-height: 1.15;
   letter-spacing: 0;
-}
-
-.reelsHeader p {
-  max-width: 780px;
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: .92rem;
-  line-height: 1.65;
 }
 
 .reelsGrid {
@@ -3950,6 +4129,30 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   margin-left: 3px;
 }
 
+.reelPlayButton > span {
+  font-size: 1.65rem;
+  font-weight: 800;
+}
+
+.reelContentType {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  left: 12px;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(7,25,22,.65);
+  color: white;
+  font-size: .65rem;
+  font-weight: 900;
+  backdrop-filter: blur(12px);
+}
+
+.reelContentType.post {
+  background: rgba(191,22,107,.78);
+}
+
 .reelActions {
   position: absolute;
   z-index: 3;
@@ -4001,7 +4204,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   z-index: 3;
   top: 12px;
   right: 12px;
-  left: 12px;
+  left: 84px;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -4136,6 +4339,11 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   opacity: .7;
 }
 
+.reelPlanFooter button.inCart,
+.promotionViewerCommerce button.inCart {
+  background: linear-gradient(135deg, #1d806b, #075f4e);
+}
+
 .reelPlanFooter svg {
   width: 14px;
   height: 14px;
@@ -4179,6 +4387,332 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   animation: skeletonPulse 1.4s ease-in-out infinite;
 }
 
+.promotionCartButton {
+  position: fixed;
+  z-index: 40;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 15px;
+  background: var(--brand-dark);
+  color: white;
+  box-shadow: 0 12px 36px rgba(6,57,49,.28);
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.promotionCartButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.promotionCartButton strong {
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: white;
+  color: var(--brand-dark);
+  font-size: .68rem;
+}
+
+.promotionViewer {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(3,10,9,.94);
+  color: white;
+}
+
+.promotionViewerStage {
+  position: relative;
+  width: min(460px, 100vw);
+  height: min(820px, 100dvh);
+  overflow: hidden;
+  background: #081714;
+}
+
+.promotionViewerStage > img,
+.promotionViewerStage > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.promotionViewerShade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.24), transparent 35%, rgba(0,0,0,.9));
+}
+
+.promotionViewerClose,
+.promotionViewerNav {
+  position: fixed;
+  z-index: 104;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  color: white;
+  font-size: 1.4rem;
+  backdrop-filter: blur(14px);
+}
+
+.promotionViewerClose {
+  top: 20px;
+  right: 20px;
+}
+
+.promotionViewerNav {
+  right: max(28px, calc(50vw - 300px));
+}
+
+.promotionViewerNav.previous {
+  top: calc(50% - 52px);
+}
+
+.promotionViewerNav.next {
+  top: calc(50% + 6px);
+}
+
+.promotionViewerNav:disabled {
+  opacity: .3;
+}
+
+.reelContentType.viewerType {
+  top: 18px;
+  left: 18px;
+}
+
+.promotionViewerCopy {
+  position: absolute;
+  z-index: 3;
+  right: 18px;
+  bottom: 138px;
+  left: 18px;
+}
+
+.promotionViewerCopy > span {
+  font-size: .75rem;
+  font-weight: 900;
+}
+
+.promotionViewerCopy h2 {
+  margin: 6px 0 0;
+  font-size: 1.12rem;
+  line-height: 1.3;
+}
+
+.promotionViewerCopy p {
+  display: -webkit-box;
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: rgba(255,255,255,.78);
+  font-size: .78rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.promotionViewerCommerce {
+  position: absolute;
+  z-index: 4;
+  right: 14px;
+  bottom: 14px;
+  left: 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px 12px;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255,255,255,.9);
+  color: var(--ink);
+  backdrop-filter: blur(18px);
+}
+
+.promotionViewerCommerce div {
+  display: grid;
+  gap: 3px;
+}
+
+.promotionViewerCommerce small {
+  color: var(--muted);
+  font-size: .63rem;
+  font-weight: 800;
+}
+
+.promotionViewerCommerce strong {
+  color: #bf166b;
+  font-size: 1rem;
+}
+
+.promotionViewerCommerce button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 13px;
+  background: linear-gradient(135deg, #bf166b, #7f1d58);
+  color: white;
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.promotionViewerCommerce button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.promotionViewerCommerce > a {
+  grid-column: 1 / -1;
+  color: var(--brand-dark);
+  font-size: .7rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.promotionViewerHint {
+  position: fixed;
+  bottom: 14px;
+  left: 24px;
+  color: rgba(255,255,255,.56);
+  font-size: .66rem;
+}
+
+.promotionCartOverlay {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+}
+
+.promotionCartBackdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(3,10,9,.58);
+}
+
+.promotionCartDrawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(430px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  background: #f9fbfa;
+  box-shadow: -18px 0 50px rgba(0,0,0,.18);
+}
+
+.promotionCartDrawer > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+}
+
+.promotionCartDrawer header small {
+  color: var(--brand);
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.promotionCartDrawer h2 {
+  margin: 4px 0 0;
+  font-size: 1.35rem;
+}
+
+.promotionCartDrawer header > button {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.7rem;
+}
+
+.promotionCartItems {
+  display: grid;
+  gap: 12px;
+}
+
+.promotionCartItems article {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px;
+  background: white;
+}
+
+.promotionCartItems article > img {
+  width: 82px;
+  height: 108px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.promotionCartItems article > div {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+
+.promotionCartItems article strong {
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.promotionCartItems article span {
+  color: #bf166b;
+  font-size: .8rem;
+  font-weight: 900;
+}
+
+.promotionCartItems article div div {
+  display: flex;
+  gap: 8px;
+}
+
+.promotionCartItems article button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: white;
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 850;
+}
+
+.promotionCartItems article button:last-child {
+  border-color: var(--brand-dark);
+  background: var(--brand-dark);
+  color: white;
+}
+
+.promotionCartDrawer > p {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 1120px) {
   .reelsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4209,6 +4743,14 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   .reelSkeletonPoster {
     min-height: min(680px, calc(100vh - 140px));
   }
+
+  .promotionViewerNav {
+    display: none;
+  }
+
+  .promotionViewerHint {
+    display: none;
+  }
 }
 
 @media (max-width: 500px) {
@@ -4224,5 +4766,10 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   .reelPlanFooter button {
     justify-content: center;
     width: 100%;
+  }
+
+  .promotionCartButton {
+    right: 14px;
+    bottom: 86px;
   }
 }
