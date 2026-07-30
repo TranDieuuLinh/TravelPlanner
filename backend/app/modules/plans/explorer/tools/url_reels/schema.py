@@ -38,8 +38,28 @@ class MediaArtifacts(BaseModel):
     model_config = {"populate_by_name": True, "arbitrary_types_allowed": True}
 
 
+class SpeechToTextObservation(BaseModel):
+    order: int = Field(ge=1)
+    place_name: str = Field(alias="placeName")
+    evidence: str
+    day_number: int | None = Field(default=None, ge=1, le=30, alias="dayNumber")
+    time_hint: str = Field(default="", alias="timeHint")
+    activity: str = ""
+    search_region: str = Field(default="", alias="searchRegion")
+    duration_minutes: int | None = Field(
+        default=None,
+        ge=15,
+        le=720,
+        alias="durationMinutes",
+    )
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+
 class SpeechToTextResult(BaseModel):
     text: str
+    observations: list[SpeechToTextObservation] = Field(default_factory=list)
     status: str = "ok"
     error: str | None = None
     language: str | None = None
@@ -50,6 +70,7 @@ class SpeechToTextResult(BaseModel):
 
 
 class FrameVisionObservation(BaseModel):
+    order: int | None = Field(default=None, ge=1)
     place_name: str = Field(alias="placeName")
     evidence: str = ""
     day_number: int | None = Field(default=None, ge=1, le=30, alias="dayNumber")

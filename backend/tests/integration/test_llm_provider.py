@@ -11,6 +11,7 @@ class FakeAsyncClient:
     responses: list[httpx.Response] = []
     post_count = 0
     api_keys: list[str] = []
+    payloads: list[dict] = []
 
     def __init__(self, *args, **kwargs) -> None:
         pass
@@ -26,6 +27,7 @@ class FakeAsyncClient:
         type(self).api_keys.append(
             kwargs["headers"]["x-goog-api-key"]
         )
+        type(self).payloads.append(kwargs["json"])
         return type(self).responses.pop(0)
 
 
@@ -80,6 +82,7 @@ def test_gemini_retries_transient_503(monkeypatch) -> None:
     ]
     FakeAsyncClient.post_count = 0
     FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
     monkeypatch.setattr(
         "app.integrations.llm.provider.httpx.AsyncClient",
         FakeAsyncClient,
@@ -112,6 +115,7 @@ def test_gemini_exhausted_503_becomes_runtime_error(monkeypatch) -> None:
     ]
     FakeAsyncClient.post_count = 0
     FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
     monkeypatch.setattr(
         "app.integrations.llm.provider.httpx.AsyncClient",
         FakeAsyncClient,
@@ -143,6 +147,7 @@ def test_gemini_does_not_retry_authentication_error(monkeypatch) -> None:
     FakeAsyncClient.responses = [_response(401)]
     FakeAsyncClient.post_count = 0
     FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
     monkeypatch.setattr(
         "app.integrations.llm.provider.httpx.AsyncClient",
         FakeAsyncClient,
@@ -173,6 +178,7 @@ def test_gemini_rotates_to_next_key_after_quota_error(monkeypatch) -> None:
     ]
     FakeAsyncClient.post_count = 0
     FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
     monkeypatch.setattr(
         "app.integrations.llm.provider.httpx.AsyncClient",
         FakeAsyncClient,
@@ -193,6 +199,44 @@ def test_gemini_rotates_to_next_key_after_quota_error(monkeypatch) -> None:
     assert FakeAsyncClient.api_keys == ["key-api1", "key-api2"]
 
 
+def test_gemini_passes_structured_output_schema(monkeypatch) -> None:
+    FakeAsyncClient.responses = [
+        _response(200, text='{"destination": "Hà Nội"}'),
+    ]
+    FakeAsyncClient.post_count = 0
+    FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
+    monkeypatch.setattr(
+        "app.integrations.llm.provider.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+    schema = {
+        "type": "object",
+        "properties": {"destination": {"type": "string"}},
+        "required": ["destination"],
+    }
+
+    result = asyncio.run(
+        GeminiLLMClient(
+            "structured-test-key",
+            "test-model",
+            min_interval_seconds=0,
+        ).generate_structured_json(
+            "system",
+            "payload",
+            response_schema=schema,
+        )
+    )
+
+    assert result == '{"destination": "Hà Nội"}'
+    assert (
+        FakeAsyncClient.payloads[0]["generationConfig"][
+            "responseJsonSchema"
+        ]
+        == schema
+    )
+
+
 def test_gemini_uses_provider_retry_delay() -> None:
     response = _rate_limited_response("12.5s")
 
@@ -207,4 +251,3 @@ def test_gemini_caps_provider_retry_delay() -> None:
     delay = GeminiLLMClient._retry_delay_seconds(response, attempt=1)
 
     assert delay == 60.0
-

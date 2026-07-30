@@ -758,3 +758,48 @@ def _place(
         priceLevel=price_level,
         dataConfidence="high",
     )
+
+
+def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
+    macro = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={
+                        "allocated_selected_place_refs": ["late-1", "late-2"]
+                    }
+                )
+            ]
+        }
+    )
+    result = FinderService().fill_main_plan(
+        macro,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="late-1",
+                name="Late place 1",
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=1,
+                sourceTimeHint="night",
+                sourceDurationMinutes=180,
+            ),
+            SelectedPlaceContext(
+                placeId="late-2",
+                name="Late place 2",
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=2,
+                sourceDurationMinutes=60,
+            ),
+        ],
+        allow_finder_suggestions=False,
+    )
+
+    assert [item.name for item in result.days[0].items] == ["Late place 1"]
+    assert result.unscheduled_places[0].name == "Late place 2"
+    assert result.unscheduled_places[0].reason_code == "timeline_overflow"
+    assert all(
+        int(item.time_window[:2]) < 24
+        and int(item.time_window.split("-", 1)[1][:2]) < 24
+        for item in result.days[0].items
+    )

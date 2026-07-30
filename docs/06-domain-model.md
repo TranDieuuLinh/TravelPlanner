@@ -20,7 +20,9 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 - `MacroPlan`: tên plan, điểm đến và mô tả cấp cao cho từng ngày.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
-  địa điểm và ghi chú.
+  địa điểm, ghi chú và `sourceDay` khi item bắt nguồn từ itinerary tham khảo.
+  Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
+  `24:00`.
 - `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
   `source`, `verified` và `fetchedAt`. Leg HERE có provenance
   `here_routing_v8` hoặc `here_transit_v8`; fallback địa lý phải giữ
@@ -42,7 +44,10 @@ nhất và giữ nguyên plan ID khi user yêu cầu AI sửa tiếp.
 - `TripChatMessage`: tin nhắn user/assistant theo thứ tự, attachment chỉ lưu tên
   file; không lưu bytes ảnh.
 - `TripChatPlanRevision`: snapshot plan và Explorer context bất biến sau mỗi lần
-  tạo hoặc sửa thành công.
+  tạo hoặc sửa thành công, kèm `intakeId` đã sinh ra snapshot đó.
+- `ExplorerIntake`: identity bền vững cho mỗi lần Explorer xử lý input; là
+  parent của các record `UserMustPlace`, kể cả khi intake không resolve được
+  địa điểm nào.
 
 Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-up trong
 cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;
@@ -88,11 +93,12 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
   chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
   chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
-- `UserMustPlace`: candidate của intake đã được tự động resolve/lưu với trạng
-  thái `resolved`, `provisional` hoặc `unresolved`; giữ source URL, address,
-  latitude/longitude, description, provider, `searchRegion`,
-  `sourceEvidence` tách theo `stt`/`ocr`/`caption`, lý do resolve bị từ chối và
-  độ mới ngay trên record. `candidateName` luôn là nhãn từ nguồn;
+- `UserMustPlace`: candidate của intake đã được provider resolve tới một địa
+  điểm cụ thể có đủ latitude/longitude; giữ source URL, address, description,
+  provider, `searchRegion`, `sourceEvidence` tách theo
+  `stt`/`ocr`/`caption` và độ mới ngay trên record. Candidate
+  provisional/unresolved, thiếu tọa độ hoặc chỉ match rộng tới thành phố/quốc
+  gia không được lưu vào bảng này. `candidateName` luôn là nhãn từ nguồn;
   `resolvedName` là kết quả provider riêng, không tự ghi đè nhãn nguồn của stop
   URL. Flow Explorer không tạo hoặc cập nhật `Place`.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
@@ -170,13 +176,16 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Mỗi trip chat chỉ thuộc một user; user khác không được đọc hoặc sửa chat.
 - Revision của trip chat tăng đúng một đơn vị sau mỗi lần Planner hoàn thành.
 - Follow-up giữ nguyên plan ID hiện tại; snapshot revision trước không bị sửa.
-- Intake hiện chạy ở chế độ không hỏi lại user: mọi candidate được commit vào
-  `UserMustPlace`. Độ tin cậy thấp phải giữ trạng thái
-  `provisional`/`unresolved`; không được mô tả như dữ liệu đã xác minh.
-- Candidate URL vẫn được lưu để giữ provenance, nhưng chỉ địa điểm đã resolve
-  tới một danh tính cụ thể kèm tọa độ mới được chuyển thành `SelectedPlace`.
-  Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
-  được đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa thay thế.
+- Follow-up yêu cầu tăng số ngày được phép suy ra duration tối thiểu từ toàn bộ
+  địa điểm cũ và mới sau khi merge. Follow-up không yêu cầu tăng ngày phải giữ
+  duration hiện tại và đưa phần vượt sức chứa vào `UnscheduledPlace`.
+- Intake hiện chạy ở chế độ không hỏi lại user. Candidate chỉ được commit vào
+  `UserMustPlace` khi đã resolve tới danh tính cụ thể và có đủ latitude,
+  longitude. Candidate provisional/unresolved hoặc thiếu tọa độ bị loại trước
+  persistence và không được chuyển thành `SelectedPlace`.
+- Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
+  được lưu hay đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa
+  thay thế.
 - Planner downstream nhận trực tiếp Explorer context và không đọc
   `UserMustPlace`. Finder downstream dùng cả `intakeId + userId` để đọc đúng
   record `UserMustPlace`; Explorer không điều phối hai module này.

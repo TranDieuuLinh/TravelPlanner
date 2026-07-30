@@ -7,6 +7,7 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.explorer.schema import FullExploreRequest
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
+    ExtractedPlace,
     FrameVisionResult,
     MediaArtifacts,
     SpeechToTextResult,
@@ -19,6 +20,7 @@ class RecordingLLM:
     def __init__(self) -> None:
         self.system_prompt = ""
         self.user_payload = ""
+        self.response_schema: dict = {}
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         self.system_prompt = system_prompt
@@ -51,8 +53,31 @@ class RecordingLLM:
             }
         )
 
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        self.system_prompt = system_prompt
+        self.user_payload = user_payload
+        self.response_schema = response_schema
+        return json.dumps(
+            {
+                "intent": {
+                    "destination": "Hà Nội",
+                    "interests": ["food", "culture"],
+                },
+                "tripSpec": {"days": 3},
+                "assumptions": [],
+                "missingInfoQuestions": [],
+                "preferenceSnapshot": {"signals": []},
+            }
+        )
 
-def test_formatter_prioritizes_url_itinerary_and_excludes_raw_provider_payload(
+
+def test_url_context_formatter_sends_compact_summary_and_structured_schema(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
@@ -82,12 +107,25 @@ def test_formatter_prioritizes_url_itinerary_and_excludes_raw_provider_payload(
             durationSeconds=1,
         ),
         frameVision=FrameVisionResult(text="Frame 1: Xôi Yến", status="ok"),
-        extractedContext=ExtractedContext(),
+        extractedContext=ExtractedContext(
+            extractedPlaces=["Xôi Yến"],
+            extractedPlaceDetails=[
+                ExtractedPlace(
+                    name="Xôi Yến",
+                    category="food",
+                    sourceOrder=1,
+                    sourceTimeHint="breakfast",
+                    sourceActivity="Order turmeric sticky rice.",
+                )
+            ],
+            interests=["food", "culture"],
+            confidence=0.9,
+        ),
         timings={},
     )
 
     response = asyncio.run(
-        formatter.format(
+        formatter.format_context(
             FullExploreRequest(
                 rawRequest="Follow this URL closely.",
                 destination="Hà Nội",
@@ -97,14 +135,19 @@ def test_formatter_prioritizes_url_itinerary_and_excludes_raw_provider_payload(
         )
     )
 
-    assert "primary planning blueprint" in llm.system_prompt
     assert "untrusted evidence" in llm.system_prompt
-    assert "established Vietnamese place name" in llm.system_prompt
+    assert "Do not produce places" in llm.system_prompt
     sent = json.loads(llm.user_payload)
-    assert "raw" not in sent["urlReelResults"][0]["metadata"]
+    assert "requiredOutputShape" not in sent
+    assert "transcript" not in sent
+    assert "reelFrameVisionText" not in sent
+    assert "urlReelResults" not in sent
+    assert sent["urlSummaries"][0]["stopCount"] == 1
+    assert sent["urlSummaries"][0]["categoryCounts"] == {"food": 1}
+    assert sent["urlSummaries"][0]["activities"] == [
+        "Order turmeric sticky rice."
+    ]
     assert "must-not-leak" not in llm.user_payload
-    candidate = response.places.place_candidates[0]
-    assert candidate.source_order == 1
-    assert candidate.source_day == 1
-    assert candidate.source_time_hint == "breakfast"
-    assert candidate.sources[0].url == url
+    assert "places" not in llm.response_schema["properties"]
+    assert response.intent.destination == "Hà Nội"
+    assert response.trip_spec.days == 3

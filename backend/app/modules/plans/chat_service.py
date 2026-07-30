@@ -1,4 +1,5 @@
 import json
+import re
 
 from app.modules.plans.chat_model import TripChat
 from app.modules.plans.chat_repository import TripChatRepository
@@ -9,6 +10,7 @@ from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
     ExploreTripSpecInput,
     ExplorerContextResponse,
+    ExplorerTimingReport,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.schema import MainPlanFromExplorerCreate, SelectedPlaceCreate
@@ -87,6 +89,14 @@ class TripChatService:
             if current_explorer is not None
             else ExploreTripSpecInput()
         )
+        requested_days = _explicit_day_count(content)
+        expand_days = requested_days is None and _requests_more_days(content)
+        if requested_days is not None:
+            trip_spec.days = requested_days
+        elif expand_days:
+            # Let the new intake infer initial URL coverage. The planning service
+            # expands again after old and newly imported Places are merged.
+            trip_spec.days = None
         profile = LongTermPreferenceProfile.from_storage(user.travel_preferences)
         user_state = UserPlanningState(
             userId=str(user.id),
@@ -110,6 +120,7 @@ class TripChatService:
                 selectedPlaces=self._selected_places_from(current_plan),
                 preferenceProfile=explore.explorer.preference_snapshot.effective_profile,
                 allowFinderSuggestions=explore.allow_finder_suggestions,
+                expandDaysToFitSelectedPlaces=expand_days,
             )
         )
         if current_plan is not None:
@@ -139,7 +150,10 @@ class TripChatService:
             title=title,
             revision=revision,
         )
-        return self._read(saved)
+        return self._read(
+            saved,
+            latest_timing=explore.timing_report,
+        )
 
     def _contextual_request(
         self,
@@ -187,7 +201,16 @@ class TripChatService:
                 tags=item.tags,
                 sourceRefs=item.source_refs,
                 notes=item.notes,
-                sourceOrder=item.source_order,
+                sourceOrder=(
+                    item.source_order
+                    if _is_reference_item(item.source_refs)
+                    else None
+                ),
+                sourceDay=(
+                    item.source_day
+                    if _is_reference_item(item.source_refs)
+                    else None
+                ),
                 sourceTimeHint=item.source_time_hint,
                 sourceActivity=item.source_activity,
                 sourceDurationMinutes=item.duration_minutes,
@@ -213,7 +236,12 @@ class TripChatService:
             updatedAt=chat.updated_at,
         )
 
-    def _read(self, chat: TripChat) -> TripChatRead:
+    def _read(
+        self,
+        chat: TripChat,
+        *,
+        latest_timing: ExplorerTimingReport | None = None,
+    ) -> TripChatRead:
         summary = self._summary(chat)
         return TripChatRead(
             **summary.model_dump(),
@@ -227,5 +255,36 @@ class TripChatService:
                 if chat.current_explorer is not None
                 else None
             ),
+            latestExplorerTiming=latest_timing,
             messages=chat.messages,
         )
+
+
+def _explicit_day_count(content: str) -> int | None:
+    match = re.search(r"\b([1-9]|[12]\d|30)\s*(?:ngày|days?)\b", content.casefold())
+    return int(match.group(1)) if match is not None else None
+
+
+def _requests_more_days(content: str) -> bool:
+    normalized = " ".join(content.casefold().split())
+    return any(
+        phrase in normalized
+        for phrase in (
+            "more day",
+            "more days",
+            "additional day",
+            "additional days",
+            "extend the trip",
+            "thêm ngày",
+            "nhiều ngày hơn",
+            "tăng số ngày",
+            "kéo dài chuyến",
+        )
+    )
+
+
+def _is_reference_item(source_refs: list[str]) -> bool:
+    return any(
+        ref == "ocr" or ref.startswith(("http://", "https://"))
+        for ref in source_refs
+    )

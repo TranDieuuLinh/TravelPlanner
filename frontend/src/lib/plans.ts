@@ -9,6 +9,7 @@ export type PlanItem = {
   source: string;
   sourceRefs: string[];
   sourceOrder?: number | null;
+  sourceDay?: number | null;
   notes?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -166,6 +167,40 @@ export type ExploreResponse = {
   userId?: string | null;
   explorer: ExplorerContext;
   allowFinderSuggestions: boolean;
+  timingReport?: ExplorerTimingReport | null;
+};
+
+export type ExplorerTimingStage = {
+  key: string;
+  label: string;
+  durationSeconds: number;
+  details: Record<string, string | number | boolean | null>;
+};
+
+export type ExplorerSourceTiming = {
+  sourceIndex: number;
+  platform: string;
+  totalSeconds: number;
+  stages: ExplorerTimingStage[];
+  sampledFrames: number;
+  speechStatus: string;
+  visionStatus: string;
+  extractedPlaceCount: number;
+};
+
+export type ExplorerTimingReport = {
+  intakeId: string;
+  status: string;
+  totalSeconds: number;
+  stages: ExplorerTimingStage[];
+  sources: ExplorerSourceTiming[];
+  urlCount: number;
+  imageCount: number;
+  candidateCount: number;
+  resolvedCount: number;
+  persistedCount: number;
+  providerCounts: Record<string, number>;
+  logFile?: string | null;
 };
 
 export type PlannerIntakeInput = {
@@ -201,6 +236,7 @@ export type TripChatSummary = {
 export type TripChat = TripChatSummary & {
   currentPlan: TravelPlan | null;
   currentExplorer: ExplorerContext | null;
+  latestExplorerTiming?: ExplorerTimingReport | null;
   messages: TripChatMessage[];
 };
 

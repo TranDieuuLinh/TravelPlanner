@@ -17,6 +17,15 @@ class LLMClient(ABC):
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         raise NotImplementedError
 
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        return await self.generate_json(system_prompt, user_payload)
+
     async def generate_text_from_images(
         self,
         system_prompt: str,

@@ -13,7 +13,9 @@ migration và model trong các bước tiếp theo.
 | `auth_sessions` | Implemented | `backend/app/modules/auth/model.py`, migration `20260727_0002_add_auth_and_profile.py` |
 | `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
+| `explorer_intakes` | Implemented | Identity của từng lần Explorer xử lý input, migration `20260730_0012` |
 | `user_must_place` | Implemented | Candidate, attributes và dữ liệu resolve đầy đủ theo `intakeId`, migrations `20260728_0004` và `20260729_0007` |
+| `trip_chat_plan_revisions` | Implemented | Snapshot plan/Explorer bất biến và `intake_id` tạo revision, migrations `20260730_0011` và `20260730_0012` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
 | `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
 | `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
@@ -84,15 +86,30 @@ Lưu địa điểm có thể xuất hiện trong lịch trình.
 không dùng làm khóa gom nhóm. Planner sử dụng `region_key`. Giờ mở cửa được đưa
 ra khỏi `metadata`; ID của provider được lưu riêng trong `place_external_refs`.
 
+### `explorer_intakes`
+
+Lưu identity bền vững của mỗi lần Explorer xử lý input, không lưu raw
+prompt/OCR/transcript. Intake vẫn tồn tại khi không có candidate nào đủ điều
+kiện ghi vào `user_must_place`.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid/string PK | Giá trị `intakeId` trả trong Explorer response |
+| `user_id` | varchar, nullable | Owner hiện hành; nullable cho flow không đăng nhập |
+| `destination` | varchar | Điểm đến chuẩn hóa của intake |
+| `created_at` | timestamptz | Tạo lúc |
+
 ### `user_must_place`
 
-Lưu mọi candidate và dữ liệu resolve của intake theo chế độ không hỏi lại user.
-Không có FK hoặc thao tác ghi sang `places`.
+Lưu candidate đã resolve tới địa điểm cụ thể có đủ latitude/longitude theo chế
+độ không hỏi lại user. Candidate provisional/unresolved, thiếu tọa độ hoặc match
+rộng tới thành phố/quốc gia không được ghi vào bảng này. Bảng tham chiếu
+`explorer_intakes` nhưng không có FK hoặc thao tác ghi sang `places`.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid/string PK | Opaque ID |
-| `intake_id` | varchar | Correlation ID trả cùng Explorer JSON |
+| `intake_id` | FK `explorer_intakes.id` | Correlation ID trả cùng Explorer JSON |
 | `user_id` | varchar, nullable | Khóa owner trả cùng response; Finder query cùng `intake_id` |
 | `destination` | varchar | Điểm đến của intake |
 | `candidate_key` | varchar | Khóa gộp trùng trong intake |
@@ -104,7 +121,7 @@ Không có FK hoặc thao tác ghi sang `places`.
 | `resolved_name` | varchar | Tên sau resolve |
 | `address`, `city`, `country`, `country_code` | text/varchar, nullable | Địa chỉ chuẩn hóa khi tìm được |
 | `primary_area` | varchar, nullable | Khu vực con |
-| `latitude`, `longitude` | decimal, nullable | Tọa độ khi tìm được |
+| `latitude`, `longitude` | decimal, nullable ở schema lịch sử | Runtime mới chỉ ghi record khi có đủ cặp tọa độ |
 | `description` | text, nullable | Mô tả khi provider trả về |
 | `provider`, `external_id` | varchar, nullable | Provenance của kết quả search |
 | `sources` | json | Danh sách `{type, url?}` giữ provenance |
@@ -113,7 +130,7 @@ Không có FK hoặc thao tác ghi sang `places`.
 | `data_confidence` | varchar | low, medium, high |
 | `fetched_at` | timestamptz, nullable | Độ mới dữ liệu |
 | `attribution` | text, nullable | Attribution của provider |
-| `resolution_status` | varchar | resolved, provisional, unresolved |
+| `resolution_status` | varchar | Schema giữ giá trị lịch sử; runtime mới chỉ ghi `resolved` |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
 

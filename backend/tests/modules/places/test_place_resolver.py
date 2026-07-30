@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any
 
+from app.modules.places import resolver as resolver_module
 from app.modules.places.resolver import (
     FallbackPlaceResolver,
     HerePlaceResolver,
@@ -58,6 +59,82 @@ class StaticPlaceResolver(PlaceResolver):
     ) -> PlaceResolution:
         self.calls += 1
         return self.result.model_copy(update={"candidate": candidate})
+
+
+class ConcurrencyTrackingHereResolver(HerePlaceResolver):
+    def __init__(
+        self,
+        *,
+        unresolved_names: set[str] | None = None,
+    ) -> None:
+        super().__init__(
+            base_url="https://example.invalid",
+            api_key="test-key",
+            max_concurrency=4,
+        )
+        self.unresolved_names = unresolved_names or set()
+        self.active = 0
+        self.max_active = 0
+
+    async def resolve(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(
+            0.002 * (9 - int(candidate.name.rsplit(" ", 1)[-1]))
+        )
+        self.active -= 1
+        if candidate.name in self.unresolved_names:
+            return PlaceResolution(
+                candidate=candidate,
+                status="unresolved",
+                resolutionReason="not_found",
+                provider="here",
+                name=candidate.name,
+            )
+        return PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider="here",
+            name=candidate.name,
+            latitude="21.0285",
+            longitude="105.8542",
+        )
+
+
+class ConcurrencyTrackingNominatimResolver(NominatimPlaceResolver):
+    def __init__(self) -> None:
+        super().__init__(
+            base_url="https://example.invalid",
+            user_agent="VSF-Travel-Test/1.0",
+        )
+        self.active = 0
+        self.max_active = 0
+        self.names: list[str] = []
+
+    async def resolve(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        self.names.append(candidate.name)
+        await asyncio.sleep(0.001)
+        self.active -= 1
+        return PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider="nominatim",
+            name=candidate.name,
+            latitude="21.0285",
+            longitude="105.8542",
+        )
 
 
 def _candidate(name: str = "Mì Quảng Bà Mua") -> UnifiedPlaceCandidate:
@@ -175,6 +252,84 @@ def test_here_resolver_matches_bilingual_provider_title() -> None:
     assert result.resolution_reason is None
 
 
+def test_here_resolve_many_caps_concurrency_and_preserves_order() -> None:
+    resolver = ConcurrencyTrackingHereResolver()
+    candidates = [_candidate(f"Địa điểm {index}") for index in range(8)]
+
+    results = asyncio.run(
+        resolver.resolve_many(candidates, destination="Hà Nội")
+    )
+
+    assert resolver.max_active == 4
+    assert [result.candidate.name for result in results] == [
+        candidate.name for candidate in candidates
+    ]
+
+
+def test_here_rate_limiter_does_not_hold_lock_during_network_wait(
+    monkeypatch: Any,
+) -> None:
+    active = 0
+    max_active = 0
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, list[Any]]:
+            return {"items": []}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout: float) -> None:
+            self.timeout = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            params: dict[str, str | int],
+        ) -> FakeResponse:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        resolver_module.httpx,
+        "AsyncClient",
+        FakeAsyncClient,
+    )
+    resolver = HerePlaceResolver(
+        base_url="https://example.invalid",
+        api_key="test-key",
+    )
+    resolver.min_interval_seconds = 0.0
+
+    async def request_twice() -> None:
+        await asyncio.gather(
+            resolver._request_json(
+                "https://example.invalid/one",
+                params={"q": "one"},
+            ),
+            resolver._request_json(
+                "https://example.invalid/two",
+                params={"q": "two"},
+            ),
+        )
+
+    asyncio.run(request_twice())
+
+    assert max_active == 2
+
+
 def test_fallback_resolver_uses_nominatim_after_here_miss() -> None:
     candidate = _candidate()
     here_result = PlaceResolution(
@@ -238,6 +393,46 @@ def test_fallback_resolver_skips_nominatim_for_usable_here_result() -> None:
     assert result.provider == "here"
 
 
+def test_fallback_resolve_many_only_sends_here_misses_to_sequential_nominatim(
+) -> None:
+    candidates = [_candidate(f"Địa điểm {index}") for index in range(8)]
+    unresolved_names = {
+        candidates[1].name,
+        candidates[4].name,
+        candidates[6].name,
+    }
+    primary = ConcurrencyTrackingHereResolver(
+        unresolved_names=unresolved_names,
+    )
+    fallback = ConcurrencyTrackingNominatimResolver()
+    resolver = FallbackPlaceResolver(primary, fallback)
+
+    results = asyncio.run(
+        resolver.resolve_many(candidates, destination="Hà Nội")
+    )
+
+    assert primary.max_active == 4
+    assert fallback.max_active == 1
+    assert fallback.names == [
+        candidates[1].name,
+        candidates[4].name,
+        candidates[6].name,
+    ]
+    assert [result.candidate.name for result in results] == [
+        candidate.name for candidate in candidates
+    ]
+    assert [result.provider for result in results] == [
+        "here",
+        "nominatim",
+        "here",
+        "here",
+        "nominatim",
+        "here",
+        "nominatim",
+        "here",
+    ]
+
+
 def test_runtime_wires_here_primary_with_nominatim_fallback(
     monkeypatch: Any,
 ) -> None:
@@ -257,6 +452,7 @@ def test_runtime_wires_here_primary_with_nominatim_fallback(
     assert isinstance(resolver, FallbackPlaceResolver)
     assert isinstance(resolver.primary, HerePlaceResolver)
     assert isinstance(resolver.fallback, NominatimPlaceResolver)
+    assert resolver.primary.max_concurrency == 4
 
 
 def test_runtime_uses_nominatim_when_here_key_is_missing(

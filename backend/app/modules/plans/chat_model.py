@@ -85,6 +85,11 @@ class TripChatPlanRevision(Base):
         index=True,
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    intake_id: Mapped[str | None] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
     plan_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     explorer_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

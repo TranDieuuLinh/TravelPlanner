@@ -33,9 +33,11 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Trích xuất place candidate, hoạt động, món ăn, thời điểm, thời lượng, giá được
   nhắc đến, mẹo và claim có bằng chứng.
 - Place resolution, gộp trùng, độ tin cậy và provenance cho từng kết quả.
-- Luồng intake hiện tại tự động lưu candidate và kết quả resolve mà không chặn
-  để hỏi lại user; trạng thái `resolved`, `provisional` hoặc `unresolved` phải
-  được giữ để UI/Planner không coi dữ liệu yếu là đã xác minh.
+- Luồng intake hiện tại tự động resolve mà không chặn để hỏi lại user, nhưng chỉ
+  lưu `UserMustPlace` khi provider trả kết quả `resolved` có đủ latitude và
+  longitude, đồng thời không phải match rộng tới thành phố/quốc gia. Candidate
+  yếu hoặc không có tọa độ không được đưa vào Planner và không được lưu trong
+  `user_must_place`.
 - Giữ kết quả từng phần và fallback thủ công khi URL không được hỗ trợ, riêng tư
   hoặc provider lỗi.
 - Chống SSRF, giới hạn fetch và cô lập nội dung nguồn khỏi instruction của AI.
@@ -122,9 +124,10 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 ## Tín hiệu nghiệm thu Planner
 
 - URL hợp lệ tạo import job có trạng thái và không làm mất dữ liệu khi retry.
-- Mỗi địa điểm trích xuất có source/evidence/confidence. Intake tự động lưu mọi
-  candidate, nhưng địa điểm không chắc chắn giữ trạng thái
-  `provisional`/`unresolved` và không được mô tả như dữ liệu provider đã xác minh.
+- Mỗi địa điểm trích xuất có source/evidence/confidence trong bước xử lý.
+  `UserMustPlace` chỉ chứa candidate đã resolve tới địa điểm cụ thể có đủ tọa
+  độ; candidate yếu hoặc không có tọa độ không được mô tả như dữ liệu provider
+  đã xác minh và không được lưu vào bảng này.
 - Traveler có thể đi từ URL đến Main Plan hợp lệ mà không cần nhân sự hỗ trợ.
 - Địa điểm đã xác nhận được xếp vào plan hoặc xuất hiện trong danh sách chưa xếp
   kèm lý do.

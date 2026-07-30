@@ -1,3 +1,5 @@
+import re
+
 from app.modules.plans.domain.entities import CheckReport, CheckIssue, Plan
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.domain.validators import find_empty_days
@@ -33,6 +35,8 @@ class OverallChecker:
             for warning in dict.fromkeys(plan.warnings)
         )
         issues.extend(self._constraint_policy_issues(plan))
+        issues.extend(self._timeline_issues(plan))
+        issues.extend(self._density_issues(plan))
         duplicate_place_ids = self._duplicate_place_ids(plan)
         if duplicate_place_ids:
             issues.append(
@@ -112,6 +116,89 @@ class OverallChecker:
             "remain unavailable."
         )
         return CheckReport(status=status, issues=issues, summary=summary)
+
+    def _timeline_issues(self, plan: Plan) -> list[CheckIssue]:
+        invalid_items = [
+            item
+            for day in plan.days
+            for item in day.items
+            if not self._is_valid_same_day_window(item.time_window)
+        ]
+        if not invalid_items:
+            return []
+        return [
+            CheckIssue(
+                code="invalid_time_window",
+                severity="error",
+                message=(
+                    "Plan contains a time window outside the same local day."
+                ),
+                affectedItemIds=[
+                    item.item_id
+                    for item in invalid_items
+                    if item.item_id is not None
+                ],
+                evidence=[item.time_window for item in invalid_items],
+                canAutoFix=True,
+                suggestedAction=(
+                    "Move overflowing items to another day or leave them "
+                    "unscheduled."
+                ),
+            )
+        ]
+
+    def _density_issues(self, plan: Plan) -> list[CheckIssue]:
+        capacity = {
+            "relaxed": 2,
+            "balanced": 3,
+            "packed": 5,
+        }[plan.intent.pace.value]
+        issues: list[CheckIssue] = []
+        for day in plan.days:
+            activities = [
+                item
+                for item in day.items
+                if item.place_type not in {"break", "free_time", "meal"}
+            ]
+            if len(activities) <= capacity:
+                continue
+            issues.append(
+                CheckIssue(
+                    code="day_activity_capacity_exceeded",
+                    severity="error",
+                    message=(
+                        f"Day {day.day} contains {len(activities)} activities, "
+                        f"above the {capacity}-activity limit for "
+                        f"{plan.intent.pace.value} pace."
+                    ),
+                    affectedItemIds=[
+                        item.item_id
+                        for item in activities[capacity:]
+                        if item.item_id is not None
+                    ],
+                    evidence=[
+                        f"activityCount={len(activities)}",
+                        f"capacity={capacity}",
+                    ],
+                    canAutoFix=True,
+                    suggestedAction=(
+                        "Move excess activities to another day or leave them "
+                        "unscheduled."
+                    ),
+                )
+            )
+        return issues
+
+    def _is_valid_same_day_window(self, value: str) -> bool:
+        match = re.fullmatch(
+            r"([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)",
+            value,
+        )
+        if match is None:
+            return False
+        start = int(match.group(1)) * 60 + int(match.group(2))
+        end = int(match.group(3)) * 60 + int(match.group(4))
+        return start < end
 
     def _constraint_policy_issues(self, plan: Plan) -> list[CheckIssue]:
         issues: list[CheckIssue] = []

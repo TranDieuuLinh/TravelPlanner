@@ -14,6 +14,7 @@ import {
   listTripChats,
   type ExplorerContext,
   type ExploreResponse,
+  type ExplorerTimingReport,
   type PlaceCategory,
   type TransportOption,
   type TripChat,
@@ -101,6 +102,9 @@ function Planner() {
     }
   ]);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
+  const [explorerTiming, setExplorerTiming] = useState<
+    ExplorerTimingReport | null
+  >(null);
   const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
@@ -135,6 +139,7 @@ function Planner() {
         setActiveChatId(null);
         setChatRevision(0);
         setExploreResult(null);
+        setExplorerTiming(null);
         setPlan(null);
         setWorkflowStage("idle");
         setMessages([{
@@ -149,6 +154,7 @@ function Planner() {
     setActiveChatId(null);
     setChatRevision(0);
     setExploreResult(null);
+    setExplorerTiming(null);
     setPlan(null);
     void listTripChats()
       .then(async (chats) => {
@@ -263,6 +269,7 @@ function Planner() {
     setLoading(true);
     setIntakeKind(URL_PATTERN.test(text) ? "url" : images.length > 0 ? "image" : "prompt");
     setStageDurations({});
+    setExplorerTiming(null);
     const exploringStartedAt = Date.now();
     setStageStartedAt(exploringStartedAt);
     setStageElapsedSeconds(0);
@@ -287,9 +294,19 @@ function Planner() {
           images
         });
         applyTripChat(updated);
+        const totalWallSeconds = Math.max(
+          0,
+          (Date.now() - exploringStartedAt) / 1000
+        );
+        const explorerSeconds = (
+          updated.latestExplorerTiming?.totalSeconds
+          ?? totalWallSeconds
+        );
         setStageDurations({
-          exploring: Math.max(0, Math.round((Date.now() - exploringStartedAt) / 1000)),
-          planning: 0
+          exploring: Math.round(explorerSeconds),
+          planning: Math.round(
+            Math.max(0, totalWallSeconds - explorerSeconds)
+          )
         });
         setWorkflowStage("ready");
         setStageStartedAt(null);
@@ -304,8 +321,12 @@ function Planner() {
         rawRequest: text,
         images
       });
+      setExplorerTiming(nextExploreResult.timingReport ?? null);
       setStageDurations({
-        exploring: Math.max(0, Math.round((Date.now() - exploringStartedAt) / 1000))
+        exploring: Math.round(
+          nextExploreResult.timingReport?.totalSeconds
+          ?? Math.max(0, (Date.now() - exploringStartedAt) / 1000)
+        )
       });
       setExploreResult(nextExploreResult);
       const planningStartedAt = Date.now();
@@ -396,6 +417,7 @@ function Planner() {
     setPrompt("");
     setImages([]);
     setExploreResult(null);
+    setExplorerTiming(null);
     setPlan(null);
     setSelectedMapPlaceKey(null);
     setWorkflowStage("idle");
@@ -431,6 +453,7 @@ function Planner() {
     setActiveChatId(chat.id);
     setChatRevision(chat.revision);
     setPlan(chat.currentPlan);
+    setExplorerTiming(chat.latestExplorerTiming ?? null);
     setExploreResult(
       chat.currentExplorer
         ? {
@@ -631,6 +654,80 @@ function Planner() {
               );
             })}
           </ol>
+          {explorerTiming ? (
+            <details className="explorerTimingPanel">
+              <summary>
+                <span>Chi tiết thời gian Explorer</span>
+                <strong>{formatTimingSeconds(explorerTiming.totalSeconds)}</strong>
+              </summary>
+              <div className="explorerTimingBody">
+                <div className="explorerTimingCounts">
+                  <span>{explorerTiming.candidateCount} candidate</span>
+                  <span>{explorerTiming.resolvedCount} resolved</span>
+                  <span>{explorerTiming.persistedCount} đã lưu</span>
+                  {Object.entries(explorerTiming.providerCounts).map(
+                    ([provider, count]) => (
+                      <span key={provider}>{provider}: {count}</span>
+                    )
+                  )}
+                </div>
+                <ol className="explorerTimingStages">
+                  {explorerTiming.stages.map((stage) => (
+                    <li key={stage.key}>
+                      <span>{stage.label}</span>
+                      <strong>{formatTimingSeconds(stage.durationSeconds)}</strong>
+                      <i
+                        aria-hidden="true"
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            Math.min(
+                              100,
+                              (stage.durationSeconds / Math.max(
+                                explorerTiming.totalSeconds,
+                                0.001
+                              )) * 100
+                            )
+                          )}%`
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ol>
+                {explorerTiming.sources.map((source) => (
+                  <section
+                    className="explorerSourceTiming"
+                    key={`${source.sourceIndex}-${source.platform}`}
+                  >
+                    <header>
+                      <strong>URL {source.sourceIndex} · {source.platform}</strong>
+                      <span>{formatTimingSeconds(source.totalSeconds)}</span>
+                    </header>
+                    <small>
+                      {source.sampledFrames} frame · STT {source.speechStatus}
+                      {" · "}Vision {source.visionStatus}
+                      {" · "}{source.extractedPlaceCount} địa điểm
+                    </small>
+                    <ul>
+                      {source.stages.map((stage) => (
+                        <li key={stage.key}>
+                          <span>{stage.label}</span>
+                          <strong>{formatTimingSeconds(stage.durationSeconds)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+                <p>
+                  STT và vision chạy song song; Formatter và resolve cũng chạy
+                  song song. Vì vậy không cộng các dòng con để tính tổng.
+                </p>
+                {explorerTiming.logFile ? (
+                  <code>{explorerTiming.logFile}</code>
+                ) : null}
+              </div>
+            </details>
+          ) : null}
           <div className="chatMessages" aria-live="polite" ref={messageListRef}>
             {messages.map((message) => (
               <div className={`chatMessageRow ${message.role}`} key={message.id}>
@@ -835,14 +932,27 @@ function Planner() {
                                       primary
                                       toPlace={transportLeg.toPlace}
                                     />
-                                    {(transportLeg.alternatives ?? []).map((option) => (
-                                      <TransportOptionCard
-                                        fromPlace={transportLeg.fromPlace}
-                                        key={`${option.mode}-${option.source}`}
-                                        option={option}
-                                        toPlace={transportLeg.toPlace}
-                                      />
-                                    ))}
+                                    {(transportLeg.alternatives ?? []).length ? (
+                                      <details className="transportAlternatives">
+                                        <summary>
+                                          <span className="transportAlternativesLabel">
+                                            <span className="whenClosed">Xem phương án dự phòng</span>
+                                            <span className="whenOpen">Ẩn phương án dự phòng</span>
+                                          </span>
+                                          <ChevronDownIcon />
+                                        </summary>
+                                        <div className="transportAlternativesList">
+                                          {(transportLeg.alternatives ?? []).map((option) => (
+                                            <TransportOptionCard
+                                              fromPlace={transportLeg.fromPlace}
+                                              key={`${option.mode}-${option.source}`}
+                                              option={option}
+                                              toPlace={transportLeg.toPlace}
+                                            />
+                                          ))}
+                                        </div>
+                                      </details>
+                                    ) : null}
                                   </div>
                                 </div>
                               ) : null}
@@ -987,6 +1097,12 @@ function formatElapsedTime(totalSeconds: number): string {
   const seconds = totalSeconds % 60;
   if (minutes === 0) return `${seconds} giây`;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatTimingSeconds(seconds: number): string {
+  return seconds < 10
+    ? `${seconds.toFixed(2)} giây`
+    : `${seconds.toFixed(1)} giây`;
 }
 
 function processingDescription(stage: WorkflowStage, intakeKind: IntakeKind): string {
@@ -1194,6 +1310,14 @@ function ClockIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m7 10 5 5 5-5" />
     </svg>
   );
 }

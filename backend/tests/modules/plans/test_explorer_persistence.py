@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import UserMustPlace
+from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 
 
@@ -14,7 +14,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -78,7 +78,13 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert must_place.latitude == Decimal("16.0592000")
         assert must_place.external_id == "place-123"
         assert must_place.provider == "fake_places"
-        assert inspect(engine).get_table_names() == ["user_must_place"]
+        intake = session.get(ExplorerIntake, "intake-1")
+        assert intake is not None
+        assert intake.destination == "Đà Nẵng"
+        assert inspect(engine).get_table_names() == [
+            "explorer_intakes",
+            "user_must_place",
+        ]
         selected_places = repository.load_must_places("intake-1", None)
         assert len(selected_places) == 1
         assert selected_places[0].must_visit is False
@@ -105,7 +111,7 @@ def test_url_itinerary_preserves_source_name_after_provider_resolution() -> None
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -161,7 +167,7 @@ def test_url_itinerary_drops_source_name_when_provider_match_is_only_city() -> N
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -206,11 +212,11 @@ def test_url_itinerary_drops_source_name_when_provider_match_is_only_city() -> N
     engine.dispose()
 
 
-def test_explorer_does_not_schedule_unresolved_candidates_without_coordinates() -> None:
+def test_explorer_does_not_persist_unresolved_candidates_without_coordinates() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
     )
     unresolved = PlaceResolution.model_validate(
         {
@@ -262,8 +268,46 @@ def test_explorer_does_not_schedule_unresolved_candidates_without_coordinates() 
             resolutions=[unresolved, no_coordinates],
         )
 
-        assert session.scalar(select(UserMustPlace)) is not None
+        assert session.scalar(select(UserMustPlace)) is None
         assert repository.load_must_places("intake-1", None) == []
+
+    engine.dispose()
+
+
+def test_explorer_does_not_persist_provisional_candidate_with_coordinates() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+    )
+    provisional = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Địa điểm chưa xác minh",
+                "category": "other",
+                "sources": [{"type": "user_prompt", "url": None}],
+                "confidence": 0.5,
+            },
+            "status": "provisional",
+            "provider": "fake_places",
+            "name": "Địa điểm chưa xác minh",
+            "city": "Hà Nội",
+            "latitude": "21.0285",
+            "longitude": "105.8542",
+            "dataConfidence": "low",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-provisional",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[provisional],
+        )
+
+        assert session.scalar(select(UserMustPlace)) is None
 
     engine.dispose()
 
@@ -272,7 +316,7 @@ def test_explorer_drops_high_confidence_url_stop_without_verified_identity() -> 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
     )
     unresolved_activity = PlaceResolution.model_validate(
         {
@@ -310,5 +354,6 @@ def test_explorer_drops_high_confidence_url_stop_without_verified_identity() -> 
         selected = repository.load_must_places("intake-url", None)
 
         assert selected == []
+        assert session.scalar(select(UserMustPlace)) is None
 
     engine.dispose()

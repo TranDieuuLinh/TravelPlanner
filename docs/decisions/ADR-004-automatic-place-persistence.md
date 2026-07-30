@@ -1,6 +1,6 @@
 # ADR-004: Tự động resolve và lưu địa điểm từ Explorer
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Được thay thế một phần bởi ADR-007
 - Ngày: 2026-07-28
 
 ## Bối cảnh
@@ -50,3 +50,7 @@ Explorer intake.
   phép request song song; background job là bước nâng cấp tiếp theo khi tải tăng.
 - Quyết định này thay thế yêu cầu confirm bắt buộc của ADR-003 trong flow
   Explorer intake, nhưng không thay đổi confirmation ở các nghiệp vụ khác.
+
+ADR-007 thay thế quyết định lưu mọi trạng thái resolution ở mục 4-5. Phần
+no-interruption, ranh giới `UserMustPlace`/`Place` và cách bàn giao
+`intakeId + userId` vẫn còn hiệu lực.

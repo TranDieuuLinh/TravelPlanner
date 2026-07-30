@@ -12,7 +12,11 @@ Sử dụng pytest cho domain và service:
 
 - phân tích sở thích và tạo câu hỏi làm rõ;
 - chuyển artifact thành claim/candidate và gộp địa điểm trùng;
-- không commit candidate chưa được user xác nhận;
+- URL candidate chỉ được tạo bởi Extractor, không bị Formatter sinh lại;
+- Formatter và Resolver bắt đầu song song với intake URL;
+- timing report giữ cùng `intakeId`, có đủ stage chính và không ghi raw
+  prompt/URL/transcript/OCR vào JSONL;
+- không persist candidate unresolved hoặc thiếu latitude/longitude;
 - điều phối luồng tạo plan;
 - mọi selected place được xếp hoặc có lý do chưa xếp;
 - bảo toàn item đã khóa và tính độc lập của plan dự phòng;

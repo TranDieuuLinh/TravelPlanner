@@ -23,6 +23,7 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
+from app.modules.plans.explorer.timing import ExplorerTimingLogger
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
 from app.modules.plans.planner.planner_service import PlannerService
@@ -78,6 +79,9 @@ def get_plan_service(
         explorer_persistence=ExplorerPersistenceRepository(db),
         preference_learning=PreferenceLearningService(),
         user_repository=UserRepository(db),
+        explorer_timing_logger=ExplorerTimingLogger(
+            settings.explorer_timing_log_path
+        ),
     )
 
 
@@ -98,6 +102,7 @@ def _get_place_resolver() -> PlaceResolver:
                 country_code=settings.here_country_code,
                 language=settings.here_language,
                 min_interval_seconds=settings.here_min_interval_seconds,
+                max_concurrency=settings.here_max_concurrency,
             ),
             nominatim,
         )

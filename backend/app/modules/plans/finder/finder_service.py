@@ -283,6 +283,7 @@ class FinderService:
             tentative_plan_status.current_strategy = skeleton.strategy
             tentative_plan_status.day_usage = FinderUsage()
             day_items: list[PlanItem] = []
+            committed_activities: dict[str, tuple[FinderPlace, DayBlock]] = {}
 
             for block in skeleton.blocks:
                 tentative_plan_status.current_slot = block.role
@@ -330,14 +331,18 @@ class FinderService:
                     continue
 
                 selected_source = candidate.stable_ref in selected_by_ref
-                day_items.append(
-                    self._build_activity_item(
+                activity_item = self._build_activity_item(
+                    candidate,
+                    block,
+                    mode=mode,
+                    selected_source=selected_source,
+                )
+                day_items.append(activity_item)
+                if activity_item.item_id is not None:
+                    committed_activities[activity_item.item_id] = (
                         candidate,
                         block,
-                        mode=mode,
-                        selected_source=selected_source,
                     )
-                )
                 self._apply_activity(
                     candidate,
                     block,
@@ -370,13 +375,52 @@ class FinderService:
                 preferred_modes=preferred_modes,
                 avoid_modes=avoid_modes,
             )
-            optimized_items = self._fit_timeline_after_routing(
+            optimized_items, overflow_items = self._fit_timeline_after_routing(
                 optimized_items,
                 transport_legs,
                 day=brief.day,
                 warnings=warnings,
                 plan_status=tentative_plan_status,
             )
+            if overflow_items:
+                retained_item_ids = {
+                    item.item_id
+                    for item in optimized_items
+                    if item.item_id is not None
+                }
+                transport_legs = [
+                    leg
+                    for leg in transport_legs
+                    if leg.from_item_id in retained_item_ids
+                    and leg.to_item_id in retained_item_ids
+                ]
+                for item in overflow_items:
+                    committed = (
+                        committed_activities.get(item.item_id)
+                        if item.item_id is not None
+                        else None
+                    )
+                    if committed is None:
+                        continue
+                    candidate, block = committed
+                    self._rollback_activity(
+                        candidate,
+                        block,
+                        tentative_user_status,
+                        tentative_plan_status,
+                        restore_selected=(
+                            candidate.stable_ref in selected_by_ref
+                        ),
+                    )
+                    rejected_selected_places[candidate.stable_ref] = (
+                        CandidateRejection(
+                            "timeline_overflow",
+                            (
+                                f"Day {brief.day} has no remaining time before "
+                                "24:00 after travel time is included."
+                            ),
+                        )
+                    )
             travel_minutes = sum(
                 leg.estimated_duration_minutes for leg in transport_legs
             )
@@ -991,6 +1035,7 @@ class FinderService:
                 )
             ),
             sourceOrder=candidate.source_order,
+            sourceDay=candidate.source_day,
             sourceTimeHint=candidate.source_time_hint,
             sourceActivity=candidate.source_activity,
         )
@@ -1036,24 +1081,26 @@ class FinderService:
         day: int,
         warnings: list[str],
         plan_status: FinderPlanStatus,
-    ) -> list[PlanItem]:
+    ) -> tuple[list[PlanItem], list[PlanItem]]:
         if not items:
-            return items
+            return items, []
         leg_by_pair = {
             (leg.from_item_id, leg.to_item_id): leg
             for leg in transport_legs
         }
         fitted: list[PlanItem] = []
+        overflow: list[PlanItem] = []
         previous: PlanItem | None = None
         previous_end: int | None = None
         shifted = False
         for item in items:
-            start = self._extract_clock_minutes(item.time_window)
-            duration = item.duration_minutes or self._window_duration_minutes(item.time_window)
+            start = self._extract_unbounded_clock_minutes(item.time_window)
+            duration = (
+                item.duration_minutes
+                or self._window_duration_minutes(item.time_window)
+            )
             if start is None or duration is None:
-                fitted.append(item)
-                previous = item
-                previous_end = None
+                overflow.append(item)
                 continue
             required_start = start
             if previous is not None and previous_end is not None:
@@ -1065,6 +1112,9 @@ class FinderService:
                     )
                 else:
                     required_start = max(required_start, previous_end)
+            if required_start + duration >= 24 * 60:
+                overflow.append(item)
+                continue
             if required_start > start:
                 shifted = True
                 item = item.model_copy(
@@ -1092,17 +1142,30 @@ class FinderService:
             )
             warnings.append(message)
             plan_status.warnings.append(message)
-        return fitted
+        if overflow:
+            message = (
+                f"Day {day} left {len(overflow)} item(s) unscheduled because "
+                "their route-aware time windows would reach or exceed 24:00."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
+        return fitted, overflow
 
     def _window_duration_minutes(self, value: str) -> int | None:
         parts = value.split("-", 1)
         if len(parts) != 2:
             return None
-        start = self._extract_clock_minutes(parts[0])
-        end = self._extract_clock_minutes(parts[1])
+        start = self._extract_unbounded_clock_minutes(parts[0])
+        end = self._extract_unbounded_clock_minutes(parts[1])
         if start is None or end is None:
             return None
         return max(0, end - start)
+
+    def _extract_unbounded_clock_minutes(self, value: str) -> int | None:
+        match = re.search(r"(?<!\d)(\d{1,3}):([0-5]\d)", value)
+        if match is None:
+            return None
+        return int(match.group(1)) * 60 + int(match.group(2))
 
     def _format_clock_window(self, start: int, duration: int) -> str:
         return f"{self._format_clock(start)}-{self._format_clock(start + duration)}"
@@ -1187,6 +1250,56 @@ class FinderService:
             latitude=candidate.latitude,
             longitude=candidate.longitude,
         )
+
+    def _rollback_activity(
+        self,
+        candidate: FinderPlace,
+        block: DayBlock,
+        user_status: UserStatus,
+        plan_status: FinderPlanStatus,
+        *,
+        restore_selected: bool,
+    ) -> None:
+        candidate_ref = candidate.stable_ref
+        if candidate_ref in plan_status.used_place_ids:
+            plan_status.used_place_ids.remove(candidate_ref)
+        if (
+            restore_selected
+            and candidate_ref not in plan_status.remaining_selected_place_ids
+        ):
+            plan_status.remaining_selected_place_ids.append(candidate_ref)
+        for tag in candidate.tags:
+            count = plan_status.visited_tag_counts.get(tag, 0)
+            if count <= 1:
+                plan_status.visited_tag_counts.pop(tag, None)
+            else:
+                plan_status.visited_tag_counts[tag] = count - 1
+        region_count = plan_status.visited_region_counts.get(
+            candidate.region_key,
+            0,
+        )
+        if region_count <= 1:
+            plan_status.visited_region_counts.pop(candidate.region_key, None)
+        else:
+            plan_status.visited_region_counts[candidate.region_key] = (
+                region_count - 1
+            )
+        duration = self._candidate_duration(candidate, block)
+        for usage in (plan_status.day_usage, plan_status.trip_usage):
+            usage.activity_minutes = max(
+                0,
+                usage.activity_minutes - duration,
+            )
+            usage.place_count = max(0, usage.place_count - 1)
+        if candidate.activity_intensity:
+            inverse_delta = {
+                metric: -change
+                for metric, change in INTENSITY_EFFECTS.get(
+                    candidate.activity_intensity,
+                    {},
+                ).items()
+            }
+            self._apply_metric_delta(user_status, inverse_delta)
 
     def _candidate_duration(
         self,

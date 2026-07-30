@@ -1,5 +1,6 @@
 import asyncio
 import math
+import time
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import Plan
@@ -18,7 +19,6 @@ from app.modules.plans.explorer.schema import (
     PlaceCandidateSourceType,
     ExploreTripSpecInput,
     FullExploreRequest,
-    PlaceCandidatesResponse,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService, ImageUploadPayload
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -26,6 +26,10 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelInput,
 )
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
+from app.modules.plans.explorer.timing import (
+    ExplorerTimingLogger,
+    ExplorerTimingTrace,
+)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.schema import (
     BackupPlanCreate,
@@ -60,6 +64,7 @@ class PlanService:
         explorer_persistence: ExplorerPersistenceRepository | None = None,
         preference_learning: PreferenceLearningService | None = None,
         user_repository: UserRepository | None = None,
+        explorer_timing_logger: ExplorerTimingLogger | None = None,
     ) -> None:
         self.repository = repository
         self.explore_formatter = explore_formatter
@@ -76,6 +81,7 @@ class PlanService:
             preference_learning or PreferenceLearningService()
         )
         self.user_repository = user_repository
+        self.explorer_timing_logger = explorer_timing_logger
 
     def feature_map(self) -> list[FeatureMapItem]:
         return [
@@ -89,14 +95,34 @@ class PlanService:
         self,
         payload: FullExploreRequest,
     ) -> ExploreIntakeResponse:
-        url_reel_results = await self._extract_urls(
-            payload.urls,
-            destination=payload.destination,
+        intake_id = str(uuid4())
+        trace = ExplorerTimingTrace(
+            intake_id,
+            url_count=len(payload.urls),
+            image_count=len(payload.image_contexts),
         )
-        return await self._format_resolve_and_persist(
-            payload,
-            url_reel_results=url_reel_results,
-        )
+        try:
+            extraction_start = time.perf_counter()
+            url_reel_results = await self._extract_urls(
+                payload.urls,
+                destination=payload.destination,
+            )
+            trace.record_stage(
+                "urlExtractionWall",
+                "URL extractor (wall)",
+                extraction_start,
+                details={"urlCount": len(payload.urls)},
+            )
+            trace.add_url_results(url_reel_results)
+            return await self._format_resolve_and_persist(
+                payload,
+                url_reel_results=url_reel_results,
+                intake_id=intake_id,
+                trace=trace,
+            )
+        except Exception:
+            self._write_timing_report(trace, status="failed")
+            raise
 
     async def explore_from_intake(
         self,
@@ -108,21 +134,57 @@ class PlanService:
         trip_spec: ExploreTripSpecInput | None = None,
         user_state: UserPlanningState | None = None,
     ) -> ExploreIntakeResponse:
+        intake_id = str(uuid4())
+        trace = ExplorerTimingTrace(
+            intake_id,
+            url_count=len(urls),
+            image_count=len(images),
+        )
         try:
             if images and self.image_ocr is None:
                 raise RuntimeError("Image OCR is not configured.")
-            image_task = (
-                self.image_ocr.extract_many(
-                    images,
-                    destination=destination,
-                )
-                if images and self.image_ocr is not None
-                else _empty_list()
-            )
+
+            async def extract_images():
+                started_at = time.perf_counter()
+                try:
+                    return (
+                        await self.image_ocr.extract_many(
+                            images,
+                            destination=destination,
+                        )
+                        if images and self.image_ocr is not None
+                        else []
+                    )
+                finally:
+                    if images:
+                        trace.record_stage(
+                            "imageExtractionWall",
+                            "Image OCR (wall)",
+                            started_at,
+                            details={"imageCount": len(images)},
+                        )
+
+            async def extract_urls():
+                started_at = time.perf_counter()
+                try:
+                    return await self._extract_urls(
+                        urls,
+                        destination=destination,
+                    )
+                finally:
+                    if urls:
+                        trace.record_stage(
+                            "urlExtractionWall",
+                            "URL extractor (wall)",
+                            started_at,
+                            details={"urlCount": len(urls)},
+                        )
+
             image_contexts, url_reel_results = await asyncio.gather(
-                image_task,
-                self._extract_urls(urls, destination=destination),
+                extract_images(),
+                extract_urls(),
             )
+            trace.add_url_results(url_reel_results)
 
             payload = FullExploreRequest(
                 rawRequest=raw_request,
@@ -135,7 +197,12 @@ class PlanService:
             return await self._format_resolve_and_persist(
                 payload,
                 url_reel_results=url_reel_results,
+                intake_id=intake_id,
+                trace=trace,
             )
+        except Exception:
+            self._write_timing_report(trace, status="failed")
+            raise
         finally:
             for image in images:
                 image.clear_data()
@@ -166,6 +233,8 @@ class PlanService:
         payload: FullExploreRequest,
         *,
         url_reel_results: list[UrlReelExtractionResult],
+        intake_id: str,
+        trace: ExplorerTimingTrace,
     ) -> ExploreIntakeResponse:
         explicitly_requested_days = payload.trip_spec.days
         has_reference_input = bool(
@@ -180,16 +249,43 @@ class PlanService:
                 DEFAULT_TRIP_DAYS,
                 provisional_reference_days,
             )
-        draft = await self.explore_formatter.format(
-            payload,
-            url_reel_results=url_reel_results,
-        )
-        candidates = self.place_candidate_aggregator.aggregate(
-            destination=payload.destination,
-            generated=draft.places.place_candidates,
-            explicit=payload.place_candidates,
-            url_results=url_reel_results,
-        )
+        if payload.urls:
+            aggregation_start = time.perf_counter()
+            candidates = self.place_candidate_aggregator.aggregate(
+                destination=payload.destination,
+                generated=[],
+                explicit=payload.place_candidates,
+                url_results=url_reel_results,
+            )
+            trace.record_stage(
+                "candidateAggregation",
+                "Gộp và dedupe candidate",
+                aggregation_start,
+            )
+        else:
+            formatter_start = time.perf_counter()
+            draft = await self.explore_formatter.format(
+                payload,
+                url_reel_results=url_reel_results,
+            )
+            trace.record_stage(
+                "formatter",
+                "Formatter",
+                formatter_start,
+            )
+            aggregation_start = time.perf_counter()
+            candidates = self.place_candidate_aggregator.aggregate(
+                destination=payload.destination,
+                generated=draft.places.place_candidates,
+                explicit=payload.place_candidates,
+                url_results=url_reel_results,
+            )
+            trace.record_stage(
+                "candidateAggregation",
+                "Gộp và dedupe candidate",
+                aggregation_start,
+            )
+        trace.candidate_count = len(candidates)
         if (
             payload.urls
             and not candidates
@@ -201,28 +297,83 @@ class PlanService:
                 "Retry later, upload screenshots, or paste the caption instead "
                 "of generating an empty itinerary."
             )
-        draft.places = PlaceCandidatesResponse(placeCandidates=candidates)
-        resolutions = await self.place_resolver.resolve_many(
-            candidates,
-            destination=draft.explorer.intent.destination,
+        if payload.urls:
+            async def format_context():
+                started_at = time.perf_counter()
+                try:
+                    return await self.explore_formatter.format_context(
+                        payload,
+                        url_reel_results=url_reel_results,
+                    )
+                finally:
+                    trace.record_stage(
+                        "formatter",
+                        "Formatter intent/trip spec",
+                        started_at,
+                    )
+
+            async def resolve_places():
+                started_at = time.perf_counter()
+                try:
+                    return await self.place_resolver.resolve_many(
+                        candidates,
+                        destination=payload.destination,
+                    )
+                finally:
+                    trace.record_stage(
+                        "placeResolution",
+                        "Resolve địa điểm",
+                        started_at,
+                        details={"candidateCount": len(candidates)},
+                    )
+
+            explorer, resolutions = await asyncio.gather(
+                format_context(),
+                resolve_places(),
+            )
+        else:
+            explorer = draft.explorer
+            resolution_start = time.perf_counter()
+            try:
+                resolutions = await self.place_resolver.resolve_many(
+                    candidates,
+                    destination=explorer.intent.destination,
+                )
+            finally:
+                trace.record_stage(
+                    "placeResolution",
+                    "Resolve địa điểm",
+                    resolution_start,
+                    details={"candidateCount": len(candidates)},
+                )
+        trace.resolved_count = sum(
+            resolution.status == "resolved"
+            for resolution in resolutions
         )
+        for resolution in resolutions:
+            provider = resolution.provider or "unknown"
+            trace.provider_counts[provider] = (
+                trace.provider_counts.get(provider, 0) + 1
+            )
+        post_processing_start = time.perf_counter()
         schedulable_candidates = [
             resolution.candidate
             for resolution in resolutions
-            if is_schedulable_place(
+            if resolution.status == "resolved"
+            and is_schedulable_place(
                 is_url_source=has_url_source(resolution.candidate),
                 resolution_status=resolution.status,
                 latitude=resolution.latitude,
                 longitude=resolution.longitude,
                 resolved_name=resolution.name,
                 city=resolution.city,
-                destination=draft.explorer.intent.destination,
+                destination=explorer.intent.destination,
                 country=resolution.country,
             )
         ]
         source_coverage_days = _candidate_coverage_days(
             schedulable_candidates,
-            pace=draft.explorer.intent.pace.value,
+            pace=explorer.intent.pace.value,
         )
         effective_days = (
             explicitly_requested_days
@@ -231,16 +382,16 @@ class PlanService:
                 if has_reference_input
                 else None
             )
-            or draft.explorer.trip_spec.days
+            or explorer.trip_spec.days
             or DEFAULT_TRIP_DAYS
         )
-        draft.explorer.trip_spec.days = effective_days
+        explorer.trip_spec.days = effective_days
         if (
             explicitly_requested_days is None
             and source_coverage_days > DEFAULT_TRIP_DAYS
         ):
-            draft.explorer.assumptions = [
-                *draft.explorer.assumptions,
+            explorer.assumptions = [
+                *explorer.assumptions,
                 (
                     f"Trip duration was inferred as {effective_days} days "
                     "from URL/OCR itinerary coverage because the user did "
@@ -248,8 +399,8 @@ class PlanService:
                 ),
             ]
         elif explicitly_requested_days is None and has_reference_input:
-            draft.explorer.assumptions = [
-                *draft.explorer.assumptions,
+            explorer.assumptions = [
+                *explorer.assumptions,
                 (
                     f"The default {DEFAULT_TRIP_DAYS}-day duration was kept. "
                     "Finder may add catalog Places to empty or sparse days "
@@ -257,10 +408,10 @@ class PlanService:
                 ),
             ]
         preference_snapshot = self.preference_learning.enrich_snapshot(
-            draft.explorer.preference_snapshot,
-            destination=draft.explorer.intent.destination,
+            explorer.preference_snapshot,
+            destination=explorer.intent.destination,
             candidates=schedulable_candidates,
-            interests=draft.explorer.intent.interests,
+            interests=explorer.intent.interests,
         )
         stored_profile: object = payload.user_state.preference_profile
         preference_user = None
@@ -280,36 +431,71 @@ class PlanService:
         preference_snapshot = preference_snapshot.model_copy(
             update={"effective_profile": effective_profile}
         )
-        draft.explorer = draft.explorer.model_copy(
+        explorer = explorer.model_copy(
             update={"preference_snapshot": preference_snapshot}
         )
-        intake_id = str(uuid4())
+        trace.record_stage(
+            "postProcessing",
+            "Policy, coverage và preference",
+            post_processing_start,
+        )
+        persistence_start = time.perf_counter()
         if self.explorer_persistence is not None:
             self.explorer_persistence.save(
                 intake_id=intake_id,
                 user_id=payload.user_state.user_id,
-                destination=draft.explorer.intent.destination,
+                destination=explorer.intent.destination,
                 resolutions=resolutions,
             )
+            trace.persisted_count = len(schedulable_candidates)
         if preference_user is not None and self.user_repository is not None:
             preference_user.travel_preferences = effective_profile.model_dump(
                 mode="json",
                 by_alias=True,
             )
             self.user_repository.commit()
+        trace.record_stage(
+            "persistence",
+            "Lưu Explorer intake",
+            persistence_start,
+            details={"persistedPlaceCount": trace.persisted_count},
+        )
+        timing_report = self._write_timing_report(
+            trace,
+            status="completed",
+        )
         return ExploreIntakeResponse(
             intakeId=intake_id,
             userId=payload.user_state.user_id,
-            explorer=draft.explorer,
+            explorer=explorer,
             allowFinderSuggestions=(
                 not has_reference_input
                 or _source_days_need_finder(
                     schedulable_candidates,
                     days=effective_days,
-                    pace=draft.explorer.intent.pace.value,
+                    pace=explorer.intent.pace.value,
                 )
             ),
+            timingReport=timing_report,
         )
+
+    def _write_timing_report(
+        self,
+        trace: ExplorerTimingTrace,
+        *,
+        status: str,
+    ):
+        report = trace.finish(
+            status=status,
+            log_file=(
+                self.explorer_timing_logger.display_path
+                if self.explorer_timing_logger is not None
+                else None
+            ),
+        )
+        if self.explorer_timing_logger is not None:
+            self.explorer_timing_logger.write(report)
+        return report
 
     async def create_main_plan(self, payload: MainPlanCreate) -> Plan:
         plan = await self.main_workflow.run(payload)
@@ -329,6 +515,19 @@ class PlanService:
                     payload.user_id,
                 ),
             )
+        if payload.expand_days_to_fit_selected_places:
+            required_days = _required_days_for_selected_places(
+                selected_places,
+                pace=payload.intent.pace.value,
+            )
+            if required_days > payload.trip_spec.days:
+                payload = payload.model_copy(
+                    update={
+                        "trip_spec": payload.trip_spec.model_copy(
+                            update={"days": required_days}
+                        )
+                    }
+                )
         plan = await self.main_workflow.run_from_explorer(
             payload.model_copy(update={"selected_places": selected_places})
         )
@@ -352,10 +551,6 @@ class PlanService:
             backupPlan=backup_plan.model_dump(by_alias=True),
             validation=validation.model_dump(by_alias=True),
         )
-
-
-async def _empty_list() -> list:
-    return []
 
 
 def _url_result_coverage_days(
@@ -475,3 +670,25 @@ def _merge_selected_places(
         merged.append(place)
         seen.add(key)
     return merged
+
+
+def _required_days_for_selected_places(
+    selected_places: list[SelectedPlaceCreate],
+    *,
+    pace: str,
+) -> int:
+    capacity = {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
+    count_based_days = math.ceil(len(selected_places) / capacity)
+    latest_source_day = max(
+        (
+            place.source_day
+            for place in selected_places
+            if place.source_day is not None
+        ),
+        default=0,
+    )
+    return min(30, max(1, count_based_days, latest_source_day))

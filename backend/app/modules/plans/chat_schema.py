@@ -4,7 +4,10 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import Plan
-from app.modules.plans.explorer.schema import ExplorerContextResponse
+from app.modules.plans.explorer.schema import (
+    ExplorerContextResponse,
+    ExplorerTimingReport,
+)
 
 
 class TripChatCreate(BaseModel):
@@ -40,5 +43,8 @@ class TripChatRead(TripChatSummaryRead):
         ExplorerContextResponse | None,
         Field(alias="currentExplorer"),
     ]
+    latest_explorer_timing: Annotated[
+        ExplorerTimingReport | None,
+        Field(default=None, alias="latestExplorerTiming"),
+    ]
     messages: list[TripChatMessageRead]
-

@@ -350,6 +350,17 @@ h1, h2, h3, p { margin-top: 0; }
 .transportOptionCard { display: grid; min-width: 0; gap: 6px; border: 1px solid #dce9e5; border-radius: 10px; padding: 9px 10px; background: #f8fbfa; }
 .transportOptionCard.primary { border-color: #bcded4; background: #f3faf7; }
 .transportOptionCard.backup { border-color: #efd8b7; background: #fffaf2; }
+.transportAlternatives { min-width: 0; }
+.transportAlternatives summary { display: flex; width: fit-content; align-items: center; gap: 4px; border-radius: 7px; padding: 4px 6px; color: #83551d; cursor: pointer; font-size: .5rem; font-weight: 800; list-style: none; }
+.transportAlternatives summary::-webkit-details-marker { display: none; }
+.transportAlternatives summary:hover { background: #fff6e8; }
+.transportAlternatives summary:focus-visible { outline: 2px solid #b9792c; outline-offset: 2px; }
+.transportAlternatives summary svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: transform .18s ease; }
+.transportAlternatives[open] summary svg { transform: rotate(180deg); }
+.transportAlternatives .whenOpen { display: none; }
+.transportAlternatives[open] .whenClosed { display: none; }
+.transportAlternatives[open] .whenOpen { display: inline; }
+.transportAlternativesList { display: grid; gap: 7px; padding-top: 5px; }
 .transportOptionKind { width: fit-content; border-radius: 999px; padding: 3px 6px; background: #e3f3ed; color: var(--brand-dark); font-size: .43rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
 .transportOptionCard.backup .transportOptionKind { background: #f8e7cb; color: #83551d; }
 .transportOptionHeading { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 5px; }
@@ -1746,6 +1757,140 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   background: var(--brand-soft);
 }
 
+.explorerTimingPanel {
+  margin: -5px 20px 8px;
+  border: 1px solid #dce5e1;
+  border-radius: 12px;
+  background: #fbfdfc;
+  color: var(--ink);
+}
+
+.explorerTimingPanel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  cursor: pointer;
+  font-size: .56rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.explorerTimingPanel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.explorerTimingPanel > summary::before {
+  content: "＋";
+  color: var(--brand);
+}
+
+.explorerTimingPanel[open] > summary::before {
+  content: "−";
+}
+
+.explorerTimingPanel > summary span {
+  flex: 1;
+}
+
+.explorerTimingPanel > summary strong {
+  color: var(--brand-dark);
+}
+
+.explorerTimingBody {
+  display: grid;
+  gap: 9px;
+  max-height: 320px;
+  overflow-y: auto;
+  border-top: 1px solid #e4ebe8;
+  padding: 10px 11px 12px;
+}
+
+.explorerTimingCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.explorerTimingCounts span {
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: .48rem;
+  font-weight: 800;
+}
+
+.explorerTimingStages,
+.explorerSourceTiming ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.explorerTimingStages li {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
+  padding-bottom: 5px;
+  font-size: .5rem;
+}
+
+.explorerTimingStages li i {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: #d69231;
+}
+
+.explorerSourceTiming {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e4ebe8;
+  border-radius: 9px;
+  padding: 8px;
+  background: white;
+}
+
+.explorerSourceTiming header,
+.explorerSourceTiming li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.explorerSourceTiming header {
+  font-size: .51rem;
+}
+
+.explorerSourceTiming small,
+.explorerSourceTiming li,
+.explorerTimingBody p {
+  color: var(--muted);
+  font-size: .46rem;
+  line-height: 1.45;
+}
+
+.explorerTimingBody p {
+  margin: 0;
+}
+
+.explorerTimingBody code {
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  padding: 5px 6px;
+  background: #eef3f1;
+  color: #466159;
+  font-size: .44rem;
+}
+
 .plannerChat .chatMessages {
   gap: 12px;
   overflow-x: hidden;
@@ -2132,6 +2277,10 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   }
 
   .plannerChat .chatWorkflow {
+    margin-inline: 16px;
+  }
+
+  .explorerTimingPanel {
     margin-inline: 16px;
   }
 

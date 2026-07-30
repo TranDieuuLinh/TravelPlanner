@@ -53,8 +53,12 @@ không được truyền sang Finder. Finder vẫn tạo lịch
 chi tiết bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
-Khi intake có URL video, Explorer dùng transcript STT, metadata và frame vision
-để trích từng stop theo thứ tự. Candidate URL giữ `sourceOrder`,
+Khi intake có URL video, Gemini Audio trả đồng thời `transcript` và danh sách
+STT observation bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
+`order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
+và confidence. Explorer dùng structured STT observations, metadata và structured
+frame vision observations để tạo từng stop; Python không suy diễn candidate,
+day hay activity từ transcript tự do khi structured STT đã có. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
 nguồn có nói rõ. STT chịu trách nhiệm chính cho day/order/activity và
 `searchRegion`; OCR chịu trách nhiệm chính cho chữ trên bảng hiệu, địa chỉ và
@@ -73,10 +77,12 @@ batch lớn nhất. Tối đa năm batch frame vision được gọi song song b
 khác nhau, ưu tiên các key cuối trong pool `GEMINI_API_KEY`; mức song song tự
 giảm khi thiếu key hoặc batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
 STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
-một nguồn loại bỏ nguồn còn lại. Marker ngày rõ ràng trong STT được dùng để sửa
-day label OCR mâu thuẫn trong cùng chuỗi itinerary. Khi STT chuyển một ngày sang
-day trip vùng khác, vùng đó trở thành `searchRegion` cho các stop của ngày mà
-không thay đổi trip base. Observation thành công được
+một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa điểm, OCR được
+ưu tiên cho tên hiển thị và thứ tự frame; structured STT được ưu tiên cho day,
+time hint, activity, duration và `searchRegion`. Evidence của cả hai nguồn vẫn
+được giữ tách biệt. Khi STT chuyển một ngày sang day trip vùng khác, vùng đó
+trở thành `searchRegion` cho các stop của ngày mà không thay đổi trip base.
+Observation thành công được
 giữ lại nếu một batch khác lỗi. OCR ảnh/screenshot người dùng upload dùng cùng
 model cấu hình. Không áp dụng giới hạn số place candidate có evidence sau bước
 gộp; giới hạn 48 chỉ áp dụng cho số frame video được lấy mẫu.
@@ -109,6 +115,8 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
 
 Structured output của extraction gồm:
 
+- `transcript` cùng structured STT `observations`; transcript phục vụ hiển thị
+  hoặc formatter context, còn candidate được tạo từ observations đã validate;
 - `placeClaims`: tên thô, alias, khu vực được nhắc đến và evidence;
 - `activityClaims`: hoạt động, món ăn hoặc trải nghiệm;
 - `timingClaims`: thời điểm nên đến, thời lượng và thứ tự được gợi ý;
@@ -123,9 +131,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 
 - tìm place phù hợp cho từng candidate;
 - gộp candidate trùng nhưng giữ nhiều source ref;
-- lưu kết quả dưới trạng thái `resolved`, `provisional` hoặc `unresolved`;
+- chỉ lưu kết quả `resolved` có đủ latitude/longitude và danh tính cụ thể;
+- bỏ qua persistence đối với kết quả `provisional`, `unresolved`, thiếu tọa độ
+  hoặc match rộng tới thành phố/quốc gia;
 - không chặn intake để hỏi user;
-- lưu dữ liệu resolve đầy đủ chỉ vào `UserMustPlace`, không ghi `Place`;
+- lưu dữ liệu resolve đủ điều kiện chỉ vào `UserMustPlace`, không ghi `Place`;
 - Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
 - Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
   đọc `UserMustPlace` theo cả `intakeId + userId`.
@@ -142,6 +152,15 @@ user, signal đủ confidence được aggregate vào cột JSON
 `users.travel_preferences`; raw prompt, OCR và transcript không đi vào profile.
 Planner nhận `effectiveProfile`, nhưng explicit constraint của chuyến hiện tại
 luôn ưu tiên hơn profile dài hạn.
+
+Với intake có URL, source adapter tạo candidate đúng một lần. Code ứng dụng bổ
+sung source, priority và preference mặc định, gộp trùng rồi gửi thẳng sang
+Resolver. Formatter không sinh lại URL `placeCandidates`; nó chỉ nhận summary
+ngắn gồm số stop, interest, category, attribute, activity và source day để tạo
+intent, trip spec, constraint và preference. Formatter dùng structured output
+schema của provider thay vì nhét toàn bộ JSON Schema vào nội dung prompt.
+Formatter và Resolver chạy song song vì cả hai chỉ phụ thuộc output đã chuẩn hóa
+của Extractor.
 
 ### Giai đoạn 5: Planner
 
@@ -264,15 +283,22 @@ tuyến đường hoặc danh tính địa điểm.
 - Hiển thị rõ các giả định.
 - Giữ địa điểm người dùng đã chọn trừ khi xung đột với ràng buộc cứng; khi đó
   phải giải thích.
-- Candidate được tự động lưu theo lựa chọn sản phẩm no-interruption, nhưng phải
-  giữ confidence và resolution status để Finder/Check có thể cảnh báo.
+- Candidate được tự động resolve theo lựa chọn sản phẩm no-interruption, nhưng
+  chỉ kết quả resolved có danh tính cụ thể và đủ tọa độ được lưu để Finder dùng.
 - Không chuyển caption/câu quảng bá/danh sách nhiều venue thành một PlanItem.
-  URL place chưa resolve được danh tính cụ thể và tọa độ phải ở lại lớp
-  provenance, không xuất hiện trong plan; phần thiếu được Finder điền bằng Place
-  đã chuẩn hóa khi policy cho phép.
+  URL place chưa resolve được danh tính cụ thể và tọa độ không được lưu vào
+  `UserMustPlace` hay xuất hiện trong plan; phần thiếu được Finder điền bằng
+  Place đã chuẩn hóa khi policy cho phép.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
+- Mỗi ngày áp sức chứa activity theo pace: `relaxed=2`, `balanced=3`,
+  `packed=5`. Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
+  khi merge địa điểm của revision cũ với intake mới; nếu duration được giữ cố
+  định, phần vượt sức chứa phải vào `UnscheduledPlace`.
+- `timeWindow` phải nằm trọn trong một ngày địa phương. Sau khi cộng thời gian
+  route, item đạt hoặc vượt `24:00` phải được bỏ khỏi ngày và trả về
+  `UnscheduledPlace`, không được format thành giờ 24–28.
 - Phân biệt claim từ nguồn, dữ liệu provider xác minh và suy luận của model.
 - Plan dự phòng phải dùng được độc lập và được liên kết với plan chính.
 

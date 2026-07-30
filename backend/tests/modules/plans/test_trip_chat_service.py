@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy import select
 
 from app.modules.plans.chat_repository import TripChatRepository
+from app.modules.plans.chat_model import TripChatPlanRevision
 from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import ExploreIntakeResponse
@@ -82,7 +84,9 @@ def _plan(destination: str, *, plan_id: str) -> Plan:
                             "timeWindow": "09:00-10:00",
                             "placeType": "cafe",
                             "source": "finder",
-                            "sourceRefs": [],
+                            "sourceRefs": ["https://example.com/old-cafe"],
+                            "sourceOrder": 1,
+                            "sourceDay": 1,
                         }
                     ],
                 },
@@ -105,11 +109,13 @@ class _FakePlanService:
     def __init__(self) -> None:
         self.repository = _MemoryPlanRepository()
         self.raw_requests: list[str] = []
+        self.explore_kwargs: list[dict] = []
         self.plan_payloads: list[MainPlanFromExplorerCreate] = []
         self._count = 0
 
     async def explore_from_intake(self, **kwargs) -> ExploreIntakeResponse:
         self.raw_requests.append(kwargs["raw_request"])
+        self.explore_kwargs.append(kwargs)
         destination = (
             "Hà Nội"
             if kwargs["destination"] == "unspecified"
@@ -178,6 +184,61 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert "Tạo chuyến Hà Nội 2 ngày" in fake_plans.raw_requests[1]
     assert "Latest user amendment: Thêm một quán cà phê" in fake_plans.raw_requests[1]
     assert fake_plans.plan_payloads[1].selected_places[0].name == "Old Cafe"
+    assert fake_plans.plan_payloads[1].selected_places[0].source_day == 1
+    revisions = list(
+        db_session.scalars(
+            select(TripChatPlanRevision).order_by(
+                TripChatPlanRevision.revision
+            )
+        )
+    )
+    assert [item.intake_id for item in revisions] == [
+        "intake-Hà Nội",
+        "intake-Hà Nội",
+    ]
+
+
+def test_chat_more_days_amendment_allows_duration_expansion(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+
+    first = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+    asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Adjust this plan with more days using this URL",
+            expected_revision=first.revision,
+            initial_destination="ignored",
+            urls=["https://example.com/new-reel"],
+            images=[],
+        )
+    )
+
+    assert fake_plans.explore_kwargs[1]["trip_spec"].days is None
+    assert (
+        fake_plans.plan_payloads[1].expand_days_to_fit_selected_places
+        is True
+    )
 
 
 def test_chat_amendment_rejects_stale_revision(

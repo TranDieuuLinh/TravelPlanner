@@ -16,3 +16,4 @@ dist/
 coverage/
 *.db*
 *.sqlite3
+backend/var/*.jsonl

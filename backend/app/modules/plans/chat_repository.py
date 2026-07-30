@@ -104,6 +104,7 @@ class TripChatRepository:
                     id=str(uuid4()),
                     chat_id=chat.id,
                     revision=revision,
+                    intake_id=intake_id,
                     plan_payload=plan_payload,
                     explorer_payload=explorer_payload,
                     created_at=now,
