@@ -20,6 +20,7 @@ from app.modules.plans.schema import (
     FeatureMapItem,
     MainPlanCreate,
     MainPlanFromExplorerCreate,
+    PlanGenerationRead,
     PlanBundleRead,
     PlanRead,
     PlanningContextCreate,
@@ -108,15 +109,18 @@ async def create_main_plan(
 
 @router.post(
     "/main/from-explorer",
-    response_model=PlanRead,
+    response_model=PlanGenerationRead,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_main_plan_from_explorer(
     payload: MainPlanFromExplorerCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
-) -> PlanRead:
+) -> PlanGenerationRead:
     try:
-        return await service.create_main_plan_from_explorer(payload)
+        plan, timing_report = (
+            await service.create_main_plan_from_explorer_with_timing(payload)
+        )
+        return PlanGenerationRead(plan=plan, timingReport=timing_report)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

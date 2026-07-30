@@ -16,6 +16,8 @@ Sử dụng pytest cho domain và service:
 - Formatter và Resolver bắt đầu song song với intake URL;
 - timing report giữ cùng `intakeId`, có đủ stage chính và không ghi raw
   prompt/URL/transcript/OCR vào JSONL;
+- timing Planner/Finder có tổng wall-clock, đủ stage Planner, Finder và
+  CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
 - điều phối luồng tạo plan;
 - mọi selected place được xếp hoặc có lý do chưa xếp;

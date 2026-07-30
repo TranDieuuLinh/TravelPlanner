@@ -119,6 +119,8 @@ Response detail:
   "hasPlan": true,
   "currentPlan": {},
   "currentExplorer": {},
+  "latestExplorerTiming": {},
+  "latestPlannerTiming": {},
   "messages": [
     {
       "id": "message_uuid",
@@ -133,6 +135,9 @@ Response detail:
   "updatedAt": "2026-07-30T07:00:00Z"
 }
 ```
+
+Hai timing field chỉ có trong response vừa xử lý message; khi đọc lại lịch sử
+chúng có thể là `null` vì report debug không được lưu vào snapshot nghiệp vụ.
 
 Nếu `expectedRevision` đã cũ, backend trả HTTP 409 với code
 `VERSION_CONFLICT`. Lookup luôn lọc đồng thời `chatId + currentUser.id`; tài
@@ -260,6 +265,12 @@ hard-cap, confidence hay calculation
 basis, và không lặp `budgetLevel` trong `intent`.
 
 `POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
+Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
+`timingReport` gồm tổng wall-clock và các stage
+`preparePlanningContext`, `planner`, `finder`, `assemblePlan`,
+`checkOverall`; report còn trả số ngày, item, chặng di chuyển, địa điểm chưa
+xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không chứa prompt,
+selected-place payload hay dữ liệu provider thô.
 Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
 `allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
 chỉ bật cờ mở rộng khi amendment yêu cầu thêm ngày; số ngày được giới hạn tối đa

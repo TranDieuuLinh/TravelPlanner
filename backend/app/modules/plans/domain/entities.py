@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
@@ -94,6 +95,9 @@ class PlanItem(BaseModel):
     address: str | None = None
     time_window: str = Field(alias="timeWindow")
     place_type: str = Field(alias="placeType")
+    timeline_category: Literal["activity", "food", "break"] = Field(
+        alias="timelineCategory"
+    )
     region_key: str | None = Field(default=None, alias="regionKey")
     role: str | None = None
     source: str = "finder"
@@ -116,6 +120,55 @@ class PlanItem(BaseModel):
     source_activity: str | None = Field(default=None, alias="sourceActivity")
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_timeline_category(cls, value):
+        if not isinstance(value, dict):
+            return value
+        if "timelineCategory" in value or "timeline_category" in value:
+            return value
+        data = dict(value)
+        place_type = str(
+            data.get("placeType", data.get("place_type", ""))
+        ).casefold()
+        role = str(data.get("role", "")).casefold()
+        tags = {str(tag).casefold() for tag in data.get("tags", [])}
+        if (
+            place_type in {"break", "free_time"}
+            or ("break" in role and "breakfast" not in role)
+        ):
+            category = "break"
+        elif (
+            place_type
+            in {
+                "meal",
+                "restaurant",
+                "cafe",
+                "coffee",
+                "bakery",
+                "fast_food",
+                "food_court",
+            }
+            or "meal" in role
+            or bool(
+                tags.intersection(
+                    {
+                        "food",
+                        "food_drink",
+                        "restaurant",
+                        "cafe",
+                        "coffee",
+                        "bakery",
+                    }
+                )
+            )
+        ):
+            category = "food"
+        else:
+            category = "activity"
+        data["timelineCategory"] = category
+        return data
 
 
 class PlanTransportOption(BaseModel):

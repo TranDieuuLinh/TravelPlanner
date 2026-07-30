@@ -14,6 +14,7 @@ from app.modules.plans.explorer.schema import (
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.schema import MainPlanFromExplorerCreate, SelectedPlaceCreate
+from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.users.model import User
@@ -114,16 +115,20 @@ class TripChatService:
             trip_spec=trip_spec,
             user_state=user_state,
         )
-        next_plan = await self.plan_service.create_main_plan_from_explorer(
-            MainPlanFromExplorerCreate(
-                intent=explore.explorer.intent,
-                tripSpec=explore.explorer.trip_spec,
-                intakeId=explore.intake_id,
-                userId=str(user.id),
-                selectedPlaces=self._selected_places_from(current_plan),
-                preferenceProfile=explore.explorer.preference_snapshot.effective_profile,
-                allowFinderSuggestions=explore.allow_finder_suggestions,
-                expandDaysToFitSelectedPlaces=expand_days,
+        next_plan, planner_timing = await (
+            self.plan_service.create_main_plan_from_explorer_with_timing(
+                MainPlanFromExplorerCreate(
+                    intent=explore.explorer.intent,
+                    tripSpec=explore.explorer.trip_spec,
+                    intakeId=explore.intake_id,
+                    userId=str(user.id),
+                    selectedPlaces=self._selected_places_from(current_plan),
+                    preferenceProfile=(
+                        explore.explorer.preference_snapshot.effective_profile
+                    ),
+                    allowFinderSuggestions=explore.allow_finder_suggestions,
+                    expandDaysToFitSelectedPlaces=expand_days,
+                )
             )
         )
         if current_plan is not None:
@@ -156,6 +161,7 @@ class TripChatService:
         return self._read(
             saved,
             latest_timing=explore.timing_report,
+            latest_planner_timing=planner_timing,
         )
 
     def _contextual_request(
@@ -244,6 +250,7 @@ class TripChatService:
         chat: TripChat,
         *,
         latest_timing: ExplorerTimingReport | None = None,
+        latest_planner_timing: PlanTimingReport | None = None,
     ) -> TripChatRead:
         summary = self._summary(chat)
         return TripChatRead(
@@ -259,6 +266,7 @@ class TripChatService:
                 else None
             ),
             latestExplorerTiming=latest_timing,
+            latestPlannerTiming=latest_planner_timing,
             messages=chat.messages,
         )
 

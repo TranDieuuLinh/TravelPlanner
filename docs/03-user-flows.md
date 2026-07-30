@@ -111,16 +111,21 @@ chốt Main Plan.
 
 1. Tìm kiếm/lọc plan theo điểm đến, thời lượng, ngân sách, phong cách, đánh giá
    và độ mới.
-2. Mở listing và kiểm tra preview, creator, ngày cập nhật, nội dung bao gồm,
+2. Có thể khám phá listing qua feed quảng bá hỗn hợp gồm video và bài post. Hai
+   loại nội dung dùng cùng card dọc; video mở trong trình xem lướt dọc, còn bài
+   post giữ ảnh và caption trong cùng format. Giá plan và thao tác thêm vào giỏ
+   luôn hiện trong trình xem.
+3. Mở listing và kiểm tra preview, creator, ngày cập nhật, nội dung bao gồm,
    license, review và chi phí dự kiến.
-3. Mua plan qua checkout.
-4. Nền tảng xác minh payment phía server, ghi nhận order và cấp entitlement cho
+4. Thêm plan vào giỏ hoặc mua qua checkout. Checkout hiện xử lý từng listing
+   version để giữ liên kết phiên bản rõ ràng.
+5. Nền tảng xác minh payment phía server, ghi nhận order và cấp entitlement cho
    đúng `ListingVersion` và `TripPlanVersion`.
-5. Buyer tạo một bản sao cá nhân có provenance trỏ về phiên bản đã mua.
-6. Buyer dùng Planner để thay đổi ngày, ngân sách, thành phần nhóm, thêm URL hoặc
+6. Buyer tạo một bản sao cá nhân có provenance trỏ về phiên bản đã mua.
+7. Buyer dùng Planner để thay đổi ngày, ngân sách, thành phần nhóm, thêm URL hoặc
    chỉnh sửa item; plan đã publish của creator không thay đổi.
-7. Buyer sử dụng plan, đánh giá hoặc báo cáo khi đủ điều kiện.
-8. Nếu không có listing phù hợp, ngữ cảnh tìm kiếm được chuyển sang Explorer để
+8. Buyer sử dụng plan, đánh giá hoặc báo cáo khi đủ điều kiện.
+9. Nếu không có listing phù hợp, ngữ cảnh tìm kiếm được chuyển sang Explorer để
    tạo plan mới.
 
 ## Nhà sáng tạo tạo và xuất bản plan

@@ -98,6 +98,10 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 ### Marketplace cho buyer
 
 - Duyệt, tìm kiếm, lọc, favorite và xem listing detail.
+- Feed quảng bá hỗn hợp gồm video và bài post dùng chung card dọc; video có trình
+  xem lướt dọc, đồng thời luôn giữ giá và thao tác thêm vào giỏ trong tầm nhìn.
+- Giỏ phía client giữ các listing đã chọn; checkout backend vẫn xử lý từng
+  listing version trong mỗi phiên thanh toán.
 - Preview đủ để ra quyết định nhưng không lộ toàn bộ nội dung trả phí.
 - Checkout qua một payment provider.
 - Order, payment webhook idempotent, refund và entitlement.

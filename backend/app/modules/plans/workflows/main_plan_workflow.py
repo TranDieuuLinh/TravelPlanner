@@ -1,3 +1,4 @@
+import time
 from uuid import uuid4
 
 from app.modules.plans.checks.overall_checker import OverallChecker
@@ -23,6 +24,7 @@ from app.modules.plans.schema import (
 )
 from app.shared.errors import AppError
 from app.modules.preferences.schema import LongTermPreferenceProfile
+from app.modules.plans.timing import PlanTimingReport, PlanTimingTrace
 
 
 class MainPlanWorkflow:
@@ -61,6 +63,15 @@ class MainPlanWorkflow:
         self,
         payload: MainPlanFromExplorerCreate,
     ) -> Plan:
+        plan, _ = await self.run_from_explorer_with_timing(payload)
+        return plan
+
+    async def run_from_explorer_with_timing(
+        self,
+        payload: MainPlanFromExplorerCreate,
+    ) -> tuple[Plan, PlanTimingReport]:
+        trace = PlanTimingTrace()
+        prepare_started_at = time.perf_counter()
         intent = TravelIntent(
             destination=payload.intent.destination,
             days=payload.trip_spec.days,
@@ -74,7 +85,16 @@ class MainPlanWorkflow:
             constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
-        return await self._run_planning(
+        trace.add_stage(
+            "preparePlanningContext",
+            "Chuẩn bị planning context",
+            prepare_started_at,
+            details={
+                "selectedPlaceCount": len(payload.selected_places),
+                "requestedDays": payload.trip_spec.days,
+            },
+        )
+        plan = await self._run_planning(
             intent=intent,
             planning_intent=payload.intent,
             trip_spec=payload.trip_spec,
@@ -86,7 +106,9 @@ class MainPlanWorkflow:
             user_status=payload.user_status,
             preference_profile=payload.preference_profile,
             allow_finder_suggestions=payload.allow_finder_suggestions,
+            timing_trace=trace,
         )
+        return plan, trace.finish(plan)
 
     async def run_from_context(
         self,
@@ -130,8 +152,10 @@ class MainPlanWorkflow:
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
         allow_finder_suggestions: bool,
+        timing_trace: PlanTimingTrace | None = None,
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
+        planner_started_at = time.perf_counter()
         planner_output = await self.planner.create_main_macro_plan(
             intent,
             trip_spec=trip_spec,
@@ -139,6 +163,16 @@ class MainPlanWorkflow:
             selected_places=selected_places,
             preference_profile=preference_profile,
         )
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "planner",
+                "Planner tạo macro plan",
+                planner_started_at,
+                details={
+                    "dayBriefCount": len(planner_output.macro_plan.day_briefs),
+                    "selectedPlaceCount": len(selected_places),
+                },
+            )
         if not planner_output.day_briefs_ready:
             raise AppError(
                 422,
@@ -159,6 +193,7 @@ class MainPlanWorkflow:
             selected_places,
             planner_output,
         )
+        finder_started_at = time.perf_counter()
         finder_output = self.finder.fill_agent_plan(
             FinderAgentInput(
                 mode=PlanningMode.main,
@@ -170,6 +205,17 @@ class MainPlanWorkflow:
                 allowFinderSuggestions=allow_finder_suggestions,
             )
         )
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "finder",
+                "Finder xếp lịch trình và tuyến",
+                finder_started_at,
+                details={
+                    "scheduledDayCount": len(finder_output.final_days),
+                    "finderSelectedPlaceCount": len(finder_selected_places),
+                },
+            )
+        assemble_started_at = time.perf_counter()
         unscheduled_places = self._merge_unscheduled_places(
             planner_output,
             finder_output.unscheduled_places,
@@ -193,7 +239,28 @@ class MainPlanWorkflow:
                 *finder_output.warnings,
             ],
         )
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "assemblePlan",
+                "Dựng plan hoàn chỉnh",
+                assemble_started_at,
+                details={
+                    "itemCount": sum(len(day.items) for day in plan.days),
+                    "unscheduledCount": len(unscheduled_places),
+                },
+            )
+        checker_started_at = time.perf_counter()
         check_report = self.checker.check(plan)
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "checkOverall",
+                "Kiểm tra tính khả thi",
+                checker_started_at,
+                details={
+                    "status": check_report.status,
+                    "issueCount": len(check_report.issues),
+                },
+            )
         final_status = (
             PlanStatus.locked
             if check_report.status == "passed"

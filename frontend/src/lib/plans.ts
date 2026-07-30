@@ -2,10 +2,13 @@ import { apiFetch } from "@/lib/api";
 
 export type PlanItem = {
   itemId?: string | null;
+  placeId?: string | null;
   name: string;
   address?: string | null;
   timeWindow: string;
   placeType: string;
+  role?: string | null;
+  timelineCategory?: "activity" | "food" | "break";
   source: string;
   sourceRefs: string[];
   sourceOrder?: number | null;
@@ -203,6 +206,29 @@ export type ExplorerTimingReport = {
   logFile?: string | null;
 };
 
+export type PlanTimingStage = {
+  key: string;
+  label: string;
+  durationSeconds: number;
+  details: Record<string, string | number | boolean | null>;
+};
+
+export type PlanTimingReport = {
+  status: string;
+  totalSeconds: number;
+  stages: PlanTimingStage[];
+  dayCount: number;
+  itemCount: number;
+  transportLegCount: number;
+  unscheduledCount: number;
+  warningCount: number;
+};
+
+export type PlanGenerationResult = {
+  plan: TravelPlan;
+  timingReport?: PlanTimingReport | null;
+};
+
 export type PlannerIntakeInput = {
   rawRequest: string;
   urls?: string[];
@@ -237,6 +263,7 @@ export type TripChat = TripChatSummary & {
   currentPlan: TravelPlan | null;
   currentExplorer: ExplorerContext | null;
   latestExplorerTiming?: ExplorerTimingReport | null;
+  latestPlannerTiming?: PlanTimingReport | null;
   messages: TripChatMessage[];
 };
 
@@ -282,14 +309,14 @@ export async function runPlannerIntake(
   input: PlannerIntakeInput
 ): Promise<PlannerIntakeResult> {
   const explore = await exploreFullIntake(input);
-  const plan = await createPlanFromExplorer({
+  const generation = await createPlanFromExplorer({
     context: explore.explorer,
     intakeId: explore.intakeId,
     userId: explore.userId,
     allowFinderSuggestions: explore.allowFinderSuggestions
   });
 
-  return { explore, plan };
+  return { explore, plan: generation.plan };
 }
 
 export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
@@ -311,10 +338,12 @@ export async function createPlanFromExplorer(input: {
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
   allowFinderSuggestions?: boolean;
-}): Promise<TravelPlan> {
+}): Promise<PlanGenerationResult> {
   const selectedPlaces = input.selectedPlaces ?? [];
 
-  return apiFetch<TravelPlan>("/plans/main/from-explorer", {
+  const response = await apiFetch<PlanGenerationResult | TravelPlan>(
+    "/plans/main/from-explorer",
+    {
     method: "POST",
     body: JSON.stringify({
       intent: input.context.intent,
@@ -337,7 +366,17 @@ export async function createPlanFromExplorer(input: {
       })),
       preferenceProfile: input.context.preferenceSnapshot.effectiveProfile
     })
-  });
+    }
+  );
+
+  if ("plan" in response) {
+    return response;
+  }
+
+  return {
+    plan: response,
+    timingReport: null
+  };
 }
 
 export async function createBackupPlan(

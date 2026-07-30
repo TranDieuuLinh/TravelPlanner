@@ -1155,6 +1155,12 @@ class FinderService:
         mode: str,
         selected_source: bool,
     ) -> PlanItem:
+        timeline_category = (
+            "food"
+            if block.kind == "meal"
+            or place_category(candidate) == "food_drink"
+            else "activity"
+        )
         return PlanItem(
             itemId=str(uuid4()),
             placeId=candidate.place_id,
@@ -1171,6 +1177,7 @@ class FinderService:
                 if mode == "backup"
                 else candidate.place_type
             ),
+            timelineCategory=timeline_category,
             regionKey=candidate.region_key,
             role=block.role,
             source=(
@@ -1207,6 +1214,7 @@ class FinderService:
                 ),
                 timeWindow=block.time_window,
                 placeType="meal",
+                timelineCategory="food",
                 role=block.role,
                 source="finder_rule",
                 durationMinutes=block.duration_minutes,
@@ -1221,6 +1229,7 @@ class FinderService:
                 name="Group social activity",
                 timeWindow=block.time_window,
                 placeType="group_activity",
+                timelineCategory="activity",
                 role=block.role,
                 source="finder_rule",
                 durationMinutes=block.duration_minutes,
@@ -1237,6 +1246,7 @@ class FinderService:
             ),
             timeWindow=block.time_window,
             placeType="break",
+            timelineCategory="break",
             role=block.role,
             source="finder_rule",
             durationMinutes=block.duration_minutes,

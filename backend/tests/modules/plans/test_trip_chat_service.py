@@ -11,6 +11,7 @@ from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import ExploreIntakeResponse
 from app.modules.plans.schema import MainPlanFromExplorerCreate
+from app.modules.plans.timing import PlanTimingReport
 from app.modules.users.repository import UserRepository
 from app.shared.errors import AppError
 
@@ -123,15 +124,24 @@ class _FakePlanService:
         )
         return _explore(destination)
 
-    async def create_main_plan_from_explorer(
+    async def create_main_plan_from_explorer_with_timing(
         self,
         payload: MainPlanFromExplorerCreate,
-    ) -> Plan:
+    ) -> tuple[Plan, PlanTimingReport]:
         self.plan_payloads.append(payload)
         self._count += 1
         plan = _plan(payload.intent.destination, plan_id=f"generated-{self._count}")
         self.repository.save(plan)
-        return plan
+        return plan, PlanTimingReport(
+            status="completed",
+            totalSeconds=1.25,
+            stages=[],
+            dayCount=len(plan.days),
+            itemCount=sum(len(day.items) for day in plan.days),
+            transportLegCount=0,
+            unscheduledCount=0,
+            warningCount=0,
+        )
 
 
 def test_chat_amendment_keeps_one_plan_identity_and_history(
@@ -173,6 +183,8 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert first.revision == 1
     assert second.revision == 2
     assert first.current_plan is not None
+    assert first.latest_planner_timing is not None
+    assert first.latest_planner_timing.total_seconds == 1.25
     assert second.current_plan is not None
     assert second.current_plan.id == first.current_plan.id
     assert [message.role for message in second.messages] == [

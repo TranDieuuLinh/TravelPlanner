@@ -8,10 +8,11 @@ from app.modules.plans.domain.entities import (
     TravelIntent,
     UserStatus,
 )
-from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
+from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
 from app.modules.preferences.schema import LongTermPreferenceProfile
+from app.modules.plans.timing import PlanTimingReport
 
 
 class FeatureMapItem(BaseModel):
@@ -127,6 +128,13 @@ class BackupPlanCreate(BaseModel):
 TravelIntentRead = TravelIntent
 PlanRead = Plan
 CheckReportRead = CheckReport
+
+
+class PlanGenerationRead(BaseModel):
+    plan: PlanRead
+    timing_report: Annotated[PlanTimingReport, Field(alias="timingReport")]
+
+    model_config = {"populate_by_name": True}
 
 
 class PlanBundleRead(BaseModel):

@@ -671,12 +671,25 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
         }
     )
 
-    plan = asyncio.run(service.create_main_plan_from_explorer(payload))
+    plan, timing = asyncio.run(
+        service.create_main_plan_from_explorer_with_timing(payload)
+    )
 
     assert plan.days[0].items[0].name == "Bún chả Hàng Quạt"
     assert plan.days[0].items[0].source_refs == [
         "https://www.tiktok.com/@brandneweats/video/7662905162960243989"
     ]
+    assert timing.status == "completed"
+    assert timing.total_seconds >= 0
+    assert [stage.key for stage in timing.stages] == [
+        "preparePlanningContext",
+        "planner",
+        "finder",
+        "assemblePlan",
+        "checkOverall",
+    ]
+    assert timing.day_count == len(plan.days)
+    assert timing.item_count == sum(len(day.items) for day in plan.days)
 
 
 def test_plan_service_expands_days_to_fit_merged_selected_places() -> None:

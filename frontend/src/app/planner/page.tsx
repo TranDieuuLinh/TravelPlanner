@@ -24,6 +24,7 @@ import {
   type ExplorerContext,
   type ExploreResponse,
   type ExplorerTimingReport,
+  type PlanTimingReport,
   type PlaceCategory,
   type TransportOption,
   type TripChat,
@@ -115,6 +116,9 @@ function Planner() {
   const [explorerTiming, setExplorerTiming] = useState<
     ExplorerTimingReport | null
   >(null);
+  const [plannerTiming, setPlannerTiming] = useState<PlanTimingReport | null>(
+    null
+  );
   const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [activePlanDay, setActivePlanDay] = useState<number | null>(null);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
@@ -152,6 +156,7 @@ function Planner() {
         setChatRevision(0);
         setExploreResult(null);
         setExplorerTiming(null);
+        setPlannerTiming(null);
         setPlan(null);
         setWorkflowStage("idle");
         setMessages([{
@@ -167,6 +172,7 @@ function Planner() {
     setChatRevision(0);
     setExploreResult(null);
     setExplorerTiming(null);
+    setPlannerTiming(null);
     setPlan(null);
     void listTripChats()
       .then(async (chats) => {
@@ -216,78 +222,88 @@ function Planner() {
     () => createDayColorMap(planDayColorKeys),
     [planDayColorKeys]
   );
-  const displayedPlanDay = useMemo(
-    () =>
-      displayedPlan?.days.find((day) => day.day === activePlanDay)
-      ?? displayedPlan?.days[0]
-      ?? null,
+  const displayedPlanDays = useMemo(
+    () => {
+      if (!displayedPlan) return [];
+      if (activePlanDay == null) return displayedPlan.days;
+      return displayedPlan.days.filter((day) => day.day === activePlanDay);
+    },
     [activePlanDay, displayedPlan]
   );
 
   useEffect(() => {
     setActivePlanDay((current) => {
+      if (current == null) return null;
       if (displayedPlan?.days.some((day) => day.day === current)) return current;
-      return displayedPlan?.days[0]?.day ?? null;
+      return null;
     });
   }, [displayedPlan]);
 
   const tripPlaces = useMemo<TripPlaceSummary[]>(() => {
     if (!displayedPlan) return [];
-    const seen = new Set<string>();
-    let order = 0;
 
-    return displayedPlan.days.flatMap((day) =>
-      day.items.flatMap((item, itemIndex) => {
-        if (isBreakPlanItem(item)) return [];
-        const key = item.name.trim().toLocaleLowerCase("vi");
-        if (seen.has(key)) return [];
-        seen.add(key);
-        order += 1;
+    return displayedPlan.days.flatMap((day) => {
+      let dayOrder = 0;
+      return day.items.flatMap((item, itemIndex) => {
+        if (item.timelineCategory === "break") return [];
+        dayOrder += 1;
         return [{
           ...item,
           day: day.day,
-          order,
+          order: dayOrder,
           mapKey: hasPlanItemCoordinates(item)
             ? planItemMapKey(day.day, itemIndex, item.name)
             : null
         }];
-      })
-    );
+      });
+    });
   }, [displayedPlan]);
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
     const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
-    return tripPlaces.flatMap((item) =>
-      item.mapKey
-        ? [{
-            name: item.name,
-            category: categoryFromPlaceType(item.placeType),
-            address: item.address || `Ngày ${item.day} · ${item.timeWindow}`,
-            latitude: item.latitude ?? null,
-            longitude: item.longitude ?? null,
-            notes: item.notes,
-            mapKey: item.mapKey,
-            mapOrder: item.order,
-            dayColorKey: dateKeyForTripDay(startDate, item.day),
-            dayLabel: dateLabelForTripDay(startDate, item.day)
-          }]
-        : []
-    );
-  }, [displayedExploreResult?.explorer.tripSpec.startDate, tripPlaces]);
+    return tripPlaces
+      .filter((item) => activePlanDay == null || item.day === activePlanDay)
+      .flatMap((item) =>
+        item.mapKey
+          ? [{
+              name: item.name,
+              category: categoryFromPlaceType(item.placeType),
+              address: item.address || `Ngày ${item.day} · ${item.timeWindow}`,
+              latitude: item.latitude ?? null,
+              longitude: item.longitude ?? null,
+              notes: item.notes,
+              mapKey: item.mapKey,
+              mapOrder: item.order,
+              dayColorKey: dateKeyForTripDay(startDate, item.day),
+              dayLabel: dateLabelForTripDay(startDate, item.day)
+            }]
+          : []
+      );
+  }, [
+    activePlanDay,
+    displayedExploreResult?.explorer.tripSpec.startDate,
+    tripPlaces
+  ]);
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
     if (!displayedPlan) return [];
     const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
-    return displayedPlan.days.flatMap((day) =>
-      day.transportLegs
-        .filter((leg) => leg.geometryCoordinates.length >= 2)
-        .map((leg, index) => ({
-          key: `day-${day.day}-leg-${index}`,
-          coordinates: leg.geometryCoordinates,
-          verified: leg.verified,
-          source: leg.source,
-          dayColorKey: dateKeyForTripDay(startDate, day.day)
-        }))
-    );
-  }, [displayedExploreResult?.explorer.tripSpec.startDate, displayedPlan]);
+    return displayedPlan.days
+      .filter((day) => activePlanDay == null || day.day === activePlanDay)
+      .flatMap((day) =>
+        day.transportLegs
+          .filter((leg) => leg.geometryCoordinates.length >= 2)
+          .map((leg, index) => ({
+            key: `day-${day.day}-leg-${index}`,
+            coordinates: leg.geometryCoordinates,
+            verified: leg.verified,
+            source: leg.source,
+            dayColorKey: dateKeyForTripDay(startDate, day.day)
+          }))
+      );
+  }, [
+    activePlanDay,
+    displayedExploreResult?.explorer.tripSpec.startDate,
+    displayedPlan
+  ]);
 
   async function sendMessage() {
     const typedText = prompt.trim();
@@ -341,11 +357,13 @@ function Planner() {
           updated.latestExplorerTiming?.totalSeconds
           ?? totalWallSeconds
         );
+        const plannerSeconds = (
+          updated.latestPlannerTiming?.totalSeconds
+          ?? Math.max(0, totalWallSeconds - explorerSeconds)
+        );
         setStageDurations({
           exploring: Math.round(explorerSeconds),
-          planning: Math.round(
-            Math.max(0, totalWallSeconds - explorerSeconds)
-          )
+          planning: Math.round(plannerSeconds)
         });
         setWorkflowStage("ready");
         setStageStartedAt(null);
@@ -374,17 +392,22 @@ function Planner() {
       setStageStartedAt(planningStartedAt);
       setStageElapsedSeconds(0);
       setWorkflowStage("planning");
-      const nextPlan = await createPlanFromExplorer({
+      const generation = await createPlanFromExplorer({
         context: nextExploreResult.explorer,
         intakeId: nextExploreResult.intakeId,
         userId: nextExploreResult.userId,
         allowFinderSuggestions: nextExploreResult.allowFinderSuggestions
       });
+      const plannerSeconds = (
+        generation.timingReport?.totalSeconds
+        ?? Math.max(0, (Date.now() - planningStartedAt) / 1000)
+      );
       setStageDurations((current) => ({
         ...current,
-        planning: Math.max(0, Math.round((Date.now() - planningStartedAt) / 1000))
+        planning: Math.round(plannerSeconds)
       }));
-      setPlan(nextPlan);
+      setPlannerTiming(generation.timingReport ?? null);
+      setPlan(generation.plan);
       setWorkflowStage("ready");
       setStageStartedAt(null);
       setStageElapsedSeconds(0);
@@ -457,6 +480,7 @@ function Planner() {
     setImages([]);
     setExploreResult(null);
     setExplorerTiming(null);
+    setPlannerTiming(null);
     setPlan(null);
     setSelectedMapPlaceKey(null);
     setWorkflowStage("idle");
@@ -514,6 +538,7 @@ function Planner() {
     setChatRevision(chat.revision);
     setPlan(chat.currentPlan);
     setExplorerTiming(chat.latestExplorerTiming ?? null);
+    setPlannerTiming(chat.latestPlannerTiming ?? null);
     setExploreResult(
       chat.currentExplorer
         ? {
@@ -790,6 +815,50 @@ function Planner() {
               </div>
             </details>
           ) : null}
+          {plannerTiming ? (
+            <details className="explorerTimingPanel plannerTimingPanel">
+              <summary>
+                <span>Chi tiết thời gian Planner + Finder</span>
+                <strong>{formatTimingSeconds(plannerTiming.totalSeconds)}</strong>
+              </summary>
+              <div className="explorerTimingBody">
+                <div className="explorerTimingCounts">
+                  <span>{plannerTiming.dayCount} ngày</span>
+                  <span>{plannerTiming.itemCount} item</span>
+                  <span>{plannerTiming.transportLegCount} chặng</span>
+                  <span>{plannerTiming.unscheduledCount} chưa xếp</span>
+                  <span>{plannerTiming.warningCount} cảnh báo</span>
+                </div>
+                <ol className="explorerTimingStages">
+                  {plannerTiming.stages.map((stage) => (
+                    <li key={stage.key}>
+                      <span>{stage.label}</span>
+                      <strong>{formatTimingSeconds(stage.durationSeconds)}</strong>
+                      <i
+                        aria-hidden="true"
+                        style={{
+                          width: `${Math.max(
+                            2,
+                            Math.min(
+                              100,
+                              (stage.durationSeconds / Math.max(
+                                plannerTiming.totalSeconds,
+                                0.001
+                              )) * 100
+                            )
+                          )}%`
+                        }}
+                      />
+                    </li>
+                  ))}e c
+                </ol>
+                <p>
+                  Tổng là thời gian thực của toàn pipeline; các bước được đo
+                  trực tiếp tại backend.
+                </p>
+              </div>
+            </details>
+          ) : null}
           <div className="chatMessages" aria-live="polite" ref={messageListRef}>
             {messages.map((message) => (
               <div className={`chatMessageRow ${message.role}`} key={message.id}>
@@ -953,21 +1022,40 @@ function Planner() {
                   className="dayTabList"
                   role="tablist"
                 >
+                  <button
+                    aria-controls="plan-days-panel"
+                    aria-selected={activePlanDay == null}
+                    className={activePlanDay == null ? "active" : ""}
+                    id="plan-day-tab-all"
+                    onClick={() => {
+                      setActivePlanDay(null);
+                      setSelectedMapPlaceKey(null);
+                    }}
+                    role="tab"
+                    style={{ "--day-color": "#167c68" } as CSSProperties}
+                    tabIndex={activePlanDay == null ? 0 : -1}
+                    type="button"
+                  >
+                    <i aria-hidden="true">Tất cả</i>
+                  </button>
                   {displayedPlan.days.map((day) => {
                     const dateKey = dateKeyForTripDay(
                       displayedExploreResult.explorer.tripSpec.startDate,
                       day.day
                     );
                     const color = planDayColors.get(dateKey) ?? "#167c68";
-                    const isActive = day.day === displayedPlanDay?.day;
+                    const isActive = day.day === activePlanDay;
                     return (
                       <button
-                        aria-controls={`plan-day-panel-${day.day}`}
+                        aria-controls="plan-days-panel"
                         aria-selected={isActive}
                         className={isActive ? "active" : ""}
                         id={`plan-day-tab-${day.day}`}
                         key={day.day}
-                        onClick={() => setActivePlanDay(day.day)}
+                        onClick={() => {
+                          setActivePlanDay(day.day);
+                          setSelectedMapPlaceKey(null);
+                        }}
                         role="tab"
                         style={{ "--day-color": color } as CSSProperties}
                         tabIndex={isActive ? 0 : -1}
@@ -978,13 +1066,20 @@ function Planner() {
                     );
                   })}
                 </div>
-                {displayedPlanDay ? (
+                <div
+                  aria-labelledby={
+                    activePlanDay == null
+                      ? "plan-day-tab-all"
+                      : `plan-day-tab-${activePlanDay}`
+                  }
+                  className="planDayPanels"
+                  id="plan-days-panel"
+                  role="tabpanel"
+                >
+                  {displayedPlanDays.map((displayedPlanDay) => (
                     <article
-                      aria-labelledby={`plan-day-tab-${displayedPlanDay.day}`}
                       className="explorerDayCard"
-                      id={`plan-day-panel-${displayedPlanDay.day}`}
                       key={displayedPlanDay.day}
-                      role="tabpanel"
                       style={{
                         "--day-color": planDayColors.get(
                           dateKeyForTripDay(
@@ -997,19 +1092,38 @@ function Planner() {
                       <div className="dayCardHeading">
                         <strong>{displayedPlanDay.theme}</strong>
                       </div>
-                      <div className="dayTimeline">
+                      <div className="itineraryStops">
                         {displayedPlanDay.items.map((item, itemIndex) => {
                           const mapKey = hasPlanItemCoordinates(item)
                             ? planItemMapKey(displayedPlanDay.day, itemIndex, item.name)
                             : null;
                           const transportLeg = transportLegAfterItem(displayedPlanDay, item, itemIndex);
+                          const timelineCategory = item.timelineCategory ?? "activity";
+                          const isNonActivity = (
+                            timelineCategory === "break"
+                            || item.placeId == null
+                          );
                           return (
                             <Fragment key={`${displayedPlanDay.day}-${itemIndex}`}>
-                              <div className={`dayTimelineItem ${isBreakPlanItem(item) ? "break" : ""}`}>
-                                <time>{item.timeWindow}</time>
-                                <span className="dayTimelineDot" aria-hidden="true" />
-                                <div>
-                                  {!isBreakPlanItem(item) && mapKey ? (
+                              {isNonActivity ? (
+                                <div className="itineraryBreakCard">
+                                  <time>{item.timeWindow}</time>
+                                  <div>
+                                    <strong>{item.name}</strong>
+                                    {item.notes ? <p>{item.notes}</p> : null}
+                                  </div>
+                                </div>
+                              ) : (
+                                <article
+                                  className={`itineraryStop ${transportLeg ? "hasRoute" : ""}`}
+                                >
+                                  <span
+                                    className="itineraryStopPin"
+                                    aria-hidden="true"
+                                  />
+                                  <div className="itineraryPlaceCard">
+                                    <header>
+                                      {mapKey ? (
                                     <button
                                       className="placeMapButton"
                                       onClick={() => {
@@ -1026,49 +1140,52 @@ function Planner() {
                                     >
                                       <strong>{item.name}</strong>
                                     </button>
-                                  ) : <strong>{item.name}</strong>}
-                                  {item.notes ? <p>{item.notes}</p> : null}
-                                </div>
-                              </div>
+                                      ) : <strong>{item.name}</strong>}
+                                      <time>{item.timeWindow}</time>
+                                    </header>
+                                    <p>
+                                      {item.notes
+                                        || item.address
+                                        || "Địa điểm được thêm từ nguồn bạn cung cấp."}
+                                    </p>
+                                  </div>
+                                </article>
+                              )}
                               {transportLeg ? (
                                 <div
-                                  className="timelineTransportLeg"
+                                  className="itineraryRoute"
                                   aria-label={`${transportModeLabel(transportLeg.mode)}, từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace}, khoảng ${transportLeg.estimatedDurationMinutes} phút`}
                                   role="group"
                                 >
-                                  <span aria-hidden="true" />
-                                  <span className="transportModeIcon" aria-hidden="true">
+                                  <span className="itineraryRouteIcon" aria-hidden="true">
                                     <TransportModeIcon mode={transportLeg.mode} />
                                   </span>
-                                  <div className="transportOptionGrid">
-                                    <TransportOptionCard
-                                      fromPlace={transportLeg.fromPlace}
-                                      option={transportLeg}
-                                      primary
-                                      toPlace={transportLeg.toPlace}
-                                    />
-                                    {(transportLeg.alternatives ?? []).length ? (
-                                      <details className="transportAlternatives">
-                                        <summary>
-                                          <span className="transportAlternativesLabel">
-                                            <span className="whenClosed">Xem phương án dự phòng</span>
-                                            <span className="whenOpen">Ẩn phương án dự phòng</span>
-                                          </span>
-                                          <ChevronDownIcon />
-                                        </summary>
-                                        <div className="transportAlternativesList">
-                                          {(transportLeg.alternatives ?? []).map((option) => (
-                                            <TransportOptionCard
-                                              fromPlace={transportLeg.fromPlace}
-                                              key={`${option.mode}-${option.source}`}
-                                              option={option}
-                                              toPlace={transportLeg.toPlace}
-                                            />
-                                          ))}
-                                        </div>
-                                      </details>
-                                    ) : null}
-                                  </div>
+                                  <span>
+                                    {transportLeg.estimatedDurationMinutes} phút
+                                    {" · "}{formatDistance(transportLeg.distanceMeters)}
+                                  </span>
+                                  <details className="itineraryRouteDetails">
+                                    <summary>
+                                      Chi tiết chặng
+                                      <ChevronDownIcon />
+                                    </summary>
+                                    <div className="itineraryRouteAlternatives">
+                                      <TransportOptionCard
+                                        fromPlace={transportLeg.fromPlace}
+                                        option={transportLeg}
+                                        primary
+                                        toPlace={transportLeg.toPlace}
+                                      />
+                                      {(transportLeg.alternatives ?? []).map((option) => (
+                                        <TransportOptionCard
+                                          fromPlace={transportLeg.fromPlace}
+                                          key={`${option.mode}-${option.source}`}
+                                          option={option}
+                                          toPlace={transportLeg.toPlace}
+                                        />
+                                      ))}
+                                    </div>
+                                  </details>
                                 </div>
                               ) : null}
                             </Fragment>
@@ -1076,7 +1193,8 @@ function Planner() {
                         })}
                       </div>
                     </article>
-                ) : null}
+                  ))}
+                </div>
               </section>
             </div>
           ) : (
@@ -1167,11 +1285,6 @@ function categoryFromPlaceType(placeType: string): PlaceCategory {
   if (normalized.includes("break") || normalized.includes("free")) return "free_time";
   if (normalized.includes("attraction") || normalized.includes("visit") || normalized.includes("place")) return "attraction";
   return "other";
-}
-
-function isBreakPlanItem(item: TravelPlan["days"][number]["items"][number]): boolean {
-  const type = item.placeType.toLowerCase();
-  return type.includes("break") || type.includes("free");
 }
 
 function hasPlanItemCoordinates(
@@ -1327,6 +1440,15 @@ function transportLegAfterItem(
   );
 }
 
+function formatDistance(distanceMeters: number): string {
+  if (distanceMeters < 1000) {
+    return `${Math.max(0, Math.round(distanceMeters))} m`;
+  }
+  return `${(distanceMeters / 1000).toLocaleString("vi-VN", {
+    maximumFractionDigits: 1
+  })} km`;
+}
+
 function TransportModeIcon({ mode }: { mode: string }) {
   const normalized = mode.toLowerCase();
 
@@ -1416,9 +1538,9 @@ function TransportOptionCard({
 }) {
   const lines = option.details?.lines ?? [];
   return (
-    <article className={`transportOptionCard ${primary ? "primary" : "backup"}`}>
+    <article className={`transportOptionCard ${primary ? "primary" : "alternative"}`}>
       <span className="transportOptionKind">
-        {primary ? "Đề xuất" : "Phương án dự phòng"}
+        {primary ? "Tuyến đề xuất" : "Lựa chọn khác"}
       </span>
       <div className="transportOptionHeading">
         <span className="transportOptionInlineIcon" aria-hidden="true">
