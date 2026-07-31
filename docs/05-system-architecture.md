@@ -194,3 +194,16 @@ Không để payload riêng của TikTok, YouTube hoặc provider khác lan vào
 Sử dụng structured log có request/job ID, độ trễ provider, số token/chi phí và mã
 kết quả. Không ghi access token, thông tin thanh toán, toàn bộ prompt, URL riêng
 tư hoặc dữ liệu cá nhân không cần thiết.
+
+### Planning Control đã triển khai
+
+`admin-frontend/` là ứng dụng Next.js độc lập chạy mặc định tại cổng `3001`.
+Ứng dụng dùng cùng JWT cookie của backend nhưng mọi API quan sát đều kiểm tra
+role `admin` ở server.
+
+Backend lưu `PlanningRun` và các `PlanningRunStage` theo chuỗi
+Explorer–Planner–Finder–Checker. Snapshot được tạo ở ranh giới workflow, không
+thay đổi business rule của từng module. Trước khi ghi JSON, backend loại secret,
+media bytes, query string URL, payload thô và thay `rawRequest` bằng metadata độ
+dài. Golden dataset được đọc ở chế độ chỉ đọc và mỗi case được kiểm tra độ phù
+hợp với contract hiện tại trước khi hiển thị.

@@ -1,0 +1,130 @@
+{
+  "version": "1.0",
+  "description": "Golden Dataset kiểm thử Module Import & Extractor (Tập trung thị trường Hà Nội)",
+  "cases": [
+    {
+      "id": "EXT-001",
+      "scenarioName": "Trích xuất STT chuẩn từ Instagram Reel 1 ngày ăn uống Hà Nội",
+      "scenarioPurpose": "Kiểm tra khả năng trích xuất âm thanh (Gemini Audio) ra transcript và các observations có cấu trúc tại Hà Nội (tên địa điểm, địa chỉ hint, buổi ăn, hoạt động).",
+      "category": "url_reels_integration",
+      "input": {
+        "url": "https://www.instagram.com/reel/C1234567890/",
+        "platform": "instagram",
+        "rawPrompt": "Gợi ý quán ăn Hà Nội từ clip này"
+      },
+      "goldenOutput": {
+        "transcript": "Sáng nay mình ghé Phở Thìn Bờ Hồ ở 61 Đinh Tiên Hoàng ăn một bát phở tái lăn cực thơm. Sau đó qua Cà phê Giảng ở 39 Nguyễn Hữu Huân uống cà phê trứng nổi tiếng nha.",
+        "structuredSttObservations": [
+          {
+            "order": 1,
+            "placeName": "Phở Thìn Bờ Hồ",
+            "addressHint": "61 Đinh Tiên Hoàng, Hoàn Kiếm, Hà Nội",
+            "searchRegion": "vn,ha-noi,hoan-kiem",
+            "sourceDay": 1,
+            "sourceTimeHint": "breakfast",
+            "sourceActivity": "Ăn phở tái lăn truyền thống",
+            "confidence": 0.94
+          },
+          {
+            "order": 2,
+            "placeName": "Cà phê Giảng",
+            "addressHint": "39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+            "searchRegion": "vn,ha-noi,hoan-kiem",
+            "sourceDay": 1,
+            "sourceTimeHint": "morning",
+            "sourceActivity": "Thưởng thức cà phê trứng",
+            "confidence": 0.91
+          }
+        ],
+        "ocrObservations": []
+      },
+      "assertions": [
+        "structuredSttObservations có đúng 2 địa điểm tại Hà Nội",
+        "Phở Thìn Bờ Hồ có sourceTimeHint là 'breakfast' và searchRegion thuộc Hoàn Kiếm",
+        "Cà phê Giảng có sourceTimeHint là 'morning'"
+      ]
+    },
+    {
+      "id": "EXT-002",
+      "scenarioName": "Trích xuất OCR bảng hiệu & menu quán ăn Phố Cổ Hà Nội từ ảnh chụp",
+      "scenarioPurpose": "Kiểm tra module OCR (Vision) nhận diện chữ trên bảng hiệu, địa chỉ chính xác và giá trị món ăn từ ảnh người dùng upload tại Hà Nội.",
+      "category": "image_ocr",
+      "input": {
+        "imagePath": "uploads/screenshots/hanoi_bun_cha_menu.jpg",
+        "rawPrompt": "Lấy thông tin địa chỉ và món ăn từ hình chụp quán bún chả này"
+      },
+      "goldenOutput": {
+        "transcript": "",
+        "structuredSttObservations": [],
+        "ocrObservations": [
+          {
+            "placeName": "Bún Chả Cửa Đông",
+            "addressHint": "41 Cửa Đông, Quận Hoàn Kiếm, Hà Nội",
+            "detectedText": "BÚN CHẢ CỬA ĐÔNG - 41 CỬA ĐÔNG HOÀN KIẾM HÀ NỘI - Bún chả nướng than hoa 60k/bát",
+            "confidence": 0.96,
+            "priceHint": "60000 VND"
+          }
+        ]
+      },
+      "assertions": [
+        "ocrObservations trích xuất đúng địa chỉ 41 Cửa Đông, Hoàn Kiếm, Hà Nội",
+        "Nhận diện đúng tên Bún Chả Cửa Đông"
+      ]
+    },
+    {
+      "id": "EXT-003",
+      "scenarioName": "Gộp thông tin trùng lặp giữa STT Âm thanh và Vision OCR tại Hà Nội",
+      "scenarioPurpose": "Kiểm tra quy tắc ưu tiên: OCR được ưu tiên cho tên chính xác/địa chỉ bảng hiệu Hà Nội, STT được ưu tiên cho ngày/buổi/thời lượng.",
+      "category": "multi_source_merge",
+      "input": {
+        "url": "https://www.tiktok.com/@foodblogger/video/7123456789",
+        "hasAudio": true,
+        "hasVideoFrames": true
+      },
+      "goldenOutput": {
+        "mergedPlaceCandidates": [
+          {
+            "name": "Bún Chả Hương Liên (Obama)",
+            "address": "24 Lê Văn Hưu, Quận Hai Bà Trưng, Hà Nội",
+            "sourceDay": 1,
+            "sourceTimeHint": "lunch",
+            "sourceActivity": "Ăn bún chả suất đặc biệt",
+            "sources": ["stt", "ocr"],
+            "evidence": {
+              "stt": "Buổi trưa tụi mình ghé bún chả Hương Liên ăn suất Obama nổi tiếng",
+              "ocr": "BÚN CHẢ HƯƠNG LIÊN - 24 LÊ VĂN HƯU HÀ NỘI"
+            }
+          }
+        ]
+      },
+      "assertions": [
+        "Tên địa điểm lấy theo OCR (Bún Chả Hương Liên)",
+        "Địa chỉ lấy theo OCR (24 Lê Văn Hưu, Hà Nội)",
+        "sourceDay và sourceTimeHint lấy theo STT (Day 1, lunch)",
+        "Giữ nguồn vết provenance của cả STT và OCR"
+      ]
+    },
+    {
+      "id": "EXT-004",
+      "scenarioName": "Xử lý URL video Hà Nội không có tiếng/không có địa điểm cụ thể",
+      "scenarioPurpose": "Kiểm tra trường hợp biên khi URL video cảnh phố cổ Hà Nội chỉ có nhạc nền, không có lời nói hoặc địa điểm rõ ràng, hệ thống trả về nhãn warning và giữ chỗ để người dùng nhập tay.",
+      "category": "edge_case_fallback",
+      "input": {
+        "url": "https://www.instagram.com/reel/C999999999/",
+        "rawPrompt": "Lên lịch phố cổ Hà Nội từ video cảnh phố này"
+      },
+      "goldenOutput": {
+        "transcript": "[Music Only]",
+        "structuredSttObservations": [],
+        "ocrObservations": [],
+        "warnings": ["NO_PLACE_EXTRACTED_FROM_MEDIA"],
+        "fallbackAction": "PROMPT_MANUAL_PLACE_ENTRY"
+      },
+      "assertions": [
+        "structuredSttObservations rỗng",
+        "Có cảnh báo NO_PLACE_EXTRACTED_FROM_MEDIA",
+        "Không crash hệ thống"
+      ]
+    }
+  ]
+}
