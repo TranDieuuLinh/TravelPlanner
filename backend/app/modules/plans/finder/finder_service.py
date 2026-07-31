@@ -41,6 +41,11 @@ from app.modules.plans.finder.skeleton_builder import (
     DayBlock,
     DaySkeletonBuilder,
 )
+from app.modules.plans.finder.area_survey import (
+    AreaProfile,
+    AreaSurveyResult,
+    AreaSurveyService,
+)
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
@@ -75,6 +80,26 @@ class FinderService:
         self.max_candidates_per_block = max_candidates_per_block
         self.skeleton_builder = skeleton_builder or DaySkeletonBuilder()
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
+        self._area_survey_cache: dict[str, AreaProfile] = {}
+        self._area_survey_service: AreaSurveyService | None = None
+
+    @property
+    def _survey_service(self) -> AreaSurveyService:
+        """Lazy initialization of AreaSurveyService."""
+        if self._area_survey_service is None:
+            self._area_survey_service = AreaSurveyService(self.place_tool)
+        return self._area_survey_service
+
+    def _get_area_profile(self, region_key: str) -> AreaProfile | None:
+        """Get cached AreaProfile or survey on demand."""
+        if region_key not in self._area_survey_cache:
+            # Only cache if place_tool can actually search
+            if not isinstance(self.place_tool, EmptyFinderPlaceTool):
+                result = self._survey_service.survey(region_key)
+                self._area_survey_cache[region_key] = result.profile
+            else:
+                return None
+        return self._area_survey_cache.get(region_key)
 
     def fill_main_plan(
         self,
@@ -269,6 +294,9 @@ class FinderService:
             has_source_itinerary = any(
                 place.source_order is not None for place in allocated_places
             )
+            # Get area profile for this day based on target region
+            region_key = brief.target_region_key or brief.target_area
+            area_profile = self._get_area_profile(region_key) if region_key else None
             skeleton = (
                 self.skeleton_builder.build_source_itinerary(
                     brief,
@@ -279,6 +307,7 @@ class FinderService:
                     brief,
                     tentative_user_status,
                     intent_constraints=intent_constraints,
+                    area_profile=area_profile,
                 )
             )
             tentative_plan_status.current_day = brief.day

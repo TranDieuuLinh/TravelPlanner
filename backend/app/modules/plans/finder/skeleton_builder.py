@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.modules.plans.domain.entities import DayBrief, UserStatus
 from app.modules.plans.domain.enums import TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
+
+if TYPE_CHECKING:
+    from app.modules.plans.finder.area_survey import AreaProfile
 
 
 @dataclass(frozen=True)
@@ -76,9 +80,19 @@ class DaySkeletonBuilder:
         brief: DayBrief,
         user_status: UserStatus,
         intent_constraints: list[str] | None = None,
+        area_profile: AreaProfile | None = None,
     ) -> DaySkeleton:
-        pace = self._effective_pace(brief.pace, user_status)
-        start_min = self._extract_start_minutes(user_status, default_minutes=self._default_start_minutes(pace, user_status, intent_constraints))
+        pace = self._effective_pace(brief.pace, user_status, area_profile)
+        start_min = self._extract_start_minutes(
+            user_status,
+            default_minutes=self._default_start_minutes(
+                pace,
+                user_status,
+                intent_constraints,
+                area_profile,
+            ),
+            area_profile=area_profile,
+        )
 
         if self._needs_recovery(user_status):
             cur = start_min
@@ -272,6 +286,7 @@ class DaySkeletonBuilder:
         pace: TravelPace,
         user_status: UserStatus,
         intent_constraints: list[str] | None,
+        area_profile: AreaProfile | None = None,
     ) -> int:
         if self._needs_recovery(user_status):
             return 9 * 60 + 30
@@ -281,9 +296,20 @@ class DaySkeletonBuilder:
             return 8 * 60 + 30
         if pace == TravelPace.packed:
             return 7 * 60 + 30
+        # Adjust start time based on area typical hours
+        if area_profile is not None:
+            if area_profile.typical_hours == "morning_focused":
+                return 7 * 60 + 30  # Earlier start for morning areas
+            elif area_profile.typical_hours == "evening_focused":
+                return 9 * 60  # Later start for evening areas
         return 8 * 60
 
-    def _extract_start_minutes(self, user_status: UserStatus, default_minutes: int) -> int:
+    def _extract_start_minutes(
+        self,
+        user_status: UserStatus,
+        default_minutes: int,
+        area_profile: AreaProfile | None = None,
+    ) -> int:
         if not user_status.available_at:
             return default_minutes
         import re
@@ -453,6 +479,7 @@ class DaySkeletonBuilder:
         self,
         requested_pace: TravelPace,
         user_status: UserStatus,
+        area_profile: AreaProfile | None = None,
     ) -> TravelPace:
         known_capacity = [
             value
@@ -464,4 +491,9 @@ class DaySkeletonBuilder:
         ]
         if known_capacity and min(known_capacity) <= 40:
             return TravelPace.relaxed
+        # Adjust pace based on area density - sparse areas need slower pace
+        if area_profile is not None:
+            if area_profile.estimated_walkability == "low" and requested_pace == TravelPace.packed:
+                # Don't pack too tight in low walkability areas
+                return TravelPace.balanced
         return requested_pace
