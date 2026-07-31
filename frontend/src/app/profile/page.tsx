@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { useAuth } from "@/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
+  type CountryFootprint,
   ProfileVisitedMap,
-  type ProvinceFootprint,
 } from "@/components/ProfileVisitedMap";
 import { APIError } from "@/lib/api";
 import { getPurchasedPlans, getUserFavorites } from "@/lib/marketplace";
@@ -27,8 +27,8 @@ export default function ProfilePage() {
   const [favorites, setFavorites] = useState<ListingSummary[]>([]);
   const [purchased, setPurchased] = useState<BuyerPlan[]>([]);
   const [contentBusy, setContentBusy] = useState(true);
-  const [selectedProvinceCode, setSelectedProvinceCode] = useState<string | null>(null);
-  const [provinceFootprints, setProvinceFootprints] = useState<ProvinceFootprint[]>([]);
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string | null>(null);
+  const [countryFootprints, setCountryFootprints] = useState<CountryFootprint[]>([]);
   const [editing, setEditing] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
@@ -73,25 +73,17 @@ export default function ProfilePage() {
     };
   }, [user]);
 
-  const selectProvince = useCallback((code: string) => setSelectedProvinceCode(code), []);
-  const updateProvinceFootprints = useCallback((summaries: ProvinceFootprint[]) => {
-    setProvinceFootprints(summaries);
-    setSelectedProvinceCode((current) => {
-      if (current && summaries.some((province) => province.code === current)) return current;
-      return summaries.find((province) => province.status === "visited")?.code ?? summaries[0]?.code ?? null;
+  const selectCountry = useCallback((code: string) => setSelectedCountryCode(code), []);
+  const updateCountryFootprints = useCallback((summaries: CountryFootprint[]) => {
+    setCountryFootprints(summaries);
+    setSelectedCountryCode((current) => {
+      if (current && summaries.some((country) => country.code === current)) return current;
+      return summaries.find((country) => country.status === "visited")?.code ?? null;
     });
   }, []);
-  const visitedProvinceCount = useMemo(
-    () => provinceFootprints.filter((province) => province.status === "visited").length,
-    [provinceFootprints],
-  );
-  const visitCount = useMemo(
-    () => new Set(showcase.visitedPlaces.map((place) => place.visitedAt)).size,
-    [showcase.visitedPlaces],
-  );
   const unlockedAchievements = useMemo(
-    () => getFootprintAchievements(provinceFootprints),
-    [provinceFootprints],
+    () => getFootprintAchievements(countryFootprints),
+    [countryFootprints],
   );
 
   if (loading || !user) return <div className="routeLoading">Đang tải hồ sơ...</div>;
@@ -253,51 +245,13 @@ export default function ProfilePage() {
 
       {!contentBusy && activeTab === "achievements" ? (
         <section className="achievementPanel">
-          <div className="achievementHeading">
-            <div>
-              <span className="eyebrow">Hành trình của tôi</span>
-              <h2>Dấu chân Việt Nam</h2>
-              <p>
-                {visitedProvinceCount} vùng đất đã ghé · {visitCount} lần ghé ·{" "}
-                {showcase.visitedPlaces.length} địa điểm
-              </p>
-            </div>
-            <div className="achievementMiniStats">
-              <div><strong>{visitedProvinceCount}</strong><span>tỉnh/thành</span></div>
-              <div><strong>{showcase.visitedPlaces.length}</strong><span>địa điểm</span></div>
-            </div>
-          </div>
-
-          <div className="footprintProgressBlock">
-            <div>
-              <span>Đã khám phá {visitedProvinceCount}/34 tỉnh, thành</span>
-              <strong>{Math.round((visitedProvinceCount / 34) * 100)}%</strong>
-            </div>
-            <div
-              aria-label={`Tiến độ khám phá ${visitedProvinceCount} trên 34 tỉnh, thành`}
-              aria-valuemax={34}
-              aria-valuemin={0}
-              aria-valuenow={visitedProvinceCount}
-              className="footprintProgressTrack"
-              role="progressbar"
-            >
-              <span style={{ width: `${(visitedProvinceCount / 34) * 100}%` }} />
-            </div>
-          </div>
-
           <div className="achievementMapLayout">
             <ProfileVisitedMap
-              onSelect={selectProvince}
-              onSummariesChange={updateProvinceFootprints}
+              onSelect={selectCountry}
+              onSummariesChange={updateCountryFootprints}
               places={showcase.visitedPlaces}
-              selectedProvinceCode={selectedProvinceCode}
+              selectedCountryCode={selectedCountryCode}
             />
-          </div>
-
-          <div className="footprintLegend" aria-label="Chú thích trạng thái bản đồ">
-            <span><i className="unvisited" /> Chưa đi</span>
-            <span><i className="planned" /> Đang lên kế hoạch</span>
-            <span><i className="visited" /> Đã đi</span>
           </div>
 
           <section className="footprintAchievements" aria-labelledby="footprint-achievement-title">
@@ -376,22 +330,13 @@ export default function ProfilePage() {
   );
 }
 
-function getFootprintAchievements(provinces: ProvinceFootprint[]) {
+function getFootprintAchievements(countries: CountryFootprint[]) {
   const visitedNames = new Set(
-    provinces
-      .filter((province) => province.status === "visited")
-      .map((province) => province.name),
+    countries
+      .filter((country) => country.status === "visited")
+      .map((country) => country.name),
   );
   const visitedCount = visitedNames.size;
-  const coastalNames = new Set([
-    "Quảng Ninh", "Hải Phòng", "Hưng Yên", "Ninh Bình", "Thanh Hóa", "Nghệ An",
-    "Hà Tĩnh", "Quảng Trị", "Huế", "Đà Nẵng", "Quảng Ngãi", "Gia Lai", "Đắk Lắk",
-    "Khánh Hòa", "Lâm Đồng", "Hồ Chí Minh", "Đồng Tháp", "Vĩnh Long", "Cần Thơ",
-    "Cà Mau", "An Giang",
-  ]);
-  const coastalCount = [...visitedNames].filter((name) => coastalNames.has(name)).length;
-  const northwestNames = ["Điện Biên", "Lai Châu", "Sơn La", "Lào Cai"];
-  const northwestCount = northwestNames.filter((name) => visitedNames.has(name)).length;
 
   return [
     {
@@ -402,32 +347,32 @@ function getFootprintAchievements(provinces: ProvinceFootprint[]) {
       progress: "Chưa có chuyến hoàn thành từ Planner",
     },
     {
-      title: "Khám phá 5 tỉnh/thành",
-      description: "Để lại dấu chân tại năm vùng đất.",
-      icon: "5",
-      unlocked: visitedCount >= 5,
-      progress: `${Math.min(visitedCount, 5)}/5 tỉnh, thành`,
+      title: "Khám phá 3 quốc gia",
+      description: "Để lại dấu chân tại ba quốc gia.",
+      icon: "3",
+      unlocked: visitedCount >= 3,
+      progress: `${Math.min(visitedCount, 3)}/3 quốc gia`,
     },
     {
-      title: "Người yêu biển",
-      description: "Ghé thăm ba tỉnh, thành ven biển.",
-      icon: "≈",
-      unlocked: coastalCount >= 3,
-      progress: `${Math.min(coastalCount, 3)}/3 vùng biển`,
+      title: "Nhà thám hiểm",
+      description: "Khám phá mười quốc gia trên bản đồ thế giới.",
+      icon: "10",
+      unlocked: visitedCount >= 10,
+      progress: `${Math.min(visitedCount, 10)}/10 quốc gia`,
     },
     {
-      title: "Dấu chân Tây Bắc",
-      description: "Khám phá Điện Biên, Lai Châu, Sơn La và Lào Cai.",
-      icon: "⌁",
-      unlocked: northwestCount === northwestNames.length,
-      progress: `${northwestCount}/${northwestNames.length} vùng đất`,
+      title: "Công dân toàn cầu",
+      description: "Khám phá hai mươi lăm quốc gia.",
+      icon: "25",
+      unlocked: visitedCount >= 25,
+      progress: `${Math.min(visitedCount, 25)}/25 quốc gia`,
     },
     {
-      title: "Xuyên Việt",
-      description: "Hoàn thiện bản đồ 34 tỉnh, thành Việt Nam.",
-      icon: "VN",
-      unlocked: visitedCount === 34,
-      progress: `${visitedCount}/34 tỉnh, thành`,
+      title: "Vòng quanh thế giới",
+      description: "Để lại dấu chân tại năm mươi quốc gia.",
+      icon: "◎",
+      unlocked: visitedCount >= 50,
+      progress: `${Math.min(visitedCount, 50)}/50 quốc gia`,
     },
   ];
 }

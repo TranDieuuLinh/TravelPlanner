@@ -15,17 +15,16 @@ import type {
 } from "leaflet";
 import type { VisitedPlace } from "@/types/profile";
 
-type ProvinceProperties = {
-  code: string;
+type CountryProperties = {
+  iso_a3: string;
   name: string;
-  fullName: string;
 };
 
-type ProvinceGeometry = Polygon | MultiPolygon;
-type ProvinceFeature = Feature<ProvinceGeometry, ProvinceProperties>;
-type ProvinceCollection = FeatureCollection<ProvinceGeometry, ProvinceProperties>;
+type CountryGeometry = Polygon | MultiPolygon;
+type CountryFeature = Feature<CountryGeometry, CountryProperties>;
+type CountryCollection = FeatureCollection<CountryGeometry, CountryProperties>;
 
-export type ProvinceFootprint = {
+export type CountryFootprint = {
   code: string;
   name: string;
   status: "unvisited" | "planned" | "visited";
@@ -35,61 +34,25 @@ export type ProvinceFootprint = {
 
 type ProfileVisitedMapProps = {
   places: VisitedPlace[];
-  plannedProvinceNames?: string[];
-  selectedProvinceCode: string | null;
+  plannedCountryNames?: string[];
+  selectedCountryCode: string | null;
   onSelect: (code: string) => void;
-  onSummariesChange?: (summaries: ProvinceFootprint[]) => void;
+  onSummariesChange?: (summaries: CountryFootprint[]) => void;
 };
 
-const BOUNDARY_URL = "/data/vietnam-provinces.geojson";
-const VIETNAM_BOUNDS: [[number, number], [number, number]] = [
-  [8.15, 102.1],
-  [23.45, 110.2],
+const BOUNDARY_URL = "/data/world-countries.geojson";
+const WORLD_BOUNDS: [[number, number], [number, number]] = [
+  [-58, -180],
+  [84, 180],
 ];
 const EMPTY_NAMES: string[] = [];
 
-const LEGACY_PROVINCE_NAMES: Record<string, string> = {
-  "ha giang": "tuyen quang",
-  "yen bai": "lao cai",
-  "bac kan": "thai nguyen",
-  "vinh phuc": "phu tho",
-  "hoa binh": "phu tho",
-  "bac giang": "bac ninh",
-  "thai binh": "hung yen",
-  "hai duong": "hai phong",
-  "ha nam": "ninh binh",
-  "nam dinh": "ninh binh",
-  "quang binh": "quang tri",
-  "quang nam": "da nang",
-  "kon tum": "quang ngai",
-  "binh dinh": "gia lai",
-  "ninh thuan": "khanh hoa",
-  "phu yen": "dak lak",
-  "dak nong": "lam dong",
-  "binh thuan": "lam dong",
-  "binh phuoc": "dong nai",
-  "binh duong": "ho chi minh",
-  "ba ria - vung tau": "ho chi minh",
-  "ba ria vung tau": "ho chi minh",
-  "long an": "tay ninh",
-  "tien giang": "dong thap",
-  "ben tre": "vinh long",
-  "tra vinh": "vinh long",
-  "kien giang": "an giang",
-  "soc trang": "can tho",
-  "hau giang": "can tho",
-  "bac lieu": "ca mau",
-};
-
-function normalizeProvinceName(value: string) {
-  const normalized = value
+function normalizeCountryName(value: string) {
+  return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/^(tinh|thanh pho|tp)\s+/i, "")
     .trim()
     .toLowerCase();
-  return LEGACY_PROVINCE_NAMES[normalized] ?? normalized;
 }
 
 function pointIsInRing([longitude, latitude]: Position, ring: Position[]) {
@@ -122,7 +85,7 @@ function pointIsInRing([longitude, latitude]: Position, ring: Position[]) {
   return inside;
 }
 
-function pointIsInFeature(point: Position, feature: ProvinceFeature) {
+function pointIsInFeature(point: Position, feature: CountryFeature) {
   const polygons =
     feature.geometry.type === "Polygon"
       ? [feature.geometry.coordinates]
@@ -134,12 +97,12 @@ function pointIsInFeature(point: Position, feature: ProvinceFeature) {
   });
 }
 
-function getProvinceStyle(summary: ProvinceFootprint, selected: boolean) {
+function getCountryStyle(summary: CountryFootprint, selected: boolean) {
   if (summary.status === "visited") {
     const fillColor =
       summary.visitCount >= 3 ? "#0f5d50" : summary.visitCount === 2 ? "#21836e" : "#38a58c";
     return {
-      className: `footprintProvince is-visited${selected ? " is-selected" : ""}`,
+      className: `footprintCountry is-visited${selected ? " is-selected" : ""}`,
       color: selected ? "#fff7df" : "#ffffff",
       dashArray: undefined,
       fillColor,
@@ -150,7 +113,7 @@ function getProvinceStyle(summary: ProvinceFootprint, selected: boolean) {
   }
   if (summary.status === "planned") {
     return {
-      className: `footprintProvince is-planned${selected ? " is-selected" : ""}`,
+      className: `footprintCountry is-planned${selected ? " is-selected" : ""}`,
       color: "#167c68",
       dashArray: "5 5",
       fillColor: "#eef3f1",
@@ -160,7 +123,7 @@ function getProvinceStyle(summary: ProvinceFootprint, selected: boolean) {
     };
   }
   return {
-    className: `footprintProvince is-unvisited${selected ? " is-selected" : ""}`,
+    className: `footprintCountry is-unvisited${selected ? " is-selected" : ""}`,
     color: selected ? "#167c68" : "#ffffff",
     dashArray: undefined,
     fillColor: selected ? "#dce7e3" : "#e8edeb",
@@ -170,7 +133,7 @@ function getProvinceStyle(summary: ProvinceFootprint, selected: boolean) {
   };
 }
 
-function makeTooltip(summary: ProvinceFootprint) {
+function makeTooltip(summary: CountryFootprint) {
   const tooltip = document.createElement("div");
   tooltip.className = "footprintTooltip";
   const title = document.createElement("strong");
@@ -188,16 +151,16 @@ function makeTooltip(summary: ProvinceFootprint) {
 
 export function ProfileVisitedMap({
   places,
-  plannedProvinceNames = EMPTY_NAMES,
-  selectedProvinceCode,
+  plannedCountryNames = EMPTY_NAMES,
+  selectedCountryCode,
   onSelect,
   onSummariesChange,
 }: ProfileVisitedMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
-  const provinceLayerRef = useRef<LeafletGeoJSON | null>(null);
+  const countryLayerRef = useRef<LeafletGeoJSON | null>(null);
   const fittedRef = useRef(false);
-  const [boundaries, setBoundaries] = useState<ProvinceCollection | null>(null);
+  const [boundaries, setBoundaries] = useState<CountryCollection | null>(null);
   const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
@@ -205,7 +168,7 @@ export function ProfileVisitedMap({
     fetch(BOUNDARY_URL, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("BOUNDARY_LOAD_FAILED");
-        return response.json() as Promise<ProvinceCollection>;
+        return response.json() as Promise<CountryCollection>;
       })
       .then(setBoundaries)
       .catch((reason: unknown) => {
@@ -217,27 +180,27 @@ export function ProfileVisitedMap({
 
   const summaries = useMemo(() => {
     if (!boundaries) return [];
-    const plannedNames = new Set(plannedProvinceNames.map(normalizeProvinceName));
+    const plannedNames = new Set(plannedCountryNames.map(normalizeCountryName));
     return boundaries.features.map((feature) => {
-      const provincePlaces = places.filter((place) =>
+      const countryPlaces = places.filter((place) =>
         pointIsInFeature([place.longitude, place.latitude], feature),
       );
-      const visitCount = new Set(provincePlaces.map((place) => place.visitedAt)).size;
-      const status: ProvinceFootprint["status"] =
-        provincePlaces.length > 0
+      const visitCount = new Set(countryPlaces.map((place) => place.visitedAt)).size;
+      const status: CountryFootprint["status"] =
+        countryPlaces.length > 0
           ? "visited"
-          : plannedNames.has(normalizeProvinceName(feature.properties.name))
+          : plannedNames.has(normalizeCountryName(feature.properties.name))
             ? "planned"
             : "unvisited";
       return {
-        code: feature.properties.code,
+        code: feature.properties.iso_a3,
         name: feature.properties.name,
         status,
-        places: provincePlaces,
+        places: countryPlaces,
         visitCount,
       };
     });
-  }, [boundaries, places, plannedProvinceNames]);
+  }, [boundaries, places, plannedCountryNames]);
 
   useEffect(() => {
     onSummariesChange?.(summaries);
@@ -260,7 +223,7 @@ export function ProfileVisitedMap({
         touchZoom: false,
         zoomControl: false,
       });
-      mapRef.current.fitBounds(VIETNAM_BOUNDS, { animate: false, padding: [18, 18] });
+      mapRef.current.fitBounds(WORLD_BOUNDS, { animate: false, padding: [24, 24] });
     }
 
     void createMap();
@@ -268,41 +231,41 @@ export function ProfileVisitedMap({
       disposed = true;
       mapRef.current?.remove();
       mapRef.current = null;
-      provinceLayerRef.current = null;
+      countryLayerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function drawProvinces() {
+    async function drawCountries() {
       if (!boundaries || summaries.length === 0) return;
       const map = mapRef.current;
       if (!map) {
         window.setTimeout(() => {
-          if (!cancelled) void drawProvinces();
+          if (!cancelled) void drawCountries();
         }, 40);
         return;
       }
 
       const leaflet = await import("leaflet");
       if (cancelled) return;
-      provinceLayerRef.current?.removeFrom(map);
+      countryLayerRef.current?.removeFrom(map);
 
       const summaryByCode = new Map(summaries.map((summary) => [summary.code, summary]));
       const layer = leaflet.geoJSON(boundaries, {
         style: (feature) => {
-          const code = (feature?.properties as ProvinceProperties | undefined)?.code ?? "";
+          const code = (feature?.properties as CountryProperties | undefined)?.iso_a3 ?? "";
           const summary = summaryByCode.get(code);
           return summary
-            ? getProvinceStyle(summary, code === selectedProvinceCode)
-            : getProvinceStyle(
+            ? getCountryStyle(summary, code === selectedCountryCode)
+            : getCountryStyle(
                 { code, name: "", status: "unvisited", places: [], visitCount: 0 },
                 false,
               );
         },
         onEachFeature: (feature, featureLayer) => {
-          const code = (feature.properties as ProvinceProperties).code;
+          const code = (feature.properties as CountryProperties).iso_a3;
           const summary = summaryByCode.get(code);
           if (!summary) return;
           const path = featureLayer as Path;
@@ -314,7 +277,7 @@ export function ProfileVisitedMap({
           });
           path.on({
             click: () => onSelect(code),
-            mouseout: () => path.setStyle(getProvinceStyle(summary, code === selectedProvinceCode)),
+            mouseout: () => path.setStyle(getCountryStyle(summary, code === selectedCountryCode)),
             mouseover: () => {
               path.bringToFront();
               path.setStyle({
@@ -327,23 +290,23 @@ export function ProfileVisitedMap({
         },
       }).addTo(map);
 
-      provinceLayerRef.current = layer;
+      countryLayerRef.current = layer;
       if (!fittedRef.current) {
         map.fitBounds(layer.getBounds(), { animate: false, padding: [18, 18] });
         fittedRef.current = true;
       }
     }
 
-    void drawProvinces();
+    void drawCountries();
     return () => {
       cancelled = true;
     };
-  }, [boundaries, onSelect, selectedProvinceCode, summaries]);
+  }, [boundaries, onSelect, selectedCountryCode, summaries]);
 
   return (
     <div className="profileMapShell">
       <div
-        aria-label="Bản đồ Dấu chân Việt Nam theo 34 tỉnh, thành"
+        aria-label="Bản đồ thế giới hiển thị các quốc gia đã ghé thăm"
         className="profileMapCanvas"
         ref={containerRef}
         role="img"

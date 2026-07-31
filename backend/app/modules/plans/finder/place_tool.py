@@ -157,6 +157,10 @@ class FinderPlace(BaseModel):
     )
     must_visit: bool = Field(default=False, alias="mustVisit")
     source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    source_provider: str | None = Field(
+        default=None,
+        alias="sourceProvider",
+    )
     accessibility_features: list[str] = Field(
         default_factory=list,
         alias="accessibilityFeatures",

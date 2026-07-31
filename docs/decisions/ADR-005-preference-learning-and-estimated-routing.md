@@ -23,8 +23,10 @@ tốt hơn trước khi ADR-002 chọn route provider chính thức.
 5. Planner nhận effective preference profile; explicit constraint của trip có
    quyền ưu tiên cao hơn.
 6. Finder dùng tọa độ để chạy nearest-neighbour và 2-opt. Theo ADR-002 cập nhật,
-   từng transport leg sau đó được HERE Routing v8 xác minh; leg provider lỗi
-   phải fallback với `source=geodesic_estimate` và `verified=false`.
+   từng transport leg đi bộ/đường bộ sau đó được Valhalla xác minh; leg
+   road provider lỗi phải fallback với `source=geodesic_estimate` và
+   `verified=false`. Public transit chỉ tồn tại khi provider trả route transit
+   xác minh, không dùng fallback đường chim bay.
 
 ## Hệ quả
 
@@ -33,5 +35,5 @@ tốt hơn trước khi ADR-002 chọn route provider chính thức.
   user.
 - Một Reel đơn lẻ chỉ tạo tín hiệu yếu; tín hiệu lặp lại mới tăng confidence.
 - Thứ tự route hiện tại giảm đi vòng theo tọa độ nhưng chưa được tối ưu toàn cục
-  bằng road-time matrix. Leg HERE phản ánh mạng đường và phương tiện nhưng chưa
+  bằng road-time matrix. Leg Valhalla phản ánh mạng đường và phương tiện nhưng chưa
   traffic-aware vì plan chưa có ngày đi.

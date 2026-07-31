@@ -53,8 +53,13 @@ không được truyền sang Finder. Finder vẫn tạo lịch
 chi tiết bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
-Khi intake có URL video, Gemini Audio trả đồng thời `transcript` và danh sách
-STT observation bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
+Khi intake có URL YouTube, runtime thử caption công khai bằng
+`youtube-transcript-api` trước. Caption thủ công hoặc tự sinh được dùng trực tiếp
+làm transcript và video không bị tải xuống. Chỉ khi caption không tồn tại, bị
+tắt, bị chặn hoặc không đọc được thì runtime mới tải video bằng `yt-dlp`, tách
+audio và gọi Gemini Audio. Với nguồn video khác, pipeline media hiện tại vẫn
+được dùng. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
+bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
 `order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
 và confidence. Explorer dùng structured STT observations, metadata và structured
 frame vision observations để tạo từng stop; Python không suy diễn candidate,
@@ -74,8 +79,11 @@ Frame được lấy thích nghi theo toàn bộ duration, không quá một fra
 tối đa 48 frame và xử lý theo
 batch tối đa 10 ảnh; frame được chia đều giữa các batch để giảm thời gian chờ
 batch lớn nhất. Tối đa năm batch frame vision được gọi song song bằng năm API key
-khác nhau, ưu tiên các key cuối trong pool `GEMINI_API_KEY`; mức song song tự
-giảm khi thiếu key hoặc batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
+khác nhau trong pool `GEMINI_OCR_API_KEYS`; STT dùng pool riêng
+`GEMINI_STT_API_KEYS`. Hai pool riêng không được có key trùng nhau. Khi chỉ cấu
+hình pool chung `GEMINI_API_KEY` có ít nhất hai key, runtime chia pool làm hai
+nửa không giao nhau cho STT và OCR. Mức song song tự giảm khi thiếu key hoặc
+batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
 STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
 một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa điểm, OCR được
 ưu tiên cho tên hiển thị và thứ tự frame; structured STT được ưu tiên cho day,
@@ -88,9 +96,23 @@ model cấu hình. Không áp dụng giới hạn số place candidate có evide
 gộp; giới hạn 48 chỉ áp dụng cho số frame video được lấy mẫu.
 TikTok photo post vẫn không được tải tự động và yêu cầu upload screenshot.
 
+STT fallback probe duration bằng `ffprobe`. Audio không quá 120 giây hoặc chỉ có
+một STT key vẫn dùng một request. Audio dài hơn có thể được chia cân bằng thành
+tối đa bốn chunk theo thứ tự thời gian, overlap mặc định hai giây ở biên. Mặc
+định `URL_REEL_STT_MAX_CONCURRENCY=1` và mỗi request Gemini STT được bắt đầu cách
+nhau tối thiểu sáu giây trong một tiến trình. Có thể tăng concurrency sau khi
+xác minh quota thực tế của project; nhiều API key không mặc nhiên tạo quota độc
+lập vì Gemini áp rate limit theo project. Mỗi key chỉ thuộc một chunk trong wave
+đầu; chunk lỗi chỉ retry sau khi toàn bộ wave kết thúc để không tranh key đang
+chạy. `429` tôn trọng `Retry-After` với trần 60 giây trước lần thử tiếp theo.
+Transcript
+được ghép theo chunk order; observation overlap được dedupe theo tên place và
+source day rồi đánh lại order toàn cục. Nếu `ffprobe`/`ffmpeg` không khả dụng,
+runtime fallback về một request toàn audio.
+
 Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ:
 
-- nếu user nói rõ số ngày, số đó luôn thắng;
+- nếu không có URL/OCR, số ngày user nói rõ được giữ nguyên;
 - nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và Finder bổ sung catalog vào
   ngày trống hoặc ngày có ít stop hơn mức tối thiểu theo pace; stop URL/OCR vẫn
   được giữ nguyên và địa điểm bổ sung phải mang source `finder_suggestion`;
@@ -98,9 +120,10 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
   thiểu theo pace để xếp hết stop;
 - nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, áp dụng cùng quy tắc:
   bổ sung catalog vào ngày trống hoặc ngày nguồn còn thưa;
-- nếu user yêu cầu ít ngày hơn, toàn bộ stop không có `sourceDay` được phân bổ
-  lại theo thứ tự trong đúng số ngày user yêu cầu. Stop có ngày nguồn rõ ràng
-  vượt ngoài phạm vi vẫn đi vào `UnscheduledPlace`, không bị âm thầm đổi ngày.
+- nếu user yêu cầu ít ngày hơn nhưng intake có địa điểm URL đã resolve, Planner
+  tự tăng duration tối thiểu theo pace sau khi merge địa điểm cũ và intake mới.
+  Địa điểm URL không bị đưa vào `UnscheduledPlace` chỉ vì `no_day_capacity`;
+  hard constraint và lỗi feasibility khác vẫn có thể ngăn một stop được xếp.
 
 ## Luồng mục tiêu của MVP
 
@@ -153,6 +176,14 @@ user, signal đủ confidence được aggregate vào cột JSON
 Planner nhận `effectiveProfile`, nhưng explicit constraint của chuyến hiện tại
 luôn ưu tiên hơn profile dài hạn.
 
+Với intake chỉ có `rawRequest` (không URL, ảnh OCR hoặc `placeCandidates`),
+Explorer không hỏi lại user. Explorer đánh dấu `mode=vague` khi chưa có điểm đến
+cụ thể, `mode=partial` khi đã có điểm đến nhưng thiếu trường cốt lõi, và
+`mode=confirmed` khi đã có destination, days và budget. Contract trả thêm
+`inputCompleteness`, `missingFields`, `assumptions` và `trace`; mỗi trường thiếu
+giữ `wasProvided=false` và không gán `inferredSource` tại Explorer. Luồng URL và
+OCR giữ hành vi hiện tại, không áp dụng phép phân loại raw-prompt-only này.
+
 Với intake có URL, source adapter tạo candidate đúng một lần. Code ứng dụng bổ
 sung source, priority và preference mặc định, gộp trùng rồi gửi thẳng sang
 Resolver. Formatter không sinh lại URL `placeCandidates`; nó chỉ nhận summary
@@ -197,10 +228,10 @@ Finder điền item cụ thể:
 - thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
-- lấy route pedestrian/car từ HERE Routing v8 sau khi xếp stop; leg HERE có
-  geometry, `fetchedAt`, `source=here_routing_v8`, `verified=true`, còn lỗi
+- lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
+  geometry, `fetchedAt`, `source=valhalla_routing`, `verified=true`, còn lỗi
   provider fallback về ước tính địa lý `verified=false`;
-- với trip có `startDate`, lấy thêm HERE Public Transit theo giờ kết thúc stop;
+- với trip có `startDate`, lấy thêm OpenTripPlanner theo giờ kết thúc stop;
   chọn transit khi user ưu tiên bus/train, nếu không giữ làm alternative; không
   gọi timetable hiện tại cho trip chưa có ngày;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
@@ -342,10 +373,12 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
   Không áp dụng khoảng chờ cố định giữa các call thành công. Khi Gemini trả
   `Retry-After` hoặc `google.rpc.RetryInfo.retryDelay`, limiter dùng thời gian
   provider yêu cầu (tối đa 60 giây) trước khi retry. `GEMINI_API_KEY` nhận một
-  key hoặc nhiều key phân tách bằng dấu phẩy. Client dùng chung pool key trong
-  tiến trình; khi key hiện tại trả `429`, key đó được cooldown theo chỉ dẫn của
-  provider và call chuyển sang key kế tiếp ngay. Key trả `401/403` bị loại khỏi
-  pool cho đến khi tiến trình khởi động lại. API key không được ghi vào log.
+  key hoặc nhiều key phân tách bằng dấu phẩy. URL extraction ưu tiên
+  `GEMINI_STT_API_KEYS` và `GEMINI_OCR_API_KEYS` để các call đồng thời không
+  tranh cùng key. Client dùng pool key trong tiến trình; khi key hiện tại trả
+  `429`, key đó được cooldown theo chỉ dẫn của provider và call chuyển sang key
+  kế tiếp ngay. Key trả `401/403` bị loại khỏi pool cho đến khi tiến trình khởi
+  động lại. API key không được ghi vào log.
   Circuit breaker vẫn là phần chưa triển khai.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của

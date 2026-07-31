@@ -56,7 +56,7 @@ class GeminiReelFrameVision:
         api_key: str | list[str] | tuple[str, ...] | None = None,
     ) -> None:
         self.model_name = settings.gemini_image_ocr_model
-        configured_keys = api_key or settings.gemini_api_key or ""
+        configured_keys = api_key or settings.gemini_ocr_key_pool
         raw_keys = (
             configured_keys.split(",")
             if isinstance(configured_keys, str)
@@ -78,7 +78,8 @@ class GeminiReelFrameVision:
             return FrameVisionResult()
         if not self.api_keys:
             raise RuntimeError(
-                "GEMINI_API_KEY is required for URL reel frame vision."
+                "GEMINI_OCR_API_KEYS or GEMINI_API_KEY is required for "
+                "URL reel frame vision."
             )
         batch_size = max(1, settings.url_reel_vision_batch_size)
         if len(frame_paths) <= batch_size:
@@ -95,9 +96,9 @@ class GeminiReelFrameVision:
             len(self.api_keys),
             len(batches),
         )
-        # Prefer keys at the end of GEMINI_API_KEY as requested for the OCR
-        # pool. A leased key is returned only after its batch (including retry)
-        # completes, so simultaneous OCR calls always use different keys.
+        # A leased OCR-only key is returned only after its batch (including
+        # retry) completes, so simultaneous OCR calls use different keys and
+        # never consume the separately configured STT pool.
         key_pool: Queue[str] = Queue()
         for api_key in reversed(self.api_keys[-maximum_concurrency:]):
             key_pool.put(api_key)

@@ -61,10 +61,25 @@ class SpeechToTextResult(BaseModel):
     text: str
     observations: list[SpeechToTextObservation] = Field(default_factory=list)
     status: str = "ok"
+    source: str = "none"
     error: str | None = None
     language: str | None = None
     language_probability: float | None = Field(default=None, alias="languageProbability")
     duration_seconds: float = Field(alias="durationSeconds")
+    audio_duration_seconds: float | None = Field(
+        default=None,
+        alias="audioDurationSeconds",
+    )
+    chunk_count: int = Field(default=1, ge=1, alias="chunkCount")
+    chunk_duration_seconds: list[float] = Field(
+        default_factory=list,
+        alias="chunkDurationSeconds",
+    )
+    chunk_retry_count: int = Field(
+        default=0,
+        ge=0,
+        alias="chunkRetryCount",
+    )
 
     model_config = {"populate_by_name": True}
 

@@ -22,7 +22,13 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlMetadata,
 )
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import GeminiAudioSpeechToText
-from app.modules.plans.explorer.tools.url_reels.utils import canonicalize_url
+from app.modules.plans.explorer.tools.url_reels.utils import (
+    canonicalize_url,
+    detect_platform,
+)
+from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
+    YouTubeTranscriptExtractor,
+)
 
 
 class UrlReelExtractionService:
@@ -33,12 +39,16 @@ class UrlReelExtractionService:
         speech_to_text: GeminiAudioSpeechToText | None = None,
         context_extractor: UrlReelContextExtractor | None = None,
         frame_vision: GeminiReelFrameVision | None = None,
+        youtube_transcript: YouTubeTranscriptExtractor | None = None,
     ) -> None:
         self.loader = loader or UrlReelLoader()
         self.media = media or UrlReelMediaExtractor()
         self.speech_to_text = speech_to_text
         self.context_extractor = context_extractor or UrlReelContextExtractor()
         self.frame_vision = frame_vision
+        self.youtube_transcript = (
+            youtube_transcript or YouTubeTranscriptExtractor()
+        )
 
     def extract(self, payload: UrlReelInput) -> UrlReelExtractionResult:
         temporary_parent = payload.work_dir
@@ -68,21 +78,45 @@ class UrlReelExtractionService:
             metadata_result = self.loader.load_metadata(payload.url)
             return metadata_result, time.perf_counter() - start
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            metadata_future = executor.submit(load_metadata)
-            media_future = executor.submit(
-                self.media.prepare,
-                canonicalize_url(payload.url),
-                work_dir=work_dir,
-            )
-            metadata, metadata_duration = metadata_future.result()
-            artifacts, media_timings = media_future.result()
+        caption_result: SpeechToTextResult | None = None
+        if detect_platform(payload.url) == "youtube":
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                metadata_future = executor.submit(load_metadata)
+                transcript_future = executor.submit(
+                    self.youtube_transcript.fetch,
+                    payload.url,
+                    languages=payload.stt_language,
+                )
+                metadata, metadata_duration = metadata_future.result()
+                caption_result = transcript_future.result()
+            if caption_result is None:
+                artifacts, media_timings = self.media.prepare(
+                    canonicalize_url(payload.url),
+                    work_dir=work_dir,
+                )
+                media_timings["youtubeTranscriptFallback"] = 1.0
+            else:
+                artifacts = MediaArtifacts()
+                media_timings = {
+                    "youtubeTranscriptAvailable": 1.0,
+                    "mediaDownloadSkipped": 1.0,
+                }
+        else:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                metadata_future = executor.submit(load_metadata)
+                media_future = executor.submit(
+                    self.media.prepare,
+                    canonicalize_url(payload.url),
+                    work_dir=work_dir,
+                )
+                metadata, metadata_duration = metadata_future.result()
+                artifacts, media_timings = media_future.result()
 
         timings["loadMetadata"] = metadata_duration
         timings["prepareSourceWall"] = time.perf_counter() - source_start
         timings.update(media_timings)
 
-        speech_result = SpeechToTextResult(
+        speech_result = caption_result or SpeechToTextResult(
             text="",
             status="skipped",
             durationSeconds=0.0,
@@ -105,7 +139,7 @@ class UrlReelExtractionService:
                     language=payload.stt_language,
                     initial_prompt=stt_prompt,
                 )
-                if artifacts.audio_path is not None
+                if caption_result is None and artifacts.audio_path is not None
                 else None
             )
             vision_future = (
@@ -140,6 +174,18 @@ class UrlReelExtractionService:
                     )
 
         timings["speechToText"] = speech_result.duration_seconds
+        timings["sttChunkCount"] = float(speech_result.chunk_count)
+        timings["sttChunkRetryCount"] = float(
+            speech_result.chunk_retry_count
+        )
+        if speech_result.audio_duration_seconds is not None:
+            timings["sttAudioDuration"] = (
+                speech_result.audio_duration_seconds
+            )
+        if speech_result.chunk_duration_seconds:
+            timings["sttSlowestChunk"] = max(
+                speech_result.chunk_duration_seconds
+            )
         timings["frameVision"] = vision_result.duration_seconds
         timings["extractSignalsWall"] = time.perf_counter() - start
 
@@ -172,7 +218,9 @@ class UrlReelExtractionService:
             metadata=metadata,
             artifacts=artifacts,
             needsImageUpload=(
-                artifacts.audio_path is None and not artifacts.frame_paths
+                not speech_result.text
+                and artifacts.audio_path is None
+                and not artifacts.frame_paths
             ),
             speechToText=speech_result,
             frameVision=vision_result,
