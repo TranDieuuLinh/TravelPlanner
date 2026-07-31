@@ -80,6 +80,8 @@ client không được tự chọn role.
 - `POST /api/plans/main`
 - `POST /api/plans/main/from-explorer`
 - `POST /api/plans/main/from-context`
+- `POST /api/plans/current-location-route`
+- `POST /api/plans/day-directions`
 - `POST /api/plans/{planId}/backup`
 
 ### Trip chat và lịch sử chỉnh sửa
@@ -179,7 +181,13 @@ lưu Explorer context.
 
 Explorer response có thêm `timingReport` để debug latency. Report dùng cùng
 `intakeId`, gồm `totalSeconds`, các stage cấp Explorer, timing chi tiết theo từng
-URL và số candidate/resolved/persisted. Các stage chạy song song giữ duration
+URL và số candidate/resolved/persisted. Mỗi source URL còn có
+`extractedPlaceCount`, `candidateCount`, `resolvedCount`, `providerCounts` và
+`resolvedProviderCounts`, cùng `sttChunkCount`, `sttAudioDurationSeconds`,
+`sttChunkDurationSeconds` và `sttChunkRetryCount`;
+`providerCounts` là số candidate provider đã xử lý,
+không đồng nghĩa tất cả đã resolve thành công. Report cấp intake cũng có
+`resolvedProviderCounts` với cùng ý nghĩa. Các stage chạy song song giữ duration
 riêng và phải so theo wall time, không cộng STT với frame vision hoặc Formatter
 với place resolution. Report không chứa raw prompt, URL đầy đủ, transcript, OCR
 text hay credential. Runtime nối mỗi report thành một dòng JSON tại
@@ -275,6 +283,10 @@ Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
 `allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
 chỉ bật cờ mở rộng khi amendment yêu cầu thêm ngày; số ngày được giới hạn tối đa
 30 và được tính lại sau khi merge địa điểm cũ với intake mới.
+Ngoài cờ nội bộ này, service luôn tự mở rộng duration khi danh sách đã merge có
+địa điểm mang provenance URL. Vì vậy số ngày user/default không làm địa điểm URL
+đã resolve bị loại chỉ vì `no_day_capacity`; duration cuối được tính đủ cho toàn
+bộ selected place theo sức chứa của pace.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
 đúng `intakeId + userId`. Candidate chưa được user xác nhận vẫn giữ
 `preferenceLevel=preferred`, confidence và provenance; không được đổi thành
@@ -293,8 +305,11 @@ Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrde
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
 `longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
-`PlanItem` cũng trả lại `sourceDay` để lần sửa tiếp theo không làm mất phân ngày
-của nguồn.
+`sourceProvider` giữ adapter đã resolve candidate (`nominatim`, ...)
+và được chuyển tiếp vào `PlanItem` cùng `sourceRefs`; UI dùng hai field này để
+gắn nhãn như `Từ URL TikTok · NOMINATIM`. Card không có URL provenance được phân biệt
+bằng `Finder gợi ý` hoặc `Địa điểm đã chọn`. `PlanItem` cũng trả lại `sourceDay`
+để lần sửa tiếp theo không làm mất phân ngày của nguồn.
 Planner/Finder ưu tiên blueprint URL và giữ thứ tự nguồn. Hard constraint
 explicit vẫn thắng; timing cue không được mô tả như giờ hoạt động đã xác minh.
 
@@ -305,21 +320,81 @@ như `24:07-25:07`.
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`
-với thứ tự đã tối ưu nearest-neighbour + 2-opt. Finder lấy route pedestrian/car
-từ HERE Routing v8 cho từng cặp stop. Leg thành công có
-`source=here_routing_v8`, `verified=true`, `fetchedAt` và geometry theo đường;
-provider lỗi hoặc thiếu credential fallback thành `source=geodesic_estimate`,
-`verified=false`. Route HERE hiện dùng `departureTime=any`, vì vậy
+với thứ tự đã tối ưu nearest-neighbour + 2-opt. Finder lấy route
+pedestrian/auto từ Valhalla cho từng cặp stop. Leg thành công có
+`source=valhalla_routing`, `verified=true`, `fetchedAt` và geometry theo đường;
+provider lỗi fallback thành `source=geodesic_estimate`, `verified=false`.
 `verified=true` không được mô tả là dữ liệu traffic live.
 
-Khi `tripSpec.startDate` có giá trị, Finder còn gọi HERE Public Transit theo
+Khi `tripSpec.startDate` có giá trị, Finder còn gọi OpenTripPlanner theo
 ngày của `PlanDay` và giờ kết thúc item đầu. Route có ít nhất một transit section
-mới được nhận; route chỉ đi bộ do Transit API trả thêm bị loại. Nếu
+mới được nhận; itinerary chỉ đi bộ bị loại. Nếu
 `tripSpec.transport.preferredModes` chứa `bus` hoặc `train`, transit khả thi trở
 thành leg chính. Nếu không, nó xuất hiện trong `transportLeg.alternatives`.
 `avoidModes` loại mode tương ứng trước khi chọn. Transit option có
-`source=here_transit_v8`, geometry, duration gồm cả thời gian chờ và
-`details.transitModes`/`details.lines`.
+`source=opentripplanner_transit`, geometry, duration gồm cả thời gian chờ và
+`details.transitModes`/`details.lines`/`details.agencies`. `details.segments`
+giữ thứ tự từng leg do OTP trả về; mỗi segment có `mode`, `fromPlace`, `toPlace`,
+`distanceMeters`, `estimatedDurationMinutes`, `geometryCoordinates` và có thể
+có `line`/`headsign`.
+Tên điểm đầu và cuối của toàn hành trình được chuẩn hóa theo stop trong plan,
+còn tên trạm trung gian lấy từ OTP.
+
+`POST /api/plans/current-location-route` nhận tọa độ tạm thời từ Geolocation API
+cùng stop đang chọn trên bản đồ, hoặc stop đầu tiên của ngày nếu chưa chọn.
+Endpoint không lưu vị trí vào plan hoặc
+database. Response là một `PlanTransportLeg` camelCase dùng chung với itinerary,
+gồm mode, distance, duration, geometry, `source`, `verified`, `fetchedAt` và
+`alternatives`. Khi Valhalla/OTP được cấu hình, backend thử pedestrian/car và public
+transit theo preference; khi provider không khả dụng, response giữ
+`source=geodesic_estimate` và `verified=false`.
+
+```json
+{
+  "origin": {"latitude": 10.7769, "longitude": 106.7009},
+  "destination": {
+    "itemId": "stop-1",
+    "name": "Bưu điện Thành phố",
+    "latitude": 10.7798,
+    "longitude": 106.699
+  },
+  "departureTime": "2026-07-30T09:00:00+07:00",
+  "preferredModes": [],
+  "avoidModes": []
+}
+```
+
+`POST /api/plans/day-directions` chỉ dùng khi UI đang chọn một ngày cụ thể.
+Request chứa vị trí hiện tại, toàn bộ stop có tọa độ của ngày theo thứ tự lịch
+trình và `timeWindow` của từng stop. Backend không tối ưu lại thứ tự; nó trả mảng
+`PlanTransportLeg` theo chuỗi cố định
+`current -> stop 1 -> ... -> stop N`. Mỗi leg có tuyến đề xuất làm primary và
+các lựa chọn đi bộ, ô tô trong `alternatives`; xe buýt chỉ xuất hiện khi
+provider trả route transit có geometry. Chặng `current -> stop 1` dùng
+`departureTime` của request; mỗi chặng sau dùng giờ kết thúc `timeWindow` của
+stop đầu chặng trên cùng ngày để khớp saved itinerary. Backend chuẩn hóa cả
+`departureTime` và `timeWindow` về `Asia/Ho_Chi_Minh` (`UTC+07:00`) trước khi
+gọi provider. Endpoint chỉ được gọi sau thao tác “Chỉ đường”/“Tính lại”; chọn alternative chỉ đổi geometry ở client
+và không gọi provider lại. `requestedMode=walk|car|bus` vẫn được hỗ trợ để ép
+đồng nhất mọi chặng khi cần. Nếu ép `bus` nhưng một chặng không có route
+transit, endpoint trả HTTP 422 thay vì tạo tuyến ước tính hoặc geometry đường
+chim bay.
+
+```json
+{
+  "origin": {"latitude": 10.7769, "longitude": 106.7009},
+  "destinations": [
+    {
+      "itemId": "stop-1",
+      "name": "Bưu điện Thành phố",
+      "timeWindow": "08:00-10:00",
+      "latitude": 10.7798,
+      "longitude": 106.699
+    }
+  ],
+  "departureTime": "2026-07-31T09:00:00+07:00"
+}
+```
 
 Request tạo plan chính:
 

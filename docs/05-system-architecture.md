@@ -14,14 +14,16 @@ Router FastAPI
     +-- plans: service -> workflow -> domain service
     |                         |             |
     |                         |             +-- LLM gateway (Stub/Gemini)
-    |                         |             +-- route gateway (HERE/fallback)
+    |                         |             +-- route gateway (Valhalla/OTP/fallback)
     |                         +-- PlanRepository trong bộ nhớ
     |
     +-- profiles/marketplace: endpoint placeholder
 ```
 
-`docker-compose.yml` chỉ chạy backend và PostgreSQL. Frontend Next.js được chạy
-riêng trên host khi cần phát triển hoặc kiểm thử giao diện.
+`docker-compose.yml` mặc định chạy backend và PostgreSQL. Profile `routing`
+chạy thêm Valhalla và OpenTripPlanner sau khi dữ liệu OTP đã được build theo
+`routing-data/README.md`. Frontend Next.js được chạy riêng trên host khi cần
+phát triển hoặc kiểm thử giao diện.
 PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backend trực
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
@@ -31,13 +33,37 @@ không phải cấu hình ứng dụng. Container backend chạy Alembic trướ
 Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
 có thể dùng `StubLLMClient` khi không có provider.
 
-Finder dùng HERE Routing API v8 qua interface route provider khi
-`ROUTE_PROVIDER=here` và có `HERE_API_KEY`. Adapter lấy route pedestrian/car,
-summary và flexible polyline; lỗi theo từng leg fallback về ước tính địa lý.
-Khi trip có `startDate`, adapter HERE Public Transit v8 bổ sung route theo lịch
-chạy và đưa vào lựa chọn chính hoặc `transportLeg.alternatives` theo
-`preferredModes`/`avoidModes`.
-Leaflet/OpenStreetMap vẫn là bản đồ nền, không phải HERE Maps.
+Finder dùng Valhalla tự vận hành qua interface route provider khi
+`ROUTE_PROVIDER=valhalla`. Adapter lấy route pedestrian/auto, summary và
+polyline6; lỗi theo từng leg fallback về ước tính địa lý. Khi trip có
+`startDate`, adapter OpenTripPlanner GraphQL dùng OSM + GTFS/GTFS-RT để bổ sung
+route theo lịch chạy và đưa vào lựa chọn chính hoặc
+`transportLeg.alternatives` theo `preferredModes`/`avoidModes`.
+Plan chưa có `startDate` dùng ngày hiện tại cùng giờ kết thúc item làm preview
+lịch chạy; thứ tự itinerary vẫn được giữ nguyên.
+Hai adapter tự host không dùng API key. Leaflet/OpenStreetMap vẫn là bản đồ nền.
+Planner UI chỉ xin Geolocation khi user bấm “Vị trí của tôi”; thao tác này chỉ
+định vị, xoay marker theo heading khi thiết bị cung cấp và đưa camera về user.
+Khi một ngày cụ thể được chọn, `/api/plans/day-directions` nhận tọa độ tạm thời,
+danh sách stop có tọa độ của ngày theo đúng thứ tự itinerary đã lưu. Backend
+không gọi travel-time matrix và không giải shortest path cho thao tác chỉ đường;
+nó chỉ lấy geometry/duration chi tiết từ vị trí hiện tại tới stop đầu tiên rồi
+giữa các stop kế tiếp theo thứ tự cố định. Chặng đầu dùng thời điểm hiện tại;
+các chặng itinerary tiếp theo dùng giờ kết thúc `timeWindow` của stop đầu chặng
+để saved view và live-directions query cùng service period. Mọi timestamp được
+chuẩn hóa về `Asia/Ho_Chi_Minh` trước khi lấy ngày/giờ gửi OTP; ISO UTC từ
+browser không được dùng trực tiếp làm service time. Endpoint chỉ được gọi khi
+user bấm “Chỉ đường” hoặc chủ động bấm “Tính lại”. Nút vị trí dùng một lần đọc
+`getCurrentPosition`, chỉ đưa camera về user một lần và không dùng GPS watch;
+đổi mode cũng không gọi route lại. Mỗi chặng trả tuyến đề xuất cùng các lựa chọn
+đi bộ và ô tô; xe buýt chỉ được thêm khi OTP trả itinerary transit có geometry thật.
+Mỗi itinerary transit giữ nguyên danh sách leg của OTP để UI trình bày rõ chặng
+đi bộ tới trạm, chặng xe buýt giữa các trạm và chặng đi bộ tới điểm đến;
+trên bản đồ, WALK được vẽ bằng nét chấm, BUS bằng nét liền và điểm lên/xuống xe
+được đánh dấu riêng;
+đổi lựa chọn chỉ thay geometry đã trả về ở client. Các lựa chọn đang chọn được
+ghép trên cùng bản đồ. Backend không lưu tọa độ, lựa
+chọn hoặc chặng điều hướng vào plan, database hay timing log.
 
 ### Pipeline Explorer intake hiện tại
 
@@ -92,6 +118,12 @@ Response trả `intakeId`, `userId`, Explorer context và `timingReport`.
 giữ prompt, URL đầy đủ, transcript, OCR text hoặc credential. Explorer không tự
 gọi Planner/Finder. Planner downstream đọc context và chuyển tiếp hai khóa;
 Finder downstream đọc `user_must_place` bằng `intakeId + userId`.
+Timing của mỗi URL phân biệt số địa điểm thô do OCR/STT trích xuất, số candidate
+sau dedupe, số resolve thành công, số candidate từng provider đã xử lý và số
+resolve thành công theo provider. Candidate có provenance từ nhiều URL được tính
+cho từng URL liên quan nên tổng theo URL có thể lớn hơn tổng candidate toàn
+intake. Timing source còn trả số STT chunk, duration audio, duration từng chunk
+và retry count; đây là count/duration an toàn, không chứa transcript hoặc audio.
 
 ## Ranh giới backend
 

@@ -211,6 +211,7 @@ class UrlReelContextExtractor:
             if part
         )
         places = self._extract_places(
+            metadata=metadata,
             metadata_text=metadata_text,
             transcript=transcript,
             destination=destination,
@@ -263,21 +264,41 @@ class UrlReelContextExtractor:
         metadata_text: str,
         transcript: str,
         destination: str | None,
+        metadata: UrlMetadata | None = None,
         visual_places: list[str] | None = None,
         speech_observations: list[SpeechToTextObservation] | None = None,
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> list[str]:
         candidates: list[tuple[str, int]] = []
-        metadata_phrases = self._metadata_itinerary_phrases(metadata_text)
+        metadata_place = self._metadata_place_name(metadata)
+        authoritative_places = self._authoritative_metadata_places(
+            metadata,
+            metadata_text,
+            destination,
+        )
+        if metadata_place and authoritative_places[:1] == [metadata_place]:
+            candidates.append((metadata_place, 200))
+        metadata_phrases = [
+            phrase
+            for phrase in authoritative_places
+            if phrase != metadata_place
+        ]
         for phrase in metadata_phrases:
-            candidates.append((phrase, 120))
+            candidates.append((phrase, 180))
 
         for observation in sorted(
             speech_observations or [],
             key=lambda item: item.order,
         ):
             cleaned = self._normalize_candidate(observation.place_name)
-            if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
+            if (
+                cleaned
+                and cleaned.lower() not in GENERIC_PLACE_TERMS
+                and not any(
+                    self._same_place_name(cleaned, authoritative)
+                    for authoritative in authoritative_places
+                )
+            ):
                 candidates.append((cleaned, 140))
 
         ordered_visual_observations = sorted(
@@ -287,7 +308,14 @@ class UrlReelContextExtractor:
         observed_visual_names: set[str] = set()
         for observation in ordered_visual_observations:
             cleaned = self._normalize_candidate(observation.place_name)
-            if cleaned and cleaned.lower() not in GENERIC_PLACE_TERMS:
+            if (
+                cleaned
+                and cleaned.lower() not in GENERIC_PLACE_TERMS
+                and not any(
+                    self._same_place_name(cleaned, authoritative)
+                    for authoritative in authoritative_places
+                )
+            ):
                 candidates.append((cleaned, 150))
                 observed_visual_names.add(self._dedupe_key(cleaned))
 
@@ -297,6 +325,10 @@ class UrlReelContextExtractor:
                 cleaned
                 and cleaned.lower() not in GENERIC_PLACE_TERMS
                 and self._dedupe_key(cleaned) not in observed_visual_names
+                and not any(
+                    self._same_place_name(cleaned, authoritative)
+                    for authoritative in authoritative_places
+                )
             ):
                 candidates.append((cleaned, 150))
 
@@ -324,11 +356,10 @@ class UrlReelContextExtractor:
                 known_places.append(phrase)
 
         places = self._dedupe_in_order(candidates)
-        destination_key = self._dedupe_key(destination or "")
         return [
             place
             for place in places
-            if self._dedupe_key(place) != destination_key
+            if not self._is_destination_alias(place, destination)
         ]
 
     def _same_place_name(self, left: str, right: str) -> bool:
@@ -339,6 +370,10 @@ class UrlReelContextExtractor:
         if left_key in right_key or right_key in left_key:
             return True
         if SequenceMatcher(None, left_key, right_key).ratio() >= 0.82:
+            return True
+        left_tokens = self._place_name_tokens(left)
+        right_tokens = self._place_name_tokens(right)
+        if left_tokens and left_tokens == right_tokens:
             return True
         left_first = self._dedupe_key(left.split()[0]) if left.split() else ""
         right_first = self._dedupe_key(right.split()[0]) if right.split() else ""
@@ -361,8 +396,22 @@ class UrlReelContextExtractor:
             )[0]
             cleaned = self._normalize_candidate(phrase)
             if cleaned:
-                phrases.append(cleaned)
+                phrases.extend(self._split_pinned_place_phrase(cleaned))
         return phrases
+
+    def _split_pinned_place_phrase(self, phrase: str) -> list[str]:
+        match = re.fullmatch(
+            r"(?P<left>.+?\b(?:st|street))\s+(?:and|&)\s+"
+            r"(?P<right>.+?\b(?:st|street))",
+            phrase,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return [phrase]
+        return [
+            self._normalize_candidate(match.group("left")),
+            self._normalize_candidate(match.group("right")),
+        ]
 
     def _keyword_phrases(self, *texts: str) -> list[str]:
         joined = "\n".join(text for text in texts if text)
@@ -443,18 +492,27 @@ class UrlReelContextExtractor:
             prefix_key = next(
                 (
                     existing_key
-                    for existing_key in ordered
-                    if len(existing_key) >= 6
-                    and (
-                        key.startswith(existing_key)
-                        or existing_key.startswith(key)
+                    for existing_key, existing in ordered.items()
+                    if (
+                        len(existing_key) >= 6
+                        and (
+                            key.startswith(existing_key)
+                            or existing_key.startswith(key)
+                        )
                     )
+                    or self._likely_same_cafe_name(cleaned, existing[0])
                 ),
                 None,
             )
             if prefix_key is not None:
                 previous = ordered[prefix_key]
-                if len(cleaned) > len(previous[0]) or score > previous[1]:
+                if (
+                    score > previous[1]
+                    or (
+                        score == previous[1]
+                        and len(cleaned) > len(previous[0])
+                    )
+                ):
                     ordered[prefix_key] = (cleaned, max(score, previous[1]))
                 continue
             previous = ordered.get(key)
@@ -463,6 +521,28 @@ class UrlReelContextExtractor:
             elif score > previous[1]:
                 ordered[key] = (cleaned, score)
         return [candidate for candidate, _score in ordered.values()]
+
+    def _likely_same_cafe_name(self, left: str, right: str) -> bool:
+        left_words = left.casefold().split()
+        right_words = right.casefold().split()
+        cafe_terms = {"cafe", "café", "coffee"}
+        if (
+            not left_words
+            or not right_words
+            or left_words[0] not in cafe_terms
+            or right_words[0] not in cafe_terms
+        ):
+            return False
+        left_key = self._dedupe_key(left).replace("9", "nine")
+        right_key = self._dedupe_key(right).replace("9", "nine")
+        return (
+            SequenceMatcher(
+                None,
+                left_key,
+                right_key,
+            ).ratio()
+            >= 0.75
+        )
 
     def _normalize_candidate(self, candidate: str) -> str:
         candidate = "".join(
@@ -598,7 +678,18 @@ class UrlReelContextExtractor:
                 destination=destination,
             )
         )
+        metadata_place = self._metadata_place_name(metadata)
+        metadata_search_region = self._metadata_search_region(metadata)
+        authoritative_places = self._authoritative_metadata_places(
+            metadata,
+            metadata_text,
+            destination,
+        )
         for order, place in enumerate(places, start=1):
+            is_metadata_place = bool(
+                metadata_place
+                and self._same_place_name(place, metadata_place)
+            )
             observation = self._matching_observation(
                 place,
                 observations_by_place,
@@ -608,6 +699,19 @@ class UrlReelContextExtractor:
                 speech_observations_by_place,
             )
             address = address_hints.get(self._dedupe_key(place))
+            if not address:
+                for source_observation in (
+                    observation,
+                    speech_observation,
+                ):
+                    if source_observation is None:
+                        continue
+                    address = self._leading_address_for_place(
+                        place,
+                        source_observation.evidence,
+                    )
+                    if address:
+                        break
             speech_evidence = (
                 speech_observation.evidence
                 if speech_observation is not None
@@ -634,14 +738,17 @@ class UrlReelContextExtractor:
                 metadata_text=metadata_text,
                 transcript="",
             )
+            metadata_evidence = metadata_place if is_metadata_place else ""
             evidence = (
-                visual_evidence
+                metadata_evidence
+                or visual_evidence
                 or speech_evidence
                 or caption_evidence
             )
             source_evidence = {
                 source: value
                 for source, value in (
+                    ("metadata", metadata_evidence),
                     ("ocr", visual_evidence),
                     ("stt", speech_evidence),
                     ("caption", caption_evidence),
@@ -672,6 +779,23 @@ class UrlReelContextExtractor:
                 source_order = speech_observation.order
             if observation is not None and observation.order is not None:
                 source_order = observation.order
+            if is_metadata_place:
+                source_order = 1
+            authoritative_order = next(
+                (
+                    index
+                    for index, authoritative in enumerate(
+                        authoritative_places,
+                        start=1,
+                    )
+                    if self._same_place_name(place, authoritative)
+                ),
+                None,
+            )
+            if authoritative_order is not None:
+                source_order = authoritative_order
+            elif authoritative_places:
+                source_order = order
 
             source_time_hint = self._time_hint(speech_evidence or "")
             if speech_observation is not None and speech_observation.time_hint:
@@ -691,12 +815,20 @@ class UrlReelContextExtractor:
             elif observation is not None and observation.activity:
                 source_activity = observation.activity
 
-            search_region = destination
+            search_region = metadata_search_region or destination
             if source_day is not None:
-                search_region = day_regions.get(source_day) or destination
+                search_region = (
+                    day_regions.get(source_day)
+                    or metadata_search_region
+                    or destination
+                )
             if (
                 speech_observation is not None
                 and speech_observation.search_region
+                and not (
+                    is_metadata_place
+                    and metadata_search_region
+                )
             ):
                 search_region = speech_observation.search_region
 
@@ -923,6 +1055,25 @@ class UrlReelContextExtractor:
         metadata_text: str,
         transcript: str,
     ) -> str:
+        place_text = place.lower()
+        if "museum" in place_text:
+            return "culture"
+        if "train street" in place_text:
+            return "attraction"
+        if any(term in place_text for term in ("market", "shopping", "chợ")):
+            return "shopping"
+        if any(term in place_text for term in ("dong xuan", "hang ma")):
+            return "shopping"
+        if (
+            re.search(r"\b(?:st|street)\b", place_text)
+            and re.search(
+                r"\b(?:market|shop|shopping|souvenir|clothing)\b",
+                " ".join((metadata_text, transcript)).lower(),
+            )
+        ):
+            return "shopping"
+        if any(term in place_text for term in ("coffee", "cafe", "café")):
+            return "cafe"
         text = " ".join((place, metadata_text, transcript)).lower()
         if any(term in text for term in ("coffee", "cafe", "café")):
             return "cafe"
@@ -1021,7 +1172,12 @@ class UrlReelContextExtractor:
     ) -> dict[str, str]:
         hints: dict[str, str] = {}
         direct_address = self._metadata_address(metadata)
-        metadata_places = self._extract_places(metadata_text=metadata_text, transcript="", destination=None)
+        metadata_places = self._extract_places(
+            metadata=metadata,
+            metadata_text=metadata_text,
+            transcript="",
+            destination=None,
+        )
         if direct_address:
             for place in metadata_places:
                 hints[self._dedupe_key(place)] = direct_address
@@ -1042,13 +1198,88 @@ class UrlReelContextExtractor:
         return hints
 
     def _metadata_address(self, metadata: UrlMetadata) -> str | None:
-        for key in ("address", "street_address", "location", "venue", "place"):
+        for key in (
+            "address",
+            "street_address",
+            "location_address",
+            "location",
+            "venue",
+            "place",
+        ):
             value = metadata.raw.get(key)
             if isinstance(value, str):
                 address = self._normalize_address(value)
                 if address:
                     return address
+            if isinstance(value, dict):
+                for field in (
+                    "address",
+                    "street_address",
+                    "formatted_address",
+                    "display_name",
+                ):
+                    nested = value.get(field)
+                    if isinstance(nested, str):
+                        address = self._normalize_address(nested)
+                        if address:
+                            return address
         return None
+
+    def _metadata_place_name(
+        self,
+        metadata: UrlMetadata | None,
+    ) -> str | None:
+        if metadata is None:
+            return None
+        for key in ("place", "venue", "location_name", "location"):
+            value = metadata.raw.get(key)
+            if isinstance(value, str):
+                candidate = self._normalize_candidate(value)
+                if candidate:
+                    return candidate
+            if isinstance(value, dict):
+                for field in ("name", "title", "place_name", "venue_name"):
+                    nested = value.get(field)
+                    if isinstance(nested, str):
+                        candidate = self._normalize_candidate(nested)
+                        if candidate:
+                            return candidate
+        return None
+
+    def _metadata_search_region(
+        self,
+        metadata: UrlMetadata,
+    ) -> str | None:
+        values: list[object] = [
+            metadata.raw.get(key)
+            for key in (
+                "city",
+                "locality",
+                "region",
+                "state",
+                "province",
+                "country",
+            )
+        ]
+        location = metadata.raw.get("location")
+        if isinstance(location, dict):
+            values.extend(
+                location.get(key)
+                for key in (
+                    "city",
+                    "locality",
+                    "region",
+                    "state",
+                    "province",
+                    "country",
+                )
+            )
+        parts = [
+            re.sub(r"\s+", " ", value).strip(" .,;:-")
+            for value in values
+            if isinstance(value, str) and value.strip()
+        ]
+        return ", ".join(dict.fromkeys(parts)) or None
 
     def _address_from_sentence(self, sentence: str) -> str | None:
         match = ADDRESS_CUE_RE.search(sentence)
@@ -1060,9 +1291,117 @@ class UrlReelContextExtractor:
         cleaned = re.sub(r"\s+", " ", value).strip(" .,;:-")
         cleaned = re.split(r"\s+(?:and|then|before|after|but|with|và|rồi|sau đó)\s+", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
         cleaned = cleaned.strip(" .,;:-")
-        if len(cleaned) < 6 or cleaned.lower() in GENERIC_PLACE_TERMS:
+        if (
+            len(cleaned) < 6
+            or cleaned.lower() in GENERIC_PLACE_TERMS
+            or cleaned.startswith("+")
+            or re.search(
+                r"\b(?:timetables?|comment|link in bio|video info)\b",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+        ):
             return None
         return cleaned
+
+    def _leading_address_for_place(
+        self,
+        place: str,
+        evidence: str,
+    ) -> str | None:
+        prefix, separator, remainder = evidence.partition(",")
+        if not re.match(r"^\s*\d{1,5}\w?\s+\S+", prefix):
+            return None
+        if not separator:
+            return self._normalize_address(prefix)
+        if not self._same_place_name(place, remainder):
+            return None
+        return self._normalize_address(prefix)
+
+    def _authoritative_metadata_places(
+        self,
+        metadata: UrlMetadata | None,
+        metadata_text: str,
+        destination: str | None,
+    ) -> list[str]:
+        ordered: list[str] = []
+        for place in (
+            self._metadata_place_name(metadata),
+            *self._metadata_itinerary_phrases(metadata_text),
+        ):
+            if not place or self._is_destination_alias(place, destination):
+                continue
+            existing_index = next(
+                (
+                    index
+                    for index, existing in enumerate(ordered)
+                    if self._same_place_name(place, existing)
+                ),
+                None,
+            )
+            if existing_index is not None:
+                if len(place) > len(ordered[existing_index]):
+                    ordered[existing_index] = place
+                continue
+            ordered.append(place)
+        return ordered
+
+    def _is_destination_alias(
+        self,
+        place: str,
+        destination: str | None,
+    ) -> bool:
+        if not destination:
+            return False
+        place_key = self._location_identity(place)
+        destination_key = self._location_identity(destination)
+        return bool(place_key and place_key == destination_key)
+
+    def _location_identity(self, value: str) -> str:
+        tokens = re.findall(
+            r"[a-z0-9]+",
+            "".join(
+                character
+                for character in unicodedata.normalize(
+                    "NFD",
+                    value.casefold(),
+                )
+                if unicodedata.category(character) != "Mn"
+            ).replace("đ", "d"),
+        )
+        while tokens[:2] in (["thanh", "pho"], ["city", "of"]):
+            tokens = tokens[2:]
+        while tokens and tokens[0] in {"city", "province", "tinh", "tp"}:
+            tokens = tokens[1:]
+        while tokens and tokens[-1] in {"city", "province"}:
+            tokens = tokens[:-1]
+        if tokens[-2:] == ["viet", "nam"]:
+            tokens = tokens[:-2]
+        elif tokens[-1:] == ["vietnam"]:
+            tokens = tokens[:-1]
+        return "".join(tokens)
+
+    def _place_name_tokens(self, value: str) -> set[str]:
+        ignored = {"entrance", "of", "the"}
+        aliases = {
+            "northern": "north",
+            "southern": "south",
+        }
+        return {
+            aliases.get(token, token)
+            for token in re.findall(
+                r"[a-z0-9]+",
+                "".join(
+                    character
+                    for character in unicodedata.normalize(
+                        "NFD",
+                        value.casefold(),
+                    )
+                    if unicodedata.category(character) != "Mn"
+                ).replace("đ", "d"),
+            )
+            if token not in ignored
+        }
 
     def _evidence_for_place(self, place: str, metadata_text: str, transcript: str, prefer_address: bool = False) -> str | None:
         key = self._dedupe_key(place)

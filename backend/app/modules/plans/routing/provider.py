@@ -18,6 +18,13 @@ class RouteCalculation:
     details: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class TravelTimeMatrix:
+    travel_times_seconds: list[list[int | None]]
+    provider: str
+    fetched_at: datetime
+
+
 class RouteProvider(Protocol):
     def calculate(
         self,
@@ -25,6 +32,7 @@ class RouteProvider(Protocol):
         destination: tuple[float, float],
         *,
         transport_mode: RouteTransportMode,
+        departure_time: datetime | None = None,
     ) -> RouteCalculation | None: ...
 
 
@@ -37,3 +45,13 @@ class TransitRouteProvider(Protocol):
         departure_time: datetime | None,
         modes: tuple[str, ...] = (),
     ) -> RouteCalculation | None: ...
+
+
+class TravelTimeMatrixProvider(Protocol):
+    def calculate(
+        self,
+        coordinates: list[tuple[float, float]],
+        *,
+        transport_mode: RouteTransportMode,
+        departure_time: datetime | None,
+    ) -> TravelTimeMatrix | None: ...

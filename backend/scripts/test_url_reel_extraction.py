@@ -53,6 +53,12 @@ def main() -> None:
     print(f"status: {stt.get('status', 'unknown')}")
     if stt.get("error"):
         print(f"error: {stt['error']}")
+    print(
+        "chunks: "
+        f"{stt.get('chunkCount', 1)} · "
+        f"audio: {stt.get('audioDurationSeconds') or 0:.2f}s · "
+        f"chunk calls: {stt.get('chunkDurationSeconds', [])}"
+    )
 
     print("\n=== Transcript Preview ===")
     transcript = stt.get("text") or ""

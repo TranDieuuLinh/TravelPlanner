@@ -148,6 +148,10 @@ class SelectedPlaceContext(BaseModel):
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )
+    source_provider: Annotated[
+        str | None,
+        Field(default=None, alias="sourceProvider"),
+    ]
     notes: str | None = None
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
     source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]

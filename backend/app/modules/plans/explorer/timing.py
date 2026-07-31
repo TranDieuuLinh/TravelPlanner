@@ -15,6 +15,8 @@ from app.modules.plans.explorer.schema import (
 from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelExtractionResult,
 )
+from app.modules.plans.explorer.tools.url_reels.utils import canonicalize_url
+from app.modules.places.resolver import PlaceResolution
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class ExplorerTimingTrace:
         self.resolved_count = 0
         self.persisted_count = 0
         self.provider_counts: dict[str, int] = {}
+        self.resolved_provider_counts: dict[str, int] = {}
 
     def record_stage(
         self,
@@ -102,11 +105,72 @@ class ExplorerTimingTrace:
                 ),
                 speechStatus=result.speech_to_text.status,
                 visionStatus=result.frame_vision.status,
+                sttChunkCount=result.speech_to_text.chunk_count,
+                sttAudioDurationSeconds=(
+                    result.speech_to_text.audio_duration_seconds
+                ),
+                sttChunkDurationSeconds=(
+                    result.speech_to_text.chunk_duration_seconds
+                ),
+                sttChunkRetryCount=(
+                    result.speech_to_text.chunk_retry_count
+                ),
                 extractedPlaceCount=len(
                     result.extracted_context.extracted_place_details
                 ),
             )
             for index, result in enumerate(results, start=1)
+        ]
+
+    def add_url_resolution_results(
+        self,
+        url_results: list[UrlReelExtractionResult],
+        resolutions: list[PlaceResolution],
+    ) -> None:
+        source_stats = {
+            canonicalize_url(result.url): {
+                "candidate_count": 0,
+                "resolved_count": 0,
+                "provider_counts": {},
+                "resolved_provider_counts": {},
+            }
+            for result in url_results
+        }
+        for resolution in resolutions:
+            source_urls = {
+                canonicalize_url(source.url)
+                for source in resolution.candidate.sources
+                if source.type.value == "url" and source.url
+            }
+            provider = resolution.provider or "unknown"
+            for source_url in source_urls:
+                stats = source_stats.get(source_url)
+                if stats is None:
+                    continue
+                stats["candidate_count"] += 1
+                provider_counts = stats["provider_counts"]
+                provider_counts[provider] = provider_counts.get(provider, 0) + 1
+                if resolution.status != "resolved":
+                    continue
+                stats["resolved_count"] += 1
+                resolved_provider_counts = stats["resolved_provider_counts"]
+                resolved_provider_counts[provider] = (
+                    resolved_provider_counts.get(provider, 0) + 1
+                )
+
+        self.sources = [
+            source.model_copy(
+                update={
+                    "candidate_count": stats["candidate_count"],
+                    "resolved_count": stats["resolved_count"],
+                    "provider_counts": stats["provider_counts"],
+                    "resolved_provider_counts": (
+                        stats["resolved_provider_counts"]
+                    ),
+                }
+            )
+            for source, result in zip(self.sources, url_results)
+            for stats in [source_stats[canonicalize_url(result.url)]]
         ]
 
     def finish(
@@ -130,6 +194,7 @@ class ExplorerTimingTrace:
             resolvedCount=self.resolved_count,
             persistedCount=self.persisted_count,
             providerCounts=self.provider_counts,
+            resolvedProviderCounts=self.resolved_provider_counts,
             logFile=log_file,
         )
 

@@ -1,8 +1,8 @@
 # ADR-002: Lựa chọn nhà cung cấp bản đồ và địa điểm
 
-- Trạng thái: Đã chấp nhận một phần
+- Trạng thái: Đã thay thế bởi ADR-008
 - Ngày: 2026-07-27
-- Cập nhật: 2026-07-30
+- Cập nhật: 2026-07-31
 
 ## Bối cảnh
 
@@ -36,12 +36,18 @@ nếu dài hơn ngưỡng thì lấy tuyến car. Mỗi leg HERE thành công c�
 quota, response lỗi hoặc thiếu credential chỉ làm leg tương ứng fallback về
 `source=geodesic_estimate`, `verified=false`; không làm hỏng toàn bộ plan.
 Transit thành công dùng `source=here_transit_v8`, giữ mode/line trong `details`
-và cùng provenance/freshness như leg road.
+và cùng provenance/freshness như leg road. Nếu Transit API không trả route có
+transit section và geometry hợp lệ, mode này không được thêm làm lựa chọn; hệ
+thống không tạo public-transit estimate bằng đường nối thẳng hai tọa độ.
 
-Thứ tự stop chưa có source itinerary vẫn dùng nearest-neighbour và 2-opt theo
-tọa độ. HERE hiện xác minh từng leg sau khi xếp thứ tự; chưa dùng Matrix Routing
-hoặc Waypoints Sequence để tối ưu toàn cục. Itinerary có thứ tự nguồn tiếp tục
-được giữ nguyên.
+Luồng chỉ đường ngày từ vị trí hiện tại dùng HERE Matrix Routing v8 đồng bộ để
+lấy car travel time giữa origin và toàn bộ stop với `routingMode=fast` và
+`departureTime` của thao tác user. Backend giải exact open path cho tối đa 10
+stop; ngày lớn hơn dùng nearest-neighbour và local improvement trên matrix.
+Chỉ các leg của thứ tự thắng mới được lấy geometry chi tiết. Lỗi Matrix, cặp
+điểm không reachable hoặc thiếu credential fallback về khoảng cách địa lý và
+không làm hỏng chỉ đường. Đây là thứ tự điều hướng tạm thời, không ghi đè thứ tự
+itinerary đã lưu. Luồng tạo plan chưa có current origin vẫn giữ policy hiện tại.
 
 Trong thời gian benchmark, Explorer được phép dùng HERE Discover như adapter
 POI thử nghiệm với Nominatim làm fallback. Việc này không chấp nhận HERE làm
@@ -74,8 +80,8 @@ năng tiếp cận, độ trễ và chất lượng SDK.
 ## Hệ quả
 
 - Một interface nhỏ giúp giảm phụ thuộc provider và cho phép dùng fake khi test.
-- Cần benchmark tiếp Matrix/Waypoints Sequence trước khi đổi thuật toán sắp thứ
-  tự stop sang dữ liệu thời gian đường thực.
+- Cần theo dõi latency, quota và chất lượng Matrix tại Việt Nam trước khi áp
+  cùng policy cho luồng tạo plan hoặc mô tả thành production SLA.
 - Tính năng riêng của provider có thể tồn tại trong adapter nhưng không được rò
   rỉ vào plan entity hoặc contract API công khai.
 - Hạn mức và pricing của plan provider là dữ liệu vận hành có thể thay đổi,

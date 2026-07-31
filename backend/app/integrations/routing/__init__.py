@@ -1,4 +1,13 @@
-from app.integrations.routing.here import HereRouteProvider
-from app.integrations.routing.here_transit import HereTransitRouteProvider
+from app.integrations.routing.opentripplanner import (
+    OpenTripPlannerTransitProvider,
+)
+from app.integrations.routing.valhalla import ValhallaRouteProvider
+from app.integrations.routing.valhalla_matrix import (
+    ValhallaTravelTimeMatrixProvider,
+)
 
-__all__ = ["HereRouteProvider", "HereTransitRouteProvider"]
+__all__ = [
+    "OpenTripPlannerTransitProvider",
+    "ValhallaRouteProvider",
+    "ValhallaTravelTimeMatrixProvider",
+]

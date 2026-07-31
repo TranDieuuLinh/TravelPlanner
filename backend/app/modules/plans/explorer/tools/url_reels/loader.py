@@ -61,8 +61,16 @@ class UrlReelLoader:
                     "address",
                     "street_address",
                     "location",
+                    "location_name",
+                    "location_address",
                     "venue",
                     "place",
+                    "city",
+                    "locality",
+                    "region",
+                    "state",
+                    "province",
+                    "country",
                     "extractorError",
                 )
                 if info.get(key) is not None

@@ -729,6 +729,51 @@ def test_plan_service_expands_days_to_fit_merged_selected_places() -> None:
     assert plan.unscheduled_places == []
 
 
+def test_plan_service_automatically_expands_days_for_url_places() -> None:
+    main_workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=_planner(FakeStatisticsProvider()),
+        finder=FinderService(),
+    )
+    service = PlanService(
+        repository=PlanRepository(),
+        explore_formatter=object(),  # type: ignore[arg-type]
+        main_workflow=main_workflow,
+        backup_workflow=object(),  # type: ignore[arg-type]
+    )
+    source_url = "https://www.tiktok.com/@traveler/video/123456789"
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hà Nội",
+                "pace": "balanced",
+            },
+            "tripSpec": {"days": 1},
+            "selectedPlaces": [
+                {
+                    "name": f"TikTok Place {index}",
+                    "sourceRefs": [source_url],
+                    "sourceOrder": index,
+                    "sourceDay": 1,
+                }
+                for index in range(1, 8)
+            ],
+        }
+    )
+
+    plan = asyncio.run(service.create_main_plan_from_explorer(payload))
+
+    assert plan.intent.days == 3
+    assert len(plan.days) == 3
+    assert {
+        item.name
+        for day in plan.days
+        for item in day.items
+        if item.source == "selected_place"
+    } == {f"TikTok Place {index}" for index in range(1, 8)}
+    assert plan.unscheduled_places == []
+
+
 def test_main_workflow_accepts_planning_context() -> None:
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),

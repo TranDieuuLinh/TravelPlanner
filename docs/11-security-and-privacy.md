@@ -76,6 +76,11 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 - Hỗ trợ export và xóa dữ liệu khi pháp luật cho phép.
 - Không theo dõi vị trí chính xác trừ khi user chủ động bật và tính năng thực sự
   cần.
+- Nút “Vị trí của tôi” chỉ gọi browser `getCurrentPosition` sau thao tác chủ
+  động của user, cập nhật marker và đưa camera về user đúng một lần; Planner
+  không dùng Geolocation watch. Tọa độ chỉ được chuyển tiếp cho route provider
+  khi user bấm “Chỉ đường” hoặc “Tính lại” ở một ngày cụ thể. Vị trí và route
+  điều hướng chỉ giữ trong memory của trang, không lưu vào plan/database/log.
 - Loại bỏ dữ liệu cá nhân khỏi log và analytics.
 
 Phải thực hiện threat model trước khi phát hành authentication, URL fetching,

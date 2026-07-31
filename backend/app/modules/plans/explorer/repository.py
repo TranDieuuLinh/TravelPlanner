@@ -154,6 +154,7 @@ class ExplorerPersistenceRepository:
                     source.get("url") or source.get("type", "unknown")
                     for source in (must_place.sources_json or [])
                 ],
+                sourceProvider=must_place.provider,
                 # Extraction evidence is retained on UserMustPlace for
                 # provenance, but raw captions are not user-facing plan notes.
                 notes=must_place.description,
@@ -184,6 +185,7 @@ def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
         resolution_status=must_place.resolution_status,
         latitude=must_place.latitude,
         longitude=must_place.longitude,
+        candidate_name=must_place.candidate_name,
         resolved_name=must_place.resolved_name,
         city=must_place.city,
         destination=must_place.destination,
@@ -206,6 +208,7 @@ def _is_persistable_resolution(
         resolution_status=resolution.status,
         latitude=resolution.latitude,
         longitude=resolution.longitude,
+        candidate_name=resolution.candidate.name,
         resolved_name=resolution.name,
         city=resolution.city,
         destination=destination,

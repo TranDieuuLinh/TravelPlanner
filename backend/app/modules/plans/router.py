@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.modules.auth.dependencies import get_optional_current_user
 from app.modules.preferences.schema import LongTermPreferenceProfile
-from app.modules.plans.dependencies import get_plan_service
+from app.modules.plans.dependencies import (
+    get_current_location_route_service,
+    get_plan_service,
+)
+from app.modules.plans.domain.entities import PlanTransportLeg
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
@@ -17,6 +21,8 @@ from app.modules.plans.explorer.schema import (
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.schema import (
     BackupPlanCreate,
+    CurrentLocationRouteCreate,
+    DayDirectionsCreate,
     FeatureMapItem,
     MainPlanCreate,
     MainPlanFromExplorerCreate,
@@ -25,6 +31,10 @@ from app.modules.plans.schema import (
     PlanRead,
     PlanningContextCreate,
 )
+from app.modules.plans.routing.current_location_service import (
+    CurrentLocationRouteService,
+)
+from app.modules.plans.routing.optimizer import RouteUnavailableError
 from app.modules.plans.service import PlanService
 from app.modules.users.model import User
 
@@ -138,6 +148,40 @@ async def create_main_plan_from_context(
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanRead:
     return await service.create_main_plan_from_context(payload)
+
+
+@router.post(
+    "/current-location-route",
+    response_model=PlanTransportLeg,
+)
+def current_location_route(
+    payload: CurrentLocationRouteCreate,
+    service: Annotated[
+        CurrentLocationRouteService,
+        Depends(get_current_location_route_service),
+    ],
+) -> PlanTransportLeg:
+    return service.calculate(payload)
+
+
+@router.post(
+    "/day-directions",
+    response_model=list[PlanTransportLeg],
+)
+def day_directions(
+    payload: DayDirectionsCreate,
+    service: Annotated[
+        CurrentLocationRouteService,
+        Depends(get_current_location_route_service),
+    ],
+) -> list[PlanTransportLeg]:
+    try:
+        return service.calculate_day(payload)
+    except RouteUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/{plan_id}/backup", response_model=PlanBundleRead, status_code=status.HTTP_201_CREATED)

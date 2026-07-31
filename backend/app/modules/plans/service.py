@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from app.modules.plans.domain.entities import Plan
 from app.modules.places.resolver import PlaceResolver, ProvisionalPlaceResolver
+from app.modules.places.alias_enricher import PlaceAliasEnricher
 from app.modules.plans.explorer.place_candidate_aggregator import (
     PlaceCandidateAggregator,
 )
@@ -66,6 +67,7 @@ class PlanService:
         preference_learning: PreferenceLearningService | None = None,
         user_repository: UserRepository | None = None,
         explorer_timing_logger: ExplorerTimingLogger | None = None,
+        place_alias_enricher: PlaceAliasEnricher | None = None,
     ) -> None:
         self.repository = repository
         self.explore_formatter = explore_formatter
@@ -83,6 +85,7 @@ class PlanService:
         )
         self.user_repository = user_repository
         self.explorer_timing_logger = explorer_timing_logger
+        self.place_alias_enricher = place_alias_enricher
 
     def feature_map(self) -> list[FeatureMapItem]:
         return [
@@ -298,6 +301,18 @@ class PlanService:
                 "Retry later, upload screenshots, or paste the caption instead "
                 "of generating an empty itinerary."
             )
+        if self.place_alias_enricher is not None:
+            alias_start = time.perf_counter()
+            candidates = await self.place_alias_enricher.enrich(
+                candidates,
+                destination=payload.destination,
+            )
+            trace.record_stage(
+                "placeAliasEnrichment",
+                "Tạo alias địa điểm Anh–Việt",
+                alias_start,
+                details={"candidateCount": len(candidates)},
+            )
         if payload.urls:
             async def format_context():
                 started_at = time.perf_counter()
@@ -356,6 +371,11 @@ class PlanService:
             trace.provider_counts[provider] = (
                 trace.provider_counts.get(provider, 0) + 1
             )
+            if resolution.status == "resolved":
+                trace.resolved_provider_counts[provider] = (
+                    trace.resolved_provider_counts.get(provider, 0) + 1
+                )
+        trace.add_url_resolution_results(url_reel_results, resolutions)
         post_processing_start = time.perf_counter()
         schedulable_candidates = [
             resolution.candidate
@@ -366,6 +386,7 @@ class PlanService:
                 resolution_status=resolution.status,
                 latitude=resolution.latitude,
                 longitude=resolution.longitude,
+                candidate_name=resolution.candidate.name,
                 resolved_name=resolution.name,
                 city=resolution.city,
                 destination=explorer.intent.destination,
@@ -523,7 +544,11 @@ class PlanService:
                     payload.user_id,
                 ),
             )
-        if payload.expand_days_to_fit_selected_places:
+        should_expand_days = (
+            payload.expand_days_to_fit_selected_places
+            or _has_url_selected_places(selected_places)
+        )
+        if should_expand_days:
             required_days = _required_days_for_selected_places(
                 selected_places,
                 pace=payload.intent.pace.value,
@@ -690,13 +715,30 @@ def _required_days_for_selected_places(
         "balanced": 3,
         "packed": 5,
     }.get(pace, 3)
-    count_based_days = math.ceil(len(selected_places) / capacity)
-    latest_source_day = max(
-        (
-            place.source_day
-            for place in selected_places
-            if place.source_day is not None
+    occupancy: dict[int, int] = {}
+    required_days = 1
+    ordered_places = sorted(
+        selected_places,
+        key=lambda place: (
+            place.source_day or 1,
+            place.source_order or 10_000,
+            place.name.casefold(),
         ),
-        default=0,
     )
-    return min(30, max(1, count_based_days, latest_source_day))
+    for place in ordered_places:
+        day = place.source_day or 1
+        while day < 30 and occupancy.get(day, 0) >= capacity:
+            day += 1
+        occupancy[day] = occupancy.get(day, 0) + 1
+        required_days = max(required_days, day)
+    return min(30, required_days)
+
+
+def _has_url_selected_places(
+    selected_places: list[SelectedPlaceCreate],
+) -> bool:
+    return any(
+        source_ref.startswith(("http://", "https://"))
+        for place in selected_places
+        for source_ref in place.source_refs
+    )

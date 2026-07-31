@@ -77,6 +77,39 @@ class RecordingLLM:
         )
 
 
+def test_plain_vague_prompt_gets_v2_completeness_metadata(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.response_formatter.settings.enable_llm_explore_formatter",
+        True,
+    )
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.response_formatter.settings.gemini_api_key",
+        "test-key",
+    )
+    formatter = ExploreResponseFormatter(RecordingLLM())  # type: ignore[arg-type]
+
+    response = asyncio.run(
+        formatter.format(
+            FullExploreRequest(
+                rawRequest="Tôi muốn đi du lịch",
+                destination="",
+            )
+        )
+    )
+
+    assert response.explorer.mode == "vague"
+    assert response.explorer.input_completeness.value == "vague"
+    assert response.explorer.intent.destination == ""
+    assert [item.field for item in response.explorer.missing_fields] == [
+        "destination",
+        "days",
+        "budget",
+    ]
+    assert response.explorer.missing_info_questions == []
+
+
 def test_url_context_formatter_sends_compact_summary_and_structured_schema(
     monkeypatch,
 ) -> None:

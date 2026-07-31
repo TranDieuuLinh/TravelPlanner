@@ -1,18 +1,49 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import re
+import signal
+import tempfile
 import time
 import unicodedata
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, Field
 
 from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
+
+
+class PlaceLookupRecord(Protocol):
+    id: str
+    name: str
+    place_type: str
+    address: str | None
+    city: str | None
+    country: str | None
+    country_code: str | None
+    primary_area: str | None
+    latitude: Decimal | None
+    longitude: Decimal | None
+    data_confidence: str
+    source_fetched_at: datetime | None
+    metadata_json: dict
+
+
+class PlaceLookupRepository(Protocol):
+    def list_active_for_planner_research(
+        self,
+        region_key: str | None = None,
+        *,
+        limit: int = 5000,
+    ) -> list[PlaceLookupRecord]: ...
 
 
 class PlaceResolution(BaseModel):
@@ -170,57 +201,108 @@ class FallbackPlaceResolver(PlaceResolver):
         return combined_results
 
 
-class HerePlaceResolver(PlaceResolver):
-    provider_name = "here"
+class DatabasePlaceResolver(PlaceResolver):
+    provider_name = "database"
+
+    def __init__(self, repository: PlaceLookupRepository) -> None:
+        self.repository = repository
+
+    async def resolve(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution:
+        from app.modules.plans.planner.region_context import normalize_region_key
+
+        search_region = candidate.search_region or destination
+        region_key = normalize_region_key(search_region)
+        records = self.repository.list_active_for_planner_research(region_key)
+        candidate_names = _candidate_lookup_names(candidate)
+        candidate_keys = {
+            _normalized(name)
+            for name in candidate_names
+            if _normalized(name)
+        }
+        matches = [
+            record
+            for record in records
+            if record.latitude is not None
+            and record.longitude is not None
+            and candidate_keys.intersection(_database_name_keys(record))
+        ]
+        if not matches:
+            return _unresolved(
+                candidate,
+                search_region,
+                reason="not_found",
+                provider=self.provider_name,
+            )
+
+        record = max(
+            matches,
+            key=lambda item: (
+                _database_confidence_score(item.data_confidence),
+                bool(item.source_fetched_at),
+            ),
+        )
+        metadata = (
+            record.metadata_json
+            if isinstance(record.metadata_json, dict)
+            else {}
+        )
+        return PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider=self.provider_name,
+            externalId=record.id,
+            name=record.name,
+            address=record.address or candidate.address_hint,
+            city=record.city or search_region,
+            country=record.country,
+            countryCode=(
+                record.country_code.upper()
+                if record.country_code
+                else None
+            ),
+            primaryArea=record.primary_area,
+            latitude=record.latitude,
+            longitude=record.longitude,
+            description=_optional_text(metadata.get("description")),
+            dataConfidence=(
+                record.data_confidence
+                if record.data_confidence in {"low", "medium", "high"}
+                else "medium"
+            ),
+            fetchedAt=record.source_fetched_at,
+            attribution=(
+                _optional_text(metadata.get("attribution"))
+                or "VSF Travel place catalog"
+            ),
+        )
+
+
+class GoogleMapsScraperPlaceResolver(PlaceResolver):
+    """Resolve aliases with the Playwright google-maps-scraper worker."""
+
+    provider_name = "google_maps_scraper"
 
     def __init__(
         self,
         *,
-        base_url: str,
-        geocode_base_url: str = "https://geocode.search.hereapi.com",
-        api_key: str,
-        timeout_seconds: float = 10.0,
-        country_code: str = "VNM",
-        language: str = "vi-VN",
-        min_interval_seconds: float = 0.2,
-        max_concurrency: int = 4,
+        executable: str | None = None,
+        work_dir: Path | None = None,
+        timeout_seconds: float = 45.0,
+        max_alias_queries: int = 3,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.geocode_base_url = geocode_base_url.rstrip("/")
-        self.api_key = api_key
-        self.timeout_seconds = timeout_seconds
-        self.country_code = country_code.strip().upper()
-        self.language = language
-        self.min_interval_seconds = max(min_interval_seconds, 0.2)
-        self.max_concurrency = max(1, min(max_concurrency, 4))
-        self._request_lock = asyncio.Lock()
-        self._region_lock = asyncio.Lock()
-        self._last_request_at = 0.0
-        self._response_cache: dict[str, list[dict[str, Any]]] = {}
-        self._region_cache: dict[str, tuple[float, float]] = {}
-
-    async def resolve_many(
-        self,
-        candidates: list[UnifiedPlaceCandidate],
-        *,
-        destination: str,
-    ) -> list[PlaceResolution]:
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
-        async def resolve_one(
-            candidate: UnifiedPlaceCandidate,
-        ) -> PlaceResolution:
-            async with semaphore:
-                return await self.resolve(
-                    candidate,
-                    destination=destination,
-                )
-
-        return list(
-            await asyncio.gather(
-                *(resolve_one(candidate) for candidate in candidates)
+        if not executable and work_dir is None:
+            raise ValueError(
+                "google-maps-scraper needs an executable or shared work_dir"
             )
-        )
+        self.executable = executable
+        self.work_dir = work_dir
+        self.timeout_seconds = timeout_seconds
+        self.max_alias_queries = max_alias_queries
 
     async def resolve(
         self,
@@ -229,24 +311,28 @@ class HerePlaceResolver(PlaceResolver):
         destination: str,
     ) -> PlaceResolution:
         search_region = candidate.search_region or destination
-        query = ", ".join(
-            part
-            for part in (
-                candidate.name,
-                candidate.address_hint,
-                search_region,
-            )
-            if part
+        candidate_names = _candidate_lookup_names(candidate)
+        queries = _google_maps_alias_queries(
+            candidate_names,
+            address_hint=candidate.address_hint,
+            search_region=search_region,
+            limit=self.max_alias_queries,
         )
         try:
-            payload = await self._search(query, search_region=search_region)
-        except (httpx.HTTPError, ValueError, TypeError):
+            payload = await self._search(queries)
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            asyncio.TimeoutError,
+        ):
             return _unresolved(
                 candidate,
                 search_region,
                 reason="provider_error",
                 provider=self.provider_name,
             )
+
         if not payload:
             return _unresolved(
                 candidate,
@@ -255,46 +341,48 @@ class HerePlaceResolver(PlaceResolver):
                 provider=self.provider_name,
             )
 
-        candidate_names = [candidate.name, *candidate.search_names]
-        result = _best_here_result(
+        result = _best_google_maps_result(
             payload,
             candidate_names=candidate_names,
             search_region=search_region,
+            candidate_category=candidate.category.value,
         )
         title = _optional_text(result.get("title")) or candidate.name
-        address = (
-            result.get("address")
-            if isinstance(result.get("address"), dict)
-            else {}
+        address = _google_maps_address(result) or candidate.address_hint
+        latitude = _as_decimal(result.get("latitude"))
+        longitude = _as_decimal(
+            result.get("longitude", result.get("longtitude"))
         )
-        position = (
-            result.get("position")
-            if isinstance(result.get("position"), dict)
-            else {}
+        name_matches = any(
+            _token_names_match(_name_tokens(name), _name_tokens(title))
+            for name in candidate_names
         )
-        latitude = _as_decimal(position.get("lat"))
-        longitude = _as_decimal(position.get("lng"))
-        name_matches = _here_name_matches(candidate_names, title)
-        region_matches = _here_result_matches_region(
+        region_matches = _google_maps_result_matches_region(
             result,
             search_region=search_region,
         )
-        result_type = (_optional_text(result.get("resultType")) or "").casefold()
+        category_compatible = _category_compatible(
+            candidate.category.value,
+            result,
+        )
+        coordinates_valid = _coordinates_valid(latitude, longitude)
         rejection_reasons = [
             reason
             for condition, reason in (
                 (not name_matches, "name_mismatch"),
                 (region_matches is False, "region_mismatch"),
-                (result_type != "place", "not_a_place"),
-                (
-                    latitude is None or longitude is None,
-                    "coordinates_missing",
-                ),
+                (category_compatible is False, "category_mismatch"),
+                (not coordinates_valid, "coordinates_missing"),
             )
             if condition
         ]
         status = "resolved" if not rejection_reasons else "unresolved"
-        exact_name_match = _name_tokens(candidate.name) == _name_tokens(title)
+        complete_address = result.get("complete_address")
+        complete_address_dict = (
+            complete_address
+            if isinstance(complete_address, dict)
+            else {}
+        )
         return PlaceResolution(
             candidate=candidate,
             status=status,
@@ -302,133 +390,144 @@ class HerePlaceResolver(PlaceResolver):
                 None if status == "resolved" else "+".join(rejection_reasons)
             ),
             provider=self.provider_name,
-            externalId=_optional_text(result.get("id")),
+            externalId=(
+                _optional_text(result.get("place_id"))
+                or _optional_text(result.get("cid"))
+                or _optional_text(result.get("data_id"))
+            ),
             name=title,
-            address=_optional_text(address.get("label"))
-            or candidate.address_hint,
-            city=_first_address_value(
-                address,
-                "city",
-                "county",
-                "state",
-            )
-            or search_region,
-            country=_optional_text(address.get("countryName")),
+            address=address,
+            city=(
+                _optional_text(complete_address_dict.get("city"))
+                or search_region
+            ),
+            country=_optional_text(complete_address_dict.get("country")),
             countryCode=(
-                _optional_text(address.get("countryCode")) or ""
+                _optional_text(complete_address_dict.get("country_code"))
+                or ""
             ).upper()
             or None,
-            primaryArea=_first_address_value(
-                address,
-                "district",
-                "subdistrict",
-                "county",
+            primaryArea=(
+                _optional_text(complete_address_dict.get("borough"))
+                or _optional_text(complete_address_dict.get("neighborhood"))
             ),
             latitude=latitude,
             longitude=longitude,
-            dataConfidence=(
-                "high"
-                if status == "resolved" and exact_name_match
-                else "medium"
-                if status == "resolved"
-                else "low"
-            ),
+            description=_google_maps_description(result),
+            dataConfidence="medium" if status == "resolved" else "low",
             fetchedAt=datetime.now(timezone.utc),
-            attribution="© HERE",
+            attribution="Google Maps data via gosom/google-maps-scraper",
         )
 
     async def _search(
         self,
-        query: str,
-        *,
-        search_region: str,
+        queries: list[str],
     ) -> list[dict[str, Any]]:
-        cache_key = "|".join(
-            (_normalized(query), self.country_code, self.language)
-        )
-        cached = self._response_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        latitude, longitude = await self._region_position(search_region)
-        data = await self._request_json(
-            f"{self.base_url}/v1/discover",
-            params={
-                "q": query,
-                "at": f"{latitude},{longitude}",
-                "limit": 5,
-                "lang": self.language,
-                "apiKey": self.api_key,
-            },
-        )
-        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-            raise ValueError("HERE discover response must contain an items list.")
-        results = [item for item in data["items"] if isinstance(item, dict)]
-        self._response_cache[cache_key] = results
-        return results
-
-    async def _region_position(
-        self,
-        search_region: str,
-    ) -> tuple[float, float]:
-        cache_key = "|".join(
-            (_normalized(search_region), self.country_code, self.language)
-        )
-        cached = self._region_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        async with self._region_lock:
-            cached = self._region_cache.get(cache_key)
-            if cached is not None:
-                return cached
-            query = search_region
-            if self.country_code == "VNM":
-                query = f"{search_region}, Việt Nam"
-            data = await self._request_json(
-                f"{self.geocode_base_url}/v1/geocode",
-                params={
-                    "q": query,
-                    "limit": 1,
-                    "lang": self.language,
-                    "apiKey": self.api_key,
+        if not queries:
+            return []
+        if self.work_dir is not None:
+            return await self._search_via_worker(queries)
+        if not self.executable:
+            raise ValueError("Google Maps scraper executable is missing.")
+        with tempfile.TemporaryDirectory(
+            prefix="vsf-google-maps-"
+        ) as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "queries.txt"
+            results_path = temp_path / "results.json"
+            input_path.write_text(
+                "\n".join(queries) + "\n",
+                encoding="utf-8",
+            )
+            process = await asyncio.create_subprocess_exec(
+                self.executable,
+                "-input",
+                str(input_path),
+                "-results",
+                str(results_path),
+                "-json",
+                "-depth",
+                "1",
+                "-c",
+                "1",
+                "-lang",
+                "vi",
+                "-exit-on-inactivity",
+                "15s",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    **os.environ,
+                    "DISABLE_TELEMETRY": "1",
                 },
+                start_new_session=True,
             )
-            items = data.get("items") if isinstance(data, dict) else None
-            if not isinstance(items, list) or not items:
-                raise ValueError(
-                    "HERE geocode response did not resolve the region."
+            try:
+                _, _ = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=self.timeout_seconds,
                 )
-            first = items[0] if isinstance(items[0], dict) else {}
-            position = (
-                first.get("position")
-                if isinstance(first.get("position"), dict)
-                else {}
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await process.communicate()
+                raise
+            if process.returncode != 0:
+                raise ValueError(
+                    "Google Maps scraper CLI exited unsuccessfully."
+                )
+            if not results_path.exists():
+                return []
+            return _load_google_maps_output(
+                results_path.read_text(encoding="utf-8")
             )
-            latitude = _as_float_or_none(position.get("lat"))
-            longitude = _as_float_or_none(position.get("lng"))
-            if latitude is None or longitude is None:
-                raise ValueError(
-                    "HERE geocode response is missing coordinates."
-                )
-            result = (latitude, longitude)
-            self._region_cache[cache_key] = result
-            return result
 
-    async def _request_json(
+    async def _search_via_worker(
         self,
-        url: str,
-        *,
-        params: dict[str, str | int],
-    ) -> Any:
-        async with self._request_lock:
-            elapsed = time.monotonic() - self._last_request_at
-            wait_for = self.min_interval_seconds - elapsed
-            if wait_for > 0:
-                await asyncio.sleep(wait_for)
-            self._last_request_at = time.monotonic()
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
+        queries: list[str],
+    ) -> list[dict[str, Any]]:
+        if self.work_dir is None:
+            raise ValueError("Google Maps scraper work directory is missing.")
+
+        request_id = uuid.uuid4().hex
+        requests_dir = self.work_dir / "requests"
+        responses_dir = self.work_dir / "responses"
+        errors_dir = self.work_dir / "errors"
+        for directory in (requests_dir, responses_dir, errors_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        temporary_request_path = requests_dir / f".{request_id}.tmp"
+        request_path = requests_dir / f"{request_id}.txt"
+        response_path = responses_dir / f"{request_id}.json"
+        error_path = errors_dir / f"{request_id}.txt"
+        temporary_request_path.write_text(
+            "\n".join(queries) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary_request_path, request_path)
+
+        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                if response_path.exists():
+                    payload = _load_google_maps_output(
+                        response_path.read_text(encoding="utf-8")
+                    )
+                    response_path.unlink(missing_ok=True)
+                    return payload
+                if error_path.exists():
+                    error_path.unlink(missing_ok=True)
+                    raise ValueError(
+                        "Google Maps scraper worker exited unsuccessfully."
+                    )
+                await asyncio.sleep(0.1)
+        finally:
+            temporary_request_path.unlink(missing_ok=True)
+            request_path.unlink(missing_ok=True)
+
+        raise asyncio.TimeoutError
 
 
 class NominatimPlaceResolver(PlaceResolver):
@@ -467,7 +566,7 @@ class NominatimPlaceResolver(PlaceResolver):
         )
         try:
             payload = await self._search(query)
-            candidate_names = [candidate.name, *candidate.search_names]
+            candidate_names = _candidate_lookup_names(candidate)
             if (
                 candidate.search_names
                 and not _payload_matches_any_name(payload, candidate_names)
@@ -688,13 +787,6 @@ def _as_float(value: Any) -> float:
         return 0.0
 
 
-def _as_float_or_none(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _is_usable_resolution(result: PlaceResolution) -> bool:
     return (
         result.status == "resolved"
@@ -711,77 +803,6 @@ def _provider_reason(
     reason = result.resolution_reason or default_reason
     return f"{provider}:{reason}"
 
-
-def _best_here_result(
-    payload: list[dict[str, Any]],
-    *,
-    candidate_names: list[str],
-    search_region: str,
-) -> dict[str, Any]:
-    def score(result: dict[str, Any]) -> tuple[int, int, int]:
-        title = _optional_text(result.get("title")) or ""
-        matches_name = _here_name_matches(candidate_names, title)
-        matches_region = _here_result_matches_region(
-            result,
-            search_region=search_region,
-        )
-        is_place = (
-            (_optional_text(result.get("resultType")) or "").casefold()
-            == "place"
-        )
-        return (
-            int(matches_name),
-            int(matches_region is not False),
-            int(is_place),
-        )
-
-    return max(payload, key=score)
-
-
-def _here_result_matches_region(
-    result: dict[str, Any],
-    *,
-    search_region: str,
-) -> bool | None:
-    region_key = _normalized(search_region)
-    if not region_key:
-        return None
-    address = (
-        result.get("address")
-        if isinstance(result.get("address"), dict)
-        else {}
-    )
-    location_text = " ".join(
-        str(value) for value in address.values() if value
-    )
-    if not location_text:
-        return None
-    return region_key in _normalized(location_text)
-
-
-def _here_name_matches(
-    candidate_names: list[str],
-    provider_title: str,
-) -> bool:
-    title_variants = [provider_title]
-    prefix = provider_title.split("(", 1)[0].strip()
-    if prefix and prefix != provider_title:
-        title_variants.append(prefix)
-    title_variants.extend(
-        match.strip()
-        for match in re.findall(r"\(([^()]*)\)", provider_title)
-        if match.strip()
-    )
-    return any(
-        _token_names_match(
-            _name_tokens(candidate_name),
-            _name_tokens(title_variant),
-        )
-        for candidate_name in candidate_names
-        for title_variant in title_variants
-    )
-
-
 def _localized_name(
     namedetails: dict[str, Any],
     result: dict[str, Any],
@@ -796,6 +817,216 @@ def _localized_name(
         if value:
             return value
     return _optional_text(result.get("name"))
+
+
+def _database_name_keys(record: PlaceLookupRecord) -> set[str]:
+    metadata = (
+        record.metadata_json
+        if isinstance(record.metadata_json, dict)
+        else {}
+    )
+    raw_aliases: list[Any] = []
+    for key in (
+        "aliases",
+        "searchNames",
+        "englishNames",
+        "vietnameseNames",
+        "alternateNames",
+    ):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            raw_aliases.extend(value)
+    for key in (
+        "originalName",
+        "officialName",
+        "nameEn",
+        "nameVi",
+    ):
+        value = metadata.get(key)
+        if value:
+            raw_aliases.append(value)
+    return {
+        _normalized(str(value))
+        for value in (record.name, *raw_aliases)
+        if value and _normalized(str(value))
+    }
+
+
+def _candidate_lookup_names(
+    candidate: UnifiedPlaceCandidate,
+) -> list[str]:
+    return list(
+        dict.fromkeys(
+            name
+            for name in (
+                candidate.original_name,
+                candidate.name,
+                *candidate.english_names,
+                *candidate.vietnamese_names,
+                *candidate.alternate_names,
+                *candidate.search_names,
+            )
+            if name
+        )
+    )
+
+
+def _database_confidence_score(value: str) -> int:
+    return {"low": 1, "medium": 2, "high": 3}.get(value, 0)
+
+
+def _google_maps_alias_queries(
+    candidate_names: list[str],
+    *,
+    address_hint: str | None,
+    search_region: str,
+    limit: int,
+) -> list[str]:
+    return [
+        ", ".join(
+            _single_line(part)
+            for part in (name, address_hint, search_region)
+            if part and _single_line(part)
+        )
+        for name in candidate_names[:limit]
+    ]
+
+
+def _load_google_maps_output(value: str) -> list[dict[str, Any]]:
+    text = value.strip()
+    if not text:
+        return []
+    try:
+        return _google_maps_results(json.loads(text))
+    except json.JSONDecodeError:
+        results: list[dict[str, Any]] = []
+        for line in text.splitlines():
+            try:
+                results.extend(_google_maps_results(json.loads(line)))
+            except json.JSONDecodeError:
+                continue
+        return results
+
+
+def _google_maps_results(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict) and (
+        "title" in value
+        or "latitude" in value
+        or "longitude" in value
+        or "longtitude" in value
+    ):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        for key in ("places", "results", "data"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                return [
+                    item for item in nested if isinstance(item, dict)
+                ]
+    return []
+
+
+def _single_line(value: str) -> str:
+    return " ".join(value.split())
+
+
+def _best_google_maps_result(
+    payload: list[dict[str, Any]],
+    *,
+    candidate_names: list[str],
+    search_region: str,
+    candidate_category: str,
+) -> dict[str, Any]:
+    def score(result: dict[str, Any]) -> tuple[int, int, int, float]:
+        title = _optional_text(result.get("title")) or ""
+        matches_name = any(
+            _token_names_match(_name_tokens(name), _name_tokens(title))
+            for name in candidate_names
+        )
+        matches_region = _google_maps_result_matches_region(
+            result,
+            search_region=search_region,
+        )
+        category_compatible = _category_compatible(
+            candidate_category,
+            result,
+        )
+        return (
+            int(matches_name),
+            int(matches_region is not False),
+            int(category_compatible is not False),
+            _as_float(result.get("review_rating")),
+        )
+
+    return max(payload, key=score)
+
+
+def _google_maps_address(result: dict[str, Any]) -> str | None:
+    address = _optional_text(result.get("address"))
+    if address:
+        return address
+    complete_address = result.get("complete_address")
+    if isinstance(complete_address, str):
+        return _optional_text(complete_address)
+    if isinstance(complete_address, dict):
+        return _optional_text(
+            complete_address.get("full_address")
+            or complete_address.get("address")
+        )
+    return None
+
+
+def _google_maps_description(result: dict[str, Any]) -> str | None:
+    descriptions = result.get("descriptions")
+    if isinstance(descriptions, list):
+        return next(
+            (
+                text
+                for value in descriptions
+                if (text := _optional_text(value))
+            ),
+            None,
+        )
+    return _optional_text(descriptions)
+
+
+def _google_maps_result_matches_region(
+    result: dict[str, Any],
+    *,
+    search_region: str,
+) -> bool | None:
+    region_key = _normalized(search_region)
+    if not region_key:
+        return None
+    complete_address = result.get("complete_address")
+    location_parts: list[Any] = [
+        result.get("address"),
+        result.get("link"),
+    ]
+    if isinstance(complete_address, dict):
+        location_parts.extend(complete_address.values())
+    elif complete_address:
+        location_parts.append(complete_address)
+    location_text = " ".join(
+        str(value) for value in location_parts if value
+    )
+    if not location_text:
+        return None
+    return region_key in _normalized(location_text)
+
+
+def _coordinates_valid(
+    latitude: Decimal | None,
+    longitude: Decimal | None,
+) -> bool:
+    return (
+        latitude is not None
+        and longitude is not None
+        and Decimal("-90") <= latitude <= Decimal("90")
+        and Decimal("-180") <= longitude <= Decimal("180")
+    )
 
 
 def _name_matches(
