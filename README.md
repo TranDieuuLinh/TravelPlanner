@@ -56,22 +56,24 @@ VSF_TravelPlanner/
 │   ├── glossary.md
 │   └── decisions/
 ├── frontend/
+├── admin-frontend/               # Console nội bộ quan sát planning runs
 ├── backend/
 └── docker-compose.yml
 ```
 
 ## Chạy dự án trên máy cá nhân
 
-Toàn bộ runtime (frontend, backend và PostgreSQL) chạy bằng Docker:
+Docker Compose chỉ dùng cho PostgreSQL và backend:
 
 ```bash
 docker compose up --build
 ```
 
-Frontend có tại `http://localhost:3000`; API và tài liệu API có tại
-`http://localhost:8000` và `http://localhost:8000/docs`. Backend tự chạy Alembic
-đến revision mới nhất trước khi nhận request. Dữ liệu PostgreSQL nằm trong
-volume `postgres_data`.
+API và tài liệu API có tại `http://localhost:8000` và
+`http://localhost:8000/docs`. Backend tự chạy Alembic đến revision mới nhất
+trước khi nhận request. Dữ liệu PostgreSQL nằm trong volume `postgres_data`.
+Frontend người dùng và Planning Control chạy trực tiếp trên host, không nằm
+trong Docker Compose.
 
 Khi cần chạy backend trực tiếp trên host nhưng vẫn dùng PostgreSQL trong Docker:
 
@@ -94,6 +96,20 @@ npm install
 cp .env.local.example .env.local
 npm run dev
 ```
+
+Planning Control là một Next.js app riêng chạy trên host tại
+`http://localhost:3001`:
+
+```bash
+cd admin-frontend
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Trong mục Golden dataset, admin có thể chạy từng case qua module runtime thật
+và xem effective input, actual output, duration, lỗi contract cùng mismatch so
+với golden projection. Các case dùng URL/LLM có thể gọi provider thật.
 
 ## Kiểm thử
 

@@ -109,6 +109,16 @@ class PlannerService:
         )
         return await self._create_plan(planner_input, statistics_status)
 
+    async def create_from_agent_input(
+        self,
+        planner_input: PlannerAgentInput,
+    ) -> PlannerAgentOutput:
+        """Execute the real Planner against an explicit evaluation contract."""
+        return await self._create_plan(
+            planner_input,
+            "provided_evaluation_context",
+        )
+
     def _build_input(
         self,
         *,

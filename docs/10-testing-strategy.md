@@ -49,6 +49,12 @@ provider nhỏ, tách khỏi quy trình trên máy cá nhân thông thường.
   control phụ thuộc quyền hạn.
 - End-to-end test các hành trình quan trọng nhất bằng Playwright.
 
+`admin-frontend/` phải vượt qua `npm run typecheck` và `npm run build`. Backend
+có test riêng cho RBAC, list/detail planning run, redaction và contract report
+của golden dataset. Golden runner phải có test cho ít nhất một module thực thi
+thành công không phụ thuộc provider (Checker), một input sai contract và việc
+lưu execution thành planning run để điều tra lại.
+
 ### Đánh giá AI
 
 Hành vi AI cần bộ evaluation có version bên cạnh test truyền thống. Xem

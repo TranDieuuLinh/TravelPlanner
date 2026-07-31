@@ -15,6 +15,7 @@ from app.modules.marketplace.model import (
 from app.modules.places.model import Place, PlaceRegionCatalogState, PlaceRegionSnapshot
 from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
 from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from app.modules.planning_runs.model import PlanningRun, PlanningRunStage
 from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.users.model import User
 
@@ -32,6 +33,8 @@ __all__ = [
     "Place",
     "PlaceRegionCatalogState",
     "PlaceRegionSnapshot",
+    "PlanningRun",
+    "PlanningRunStage",
     "Report",
     "Review",
     "ExplorerIntake",
