@@ -236,3 +236,31 @@ export function runGoldenCase(caseId: string): Promise<GoldenCaseExecution> {
     { method: "POST" }
   );
 }
+
+export function updateGoldenCaseInput(caseId: string, input: unknown): Promise<GoldenCase> {
+  return request(
+    `/admin/planning-runs/golden/cases/${encodeURIComponent(caseId)}`,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function testRegionOverview(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/region-overview`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function testConstraintResearch(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/constraint-research`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function testFestivalDiscovery(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/festival-discovery`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}

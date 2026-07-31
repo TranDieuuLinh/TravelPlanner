@@ -45,6 +45,22 @@
           "partySize": 2,
           "startDate": null,
           "endDate": null,
+          "accommodation": {
+            "required": true,
+            "hotelArea": "near city center",
+            "checkInDate": null,
+            "checkOutDate": null,
+            "roomCount": 1,
+            "guestCount": 2,
+            "preferences": []
+          },
+          "transport": {
+            "required": true,
+            "preferredModes": ["taxi", "walk"],
+            "avoidModes": [],
+            "includeBetweenPlaces": true,
+            "includeArrivalDeparture": true
+          },
           "budget": {
             "targetAmount": null,
             "currency": "VND",
@@ -52,7 +68,13 @@
           }
         },
         "assumptions": ["Sử dụng ngân sách vừa phải (medium) do người dùng không chỉ định số tiền cụ thể."],
-        "missingInfoQuestions": []
+        "missingInfoQuestions": [],
+        "trace": {
+          "agent": "explorer",
+          "status": "completed",
+          "summary": "Normalized user request into TravelIntent.",
+          "notes": []
+        }
       },
       "assertions": [
         "destination là 'Ha Noi'",
@@ -93,7 +115,32 @@
           },
           "clarifyingQuestions": []
         },
-        "tripSpec": { "days": 2, "budget": { "level": "medium" } }
+        "tripSpec": {
+          "days": 2,
+          "budget": { "level": "medium" },
+          "accommodation": {
+            "required": true,
+            "hotelArea": "near city center",
+            "checkInDate": null,
+            "checkOutDate": null,
+            "roomCount": 1,
+            "guestCount": 2,
+            "preferences": []
+          },
+          "transport": {
+            "required": true,
+            "preferredModes": ["taxi", "walk"],
+            "avoidModes": [],
+            "includeBetweenPlaces": true,
+            "includeArrivalDeparture": true
+          }
+        },
+        "trace": {
+          "agent": "explorer",
+          "status": "completed",
+          "summary": "Normalized user request into TravelIntent.",
+          "notes": []
+        }
       },
       "assertions": [
         "avoidPlaces chứa 'nightlife' và 'bar'",
@@ -123,13 +170,23 @@
           "mustVisitPlaces": [],
           "avoidPlaces": [],
           "constraints": [],
+          "constraintPolicy": {
+            "excludedPlaceTypes": [],
+            "geographicScope": { "type": "unrestricted" }
+          },
           "clarifyingQuestions": [
             "Chuyến đi Hà Nội của bạn sẽ kéo dài mấy ngày?"
           ]
         },
         "missingInfoQuestions": [
           "Trip duration (days) is missing."
-        ]
+        ],
+        "trace": {
+          "agent": "explorer",
+          "status": "completed",
+          "summary": "Normalized user request into TravelIntent.",
+          "notes": []
+        }
       },
       "assertions": [
         "clarifyingQuestions chứa câu hỏi làm rõ về số ngày chuyến đi Hà Nội",

@@ -8,6 +8,7 @@ from app.modules.planning_runs.golden_dataset import (
     get_golden_case,
     golden_modules,
     load_golden_cases,
+    update_golden_case_input,
 )
 from app.modules.planning_runs.golden_runner import GoldenCaseRunner
 from app.modules.planning_runs.repository import PlanningRunRepository
@@ -126,6 +127,23 @@ async def run_golden_case(
         plan_service,
         repository,
     ).run(case, user_id=current_user.id)
+
+
+@router.put("/golden/cases/{case_id}")
+async def update_golden_case(
+    case_id: str,
+    input_data: dict,
+    _: Annotated[User, Depends(require_role("admin"))],
+) -> dict:
+    case = update_golden_case_input(case_id, input_data)
+    if case is None:
+        raise AppError(
+            404,
+            "GOLDEN_CASE_NOT_FOUND",
+            "Golden dataset case was not found.",
+        )
+    return case
+
 
 
 @router.post("/tools/region-overview", response_model=RegionOverviewOutput)

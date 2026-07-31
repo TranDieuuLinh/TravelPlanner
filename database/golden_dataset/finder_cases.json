@@ -13,6 +13,7 @@
         "tripSpec": { "days": 1 },
         "macroPlan": {
           "title": "Hà Nội 1 Ngày Di Sản Phố Cổ",
+          "destination": "Hà Nội",
           "dayBriefs": [
             {
               "day": 1,
@@ -47,7 +48,8 @@
                 "placeType": "must_visit",
                 "role": "main_activity",
                 "source": "selected_place",
-                "durationMinutes": 120
+                "durationMinutes": 120,
+                "activityIntensity": "moderate"
               },
               {
                 "itemId": "item_02",
@@ -77,12 +79,23 @@
                 "placeType": "attraction",
                 "role": "main_activity",
                 "source": "finder_suggestion",
-                "durationMinutes": 120
+                "durationMinutes": 120,
+                "activityIntensity": "moderate"
               }
             ]
           }
         ],
-        "unscheduledPlaces": []
+        "unscheduledPlaces": [],
+        "tripCostEstimate": null,
+        "finalUserStatus": {},
+        "finalPlanStatus": {},
+        "warnings": [],
+        "trace": {
+          "agent": "finder",
+          "status": "completed",
+          "summary": "Filled dynamic day skeletons from MacroPlan.",
+          "notes": []
+        }
       },
       "assertions": [
         "Văn Miếu Quốc Tử Giám được xếp đầu tiên trong khung sáng (08:30-10:30)",
@@ -117,7 +130,17 @@
               { "name": "Chợ Đêm Phố Cổ Hà Nội", "source": "selected_place", "timeWindow": "19:00-21:00" }
             ]
           }
-        ]
+        ],
+        "tripCostEstimate": null,
+        "finalUserStatus": {},
+        "finalPlanStatus": {},
+        "warnings": [],
+        "trace": {
+          "agent": "finder",
+          "status": "completed",
+          "summary": "Filled dynamic day skeletons from MacroPlan.",
+          "notes": []
+        }
       },
       "assertions": [
         "Thứ tự các item trong day 1 giữ nguyên 1 -> 2 -> 3 theo sourceOrder",

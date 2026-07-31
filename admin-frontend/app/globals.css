@@ -749,6 +749,201 @@ select {
   max-height: 390px;
   margin: 0;
   overflow: auto;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(134, 162, 154, 0.11);
+  color: #a9beb8;
+  font-size: 0.58rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.status::before {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.status-completed,
+.status-passed {
+  background: rgba(103, 232, 189, 0.09);
+  color: var(--mint);
+}
+
+.status-running {
+  background: rgba(121, 168, 255, 0.1);
+  color: var(--blue);
+}
+
+.status-failed {
+  background: rgba(255, 116, 108, 0.1);
+  color: var(--red);
+}
+
+.status-blocked,
+.status-warning,
+.status-draft {
+  background: rgba(245, 185, 66, 0.1);
+  color: var(--amber);
+}
+
+.detailPane {
+  min-height: 620px;
+  padding: 24px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 22px;
+}
+
+.detailHeader h2 {
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.035em;
+}
+
+.detailHeader div > p:last-child {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.runFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 20px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--line);
+}
+
+.runFacts span {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  background: #0d1b19;
+}
+
+.runFacts small {
+  color: var(--muted);
+  font-size: 0.59rem;
+  text-transform: uppercase;
+}
+
+.runFacts b,
+.runFacts code {
+  overflow: hidden;
+  color: #d2e1dc;
+  font-size: 0.69rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runError {
+  margin-bottom: 18px;
+}
+
+.runError p {
+  margin: 6px 0 0;
+}
+
+.stageStack {
+  display: grid;
+  gap: 14px;
+}
+
+.stageInspector {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #091412;
+}
+
+.stageInspector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px;
+}
+
+.stageInspector > header > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.stageNumber {
+  color: var(--lime);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+}
+
+.stageInspector h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stageInspector header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.stageMeta {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.stageMeta > b {
+  color: #9bb1aa;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.tabList {
+  display: flex;
+  gap: 2px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 0 12px;
+}
+
+.tabList button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.tabList button.active {
+  border-bottom-color: var(--lime);
+  color: var(--lime);
+}
+
+.jsonPanel {
+  max-height: 390px;
+  margin: 0;
+  overflow: auto;
   padding: 17px;
   background: #07100f;
   color: #a8cabe;
