@@ -9,11 +9,6 @@ from app.modules.users.model import User
 
 
 def seed_demo_marketplace(db: Session) -> None:
-    # Check if demo listings already exist
-    existing = db.query(MarketplacePlan).filter_by(status="published").first()
-    if existing:
-        return
-
     # 1. Ensure a demo creator user exists
     creator = db.query(User).filter_by(email="creator@example.com").first()
     if not creator:
@@ -28,7 +23,17 @@ def seed_demo_marketplace(db: Session) -> None:
             avatar_url="https://images.unsplash.com/photo-1534528741775-53994a69daeb",
         )
         db.add(creator)
-        db.flush()
+        db.commit()
+    else:
+        creator.role = "creator"
+        creator.creator_status = "verified"
+        creator.password_hash = hash_password("Password123!")
+        db.commit()
+
+    # Check if demo listings already exist
+    existing = db.query(MarketplacePlan).filter_by(status="published").first()
+    if existing:
+        return
 
     # 2. Ensure a demo traveler user exists
     traveler = db.query(User).filter_by(email="traveler@example.com").first()

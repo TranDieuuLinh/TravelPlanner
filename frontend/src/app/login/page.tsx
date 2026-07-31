@@ -83,6 +83,42 @@ function LoginForm() {
             {busy ? "Đang đăng nhập..." : "Đăng nhập"}
           </button>
         </form>
+
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid #e2e8f0" }}>
+          <p style={{ fontSize: "0.8rem", color: "#64748b", marginBottom: "8px" }}>Tài khoản thử nghiệm nhanh:</p>
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setEmail("creator@example.com");
+              setPassword("Password123!");
+              setBusy(true);
+              setError("");
+              try {
+                await login("creator@example.com", "Password123!");
+                router.replace("/creator/listings");
+              } catch (reason) {
+                setError(reason instanceof APIError ? reason.message : "Không thể đăng nhập Creator.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            style={{
+              width: "100%",
+              padding: "8px 12px",
+              background: "#eef6f3",
+              color: "#167c68",
+              border: "1px solid #c8e4dc",
+              borderRadius: "8px",
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+            type="button"
+          >
+            ⚡ Đăng nhập Creator Demo (creator@example.com)
+          </button>
+        </div>
+
         <p className="authSwitch">Chưa có tài khoản? <Link href="/register">Đăng ký</Link></p>
       </section>
     </main>
