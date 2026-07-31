@@ -507,6 +507,29 @@ class PlannerAgentInput(BaseModel):
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
     check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
+    # === Research Tools Results ===
+    # Optional tool results that can be pre-populated before calling planner
+    region_overview: Annotated[
+        dict | None,
+        Field(
+            alias="regionOverview",
+            description="Pre-computed region overview statistics from region_overview tool"
+        )
+    ] = Field(default=None)
+    constraint_research: Annotated[
+        dict | None,
+        Field(
+            alias="constraintResearch",
+            description="Pre-computed constraint research results from constraint_research tool"
+        )
+    ] = Field(default=None)
+    festival_discovery: Annotated[
+        dict | None,
+        Field(
+            alias="festivalDiscovery",
+            description="Pre-computed festival discovery results from festival_discovery tool"
+        )
+    ] = Field(default=None)
 
     model_config = {"populate_by_name": True}
 

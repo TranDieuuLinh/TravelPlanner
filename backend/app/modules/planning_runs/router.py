@@ -21,6 +21,16 @@ from app.modules.planning_runs.schema import (
 )
 from app.modules.users.model import User
 from app.shared.errors import AppError
+from app.modules.planning_runs.dependencies import get_research_tools_orchestrator
+from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
+from app.modules.plans.planner.research_tools_schema import (
+    ConstraintResearchInput,
+    ConstraintResearchOutput,
+    FestivalDiscoveryInput,
+    FestivalDiscoveryOutput,
+    RegionOverviewInput,
+    RegionOverviewOutput,
+)
 
 router = APIRouter(prefix="/admin/planning-runs", tags=["admin-planning-runs"])
 
@@ -116,3 +126,39 @@ async def run_golden_case(
         plan_service,
         repository,
     ).run(case, user_id=current_user.id)
+
+
+@router.post("/tools/region-overview", response_model=RegionOverviewOutput)
+def test_region_overview(
+    input_data: RegionOverviewInput,
+    _: Annotated[User, Depends(require_role("admin"))],
+    orchestrator: Annotated[
+        ResearchToolsOrchestrator,
+        Depends(get_research_tools_orchestrator),
+    ],
+) -> RegionOverviewOutput:
+    return orchestrator.region_overview(input_data)
+
+
+@router.post("/tools/constraint-research", response_model=ConstraintResearchOutput)
+def test_constraint_research(
+    input_data: ConstraintResearchInput,
+    _: Annotated[User, Depends(require_role("admin"))],
+    orchestrator: Annotated[
+        ResearchToolsOrchestrator,
+        Depends(get_research_tools_orchestrator),
+    ],
+) -> ConstraintResearchOutput:
+    return orchestrator.constraint_research(input_data)
+
+
+@router.post("/tools/festival-discovery", response_model=FestivalDiscoveryOutput)
+def test_festival_discovery(
+    input_data: FestivalDiscoveryInput,
+    _: Annotated[User, Depends(require_role("admin"))],
+    orchestrator: Annotated[
+        ResearchToolsOrchestrator,
+        Depends(get_research_tools_orchestrator),
+    ],
+) -> FestivalDiscoveryOutput:
+    return orchestrator.festival_discovery(input_data)

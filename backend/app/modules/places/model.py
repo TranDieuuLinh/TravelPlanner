@@ -163,3 +163,50 @@ class PlaceRegionCatalogState(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class Festival(Base):
+    __tablename__ = "festivals"
+    __table_args__ = (
+        UniqueConstraint("source_id", name="uq_festival_source_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    venue: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    scale_level: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default="dia-phuong",
+    )
+    timing: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    province: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    district: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    deity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ceremony_part: Mapped[str | None] = mapped_column(Text, nullable=True)
+    festival_part: Mapped[str | None] = mapped_column(Text, nullable=True)
+    festival_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    documentation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    protection_measure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registration_time: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recurrence: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    listed_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
