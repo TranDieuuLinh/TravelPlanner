@@ -408,6 +408,211 @@ h1, h2, h3, p { margin-top: 0; }
   font-size: .62rem;
   line-height: 1.55;
 }
+.itineraryActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.itineraryActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a949e;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.itineraryActionButton:hover {
+  background: #e4e7ea;
+  color: #23272b;
+}
+.itineraryActionButton.danger:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.itineraryActionButton svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+}
+.itineraryAddButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 24px);
+  margin: 4px 12px 14px;
+  padding: 8px 12px;
+  border: 1px dashed #c0cac6;
+  border-radius: 10px;
+  background: #f8faf9;
+  color: #3b6b5e;
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.itineraryAddButton:hover {
+  border-color: #167c68;
+  background: #eef6f3;
+  color: #167c68;
+}
+.itineraryAddButton svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+}
+.itineraryMutationModal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+.itineraryMutationForm {
+  width: 100%;
+  max-width: 440px;
+  border-radius: 16px;
+  padding: 24px;
+  background: white;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  display: grid;
+  gap: 16px;
+}
+.itineraryMutationForm h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+.itineraryMutationField {
+  display: grid;
+  gap: 6px;
+}
+.itineraryMutationField label {
+  font-size: .75rem;
+  font-weight: 700;
+  color: #475569;
+}
+.itineraryMutationField input,
+.itineraryMutationField textarea,
+.itineraryMutationField select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: .85rem;
+  color: #0f172a;
+  outline: none;
+  transition: border-color .15s ease;
+}
+.itineraryMutationField input:focus,
+.itineraryMutationField textarea:focus,
+.itineraryMutationField select:focus {
+  border-color: #167c68;
+}
+.itinerarySearchContainer {
+  position: relative;
+}
+.itinerarySuggestionsDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+  border-radius: 10px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+  display: grid;
+}
+.itinerarySuggestionItem {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  transition: background .15s ease;
+}
+.itinerarySuggestionItem:last-child {
+  border-bottom: none;
+}
+.itinerarySuggestionItem:hover {
+  background: #f0fdf4;
+}
+.itinerarySuggestionItem strong {
+  font-size: .82rem;
+  color: #0f172a;
+}
+.itinerarySuggestionItem span {
+  font-size: .7rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.selectedPlaceBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #eef6f3;
+  border: 1px solid #c8e4dc;
+  color: #167c68;
+  font-size: .72rem;
+  font-weight: 700;
+}
+.itineraryMutationActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.itineraryMutationActions button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+}
+.itineraryMutationActions button.cancel {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.itineraryMutationActions button.cancel:hover {
+  background: #e2e8f0;
+}
+.itineraryMutationActions button.submit {
+  background: #167c68;
+  color: white;
+}
+.itineraryMutationActions button.submit:hover {
+  background: #126353;
+}
+
 .itineraryRoute {
   position: relative;
   z-index: 1;

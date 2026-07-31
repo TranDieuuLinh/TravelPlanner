@@ -14,6 +14,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
+  addTripChatItem,
   amendTripChat,
   createTripChat,
   createPlanFromExplorer,
@@ -21,6 +22,11 @@ import {
   exploreFullIntake,
   getTripChat,
   listTripChats,
+  removeTripChatItem,
+  reorderTripChatItem,
+  searchPlaces,
+  updateTripChatItem,
+  type PlaceSuggestion,
   type ExplorerContext,
   type ExploreResponse,
   type ExplorerTimingReport,
@@ -136,6 +142,248 @@ function Planner() {
   const [chatRevision, setChatRevision] = useState(0);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
+
+  const [editingItem, setEditingItem] = useState<{
+    day: number;
+    itemId: string;
+    name: string;
+    timeWindow: string;
+    notes: string;
+  } | null>(null);
+  const [addingDay, setAddingDay] = useState<number | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addPlaceType, setAddPlaceType] = useState("attraction");
+  const [addTimeWindow, setAddTimeWindow] = useState("");
+  const [addNotes, setAddNotes] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<PlaceSuggestion | null>(null);
+  const [searchingSuggestions, setSearchingSuggestions] = useState(false);
+  const [mutatingItem, setMutatingItem] = useState(false);
+
+  useEffect(() => {
+    if (!addName.trim() || addName.trim().length < 2 || selectedSuggestion?.name === addName) {
+      setPlaceSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingSuggestions(true);
+      try {
+        const results = await searchPlaces(addName.trim(), plan?.destination);
+        setPlaceSuggestions(results);
+      } catch {
+        setPlaceSuggestions([]);
+      } finally {
+        setSearchingSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [addName, plan?.destination, selectedSuggestion]);
+
+  async function handleDeleteItem(day: number, itemId: string) {
+    if (!activeChatId || !plan) return;
+    if (!confirm("Bạn có chắc chắn muốn xóa địa điểm này khỏi lịch trình?")) return;
+    setMutatingItem(true);
+    setError("");
+    try {
+      const updatedChat = await removeTripChatItem({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        day,
+        itemId
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      setMessages(
+        updatedChat.messages.map((m, idx) => ({
+          id: m.id || idx,
+          role: m.role as "assistant" | "user",
+          text: m.content
+        }))
+      );
+    } catch (err: any) {
+      setError(err?.message || "Không thể xóa địa điểm.");
+    } finally {
+      setMutatingItem(false);
+    }
+  }
+
+  async function handleSaveEditItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingItem || !activeChatId) return;
+    setMutatingItem(true);
+    setError("");
+    try {
+      const updatedChat = await updateTripChatItem({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        day: editingItem.day,
+        itemId: editingItem.itemId,
+        item: {
+          name: editingItem.name,
+          timeWindow: editingItem.timeWindow,
+          notes: editingItem.notes
+        }
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      setMessages(
+        updatedChat.messages.map((m, idx) => ({
+          id: m.id || idx,
+          role: m.role as "assistant" | "user",
+          text: m.content
+        }))
+      );
+      setEditingItem(null);
+    } catch (err: any) {
+      setError(err?.message || "Không thể cập nhật địa điểm.");
+    } finally {
+      setMutatingItem(false);
+    }
+  }
+
+  async function handleAddPlanItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (addingDay == null || !activeChatId || !addName.trim()) return;
+    setMutatingItem(true);
+    setError("");
+    try {
+      const updatedChat = await addTripChatItem({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        item: {
+          day: addingDay,
+          name: addName.trim(),
+          placeType: addPlaceType,
+          timeWindow: addTimeWindow.trim() || undefined,
+          notes: addNotes.trim() || undefined,
+          address: selectedSuggestion?.address || undefined,
+          latitude: selectedSuggestion?.latitude ?? undefined,
+          longitude: selectedSuggestion?.longitude ?? undefined
+        }
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      setMessages(
+        updatedChat.messages.map((m, idx) => ({
+          id: m.id || idx,
+          role: m.role as "assistant" | "user",
+          text: m.content
+        }))
+      );
+      setAddingDay(null);
+      setAddName("");
+      setAddTimeWindow("");
+      setAddNotes("");
+      setSelectedSuggestion(null);
+      setPlaceSuggestions([]);
+    } catch (err: any) {
+      setError(err?.message || "Không thể thêm địa điểm.");
+    } finally {
+      setMutatingItem(false);
+    }
+  }
+
+  const [draggedItemKey, setDraggedItemKey] = useState<{ day: number; itemId: string } | null>(null);
+
+  async function handleReorderItems(day: number, newOrderedItemIds: string[]) {
+    if (!activeChatId || !plan) return;
+    setMutatingItem(true);
+    setError("");
+
+    const updatedDays = plan.days.map((d) => {
+      if (d.day !== day) return d;
+      const itemsMap = new Map(d.items.map((it) => [it.itemId, it]));
+      const rawNewItems = newOrderedItemIds
+        .map((id) => itemsMap.get(id))
+        .filter((it): it is typeof d.items[number] => Boolean(it));
+      d.items.forEach((it) => {
+        if (it.itemId && !newOrderedItemIds.includes(it.itemId)) {
+          rawNewItems.push(it);
+        }
+      });
+
+      let currentMin = 9 * 60;
+      if (rawNewItems[0]?.timeWindow && rawNewItems[0].timeWindow.includes("-")) {
+        const parts = rawNewItems[0].timeWindow.split("-")[0].split(":");
+        if (parts.length === 2) {
+          const h = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (!isNaN(h) && !isNaN(m)) currentMin = h * 60 + m;
+        }
+      }
+
+      const newItems = rawNewItems.map((it) => {
+        const dur = getItemDurationMinutes(it.timeWindow);
+        const endMin = Math.min(23 * 60 + 59, currentMin + dur);
+        const sh = String(Math.floor(currentMin / 60)).padStart(2, "0");
+        const sm = String(currentMin % 60).padStart(2, "0");
+        const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
+        const em = String(endMin % 60).padStart(2, "0");
+        currentMin = Math.min(23 * 60 + 44, endMin + 15);
+        return { ...it, timeWindow: `${sh}:${sm}-${eh}:${em}` };
+      });
+
+      const newLegs: typeof d.transportLegs = [];
+      const locatedItems = newItems.filter((it) => it.latitude != null && it.longitude != null);
+      for (let i = 0; i < locatedItems.length - 1; i++) {
+        const from = locatedItems[i];
+        const to = locatedItems[i + 1];
+        newLegs.push({
+          fromItemId: from.itemId,
+          toItemId: to.itemId,
+          fromPlace: from.name,
+          toPlace: to.name,
+          mode: "ride_hailing",
+          distanceMeters: 2000,
+          estimatedDurationMinutes: 10,
+          geometryCoordinates: [
+            [from.latitude!, from.longitude!],
+            [to.latitude!, to.longitude!]
+          ],
+          source: "geodesic_estimate",
+          verified: false
+        });
+      }
+
+      return { ...d, items: newItems, transportLegs: newLegs };
+    });
+    setPlan({ ...plan, days: updatedDays });
+
+    try {
+      const updatedChat = await reorderTripChatItem({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        day,
+        itemIds: newOrderedItemIds
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+    } catch (err: any) {
+      setError(err?.message || "Không thể sắp xếp lại vị trí địa điểm.");
+    } finally {
+      setMutatingItem(false);
+    }
+  }
+
+  function handleMoveItemOrder(day: number, itemIndex: number, direction: "up" | "down") {
+    const targetDayObj = plan?.days.find((d) => d.day === day);
+    if (!targetDayObj) return;
+
+    const items = [...targetDayObj.items];
+    const targetIndex = direction === "up" ? itemIndex - 1 : itemIndex + 1;
+    if (targetIndex < 0 || targetIndex >= items.length) return;
+
+    const temp = items[itemIndex];
+    items[itemIndex] = items[targetIndex];
+    items[targetIndex] = temp;
+
+    const itemIds = items.map((it) => it.itemId).filter((id): id is string => Boolean(id));
+    handleReorderItems(day, itemIds);
+  }
+
+
 
   useEffect(() => {
     if (historyCollapsed) return;
@@ -1115,7 +1363,36 @@ function Planner() {
                                 </div>
                               ) : (
                                 <article
-                                  className={`itineraryStop ${transportLeg ? "hasRoute" : ""}`}
+                                  className={`itineraryStop ${transportLeg ? "hasRoute" : ""} ${draggedItemKey?.itemId === item.itemId ? "dragging" : ""}`}
+                                  draggable={Boolean(item.itemId && activeChatId)}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDragStart={() => {
+                                    if (item.itemId) {
+                                      setDraggedItemKey({ day: displayedPlanDay.day, itemId: item.itemId });
+                                    }
+                                  }}
+                                  onDrop={(e) => {
+                                     e.preventDefault();
+                                     if (
+                                       draggedItemKey &&
+                                       draggedItemKey.day === displayedPlanDay.day &&
+                                       draggedItemKey.itemId !== item.itemId
+                                     ) {
+                                       const allItems = displayedPlanDay.items;
+                                       const fromIdx = allItems.findIndex((it) => it.itemId === draggedItemKey.itemId);
+                                       const toIdx = itemIndex;
+                                       if (fromIdx !== -1 && toIdx !== -1) {
+                                         const copy = [...allItems];
+                                         const [moved] = copy.splice(fromIdx, 1);
+                                         copy.splice(toIdx, 0, moved);
+                                         const newOrderedItemIds = copy
+                                           .map((it) => it.itemId)
+                                           .filter((id): id is string => Boolean(id));
+                                         handleReorderItems(displayedPlanDay.day, newOrderedItemIds);
+                                       }
+                                     }
+                                     setDraggedItemKey(null);
+                                   }}
                                 >
                                   <span
                                     className="itineraryStopPin"
@@ -1142,6 +1419,41 @@ function Planner() {
                                     </button>
                                       ) : <strong>{item.name}</strong>}
                                       <time>{item.timeWindow}</time>
+                                      {item.itemId && activeChatId ? (
+                                        <div className="itineraryActions">
+                                          <button
+                                            className="itineraryActionButton"
+                                            title="Di chuyển xuống"
+                                            type="button"
+                                          >
+                                            <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                                          </button>
+                                          <button
+                                            className="itineraryActionButton"
+                                            onClick={() =>
+                                              setEditingItem({
+                                                day: displayedPlanDay.day,
+                                                itemId: item.itemId!,
+                                                name: item.name,
+                                                timeWindow: item.timeWindow,
+                                                notes: item.notes || ""
+                                              })
+                                            }
+                                            title="Sửa địa điểm"
+                                            type="button"
+                                          >
+                                            <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                          </button>
+                                          <button
+                                            className="itineraryActionButton danger"
+                                            onClick={() => handleDeleteItem(displayedPlanDay.day, item.itemId!)}
+                                            title="Xóa địa điểm"
+                                            type="button"
+                                          >
+                                            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                                          </button>
+                                        </div>
+                                      ) : null}
                                     </header>
                                     <p>
                                       {item.notes
@@ -1192,11 +1504,27 @@ function Planner() {
                           );
                         })}
                       </div>
+                      {activeChatId ? (
+                        <button
+                          className="itineraryAddButton"
+                          onClick={() => {
+                            setAddingDay(displayedPlanDay.day);
+                            setAddName("");
+                            setAddTimeWindow("");
+                            setAddNotes("");
+                          }}
+                          type="button"
+                        >
+                          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          Thêm địa điểm cho Ngày {displayedPlanDay.day}
+                        </button>
+                      ) : null}
                     </article>
                   ))}
                 </div>
               </section>
             </div>
+
           ) : (
             <div
               aria-label={loading ? "Đang tạo lịch trình" : "Chưa có lịch trình"}
@@ -1227,6 +1555,141 @@ function Planner() {
         />
         </section>
       </div>
+
+      {editingItem ? (
+        <div className="itineraryMutationModal" onClick={() => setEditingItem(null)}>
+          <form
+            className="itineraryMutationForm"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleSaveEditItem}
+          >
+            <h3>Sửa địa điểm (Ngày {editingItem.day})</h3>
+            <div className="itineraryMutationField">
+              <label>Tên địa điểm</label>
+              <input
+                onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                required
+                type="text"
+                value={editingItem.name}
+              />
+            </div>
+            <div className="itineraryMutationField">
+              <label>Khung giờ (VD: 09:00-10:30)</label>
+              <input
+                onChange={(e) => setEditingItem({ ...editingItem, timeWindow: e.target.value })}
+                placeholder="09:00-10:30"
+                type="text"
+                value={editingItem.timeWindow}
+              />
+            </div>
+            <div className="itineraryMutationField">
+              <label>Ghi chú</label>
+              <textarea
+                onChange={(e) => setEditingItem({ ...editingItem, notes: e.target.value })}
+                rows={3}
+                value={editingItem.notes}
+              />
+            </div>
+            <div className="itineraryMutationActions">
+              <button className="cancel" onClick={() => setEditingItem(null)} type="button">
+                Hủy
+              </button>
+              <button className="submit" disabled={mutatingItem} type="submit">
+                {mutatingItem ? "Đang lưu..." : "Lưu thay đổi"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {addingDay != null ? (
+        <div className="itineraryMutationModal" onClick={() => setAddingDay(null)}>
+          <form
+            className="itineraryMutationForm"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleAddPlanItem}
+          >
+            <h3>Thêm địa điểm vào Ngày {addingDay}</h3>
+            <div className="itineraryMutationField itinerarySearchContainer">
+              <label>Tên địa điểm (Nhập từ khóa để chọn từ gợi ý) *</label>
+              <input
+                onChange={(e) => {
+                  setAddName(e.target.value);
+                  setSelectedSuggestion(null);
+                }}
+                placeholder="Ví dụ: Phở Thìn Lò Đúc, Chùa Trấn Quốc..."
+                required
+                type="text"
+                value={addName}
+              />
+              {placeSuggestions.length > 0 ? (
+                <div className="itinerarySuggestionsDropdown">
+                  {placeSuggestions.map((suggestion, sIdx) => (
+                    <button
+                      className="itinerarySuggestionItem"
+                      key={`${suggestion.name}-${sIdx}`}
+                      onClick={() => {
+                        setAddName(suggestion.name);
+                        setSelectedSuggestion(suggestion);
+                        setPlaceSuggestions([]);
+                      }}
+                      type="button"
+                    >
+                      <strong>{suggestion.name}</strong>
+                      {suggestion.address ? <span>{suggestion.address}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {selectedSuggestion ? (
+              <div className="selectedPlaceBadge">
+                <span>✓ Đã chọn vị trí: {selectedSuggestion.address || selectedSuggestion.name}</span>
+              </div>
+            ) : null}
+
+            <div className="itineraryMutationField">
+              <label>Loại địa điểm</label>
+              <select
+                onChange={(e) => setAddPlaceType(e.target.value)}
+                value={addPlaceType}
+              >
+                <option value="attraction">Tham quan / Vui chơi</option>
+                <option value="food">Ăn uống / Nhà hàng</option>
+                <option value="cafe">Cà phê / Giải khát</option>
+                <option value="hotel">Khách sạn / Lưu trú</option>
+              </select>
+            </div>
+            <div className="itineraryMutationField">
+              <label>Khung giờ (Tùy chọn)</label>
+              <input
+                onChange={(e) => setAddTimeWindow(e.target.value)}
+                placeholder="Mặc định tự động xếp giờ"
+                type="text"
+                value={addTimeWindow}
+              />
+            </div>
+            <div className="itineraryMutationField">
+              <label>Ghi chú (Tùy chọn)</label>
+              <textarea
+                onChange={(e) => setAddNotes(e.target.value)}
+                placeholder="Ví dụ: Ăn bát phở tái lăn"
+                rows={2}
+                value={addNotes}
+              />
+            </div>
+            <div className="itineraryMutationActions">
+              <button className="cancel" onClick={() => setAddingDay(null)} type="button">
+                Hủy
+              </button>
+              <button className="submit" disabled={mutatingItem || !addName.trim()} type="submit">
+                {mutatingItem ? "Đang thêm..." : "Thêm vào lịch trình"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1363,6 +1826,18 @@ function processingDescription(stage: WorkflowStage, intakeKind: IntakeKind): st
     return "Đang đọc nội dung ảnh, nhận diện địa điểm và chuẩn hóa yêu cầu.";
   }
   return "Đang hiểu điểm đến, thời lượng, ngân sách, sở thích và ràng buộc.";
+}
+
+function getItemDurationMinutes(timeWindow?: string): number {
+  if (!timeWindow || !timeWindow.includes("-")) return 60;
+  const [start, end] = timeWindow.split("-");
+  const [sh, sm] = (start || "").split(":").map((n) => parseInt(n, 10));
+  const [eh, em] = (end || "").split(":").map((n) => parseInt(n, 10));
+  if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+    const diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff > 0) return diff;
+  }
+  return 60;
 }
 
 function budgetLevelLabel(level: ExplorerContext["tripSpec"]["budget"]["level"]): string {

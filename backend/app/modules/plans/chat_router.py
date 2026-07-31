@@ -8,8 +8,9 @@ from app.modules.auth.dependencies import get_current_user, require_csrf
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import TripChatCreate, TripChatRead, TripChatSummaryRead
 from app.modules.plans.chat_service import TripChatService
-from app.modules.plans.dependencies import get_plan_service
+from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
+from app.modules.plans.plan_mutation_schema import AddItemRequest, ReorderItemsRequest, UpdateItemRequest
 from app.modules.plans.router import (
     _extract_urls,
     _infer_destination,
@@ -25,7 +26,12 @@ router = APIRouter(prefix="/trip-chats", tags=["trip-chats"])
 def get_trip_chat_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> TripChatService:
-    return TripChatService(TripChatRepository(db), get_plan_service(db))
+    return TripChatService(
+        TripChatRepository(db),
+        get_plan_service(db),
+        get_plan_mutation_service(),
+    )
+
 
 
 @router.post("", response_model=TripChatRead, status_code=status.HTTP_201_CREATED)
@@ -107,3 +113,76 @@ async def amend_trip_chat(
             await image.close()
         for payload in image_payloads:
             payload.clear_data()
+
+
+@router.post("/{chat_id}/plan/items", response_model=TripChatRead)
+async def add_trip_chat_item(
+    chat_id: str,
+    payload: AddItemRequest,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return await service.add_item(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        payload=payload,
+    )
+
+
+@router.patch("/{chat_id}/plan/days/{day}/items/{item_id}", response_model=TripChatRead)
+async def update_trip_chat_item(
+    chat_id: str,
+    day: int,
+    item_id: str,
+    payload: UpdateItemRequest,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return await service.update_item(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        day=day,
+        item_id=item_id,
+        payload=payload,
+    )
+
+
+@router.delete("/{chat_id}/plan/days/{day}/items/{item_id}", response_model=TripChatRead)
+def remove_trip_chat_item(
+    chat_id: str,
+    day: int,
+    item_id: str,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return service.remove_item(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        day=day,
+        item_id=item_id,
+    )
+
+
+@router.put("/{chat_id}/plan/days/{day}/items/reorder", response_model=TripChatRead)
+def reorder_trip_chat_items(
+    chat_id: str,
+    day: int,
+    payload: ReorderItemsRequest,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return service.reorder_items(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        day=day,
+        payload=payload,
+    )
+

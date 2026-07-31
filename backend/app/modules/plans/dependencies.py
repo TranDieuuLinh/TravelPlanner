@@ -32,12 +32,23 @@ from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
+from app.modules.plans.checks.overall_checker import OverallChecker
+from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.users.repository import UserRepository
+
+
+def get_plan_mutation_service() -> PlanMutationService:
+    return PlanMutationService(
+        place_resolver=_get_place_resolver(),
+        route_optimizer=_get_route_optimizer(),
+        checker=OverallChecker(),
+    )
+
 
 
 def get_plan_service(

@@ -13,6 +13,12 @@ from app.modules.plans.explorer.schema import (
     ExplorerTimingReport,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
+from app.modules.plans.plan_mutation_schema import (
+    AddItemRequest,
+    ReorderItemsRequest,
+    UpdateItemRequest,
+)
+from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.schema import MainPlanFromExplorerCreate, SelectedPlaceCreate
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
@@ -26,9 +32,12 @@ class TripChatService:
         self,
         repository: TripChatRepository,
         plan_service: PlanService,
+        mutation_service: PlanMutationService | None = None,
     ) -> None:
         self.repository = repository
         self.plan_service = plan_service
+        self.mutation_service = mutation_service or PlanMutationService()
+
 
     def create(self, user: User, title: str | None = None) -> TripChatRead:
         normalized_title = (title or "").strip() or "Chuyến đi mới"
@@ -269,6 +278,151 @@ class TripChatService:
             latestPlannerTiming=latest_planner_timing,
             messages=chat.messages,
         )
+
+    async def add_item(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        payload: AddItemRequest,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+        plan = Plan.model_validate(chat.current_plan)
+        result = await self.mutation_service.add_item(plan, payload)
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        summary = f"Đã thêm địa điểm '{payload.name}' vào Ngày {payload.day} (bản sửa đổi {revision})."
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=summary,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
+    async def update_item(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+        payload: UpdateItemRequest,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+        plan = Plan.model_validate(chat.current_plan)
+        result = await self.mutation_service.update_item(plan, day, item_id, payload)
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        summary = f"Đã cập nhật thông tin địa điểm trong Ngày {day} (bản sửa đổi {revision})."
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=summary,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
+    def remove_item(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+        plan = Plan.model_validate(chat.current_plan)
+        result = self.mutation_service.remove_item(plan, day, item_id)
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        summary = f"Đã xóa địa điểm khỏi Ngày {day} (bản sửa đổi {revision})."
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=summary,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
+    def reorder_items(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        day: int,
+        payload: ReorderItemsRequest,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+        plan = Plan.model_validate(chat.current_plan)
+        result = self.mutation_service.reorder_items(plan, day, payload)
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        summary = f"Đã sắp xếp lại thứ tự địa điểm Ngày {day} (bản sửa đổi {revision})."
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=summary,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
 
 
 def _explicit_day_count(content: str) -> int | None:

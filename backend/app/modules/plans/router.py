@@ -3,11 +3,11 @@ import re
 from typing import Annotated
 from urllib.parse import parse_qs, urlsplit
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.modules.auth.dependencies import get_optional_current_user
 from app.modules.preferences.schema import LongTermPreferenceProfile
-from app.modules.plans.dependencies import get_plan_service
+from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
@@ -15,6 +15,15 @@ from app.modules.plans.explorer.schema import (
     FullExploreRequest,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
+from app.modules.plans.plan_mutation_schema import (
+    AddItemRequest,
+    MoveItemRequest,
+    MutationResponse,
+    PlaceSuggestion,
+    ReorderItemsRequest,
+    UpdateItemRequest,
+)
+from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.schema import (
     BackupPlanCreate,
     FeatureMapItem,
@@ -147,6 +156,87 @@ async def create_backup_plan(
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanBundleRead:
     return await service.create_backup_plan(plan_id, payload)
+
+
+@router.get("/places/search", response_model=list[PlaceSuggestion])
+async def search_places(
+    query: Annotated[str, Query(min_length=2, max_length=100)],
+    destination: Annotated[str | None, Query()] = None,
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)] = None,
+) -> list[PlaceSuggestion]:
+    return await mutation_service.search_place_suggestions(query, destination)
+
+
+@router.post("/{plan_id}/items", response_model=MutationResponse, status_code=status.HTTP_201_CREATED)
+async def add_plan_item(
+    plan_id: str,
+    payload: AddItemRequest,
+    plan_service: Annotated[PlanService, Depends(get_plan_service)],
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)],
+) -> MutationResponse:
+    plan = plan_service.repository.get(plan_id)
+    result = await mutation_service.add_item(plan, payload)
+    plan_service.repository.save(result.plan)
+    return result
+
+
+@router.patch("/{plan_id}/days/{day}/items/{item_id}", response_model=MutationResponse)
+async def update_plan_item(
+    plan_id: str,
+    day: int,
+    item_id: str,
+    payload: UpdateItemRequest,
+    plan_service: Annotated[PlanService, Depends(get_plan_service)],
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)],
+) -> MutationResponse:
+    plan = plan_service.repository.get(plan_id)
+    result = await mutation_service.update_item(plan, day, item_id, payload)
+    plan_service.repository.save(result.plan)
+    return result
+
+
+@router.delete("/{plan_id}/days/{day}/items/{item_id}", response_model=MutationResponse)
+def remove_plan_item(
+    plan_id: str,
+    day: int,
+    item_id: str,
+    plan_service: Annotated[PlanService, Depends(get_plan_service)],
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)],
+) -> MutationResponse:
+    plan = plan_service.repository.get(plan_id)
+    result = mutation_service.remove_item(plan, day, item_id)
+    plan_service.repository.save(result.plan)
+    return result
+
+
+@router.post("/{plan_id}/days/{day}/items/{item_id}/move", response_model=MutationResponse)
+def move_plan_item(
+    plan_id: str,
+    day: int,
+    item_id: str,
+    payload: MoveItemRequest,
+    plan_service: Annotated[PlanService, Depends(get_plan_service)],
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)],
+) -> MutationResponse:
+    plan = plan_service.repository.get(plan_id)
+    result = mutation_service.move_item(plan, day, item_id, payload)
+    plan_service.repository.save(result.plan)
+    return result
+
+
+@router.put("/{plan_id}/days/{day}/items/reorder", response_model=MutationResponse)
+def reorder_plan_items(
+    plan_id: str,
+    day: int,
+    payload: ReorderItemsRequest,
+    plan_service: Annotated[PlanService, Depends(get_plan_service)],
+    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)],
+) -> MutationResponse:
+    plan = plan_service.repository.get(plan_id)
+    result = mutation_service.reorder_items(plan, day, payload)
+    plan_service.repository.save(result.plan)
+    return result
+
 
 
 def _normalize_urls(values: list[str]) -> list[str]:
