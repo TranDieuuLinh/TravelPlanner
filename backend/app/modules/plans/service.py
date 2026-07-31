@@ -6,6 +6,7 @@ from uuid import uuid4
 from app.modules.plans.domain.entities import Plan
 from app.modules.places.resolver import PlaceResolver, ProvisionalPlaceResolver
 from app.modules.places.alias_enricher import PlaceAliasEnricher
+from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.explorer.place_candidate_aggregator import (
     PlaceCandidateAggregator,
 )
@@ -68,6 +69,7 @@ class PlanService:
         user_repository: UserRepository | None = None,
         explorer_timing_logger: ExplorerTimingLogger | None = None,
         place_alias_enricher: PlaceAliasEnricher | None = None,
+        planning_runs: PlanningRunRepository | None = None,
     ) -> None:
         self.repository = repository
         self.explore_formatter = explore_formatter
@@ -86,6 +88,7 @@ class PlanService:
         self.user_repository = user_repository
         self.explorer_timing_logger = explorer_timing_logger
         self.place_alias_enricher = place_alias_enricher
+        self.planning_runs = planning_runs
 
     def feature_map(self) -> list[FeatureMapItem]:
         return [
@@ -100,6 +103,12 @@ class PlanService:
         payload: FullExploreRequest,
     ) -> ExploreIntakeResponse:
         intake_id = str(uuid4())
+        run_id = self._start_explorer_run(
+            intake_id=intake_id,
+            destination=payload.destination,
+            user_id=payload.user_state.user_id,
+            input_data=payload,
+        )
         trace = ExplorerTimingTrace(
             intake_id,
             url_count=len(payload.urls),
@@ -118,14 +127,17 @@ class PlanService:
                 details={"urlCount": len(payload.urls)},
             )
             trace.add_url_results(url_reel_results)
-            return await self._format_resolve_and_persist(
+            result = await self._format_resolve_and_persist(
                 payload,
                 url_reel_results=url_reel_results,
                 intake_id=intake_id,
                 trace=trace,
             )
-        except Exception:
+            self._complete_explorer_run(run_id, payload, result)
+            return result
+        except Exception as exc:
             self._write_timing_report(trace, status="failed")
+            self._fail_explorer_run(run_id, payload, exc)
             raise
 
     async def explore_from_intake(
@@ -139,6 +151,23 @@ class PlanService:
         user_state: UserPlanningState | None = None,
     ) -> ExploreIntakeResponse:
         intake_id = str(uuid4())
+        run_input = {
+            "rawRequest": raw_request,
+            "destination": destination,
+            "urls": urls,
+            "imageContexts": [
+                {"fileName": image.file_name, "mimeType": image.mime_type}
+                for image in images
+            ],
+            "tripSpec": trip_spec,
+            "userState": user_state,
+        }
+        run_id = self._start_explorer_run(
+            intake_id=intake_id,
+            destination=destination,
+            user_id=(user_state.user_id if user_state is not None else None),
+            input_data=run_input,
+        )
         trace = ExplorerTimingTrace(
             intake_id,
             url_count=len(urls),
@@ -198,14 +227,17 @@ class PlanService:
                 tripSpec=trip_spec or ExploreTripSpecInput(),
                 imageContexts=image_contexts,
             )
-            return await self._format_resolve_and_persist(
+            result = await self._format_resolve_and_persist(
                 payload,
                 url_reel_results=url_reel_results,
                 intake_id=intake_id,
                 trace=trace,
             )
-        except Exception:
+            self._complete_explorer_run(run_id, run_input, result)
+            return result
+        except Exception as exc:
             self._write_timing_report(trace, status="failed")
+            self._fail_explorer_run(run_id, run_input, exc)
             raise
         finally:
             for image in images:
@@ -518,6 +550,83 @@ class PlanService:
         if self.explorer_timing_logger is not None:
             self.explorer_timing_logger.write(report)
         return report
+
+    def _start_explorer_run(
+        self,
+        *,
+        intake_id: str,
+        destination: str,
+        user_id: str | None,
+        input_data: object,
+    ) -> str | None:
+        if self.planning_runs is None:
+            return None
+        return self.planning_runs.start(
+            source="explorer_intake",
+            destination=destination,
+            user_id=(int(user_id) if user_id and user_id.isdigit() else None),
+            intake_id=intake_id,
+            summary={"input": input_data},
+        )
+
+    def _complete_explorer_run(
+        self,
+        run_id: str | None,
+        input_data: object,
+        result: ExploreIntakeResponse,
+    ) -> None:
+        if self.planning_runs is None or run_id is None:
+            return
+        self.planning_runs.add_stage(
+            run_id,
+            stage="explorer",
+            status="completed",
+            input_data=input_data,
+            output_data=result,
+            metadata={"timing": result.timing_report},
+        )
+        self.planning_runs.complete(
+            run_id,
+            status="completed",
+            summary={
+                "intakeId": result.intake_id,
+                "destination": result.explorer.intent.destination,
+                "days": result.explorer.trip_spec.days,
+                "allowFinderSuggestions": result.allow_finder_suggestions,
+                "candidateCount": (
+                    result.timing_report.candidate_count
+                    if result.timing_report is not None
+                    else 0
+                ),
+                "persistedPlaceCount": (
+                    result.timing_report.persisted_count
+                    if result.timing_report is not None
+                    else 0
+                ),
+            },
+        )
+
+    def _fail_explorer_run(
+        self,
+        run_id: str | None,
+        input_data: object,
+        exc: Exception,
+    ) -> None:
+        if self.planning_runs is None or run_id is None:
+            return
+        self.planning_runs.add_stage(
+            run_id,
+            stage="explorer",
+            status="failed",
+            input_data=input_data,
+            error={"type": type(exc).__name__, "message": str(exc)},
+        )
+        self.planning_runs.complete(
+            run_id,
+            status="failed",
+            error_code=type(exc).__name__,
+            error_message=str(exc),
+        )
 
     async def create_main_plan(self, payload: MainPlanCreate) -> Plan:
         plan = await self.main_workflow.run(payload)

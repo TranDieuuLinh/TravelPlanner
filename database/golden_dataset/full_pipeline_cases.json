@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "Golden Dataset kiểm thử Toàn trình End-to-End Pipeline (Tập trung thị trường Hà Nội)",
+  "cases": [
+    {
+      "id": "E2E-001",
+      "scenarioName": "Toàn trình từ dán link TikTok 3 quán ăn đến Main Plan 2 ngày Hà Nội hoàn chỉnh",
+      "scenarioPurpose": "Kiểm tra sự phối hợp toàn bộ pipeline: Extractor lấy 3 quán ăn Hà Nội -> Explorer chuẩn hóa -> Planner phân bổ vĩ mô -> Finder xếp giờ chi tiết -> Checker xác nhận thành công.",
+      "category": "e2e_full_pipeline",
+      "input": {
+        "url": "https://www.tiktok.com/@hanoifoodie/video/1122334455",
+        "rawPrompt": "Tạo tour ăn uống Hà Nội 2 ngày từ clip này",
+        "userState": { "userId": "user_e2e_hanoi", "travelStyle": "foodie" }
+      },
+      "goldenOutput": {
+        "intakeId": "intake_e2e_hanoi_001",
+        "resolvedPlaces": [
+          { "name": "Phở Thìn Bờ Hồ", "lat": 21.0285, "lng": 105.8523, "persistedIn": "user_must_place" },
+          { "name": "Bún Chả Hương Liên", "lat": 21.0172, "lng": 105.8540, "persistedIn": "user_must_place" }
+        ],
+        "finalPlan": {
+          "kind": "main",
+          "status": "locked",
+          "destination": "Hà Nội",
+          "daysCount": 2,
+          "days": [
+            {
+              "day": 1,
+              "itemsCount": 3,
+              "containsSelectedPlace": true
+            },
+            {
+              "day": 2,
+              "itemsCount": 3,
+              "containsSelectedPlace": true
+            }
+          ],
+          "checkReport": {
+            "status": "passed",
+            "issues": []
+          }
+        }
+      },
+      "assertions": [
+        "Status cuối cùng của Plan là 'locked'",
+        "Lịch trình 2 ngày chứa đầy đủ các điểm Hà Nội trích xuất từ TikTok",
+        "checkReport.status bằng 'passed'",
+        "Dữ liệu địa điểm trích xuất được lưu vào user_must_place"
+      ]
+    }
+  ]
+}

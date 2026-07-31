@@ -82,6 +82,9 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
   khi user bấm “Chỉ đường” hoặc “Tính lại” ở một ngày cụ thể. Vị trí và route
   điều hướng chỉ giữ trong memory của trang, không lưu vào plan/database/log.
 - Loại bỏ dữ liệu cá nhân khỏi log và analytics.
+- Planning Control chỉ dành cho role `admin`. Snapshot planning run không lưu
+  raw media, toàn bộ prompt/transcript, secret hay query string URL; raw request
+  chỉ được biểu diễn bằng số ký tự và trạng thái có/không.
 
 Phải thực hiện threat model trước khi phát hành authentication, URL fetching,
 payment, collaboration hoặc nội dung creator công khai.

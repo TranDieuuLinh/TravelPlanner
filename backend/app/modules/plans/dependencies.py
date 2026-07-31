@@ -23,6 +23,7 @@ from app.modules.places.resolver import (
 )
 from app.modules.places.alias_enricher import LLMPlaceAliasEnricher
 from app.modules.places.repository import SqlAlchemyPlaceRepository
+from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
@@ -58,6 +59,7 @@ def get_plan_service(
         project_dir / "database" / "generated" / "place_region_statistics.json",
     )
     llm_client = get_llm_client()
+    planning_runs = PlanningRunRepository(db)
     planner = PlannerService(
         statistics,
         llm_client,
@@ -71,6 +73,7 @@ def get_plan_service(
         explorer=ExplorerService(),
         planner=planner,
         finder=finder,
+        planning_runs=planning_runs,
     )
     backup_workflow = BackupPlanWorkflow(
         planner=planner,
@@ -92,6 +95,7 @@ def get_plan_service(
         explorer_timing_logger=ExplorerTimingLogger(
             settings.explorer_timing_log_path
         ),
+        planning_runs=planning_runs,
     )
 
 

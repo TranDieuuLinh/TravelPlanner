@@ -24,7 +24,7 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
-      BACKEND_CORS_ORIGINS: http://localhost:3000
+      BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       APP_ENV: local
       GEMINI_MIN_INTERVAL_SECONDS: "0.0"
       PLACE_RESOLVER_PROVIDER: nominatim
@@ -40,6 +40,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/var:/app/var
+      - ./database/golden_dataset:/database/golden_dataset:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -473,6 +473,26 @@ backup vẫn chỉ hoạt động khi plan chính còn trong bộ nhớ của c�
 
 Đây chưa phải contract production.
 
+### Planning Control dành cho admin
+
+- `GET /api/admin/planning-runs`: danh sách run; hỗ trợ `status`, `stage`,
+  `query`, `limit`, `offset`.
+- `GET /api/admin/planning-runs/{runId}`: chi tiết run và snapshot input/output
+  đã redaction theo từng stage.
+- `GET /api/admin/planning-runs/golden/cases`: đọc golden cases theo `module`
+  và trả thêm kết quả kiểm tra contract ở `validation`.
+- `POST /api/admin/planning-runs/golden/cases/{caseId}/run`: thực thi case bằng
+  module runtime thật, lưu một planning run có `source=golden_dataset`, rồi trả
+  `effectiveInput`, `actualOutput`, thời gian chạy, adaptation minh bạch và
+  mismatch so với golden projection. Input sai contract trả execution
+  `status=failed` cùng `GOLDEN_INPUT_INVALID` để UI vẫn điều tra được thay vì
+  che lỗi dưới response 500.
+
+Bốn endpoint đều yêu cầu JWT cookie hợp lệ và role `admin`. API không trả raw
+media, toàn bộ prompt, transcript tự do, secret hoặc query string URL.
+Case Extractor/Explorer/Planner/full pipeline có thể gọi provider thật và phát
+sinh độ trễ hoặc chi phí; case có URL/asset giả sẽ trả lỗi execution tương ứng.
+
 ## Quy ước cho API mới
 
 - Resource path dùng danh từ số nhiều.

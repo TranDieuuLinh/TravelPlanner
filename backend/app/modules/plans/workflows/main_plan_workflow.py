@@ -1,6 +1,7 @@
 import time
 from uuid import uuid4
 
+from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import Plan, TravelIntent, UnscheduledPlace, UserStatus
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
@@ -34,11 +35,13 @@ class MainPlanWorkflow:
         planner: PlannerService,
         finder: FinderService,
         checker: OverallChecker | None = None,
+        planning_runs: PlanningRunRepository | None = None,
     ) -> None:
         self.explorer = explorer
         self.planner = planner
         self.finder = finder
         self.checker = checker or OverallChecker()
+        self.planning_runs = planning_runs
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
@@ -57,6 +60,7 @@ class MainPlanWorkflow:
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
             allow_finder_suggestions=True,
+            source="direct",
         )
 
     async def run_from_explorer(
@@ -107,6 +111,13 @@ class MainPlanWorkflow:
             preference_profile=payload.preference_profile,
             allow_finder_suggestions=payload.allow_finder_suggestions,
             timing_trace=trace,
+            source="explorer",
+            user_id=(
+                int(payload.user_id)
+                if payload.user_id and payload.user_id.isdigit()
+                else None
+            ),
+            intake_id=payload.intake_id,
         )
         return plan, trace.finish(plan)
 
@@ -139,6 +150,7 @@ class MainPlanWorkflow:
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
             allow_finder_suggestions=True,
+            source="context",
         )
 
     async def _run_planning(
@@ -152,10 +164,102 @@ class MainPlanWorkflow:
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
         allow_finder_suggestions: bool,
+        source: str,
+        user_id: int | None = None,
+        intake_id: str | None = None,
         timing_trace: PlanTimingTrace | None = None,
     ) -> Plan:
+        run_id = None
+        if self.planning_runs is not None:
+            run_id = self.planning_runs.start(
+                source=source,
+                destination=intent.destination,
+                user_id=user_id,
+                intake_id=intake_id,
+                summary={
+                    "days": trip_spec.days,
+                    "selectedPlaceCount": len(selected_places),
+                    "allowFinderSuggestions": allow_finder_suggestions,
+                },
+            )
+            self.planning_runs.add_stage(
+                run_id,
+                stage="explorer",
+                status="completed",
+                input_data={
+                    "source": source,
+                    "intakeId": intake_id,
+                },
+                output_data={
+                    "intent": planning_intent,
+                    "tripSpec": trip_spec,
+                    "selectedPlaces": selected_places,
+                },
+                metadata={"normalizedContext": True},
+            )
+        try:
+            plan = await self._execute_planning(
+                intent=intent,
+                planning_intent=planning_intent,
+                trip_spec=trip_spec,
+                explicit_region_key=explicit_region_key,
+                selected_places=selected_places,
+                user_status=user_status,
+                preference_profile=preference_profile,
+                allow_finder_suggestions=allow_finder_suggestions,
+                run_id=run_id,
+                timing_trace=timing_trace,
+            )
+        except Exception as exc:
+            if self.planning_runs is not None and run_id is not None:
+                self.planning_runs.add_stage(
+                    run_id,
+                    stage="workflow",
+                    status="failed",
+                    error={
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                self.planning_runs.complete(
+                    run_id,
+                    status="failed",
+                    error_code=(
+                        exc.code if isinstance(exc, AppError) else type(exc).__name__
+                    ),
+                    error_message=str(exc),
+                )
+            raise
+        if self.planning_runs is not None and run_id is not None:
+            self.planning_runs.complete(
+                run_id,
+                status="completed",
+                summary={
+                    "planId": plan.id,
+                    "planStatus": plan.status.value,
+                    "dayCount": len(plan.days),
+                    "unscheduledPlaceCount": len(plan.unscheduled_places),
+                    "warningCount": len(plan.warnings),
+                },
+            )
+        return plan
+
+    async def _execute_planning(
+        self,
+        *,
+        intent: TravelIntent,
+        planning_intent: PlanningIntent,
+        trip_spec: TripPlanningSpec,
+        explicit_region_key: str | None,
+        selected_places: list[SelectedPlaceContext],
+        user_status: UserStatus,
+        preference_profile: LongTermPreferenceProfile,
+        allow_finder_suggestions: bool,
+        run_id: str | None,
+        timing_trace: PlanTimingTrace | None,
+    ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
-        planner_started_at = time.perf_counter()
+        planner_started = time.perf_counter()
         planner_output = await self.planner.create_main_macro_plan(
             intent,
             trip_spec=trip_spec,
@@ -167,11 +271,31 @@ class MainPlanWorkflow:
             timing_trace.add_stage(
                 "planner",
                 "Planner tạo macro plan",
-                planner_started_at,
+                planner_started,
                 details={
                     "dayBriefCount": len(planner_output.macro_plan.day_briefs),
                     "selectedPlaceCount": len(selected_places),
                 },
+            )
+        if self.planning_runs is not None and run_id is not None:
+            self.planning_runs.add_stage(
+                run_id,
+                stage="planner",
+                status=(
+                    "completed"
+                    if planner_output.day_briefs_ready
+                    else "blocked"
+                ),
+                duration_ms=int((time.perf_counter() - planner_started) * 1_000),
+                input_data={
+                    "intent": planning_intent,
+                    "tripSpec": trip_spec,
+                    "regionKey": region_key,
+                    "selectedPlaces": selected_places,
+                    "preferenceProfile": preference_profile,
+                },
+                output_data=planner_output,
+                metadata={"trace": planner_output.trace},
             )
         if not planner_output.day_briefs_ready:
             raise AppError(
@@ -193,29 +317,38 @@ class MainPlanWorkflow:
             selected_places,
             planner_output,
         )
-        finder_started_at = time.perf_counter()
-        finder_output = self.finder.fill_agent_plan(
-            FinderAgentInput(
-                mode=PlanningMode.main,
-                intent=planning_intent,
-                tripSpec=planner_output.trip_spec,
-                macroPlan=macro_plan,
-                selectedPlaces=finder_selected_places,
-                userStatus=user_status,
-                allowFinderSuggestions=allow_finder_suggestions,
-            )
+        finder_input = FinderAgentInput(
+            mode=PlanningMode.main,
+            intent=planning_intent,
+            tripSpec=planner_output.trip_spec,
+            macroPlan=macro_plan,
+            selectedPlaces=finder_selected_places,
+            userStatus=user_status,
+            allowFinderSuggestions=allow_finder_suggestions,
         )
+        finder_started = time.perf_counter()
+        finder_output = self.finder.fill_agent_plan(finder_input)
         if timing_trace is not None:
             timing_trace.add_stage(
                 "finder",
                 "Finder xếp lịch trình và tuyến",
-                finder_started_at,
+                finder_started,
                 details={
                     "scheduledDayCount": len(finder_output.final_days),
                     "finderSelectedPlaceCount": len(finder_selected_places),
                 },
             )
-        assemble_started_at = time.perf_counter()
+        if self.planning_runs is not None and run_id is not None:
+            self.planning_runs.add_stage(
+                run_id,
+                stage="finder",
+                status=finder_output.trace.status.value,
+                duration_ms=int((time.perf_counter() - finder_started) * 1_000),
+                input_data=finder_input,
+                output_data=finder_output,
+                metadata={"trace": finder_output.trace},
+            )
+        assemble_started = time.perf_counter()
         unscheduled_places = self._merge_unscheduled_places(
             planner_output,
             finder_output.unscheduled_places,
@@ -243,23 +376,36 @@ class MainPlanWorkflow:
             timing_trace.add_stage(
                 "assemblePlan",
                 "Dựng plan hoàn chỉnh",
-                assemble_started_at,
+                assemble_started,
                 details={
                     "itemCount": sum(len(day.items) for day in plan.days),
                     "unscheduledCount": len(unscheduled_places),
                 },
             )
-        checker_started_at = time.perf_counter()
+        checker_started = time.perf_counter()
         check_report = self.checker.check(plan)
         if timing_trace is not None:
             timing_trace.add_stage(
                 "checkOverall",
                 "Kiểm tra tính khả thi",
-                checker_started_at,
+                checker_started,
                 details={
                     "status": check_report.status,
                     "issueCount": len(check_report.issues),
                 },
+            )
+        if self.planning_runs is not None and run_id is not None:
+            self.planning_runs.add_stage(
+                run_id,
+                stage="checker",
+                status=check_report.status,
+                duration_ms=int((time.perf_counter() - checker_started) * 1_000),
+                input_data={
+                    "planId": plan.id,
+                    "dayCount": len(plan.days),
+                    "unscheduledPlaces": plan.unscheduled_places,
+                },
+                output_data=check_report,
             )
         final_status = (
             PlanStatus.locked

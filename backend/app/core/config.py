@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     app_name: str = "VSF Travel API"
     app_env: str = "local"
     database_url: str = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
-    backend_cors_origins: str = Field(default="http://localhost:3000")
+    backend_cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:3001"
+    )
     jwt_secret: str = "local-only-change-me"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
