@@ -17,13 +17,12 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 ### Nền tảng cơ bản
 
 - Authentication bằng email và hồ sơ người dùng.
-- Hồ sơ dạng showcase có bản đồ các `Place` user đã đánh dấu đã đi, lưới bài
-  viết, plan Marketplace đã lưu và entitlement đã mua. Đây là dấu chân đơn
-  giản, chưa phải hệ thống điểm thưởng/thành tựu nâng cao. Giao diện “Dấu chân
-  Việt Nam” dùng ranh giới 34 tỉnh/thành hiện hành, tô vùng từ tọa độ `Place` và
-  hiển thị các cột mốc suy ra ở phía client. Dấu chân hiện có là dữ liệu người
-  dùng tự đánh dấu; chỉ được gắn nhãn “Có chuyến đi trong Planner” sau khi có
-  liên kết tới chuyến đã hoàn thành.
+- Hồ sơ dạng showcase có bản đồ thế giới của các `Place` user đã đánh dấu đã đi,
+  lưới bài viết, plan Marketplace đã lưu và entitlement đã mua. Đây là dấu chân
+  đơn giản, chưa phải hệ thống điểm thưởng/thành tựu nâng cao. Bản đồ dùng ranh
+  giới quốc gia, tô quốc gia từ tọa độ `Place` và hiển thị các cột mốc suy ra ở
+  phía client. Dấu chân hiện có là dữ liệu người dùng tự đánh dấu; chỉ được gắn
+  nhãn “Có chuyến đi trong Planner” sau khi có liên kết tới chuyến đã hoàn thành.
 - Quyền traveler, host, creator, buyer và admin được kiểm tra phía server.
 - Trip riêng tư, thành viên với quyền host/editor/viewer và audit cơ bản.
 - Lưu plan, version, import, listing, order và entitlement trong PostgreSQL.

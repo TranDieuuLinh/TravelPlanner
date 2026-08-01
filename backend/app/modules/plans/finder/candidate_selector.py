@@ -474,6 +474,7 @@ class CandidateSelector:
                     update={
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
+                        "source_provider": selected.source_provider,
                         "tags": list(dict.fromkeys([*selected.tags, *stored_place.tags])),
                         "source_order": selected.source_order,
                         "source_day": selected.source_day,
@@ -492,6 +493,7 @@ class CandidateSelector:
             longitude=selected.longitude,
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
+            sourceProvider=selected.source_provider,
             openingHours=[],
             dataConfidence="user_confirmed",
             sourceOrder=selected.source_order,

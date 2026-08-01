@@ -118,3 +118,61 @@ class TripChatRepository:
         )
         self.db.commit()
         return self.get(chat.id, chat.user_id)
+
+    def save_plan_mutation(
+        self,
+        chat: TripChat,
+        *,
+        action_summary: str,
+        plan_payload: dict,
+        revision: int,
+    ) -> TripChat:
+        now = datetime.now(UTC)
+        next_sequence = (revision * 2) - 1
+        result = self.db.execute(
+            update(TripChat)
+            .where(
+                TripChat.id == chat.id,
+                TripChat.user_id == chat.user_id,
+                TripChat.revision == revision - 1,
+            )
+            .values(
+                current_plan=plan_payload,
+                revision=revision,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        self.db.add_all(
+            [
+                TripChatMessage(
+                    id=str(uuid4()),
+                    chat_id=chat.id,
+                    role="assistant",
+                    content=action_summary,
+                    sequence=next_sequence,
+                    attachment_names=[],
+                    plan_revision=revision,
+                    created_at=now,
+                ),
+                TripChatPlanRevision(
+                    id=str(uuid4()),
+                    chat_id=chat.id,
+                    revision=revision,
+                    intake_id=chat.current_intake_id,
+                    plan_payload=plan_payload,
+                    explorer_payload=chat.current_explorer or {},
+                    created_at=now,
+                ),
+            ]
+        )
+        self.db.commit()
+        return self.get(chat.id, chat.user_id)
+

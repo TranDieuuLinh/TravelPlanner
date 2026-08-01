@@ -12,7 +12,16 @@ from app.modules.plans.routing.provider import (
     RouteCalculation,
     RouteProvider,
     TransitRouteProvider,
+    TravelTimeMatrixProvider,
 )
+from app.modules.plans.routing.local_time import (
+    combine_routing_datetime,
+    routing_today,
+)
+
+
+class RouteUnavailableError(ValueError):
+    """Raised when an explicitly requested mode has no provider route."""
 
 
 class GeographicRouteOptimizer:
@@ -25,9 +34,11 @@ class GeographicRouteOptimizer:
         self,
         route_provider: RouteProvider | None = None,
         transit_provider: TransitRouteProvider | None = None,
+        matrix_provider: TravelTimeMatrixProvider | None = None,
     ) -> None:
         self.route_provider = route_provider
         self.transit_provider = transit_provider
+        self.matrix_provider = matrix_provider
 
     def optimize(
         self,
@@ -78,6 +89,346 @@ class GeographicRouteOptimizer:
             preferred_modes=preferred_modes or set(),
             avoid_modes=avoid_modes or set(),
         )
+
+    def order_from_start(
+        self,
+        items: list[PlanItem],
+        *,
+        start: tuple[float, float],
+        departure_time: datetime | None = None,
+    ) -> list[PlanItem]:
+        """Order navigation stops by provider travel time, with geo fallback."""
+        if len(items) < 2:
+            return list(items)
+        if self.matrix_provider is not None:
+            coordinates = [start, *(self._coordinate(item) for item in items)]
+            matrix = self.matrix_provider.calculate(
+                coordinates,
+                transport_mode="car",
+                departure_time=departure_time,
+            )
+            if matrix is not None:
+                order = self._travel_time_order(
+                    matrix.travel_times_seconds,
+                    item_count=len(items),
+                )
+                if order is not None:
+                    return [items[index] for index in order]
+        if len(items) <= 10:
+            order = self._shortest_open_path_order(items, start=start)
+            return [items[index] for index in order]
+        order = self._best_nearest_neighbour_order(items, start=start)
+        order = self._two_opt(items, order, start=start)
+        return [items[index] for index in order]
+
+    def _travel_time_order(
+        self,
+        matrix: list[list[int | None]],
+        *,
+        item_count: int,
+    ) -> list[int] | None:
+        expected_size = item_count + 1
+        if (
+            len(matrix) != expected_size
+            or any(len(row) != expected_size for row in matrix)
+        ):
+            return None
+        if item_count <= 10:
+            return self._exact_matrix_open_path(matrix, item_count=item_count)
+        order = self._matrix_nearest_neighbour_order(
+            matrix,
+            item_count=item_count,
+        )
+        if order is None:
+            return None
+        return self._improve_matrix_order(matrix, order)
+
+    @staticmethod
+    def _exact_matrix_open_path(
+        matrix: list[list[int | None]],
+        *,
+        item_count: int,
+    ) -> list[int] | None:
+        costs: dict[tuple[int, int], tuple[int, tuple[int, ...]]] = {}
+        for item_index in range(item_count):
+            travel_time = matrix[0][item_index + 1]
+            if travel_time is not None:
+                costs[(1 << item_index, item_index)] = (
+                    travel_time,
+                    (item_index,),
+                )
+        for mask in range(1, 1 << item_count):
+            for last in range(item_count):
+                state = costs.get((mask, last))
+                if state is None:
+                    continue
+                cost, path = state
+                for next_index in range(item_count):
+                    if mask & (1 << next_index):
+                        continue
+                    travel_time = matrix[last + 1][next_index + 1]
+                    if travel_time is None:
+                        continue
+                    next_mask = mask | (1 << next_index)
+                    candidate = (
+                        cost + travel_time,
+                        (*path, next_index),
+                    )
+                    existing = costs.get((next_mask, next_index))
+                    if existing is None or candidate < existing:
+                        costs[(next_mask, next_index)] = candidate
+        complete_mask = (1 << item_count) - 1
+        complete = [
+            costs[(complete_mask, last)]
+            for last in range(item_count)
+            if (complete_mask, last) in costs
+        ]
+        return list(min(complete)[1]) if complete else None
+
+    @staticmethod
+    def _matrix_nearest_neighbour_order(
+        matrix: list[list[int | None]],
+        *,
+        item_count: int,
+    ) -> list[int] | None:
+        remaining = set(range(item_count))
+        order: list[int] = []
+        matrix_origin = 0
+        while remaining:
+            reachable = [
+                index
+                for index in remaining
+                if matrix[matrix_origin][index + 1] is not None
+            ]
+            if not reachable:
+                return None
+            next_index = min(
+                reachable,
+                key=lambda index: (
+                    matrix[matrix_origin][index + 1],
+                    index,
+                ),
+            )
+            order.append(next_index)
+            remaining.remove(next_index)
+            matrix_origin = next_index + 1
+        return order
+
+    def _improve_matrix_order(
+        self,
+        matrix: list[list[int | None]],
+        order: list[int],
+    ) -> list[int]:
+        best = list(order)
+        best_cost = self._matrix_path_cost(matrix, best)
+        if best_cost is None:
+            return best
+        improved = True
+        while improved:
+            improved = False
+            for start_index in range(len(best) - 1):
+                for end_index in range(start_index + 1, len(best)):
+                    candidate = [
+                        *best[:start_index],
+                        *reversed(best[start_index : end_index + 1]),
+                        *best[end_index + 1 :],
+                    ]
+                    candidate_cost = self._matrix_path_cost(matrix, candidate)
+                    if (
+                        candidate_cost is not None
+                        and candidate_cost < best_cost
+                    ):
+                        best = candidate
+                        best_cost = candidate_cost
+                        improved = True
+        return best
+
+    @staticmethod
+    def _matrix_path_cost(
+        matrix: list[list[int | None]],
+        order: list[int],
+    ) -> int | None:
+        total = 0
+        matrix_origin = 0
+        for item_index in order:
+            travel_time = matrix[matrix_origin][item_index + 1]
+            if travel_time is None:
+                return None
+            total += travel_time
+            matrix_origin = item_index + 1
+        return total
+
+    def _shortest_open_path_order(
+        self,
+        items: list[PlanItem],
+        *,
+        start: tuple[float, float],
+    ) -> list[int]:
+        """Solve the exact start-to-all-stops path without returning home."""
+        coordinates = [self._coordinate(item) for item in items]
+        size = len(coordinates)
+        costs: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {
+            (1 << index, index): (
+                _haversine_meters(start, coordinate),
+                (index,),
+            )
+            for index, coordinate in enumerate(coordinates)
+        }
+        for mask in range(1, 1 << size):
+            for last in range(size):
+                state = costs.get((mask, last))
+                if state is None:
+                    continue
+                cost, path = state
+                for next_index in range(size):
+                    if mask & (1 << next_index):
+                        continue
+                    next_mask = mask | (1 << next_index)
+                    next_cost = cost + _haversine_meters(
+                        coordinates[last],
+                        coordinates[next_index],
+                    )
+                    existing = costs.get((next_mask, next_index))
+                    candidate = (next_cost, (*path, next_index))
+                    if existing is None or candidate < existing:
+                        costs[(next_mask, next_index)] = candidate
+        complete_mask = (1 << size) - 1
+        return list(
+            min(
+                costs[(complete_mask, last)]
+                for last in range(size)
+            )[1]
+        )
+
+    def calculate_leg(
+        self,
+        origin: PlanItem,
+        destination: PlanItem,
+        *,
+        departure_time: datetime | None = None,
+        preferred_modes: set[str] | None = None,
+        avoid_modes: set[str] | None = None,
+        requested_mode: str | None = None,
+    ) -> PlanTransportLeg:
+        """Calculate one route without adding the live origin to a saved plan."""
+        origin_coordinate = self._coordinate(origin)
+        destination_coordinate = self._coordinate(destination)
+        straight_distance = _haversine_meters(
+            origin_coordinate,
+            destination_coordinate,
+        )
+        estimated_distance = int(
+            round(straight_distance * self.road_distance_factor)
+        )
+        if requested_mode is not None:
+            provider_route, mode = self._requested_provider_route(
+                origin_coordinate,
+                destination_coordinate,
+                departure_time=departure_time,
+                requested_mode=requested_mode,
+            )
+            if (
+                requested_mode.casefold() == "bus"
+                and provider_route is None
+            ):
+                raise RouteUnavailableError(
+                    "Không có tuyến phương tiện công cộng cho chặng này."
+                )
+            alternatives: list[PlanTransportOption] = []
+        else:
+            provider_route, mode, alternatives = self._best_provider_route(
+                origin_coordinate,
+                destination_coordinate,
+                departure_time=departure_time,
+                preferred_modes=preferred_modes or set(),
+                avoid_modes=avoid_modes or set(),
+            )
+        if provider_route is not None:
+            return self._provider_leg(
+                origin,
+                destination,
+                provider_route,
+                mode=mode,
+                alternatives=alternatives,
+            )
+
+        fallback_mode = _fallback_mode(
+            requested_mode,
+            distance_meters=estimated_distance,
+            walking_threshold=self.max_walking_distance_meters,
+        )
+        speed_kmh = {
+            "walk": 4.5,
+            "car": 22.0,
+            "public_transit": 18.0,
+            "ride_hailing": 22.0,
+        }[fallback_mode]
+        duration = max(
+            1,
+            int(round(estimated_distance / 1000 / speed_kmh * 60)),
+        )
+        return PlanTransportLeg(
+            fromItemId=origin.item_id,
+            toItemId=destination.item_id,
+            fromPlace=origin.name,
+            toPlace=destination.name,
+            mode=fallback_mode,
+            distanceMeters=estimated_distance,
+            estimatedDurationMinutes=duration,
+            geometryCoordinates=[
+                origin_coordinate,
+                destination_coordinate,
+            ],
+            source="geodesic_estimate",
+            verified=False,
+        )
+
+    def _requested_provider_route(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        *,
+        departure_time: datetime | None,
+        requested_mode: str,
+    ) -> tuple[RouteCalculation | None, str]:
+        normalized = requested_mode.casefold()
+        if normalized == "walk":
+            route = (
+                self.route_provider.calculate(
+                    origin,
+                    destination,
+                    transport_mode="pedestrian",
+                    departure_time=departure_time,
+                )
+                if self.route_provider is not None
+                else None
+            )
+            return route, "walk"
+        if normalized == "car":
+            route = (
+                self.route_provider.calculate(
+                    origin,
+                    destination,
+                    transport_mode="car",
+                    departure_time=departure_time,
+                )
+                if self.route_provider is not None
+                else None
+            )
+            return route, "car"
+        if normalized == "bus":
+            route = (
+                self.transit_provider.calculate(
+                    origin,
+                    destination,
+                    departure_time=departure_time,
+                    modes=("bus",),
+                )
+                if self.transit_provider is not None
+                else None
+            )
+            return route, "public_transit"
+        raise ValueError(f"Unsupported requested route mode: {requested_mode}")
 
     def _best_nearest_neighbour_order(
         self,
@@ -166,20 +517,10 @@ class GeographicRouteOptimizer:
         preferred_modes: set[str],
         avoid_modes: set[str],
     ) -> list[PlanTransportLeg]:
-        legs: list[PlanTransportLeg] = []
-        for origin, destination in zip(items, items[1:]):
-            origin_coordinate = self._coordinate(origin)
-            destination_coordinate = self._coordinate(destination)
-            straight_distance = _haversine_meters(
-                origin_coordinate,
-                destination_coordinate,
-            )
-            estimated_distance = int(
-                round(straight_distance * self.road_distance_factor)
-            )
-            provider_route, mode, alternatives = self._best_provider_route(
-                origin_coordinate,
-                destination_coordinate,
+        return [
+            self.calculate_leg(
+                origin,
+                destination,
                 departure_time=_leg_departure_time(
                     origin,
                     day=day,
@@ -188,45 +529,8 @@ class GeographicRouteOptimizer:
                 preferred_modes=preferred_modes,
                 avoid_modes=avoid_modes,
             )
-            if provider_route is not None:
-                legs.append(
-                    self._provider_leg(
-                        origin,
-                        destination,
-                        provider_route,
-                        mode=mode,
-                        alternatives=alternatives,
-                    )
-                )
-                continue
-            mode = (
-                "walk"
-                if estimated_distance <= self.max_walking_distance_meters
-                else "ride_hailing"
-            )
-            speed_kmh = 4.5 if mode == "walk" else 22.0
-            duration = max(
-                1,
-                int(round(estimated_distance / 1000 / speed_kmh * 60)),
-            )
-            legs.append(
-                PlanTransportLeg(
-                    fromItemId=origin.item_id,
-                    toItemId=destination.item_id,
-                    fromPlace=origin.name,
-                    toPlace=destination.name,
-                    mode=mode,
-                    distanceMeters=estimated_distance,
-                    estimatedDurationMinutes=duration,
-                    geometryCoordinates=[
-                        origin_coordinate,
-                        destination_coordinate,
-                    ],
-                    source="geodesic_estimate",
-                    verified=False,
-                )
-            )
-        return legs
+            for origin, destination in zip(items, items[1:])
+        ]
 
     def _best_provider_route(
         self,
@@ -267,6 +571,7 @@ class GeographicRouteOptimizer:
                 origin,
                 destination,
                 transport_mode="pedestrian",
+                departure_time=departure_time,
             )
             if self.route_provider is not None and not avoid_walk
             else None
@@ -276,16 +581,10 @@ class GeographicRouteOptimizer:
                 origin,
                 destination,
                 transport_mode="car",
+                departure_time=departure_time,
             )
             if self.route_provider is not None
             and not avoid_car
-            and (
-                walking_route is None
-                or walking_route.distance_meters
-                > self.max_walking_distance_meters
-                or prefer_car
-                or prefer_transit
-            )
             else None
         )
         transit_route = (
@@ -302,6 +601,12 @@ class GeographicRouteOptimizer:
             and not avoid_transit
             else None
         )
+
+        road_choices: list[tuple[RouteCalculation, str]] = []
+        if walking_route is not None:
+            road_choices.append((walking_route, "walk"))
+        if car_route is not None:
+            road_choices.append((car_route, "ride_hailing"))
 
         road_route: RouteCalculation | None = None
         road_mode = ""
@@ -321,18 +626,24 @@ class GeographicRouteOptimizer:
             road_mode = "walk"
 
         if transit_route is not None and (prefer_transit or road_route is None):
-            alternatives = (
-                [self._provider_option(road_route, mode=road_mode)]
-                if road_route is not None
-                else []
-            )
+            alternatives = [
+                self._provider_option(route, mode=mode)
+                for route, mode in road_choices
+            ]
             return transit_route, "public_transit", alternatives
 
-        alternatives = (
-            [self._provider_option(transit_route, mode="public_transit")]
-            if transit_route is not None
-            else []
-        )
+        alternatives = [
+            self._provider_option(route, mode=mode)
+            for route, mode in road_choices
+            if mode != road_mode
+        ]
+        if transit_route is not None:
+            alternatives.append(
+                self._provider_option(
+                    transit_route,
+                    mode="public_transit",
+                )
+            )
         if road_route is not None:
             return road_route, road_mode, alternatives
         return None, "", alternatives
@@ -346,6 +657,18 @@ class GeographicRouteOptimizer:
         mode: str,
         alternatives: list[PlanTransportOption],
     ) -> PlanTransportLeg:
+        normalized_alternatives = [
+            option.model_copy(
+                update={
+                    "details": _with_route_endpoints(
+                        option.details,
+                        from_place=origin.name,
+                        to_place=destination.name,
+                    )
+                }
+            )
+            for option in alternatives
+        ]
         return PlanTransportLeg(
             fromItemId=origin.item_id,
             toItemId=destination.item_id,
@@ -359,10 +682,14 @@ class GeographicRouteOptimizer:
             ),
             geometryCoordinates=route.geometry_coordinates,
             source=route.provider,
-            verified=True,
+            verified=_route_is_current(route),
             fetchedAt=route.fetched_at,
-            details=route.details,
-            alternatives=alternatives,
+            details=_with_route_endpoints(
+                route.details,
+                from_place=origin.name,
+                to_place=destination.name,
+            ),
+            alternatives=normalized_alternatives,
         )
 
     def _provider_option(
@@ -380,7 +707,7 @@ class GeographicRouteOptimizer:
             ),
             geometryCoordinates=route.geometry_coordinates,
             source=route.provider,
-            verified=True,
+            verified=_route_is_current(route),
             fetchedAt=route.fetched_at,
             details=route.details,
         )
@@ -398,6 +725,28 @@ class GeographicRouteOptimizer:
         if origin is None:
             return 0.0
         return _haversine_meters(origin, destination)
+
+
+def _route_is_current(route: RouteCalculation) -> bool:
+    return route.details.get("scheduleStatus", "current") == "current"
+
+
+def _with_route_endpoints(
+    details: dict,
+    *,
+    from_place: str,
+    to_place: str,
+) -> dict:
+    raw_segments = details.get("segments")
+    if not isinstance(raw_segments, list) or not raw_segments:
+        return details
+    segments = [
+        dict(segment) if isinstance(segment, dict) else {}
+        for segment in raw_segments
+    ]
+    segments[0]["fromPlace"] = from_place
+    segments[-1]["toPlace"] = to_place
+    return {**details, "segments": segments}
 
 
 def _haversine_meters(
@@ -424,13 +773,14 @@ def _leg_departure_time(
     trip_start_date: str | None,
 ) -> datetime | None:
     if trip_start_date is None:
-        return None
-    try:
-        departure_date = date.fromisoformat(trip_start_date) + timedelta(
-            days=day - 1
-        )
-    except ValueError:
-        return None
+        departure_date = routing_today()
+    else:
+        try:
+            departure_date = date.fromisoformat(trip_start_date) + timedelta(
+                days=day - 1
+            )
+        except ValueError:
+            return None
     parts = origin.time_window.split("-", 1)
     if len(parts) != 2:
         return None
@@ -438,28 +788,18 @@ def _leg_departure_time(
         departure_clock = time.fromisoformat(parts[1].strip())
     except ValueError:
         return None
-    return datetime.combine(departure_date, departure_clock)
+    return combine_routing_datetime(departure_date, departure_clock)
 
 
 def _transit_mode_filter(
     preferred_modes: set[str],
     avoid_modes: set[str],
 ) -> tuple[str, ...]:
-    train_modes = (
-        "highSpeedTrain",
-        "intercityTrain",
-        "interRegionalTrain",
-        "regionalTrain",
-        "cityTrain",
-        "subway",
-        "lightRail",
-        "monorail",
-    )
     included: list[str] = []
     if "bus" in preferred_modes and "bus" not in avoid_modes:
         included.append("bus")
     if "train" in preferred_modes and "train" not in avoid_modes:
-        included.extend(train_modes)
+        included.append("train")
     if included:
         return tuple(included)
 
@@ -467,5 +807,21 @@ def _transit_mode_filter(
     if "bus" in avoid_modes:
         excluded.append("-bus")
     if "train" in avoid_modes:
-        excluded.extend(f"-{mode}" for mode in train_modes)
+        excluded.append("-train")
     return tuple(excluded)
+
+
+def _fallback_mode(
+    requested_mode: str | None,
+    *,
+    distance_meters: int,
+    walking_threshold: int,
+) -> str:
+    normalized = requested_mode.casefold() if requested_mode else ""
+    if normalized == "walk":
+        return "walk"
+    if normalized == "car":
+        return "car"
+    if normalized == "bus":
+        return "public_transit"
+    return "walk" if distance_meters <= walking_threshold else "ride_hailing"

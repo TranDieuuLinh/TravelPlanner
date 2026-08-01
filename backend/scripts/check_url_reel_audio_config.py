@@ -12,8 +12,10 @@ from app.core.config import settings
 
 
 def main() -> None:
-    if not settings.gemini_api_key:
-        raise SystemExit("GEMINI_API_KEY is missing.")
+    if not settings.gemini_stt_key_pool:
+        raise SystemExit(
+            "GEMINI_STT_API_KEYS or GEMINI_API_KEY is missing."
+        )
     print(f"Gemini audio model configured: {settings.gemini_audio_model}")
 
 

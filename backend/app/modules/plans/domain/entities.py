@@ -110,6 +110,10 @@ class PlanItem(BaseModel):
         default_factory=list,
         alias="sourceRefs",
     )
+    source_provider: str | None = Field(
+        default=None,
+        alias="sourceProvider",
+    )
     tags: list[str] = Field(default_factory=list)
     latitude: float | None = None
     longitude: float | None = None

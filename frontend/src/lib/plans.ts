@@ -11,6 +11,7 @@ export type PlanItem = {
   timelineCategory?: "activity" | "food" | "break";
   source: string;
   sourceRefs: string[];
+  sourceProvider?: string | null;
   sourceOrder?: number | null;
   sourceDay?: number | null;
   notes?: string | null;
@@ -28,6 +29,17 @@ export type TransportOption = {
   details?: {
     transitModes?: string[];
     lines?: string[];
+    scheduleStatus?: string;
+    segments?: Array<{
+      mode: string;
+      fromPlace: string;
+      toPlace: string;
+      distanceMeters: number;
+      estimatedDurationMinutes: number;
+      geometryCoordinates: [number, number][];
+      line?: string | null;
+      headsign?: string | null;
+    }>;
   };
 };
 
@@ -37,6 +49,40 @@ export type TransportLeg = TransportOption & {
   fromPlace: string;
   toPlace: string;
   alternatives?: TransportOption[];
+};
+
+export type CurrentLocationRouteInput = {
+  origin: {
+    latitude: number;
+    longitude: number;
+  };
+  destination: {
+    itemId?: string | null;
+    name: string;
+    address?: string | null;
+    timeWindow?: string | null;
+    latitude: number;
+    longitude: number;
+  };
+  departureTime?: string | null;
+  preferredModes?: string[];
+  avoidModes?: string[];
+};
+
+export type DayDirectionsInput = {
+  origin: {
+    latitude: number;
+    longitude: number;
+  };
+  destinations: Array<{
+    itemId?: string | null;
+    name: string;
+    address?: string | null;
+    latitude: number;
+    longitude: number;
+  }>;
+  requestedMode?: "walk" | "car" | "bus" | null;
+  departureTime?: string | null;
 };
 export type PlanDay = {
   day: number;
@@ -188,7 +234,15 @@ export type ExplorerSourceTiming = {
   sampledFrames: number;
   speechStatus: string;
   visionStatus: string;
+  sttChunkCount?: number;
+  sttAudioDurationSeconds?: number | null;
+  sttChunkDurationSeconds?: number[];
+  sttChunkRetryCount?: number;
   extractedPlaceCount: number;
+  candidateCount?: number;
+  resolvedCount?: number;
+  providerCounts?: Record<string, number>;
+  resolvedProviderCounts?: Record<string, number>;
 };
 
 export type ExplorerTimingReport = {
@@ -203,6 +257,7 @@ export type ExplorerTimingReport = {
   resolvedCount: number;
   persistedCount: number;
   providerCounts: Record<string, number>;
+  resolvedProviderCounts?: Record<string, number>;
   logFile?: string | null;
 };
 
@@ -323,6 +378,24 @@ export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
   return apiFetch<FeatureMapItem[]>("/plans/feature-map");
 }
 
+export async function calculateCurrentLocationRoute(
+  input: CurrentLocationRouteInput
+): Promise<TransportLeg> {
+  return apiFetch<TransportLeg>("/plans/current-location-route", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function calculateDayDirections(
+  input: DayDirectionsInput
+): Promise<TransportLeg[]> {
+  return apiFetch<TransportLeg[]>("/plans/day-directions", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
 export async function exploreFull(
   input: Record<string, unknown>
 ): Promise<ExploreResponse> {
@@ -432,3 +505,122 @@ export async function amendTripChat(input: {
     body: form
   });
 }
+
+export type AddItemInput = {
+  day: number;
+  name: string;
+  address?: string | null;
+  placeType?: string;
+  timeWindow?: string | null;
+  durationMinutes?: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  notes?: string | null;
+  tags?: string[];
+  position?: number | null;
+};
+
+export type UpdateItemInput = {
+  name?: string | null;
+  address?: string | null;
+  placeType?: string | null;
+  timeWindow?: string | null;
+  durationMinutes?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  notes?: string | null;
+  tags?: string[] | null;
+};
+
+export async function addTripChatItem(input: {
+  chatId: string;
+  expectedRevision: number;
+  item: AddItemInput;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  form.append("day", String(input.item.day));
+  form.append("name", input.item.name);
+  if (input.item.address) form.append("address", input.item.address);
+  if (input.item.placeType) form.append("placeType", input.item.placeType);
+  if (input.item.timeWindow) form.append("timeWindow", input.item.timeWindow);
+  if (input.item.durationMinutes) form.append("durationMinutes", String(input.item.durationMinutes));
+  if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
+  if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
+  if (input.item.notes) form.append("notes", input.item.notes);
+
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/items`, {
+    method: "POST",
+    body: form
+  });
+}
+
+export async function updateTripChatItem(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  itemId: string;
+  item: UpdateItemInput;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  if (input.item.name) form.append("name", input.item.name);
+  if (input.item.address !== undefined) form.append("address", input.item.address || "");
+  if (input.item.placeType) form.append("placeType", input.item.placeType);
+  if (input.item.timeWindow !== undefined) form.append("timeWindow", input.item.timeWindow || "");
+  if (input.item.durationMinutes != null) form.append("durationMinutes", String(input.item.durationMinutes));
+  if (input.item.notes !== undefined) form.append("notes", input.item.notes || "");
+
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+    method: "PATCH",
+    body: form
+  });
+}
+
+export async function removeTripChatItem(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  itemId: string;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+    method: "DELETE",
+    body: form
+  });
+}
+
+export type PlaceSuggestion = {
+  name: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  placeId?: string | null;
+};
+
+export async function searchPlaces(query: string, destination?: string): Promise<PlaceSuggestion[]> {
+  const params = new URLSearchParams({ query });
+  if (destination) params.append("destination", destination);
+  return apiFetch<PlaceSuggestion[]>(`/plans/places/search?${params.toString()}`);
+}
+
+export async function reorderTripChatItem(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  itemIds: string[];
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  for (const itemId of input.itemIds) {
+    form.append("itemIds", itemId);
+  }
+
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/reorder`, {
+    method: "PUT",
+    body: form
+  });
+}
+

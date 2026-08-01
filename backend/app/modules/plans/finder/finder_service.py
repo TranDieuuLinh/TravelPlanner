@@ -644,6 +644,7 @@ class FinderService:
             durationMinutes=candidate_duration(candidate, block),
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
+            sourceProvider=candidate.source_provider,
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,

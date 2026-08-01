@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -71,7 +71,7 @@ class ExploreImageContext(BaseModel):
 
 class FullExploreRequest(BaseModel):
     raw_request: Annotated[str, Field(min_length=1, alias="rawRequest")]
-    destination: Annotated[str, Field(min_length=1)]
+    destination: str = ""
     urls: list[str] = Field(default_factory=list)
     place_candidates: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")]
     user_state: Annotated[UserPlanningState, Field(default_factory=UserPlanningState, alias="userState")]
@@ -87,6 +87,28 @@ class PlaceCandidateSourceType(StrEnum):
     url = "url"
 
 
+class IntakeInputCompleteness(StrEnum):
+    """How complete the original Explorer input was."""
+
+    vague = "vague"
+    partial = "partial"
+    anchor = "anchor"
+    complete = "complete"
+
+
+class MissingFieldInfo(BaseModel):
+    """Metadata for a planning field absent from the original input."""
+
+    field: str
+    was_provided: Annotated[bool, Field(default=False, alias="wasProvided")]
+    inferred_source: Annotated[
+        str | None,
+        Field(default=None, alias="inferredSource"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
 class PlaceCandidateSource(BaseModel):
     type: PlaceCandidateSourceType
     url: str | None = None
@@ -94,6 +116,22 @@ class PlaceCandidateSource(BaseModel):
 
 class UnifiedPlaceCandidate(BaseModel):
     name: str = Field(min_length=1)
+    original_name: Annotated[
+        str | None,
+        Field(default=None, alias="originalName"),
+    ]
+    english_names: Annotated[
+        list[str],
+        Field(default_factory=list, alias="englishNames"),
+    ]
+    vietnamese_names: Annotated[
+        list[str],
+        Field(default_factory=list, alias="vietnameseNames"),
+    ]
+    alternate_names: Annotated[
+        list[str],
+        Field(default_factory=list, alias="alternateNames"),
+    ]
     search_names: Annotated[
         list[str],
         Field(default_factory=list, alias="searchNames"),
@@ -130,14 +168,27 @@ class UnifiedPlaceCandidate(BaseModel):
 
 
 class ExplorerContextResponse(BaseModel):
+    mode: Literal["confirmed", "vague", "partial", "anchor"] = "confirmed"
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    input_completeness: Annotated[
+        IntakeInputCompleteness,
+        Field(
+            default=IntakeInputCompleteness.complete,
+            alias="inputCompleteness",
+        ),
+    ]
+    missing_fields: Annotated[
+        list[MissingFieldInfo],
+        Field(default_factory=list, alias="missingFields"),
+    ]
     assumptions: list[str] = Field(default_factory=list)
     missing_info_questions: Annotated[list[str], Field(default_factory=list, alias="missingInfoQuestions")]
     preference_snapshot: Annotated[
         PreferenceSnapshot,
         Field(default_factory=PreferenceSnapshot, alias="preferenceSnapshot"),
     ]
+    trace: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
 
@@ -175,9 +226,41 @@ class ExplorerSourceTiming(BaseModel):
     sampled_frames: Annotated[int, Field(default=0, alias="sampledFrames")]
     speech_status: Annotated[str, Field(alias="speechStatus")]
     vision_status: Annotated[str, Field(alias="visionStatus")]
+    stt_chunk_count: Annotated[
+        int,
+        Field(default=1, alias="sttChunkCount"),
+    ]
+    stt_audio_duration_seconds: Annotated[
+        float | None,
+        Field(default=None, alias="sttAudioDurationSeconds"),
+    ]
+    stt_chunk_duration_seconds: Annotated[
+        list[float],
+        Field(default_factory=list, alias="sttChunkDurationSeconds"),
+    ]
+    stt_chunk_retry_count: Annotated[
+        int,
+        Field(default=0, alias="sttChunkRetryCount"),
+    ]
     extracted_place_count: Annotated[
         int,
         Field(default=0, alias="extractedPlaceCount"),
+    ]
+    candidate_count: Annotated[
+        int,
+        Field(default=0, alias="candidateCount"),
+    ]
+    resolved_count: Annotated[
+        int,
+        Field(default=0, alias="resolvedCount"),
+    ]
+    provider_counts: Annotated[
+        dict[str, int],
+        Field(default_factory=dict, alias="providerCounts"),
+    ]
+    resolved_provider_counts: Annotated[
+        dict[str, int],
+        Field(default_factory=dict, alias="resolvedProviderCounts"),
     ]
 
     model_config = {"populate_by_name": True}
@@ -197,6 +280,10 @@ class ExplorerTimingReport(BaseModel):
     provider_counts: Annotated[
         dict[str, int],
         Field(default_factory=dict, alias="providerCounts"),
+    ]
+    resolved_provider_counts: Annotated[
+        dict[str, int],
+        Field(default_factory=dict, alias="resolvedProviderCounts"),
     ]
     log_file: Annotated[str | None, Field(default=None, alias="logFile")]
 

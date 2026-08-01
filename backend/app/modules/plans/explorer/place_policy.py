@@ -44,6 +44,7 @@ def is_schedulable_place(
     resolution_status: str,
     latitude: object | None,
     longitude: object | None,
+    candidate_name: str,
     resolved_name: str,
     city: str | None,
     destination: str | None,
@@ -56,10 +57,16 @@ def is_schedulable_place(
         return resolution_status in {"resolved", "provisional"}
     if resolution_status != "resolved":
         return False
+    if _location_identity(candidate_name) in {
+        _location_identity(value)
+        for value in (destination, city, country)
+        if value
+    }:
+        return False
 
-    resolved_key = _slug(resolved_name)
+    resolved_key = _location_identity(resolved_name)
     broad_location_keys = {
-        _slug(value)
+        _location_identity(value)
         for value in (city, destination, country)
         if value
     }
@@ -101,3 +108,18 @@ def _slug(value: str) -> str:
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "-", without_marks).strip("-")
+
+
+def _location_identity(value: str) -> str:
+    tokens = _slug(value).split("-")
+    while tokens[:2] in (["thanh", "pho"], ["city", "of"]):
+        tokens = tokens[2:]
+    while tokens and tokens[0] in {"city", "province", "tinh", "tp"}:
+        tokens = tokens[1:]
+    while tokens and tokens[-1] in {"city", "province"}:
+        tokens = tokens[:-1]
+    if tokens[-2:] == ["viet", "nam"]:
+        tokens = tokens[:-2]
+    elif tokens[-1:] == ["vietnam"]:
+        tokens = tokens[:-1]
+    return "".join(tokens)
