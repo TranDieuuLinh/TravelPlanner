@@ -7,8 +7,10 @@ from threading import Barrier, Event, Lock
 
 import httpx
 import pytest
+from pydantic import ValidationError
 from yt_dlp.utils import DownloadError
 
+from app.core.config import Settings, settings
 from app.modules.plans.explorer.tools.url_reels.extractor import (
     UrlReelContextExtractor,
 )
@@ -34,6 +36,7 @@ from app.modules.plans.explorer.tools.url_reels.service import (
 )
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     GeminiAudioSpeechToText,
+    _gemini_stt_rate_limiter,
 )
 
 
@@ -112,6 +115,20 @@ class FakeContextExtractor:
             extractedPlaces=["Hoan Kiem Lake"],
             confidence=0.9,
         )
+
+
+@pytest.fixture(autouse=True)
+def disable_gemini_stt_pacing_in_unit_tests(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        settings,
+        "url_reel_gemini_stt_min_interval_seconds",
+        0.0,
+    )
+    _gemini_stt_rate_limiter.reset()
+    yield
+    _gemini_stt_rate_limiter.reset()
 
 
 def build_service(media: FakeMedia | FailingMedia) -> UrlReelExtractionService:
@@ -208,6 +225,83 @@ def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
 
     assert result.speech_to_text.status == "ok"
     assert result.timings["prepareSourceWall"] >= 0
+
+
+def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
+    class CaptionExtractor:
+        def fetch(
+            self,
+            url: str,
+            *,
+            languages: str | None,
+        ) -> SpeechToTextResult:
+            assert url == "https://youtu.be/abc123DEF45"
+            assert languages == "en,vi"
+            return SpeechToTextResult(
+                text="Hoan Kiem Lake",
+                source="youtube_captions",
+                language="en",
+                durationSeconds=0.01,
+            )
+
+    class MediaMustNotRun:
+        def prepare(self, url: str, work_dir: Path):
+            raise AssertionError("YouTube media should not be downloaded")
+
+    class SpeechMustNotRun:
+        def transcribe(self, *args: object, **kwargs: object):
+            raise AssertionError("Gemini STT should not be called")
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=MediaMustNotRun(),  # type: ignore[arg-type]
+        speech_to_text=SpeechMustNotRun(),  # type: ignore[arg-type]
+        youtube_transcript=CaptionExtractor(),  # type: ignore[arg-type]
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://youtu.be/abc123DEF45",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.speech_to_text.source == "youtube_captions"
+    assert result.timings["mediaDownloadSkipped"] == 1.0
+    assert result.needs_image_upload is False
+
+
+def test_youtube_without_caption_downloads_media_for_gemini_stt(
+    tmp_path: Path,
+) -> None:
+    class MissingCaptionExtractor:
+        def fetch(
+            self,
+            url: str,
+            *,
+            languages: str | None,
+        ) -> None:
+            return None
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=FakeMedia(),
+        speech_to_text=FakeSpeechToText(),
+        youtube_transcript=MissingCaptionExtractor(),  # type: ignore[arg-type]
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.youtube.com/watch?v=abc123DEF45",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.speech_to_text.text == "Hoan Kiem Lake"
+    assert result.timings["youtubeTranscriptFallback"] == 1.0
+    assert result.timings["downloadVideo"] == 0.1
 
 
 def test_photo_url_requires_uploaded_image() -> None:
@@ -311,6 +405,158 @@ def test_video_frame_ocr_uses_gemini_35_flash_lite() -> None:
         GeminiReelFrameVision(api_key="test-key").model_name
         == "gemini-3.5-flash-lite"
     )
+
+
+def test_default_gemini_pool_separates_stt_and_ocr_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_keys = ",".join(f"key-{index}" for index in range(1, 11))
+    monkeypatch.setattr(settings, "gemini_api_key", shared_keys)
+    monkeypatch.setattr(settings, "gemini_stt_api_keys", None)
+    monkeypatch.setattr(settings, "gemini_ocr_api_keys", None)
+
+    speech = GeminiAudioSpeechToText()
+    vision = GeminiReelFrameVision()
+
+    assert speech.api_keys == tuple(f"key-{index}" for index in range(1, 6))
+    assert vision.api_keys == tuple(f"key-{index}" for index in range(6, 11))
+    assert set(speech.api_keys).isdisjoint(vision.api_keys)
+
+
+def test_dedicated_gemini_pools_override_shared_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", "shared-key")
+    monkeypatch.setattr(settings, "gemini_stt_api_keys", "stt-1,stt-2")
+    monkeypatch.setattr(settings, "gemini_ocr_api_keys", "ocr-1,ocr-2")
+
+    assert GeminiAudioSpeechToText().api_keys == ("stt-1", "stt-2")
+    assert GeminiReelFrameVision().api_keys == ("ocr-1", "ocr-2")
+
+
+def test_dedicated_gemini_pools_reject_overlapping_keys() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="must use different keys",
+    ):
+        Settings(
+            _env_file=None,
+            gemini_stt_api_keys="stt-key,shared-key",
+            gemini_ocr_api_keys="shared-key,ocr-key",
+        )
+
+
+def test_gemini_stt_fallback_has_rate_safe_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.url_reel_stt_max_concurrency == 1
+    assert configured.url_reel_gemini_stt_min_interval_seconds == 6.0
+
+
+def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    speech = GeminiAudioSpeechToText(
+        api_key="stt-1,stt-2,stt-3,stt-4,stt-5"
+    )
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"audio")
+    barrier = Barrier(3, timeout=2)
+    used_keys: list[tuple[str, ...]] = []
+    used_keys_lock = Lock()
+
+    monkeypatch.setattr(
+        speech,
+        "_probe_duration_seconds",
+        lambda _: 120.0,
+    )
+    monkeypatch.setattr(settings, "url_reel_stt_chunk_seconds", 45.0)
+
+    def fake_split(
+        source: Path,
+        *,
+        duration_seconds: float,
+        chunk_count: int,
+        output_dir: Path,
+    ) -> list[Path]:
+        assert source == audio_path
+        assert duration_seconds == 120.0
+        assert chunk_count == 3
+        paths = [
+            output_dir / f"chunk_{index:03d}.mp3"
+            for index in range(1, 4)
+        ]
+        for path in paths:
+            path.write_bytes(b"chunk")
+        return paths
+
+    def fake_transcribe_single(
+        chunk_path: Path,
+        *,
+        api_keys: tuple[str, ...],
+        language: str | None,
+        initial_prompt: str | None,
+        chunk_index: int | None = None,
+        chunk_count: int | None = None,
+    ) -> SpeechToTextResult:
+        assert language == "vi"
+        assert initial_prompt == "Hà Nội"
+        assert chunk_index is not None
+        assert chunk_count == 3
+        with used_keys_lock:
+            used_keys.append(api_keys)
+        barrier.wait()
+        place_name = (
+            "Hồ Hoàn Kiếm"
+            if chunk_index in {1, 2}
+            else "Cà phê Đinh"
+        )
+        return SpeechToTextResult(
+            text=f"transcript chunk {chunk_index}",
+            observations=[
+                SpeechToTextObservation(
+                    order=1,
+                    placeName=place_name,
+                    evidence=place_name,
+                    dayNumber=1,
+                    confidence=0.9,
+                )
+            ],
+            durationSeconds=float(chunk_index),
+        )
+
+    monkeypatch.setattr(speech, "_split_audio", fake_split)
+    monkeypatch.setattr(
+        speech,
+        "_transcribe_single",
+        fake_transcribe_single,
+    )
+
+    result = speech.transcribe(
+        audio_path,
+        language="vi",
+        initial_prompt="Hà Nội",
+    )
+
+    assert set(used_keys) == {("stt-1",), ("stt-2",), ("stt-3",)}
+    assert result.chunk_count == 3
+    assert result.audio_duration_seconds == 120.0
+    assert result.chunk_duration_seconds == [1.0, 2.0, 3.0]
+    assert result.chunk_retry_count == 0
+    assert result.text.splitlines() == [
+        "transcript chunk 1",
+        "transcript chunk 2",
+        "transcript chunk 3",
+    ]
+    assert [
+        observation.place_name
+        for observation in result.observations
+    ] == ["Hồ Hoàn Kiếm", "Cà phê Đinh"]
+    assert [
+        observation.order
+        for observation in result.observations
+    ] == [1, 2]
 
 
 def test_audio_stt_rotates_comma_separated_api_keys(
@@ -503,6 +749,163 @@ def test_context_extractor_merges_structured_stt_and_ocr_provenance() -> None:
         "stt": "visit Cafe Dinh for egg coffee",
         "ocr": "Cafe Dinh (Egg Coffee)",
     }
+
+
+def test_context_extractor_prioritizes_tagged_metadata_location() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.tiktok.com/@creator/video/123",
+            canonicalUrl="https://www.tiktok.com/@creator/video/123",
+            platform="tiktok",
+            title="Coffee places in Hanoi",
+            raw={
+                "place": "Café Đinh",
+                "location_address": "13 Đinh Tiên Hoàng, Hoàn Kiếm",
+                "city": "Hà Nội",
+            },
+        ),
+        transcript="Then visit another coffee shop.",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Another Coffee Shop",
+                evidence="visit another coffee shop",
+                searchRegion="",
+                confidence=0.8,
+            )
+        ],
+        destination="Hà Nội",
+        visual_places=["Café Đinh Hanoi"],
+    )
+
+    assert context.extracted_places == [
+        "Café Đinh",
+        "Another Coffee Shop",
+    ]
+    tagged = context.extracted_place_details[0]
+    assert tagged.source_order == 1
+    assert tagged.address == "13 Đinh Tiên Hoàng, Hoàn Kiếm"
+    assert tagged.search_region == "Hà Nội"
+    assert tagged.source_evidence["metadata"] == "Café Đinh"
+
+
+def test_context_extractor_keeps_caption_pins_canonical_for_hanoi_video() -> None:
+    caption = (
+        "Don't skip these 4 spots in 📍Hanoi 🇻🇳 "
+        "📌 Cafe Pho Co ☕ 📌 Ethnology Museum 🛖 "
+        "📌 Train Street Southern Entrance 🚂 "
+        "📌 Dong Xuan St and Hang Ma St 🛍️"
+    )
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510",
+            canonicalUrl="https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510",
+            platform="tiktok",
+            title=(
+                "Don't skip these 4 spots in 📍Hanoi 🇻🇳 "
+                "📌 Cafe Pho Co ☕ 📌 Ethnology Mus..."
+            ),
+            description=caption,
+        ),
+        transcript="",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Cafe Pho Co",
+                evidence="First is Cafe Pho Co.",
+                activity="drink coffee",
+                searchRegion="Hanoi",
+                confidence=0.95,
+            ),
+            SpeechToTextObservation(
+                order=2,
+                placeName="Museum of Ethnology",
+                evidence="Second is the Museum of Ethnology.",
+                searchRegion="Hanoi",
+                confidence=0.95,
+            ),
+            SpeechToTextObservation(
+                order=3,
+                placeName="Train Street",
+                evidence="Train Street, specifically the south entrance.",
+                searchRegion="Hanoi",
+                confidence=0.95,
+            ),
+            SpeechToTextObservation(
+                order=4,
+                placeName="Dong Xuan Street",
+                evidence="Lastly is Dong Xuan Street.",
+                searchRegion="Hanoi",
+                confidence=0.95,
+            ),
+            SpeechToTextObservation(
+                order=5,
+                placeName="Hang Ma Street",
+                evidence="Hang Ma Street, especially on weekends.",
+                searchRegion="Hanoi",
+                confidence=0.95,
+            ),
+            SpeechToTextObservation(
+                order=6,
+                placeName="Coffee 9",
+                evidence="Coffee 9",
+                searchRegion="Hanoi",
+                confidence=0.8,
+            ),
+        ],
+        destination="Hanoi, Vietnam",
+        visual_places=[
+            "Hanoi",
+            "Museum of Ethnology",
+            "Southern Train Street",
+        ],
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="Cafe Pho Co",
+                evidence="11 Hàng Gai, Cafe Pho Co, hidden gem",
+            ),
+            FrameVisionObservation(
+                order=2,
+                placeName="Museum of Ethnology",
+                evidence="Museum of Ethnology",
+            ),
+            FrameVisionObservation(
+                order=3,
+                placeName="Southern Train Street",
+                evidence="comment link for location + train timetables",
+            ),
+            FrameVisionObservation(
+                order=6,
+                placeName="Coffee Nang",
+                evidence="Coffee Nang",
+            ),
+        ],
+    )
+
+    assert context.extracted_places[:5] == [
+        "Cafe Pho Co",
+        "Ethnology Museum",
+        "Train Street Southern Entrance",
+        "Dong Xuan St",
+        "Hang Ma St",
+    ]
+    assert "Hanoi" not in context.extracted_places
+    assert "Museum of Ethnology" not in context.extracted_places
+    assert "Southern Train Street" not in context.extracted_places
+    assert "Ethnology Mus" not in context.extracted_places
+    assert "Coffee 9" not in context.extracted_places
+    assert "Coffee Nang" in context.extracted_places
+    by_name = {
+        detail.name: detail
+        for detail in context.extracted_place_details
+    }
+    assert by_name["Cafe Pho Co"].address == "11 Hàng Gai"
+    assert by_name["Ethnology Museum"].category.value == "culture"
+    assert by_name["Train Street Southern Entrance"].category.value == (
+        "attraction"
+    )
+    assert by_name["Train Street Southern Entrance"].address is None
 
 
 def test_frame_ocr_balances_frames_across_batches() -> None:
@@ -989,7 +1392,8 @@ def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity
         "Cafe Pho Co",
         "Ethnology Museum",
         "Train Street Southern Entrance",
-        "Dong Xuan St and Hang Ma St",
+        "Dong Xuan St",
+        "Hang Ma St",
     ]
     assert all(
         detail.source_activity is None

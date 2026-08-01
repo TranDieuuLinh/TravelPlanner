@@ -268,6 +268,10 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert result.timing_report.status == "completed"
     assert result.timing_report.candidate_count == 2
     assert result.timing_report.resolved_count == 2
+    assert result.timing_report.provider_counts == {"fake_places": 2}
+    assert result.timing_report.resolved_provider_counts == {
+        "fake_places": 2
+    }
     assert {
         stage.key for stage in result.timing_report.stages
     } >= {
@@ -281,6 +285,15 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     persisted = json.loads(log_path.read_text(encoding="utf-8"))
     assert persisted["intakeId"] == result.intake_id
     assert persisted["sources"][0]["sampledFrames"] == 4
+    assert persisted["sources"][0]["extractedPlaceCount"] == 2
+    assert persisted["sources"][0]["candidateCount"] == 2
+    assert persisted["sources"][0]["resolvedCount"] == 2
+    assert persisted["sources"][0]["providerCounts"] == {
+        "fake_places": 2
+    }
+    assert persisted["sources"][0]["resolvedProviderCounts"] == {
+        "fake_places": 2
+    }
     serialized = json.dumps(persisted)
     assert "Private prompt content" not in serialized
     assert "private-query" not in serialized

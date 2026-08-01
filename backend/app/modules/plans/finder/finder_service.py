@@ -857,6 +857,7 @@ class FinderService:
                     update={
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
+                        "source_provider": selected.source_provider,
                         "tags": list(
                             dict.fromkeys(
                                 [*selected.tags, *stored_place.tags]
@@ -883,6 +884,7 @@ class FinderService:
             longitude=selected.longitude,
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
+            sourceProvider=selected.source_provider,
             openingHours=[],
             dataConfidence="user_confirmed",
             sourceOrder=selected.source_order,
@@ -1188,6 +1190,7 @@ class FinderService:
             durationMinutes=self._candidate_duration(candidate, block),
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
+            sourceProvider=candidate.source_provider,
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,

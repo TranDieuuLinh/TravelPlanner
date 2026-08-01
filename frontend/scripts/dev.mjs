@@ -1,6 +1,14 @@
-import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 const projectRoot = process.cwd();
@@ -9,9 +17,42 @@ const devOutputTarget = join(tmpdir(), "VSF_TravelPlanner_next-dev");
 const nodeModules = join(projectRoot, "node_modules");
 const nextCli = join(nodeModules, "next", "dist", "bin", "next");
 
+function hasFileSystemEntry(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function hasBrokenTurbopackRuntime(outputDirectory) {
+  const documentBundle = join(
+    outputDirectory,
+    "server",
+    "pages",
+    "_document.js"
+  );
+  if (!existsSync(documentBundle)) return false;
+
+  const bundleSource = readFileSync(documentBundle, "utf8");
+  const runtimeImport = bundleSource.match(
+    /require\(["']([^"']*\[turbopack\]_runtime\.js)["']\)/
+  );
+  if (!runtimeImport) return false;
+
+  return !existsSync(resolve(dirname(documentBundle), runtimeImport[1]));
+}
+
+if (hasBrokenTurbopackRuntime(devOutputTarget)) {
+  console.warn("Detected an incomplete Turbopack cache; rebuilding it.");
+  rmSync(devOutputTarget, { recursive: true, force: true });
+}
+
 mkdirSync(devOutputTarget, { recursive: true });
 
-if (existsSync(devOutputLink)) {
+if (hasFileSystemEntry(devOutputLink)) {
   const isExpectedJunction =
     lstatSync(devOutputLink).isSymbolicLink() &&
     resolve(readlinkSync(devOutputLink)) === resolve(devOutputTarget);
@@ -21,7 +62,7 @@ if (existsSync(devOutputLink)) {
   }
 }
 
-if (!existsSync(devOutputLink)) {
+if (!hasFileSystemEntry(devOutputLink)) {
   symlinkSync(devOutputTarget, devOutputLink, "junction");
 }
 

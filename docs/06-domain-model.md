@@ -24,10 +24,15 @@ tương thích nhưng chưa có luồng Marketplace riêng.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
 - `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
-  `source`, `verified` và `fetchedAt`. Leg HERE có provenance
-  `here_routing_v8` hoặc `here_transit_v8`; fallback địa lý phải giữ
+  `source`, `verified` và `fetchedAt`. Leg provider có provenance
+  `valhalla_routing` hoặc `opentripplanner_transit`; fallback địa lý phải giữ
   `verified=false`. `alternatives` chứa các `PlanTransportOption` khả thi khác
   với cùng shape route và `details` có mode/tuyến public transit khi có.
+  Public transit không có provider route xác minh không được tạo thành option
+  ước tính và không được có geometry nối thẳng hai điểm.
+  Chuỗi chặng từ vị trí thiết bị qua các stop của một ngày cũng dùng value
+  object này nhưng là dữ liệu tạm thời, không được thêm vào snapshot plan hoặc
+  revision.
 - `CheckReport`: trạng thái, danh sách vấn đề và tóm tắt.
 - `Plan`: loại main/backup, trạng thái vòng đời, intent, macro plan, các ngày,
   liên kết plan cha và báo cáo kiểm tra.
@@ -108,7 +113,9 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
   nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
-  hành đã xác minh. Stop URL luôn giữ tên candidate đã tổng hợp từ evidence;
+  hành đã xác minh. `sourceProvider` giữ provider đã resolve candidate để UI có
+  thể phân biệt provenance URL với Nominatim mà không suy đoán từ tên. Stop
+  URL luôn giữ tên candidate đã tổng hợp từ evidence;
   provider chỉ bổ sung identity, địa chỉ và tọa độ khi match đã resolve.
 - `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
   chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,

@@ -28,3 +28,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+# World country boundaries
+
+`world-countries.geojson` contains country-level boundaries at 1:110m scale.
+
+- Source: Natural Earth, distributed through `datasets/geo-boundaries-world-110m`
+- Dataset snapshot: downloaded 2026-07-30
+- License: public domain

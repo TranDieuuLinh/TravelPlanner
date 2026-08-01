@@ -11,6 +11,7 @@ export type PlanItem = {
   timelineCategory?: "activity" | "food" | "break";
   source: string;
   sourceRefs: string[];
+  sourceProvider?: string | null;
   sourceOrder?: number | null;
   sourceDay?: number | null;
   notes?: string | null;
@@ -28,6 +29,17 @@ export type TransportOption = {
   details?: {
     transitModes?: string[];
     lines?: string[];
+    scheduleStatus?: string;
+    segments?: Array<{
+      mode: string;
+      fromPlace: string;
+      toPlace: string;
+      distanceMeters: number;
+      estimatedDurationMinutes: number;
+      geometryCoordinates: [number, number][];
+      line?: string | null;
+      headsign?: string | null;
+    }>;
   };
 };
 
@@ -37,6 +49,40 @@ export type TransportLeg = TransportOption & {
   fromPlace: string;
   toPlace: string;
   alternatives?: TransportOption[];
+};
+
+export type CurrentLocationRouteInput = {
+  origin: {
+    latitude: number;
+    longitude: number;
+  };
+  destination: {
+    itemId?: string | null;
+    name: string;
+    address?: string | null;
+    timeWindow?: string | null;
+    latitude: number;
+    longitude: number;
+  };
+  departureTime?: string | null;
+  preferredModes?: string[];
+  avoidModes?: string[];
+};
+
+export type DayDirectionsInput = {
+  origin: {
+    latitude: number;
+    longitude: number;
+  };
+  destinations: Array<{
+    itemId?: string | null;
+    name: string;
+    address?: string | null;
+    latitude: number;
+    longitude: number;
+  }>;
+  requestedMode?: "walk" | "car" | "bus" | null;
+  departureTime?: string | null;
 };
 export type PlanDay = {
   day: number;
@@ -188,7 +234,15 @@ export type ExplorerSourceTiming = {
   sampledFrames: number;
   speechStatus: string;
   visionStatus: string;
+  sttChunkCount?: number;
+  sttAudioDurationSeconds?: number | null;
+  sttChunkDurationSeconds?: number[];
+  sttChunkRetryCount?: number;
   extractedPlaceCount: number;
+  candidateCount?: number;
+  resolvedCount?: number;
+  providerCounts?: Record<string, number>;
+  resolvedProviderCounts?: Record<string, number>;
 };
 
 export type ExplorerTimingReport = {
@@ -203,6 +257,7 @@ export type ExplorerTimingReport = {
   resolvedCount: number;
   persistedCount: number;
   providerCounts: Record<string, number>;
+  resolvedProviderCounts?: Record<string, number>;
   logFile?: string | null;
 };
 
@@ -321,6 +376,24 @@ export async function runPlannerIntake(
 
 export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
   return apiFetch<FeatureMapItem[]>("/plans/feature-map");
+}
+
+export async function calculateCurrentLocationRoute(
+  input: CurrentLocationRouteInput
+): Promise<TransportLeg> {
+  return apiFetch<TransportLeg>("/plans/current-location-route", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function calculateDayDirections(
+  input: DayDirectionsInput
+): Promise<TransportLeg[]> {
+  return apiFetch<TransportLeg[]>("/plans/day-directions", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 export async function exploreFull(

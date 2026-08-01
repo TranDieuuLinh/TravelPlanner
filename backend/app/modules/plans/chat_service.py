@@ -218,6 +218,7 @@ class TripChatService:
                 regionKey=item.region_key,
                 tags=item.tags,
                 sourceRefs=item.source_refs,
+                sourceProvider=item.source_provider,
                 notes=item.notes,
                 sourceOrder=(
                     item.source_order

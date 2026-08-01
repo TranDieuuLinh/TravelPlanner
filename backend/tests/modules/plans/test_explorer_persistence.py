@@ -91,6 +91,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert selected_places[0].preference_level.value == "preferred"
         assert selected_places[0].place_id is None
         assert selected_places[0].name == "Mì Quảng Bà Mua"
+        assert selected_places[0].source_provider == "fake_places"
         assert selected_places[0].address == "Đà Nẵng"
         assert selected_places[0].notes == "Nhà hàng chuyên món mì Quảng."
         assert selected_places[0].latitude == 16.0592
@@ -208,6 +209,54 @@ def test_url_itinerary_drops_source_name_when_provider_match_is_only_city() -> N
         )
 
         assert selected == []
+
+    engine.dispose()
+
+
+def test_url_itinerary_rejects_destination_alias_resolved_to_airport() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Hanoi",
+                "category": "other",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                "confidence": 0.9,
+                "sourceOrder": 1,
+            },
+            "status": "resolved",
+            "provider": "nominatim",
+            "name": "Sân bay Quốc tế Nội Bài",
+            "city": "Hà Nội",
+            "country": "Việt Nam",
+            "latitude": "21.2187",
+            "longitude": "105.8042",
+            "dataConfidence": "medium",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-hanoi-alias",
+            user_id=None,
+            destination="Hanoi, Vietnam",
+            resolutions=[resolution],
+        )
+
+        assert repository.load_must_places(
+            "intake-hanoi-alias",
+            None,
+        ) == []
 
     engine.dispose()
 

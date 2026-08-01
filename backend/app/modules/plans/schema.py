@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +51,10 @@ class SelectedPlaceCreate(BaseModel):
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )
+    source_provider: Annotated[
+        str | None,
+        Field(default=None, alias="sourceProvider"),
+    ]
     notes: str | None = None
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
     source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
@@ -123,6 +128,60 @@ class BackupPlanCreate(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     keep_days: Annotated[bool, Field(alias="keepDays")] = True
     avoid_outdoor: Annotated[bool, Field(alias="avoidOutdoor")] = False
+
+
+class RouteCoordinate(BaseModel):
+    latitude: Annotated[float, Field(ge=-90, le=90)]
+    longitude: Annotated[float, Field(ge=-180, le=180)]
+
+
+class RouteDestination(RouteCoordinate):
+    item_id: Annotated[str | None, Field(default=None, alias="itemId")]
+    name: Annotated[str, Field(min_length=1, max_length=255)]
+    address: Annotated[str | None, Field(default=None, max_length=1000)]
+    time_window: Annotated[
+        str | None,
+        Field(default=None, min_length=11, max_length=32, alias="timeWindow"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
+class CurrentLocationRouteCreate(BaseModel):
+    origin: RouteCoordinate
+    destination: RouteDestination
+    departure_time: Annotated[
+        datetime | None,
+        Field(default=None, alias="departureTime"),
+    ]
+    preferred_modes: Annotated[
+        list[str],
+        Field(default_factory=list, alias="preferredModes"),
+    ]
+    avoid_modes: Annotated[
+        list[str],
+        Field(default_factory=list, alias="avoidModes"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
+class DayDirectionsCreate(BaseModel):
+    origin: RouteCoordinate
+    destinations: Annotated[
+        list[RouteDestination],
+        Field(min_length=1, max_length=30),
+    ]
+    requested_mode: Annotated[
+        Literal["walk", "car", "bus"] | None,
+        Field(default=None, alias="requestedMode"),
+    ]
+    departure_time: Annotated[
+        datetime | None,
+        Field(default=None, alias="departureTime"),
+    ]
+
+    model_config = {"populate_by_name": True}
 
 
 TravelIntentRead = TravelIntent

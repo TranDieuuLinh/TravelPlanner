@@ -18,6 +18,9 @@ from app.modules.plans.explorer.schema import (
     ExplorerContextResponse,
     FullExploreRequest,
 )
+from app.modules.plans.explorer.explorer_service import (
+    apply_raw_prompt_completeness,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import UrlReelExtractionResult
 
 
@@ -104,6 +107,14 @@ class ExploreResponseFormatter:
             draft = ExploreBundleDraft.model_validate_json(raw)
             _complete_url_itinerary_guidance(draft, url_results)
             draft = _complete_constraint_policy(draft, payload.raw_request)
+            draft = draft.model_copy(
+                update={
+                    "explorer": apply_raw_prompt_completeness(
+                        payload,
+                        draft.explorer,
+                    )
+                }
+            )
             return draft
         except (RuntimeError, ValidationError, json.JSONDecodeError, KeyError) as exc:
             raise RuntimeError(

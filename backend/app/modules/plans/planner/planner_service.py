@@ -753,17 +753,41 @@ class PlannerService:
             day: max(0, activity_capacity - len(refs))
             for day, refs in base_refs_by_day.items()
         }
+        latest_explicit_source_day = max(
+            (
+                place.source_day
+                for place in eligible_places
+                if place.source_day is not None
+            ),
+            default=0,
+        )
+        can_spill_explicit_source_days = (
+            trip_days > latest_explicit_source_day
+        )
 
         for place in eligible_places:
             if place.source_day is not None:
                 if place.source_day > trip_days:
                     out_of_range.append(place)
                     continue
-                if remaining_capacity[place.source_day] <= 0:
+                assigned_day = place.source_day
+                if (
+                    remaining_capacity[assigned_day] <= 0
+                    and can_spill_explicit_source_days
+                ):
+                    assigned_day = next(
+                        (
+                            day
+                            for day in range(place.source_day + 1, trip_days + 1)
+                            if remaining_capacity[day] > 0
+                        ),
+                        assigned_day,
+                    )
+                if remaining_capacity[assigned_day] <= 0:
                     over_capacity.append(place)
                     continue
-                assigned_days[place.stable_ref] = place.source_day
-                remaining_capacity[place.source_day] -= 1
+                assigned_days[place.stable_ref] = assigned_day
+                remaining_capacity[assigned_day] -= 1
 
         for place in eligible_places:
             if place.source_day is not None:

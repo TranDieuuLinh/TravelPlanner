@@ -38,6 +38,7 @@ class BackupPlanWorkflow:
                 latitude=item.latitude,
                 longitude=item.longitude,
                 sourceRefs=item.source_refs,
+                sourceProvider=item.source_provider,
                 tags=item.tags,
             )
             for day in main_plan.days
