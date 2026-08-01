@@ -1,0 +1,7 @@
+# Ignore data files and outputs in read_data_parquet
+*.parquet
+*.json
+*.csv
+csv_relational/
+__pycache__/
+.pytest_cache/
