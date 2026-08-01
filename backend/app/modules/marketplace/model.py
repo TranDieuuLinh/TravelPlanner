@@ -175,9 +175,9 @@ class Entitlement(Base):
 
 
 class Review(Base):
-    __tablename__ = "reviews"
+    __tablename__ = "marketplace_reviews"
     __table_args__ = (
-        UniqueConstraint("reviewer_id", "marketplace_plan_id", name="uq_reviews_reviewer_plan"),
+        UniqueConstraint("reviewer_id", "marketplace_plan_id", name="uq_marketplace_reviews_reviewer_plan"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

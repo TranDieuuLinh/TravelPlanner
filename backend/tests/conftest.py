@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.security_headers import reset_rate_limit_store
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -28,6 +29,7 @@ def override_get_db() -> Generator[Session, None, None]:
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
+    reset_rate_limit_store()
     Base.metadata.create_all(bind=test_engine)
     app.dependency_overrides[get_db] = override_get_db
     test_client = TestClient(app)
@@ -35,6 +37,7 @@ def client() -> Generator[TestClient, None, None]:
     test_client.close()
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=test_engine)
+    reset_rate_limit_store()
 
 
 @pytest.fixture

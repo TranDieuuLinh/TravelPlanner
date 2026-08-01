@@ -59,6 +59,28 @@ def get_golden_case(case_id: str) -> dict | None:
     return None
 
 
+def update_golden_case_input(case_id: str, new_input: dict) -> dict | None:
+    normalized_id = case_id.strip().casefold()
+    for module_name, filename in _MODULE_FILES.items():
+        filepath = _DATASET_DIR / filename
+        if not filepath.exists():
+            continue
+        payload = json.loads(filepath.read_text(encoding="utf-8"))
+        for case in payload.get("cases", []):
+            if str(case.get("id", "")).casefold() == normalized_id:
+                case["input"] = new_input
+                filepath.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+                
+                item = {
+                    "module": module_name,
+                    "datasetVersion": payload.get("version"),
+                    **case,
+                }
+                item["validation"] = _validate_case(module_name, case)
+                return item
+    return None
+
+
 def _validate_case(module: str, case: dict) -> dict:
     issues: list[dict[str, str]] = []
 

@@ -13,6 +13,7 @@ from app.modules.plans.dto.agent_contracts import (
     PlannerResearchDraft,
     PlannerVerifiedResearch,
 )
+from app.modules.plans.planner.place_metadata import read_place_group, read_tags
 
 
 CAPABILITY_ALIASES: dict[str, set[str]] = {
@@ -242,14 +243,18 @@ def canonical_capability(value: str) -> str:
 
 def place_supports_capability(place: Place, capability: str) -> bool:
     aliases = CAPABILITY_ALIASES.get(capability, {capability})
-    metadata = place.metadata_json or {}
+    tags = read_tags(place)
+    place_group = read_place_group(place) or ""
     raw_values = [
         place.place_type,
         place.name,
-        *metadata.get("tags", []),
-        metadata.get("placeGroup", ""),
-        metadata.get("indoorOutdoor", ""),
+        *tags,
+        place_group,
     ]
+    metadata = place.metadata_json or {}
+    indoor_outdoor = metadata.get("indoorOutdoor") or metadata.get("indoor_outdoor")
+    if indoor_outdoor:
+        raw_values.append(str(indoor_outdoor))
     normalized_values = {
         _normalized_label(str(value))
         for value in raw_values
@@ -263,17 +268,14 @@ def place_supports_capability(place: Place, capability: str) -> bool:
 
 
 def _place_evidence(place: Place) -> dict[str, object]:
-    metadata = place.metadata_json or {}
+    tags = read_tags(place)[:8]
     return {
         "placeId": place.id,
         "name": place.name,
         "regionKey": place.region_key,
         "placeType": place.place_type,
-        "tags": [
-            str(tag)
-            for tag in metadata.get("tags", [])
-            if isinstance(tag, str)
-        ][:8],
+        "tags": [str(tag) for tag in tags],
+        "placeGroup": read_place_group(place),
         "dataConfidence": place.data_confidence,
     }
 

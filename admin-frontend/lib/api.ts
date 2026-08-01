@@ -207,12 +207,13 @@ export function listRuns(filters: {
   status?: string;
   stage?: string;
   query?: string;
+  limit?: number;
 }): Promise<RunList> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.stage) params.set("stage", filters.stage);
   if (filters.query) params.set("query", filters.query);
-  params.set("limit", "100");
+  params.set("limit", String(filters.limit ?? 100));
   return request<RunList>(`/admin/planning-runs?${params.toString()}`);
 }
 
@@ -235,4 +236,32 @@ export function runGoldenCase(caseId: string): Promise<GoldenCaseExecution> {
     `/admin/planning-runs/golden/cases/${encodeURIComponent(caseId)}/run`,
     { method: "POST" }
   );
+}
+
+export function updateGoldenCaseInput(caseId: string, input: unknown): Promise<GoldenCase> {
+  return request(
+    `/admin/planning-runs/golden/cases/${encodeURIComponent(caseId)}`,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function testRegionOverview(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/region-overview`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function testConstraintResearch(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/constraint-research`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function testFestivalDiscovery(input: unknown): Promise<unknown> {
+  return request(`/admin/planning-runs/tools/festival-discovery`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }

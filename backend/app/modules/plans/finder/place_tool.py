@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from typing import Protocol
@@ -7,11 +8,21 @@ from typing import Protocol
 from pydantic import BaseModel, Field
 
 from app.modules.places.model import Place
+from app.modules.plans.planner.place_metadata import (
+    GOOGLE_TYPES_CATEGORY,
+    read_description,
+    read_price_level,
+    read_rating,
+    read_review_count,
+    read_tags,
+)
 
 
 DESCRIPTION_RETRIEVAL_MULTIPLIER = 10
 MIN_DESCRIPTION_RETRIEVAL_LIMIT = 50
 MAX_REPOSITORY_CANDIDATES = 10000
+
+logger = logging.getLogger(__name__)
 
 SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
     "accommodation": {
@@ -22,6 +33,9 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "hotel",
         "luu tru",
         "nghi dem",
+        "khach san",
+        "nha nghi",
+        "resort",
     },
     "attraction": {
         "architecture",
@@ -35,6 +49,21 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "sightseeing",
         "temple",
         "van hoa",
+        "chua",
+        "den",
+        "mieu",
+        "dinh",
+        "lang",
+        "bao tang",
+        "nha tu",
+        "tuong",
+        "quan the",
+        "monument",
+        "landmark",
+        "di san",
+        "co do",
+        "thanh pho",
+        "tham quan",
     },
     "entertainment": {
         "amusement",
@@ -43,6 +72,27 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "giai tri",
         "nightlife",
         "theatre",
+        "giai tri",
+        "rap phim",
+        "rap",
+        "karaoke",
+        "vui choi",
+        "giai tri",
+        "khu vui choi",
+        "bar",
+        "pub",
+        "club",
+        "nightclub",
+        "spa",
+        "massage",
+        "gym",
+        "tap gym",
+        "stadium",
+        "san van dong",
+        "casino",
+        "golf",
+        "san golf",
+        "bowling",
     },
     "food_drink": {
         "am thuc",
@@ -54,6 +104,95 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "hai san",
         "restaurant",
         "seafood",
+        "an",
+        "an sang",
+        "an trua",
+        "an toi",
+        "an vat",
+        "do an",
+        "thuc an",
+        "mon an",
+        "dac san",
+        "dac san dia phuong",
+        "mon dia phuong",
+        "mon vung",
+        "am thuc vung",
+        "an sang",
+        "an trua",
+        "an toi",
+        "nha hang",
+        "quan an",
+        "quan",
+        "bep",
+        "bep nha",
+        "quan nho",
+        "quan lon",
+        "quan nhau",
+        "quan cafe",
+        "coffee shop",
+        "highland",
+        "highlands",
+        "trung nguyen",
+        "phuc long",
+        "the coffee house",
+        "pho",
+        "bun",
+        "com",
+        "mien",
+        "chao",
+        "chao long",
+        "chao ga",
+        "mi quang",
+        "hu tieu",
+        "banh mi",
+        "banh my",
+        "banh xeo",
+        "bun cha",
+        "bun bo",
+        "bun dau",
+        "bun thang",
+        "bun rieu",
+        "bun oc",
+        "oc",
+        "com tam",
+        "com ga",
+        "com nieu",
+        "banh cuon",
+        "banh chung",
+        "banh",
+        "banh ngot",
+        "tiem banh",
+        "che",
+        "che hat",
+        "tra",
+        "tra sua",
+        "tra da",
+        "nuoc",
+        "nuoc uong",
+        "do uong",
+        "giai khat",
+        "bia",
+        "bia hoi",
+        "ruou",
+        "lau",
+        "nuong",
+        "do nuong",
+        "thit nuong",
+        "ga nuong",
+        "hai san",
+        "tom",
+        "cua",
+        "ca",
+        "pho bo",
+        "pho ga",
+        "nem ran",
+        "goi cuon",
+        "nem",
+        "nem chua",
+        "dac san",
+        "mon la",
+        "mon noi tieng",
+        "am thuc dan gian",
     },
     "nature": {
         "beach",
@@ -72,6 +211,30 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "thien nhien",
         "ven bien",
         "vuon quoc gia",
+        "nui",
+        "hang dong",
+        "thac",
+        "ho",
+        "song",
+        "suoi",
+        "bien",
+        "bien dong",
+        "bien viet",
+        "bi",
+        "canh",
+        "canh dep",
+        "phong canh",
+        "canh quan",
+        "cong vien",
+        "vuon",
+        "vuon hoa",
+        "vuon bot",
+        "thu vien",
+        "thien nhien",
+        "leo nui",
+        "cay",
+        "rung",
+        "trai nghiem thien nhien",
     },
     "shopping": {
         "cho",
@@ -80,6 +243,29 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "marketplace",
         "mua sam",
         "shopping",
+        "mua",
+        "mua do",
+        "sieu thi",
+        "trung tam thuong mai",
+        "tttm",
+        "cua hang",
+        "shop",
+        "shop qu",
+        "shop quan",
+        "thoi trang",
+        "quan ao",
+        "giay",
+        "dep",
+        "phu kien",
+        "trang suc",
+        "do luu niem",
+        "qua luu niem",
+        "qua tang",
+        "dac san",
+        "do an vung",
+        "mua sam",
+        "shopping mall",
+        "shopping center",
     },
 }
 
@@ -94,6 +280,7 @@ PLACE_GROUP_CATEGORY: dict[str, str] = {
 }
 
 PLACE_TYPE_CATEGORY: dict[str, str] = {
+    # OpenStreetMap / legacy place_type values that pre-date the Google CSV.
     "aerodrome": "transport",
     "apartment": "accommodation",
     "bakery": "food_drink",
@@ -129,6 +316,162 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "wetland": "nature",
     "wilderness_hut": "nature",
     "wood": "nature",
+    # Google Maps Place "primary_type" / "types" values produced by the
+    # csv_relational importer. Without this mapping
+    # ``place_category(place)`` falls back to ``None`` and the candidate
+    # is rejected by ``place_matches_categories`` whenever the meal/food
+    # query mentions a Vietnam-localised term that does not appear in the
+    # ``sorted[0]`` semantic_categories fallback.
+    "amusement_park": "entertainment",
+    "aquarium": "entertainment",
+    "art_gallery": "attraction",
+    "barbecue_area": "food_drink",
+    "bowling_alley": "entertainment",
+    "book_store": "shopping",
+    "bridge": "attraction",
+    "cafe;bakery": "food_drink",
+    "campground": "nature",
+    "casino": "entertainment",
+    "cemetery": "attraction",
+    "church": "attraction",
+    "city_hall": "attraction",
+    "clothing_store": "shopping",
+    "coffee_shop": "food_drink",
+    "convenience_store": "shopping",
+    "courthouse": "attraction",
+    "cultural_center": "attraction",
+    "department_store": "shopping",
+    "embassy": "attraction",
+    "establishment": "attraction",
+    "fire_station": "transport",
+    "fountain": "attraction",
+    "gym": "entertainment",
+    "hindu_temple": "attraction",
+    "historical_landmark": "attraction",
+    "historical_place": "attraction",
+    "hospital": "transport",
+    "library": "attraction",
+    "local_government_office": "attraction",
+    "lodging": "accommodation",
+    "meal_takeaway": "food_drink",
+    "memorial": "attraction",
+    "monument": "attraction",
+    "mosque": "attraction",
+    "museum": "attraction",
+    "national_park": "nature",
+    "natural_feature": "nature",
+    "night_club": "entertainment",
+    "observation_deck": "attraction",
+    "park;natural_feature": "nature",
+    "pharmacy": "shopping",
+    "place_of_worship": "attraction",
+    "plaza": "attraction",
+    "point_of_interest": "attraction",
+    "police": "transport",
+    "post_office": "transport",
+    "restaurant;cafe": "food_drink",
+    "rv_park": "accommodation",
+    "school": "attraction",
+    "scenic_spot": "nature",
+    "shopping_mall": "shopping",
+    "spa": "entertainment",
+    "square": "attraction",
+    "stadium": "entertainment",
+    "store": "shopping",
+    "subway_station": "transport",
+    "synagogue": "attraction",
+    "tourist_attraction": "attraction",
+    "train_station": "transport",
+    "transit_station": "transport",
+    "university": "attraction",
+    "zoo": "entertainment",
+    # Common Vietnamese-language category strings produced by the
+    # ``auto-crawl`` pipeline (CSV ``places.csv`` ``category`` column).
+    "nha_hang": "food_drink",
+    "quan_an": "food_drink",
+    "quan_nhau": "food_drink",
+    "quan_cafe": "food_drink",
+    "quan_coffee": "food_drink",
+    "quan_tra": "food_drink",
+    "tiem_banh": "food_drink",
+    "tiem_an_vat": "food_drink",
+    "an_vat": "food_drink",
+    "do_an_vat": "food_drink",
+    "o_an_vat": "food_drink",
+    "hai_san": "food_drink",
+    "lau": "food_drink",
+    "bingsu": "food_drink",
+    "che": "food_drink",
+    "pho": "food_drink",
+    "bun": "food_drink",
+    "com": "food_drink",
+    "mien": "food_drink",
+    "banh_mi": "food_drink",
+    "banh": "food_drink",
+    "banh_xeo": "food_drink",
+    "bun_cha": "food_drink",
+    "bun_bo": "food_drink",
+    "bun_dau": "food_drink",
+    "bun_thang": "food_drink",
+    "bun_rieu": "food_drink",
+    "com_tam": "food_drink",
+    "com_ga": "food_drink",
+    "com_nieu": "food_drink",
+    "nem_ran": "food_drink",
+    "chao": "food_drink",
+    "chao_long": "food_drink",
+    "mien_ga": "food_drink",
+    "hu_tieu": "food_drink",
+    "mi_quang": "food_drink",
+    "pho_bo": "food_drink",
+    "pho_ga": "food_drink",
+    "banh_cuon": "food_drink",
+    "banh_chung": "food_drink",
+    "banh_my": "food_drink",
+    "banh_xeo": "food_drink",
+    "bun_oc": "food_drink",
+    "oc": "food_drink",
+    "oc_bu": "food_drink",
+    "an_sang": "food_drink",
+    "an_trua": "food_drink",
+    "an_toi": "food_drink",
+    "di_tich": "attraction",
+    "den_chua": "attraction",
+    "chua": "attraction",
+    "dinh": "attraction",
+    "mieu": "attraction",
+    "lang": "attraction",
+    "lang_nghe": "attraction",
+    "bao_tang": "attraction",
+    "nha_tu": "attraction",
+    "cho": "shopping",
+    "cho_dem": "shopping",
+    "cho_hoa": "shopping",
+    "trung_tam_thuong_mai": "shopping",
+    "sieu_thi": "shopping",
+    "tttm": "shopping",
+    "cong_vien": "nature",
+    "vuon_quoc_gia": "nature",
+    "vuon_thu": "attraction",
+    "vuon_hoa": "nature",
+    "bai_bien": "nature",
+    "bien": "nature",
+    "dao": "nature",
+    "nui": "nature",
+    "hang_dong": "nature",
+    "thac": "nature",
+    "ho": "nature",
+    "song": "nature",
+    "rap_phim": "entertainment",
+    "rap_hai": "entertainment",
+    "karaoke": "entertainment",
+    "khu_vui_choi": "entertainment",
+    "san_golf": "entertainment",
+    "nha_hang_khach_san": "accommodation",
+    "khach_san": "accommodation",
+    "nha_nghi": "accommodation",
+    "homestay": "accommodation",
+    "resort": "accommodation",
 }
 
 
@@ -168,6 +511,8 @@ class FinderPlace(BaseModel):
     opening_hours: list[dict] = Field(default_factory=list, alias="openingHours")
     weather_sensitivity: str | None = Field(default=None, alias="weatherSensitivity")
     price_level: str | None = Field(default=None, alias="priceLevel")
+    rating: float | None = None
+    review_count: int = Field(default=0, alias="reviewCount")
     data_confidence: str = Field(default="low", alias="dataConfidence")
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
@@ -197,6 +542,7 @@ class FinderPlaceTool(Protocol):
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]: ...
 
 
@@ -222,8 +568,25 @@ class EmptyFinderPlaceTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         return []
+
+
+def _inside_bbox(
+    place: FinderPlace,
+    bbox: tuple[float, float, float, float],
+) -> bool:
+    """Return True iff place coordinates fall inside the bbox.
+
+    ``bbox`` is ``(min_lat, min_lon, max_lat, max_lon)``. Places without
+    coordinates are kept because the catalogue may still contain them.
+    """
+
+    if place.latitude is None or place.longitude is None:
+        return True
+    min_lat, min_lon, max_lat, max_lon = bbox
+    return min_lat <= place.latitude <= max_lat and min_lon <= place.longitude <= max_lon
 
 
 class RepositoryFinderPlaceTool:
@@ -244,6 +607,7 @@ class RepositoryFinderPlaceTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         places = self._load_scoped_candidates(region_key, excluded_place_ids)
         places = [
@@ -251,6 +615,8 @@ class RepositoryFinderPlaceTool:
             for place in places
             if _matches_target_locality(place, region_key)
         ]
+        if bbox_filter is not None:
+            places = [place for place in places if _inside_bbox(place, bbox_filter)]
         if not places:
             return []
 
@@ -308,14 +674,15 @@ class RepositoryFinderPlaceTool:
     ) -> list[FinderPlace]:
         candidates: list[FinderPlace] = []
         seen: set[str] = set()
-        for scope in _region_scopes(region_key):
+        scopes = _region_scopes(region_key)
+        for scope in scopes:
             if scope not in self._scope_cache:
+                raw = self.repository.list_for_finder(
+                    scope,
+                    limit=MAX_REPOSITORY_CANDIDATES,
+                )
                 self._scope_cache[scope] = [
-                    self._to_finder_place(place)
-                    for place in self.repository.list_for_finder(
-                        scope,
-                        limit=MAX_REPOSITORY_CANDIDATES,
-                    )
+                    self._to_finder_place(place) for place in raw
                 ]
             for place in self._scope_cache[scope]:
                 if (
@@ -325,32 +692,34 @@ class RepositoryFinderPlaceTool:
                     continue
                 seen.add(place.stable_ref)
                 candidates.append(place)
+        if not candidates:
+            logger.warning(
+                "Finder: empty candidate set for region '%s' across scopes %s.",
+                region_key,
+                scopes,
+            )
         return candidates
 
     def _to_finder_place(self, place: Place) -> FinderPlace:
         metadata = place.metadata_json or {}
-        tags = metadata.get("tags", [])
+        tags = read_tags(place)
+        minimum_duration = _minimum_duration_minutes(metadata)
+        if minimum_duration is None and place.typical_duration_minutes:
+            minimum_duration = max(15, place.typical_duration_minutes // 2)
+
         return FinderPlace(
             placeId=place.id,
             name=place.name,
             address=place.address,
             placeType=place.place_type,
             regionKey=place.region_key,
-            description=(
-                str(metadata.get("description"))
-                if metadata.get("description") is not None
-                else None
-            ),
+            description=read_description(place),
             placeGroup=(
                 str(metadata.get("placeGroup"))
                 if metadata.get("placeGroup") is not None
                 else None
             ),
-            tags=[
-                str(tag)
-                for tag in tags
-                if isinstance(tag, str)
-            ],
+            tags=[str(tag) for tag in tags if isinstance(tag, str)],
             latitude=(
                 float(place.latitude) if place.latitude is not None else None
             ),
@@ -358,8 +727,11 @@ class RepositoryFinderPlaceTool:
                 float(place.longitude) if place.longitude is not None else None
             ),
             typicalDurationMinutes=place.typical_duration_minutes,
-            minimumDurationMinutes=_minimum_duration_minutes(metadata),
-            activityIntensity=metadata.get("activityIntensity"),
+            minimumDurationMinutes=minimum_duration,
+            activityIntensity=(
+                metadata.get("activityIntensity")
+                or metadata.get("activity_intensity")
+            ),
             accessibilityFeatures=[
                 str(feature)
                 for feature in metadata.get("accessibilityFeatures", [])
@@ -371,11 +743,9 @@ class RepositoryFinderPlaceTool:
                 if metadata.get("weatherSensitivity") is not None
                 else None
             ),
-            priceLevel=(
-                str(metadata.get("priceLevel"))
-                if metadata.get("priceLevel") is not None
-                else None
-            ),
+            priceLevel=read_price_level(place),
+            rating=read_rating(place),
+            reviewCount=read_review_count(place),
             dataConfidence=place.data_confidence,
         )
 

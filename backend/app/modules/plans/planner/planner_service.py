@@ -41,6 +41,12 @@ from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
     load_region_statistics_context,
 )
+from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
+from app.modules.plans.planner.research_tools_schema import (
+    ConstraintResearchInput,
+    FestivalDiscoveryInput,
+    RegionOverviewInput,
+)
 from app.modules.preferences.schema import (
     LongTermPreferenceProfile,
     PreferenceDimension,
@@ -49,6 +55,77 @@ from app.modules.preferences.schema import (
 logger = logging.getLogger(__name__)
 PLANNER_MAX_REPAIR_ATTEMPTS = 3
 
+CONSTRAINT_RADIUS_KM = 50.0
+
+
+def _build_constraint_input(
+    *,
+    planner_input: PlannerAgentInput,
+    trip_spec: TripPlanningSpec,
+) -> ConstraintResearchInput | None:
+    """Build a ``ConstraintResearchInput`` that the schema will accept.
+
+    The research tool requires real coordinates when ``mode='coordinates'``.
+    When the planner has no geocoded location we fall back to ``mode='text'``
+    and forward the destination string. Returns ``None`` when neither
+    option can be satisfied so the caller skips the tool entirely.
+    """
+
+    interests = list(planner_input.intent.interests or [])
+    budget = getattr(trip_spec.budget, "target_amount", None) if trip_spec.budget else None
+    duration = trip_spec.days
+
+    center = _centroid_from_selected_places(planner_input.selected_places)
+    if center is not None:
+        center_lat, center_lng = center
+        return ConstraintResearchInput.model_validate(
+            {
+                "mode": "coordinates",
+                "centerLat": center_lat,
+                "centerLng": center_lng,
+                "radiusKm": CONSTRAINT_RADIUS_KM,
+                "budget": budget,
+                "duration": duration,
+                "interests": interests,
+            }
+        )
+
+    query = (planner_input.intent.destination or "").strip()
+    if not query:
+        return None
+
+    return ConstraintResearchInput.model_validate(
+        {
+            "mode": "text",
+            "query": query,
+            "budget": budget,
+            "duration": duration,
+            "interests": interests,
+        }
+    )
+
+
+def _centroid_from_selected_places(
+    selected_places: list[SelectedPlaceContext],
+) -> tuple[float, float] | None:
+    """Return the average latitude/longitude of selected places, if available."""
+
+    coords: list[tuple[float, float]] = []
+    for place in selected_places:
+        latitude = getattr(place, "latitude", None)
+        longitude = getattr(place, "longitude", None)
+        if latitude is None or longitude is None:
+            continue
+        try:
+            coords.append((float(latitude), float(longitude)))
+        except (TypeError, ValueError):
+            continue
+    if not coords:
+        return None
+    average_lat = sum(lat for lat, _ in coords) / len(coords)
+    average_lng = sum(lng for _, lng in coords) / len(coords)
+    return average_lat, average_lng
+
 
 class PlannerService:
     def __init__(
@@ -56,10 +133,12 @@ class PlannerService:
         statistics_provider: PlannerStatisticsProvider,
         llm: LLMClient,
         research_tool: PlannerResearchTool | None = None,
+        research_tools: ResearchToolsOrchestrator | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
         self.research_tool = research_tool or EmptyPlannerResearchTool()
+        self.research_tools = research_tools
 
     async def create_main_macro_plan(
         self,
@@ -164,6 +243,70 @@ class PlannerService:
             statistics_status,
         )
 
+    def _run_research_tools(
+        self,
+        planner_input: PlannerAgentInput,
+    ) -> PlannerAgentInput:
+        """
+        Run research tools and populate tool results into planner_input.
+        
+        This method executes:
+        1. region_overview - for overview statistics
+        2. constraint_research - if coordinates/interests provided
+        3. festival_discovery - for seasonal planning
+        """
+        if self.research_tools is None:
+            return planner_input
+
+        region_key = planner_input.region_context.region_key
+        trip_spec = planner_input.trip_spec
+
+        # 1. Always run region_overview for base statistics
+        try:
+            overview_result = self.research_tools.region_overview(
+                RegionOverviewInput(region_key=region_key)
+            )
+            planner_input.region_overview = overview_result.model_dump(by_alias=True)
+        except Exception as e:
+            logger.warning("region_overview tool failed: %s", e)
+
+        # 2. Run constraint_research if we have coordinates or interests
+        has_constraints = (
+            planner_input.intent.constraints
+            or planner_input.intent.interests
+            or trip_spec.budget
+        )
+        if has_constraints and self.research_tools:
+            try:
+                constraint_input = _build_constraint_input(
+                    planner_input=planner_input,
+                    trip_spec=trip_spec,
+                )
+                if constraint_input is not None:
+                    result = self.research_tools.constraint_research(constraint_input)
+                    planner_input.constraint_research = result.model_dump(by_alias=True)
+            except Exception:
+                logger.exception("constraint_research tool failed")
+
+        # 3. Run festival_discovery for seasonal awareness
+        try:
+            # Extract month from start_date if available
+            month = None
+            if trip_spec.start_date:
+                # Parse date like "2026-04-15"
+                parts = trip_spec.start_date.split("-")
+                if len(parts) >= 2:
+                    month = f"tháng {int(parts[1])}"
+
+            festival_result = self.research_tools.festival_discovery(
+                FestivalDiscoveryInput(month=month)
+            )
+            planner_input.festival_discovery = festival_result.model_dump(by_alias=True)
+        except Exception as e:
+            logger.warning("festival_discovery tool failed: %s", e)
+
+        return planner_input
+
     async def _create_plan(
         self,
         planner_input: PlannerAgentInput,
@@ -203,6 +346,9 @@ class PlannerService:
                     ],
                 ),
             )
+
+        # Run research tools to populate tool results
+        planner_input = self._run_research_tools(planner_input)
 
         try:
             research_raw = await self.llm.generate_json(

@@ -36,7 +36,12 @@
             "confidence": 0.91
           }
         ],
-        "ocrObservations": []
+        "ocrObservations": [],
+        "placeClaims": [],
+        "activityClaims": [],
+        "timingClaims": [],
+        "costClaims": [],
+        "adviceClaims": []
       },
       "assertions": [
         "structuredSttObservations có đúng 2 địa điểm tại Hà Nội",
@@ -64,7 +69,12 @@
             "confidence": 0.96,
             "priceHint": "60000 VND"
           }
-        ]
+        ],
+        "placeClaims": [],
+        "activityClaims": [],
+        "timingClaims": [],
+        "costClaims": [],
+        "adviceClaims": []
       },
       "assertions": [
         "ocrObservations trích xuất đúng địa chỉ 41 Cửa Đông, Hoàn Kiếm, Hà Nội",
@@ -95,7 +105,12 @@
               "ocr": "BÚN CHẢ HƯƠNG LIÊN - 24 LÊ VĂN HƯU HÀ NỘI"
             }
           }
-        ]
+        ],
+        "placeClaims": [],
+        "activityClaims": [],
+        "timingClaims": [],
+        "costClaims": [],
+        "adviceClaims": []
       },
       "assertions": [
         "Tên địa điểm lấy theo OCR (Bún Chả Hương Liên)",
@@ -118,7 +133,12 @@
         "structuredSttObservations": [],
         "ocrObservations": [],
         "warnings": ["NO_PLACE_EXTRACTED_FROM_MEDIA"],
-        "fallbackAction": "PROMPT_MANUAL_PLACE_ENTRY"
+        "fallbackAction": "PROMPT_MANUAL_PLACE_ENTRY",
+        "placeClaims": [],
+        "activityClaims": [],
+        "timingClaims": [],
+        "costClaims": [],
+        "adviceClaims": []
       },
       "assertions": [
         "structuredSttObservations rỗng",

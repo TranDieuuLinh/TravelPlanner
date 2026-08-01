@@ -33,9 +33,13 @@ from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtraction
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
+)
+from app.modules.plans.planner.research_tools_orchestrator import (
+    ResearchToolsOrchestrator,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.checks.overall_checker import OverallChecker
@@ -71,10 +75,12 @@ def get_plan_service(
     )
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
+    research_tools = ResearchToolsOrchestrator(PlaceRepositoryAdapter(db))
     planner = PlannerService(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
+        research_tools=research_tools,
     )
     finder = FinderService(
         RepositoryFinderPlaceTool(place_repository),

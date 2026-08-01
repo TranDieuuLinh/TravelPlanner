@@ -59,7 +59,14 @@
               "targetRegionKey": "vn,ha-noi,tay-ho",
               "focusTags": ["culture", "history"],
               "pace": "balanced",
-              "allocatedSelectedPlaceRefs": ["p_hn_pagoda_01"]
+              "dayPartGoals": {
+                "morning": "",
+                "lunch": "",
+                "afternoon": "",
+                "evening": ""
+              },
+              "allocatedSelectedPlaceRefs": ["p_hn_pagoda_01"],
+              "notes": []
             },
             {
               "day": 2,
@@ -68,7 +75,14 @@
               "targetRegionKey": "vn,ha-noi,cau-giay",
               "focusTags": ["museum", "culture"],
               "pace": "balanced",
-              "allocatedSelectedPlaceRefs": ["p_hn_museum_01"]
+              "dayPartGoals": {
+                "morning": "",
+                "lunch": "",
+                "afternoon": "",
+                "evening": ""
+              },
+              "allocatedSelectedPlaceRefs": ["p_hn_museum_01"],
+              "notes": []
             },
             {
               "day": 3,
@@ -77,12 +91,27 @@
               "targetRegionKey": "vn,ha-noi,hoan-kiem",
               "focusTags": ["food", "cafe"],
               "pace": "balanced",
-              "allocatedSelectedPlaceRefs": []
+              "dayPartGoals": {
+                "morning": "",
+                "lunch": "",
+                "afternoon": "",
+                "evening": ""
+              },
+              "allocatedSelectedPlaceRefs": [],
+              "notes": []
             }
           ]
         },
         "dayBriefsReady": true,
-        "unallocatedSelectedPlaces": []
+        "unallocatedSelectedPlaces": [],
+        "assumptions": [],
+        "warnings": [],
+        "trace": {
+          "agent": "planner",
+          "status": "completed",
+          "summary": "Created MacroPlan and DayBriefs.",
+          "notes": []
+        }
       },
       "assertions": [
         "dayBriefsReady bằng true",
@@ -117,9 +146,10 @@
         "mode": "main",
         "macroPlan": {
           "title": "Hành trình Hà Nội 2 ngày",
+          "destination": "Hà Nội",
           "dayBriefs": [
-            { "day": 1, "allocatedSelectedPlaceRefs": [] },
-            { "day": 2, "allocatedSelectedPlaceRefs": [] }
+            { "day": 1, "dayPartGoals": { "morning": "", "lunch": "", "afternoon": "", "evening": "" }, "allocatedSelectedPlaceRefs": [], "notes": [] },
+            { "day": 2, "dayPartGoals": { "morning": "", "lunch": "", "afternoon": "", "evening": "" }, "allocatedSelectedPlaceRefs": [], "notes": [] }
           ]
         },
         "dayBriefsReady": true,
@@ -132,7 +162,15 @@
             "reasonCode": "CONSTRAINT_EXCLUDED",
             "reason": "Địa điểm bị loại trừ do vi phạm quy tắc cấm nightlife/bar trong intent của chuyến đi."
           }
-        ]
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "trace": {
+          "agent": "planner",
+          "status": "completed",
+          "summary": "Created MacroPlan and DayBriefs.",
+          "notes": []
+        }
       },
       "assertions": [
         "unallocatedSelectedPlaces chứa đúng 1 phần tử",
@@ -159,7 +197,14 @@
         "macroPlan": null,
         "dayBriefsReady": false,
         "unallocatedSelectedPlaces": [],
-        "warnings": ["NO_CATALOG_PLACES_AVAILABLE"]
+        "assumptions": [],
+        "warnings": ["NO_CATALOG_PLACES_AVAILABLE"],
+        "trace": {
+          "agent": "planner",
+          "status": "completed",
+          "summary": "Created MacroPlan and DayBriefs.",
+          "notes": []
+        }
       },
       "assertions": [
         "dayBriefsReady bằng false",
