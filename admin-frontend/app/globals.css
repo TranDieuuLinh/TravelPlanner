@@ -953,6 +953,29 @@ select {
   tab-size: 2;
 }
 
+.jsonPanel::-webkit-scrollbar,
+.goldenList::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.jsonPanel::-webkit-scrollbar-track,
+.goldenList::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.jsonPanel::-webkit-scrollbar-thumb,
+.goldenList::-webkit-scrollbar-thumb {
+  background: rgba(134, 162, 154, 0.3);
+  border-radius: 4px;
+}
+
+.jsonPanel::-webkit-scrollbar-thumb:hover,
+.goldenList::-webkit-scrollbar-thumb:hover {
+  background: rgba(134, 162, 154, 0.5);
+}
+
 .emptyState,
 .detailEmpty,
 .detailLoading {
@@ -1197,12 +1220,13 @@ select {
 }
 
 .executionResult {
-  margin-top: 14px;
+  margin-top: 24px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-left: 3px solid var(--mint);
   border-radius: 10px;
-  background: #091412;
+  background: #0a1815;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .executionResult.execution-failed {
@@ -1231,7 +1255,7 @@ select {
 .executionError > b {
   color: #b8cbc5;
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
 }
 

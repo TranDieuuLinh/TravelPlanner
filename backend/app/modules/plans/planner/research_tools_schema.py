@@ -168,16 +168,23 @@ class CategoryBudgetStat(BaseModel):
 
 class CategoryStatsOutput(BaseModel):
     """Category statistics output for constraint research."""
+
     food: CategoryBudgetStat | None = None
     cafe: CategoryBudgetStat | None = None
     beach: CategoryBudgetStat | None = None
     nature: CategoryBudgetStat | None = None
     culture: CategoryBudgetStat | None = None
+    sightseeing: CategoryBudgetStat | None = None
+    attraction: CategoryBudgetStat | None = None
+    entertainment: CategoryBudgetStat | None = None
     shopping: CategoryBudgetStat | None = None
     nightlife: CategoryBudgetStat | None = None
+    wellness: CategoryBudgetStat | None = None
     accommodation: CategoryBudgetStat | None = None
     transport: CategoryBudgetStat | None = None
     other: CategoryBudgetStat | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class BudgetCompatibility(BaseModel):

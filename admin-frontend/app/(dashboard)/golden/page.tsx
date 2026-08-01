@@ -2,16 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import {
   APIError,
   GoldenCase,
   GoldenCaseExecution,
+  PlanningRunDetail,
+  getRun,
   listGoldenCases,
   runGoldenCase,
   updateGoldenCaseInput
 } from "../../../lib/api";
 import {
   JsonPanel,
+  StageInspector,
   durationLabel,
   statusLabel
 } from "../../components/shared";
@@ -28,6 +32,9 @@ export default function GoldenPage() {
   const [editingInput, setEditingInput] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [showDiff, setShowDiff] = useState(true);
+  const [runDetail, setRunDetail] = useState<PlanningRunDetail | null>(null);
+  const [loadingTrace, setLoadingTrace] = useState(false);
   const router = useRouter();
 
   const handleUnauthorized = () => {
@@ -72,7 +79,19 @@ export default function GoldenPage() {
     setRunError("");
     setExecution(null);
     try {
-      setExecution(await runGoldenCase(selectedCase.id));
+      const res = await runGoldenCase(selectedCase.id);
+      setExecution(res);
+      if (res?.runId) {
+        setLoadingTrace(true);
+        try {
+          const detail = await getRun(res.runId);
+          setRunDetail(detail);
+        } catch {
+          // Ignore trace load error if any
+        } finally {
+          setLoadingTrace(false);
+        }
+      }
     } catch (caught) {
       if (caught instanceof APIError && caught.status === 401) {
         handleUnauthorized();
@@ -89,6 +108,7 @@ export default function GoldenPage() {
   function chooseCase(item: GoldenCase) {
     setSelectedCase(item);
     setExecution(null);
+    setRunDetail(null);
     setRunError("");
     setEditingInput(false);
     setSaveError("");
@@ -133,36 +153,33 @@ export default function GoldenPage() {
             Bộ case Hà Nội mẫu để đối chiếu input, output và assertion của từng module.
           </p>
         </div>
-        <select value={module} onChange={(event) => setModule(event.target.value)}>
-          <option value="">Tất cả module</option>
-          {modules.map((item) => (
-            <option value={item} key={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-      </header>
-      <div className="goldenLayout">
-        <div className="goldenList">
-          {loadError && <div className="runCaseError">{loadError}</div>}
-          {cases.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              onClick={() => chooseCase(item)}
-              className={selectedCase?.id === item.id ? "active" : ""}
-            >
-              <span className="goldenCaseMeta">
-                <em>{item.id}</em>
-                <i className={`validation validation-${item.validation.status}`}>
-                  {item.validation.status}
-                </i>
-              </span>
-              <b>{item.scenarioName}</b>
-              <small>{item.module} · {item.category}</small>
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <select value={module} onChange={(event) => setModule(event.target.value)}>
+            <option value="">Tất cả module</option>
+            {modules.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectedCase?.id || ""}
+            onChange={(e) => {
+              const item = cases.find(c => c.id === e.target.value);
+              if (item) chooseCase(item);
+            }}
+          >
+            <option value="" disabled>Chọn test case</option>
+            {cases.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.id} - {item.scenarioName}
+              </option>
+            ))}
+          </select>
         </div>
+      </header>
+      <div style={{ marginTop: '24px' }}>
+        {loadError && <div className="runCaseError">{loadError}</div>}
         {selectedCase && (
           <article className="goldenDetail">
             <div className="goldenTitle">
@@ -191,11 +208,13 @@ export default function GoldenPage() {
                       setInputValue(JSON.stringify(selectedCase.input, null, 2));
                       setEditingInput(true);
                       setSaveError("");
-                    }}>Edit</button>
+                    }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '0', fontSize: '14px' }} title="Edit Input">
+                      ✏️ Edit
+                    </button>
                   ) : (
-                    <div>
-                      <button type="button" onClick={() => setEditingInput(false)} style={{ marginRight: '8px' }}>Cancel</button>
-                      <button type="button" onClick={handleSaveInput}>Save</button>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="button" onClick={() => setEditingInput(false)} style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--text)', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>Cancel</button>
+                      <button type="button" onClick={handleSaveInput} style={{ background: 'var(--lime)', border: 'none', color: '#13200c', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Save</button>
                     </div>
                   )}
                 </div>
@@ -228,7 +247,17 @@ export default function GoldenPage() {
                       {durationLabel(execution.durationMs)}
                     </span>
                   </div>
-                  <code>run {execution.runId.slice(0, 8)}</code>
+                  <div>
+                    <code style={{ marginRight: '10px' }}>run {execution.runId.slice(0, 8)}</code>
+                    <a
+                      href={`/runs?query=${execution.runId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontSize: '0.68rem', color: 'var(--lime)', textDecoration: 'none', border: '1px solid var(--line)', padding: '3px 8px', borderRadius: '4px' }}
+                    >
+                      🔗 Mở trong /runs ↗
+                    </a>
+                  </div>
                 </header>
                 {execution.adaptations.length > 0 && (
                   <div className="adaptationList">
@@ -248,16 +277,59 @@ export default function GoldenPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="executionCompare">
-                      <div>
-                        <b>Effective input</b>
-                        <JsonPanel value={execution.effectiveInput} />
-                      </div>
-                      <div>
-                        <b>Actual output</b>
-                        <JsonPanel value={execution.actualOutput} />
-                      </div>
+                    <div className="executionCompareHeader" style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 12px', marginTop: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem', color: 'var(--muted)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={showDiff} onChange={(e) => setShowDiff(e.target.checked)} />
+                        Hiển thị Diff (Golden vs Actual)
+                      </label>
                     </div>
+                    {showDiff ? (
+                      <div style={{ padding: '12px', borderTop: '1px solid var(--line)', marginTop: '8px' }}>
+                        <b style={{ display: 'block', marginBottom: '8px', color: '#b8cbc5', fontFamily: 'var(--mono)', fontSize: '0.62rem', textTransform: 'uppercase' }}>Diff: Golden (Left) vs Actual (Right)</b>
+                        <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--line)', fontSize: '12px' }}>
+                          <ReactDiffViewer
+                            oldValue={JSON.stringify(selectedCase.goldenOutput, null, 2)}
+                            newValue={JSON.stringify(execution.actualOutput, null, 2)}
+                            splitView={true}
+                            useDarkTheme={true}
+                            compareMethod={DiffMethod.WORDS}
+                            styles={{
+                              variables: {
+                                dark: {
+                                  diffViewerBackground: '#0b1715',
+                                  diffViewerTitleBackground: '#07100f',
+                                  diffViewerColor: '#a8cabe',
+                                  addedBackground: 'rgba(103, 232, 189, 0.1)',
+                                  addedColor: 'var(--mint)',
+                                  removedBackground: 'rgba(255, 116, 108, 0.1)',
+                                  removedColor: 'var(--red)',
+                                  wordAddedBackground: 'rgba(103, 232, 189, 0.3)',
+                                  wordRemovedBackground: 'rgba(255, 116, 108, 0.3)',
+                                  emptyLineBackground: '#0b1715',
+                                  gutterBackground: '#07100f',
+                                  gutterBackgroundDark: '#07100f',
+                                  highlightBackground: 'rgba(184, 241, 91, 0.1)',
+                                  highlightGutterBackground: 'rgba(184, 241, 91, 0.2)',
+                                  codeFoldGutterBackground: '#07100f',
+                                  codeFoldBackground: '#0b1715',
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="executionCompare">
+                        <div>
+                          <b>Effective input</b>
+                          <JsonPanel value={execution.effectiveInput} />
+                        </div>
+                        <div>
+                          <b>Actual output</b>
+                          <JsonPanel value={execution.actualOutput} />
+                        </div>
+                      </div>
+                    )}
                     {execution.comparison && (
                       <div className="comparisonSummary">
                         <b>
@@ -277,6 +349,25 @@ export default function GoldenPage() {
                     )}
                   </>
                 )}
+
+                {/* Trace Log Section */}
+                <div className="traceLogSection" style={{ margin: '14px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <b style={{ color: 'var(--mint)', fontFamily: 'var(--mono)', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      ⚡ Trace Log & Stage Inspector {runDetail ? `(${runDetail.stages.length} stage)` : ''}
+                    </b>
+                    {loadingTrace && <span style={{ fontSize: '0.68rem', color: 'var(--muted)' }}>Đang tải trace log...</span>}
+                  </div>
+                  {runDetail && runDetail.stages.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {runDetail.stages.map((stg) => (
+                        <StageInspector key={stg.id} stage={stg} />
+                      ))}
+                    </div>
+                  ) : (
+                    !loadingTrace && <p style={{ fontSize: '0.7rem', color: 'var(--muted)', margin: 0 }}>Không tìm thấy thông tin stage trace.</p>
+                  )}
+                </div>
               </section>
             )}
             <div className="assertionList">

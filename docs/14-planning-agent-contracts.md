@@ -352,12 +352,12 @@ evidence.
 
 Planner MVP dùng hai structured LLM call:
 
-1. `journey_research_v1` tạo `PlannerResearchDraft`: journey style, chiến lược
+1. `journey_research_v2` tạo `PlannerResearchDraft`: journey style, chiến lược
    đa dạng, capability queries và yêu cầu mở rộng vùng.
 2. Backend chạy `RepositoryPlannerResearchTool` trên Place active. Capability
    local được match theo taxonomy; region lân cận được xếp từ centroid và khoảng
    cách địa lý, chưa phải route đã xác minh.
-3. `macro_planner_v2` nhận cả proposal và `PlannerVerifiedResearch`, sau đó sinh
+3. `macro_planner_v3` nhận cả proposal và `PlannerVerifiedResearch`, sau đó sinh
    `PlannerMacroPlanDraft`.
 
 `MacroPlan` có thêm `journeyStyle` và `journeyPhases` để biểu diễn local base,

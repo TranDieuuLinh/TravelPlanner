@@ -17,6 +17,12 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import TYPE_CHECKING, Protocol
 
+from app.modules.plans.planner.place_metadata import (
+    read_daily_cost,
+    read_price_level,
+    read_rating,
+    read_tags,
+)
 from app.modules.plans.planner.research_tools_schema import (
     BudgetCompatibility,
     CategoryBudgetStat,
@@ -60,19 +66,60 @@ def _normalize_price_tier(raw_tier: str | None) -> str | None:
 
 
 def _estimate_daily_cost(metadata: dict) -> int | None:
-    """Estimate daily cost from place metadata prices."""
-    prices = metadata.get("prices", [])
-    if not prices:
-        return None
-    total = 0.0
-    count = 0
-    for price in prices:
-        if not price.get("isMock", False):
+    """Estimate daily cost from place metadata prices (legacy or new schema)."""
+
+    legacy_prices = metadata.get("prices", [])
+    if isinstance(legacy_prices, list) and legacy_prices:
+        total = 0.0
+        count = 0
+        for price in legacy_prices:
+            if not isinstance(price, dict) or price.get("isMock"):
+                continue
             amount = price.get("amount") or price.get("estimatedCost") or price.get("minCost")
             if amount:
                 total += float(amount)
                 count += 1
-    return int(total / count) if count > 0 else None
+        if count > 0:
+            return int(total / count)
+
+    finance = metadata.get("finance") if isinstance(metadata, dict) else None
+    if isinstance(finance, dict):
+        raw = finance.get("dailyBudget") or finance.get("estimatedCost")
+        if raw is not None:
+            try:
+                return int(float(raw))
+            except (TypeError, ValueError):
+                pass
+
+    tier = _normalize_price_tier(_read_price_tier(metadata))
+    if tier:
+        from app.modules.plans.planner.place_metadata import _price_level_to_cost
+
+        cost = _price_level_to_cost(tier)
+        if cost is not None:
+            return cost
+
+    return None
+
+
+def _read_price_tier(metadata: dict) -> str | None:
+    """Read a price tier string out of either schema's metadata shape."""
+
+    for key in ("priceLevel", "price_level", "priceRange", "price_range"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            tier = value.get("tier") or value.get("label")
+            if isinstance(tier, str) and tier.strip():
+                return tier.strip()
+    google_payload = metadata.get("google") if isinstance(metadata, dict) else None
+    if isinstance(google_payload, dict):
+        for key in ("priceLevel", "price_level"):
+            value = google_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
 
 
 # ============================================================================
@@ -81,48 +128,38 @@ def _estimate_daily_cost(metadata: dict) -> int | None:
 
 CANONICAL_CATEGORIES = {
     "food", "cafe", "beach", "nature", "culture", "shopping",
-    "nightlife", "accommodation", "transport", "sightseeing", "other"
+    "nightlife", "accommodation", "transport", "sightseeing",
+    "entertainment", "attraction", "wellness", "other",
 }
 
 
+from app.modules.plans.planner.region_overview_tool import (  # noqa: E402
+    TAG_CATEGORY_HINTS as _TAG_CATEGORY_HINTS,
+)
+
+
 def _normalize_category(place_type: str, tags: list[str]) -> str:
-    """Normalize place type and tags to a canonical category."""
-    place_type_lower = place_type.lower()
-    tags_lower = {t.lower() for t in tags}
+    """Normalize place type and tags to a canonical category.
 
-    # Direct mappings
-    MAPPINGS = [
-        (("restaurant", "food", "fast_food", "food_court", "local_food", "do_an", "an_uong"), "food"),
-        (("cafe", "coffee_shop", "coffee", "ca_phe"), "cafe"),
-        (("beach", "seaside", "coast", "bien"), "beach"),
-        (("park", "nature", "mountain", "waterfall", "garden", "forest", "nui", "thien_nhien"), "nature"),
-        (("museum", "heritage", "historic", "temple", "pagoda", "church", "van_hoa", "di_san"), "culture"),
-        (("market", "mall", "shopping_mall", "marketplace", "mua_sam"), "shopping"),
-        (("bar", "pub", "nightclub", "club", "bar_club"), "nightlife"),
-        (("hotel", "hostel", "motel", "resort", "homestay", "noi_that"), "accommodation"),
-        (("bus_station", "train_station", "airport", "port", "transport", "ga"), "transport"),
-        (("attraction", "amusement", "viewpoint", "tourist_spot", "dia_diem"), "sightseeing"),
-    ]
+    Mirrors the behaviour of :func:`region_overview_tool._normalize_category`
+    but is duplicated here to keep the two tools self-contained.
+    """
 
-    for types, category in MAPPINGS:
-        if place_type_lower in types:
+    from app.modules.plans.planner.region_overview_tool import (
+        GOOGLE_PLACE_TYPE_CATEGORY,
+        LEGACY_PLACE_TYPE_CATEGORY,
+    )
+
+    place_type_lower = (place_type or "").lower()
+    if place_type_lower in GOOGLE_PLACE_TYPE_CATEGORY:
+        return GOOGLE_PLACE_TYPE_CATEGORY[place_type_lower]
+    if place_type_lower in LEGACY_PLACE_TYPE_CATEGORY:
+        return LEGACY_PLACE_TYPE_CATEGORY[place_type_lower]
+
+    tags_lower = {(t or "").lower() for t in tags}
+    for hint, category in _TAG_CATEGORY_HINTS.items():
+        if hint in tags_lower:
             return category
-
-    # Tag-based fallback
-    if "food" in tags_lower or "restaurant" in tags_lower or "ăn uống" in tags_lower:
-        return "food"
-    if "cafe" in tags_lower or "cà phê" in tags_lower:
-        return "cafe"
-    if "beach" in tags_lower or "biển" in tags_lower:
-        return "beach"
-    if "nature" in tags_lower or "thiên nhiên" in tags_lower:
-        return "nature"
-    if "culture" in tags_lower or "văn hóa" in tags_lower or "di sản" in tags_lower:
-        return "culture"
-    if "shopping" in tags_lower or "mua sắm" in tags_lower:
-        return "shopping"
-    if "nightlife" in tags_lower or "bar" in tags_lower:
-        return "nightlife"
 
     return "other"
 
@@ -173,30 +210,24 @@ class _ZoneAccumulator:
         self.center_lat += float(place.latitude)
         self.center_lng += float(place.longitude)
 
+        tags = read_tags(place)
         metadata = place.metadata_json or {}
-        tags = metadata.get("tags", [])
 
-        # Rating
-        rating = metadata.get("rating") or metadata.get("avgRating")
-        if rating:
-            self.ratings.append(float(rating))
-
-        # Daily cost
+        rating = read_rating(place)
         cost = _estimate_daily_cost(metadata)
-        if cost:
-            self.daily_costs.append(cost)
+        if cost is None:
+            cost = read_daily_cost(place)
 
-        # Category
         category = _normalize_category(place.place_type, tags)
         self.categories.add(category)
 
         cat_stats = self.category_stats[category]
         cat_stats["count"] += 1
-        if rating:
-            cat_stats["ratings"].append(float(rating))
+        if rating is not None:
+            cat_stats["ratings"].append(rating)
         if cost:
             cat_stats["daily_costs"].append(cost)
-        price_tier = _normalize_price_tier(metadata.get("priceRange"))
+        price_tier = _normalize_price_tier(_read_price_tier(metadata) or read_price_level(place))
         if price_tier:
             cat_stats["price_tiers"][price_tier] += 1
 
@@ -330,15 +361,23 @@ def calculate_constraint_research(
 
 def _place_matches_interests(place: Place, interests: set[str]) -> bool:
     """Check if a place matches any of the given interests."""
-    metadata = place.metadata_json or {}
-    tags = {t.lower() for t in metadata.get("tags", [])}
 
-    place_type_lower = place.place_type.lower()
+    tags = {t.lower() for t in read_tags(place)}
+    metadata = place.metadata_json or {}
+    google_payload = metadata.get("google") if isinstance(metadata, dict) else None
+    google_category = (
+        google_payload.get("category").lower()
+        if isinstance(google_payload, dict) and isinstance(google_payload.get("category"), str)
+        else ""
+    )
+
+    place_type_lower = (place.place_type or "").lower()
 
     for interest in interests:
         interest_lower = interest.lower()
         if (
             interest_lower in place_type_lower
+            or interest_lower in google_category
             or interest_lower in tags
             or interest_lower in place.name.lower()
         ):
@@ -353,32 +392,39 @@ def _build_category_stats(places: list[Place], interests: list[str]) -> Category
     )
 
     for place in places:
-        metadata = place.metadata_json or {}
-        tags = metadata.get("tags", [])
+        tags = read_tags(place)
         category = _normalize_category(place.place_type, tags)
 
         acc = category_accumulators[category]
         acc["count"] += 1
 
-        # Rating
-        rating = metadata.get("rating") or metadata.get("avgRating")
-        if rating:
-            acc["ratings"].append(float(rating))
+        rating = read_rating(place)
+        if rating is not None:
+            acc["ratings"].append(rating)
 
-        # Price
-        cost = _estimate_daily_cost(metadata)
+        cost = _estimate_daily_cost(place.metadata_json or {})
+        if cost is None:
+            cost = read_daily_cost(place)
         if cost:
             acc["count_with_price"] += 1
             acc["daily_costs"].append(cost)
 
-        price_tier = _normalize_price_tier(metadata.get("priceRange"))
+        price_tier = _normalize_price_tier(
+            _read_price_tier(place.metadata_json or {}) or read_price_level(place)
+        )
         if price_tier:
             acc["price_tiers"][price_tier] += 1
 
     # Build output
     result = CategoryStatsOutput()
     for cat_name in CANONICAL_CATEGORIES:
-        acc = category_accumulators.get(cat_name, {})
+        acc = category_accumulators.get(cat_name) or {
+            "count": 0,
+            "count_with_price": 0,
+            "ratings": [],
+            "daily_costs": [],
+            "price_tiers": defaultdict(int),
+        }
         if acc["count"] > 0:
             stat = CategoryBudgetStat(
                 count=acc["count"],
@@ -404,7 +450,10 @@ def _build_budget_compatibility(
     # Calculate average daily cost
     daily_costs = []
     for place in places:
-        cost = _estimate_daily_cost(place.metadata_json or {})
+        metadata = place.metadata_json or {}
+        cost = _estimate_daily_cost(metadata)
+        if cost is None:
+            cost = read_daily_cost(place)
         if cost:
             daily_costs.append(cost)
 

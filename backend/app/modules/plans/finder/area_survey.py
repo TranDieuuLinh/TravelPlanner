@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from math import asin, cos, radians, sin, sqrt
 from typing import TYPE_CHECKING
@@ -12,6 +11,12 @@ if TYPE_CHECKING:
         FinderPlace,
         FinderPlaceTool,
     )
+
+
+from app.modules.plans.planner.opening_hours_parser import (  # noqa: E402
+    extract_time_intervals,
+    is_24_hours,
+)
 
 
 @dataclass(frozen=True)
@@ -61,7 +66,8 @@ class AreaProfile:
 class AreaSurveyResult:
     region_key: str
     profile: AreaProfile
-    top_places: tuple[FinderPlace, ...]
+    top_places_by_rating: tuple[FinderPlace, ...]
+    top_places_by_reviews: tuple[FinderPlace, ...]
     survey_method: str = "catalog"
 
 
@@ -77,6 +83,9 @@ class AreaSurveyService:
     STOPS_SPARSE = 3
     STOPS_MEDIUM = 4
     STOPS_DENSE = 5
+
+    # Số lượng top places giữ lại khi xếp hạng
+    TOP_PLACES_LIMIT = 10
 
     def __init__(
         self,
@@ -102,19 +111,36 @@ class AreaSurveyService:
 
         profile = self._compute_profile(region_key, places)
 
-        # Top places theo rating
-        top_places = tuple(
-            sorted(
-                (p for p in places if p.place_id is not None),
-                key=lambda p: (self._get_rating(p) or 0, p.name.casefold()),
-                reverse=True,
-            )[:10]
+        # Filter: chỉ giữ place có id (giữ nguyên hiện trạng)
+        rankable = tuple(p for p in places if p.place_id is not None)
+
+        # Place thiếu rating rơi về cuối list (top đầu chỉ chứa place có rating thật).
+        def rating_sort_key(p: FinderPlace) -> tuple:
+            rating = self._get_rating(p)
+            rating_rank = -rating if rating is not None else float("inf")
+            review_rank = -self._get_review_count(p)
+            return (rating_rank, review_rank, p.name.casefold())
+
+        # Sort theo review_count, rating làm tie-breaker.
+        # Place thiếu rating được xếp SAU place có rating (ưu tiên thông tin thật).
+        def review_sort_key(p: FinderPlace) -> tuple:
+            review_rank = -self._get_review_count(p)
+            rating = self._get_rating(p)
+            rating_rank = -rating if rating is not None else float("inf")
+            return (review_rank, rating_rank, p.name.casefold())
+
+        top_places_by_rating = tuple(
+            sorted(rankable, key=rating_sort_key)[: self.TOP_PLACES_LIMIT]
+        )
+        top_places_by_reviews = tuple(
+            sorted(rankable, key=review_sort_key)[: self.TOP_PLACES_LIMIT]
         )
 
         return AreaSurveyResult(
             region_key=region_key,
             profile=profile,
-            top_places=top_places,
+            top_places_by_rating=top_places_by_rating,
+            top_places_by_reviews=top_places_by_reviews,
             survey_method="catalog",
         )
 
@@ -233,13 +259,16 @@ class AreaSurveyService:
         total_distance = 0.0
         count = 0
 
-        # Sample để tránh O(n^2) quá lớn
+        # Use a stable evenly-spaced sample to keep area profiles reproducible.
         sample_size = min(50, len(coords))
-        import random
-
-        import random
-
-        sampled = random.sample(coords, sample_size)
+        if sample_size == len(coords):
+            sampled = coords
+        else:
+            indexes = [
+                round(index * (len(coords) - 1) / (sample_size - 1))
+                for index in range(sample_size)
+            ]
+            sampled = [coords[index] for index in indexes]
         for i in range(len(sampled)):
             for j in range(i + 1, len(sampled)):
                 total_distance += self._haversine_km(sampled[i], sampled[j])
@@ -299,26 +328,25 @@ class AreaSurveyService:
                 continue
             has_hours_count += 1
 
-            for hours in place.opening_hours:
-                close_time = hours.get("closeTime") or hours.get("close_time")
-                if close_time:
-                    if self._is_late_evening(close_time):
-                        late_opening_count += 1
-                        break
+            intervals = extract_time_intervals(place.opening_hours)
+            if not intervals:
+                continue
+            if is_24_hours(place.opening_hours):
+                late_opening_count += 1
+                continue
+            if any(self._is_late_evening(end) for _, end in intervals):
+                late_opening_count += 1
 
         return (
             late_opening_count / has_hours_count
-            if has_hours_count > 0
-            else 0.5  # default nếu không có data
+            if has_hours_count > 0 else 0.5
         )
 
-    def _is_late_evening(self, time_str: str) -> bool:
-        """Kiểm tra nếu giờ đóng cửa >= 21:00."""
-        match = re.search(r"(\d{1,2}):(\d{2})", time_str)
-        if match:
-            hour = int(match.group(1))
-            return hour >= 21
-        return False
+    def _is_late_evening(self, end_minutes: int) -> bool:
+        """Check if a closing minute-of-day is at or after 21:00."""
+
+        normalised = end_minutes if end_minutes <= 24 * 60 else end_minutes - 24 * 60
+        return normalised >= 21 * 60
 
     def _compute_typical_hours(
         self,
@@ -333,18 +361,18 @@ class AreaSurveyService:
             if not place.opening_hours:
                 continue
             has_hours_count += 1
-
-            for hours in place.opening_hours:
-                open_time = hours.get("openTime") or hours.get("open_time")
-                if open_time:
-                    if self._is_early_morning(open_time):
-                        early_open_count += 1
-                        break
+            intervals = extract_time_intervals(place.opening_hours)
+            if not intervals:
+                continue
+            if is_24_hours(place.opening_hours):
+                early_open_count += 1
+                continue
+            if any(self._is_early_morning(start) for start, _ in intervals):
+                early_open_count += 1
 
         early_open_ratio = (
             early_open_count / has_hours_count
-            if has_hours_count > 0
-            else 0.5
+            if has_hours_count > 0 else 0.5
         )
 
         # Decision logic
@@ -355,36 +383,22 @@ class AreaSurveyService:
         else:
             return "all_day"
 
-    def _is_early_morning(self, time_str: str) -> bool:
-        """Kiểm tra nếu giờ mở cửa <= 8:00."""
-        match = re.search(r"(\d{1,2}):(\d{2})", time_str)
-        if match:
-            hour = int(match.group(1))
-            return hour <= 8
-        return False
+    def _is_early_morning(self, start_minutes: int) -> bool:
+        """Check if an opening minute-of-day is at or before 08:00."""
+
+        return 0 <= start_minutes <= 8 * 60
 
     def _get_rating(self, place: FinderPlace) -> float | None:
-        """Extract rating từ place metadata."""
-        # Try from tags or metadata-like field
-        # Place model có review_rating trong metadata_json
-        # Nhưng FinderPlace không có direct field, check tags
-        for tag in place.tags:
-            if tag.startswith("rating:"):
-                try:
-                    return float(tag.split(":")[1])
-                except (ValueError, IndexError):
-                    pass
+        """Return the place rating from the dedicated field if available."""
+
+        if place.rating is not None:
+            return float(place.rating)
         return None
 
     def _get_review_count(self, place: FinderPlace) -> int:
-        """Extract review count từ place."""
-        for tag in place.tags:
-            if tag.startswith("reviews:"):
-                try:
-                    return int(tag.split(":")[1])
-                except (ValueError, IndexError):
-                    pass
-        return 0
+        """Return the place review count from the dedicated field."""
+
+        return int(place.review_count or 0)
 
     def _compute_price_distribution(self, places: list[FinderPlace]) -> dict[str, int]:
         """Phân bố theo mức giá."""
@@ -535,6 +549,7 @@ class AreaSurveyService:
                 recommended_stops_per_day=3,
                 insights=("Chưa có dữ liệu địa điểm cho khu vực này.",),
             ),
-            top_places=(),
+            top_places_by_rating=(),
+            top_places_by_reviews=(),
             survey_method="empty",
         )

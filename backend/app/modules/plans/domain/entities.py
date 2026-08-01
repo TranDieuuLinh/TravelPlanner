@@ -320,6 +320,10 @@ class FinderPlanStatus(BaseModel):
         default_factory=dict,
         alias="visitedRegionCounts",
     )
+    used_food_drink_place_types: list[str] = Field(
+        default_factory=list,
+        alias="usedFoodDrinkPlaceTypes",
+    )
     trip_usage: FinderUsage = Field(default_factory=FinderUsage, alias="tripUsage")
     day_usage: FinderUsage = Field(default_factory=FinderUsage, alias="dayUsage")
     rejected_candidate_ids: list[str] = Field(

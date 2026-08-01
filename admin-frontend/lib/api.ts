@@ -207,12 +207,13 @@ export function listRuns(filters: {
   status?: string;
   stage?: string;
   query?: string;
+  limit?: number;
 }): Promise<RunList> {
   const params = new URLSearchParams();
   if (filters.status) params.set("status", filters.status);
   if (filters.stage) params.set("stage", filters.stage);
   if (filters.query) params.set("query", filters.query);
-  params.set("limit", "100");
+  params.set("limit", String(filters.limit ?? 100));
   return request<RunList>(`/admin/planning-runs?${params.toString()}`);
 }
 

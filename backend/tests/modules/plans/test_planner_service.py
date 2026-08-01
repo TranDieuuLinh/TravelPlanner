@@ -124,8 +124,8 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert output.day_briefs_ready is True
     assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
     assert "generator=llm" in output.trace.notes
-    assert "researchPromptVersion=journey_research_v1" in output.trace.notes
-    assert "promptVersion=macro_planner_v2" in output.trace.notes
+    assert "researchPromptVersion=journey_research_v2" in output.trace.notes
+    assert "promptVersion=macro_planner_v3" in output.trace.notes
     assert "snapshotId=snapshot-3" in output.trace.notes
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
@@ -308,7 +308,7 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
     assert "Macro Planner" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "macro_plan"
-    assert payload["promptVersion"] == "macro_planner_v2"
+    assert payload["promptVersion"] == "macro_planner_v3"
     assert payload["plannerInput"]["regionContext"]["plannerSignals"][
         "candidateAreas"
     ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"

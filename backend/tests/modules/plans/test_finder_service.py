@@ -714,6 +714,7 @@ class FakeFinderPlaceTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         self.search_queries.append(list(target_tags))
         return [

@@ -6,9 +6,15 @@ from typing import TYPE_CHECKING
 from app.modules.plans.domain.entities import DayBrief, UserStatus
 from app.modules.plans.domain.enums import TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
+from app.modules.plans.finder.time_windows import (
+    format_clock,
+    format_clock_window,
+    parse_clock_minutes,
+)
 
 if TYPE_CHECKING:
     from app.modules.plans.finder.area_survey import AreaProfile
+    from app.modules.plans.finder.day_style_selector import DayStyle
 
 
 @dataclass(frozen=True)
@@ -299,7 +305,7 @@ class DaySkeletonBuilder:
         # Adjust start time based on area typical hours
         if area_profile is not None:
             if area_profile.typical_hours == "morning_focused":
-                return 7 * 60 + 30  # Earlier start for morning areas
+                return 8 * 60  # Start at the earliest commonly reported opening time
             elif area_profile.typical_hours == "evening_focused":
                 return 9 * 60  # Later start for evening areas
         return 8 * 60
@@ -312,14 +318,205 @@ class DaySkeletonBuilder:
     ) -> int:
         if not user_status.available_at:
             return default_minutes
-        import re
-        match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)", user_status.available_at)
-        if match is None:
-            return default_minutes
-        return int(match.group(1)) * 60 + int(match.group(2))
+        parsed = parse_clock_minutes(user_status.available_at)
+        return default_minutes if parsed is None else parsed
 
     def _clock_window(self, start: int, duration: int) -> str:
-        return f"{self._clock(start)}-{self._clock(start + duration)}"
+        return format_clock_window(start, duration, bound_to_day=True)
+
+    def build_anchor_day(
+        self,
+        brief: DayBrief,
+        user_status: UserStatus,
+        *,
+        intent_constraints: list[str] | None = None,
+        area_profile: AreaProfile | None = None,
+    ) -> DaySkeleton:
+        """Day skeleton for "long-anchor" days (museum / park / complex).
+
+        Layout::
+
+            08:30-11:30  main_activity           180'
+            12:00-13:00  lunch_meal               60'
+            13:30-15:00  support_activity         90'
+            15:30-16:30  break_support_bonus      60'
+            18:00-19:00  dinner_meal              60'
+            19:30-21:00  bonus_activity           90'
+
+        Strategy name: ``"anchor_day"``. Role names are kept aligned with
+        the previous ``anchor_led`` strategy so downstream consumers do not
+        need to special-case the new day shapes.
+        """
+
+        pace = self._effective_pace(brief.pace, user_status, area_profile)
+        start_min = self._extract_start_minutes(
+            user_status,
+            default_minutes=self._default_start_minutes(
+                pace,
+                user_status,
+                intent_constraints,
+                area_profile,
+            ),
+            area_profile=area_profile,
+        )
+
+        cur = start_min
+        b1 = DayBlock("main_activity", self._clock_window(cur, 180), 180, True)
+        cur += 180
+        lunch_start = max(12 * 60, min(13 * 60, cur))
+        b2 = DayBlock(
+            "lunch_meal",
+            self._clock_window(lunch_start, 60),
+            60,
+            False,
+            kind="meal",
+            candidate_category="food_drink",
+        )
+        cur = lunch_start + 60 + 30
+        b3 = DayBlock("support_activity", self._clock_window(cur, 90), 90, True)
+        cur += 90 + 30
+        b4 = DayBlock(
+            "break_support_bonus", self._clock_window(cur, 60), 60, False, kind="break"
+        )
+        cur += 60
+        dinner_start = max(18 * 60, min(20 * 60, cur))
+        b5 = DayBlock(
+            "dinner_meal",
+            self._clock_window(dinner_start, 60),
+            60,
+            False,
+            kind="meal",
+            candidate_category="food_drink",
+        )
+        cur = dinner_start + 60 + 30
+        b6 = DayBlock("bonus_activity", self._clock_window(cur, 90), 90, True, optional=True)
+        cur += 90
+        blocks = [b1, b2, b3, b4, b5, b6]
+        if cur + 30 < 23 * 60:
+            blocks.append(
+                DayBlock(
+                    "group_social_activity",
+                    self._clock_window(cur + 30, 90),
+                    90,
+                    False,
+                    optional=True,
+                    kind="social_activity",
+                )
+            )
+        return DaySkeleton(strategy="anchor_day", blocks=tuple(blocks))
+
+    def build_scattered_day(
+        self,
+        brief: DayBrief,
+        user_status: UserStatus,
+        *,
+        intent_constraints: list[str] | None = None,
+        area_profile: AreaProfile | None = None,
+    ) -> DaySkeleton:
+        """Day skeleton for "many short stops" days (cafe / shop / street food).
+
+        Layout::
+
+            09:00-09:45  stop_1                  45'
+            10:00-10:45  stop_2                  45'
+            11:00-12:00  stop_3                  60'
+            12:15-13:15  lunch_meal              60'
+            14:00-14:45  stop_4                  45'
+            15:00-15:45  stop_5                  45'
+            16:00-17:00  stop_6                  60'
+            18:00-19:00  dinner_meal             60'
+            19:30-20:30  stop_7                  60'
+
+        Strategy name: ``"scattered_day"``.
+        """
+
+        pace = self._effective_pace(brief.pace, user_status, area_profile)
+        start_min = self._extract_start_minutes(
+            user_status,
+            default_minutes=self._default_start_minutes(
+                pace,
+                user_status,
+                intent_constraints,
+                area_profile,
+            ),
+            area_profile=area_profile,
+        )
+
+        cur = start_min
+        b1 = DayBlock("stop_1", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b2 = DayBlock("stop_2", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b3 = DayBlock("stop_3", self._clock_window(cur, 60), 60, True)
+        cur += 60 + 15
+        lunch_start = max(12 * 60 + 15, min(13 * 60, cur))
+        b4 = DayBlock(
+            "lunch_meal",
+            self._clock_window(lunch_start, 60),
+            60,
+            False,
+            kind="meal",
+            candidate_category="food_drink",
+        )
+        cur = lunch_start + 60 + 45
+        b5 = DayBlock("stop_4", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b6 = DayBlock("stop_5", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b7 = DayBlock("stop_6", self._clock_window(cur, 60), 60, True)
+        cur += 60 + 60
+        dinner_start = max(18 * 60, min(20 * 60, cur))
+        b8 = DayBlock(
+            "dinner_meal",
+            self._clock_window(dinner_start, 60),
+            60,
+            False,
+            kind="meal",
+            candidate_category="food_drink",
+        )
+        cur = dinner_start + 60 + 30
+        b9 = DayBlock("stop_7", self._clock_window(cur, 60), 60, True, optional=True)
+        cur += 60
+        blocks = [b1, b2, b3, b4, b5, b6, b7, b8, b9]
+        if cur + 30 < 23 * 60:
+            blocks.append(
+                DayBlock(
+                    "group_social_activity",
+                    self._clock_window(cur + 30, 75),
+                    75,
+                    False,
+                    optional=True,
+                    kind="social_activity",
+                )
+            )
+        return DaySkeleton(strategy="scattered_day", blocks=tuple(blocks))
+
+    def build_by_style(
+        self,
+        style: "DayStyle",
+        brief: DayBrief,
+        user_status: UserStatus,
+        *,
+        intent_constraints: list[str] | None = None,
+        area_profile: AreaProfile | None = None,
+    ) -> DaySkeleton:
+        """Dispatch to :meth:`build_anchor_day` or :meth:`build_scattered_day`."""
+
+        from app.modules.plans.finder.day_style_selector import DayStyle
+
+        if style == DayStyle.scattered_day:
+            return self.build_scattered_day(
+                brief,
+                user_status,
+                intent_constraints=intent_constraints,
+                area_profile=area_profile,
+            )
+        return self.build_anchor_day(
+            brief,
+            user_status,
+            intent_constraints=intent_constraints,
+            area_profile=area_profile,
+        )
 
     def build_source_itinerary(
         self,
@@ -345,7 +542,7 @@ class DaySkeletonBuilder:
             blocks.append(
                 DayBlock(
                     role=f"url_stop_{place.source_order or len(blocks) + 1}",
-                    time_window=f"{self._clock(start)}-{self._clock(end)}",
+                    time_window=format_clock_window(start, duration, bound_to_day=True),
                     duration_minutes=duration,
                     activity=True,
                     preferred_ref=place.stable_ref,
@@ -401,11 +598,7 @@ class DaySkeletonBuilder:
 
     def _window_interval(self, time_window: str) -> tuple[int, int]:
         start, end = time_window.split("-", maxsplit=1)
-        return self._clock_minutes(start), self._clock_minutes(end)
-
-    def _clock_minutes(self, value: str) -> int:
-        hours, minutes = value.split(":", maxsplit=1)
-        return int(hours) * 60 + int(minutes)
+        return parse_clock_minutes(start) or 0, parse_clock_minutes(end) or 0
 
     def _intervals_overlap(
         self,
@@ -444,8 +637,7 @@ class DaySkeletonBuilder:
         return 60
 
     def _clock(self, minutes: int) -> str:
-        bounded = min(minutes, 23 * 60 + 59)
-        return f"{bounded // 60:02d}:{bounded % 60:02d}"
+        return format_clock(minutes, bound_to_day=True)
 
     def _needs_recovery(self, user_status: UserStatus) -> bool:
         known_capacity = [

@@ -12,7 +12,9 @@
     "next": "^15.0.0",
     "postcss": "8.5.25",
     "react": "^19.0.0",
+    "react-diff-viewer-continued": "^4.4.0",
     "react-dom": "^19.0.0",
+    "react-resizable-panels": "^4.12.2",
     "sharp": "0.35.3"
   },
   "devDependencies": {

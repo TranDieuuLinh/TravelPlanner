@@ -10,8 +10,15 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
+from app.modules.plans.planner.place_metadata import (
+    read_daily_cost,
+    read_price_level,
+    read_rating,
+    read_review_count,
+    read_tags,
+)
 from app.modules.plans.planner.research_tools_schema import (
     CategoryStat,
     RegionOverviewInput,
@@ -44,76 +51,270 @@ class _CategoryAccumulator:
 
 
 def _extract_price_tier(metadata: dict) -> str | None:
-    """Extract price tier from place metadata."""
-    prices = metadata.get("prices", [])
-    if not prices:
+    """Extract price tier from place metadata (legacy or new schema)."""
+
+    legacy_prices = metadata.get("prices", [])
+    if isinstance(legacy_prices, list) and legacy_prices:
+        for price in legacy_prices:
+            if not isinstance(price, dict):
+                continue
+            if price.get("isMock"):
+                continue
+            tier = price.get("tier") or price.get("priceRange")
+            if isinstance(tier, str) and tier.strip():
+                return tier.strip()
         return None
-    # Find first non-mock price
-    for price in prices:
-        if not price.get("isMock", False):
-            return price.get("tier", price.get("priceRange"))
+
+    for key in ("priceLevel", "price_level", "priceRange", "price_range"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            tier = value.get("tier") or value.get("label")
+            if isinstance(tier, str) and tier.strip():
+                return tier.strip()
+
+    google_payload = metadata.get("google") if isinstance(metadata, dict) else None
+    if isinstance(google_payload, dict):
+        for key in ("priceLevel", "price_level"):
+            value = google_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
     return None
 
 
 def _estimate_daily_cost(metadata: dict) -> int | None:
-    """Estimate daily cost from place metadata prices."""
-    prices = metadata.get("prices", [])
-    if not prices:
-        return None
-    # Sum up cost estimates for a day
-    total = 0
-    count = 0
-    for price in prices:
-        if not price.get("isMock", False):
+    """Estimate daily cost from place metadata prices (legacy or new schema)."""
+
+    legacy_prices = metadata.get("prices", [])
+    if isinstance(legacy_prices, list) and legacy_prices:
+        total = 0
+        count = 0
+        for price in legacy_prices:
+            if not isinstance(price, dict) or price.get("isMock"):
+                continue
             amount = price.get("amount") or price.get("estimatedCost") or price.get("minCost")
             if amount:
                 total += float(amount)
                 count += 1
-    return int(total / count) if count > 0 else None
+        if count > 0:
+            return int(total / count)
+
+    finance = metadata.get("finance") if isinstance(metadata, dict) else None
+    if isinstance(finance, dict):
+        raw = finance.get("dailyBudget") or finance.get("estimatedCost")
+        if raw is not None:
+            try:
+                return int(float(raw))
+            except (TypeError, ValueError):
+                pass
+
+    tier = _extract_price_tier(metadata)
+    if tier:
+        from app.modules.plans.planner.place_metadata import _price_level_to_cost
+
+        cost = _price_level_to_cost(tier)
+        if cost is not None:
+            return cost
+
+    return None
+
+
+GOOGLE_PLACE_TYPE_CATEGORY: dict[str, str] = {
+    "accounting": "shopping",
+    "airport": "transport",
+    "amusement_park": "entertainment",
+    "aquarium": "attraction",
+    "art_gallery": "culture",
+    "atm": "shopping",
+    "bakery": "food",
+    "bank": "shopping",
+    "bar": "nightlife",
+    "beauty_salon": "shopping",
+    "bicycle_store": "shopping",
+    "book_store": "shopping",
+    "bowling_alley": "entertainment",
+    "bus_station": "transport",
+    "cafe": "cafe",
+    "campground": "nature",
+    "car_dealer": "shopping",
+    "car_rental": "transport",
+    "car_repair": "shopping",
+    "car_wash": "shopping",
+    "casino": "entertainment",
+    "cemetery": "culture",
+    "church": "culture",
+    "city_hall": "culture",
+    "clothing_store": "shopping",
+    "convenience_store": "shopping",
+    "courthouse": "culture",
+    "dentist": "shopping",
+    "department_store": "shopping",
+    "doctor": "shopping",
+    "drugstore": "shopping",
+    "electrician": "shopping",
+    "electronics_store": "shopping",
+    "embassy": "culture",
+    "fire_station": "transport",
+    "florist": "shopping",
+    "funeral_home": "shopping",
+    "furniture_store": "shopping",
+    "gas_station": "transport",
+    "gym": "entertainment",
+    "hair_care": "shopping",
+    "hardware_store": "shopping",
+    "hindu_temple": "culture",
+    "home_goods_store": "shopping",
+    "hospital": "shopping",
+    "insurance_agency": "shopping",
+    "jewelry_store": "shopping",
+    "laundry": "shopping",
+    "lawyer": "shopping",
+    "library": "culture",
+    "light_rail_station": "transport",
+    "liquor_store": "shopping",
+    "local_government_office": "culture",
+    "locksmith": "shopping",
+    "lodging": "accommodation",
+    "meal_delivery": "food",
+    "meal_takeaway": "food",
+    "mosque": "culture",
+    "movie_rental": "entertainment",
+    "movie_theater": "entertainment",
+    "moving_company": "transport",
+    "museum": "culture",
+    "natural_feature": "nature",
+    "neighborhood": "other",
+    "night_club": "nightlife",
+    "park": "nature",
+    "parking": "transport",
+    "pet_store": "shopping",
+    "pharmacy": "shopping",
+    "physiotherapist": "shopping",
+    "place_of_worship": "culture",
+    "plumber": "shopping",
+    "point_of_interest": "sightseeing",
+    "police": "shopping",
+    "post_office": "shopping",
+    "real_estate_agency": "shopping",
+    "restaurant": "food",
+    "roofing_contractor": "shopping",
+    "rv_park": "accommodation",
+    "school": "culture",
+    "spa": "wellness",
+    "stadium": "entertainment",
+    "storage": "shopping",
+    "store": "shopping",
+    "subway_station": "transport",
+    "supermarket": "shopping",
+    "synagogue": "culture",
+    "taxi_stand": "transport",
+    "tourist_attraction": "sightseeing",
+    "train_station": "transport",
+    "travel_agency": "shopping",
+    "university": "culture",
+    "veterinary_care": "shopping",
+    "zoo": "attraction",
+}
+
+
+LEGACY_PLACE_TYPE_CATEGORY: dict[str, str] = {
+    "restaurant": "food",
+    "food": "food",
+    "fast_food": "food",
+    "food_court": "food",
+    "local_food": "food",
+    "do_an": "food",
+    "an_uong": "food",
+    "cafe": "cafe",
+    "coffee_shop": "cafe",
+    "coffee": "cafe",
+    "ca_phe": "cafe",
+    "beach": "beach",
+    "seaside": "beach",
+    "coast": "beach",
+    "bien": "beach",
+    "park": "nature",
+    "nature": "nature",
+    "mountain": "nature",
+    "waterfall": "nature",
+    "garden": "nature",
+    "forest": "nature",
+    "nui": "nature",
+    "thien_nhien": "nature",
+    "museum": "culture",
+    "heritage": "culture",
+    "historic": "culture",
+    "temple": "culture",
+    "pagoda": "culture",
+    "church": "culture",
+    "van_hoa": "culture",
+    "di_san": "culture",
+    "market": "shopping",
+    "mall": "shopping",
+    "shopping_mall": "shopping",
+    "marketplace": "shopping",
+    "mua_sam": "shopping",
+    "bar": "nightlife",
+    "pub": "nightlife",
+    "nightclub": "nightlife",
+    "club": "nightlife",
+    "bar_club": "nightlife",
+    "hotel": "accommodation",
+    "hostel": "accommodation",
+    "motel": "accommodation",
+    "resort": "accommodation",
+    "homestay": "accommodation",
+    "noi_that": "accommodation",
+    "bus_station": "transport",
+    "train_station": "transport",
+    "airport": "transport",
+    "port": "transport",
+    "transport": "transport",
+    "ga": "transport",
+    "attraction": "sightseeing",
+    "amusement": "sightseeing",
+    "viewpoint": "sightseeing",
+    "tourist_spot": "sightseeing",
+    "dia_diem": "sightseeing",
+}
+
+
+TAG_CATEGORY_HINTS: dict[str, str] = {
+    "food": "food",
+    "restaurant": "food",
+    "an_uong": "food",
+    "cafe": "cafe",
+    "ca_phe": "cafe",
+    "beach": "beach",
+    "bien": "beach",
+    "nature": "nature",
+    "thien_nhien": "nature",
+    "culture": "culture",
+    "van_hoa": "culture",
+    "di_san": "culture",
+    "shopping": "shopping",
+    "mua_sam": "shopping",
+    "nightlife": "nightlife",
+    "attraction": "sightseeing",
+    "dia_diem": "sightseeing",
+}
 
 
 def _normalize_category(place_type: str, tags: list[str]) -> str:
     """Normalize place type and tags to a canonical category."""
-    place_type_lower = place_type.lower()
-    tags_lower = {t.lower() for t in tags}
 
-    # Direct mappings
-    if place_type_lower in ("restaurant", "food", "fast_food", "food_court", "local_food"):
-        return "food"
-    if place_type_lower in ("cafe", "coffee_shop", "coffee"):
-        return "cafe"
-    if place_type_lower in ("beach", "seaside", "coast"):
-        return "beach"
-    if place_type_lower in ("park", "nature", "mountain", "waterfall", "garden", "forest"):
-        return "nature"
-    if place_type_lower in ("museum", "heritage", "historic", "temple", "pagoda", "church"):
-        return "culture"
-    if place_type_lower in ("market", "mall", "shopping_mall", "marketplace"):
-        return "shopping"
-    if place_type_lower in ("bar", "pub", "nightclub", "club"):
-        return "nightlife"
-    if place_type_lower in ("hotel", "hostel", "motel", "resort", "homestay"):
-        return "accommodation"
-    if place_type_lower in ("bus_station", "train_station", "airport", "port", "transport"):
-        return "transport"
-    if place_type_lower in ("attraction", "amusement", "viewpoint", "tourist_spot"):
-        return "sightseeing"
+    place_type_lower = (place_type or "").lower()
+    if place_type_lower in GOOGLE_PLACE_TYPE_CATEGORY:
+        return GOOGLE_PLACE_TYPE_CATEGORY[place_type_lower]
+    if place_type_lower in LEGACY_PLACE_TYPE_CATEGORY:
+        return LEGACY_PLACE_TYPE_CATEGORY[place_type_lower]
 
-    # Tag-based fallback
-    if "food" in tags_lower or "restaurant" in tags_lower or "ăn uống" in tags_lower:
-        return "food"
-    if "cafe" in tags_lower or "cà phê" in tags_lower:
-        return "cafe"
-    if "beach" in tags_lower or "biển" in tags_lower:
-        return "beach"
-    if "nature" in tags_lower or "nature" in tags_lower or "thiên nhiên" in tags_lower:
-        return "nature"
-    if "culture" in tags_lower or "văn hóa" in tags_lower or "di sản" in tags_lower:
-        return "culture"
-    if "shopping" in tags_lower or "mua sắm" in tags_lower:
-        return "shopping"
-    if "nightlife" in tags_lower or "bar" in tags_lower:
-        return "nightlife"
+    tags_lower = {(t or "").lower() for t in tags}
+    for hint, category in TAG_CATEGORY_HINTS.items():
+        if hint in tags_lower:
+            return category
 
     return "other"
 
@@ -131,36 +332,25 @@ class _RegionAccumulator:
         if place.status == "active":
             self.active_places += 1
 
+        tags = read_tags(place)
         metadata = place.metadata_json or {}
-        tags = metadata.get("tags", [])
 
-        # Get rating and review count
-        rating = None
-        if place.data_confidence in ("high", "medium"):
-            # Try to get from metadata first
-            rating = metadata.get("rating") or metadata.get("avgRating")
-            if rating:
-                rating = float(rating)
+        rating = read_rating(place) if place.data_confidence in ("high", "medium") else None
         if rating is None and place.status == "active":
-            # Fallback: estimate from review count
-            review_count = metadata.get("reviewCount") or metadata.get("review_count") or metadata.get("reviewcount", 0)
-            if isinstance(review_count, (int, float)) and review_count > 0:
-                rating = min(5.0, 3.5 + (float(review_count) / 100))
+            review_count = read_review_count(place)
+            if review_count > 0:
+                rating = min(5.0, 3.5 + (review_count / 100))
 
-        review_count = metadata.get("reviewCount") or metadata.get("review_count") or metadata.get("reviewcount")
-        if review_count and not isinstance(review_count, int):
-            try:
-                review_count = int(review_count)
-            except (ValueError, TypeError):
-                review_count = None
+        review_count_value = read_review_count(place) or None
 
-        price_tier = _extract_price_tier(metadata)
+        price_tier = _extract_price_tier(metadata) or read_price_level(place)
         daily_cost = _estimate_daily_cost(metadata)
+        if daily_cost is None:
+            daily_cost = read_daily_cost(place)
 
-        # Determine category
         category = _normalize_category(place.place_type, tags)
 
-        self.categories[category].add(rating, review_count, price_tier, daily_cost)
+        self.categories[category].add(rating, review_count_value, price_tier, daily_cost)
         if rating is not None:
             self.all_ratings.append(rating)
 

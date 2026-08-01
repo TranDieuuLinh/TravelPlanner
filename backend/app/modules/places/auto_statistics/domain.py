@@ -342,20 +342,42 @@ def _covered_time_slots(opening_hours: list[dict[str, Any]]) -> set[str]:
             covered.update(TIME_SLOTS)
             continue
 
-        open_minutes = _parse_time(hours.get("openTime"))
-        close_minutes = _parse_time(hours.get("closeTime"), is_close=True)
-        if open_minutes is None or close_minutes is None:
-            continue
-
-        intervals = (
-            [(open_minutes, close_minutes)]
-            if close_minutes > open_minutes
-            else [(open_minutes, 24 * 60), (0, close_minutes)]
-        )
-        for slot, slot_range in TIME_SLOTS.items():
-            if any(_overlaps(interval, slot_range) for interval in intervals):
-                covered.add(slot)
+        intervals = _intervals_from_entry(hours)
+        for start, end in intervals:
+            if end <= start:
+                end += 24 * 60
+            for slot, slot_range in TIME_SLOTS.items():
+                if _overlaps((start, end), slot_range):
+                    covered.add(slot)
     return covered
+
+
+def _intervals_from_entry(entry: dict[str, Any]) -> list[tuple[int, int]]:
+    """Extract open/close intervals from the new ``rawTimeSlots`` shape first."""
+
+    raw_slots = entry.get("rawTimeSlots")
+    if isinstance(raw_slots, str) and raw_slots.strip():
+        chunks = re.split(r"\s*(?:,|;|\||/|\n|\t| và )\s*", raw_slots)
+        intervals: list[tuple[int, int]] = []
+        for chunk in chunks:
+            range_match = re.search(
+                r"(\d{1,3}:\d{2})\s*[-–—~]\s*(\d{1,3}:\d{2})",
+                chunk,
+            )
+            if not range_match:
+                continue
+            start = _parse_time(range_match.group(1))
+            end = _parse_time(range_match.group(2), is_close=True)
+            if start is not None and end is not None:
+                intervals.append((start, end))
+        if intervals:
+            return intervals
+
+    open_minutes = _parse_time(entry.get("openTime"))
+    close_minutes = _parse_time(entry.get("closeTime"), is_close=True)
+    if open_minutes is None or close_minutes is None:
+        return []
+    return [(open_minutes, close_minutes)]
 
 
 def _parse_time(value: Any, *, is_close: bool = False) -> int | None:

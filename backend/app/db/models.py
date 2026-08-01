@@ -12,7 +12,16 @@ from app.modules.marketplace.model import (
     Report,
     Review,
 )
-from app.modules.places.model import Festival, Place, PlaceRegionCatalogState, PlaceRegionSnapshot
+from app.modules.places.model import (
+    Festival,
+    Place,
+    PlaceAmenity,
+    PlaceImage,
+    PlaceOpeningHour,
+    PlaceRegionCatalogState,
+    PlaceRegionSnapshot,
+    PlaceReview,
+)
 from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
 from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
 from app.modules.planning_runs.model import PlanningRun, PlanningRunStage
@@ -32,8 +41,12 @@ __all__ = [
     "Payment",
     "PaymentEvent",
     "Place",
+    "PlaceAmenity",
+    "PlaceImage",
+    "PlaceOpeningHour",
     "PlaceRegionCatalogState",
     "PlaceRegionSnapshot",
+    "PlaceReview",
     "PlanningRun",
     "PlanningRunStage",
     "Report",

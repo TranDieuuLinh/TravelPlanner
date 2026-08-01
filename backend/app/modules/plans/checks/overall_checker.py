@@ -158,7 +158,12 @@ class OverallChecker:
             activities = [
                 item
                 for item in day.items
-                if item.place_type not in {"break", "free_time", "meal"}
+                if item.timeline_category == "activity"
+                and not (
+                    item.role == "group_social_activity"
+                    and item.source == "finder_rule"
+                    and item.place_id is None
+                )
             ]
             if len(activities) <= capacity:
                 continue

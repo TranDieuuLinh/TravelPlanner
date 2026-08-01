@@ -55,6 +55,77 @@ from app.modules.preferences.schema import (
 logger = logging.getLogger(__name__)
 PLANNER_MAX_REPAIR_ATTEMPTS = 3
 
+CONSTRAINT_RADIUS_KM = 50.0
+
+
+def _build_constraint_input(
+    *,
+    planner_input: PlannerAgentInput,
+    trip_spec: TripPlanningSpec,
+) -> ConstraintResearchInput | None:
+    """Build a ``ConstraintResearchInput`` that the schema will accept.
+
+    The research tool requires real coordinates when ``mode='coordinates'``.
+    When the planner has no geocoded location we fall back to ``mode='text'``
+    and forward the destination string. Returns ``None`` when neither
+    option can be satisfied so the caller skips the tool entirely.
+    """
+
+    interests = list(planner_input.intent.interests or [])
+    budget = getattr(trip_spec.budget, "target_amount", None) if trip_spec.budget else None
+    duration = trip_spec.days
+
+    center = _centroid_from_selected_places(planner_input.selected_places)
+    if center is not None:
+        center_lat, center_lng = center
+        return ConstraintResearchInput.model_validate(
+            {
+                "mode": "coordinates",
+                "centerLat": center_lat,
+                "centerLng": center_lng,
+                "radiusKm": CONSTRAINT_RADIUS_KM,
+                "budget": budget,
+                "duration": duration,
+                "interests": interests,
+            }
+        )
+
+    query = (planner_input.intent.destination or "").strip()
+    if not query:
+        return None
+
+    return ConstraintResearchInput.model_validate(
+        {
+            "mode": "text",
+            "query": query,
+            "budget": budget,
+            "duration": duration,
+            "interests": interests,
+        }
+    )
+
+
+def _centroid_from_selected_places(
+    selected_places: list[SelectedPlaceContext],
+) -> tuple[float, float] | None:
+    """Return the average latitude/longitude of selected places, if available."""
+
+    coords: list[tuple[float, float]] = []
+    for place in selected_places:
+        latitude = getattr(place, "latitude", None)
+        longitude = getattr(place, "longitude", None)
+        if latitude is None or longitude is None:
+            continue
+        try:
+            coords.append((float(latitude), float(longitude)))
+        except (TypeError, ValueError):
+            continue
+    if not coords:
+        return None
+    average_lat = sum(lat for lat, _ in coords) / len(coords)
+    average_lng = sum(lng for _, lng in coords) / len(coords)
+    return average_lat, average_lng
+
 
 class PlannerService:
     def __init__(
@@ -207,20 +278,15 @@ class PlannerService:
         )
         if has_constraints and self.research_tools:
             try:
-                # Extract coordinates from selected_places if available
-                constraint_input = ConstraintResearchInput(
-                    mode="coordinates",
-                    center_lat=None,  # Would need geocoding for text destination
-                    center_lng=None,
-                    radius_km=50.0,
-                    budget=trip_spec.budget.target_amount,
-                    duration=trip_spec.days,
-                    interests=planner_input.intent.interests,
+                constraint_input = _build_constraint_input(
+                    planner_input=planner_input,
+                    trip_spec=trip_spec,
                 )
-                result = self.research_tools.constraint_research(constraint_input)
-                planner_input.constraint_research = result.model_dump(by_alias=True)
-            except Exception as e:
-                logger.warning("constraint_research tool failed: %s", e)
+                if constraint_input is not None:
+                    result = self.research_tools.constraint_research(constraint_input)
+                    planner_input.constraint_research = result.model_dump(by_alias=True)
+            except Exception:
+                logger.exception("constraint_research tool failed")
 
         # 3. Run festival_discovery for seasonal awareness
         try:
