@@ -113,8 +113,19 @@ def test_search_drops_places_outside_bbox() -> None:
         "no-coords", "vn,ha-noi,hoan-kiem",
         lat=None, lon=None, name="Missing coordinates",
     )
+    adjacent_but_near = _fixture_place(
+        "near-adjacent",
+        "vn,ha-noi,cua-nam",
+        lat=21.025,
+        lon=105.855,
+        name="Nearby place across ward boundary",
+    )
 
-    tool = RepositoryFinderPlaceTool(_ListRepo([in_hoan_kiem, in_long_bien, no_coords]))
+    tool = RepositoryFinderPlaceTool(
+        _ListRepo(
+            [in_hoan_kiem, in_long_bien, no_coords, adjacent_but_near]
+        )
+    )
 
     result = tool.search(
         region_key="vn,ha-noi,hoan-kiem",
@@ -128,6 +139,7 @@ def test_search_drops_places_outside_bbox() -> None:
     assert "in-hk" in place_ids
     assert "in-lb" not in place_ids
     assert "no-coords" in place_ids
+    assert "near-adjacent" in place_ids
 
 
 def test_search_without_bbox_falls_back_to_region_match() -> None:

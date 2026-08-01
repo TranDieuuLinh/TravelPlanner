@@ -5,7 +5,14 @@ import logging
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
-from app.modules.plans.domain.entities import CheckReport, MacroPlan, TravelIntent
+from app.modules.plans.domain.entities import (
+    CheckReport,
+    DayActivityNeed,
+    DayBrief,
+    DayMealNeed,
+    MacroPlan,
+    TravelIntent,
+)
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
@@ -36,6 +43,11 @@ from app.modules.plans.planner.prompt import (
 from app.modules.plans.planner.research_tool import (
     EmptyPlannerResearchTool,
     PlannerResearchTool,
+    canonical_capability,
+)
+from app.modules.plans.planner.tourism_zone_research import (
+    EmptyTourismZoneResearchTool,
+    TourismZoneResearchTool,
 )
 from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
@@ -98,6 +110,7 @@ def _build_constraint_input(
         {
             "mode": "text",
             "query": query,
+            "regionKey": planner_input.region_context.region_key,
             "budget": budget,
             "duration": duration,
             "interests": interests,
@@ -134,11 +147,15 @@ class PlannerService:
         llm: LLMClient,
         research_tool: PlannerResearchTool | None = None,
         research_tools: ResearchToolsOrchestrator | None = None,
+        tourism_zone_tool: TourismZoneResearchTool | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
         self.research_tool = research_tool or EmptyPlannerResearchTool()
         self.research_tools = research_tools
+        self.tourism_zone_tool = (
+            tourism_zone_tool or EmptyTourismZoneResearchTool()
+        )
 
     async def create_main_macro_plan(
         self,
@@ -255,6 +272,14 @@ class PlannerService:
         2. constraint_research - if coordinates/interests provided
         3. festival_discovery - for seasonal planning
         """
+        try:
+            planner_input.tourism_zones = self.tourism_zone_tool.research(
+                root_region_key=planner_input.region_context.region_key,
+                interests=planner_input.intent.interests,
+            )
+        except Exception:
+            logger.exception("tourism_zone_research tool failed")
+
         if self.research_tools is None:
             return planner_input
 
@@ -328,6 +353,7 @@ class PlannerService:
                 ),
                 tripSpec=planner_input.trip_spec,
                 dayBriefsReady=False,
+                tourismZones=planner_input.tourism_zones,
                 warnings=statistics_warnings,
                 trace=AgentTrace(
                     agent=PlanningAgentName.planner,
@@ -425,6 +451,7 @@ class PlannerService:
             macroPlan=draft.macro_plan,
             tripSpec=planner_input.trip_spec,
             dayBriefsReady=True,
+            tourismZones=planner_input.tourism_zones,
             unallocatedSelectedPlaces=draft.unallocated_selected_places,
             assumptions=draft.assumptions,
             warnings=warnings,
@@ -506,6 +533,7 @@ class PlannerService:
 
         allowed_regions = {
             planner_input.region_context.region_key,
+            *(zone.region_key for zone in planner_input.tourism_zones),
             *(
                 str(area.get("regionKey"))
                 for area in planner_input.region_context.area_profiles
@@ -539,6 +567,144 @@ class PlannerService:
                 raise ValueError(
                     f"Unknown targetRegionKey: {brief.target_region_key}"
                 )
+
+        zone_by_id = {
+            zone.zone_id: zone for zone in planner_input.tourism_zones
+        }
+        normalized_briefs = []
+        for brief in macro.day_briefs:
+            zone = None
+            if brief.tourism_zone_ref is not None:
+                zone = zone_by_id.get(brief.tourism_zone_ref)
+                if zone is None:
+                    raise ValueError(
+                        f"Unknown tourismZoneRef: {brief.tourism_zone_ref}"
+                    )
+            elif planner_input.tourism_zones:
+                regional_zones = [
+                    candidate
+                    for candidate in planner_input.tourism_zones
+                    if candidate.region_key == brief.target_region_key
+                ]
+                candidate_zones = regional_zones or planner_input.tourism_zones
+                available_categories = list(
+                    dict.fromkeys(
+                        category
+                        for candidate in candidate_zones
+                        for category in candidate.primary_categories
+                    )
+                )
+                preferred_category = self._primary_category_for_day(
+                    planner_input,
+                    brief,
+                    available_categories,
+                )
+                zone = next(
+                    (
+                        candidate
+                        for candidate in candidate_zones
+                        if any(
+                            anchor.category == preferred_category
+                            for anchor in candidate.anchor_places
+                        )
+                    ),
+                    candidate_zones[0],
+                )
+
+            focus_category = self._focus_category_for_day(
+                brief,
+                list(
+                    dict.fromkeys(
+                        category
+                        for candidate in planner_input.tourism_zones
+                        for category in candidate.primary_categories
+                    )
+                ),
+            )
+            if zone is not None and focus_category is not None:
+                matching_zone = next(
+                    (
+                        candidate
+                        for candidate in planner_input.tourism_zones
+                        if candidate.region_key == zone.region_key
+                        and any(
+                            anchor.category == focus_category
+                            for anchor in candidate.anchor_places
+                        )
+                    ),
+                    None,
+                )
+                if matching_zone is None:
+                    matching_zone = next(
+                        (
+                            candidate
+                            for candidate in planner_input.tourism_zones
+                            if any(
+                                anchor.category == focus_category
+                                for anchor in candidate.anchor_places
+                            )
+                        ),
+                        None,
+                    )
+                if matching_zone is not None:
+                    zone = matching_zone
+
+            updates = {}
+            if not brief.activity_needs:
+                updates["activity_needs"] = self._default_activity_needs(brief)
+            if not brief.meal_needs:
+                updates["meal_needs"] = [
+                    DayMealNeed(
+                        role="lunch",
+                        earliestStart="11:30",
+                        latestEnd="13:30",
+                        minDurationMinutes=45,
+                        maxDurationMinutes=75,
+                    ),
+                    DayMealNeed(
+                        role="dinner",
+                        earliestStart="17:30",
+                        latestEnd="20:00",
+                        minDurationMinutes=45,
+                        maxDurationMinutes=90,
+                    ),
+                ]
+            if zone is not None:
+                updates["tourism_zone_ref"] = zone.zone_id
+                updates["target_region_key"] = zone.region_key
+                updates["allow_region_fallback"] = False
+                updates["anchor_place_refs"] = [
+                    anchor.place_id for anchor in zone.anchor_places
+                ]
+                updates["primary_activity_category"] = (
+                    focus_category
+                    or self._primary_category_for_day(
+                        planner_input,
+                        brief,
+                        zone.primary_categories,
+                    )
+                )
+            normalized_brief = (
+                brief.model_copy(update=updates) if updates else brief
+            )
+            if (
+                zone is not None
+                and normalized_brief.primary_activity_category is not None
+                and zone.anchor_places
+                and not any(
+                    anchor.category
+                    == normalized_brief.primary_activity_category
+                    for anchor in zone.anchor_places
+                )
+            ):
+                raise ValueError(
+                    "tourismZoneRef anchor category does not match "
+                    "primaryActivityCategory."
+                )
+            normalized_briefs.append(normalized_brief)
+        if normalized_briefs != macro.day_briefs:
+            macro = macro.model_copy(update={"day_briefs": normalized_briefs})
+            draft = draft.model_copy(update={"macro_plan": macro})
 
         self._validate_journey_phases(
             macro,
@@ -1029,6 +1195,123 @@ class PlannerService:
                 "unallocated_selected_places": normalized_unallocated,
             }
         )
+
+    @staticmethod
+    def _focus_category_for_day(
+        brief: DayBrief,
+        available_categories: list[str],
+    ) -> str | None:
+        category_by_capability = {
+            "beach": "nature",
+            "camping": "nature",
+            "coffee": "food_drink",
+            "culture": "attraction",
+            "food": "food_drink",
+            "hiking": "nature",
+            "mountain": "nature",
+            "nature": "nature",
+            "nightlife": "entertainment",
+            "seafood": "food_drink",
+            "shopping": "shopping",
+            "wellness": "entertainment",
+        }
+        scores: dict[str, int] = {}
+        weighted_signals = [
+            (brief.day_part_goals.morning, 3),
+            (brief.day_part_goals.afternoon, 3),
+            *[(tag, 2) for tag in brief.focus_tags],
+            (brief.theme, 2),
+        ]
+        for signal, weight in weighted_signals:
+            if not signal:
+                continue
+            category = category_by_capability.get(
+                canonical_capability(signal)
+            )
+            if category in available_categories:
+                scores[category] = scores.get(category, 0) + weight
+        if not scores:
+            return None
+        return max(
+            scores,
+            key=lambda category: (
+                scores[category],
+                category != "food_drink",
+                category,
+            ),
+        )
+
+    @staticmethod
+    def _default_activity_needs(brief: DayBrief) -> list[DayActivityNeed]:
+        common_experiences = list(dict.fromkeys(brief.focus_tags))
+        return [
+            DayActivityNeed(
+                role="main",
+                goal=brief.day_part_goals.morning or brief.theme,
+                preferredExperiences=common_experiences,
+                minDurationMinutes=75,
+                maxDurationMinutes=150,
+                required=True,
+            ),
+            DayActivityNeed(
+                role="support",
+                goal=brief.day_part_goals.afternoon or brief.theme,
+                preferredExperiences=common_experiences,
+                minDurationMinutes=45,
+                maxDurationMinutes=120,
+                required=brief.pace.value != "relaxed",
+            ),
+            DayActivityNeed(
+                role="bonus",
+                goal=brief.day_part_goals.evening or brief.theme,
+                preferredExperiences=common_experiences,
+                minDurationMinutes=30,
+                maxDurationMinutes=90,
+                required=False,
+            ),
+        ]
+
+    @staticmethod
+    def _primary_category_for_day(
+        planner_input: PlannerAgentInput,
+        brief: DayBrief,
+        available_categories: list[str],
+    ) -> str | None:
+        category_by_capability = {
+            "beach": "nature",
+            "camping": "nature",
+            "coffee": "food_drink",
+            "culture": "attraction",
+            "food": "food_drink",
+            "hiking": "nature",
+            "mountain": "nature",
+            "nature": "nature",
+            "nightlife": "entertainment",
+            "seafood": "food_drink",
+            "shopping": "shopping",
+            "wellness": "entertainment",
+        }
+        day_requested = [
+            category_by_capability.get(canonical_capability(tag))
+            for tag in brief.focus_tags
+        ]
+        requested = [
+            category_by_capability.get(canonical_capability(interest))
+            for interest in planner_input.intent.interests
+        ]
+        for category in (*day_requested, *requested):
+            if category in available_categories:
+                return category
+        for category in (
+            "attraction",
+            "nature",
+            "shopping",
+            "entertainment",
+            "food_drink",
+        ):
+            if category in available_categories:
+                return category
+        return None
 
     def _validate_journey_phases(
         self,

@@ -21,6 +21,7 @@ class FakePlaceTool:
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
     ) -> list[FinderPlace]:
@@ -111,6 +112,36 @@ def test_survey_empty_region_returns_empty_lists() -> None:
 
     assert result.top_places_by_rating == ()
     assert result.top_places_by_reviews == ()
+
+
+def test_survey_bbox_excludes_parent_scope_fallback_places() -> None:
+    local = FinderPlace(
+        placeId="local",
+        name="Cửa Nam local",
+        placeType="restaurant",
+        regionKey="vn,ha-noi,cua-nam",
+        latitude=21.025,
+        longitude=105.846,
+    )
+    far_parent_fallback = FinderPlace(
+        placeId="far",
+        name="Dương Nội fallback",
+        placeType="restaurant",
+        regionKey="vn,ha-noi,duong-noi",
+        latitude=20.998,
+        longitude=105.752,
+    )
+
+    class WideningPlaceTool(FakePlaceTool):
+        def search(self, **kwargs) -> list[FinderPlace]:
+            return [local, far_parent_fallback]
+
+    result = AreaSurveyService(
+        WideningPlaceTool([local, far_parent_fallback])
+    ).survey("vn,ha-noi,cua-nam")
+
+    assert result.profile.place_count == 1
+    assert result.profile.bbox == (21.025, 105.846, 21.025, 105.846)
 
 
 def test_survey_top_by_rating_drops_missing_rating_to_bottom() -> None:

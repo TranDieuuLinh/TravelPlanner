@@ -8,11 +8,12 @@ import pytest
 from app.modules.places.auto_statistics.service import (
     PlannerRegionStatisticsResult,
 )
-from app.modules.plans.domain.entities import TravelIntent
+from app.modules.plans.domain.entities import DayBrief, TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import (
     PlanWorkingState,
     SelectedPlaceContext,
+    TourismZoneEvidence,
     TripPlanningSpec,
 )
 from app.modules.plans.planner.planner_service import PlannerService
@@ -125,7 +126,7 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
     assert "generator=llm" in output.trace.notes
     assert "researchPromptVersion=journey_research_v2" in output.trace.notes
-    assert "promptVersion=macro_planner_v3" in output.trace.notes
+    assert "promptVersion=macro_planner_v5_flexible_day_needs" in output.trace.notes
     assert "snapshotId=snapshot-3" in output.trace.notes
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
@@ -308,12 +309,88 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
     assert "Macro Planner" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "macro_plan"
-    assert payload["promptVersion"] == "macro_planner_v3"
+    assert payload["promptVersion"] == "macro_planner_v5_flexible_day_needs"
     assert payload["plannerInput"]["regionContext"]["plannerSignals"][
         "candidateAreas"
     ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"
     assert payload["researchProposal"]["varietyStrategy"]
     assert "verifiedResearch" in payload
+
+
+def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
+    llm = RecordingPlannerLLM()
+    service = PlannerService(
+        FakeStatisticsProvider(),
+        llm,
+        tourism_zone_tool=FakeTourismZoneTool(),
+    )
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent().model_copy(update={"interests": ["culture"]}),
+            trip_spec=TripPlanningSpec(days=1),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    brief = output.macro_plan.day_briefs[0]
+    assert brief.tourism_zone_ref == "hoan-kiem-museum-zone"
+    assert brief.anchor_place_refs == ["museum-anchor"]
+    assert brief.primary_activity_category == "attraction"
+    assert brief.allow_region_fallback is False
+    assert output.tourism_zones[0].center_latitude == 21.03
+    research_payload = json.loads(llm.calls[0][1])
+    assert research_payload["plannerInput"]["tourismZones"][0]["zoneId"] == (
+        "hoan-kiem-museum-zone"
+    )
+    assert brief.day_window.earliest_start == "08:30"
+    assert [need.role for need in brief.activity_needs] == [
+        "main",
+        "support",
+        "bonus",
+    ]
+    assert brief.activity_needs[0].required is True
+    assert [need.role for need in brief.meal_needs] == ["lunch", "dinner"]
+    assert brief.meal_needs[0].earliest_start == "11:30"
+
+
+def test_compound_focus_tag_maps_to_deterministic_activity_category() -> None:
+    brief = DayBrief(
+        day=1,
+        theme="Hương vị Hà Nội",
+        targetArea="Hoàn Kiếm",
+        targetRegionKey="vn,ha-noi,hoan-kiem",
+        focusTags=["traditional Hanoi food", "egg coffee"],
+    )
+
+    assert PlannerService._focus_category_for_day(
+        brief,
+        ["attraction", "food_drink"],
+    ) == "food_drink"
+
+
+def test_old_quarter_visit_keeps_attractions_as_main_activity_despite_food() -> None:
+    brief = DayBrief.model_validate(
+        {
+            "day": 1,
+            "theme": "Khám phá lịch sử và kiến trúc Phố Cổ",
+            "targetArea": "Phố Cổ",
+            "targetRegionKey": "vn,ha-noi,hoan-kiem",
+            "focusTags": ["phố cổ", "food"],
+            "dayPartGoals": {
+                "morning": "tham quan đền và tượng lịch sử",
+                "lunch": "ăn trưa",
+                "afternoon": "khám phá kiến trúc và di tích",
+                "evening": "ăn tối",
+            },
+        }
+    )
+
+    assert PlannerService._focus_category_for_day(
+        brief,
+        ["attraction", "food_drink"],
+    ) == "attraction"
 
 
 def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> None:
@@ -985,6 +1062,49 @@ def test_backup_avoid_outdoor_uses_tags_not_place_name() -> None:
 
 def _planner(statistics: "FakeStatisticsProvider") -> PlannerService:
     return PlannerService(statistics, FakePlannerLLM())
+
+
+class FakeTourismZoneTool:
+    def research(
+        self,
+        *,
+        root_region_key: str,
+        interests: list[str],
+    ) -> list[TourismZoneEvidence]:
+        assert root_region_key == "vn,ha-noi"
+        assert interests == ["culture"]
+        return [
+            TourismZoneEvidence.model_validate(
+                {
+                    "zoneId": "hoan-kiem-museum-zone",
+                    "regionKey": "vn,ha-noi,hoan-kiem",
+                    "centerLatitude": 21.03,
+                    "centerLongitude": 105.85,
+                    "radiusMeters": 2500,
+                    "capabilities": ["culture", "food"],
+                    "primaryCategories": ["attraction", "food_drink"],
+                    "categoryCoverage": {
+                        "attraction": 5,
+                        "food_drink": 12,
+                    },
+                    "anchorPlaces": [
+                        {
+                            "placeId": "museum-anchor",
+                            "name": "Museum Anchor",
+                            "category": "attraction",
+                            "latitude": 21.03,
+                            "longitude": 105.85,
+                            "rating": 4.7,
+                            "reviewCount": 1000,
+                            "popularityScore": 0.9,
+                        }
+                    ],
+                    "placeCount": 17,
+                    "compactnessScore": 0.8,
+                    "popularityScore": 0.9,
+                }
+            )
+        ]
 
 
 class FakePlannerLLM:

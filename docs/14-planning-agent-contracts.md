@@ -290,6 +290,31 @@ Input chính:
   },
   "selectedPlaces": [],
   "placeCandidates": [],
+  "tourismZones": [
+    {
+      "zoneId": "vn-ha-noi-ba-dinh--place-museum",
+      "regionKey": "vn,ha-noi,ba-dinh",
+      "centerLatitude": 21.0306,
+      "centerLongitude": 105.837,
+      "radiusMeters": 2500,
+      "capabilities": ["culture", "food"],
+      "primaryCategories": ["attraction", "food_drink"],
+      "categoryCoverage": {"attraction": 8, "food_drink": 20},
+      "anchorPlaces": [{
+        "placeId": "place-museum",
+        "name": "Vietnam Fine Arts Museum",
+        "category": "attraction",
+        "latitude": 21.0306,
+        "longitude": 105.837,
+        "rating": 4.7,
+        "reviewCount": 8000,
+        "popularityScore": 0.91
+      }],
+      "placeCount": 28,
+      "compactnessScore": 0.84,
+      "popularityScore": 0.91
+    }
+  ],
   "planState": {
     "tripId": "trip_123",
     "lockedItemIds": [],
@@ -318,6 +343,11 @@ Output chính:
         "targetArea": "Hoan Kiem",
         "targetRegionKey": "vn,ha-noi,hoan-kiem",
         "focusTags": ["culture", "food"],
+        "tourismZoneRef": "vn-ha-noi-ba-dinh--place-museum",
+        "anchorPlaceRefs": ["place-museum"],
+        "primaryActivityCategory": "attraction",
+        "maxLocalTravelMinutes": 20,
+        "allowRegionFallback": false,
         "pace": "balanced",
         "dayPartGoals": {
           "morning": "Prioritize culture activities supported in the morning.",
@@ -325,6 +355,44 @@ Output chính:
           "afternoon": "Use a balanced culture block in the afternoon.",
           "evening": "Keep evening flexible; regional data coverage is weak."
         },
+        "dayWindow": {
+          "earliestStart": "08:30",
+          "latestEnd": "21:30"
+        },
+        "activityNeeds": [
+          {
+            "role": "main",
+            "goal": "Khám phá di sản trong khu vực",
+            "preferredExperiences": ["museum", "heritage"],
+            "minDurationMinutes": 75,
+            "maxDurationMinutes": 150,
+            "required": true
+          },
+          {
+            "role": "support",
+            "goal": "Bổ sung một trải nghiệm văn hóa khác loại",
+            "preferredExperiences": ["temple", "architecture"],
+            "minDurationMinutes": 45,
+            "maxDurationMinutes": 120,
+            "required": true
+          }
+        ],
+        "mealNeeds": [
+          {
+            "role": "lunch",
+            "earliestStart": "11:30",
+            "latestEnd": "13:30",
+            "minDurationMinutes": 45,
+            "maxDurationMinutes": 75
+          },
+          {
+            "role": "dinner",
+            "earliestStart": "17:30",
+            "latestEnd": "20:00",
+            "minDurationMinutes": 45,
+            "maxDurationMinutes": 90
+          }
+        ],
         "allocatedSelectedPlaceRefs": ["place_123"],
         "notes": ["Exact schedule is delegated to Finder."]
       }
@@ -357,7 +425,11 @@ Planner MVP dùng hai structured LLM call:
 2. Backend chạy `RepositoryPlannerResearchTool` trên Place active. Capability
    local được match theo taxonomy; region lân cận được xếp từ centroid và khoảng
    cách địa lý, chưa phải route đã xác minh.
-3. `macro_planner_v3` nhận cả proposal và `PlannerVerifiedResearch`, sau đó sinh
+3. Backend tạo `tourismZones` quanh các Place anchor có tọa độ, popularity và
+   capability phù hợp. Tâm, bán kính và anchor đều là evidence từ catalog;
+   LLM chỉ được chọn `zoneId`, không được tự sinh tọa độ.
+4. `macro_planner_v5_flexible_day_needs` nhận proposal, `PlannerVerifiedResearch` và
+   tourism zones, sau đó sinh
    `PlannerMacroPlanDraft`.
 
 `MacroPlan` có thêm `journeyStyle` và `journeyPhases` để biểu diễn local base,
@@ -385,6 +457,15 @@ xung đột hoặc có ngày nguồn vượt duration được giữ trong
 Finder nhận `MacroPlan`, `selectedPlaces`, `UserStatus` và `FinderPlanStatus`,
 sau đó tạo DaySkeleton động và fill lịch cụ thể. Số block phụ thuộc pace và
 UserStatus: `relaxed` ít block, `anchor_led` trung bình, `multi_stop` nhiều block.
+`PlannerAgentOutput.tourismZones` được chuyển nguyên trạng vào `FinderAgentInput`;
+Finder không nhận tọa độ do model tự tạo.
+
+`DayBrief` mô tả nhu cầu thay vì lịch đóng đinh. `dayWindow` là biên ngày;
+`activityNeeds` giữ một main bắt buộc, support tùy pace và bonus tùy chọn;
+`mealNeeds` giữ các bữa lõi bằng cửa sổ thời gian. Finder chọn Place trước rồi
+chọn giờ khả thi trong cửa sổ theo giờ mở cửa và route. Lunch độc lập với theme;
+coffee hoặc một nhà hàng thứ hai không được dùng để giả làm activity văn hóa.
+Timing cue có provenance từ URL vẫn được giữ riêng và không bị cửa sổ mềm ghi đè.
 
 Input chính:
 
@@ -410,6 +491,7 @@ Input chính:
   },
   "userStatus": {},
   "finderPlanStatus": {},
+  "tourismZones": [],
   "allowFinderSuggestions": true
 }
 ```
@@ -469,20 +551,29 @@ Output chính:
 }
 ```
 
-Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi activity
-block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
+Finder MVP hiện dùng rule deterministic, tối đa 25 candidate cho mỗi activity
+block. Break block không bắt buộc có Place và bị loại nếu activity ở một trong
+hai phía không được xếp; không còn break mồ côi chỉ vì skeleton có sẵn. Budget/route chưa được tự ước lượng:
 khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
 sinh số.
 
-Catalog retrieval của Finder dùng hai tầng. Tầng đầu rank mô tả Place theo query
-được tạo từ `DayBrief.theme`, `focusTags`, `dayPartGoals`, target area và
-`JourneyPhase` chứa ngày hiện tại, sau đó lấy shortlist. Tầng hai rerank bằng
-`placeType`, `placeGroup`, tags, region, data confidence và tọa độ. Khi target
+Catalog retrieval của Finder dùng ba tầng. Tầng đầu lọc cứng active Place theo
+region/bbox, category và danh sách đã dùng/loại trừ. Tầng hai dùng embedding của
+query tạo từ `DayBrief.theme`, `focusTags`, `dayPartGoals`, target area và
+`JourneyPhase` chứa ngày hiện tại để lấy semantic top-K trong tập ID hợp lệ.
+Tầng ba rerank bằng rating, số review, `placeType`, `placeGroup`, tags, region,
+data confidence và tọa độ. Khi vector/provider chưa sẵn sàng, tầng hai fallback
+về description/keyword retrieval. Khi target
 region nhỏ thiếu dữ liệu, tool có thể đọc dần region cha nhưng Place fallback
 phải có locality tương ứng trong tên hoặc mô tả. Finder không dùng accommodation
 cho activity thường và không dùng food/transport/shopping để lấp một theme
 không tương thích. Selected Place do user xác nhận vẫn được ưu tiên và không bị
 category guard tự động loại.
+
+Trong semantic shortlist đã đúng category và qua hard constraints, similarity là
+tín hiệu chính. Popularity kết hợp rating với số review có trọng số mạnh ở bước
+rerank, vì vậy địa điểm nổi tiếng được ưu tiên giữa các ứng viên gần nhau về ngữ
+nghĩa nhưng không thể thắng một địa điểm phù hợp rõ rệt chỉ nhờ nhiều review.
 
 `metadata.description`, `metadata.placeGroup` và minimum duration trong
 `metadata.recommendedDurationRange` được adapter đưa vào context nội bộ của
@@ -513,9 +604,19 @@ thích, theme và mục tiêu của ngày vào truy vấn. Nếu không có Plac
 Finder giữ meal placeholder có `source=finder_rule` và trả planning warning để
 không mô tả plan như đã hoàn thiện.
 
-Trong shortlist đã được rank theo relevance, Finder dùng khoảng cách tới
-`UserStatus.location` làm tín hiệu phụ để tránh chọn các Place đúng chủ đề nhưng
-rời rạc. Candidate thiếu tọa độ vẫn được giữ nhưng chịu penalty có giới hạn.
+Khi DayBrief có `tourismZoneRef`, catalog query ưu tiên bbox và mọi Place gợi ý
+được kiểm tra lại bằng khoảng cách Haversine. Candidate thường nằm trong bán kính
+2,5 km; địa điểm nổi tiếng có evidence mạnh (rating, số review, confidence) được
+mở rộng có kiểm soát tối đa 8 km. Candidate thiếu tọa độ hoặc xa hơn ngưỡng này bị
+loại; fallback lên region cha không thể làm hành trình rộng không giới hạn.
+Nếu chưa có zone và `allowRegionFallback=false`, candidate phải thuộc đúng
+`targetRegionKey`. Sau hard boundary, Finder dùng khoảng cách tới
+`UserStatus.location` làm tín hiệu rerank phụ.
+
+Semantic/vector retrieval chạy sau hard filters. Place lưu vector 768 chiều cùng
+`embeddingModel`, `embeddingContentHash`, `embeddedAt`; content thay đổi cần được
+backfill lại. Embedding rank theo theme/goal nhưng không thay thế kiểm tra zone,
+category, giờ mở cửa, budget và constraint.
 
 `Group social activity` vẫn có trong skeleton dưới dạng `Coming soon`. Item này
 không phải Place đã commit, không được tính vào usage hoặc provenance count và

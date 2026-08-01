@@ -43,6 +43,151 @@ def test_agent_finder_reads_budget_level_from_trip_spec() -> None:
     assert result.mode.value == "main"
 
 
+def test_agent_finder_keeps_suggestions_inside_verified_tourism_zone() -> None:
+    places = {
+        "far-museum": _place(
+            "far-museum",
+            "Far museum",
+            tags=["culture", "museum"],
+            intensity="light",
+            latitude=21.1200,
+            longitude=105.9300,
+        ),
+        "local-museum": _place(
+            "local-museum",
+            "Local museum",
+            tags=["culture", "museum"],
+            intensity="light",
+            latitude=21.0307,
+            longitude=105.8372,
+        ),
+        "local-food": _place(
+            "local-food",
+            "Local lunch",
+            tags=["food"],
+            intensity="light",
+            place_type="restaurant",
+            latitude=21.0310,
+            longitude=105.8380,
+        ),
+    }
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            places,
+            search_order=["far-museum", "local-museum", "local-food"],
+        )
+    )
+    macro = AgentMacroPlan.model_validate(
+        _macro_plan().model_dump(by_alias=True)
+    )
+    macro.day_briefs[0] = macro.day_briefs[0].model_copy(
+        update={
+            "allocated_selected_place_refs": [],
+            "tourism_zone_ref": "ba-dinh-museum-zone",
+            "primary_activity_category": "attraction",
+        }
+    )
+    finder_input = FinderAgentInput(
+        intent=PlanningIntent(
+            destination="Hà Nội",
+            travelStyle="local",
+            pace="balanced",
+            interests=["culture"],
+        ),
+        tripSpec=TripPlanningSpec(days=1),
+        macroPlan=macro,
+        tourismZones=[
+            {
+                "zoneId": "ba-dinh-museum-zone",
+                "regionKey": "vn,ha-noi,ba-dinh",
+                "centerLatitude": 21.0306,
+                "centerLongitude": 105.8370,
+                "radiusMeters": 2500,
+                "capabilities": ["culture", "food"],
+                "primaryCategories": ["attraction", "food_drink"],
+                "categoryCoverage": {"attraction": 1, "food_drink": 1},
+                "anchorPlaces": [],
+                "placeCount": 2,
+                "compactnessScore": 0.9,
+                "popularityScore": 0.9,
+            }
+        ],
+    )
+
+    result = finder.fill_agent_plan(finder_input)
+    names = [item.name for item in result.final_days[0].items]
+
+    assert "Local museum" in names
+    assert "Far museum" not in names
+
+
+def test_agent_finder_allows_famous_verified_place_beyond_core_zone() -> None:
+    famous = _place(
+        "famous-museum",
+        "Famous Hanoi Museum",
+        tags=["culture", "museum"],
+        intensity="light",
+        latitude=21.0800,
+        longitude=105.8370,
+    ).model_copy(
+        update={
+            "rating": 4.7,
+            "review_count": 8_000,
+            "data_confidence": "high",
+        }
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"famous-museum": famous},
+            search_order=["famous-museum"],
+        )
+    )
+    macro = AgentMacroPlan.model_validate(
+        _macro_plan().model_dump(by_alias=True)
+    )
+    macro.day_briefs[0] = macro.day_briefs[0].model_copy(
+        update={
+            "allocated_selected_place_refs": [],
+            "tourism_zone_ref": "museum-zone",
+            "primary_activity_category": "attraction",
+        }
+    )
+
+    result = finder.fill_agent_plan(
+        FinderAgentInput(
+            intent=PlanningIntent(
+                destination="Hà Nội",
+                travelStyle="local",
+                pace="balanced",
+                interests=["culture"],
+            ),
+            tripSpec=TripPlanningSpec(days=1),
+            macroPlan=macro,
+            tourismZones=[
+                {
+                    "zoneId": "museum-zone",
+                    "regionKey": "vn,ha-noi,ba-dinh",
+                    "centerLatitude": 21.0306,
+                    "centerLongitude": 105.8370,
+                    "radiusMeters": 2500,
+                    "capabilities": ["culture"],
+                    "primaryCategories": ["attraction"],
+                    "categoryCoverage": {"attraction": 1},
+                    "anchorPlaces": [],
+                    "placeCount": 1,
+                    "compactnessScore": 0.8,
+                    "popularityScore": 0.9,
+                }
+            ],
+        )
+    )
+
+    assert any(
+        item.place_id == "famous-museum"
+        for item in result.final_days[0].items
+    )
+
+
 def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     places = {
         "selected-main": _place(
@@ -53,9 +198,10 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
         ),
         "support": _place(
             "support",
-            "Local restaurant",
-            tags=["food"],
+            "Local cultural center",
+            tags=["culture"],
             intensity="light",
+            place_type="cultural center",
         ),
         "too-heavy": _place(
             "too-heavy",
@@ -108,7 +254,6 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
         "main_activity",
         "lunch_meal",
         "support_activity",
-        "break_support_bonus",
         "dinner_meal",
         "group_social_activity",
     ]
@@ -120,11 +265,10 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     ]
     assert result.final_plan_status.rejected_candidate_ids == ["too-heavy"]
     assert result.final_plan_status.visited_tag_counts == {
-        "culture": 1,
-        "food": 1,
+        "culture": 2,
     }
     assert result.final_user_status.metrics.physical == 65
-    assert result.final_user_status.metrics.energy == 80
+    assert result.final_user_status.metrics.energy == 75
     assert result.final_user_status.location is not None
     assert result.final_user_status.location.place_id == "hotel-a"
     assert result.unscheduled_places == []
@@ -152,6 +296,13 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
             intensity=None,
             place_type="restaurant",
         ),
+        "coffee-only": _place(
+            "coffee-only",
+            "Cafe Dinh",
+            tags=["food", "coffee"],
+            intensity=None,
+            place_type="coffee_shop",
+        ),
         "gallery": _place(
             "gallery",
             "Nhà triển lãm Mỹ thuật",
@@ -170,8 +321,9 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
         places,
         search_order=[
             "hotel",
-            "local-lunch",
             "gallery",
+            "coffee-only",
+            "local-lunch",
             "local-dinner",
         ],
     )
@@ -216,6 +368,10 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
     ]
     assert len(meal_queries) == 2
     assert all("món địa phương" in query for query in meal_queries)
+    assert all("culture" not in query for query in meal_queries)
+    assert all("Culture and food" not in query for query in meal_queries)
+    assert all("Hoàn Kiếm" not in query for query in meal_queries)
+    assert 25 in tool.search_limits
     assert not any("unresolved meal placeholder" in warning for warning in result.warnings)
 
 
@@ -454,7 +610,6 @@ def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
     assert result.days[0].strategy == "relaxed"
     assert [item.role for item in result.days[0].items] == [
         "lunch_meal",
-        "break_main_support",
         "dinner_meal",
         "group_social_activity",
     ]
@@ -588,6 +743,64 @@ def test_finder_rejects_place_outside_opening_hours() -> None:
     assert "closed-morning" in result.final_plan_status.rejected_candidate_ids
 
 
+def test_finder_schedules_place_at_first_feasible_time_inside_soft_window() -> None:
+    museum = _place(
+        "opens-at-nine",
+        "Museum opening at nine",
+        tags=["culture", "museum"],
+        intensity="light",
+        opening_hours=[{"openTime": "09:00", "closeTime": "17:00"}],
+    )
+    base_brief = _macro_plan().day_briefs[0].model_dump(by_alias=True)
+    base_brief.update(
+        {
+            "allocatedSelectedPlaceRefs": [],
+            "dayWindow": {
+                            "earliestStart": "08:30",
+                            "latestEnd": "20:30",
+                        },
+            "activityNeeds": [
+                            {
+                                "role": "main",
+                                "goal": "Visit a museum",
+                                "preferredExperiences": ["museum"],
+                                "minDurationMinutes": 60,
+                                "maxDurationMinutes": 120,
+                                "required": True,
+                            }
+                        ],
+            "mealNeeds": [
+                            {
+                                "role": "lunch",
+                                "earliestStart": "11:30",
+                                "latestEnd": "13:30",
+                            },
+                            {
+                                "role": "dinner",
+                                "earliestStart": "17:30",
+                                "latestEnd": "20:00",
+                            },
+            ],
+        }
+    )
+    macro = _macro_plan().model_copy(
+        update={"day_briefs": [DayBrief.model_validate(base_brief)]}
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"opens-at-nine": museum},
+            search_order=["opens-at-nine"],
+        )
+    )
+
+    result = finder.fill_main_plan(macro, _intent(), [])
+
+    item = next(
+        item for item in result.days[0].items if item.place_id == "opens-at-nine"
+    )
+    assert item.time_window == "09:00-10:00"
+
+
 def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
     outdoor = _place(
         "outdoor",
@@ -705,6 +918,7 @@ class FakeFinderPlaceTool:
         self.places = places
         self.search_order = search_order
         self.search_queries: list[list[str]] = []
+        self.search_limits: list[int] = []
 
     def get(self, place_id: str) -> FinderPlace | None:
         return self.places.get(place_id)
@@ -714,16 +928,43 @@ class FakeFinderPlaceTool:
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         self.search_queries.append(list(target_tags))
+        self.search_limits.append(limit)
         return [
             self.places[place_id]
             for place_id in self.search_order
             if place_id not in excluded_place_ids
         ][:limit]
+
+
+def test_day_style_can_resolve_catalog_tourism_anchor_without_selected_place() -> None:
+    anchor = _place(
+        "museum-anchor",
+        "Museum anchor",
+        tags=["culture"],
+        intensity="light",
+        place_type="museum",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {"museum-anchor": anchor},
+            search_order=[],
+        )
+    )
+
+    resolved = finder._resolve_finder_place_for_style(
+        "museum-anchor",
+        {},
+        "vn,ha-noi",
+    )
+
+    assert resolved.place_id == "museum-anchor"
+    assert resolved.place_type == "museum"
 
 
 def _macro_plan() -> MacroPlan:

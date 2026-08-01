@@ -11,6 +11,13 @@ from app.modules.plans.finder.day_style_selector import (
     classify_place,
     select_day_style,
 )
+from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.finder.candidate_selector import (
+    CandidateSelector,
+    candidate_duration,
+    food_drink_experience_signature,
+    place_experience_signature,
+)
 from app.modules.plans.finder.place_tool import EmptyFinderPlaceTool, FinderPlace
 from app.modules.plans.finder.skeleton_builder import DayBlock, DaySkeletonBuilder
 from app.modules.plans.finder.status_tracker import FinderStatusTracker
@@ -135,6 +142,168 @@ def test_status_tracker_break_increments_rest_and_updates_mood() -> None:
     assert user_status.metrics.mental == 63
 
 
+def test_regular_break_is_hidden_without_explicit_rest_need() -> None:
+    block = DayBlock(
+        "break_main_support",
+        "15:00-15:45",
+        45,
+        False,
+        kind="break",
+    )
+
+    assert FinderService._break_is_needed(
+        block,
+        UserStatus(),
+        FinderPlanStatus(),
+    ) is False
+
+
+def test_break_is_kept_for_recovery_or_unmet_rest_requirement() -> None:
+    regular = DayBlock(
+        "break_support_bonus",
+        "16:00-16:45",
+        45,
+        False,
+        kind="break",
+    )
+    recovery = DayBlock(
+        "recovery_break",
+        "14:00-15:00",
+        60,
+        False,
+        kind="break",
+    )
+    constrained = UserStatus.model_validate(
+        {"constraints": {"requiredRestMinutes": 120}}
+    )
+
+    assert FinderService._break_is_needed(
+        regular,
+        constrained,
+        FinderPlanStatus(),
+    ) is True
+    assert FinderService._break_is_needed(
+        recovery,
+        UserStatus(),
+        FinderPlanStatus(),
+    ) is True
+
+
+def test_food_experience_signature_groups_similar_stops() -> None:
+    assert food_drink_experience_signature(
+        _finder_place("Bún chả A", "restaurant", tags=["food"])
+    ) == "bun"
+    assert food_drink_experience_signature(
+        _finder_place("Bún bò B", "restaurant", tags=["food"])
+    ) == "bun"
+    assert food_drink_experience_signature(
+        _finder_place("Cafe Dinh", "coffee_shop", tags=["coffee"])
+    ) == "coffee"
+    assert food_drink_experience_signature(
+        _finder_place("Nhà hàng tổng hợp", "restaurant", tags=["food"])
+    ) is None
+
+
+def test_experience_signature_prefers_name_and_type_over_noisy_description() -> None:
+    bun_place = FinderPlace(
+        name="Bun cha COI",
+        placeType="Vietnamese restaurant",
+        regionKey="vn,ha-noi",
+        tags=["food"],
+        description="Menu also serves pho, coffee and many other Hanoi dishes.",
+    )
+    temple = _finder_place("Quan Thanh Temple", "Place of worship")
+
+    assert food_drink_experience_signature(bun_place) == "bun"
+    assert place_experience_signature(temple) == "religious_heritage"
+
+
+def test_candidate_selector_filters_repeated_food_experience_for_the_day() -> None:
+    selector = CandidateSelector(EmptyFinderPlaceTool())
+    candidates = [
+        _finder_place("Bún bò thứ hai", "restaurant", tags=["food"]),
+        _finder_place("Phở thay đổi khẩu vị", "restaurant", tags=["food"]),
+        _finder_place("Nhà hàng cho bữa tối", "restaurant", tags=["food"]),
+    ]
+
+    filtered = selector._filter_repeated_food_drink(
+        candidates,
+        {},
+        FinderPlanStatus(usedFoodDrinkPlaceTypes=["bun"]),
+    )
+
+    assert [place.name for place in filtered] == [
+        "Phở thay đổi khẩu vị",
+        "Nhà hàng cho bữa tối",
+    ]
+
+
+def test_candidate_selector_keeps_explicitly_selected_repeated_stop() -> None:
+    selector = CandidateSelector(EmptyFinderPlaceTool())
+    selected = _finder_place("Quán cà phê người dùng chọn", "cafe")
+
+    filtered = selector._filter_repeated_food_drink(
+        [selected],
+        {selected.stable_ref: object()},
+        FinderPlanStatus(usedFoodDrinkPlaceTypes=["coffee"]),
+    )
+
+    assert filtered == [selected]
+
+
+def test_candidate_selector_uses_graph_to_avoid_repeated_temple_experience() -> None:
+    selector = CandidateSelector(EmptyFinderPlaceTool())
+    candidates = [
+        _finder_place("Temple A", "Buddhist temple", tags=["culture"]),
+        _finder_place("History Museum", "museum", tags=["culture"]),
+    ]
+
+    filtered = selector._filter_repeated_experiences(
+        candidates,
+        {},
+        FinderPlanStatus(usedExperienceGroups=["religious_heritage"]),
+    )
+
+    assert [place.name for place in filtered] == ["History Museum"]
+
+
+def test_main_activity_prefers_concrete_landmark_over_broad_area_label() -> None:
+    broad_area = _finder_place("Hanoi Old Quarter", "Tourist attraction")
+    museum = _finder_place("Hoa Lo Prison Relic", "History museum").model_copy(
+        update={"review_count": 22_759, "rating": 4.5}
+    )
+    temple = _finder_place("Bach Ma Temple", "Buddhist temple").model_copy(
+        update={"review_count": 1_000, "rating": 4.7}
+    )
+
+    ranked = CandidateSelector._prioritize_concrete_main_places(
+        [broad_area, museum, temple]
+    )
+
+    assert [place.name for place in ranked] == [
+        "Hoa Lo Prison Relic",
+        "Bach Ma Temple",
+        "Hanoi Old Quarter",
+    ]
+
+
+def test_generic_food_street_cannot_fill_attraction_activity() -> None:
+    candidate = _finder_place(
+        "Phá»‘ áº¨m thá»±c Äáº£o Ngá»c",
+        "Tourist attraction",
+        tags=["food"],
+    )
+
+    rejection = CandidateSelector(EmptyFinderPlaceTool())._semantic_category_rejection(
+        candidate,
+        is_selected=False,
+        query_categories={"attraction"},
+    )
+
+    assert rejection is not None
+    assert rejection.reason_code == "activity_category_mismatch"
+
+
 def _item(name: str, time_window: str, duration: int) -> PlanItem:
     return PlanItem(
         itemId=name,
@@ -222,6 +391,15 @@ def test_day_style_selector_defaults_to_anchor_when_empty() -> None:
     decision = select_day_style(None)
 
     assert decision.style is DayStyle.anchor_day
+
+
+def test_day_style_selector_uses_scattered_shape_for_explicit_food_crawl() -> None:
+    decision = select_day_style(
+        [],
+        focus_categories={"food_drink"},
+    )
+
+    assert decision.style is DayStyle.scattered_day
     assert decision.total_considered == 0
 
 
@@ -289,11 +467,28 @@ def test_build_scattered_day_emits_expected_layout() -> None:
 
     assert skeleton.strategy == "scattered_day"
     roles = [block.role for block in skeleton.blocks]
-    assert sum(role.startswith("stop_") for role in roles) >= 6
+    assert sum(role.startswith("stop_") for role in roles) == 3
     assert any(role == "lunch_meal" for role in roles)
     assert any(role == "dinner_meal" for role in roles)
     durations = [b.duration_minutes for b in skeleton.blocks if b.role.startswith("stop_")]
     assert all(duration <= 60 for duration in durations)
+
+
+def test_missing_duration_uses_category_default_instead_of_full_anchor_slot() -> None:
+    restaurant = FinderPlace(
+        placeId="restaurant",
+        name="Quán ăn địa phương",
+        placeType="restaurant",
+        regionKey="vn,ha-noi",
+    )
+    anchor_block = DayBlock(
+        role="main_activity",
+        time_window="08:00-11:00",
+        duration_minutes=180,
+        activity=True,
+    )
+
+    assert candidate_duration(restaurant, anchor_block) == 75
 
 
 def test_build_by_style_dispatches_to_correct_skeleton() -> None:

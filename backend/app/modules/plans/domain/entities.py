@@ -33,6 +33,69 @@ class DayPartGoals(BaseModel):
     evening: str | None = None
 
 
+class DayTimeWindow(BaseModel):
+    earliest_start: str = Field(default="08:30", alias="earliestStart")
+    latest_end: str = Field(default="21:30", alias="latestEnd")
+
+    model_config = {"populate_by_name": True}
+
+
+class DayActivityNeed(BaseModel):
+    role: Literal["main", "support", "bonus"]
+    goal: str
+    preferred_experiences: list[str] = Field(
+        default_factory=list,
+        alias="preferredExperiences",
+    )
+    min_duration_minutes: int = Field(
+        default=45,
+        ge=15,
+        le=360,
+        alias="minDurationMinutes",
+    )
+    max_duration_minutes: int = Field(
+        default=120,
+        ge=15,
+        le=480,
+        alias="maxDurationMinutes",
+    )
+    required: bool = True
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_duration_range(self):
+        if self.max_duration_minutes < self.min_duration_minutes:
+            raise ValueError("maxDurationMinutes must be >= minDurationMinutes")
+        return self
+
+
+class DayMealNeed(BaseModel):
+    role: Literal["lunch", "dinner"]
+    earliest_start: str = Field(alias="earliestStart")
+    latest_end: str = Field(alias="latestEnd")
+    min_duration_minutes: int = Field(
+        default=45,
+        ge=30,
+        le=120,
+        alias="minDurationMinutes",
+    )
+    max_duration_minutes: int = Field(
+        default=75,
+        ge=30,
+        le=180,
+        alias="maxDurationMinutes",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_duration_range(self):
+        if self.max_duration_minutes < self.min_duration_minutes:
+            raise ValueError("maxDurationMinutes must be >= minDurationMinutes")
+        return self
+
+
 class RegionSnapshotReference(BaseModel):
     region_key: str = Field(alias="regionKey")
     snapshot_id: str = Field(alias="snapshotId")
@@ -49,6 +112,28 @@ class DayBrief(BaseModel):
     target_area: str = Field(alias="targetArea")
     target_region_key: str | None = Field(default=None, alias="targetRegionKey")
     focus_tags: list[str] = Field(default_factory=list, alias="focusTags")
+    tourism_zone_ref: str | None = Field(default=None, alias="tourismZoneRef")
+    anchor_place_refs: list[str] = Field(
+        default_factory=list,
+        alias="anchorPlaceRefs",
+    )
+    primary_activity_category: Literal[
+        "attraction",
+        "nature",
+        "food_drink",
+        "shopping",
+        "entertainment",
+    ] | None = Field(default=None, alias="primaryActivityCategory")
+    max_local_travel_minutes: int = Field(
+        default=20,
+        ge=5,
+        le=120,
+        alias="maxLocalTravelMinutes",
+    )
+    allow_region_fallback: bool = Field(
+        default=True,
+        alias="allowRegionFallback",
+    )
     pace: TravelPace = TravelPace.balanced
     day_part_goals: DayPartGoals = Field(
         default_factory=DayPartGoals,
@@ -57,6 +142,18 @@ class DayBrief(BaseModel):
     allocated_selected_place_refs: list[str] = Field(
         default_factory=list,
         alias="allocatedSelectedPlaceRefs",
+    )
+    day_window: DayTimeWindow = Field(
+        default_factory=DayTimeWindow,
+        alias="dayWindow",
+    )
+    activity_needs: list[DayActivityNeed] = Field(
+        default_factory=list,
+        alias="activityNeeds",
+    )
+    meal_needs: list[DayMealNeed] = Field(
+        default_factory=list,
+        alias="mealNeeds",
     )
     notes: list[str] = Field(default_factory=list)
 
@@ -327,6 +424,10 @@ class FinderPlanStatus(BaseModel):
     used_food_drink_place_types: list[str] = Field(
         default_factory=list,
         alias="usedFoodDrinkPlaceTypes",
+    )
+    used_experience_groups: list[str] = Field(
+        default_factory=list,
+        alias="usedExperienceGroups",
     )
     trip_usage: FinderUsage = Field(default_factory=FinderUsage, alias="tripUsage")
     day_usage: FinderUsage = Field(default_factory=FinderUsage, alias="dayUsage")

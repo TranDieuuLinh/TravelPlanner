@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from typing import Iterator, Protocol
+from typing import Iterator, Protocol, Sequence
 from uuid import uuid4
 
 from sqlalchemy import Select, func, or_, select
@@ -115,6 +115,87 @@ class SqlAlchemyPlaceRepository:
                 ),
             )
             .order_by(Place.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(query))
+
+    def rank_place_ids_by_embedding(
+        self,
+        place_ids: Sequence[str],
+        query_embedding: list[float],
+        *,
+        embedding_model: str,
+        limit: int,
+    ) -> list[tuple[str, float]]:
+        """Return cosine similarity after the caller has applied hard filters."""
+
+        if not place_ids or limit < 1:
+            return []
+        cosine_distance = Place.embedding.cosine_distance(query_embedding)
+        query = (
+            select(Place.id, cosine_distance.label("distance"))
+            .where(
+                Place.id.in_(list(place_ids)),
+                Place.embedding.is_not(None),
+                Place.embedding_model == embedding_model,
+            )
+            .order_by(cosine_distance)
+            .limit(limit)
+        )
+        return [
+            (place_id, max(-1.0, min(1.0, 1.0 - float(distance))))
+            for place_id, distance in self.session.execute(query)
+        ]
+
+    def has_place_embeddings(
+        self,
+        region_key: str,
+        *,
+        embedding_model: str,
+    ) -> bool:
+        _validate_region_key(region_key)
+        query = select(Place.id).where(
+            Place.deleted_at.is_(None),
+            Place.status == "active",
+            Place.embedding.is_not(None),
+            Place.embedding_model == embedding_model,
+            or_(
+                Place.region_key == region_key,
+                Place.region_key.like(f"{region_key},%"),
+            ),
+        ).limit(1)
+        return self.session.scalar(query) is not None
+
+    def list_places_needing_embeddings(
+        self,
+        region_key: str,
+        *,
+        embedding_model: str,
+        limit: int,
+    ) -> list[Place]:
+        _validate_region_key(region_key)
+        query = (
+            select(Place)
+            .where(
+                Place.deleted_at.is_(None),
+                Place.status == "active",
+                or_(
+                    Place.region_key == region_key,
+                    Place.region_key.like(f"{region_key},%"),
+                ),
+                or_(
+                    Place.embedding.is_(None),
+                    Place.embedding_model != embedding_model,
+                    Place.embedding_model.is_(None),
+                    Place.embedded_at.is_(None),
+                    Place.embedded_at < Place.updated_at,
+                ),
+            )
+            .order_by(
+                Place.review_count.desc().nullslast(),
+                Place.rating.desc().nullslast(),
+                Place.id,
+            )
             .limit(limit)
         )
         return list(self.session.scalars(query))

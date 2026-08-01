@@ -28,6 +28,116 @@ from app.modules.plans.planner.opening_hours_parser import (
     extract_time_intervals,
     is_24_hours,
 )
+from app.modules.plans.knowledge_graph import (
+    TravelKnowledgeSearchTool,
+    get_default_travel_knowledge_tool,
+)
+
+
+DEFAULT_MAX_CANDIDATES_PER_BLOCK = 25
+FAMOUS_PLACE_MIN_RATING = 4.5
+FAMOUS_PLACE_MIN_REVIEW_COUNT = 1_000
+FAMOUS_PLACE_MAX_DISTANCE_METERS = 8_000
+
+_QUICK_FOOD_PLACE_TYPES = {
+    "bakery",
+    "cafe",
+    "coffee_shop",
+    "ice_cream",
+    "quan_cafe",
+    "quan_coffee",
+    "quan_tra",
+    "tiem_banh",
+    "che",
+    "bingsu",
+    "tra_sua",
+}
+
+_CATEGORY_DEFAULT_DURATION_MINUTES = {
+    "attraction": 120,
+    "entertainment": 90,
+    "food_drink": 75,
+    "nature": 120,
+    "shopping": 60,
+}
+
+_CONCRETE_MAIN_TYPE_MARKERS = {
+    "church",
+    "cultural_center",
+    "cultural_landmark",
+    "historic_site",
+    "historical_landmark",
+    "historical_place",
+    "memorial",
+    "monument",
+    "museum",
+    "pagoda",
+    "shrine",
+    "temple",
+}
+_GENERIC_ATTRACTION_TYPES = {"attraction", "tourist_attraction"}
+
+def place_experience_signature(
+    candidate: FinderPlace,
+    knowledge_tool: TravelKnowledgeSearchTool | None = None,
+) -> str | None:
+    """Return a coarse visitor-experience signature, not a venue category."""
+
+    category = place_category(candidate)
+    if category is None:
+        return None
+    tool = knowledge_tool or get_default_travel_knowledge_tool()
+    normalized_type = _normalize_text(candidate.place_type).replace(" ", "_")
+    if category == "attraction":
+        if any(
+            marker in normalized_type
+            for marker in (
+                "church",
+                "mosque",
+                "pagoda",
+                "place_of_worship",
+                "shrine",
+                "temple",
+            )
+        ):
+            return "religious_heritage"
+        if "museum" in normalized_type:
+            return "museum"
+        if any(
+            marker in normalized_type
+            for marker in ("landmark", "memorial", "monument")
+        ):
+            return "monument"
+
+    primary_signature = tool.classify_experience(
+        [candidate.name, candidate.place_type or "", *candidate.tags],
+        region_key=candidate.region_key,
+        category=category,
+    )
+    if primary_signature is not None:
+        return primary_signature
+    return tool.classify_experience(
+        [candidate.description or ""],
+        region_key=candidate.region_key,
+        category=category,
+    )
+
+
+def food_drink_experience_signature(
+    candidate: FinderPlace,
+    knowledge_tool: TravelKnowledgeSearchTool | None = None,
+) -> str | None:
+    """Return a food/drink signature while keeping the public helper stable.
+
+    Generic values such as ``restaurant`` intentionally return ``None``: lunch
+    and dinner may both be restaurants. Specific experiences such as coffee,
+    bun or pho are limited to one stop per day so a food-focused plan remains
+    varied instead of repeating near-identical venues.
+    """
+
+    if place_category(candidate) != "food_drink":
+        return None
+    return place_experience_signature(candidate, knowledge_tool)
 
 
 @dataclass(frozen=True)
@@ -53,12 +163,21 @@ class CandidateSelectionContext:
     intent_interests: list[str]
     travel_style: str
     bbox_filter: tuple[float, float, float, float] | None = None
+    zone_center: tuple[float, float] | None = None
+    zone_radius_meters: int | None = None
 
 
 def candidate_duration(candidate: FinderPlace, block: DayBlock) -> int:
     typical = candidate.typical_duration_minutes
     if typical is None:
-        return block.duration_minutes
+        category = place_category(candidate)
+        place_type = (candidate.place_type or "").strip().casefold()
+        inferred = (
+            45
+            if category == "food_drink" and place_type in _QUICK_FOOD_PLACE_TYPES
+            else _CATEGORY_DEFAULT_DURATION_MINUTES.get(category or "")
+        )
+        return min(inferred or block.duration_minutes, block.duration_minutes)
     if typical <= block.duration_minutes:
         return typical
     minimum = candidate.minimum_duration_minutes
@@ -67,15 +186,45 @@ def candidate_duration(candidate: FinderPlace, block: DayBlock) -> int:
     return typical
 
 
+def candidate_feasible_start(
+    candidate: FinderPlace,
+    block: DayBlock,
+    duration_minutes: int,
+) -> int | None:
+    preferred_start = parse_clock_minutes(block.time_window)
+    window_start = (
+        parse_clock_minutes(block.earliest_start)
+        if block.earliest_start
+        else preferred_start
+    )
+    window_end = (
+        parse_clock_minutes(block.latest_end)
+        if block.latest_end
+        else None
+    )
+    if window_start is None:
+        return preferred_start
+    if not candidate.opening_hours or is_24_hours(candidate.opening_hours):
+        return window_start if window_end is None or window_start + duration_minutes <= window_end else None
+    for open_minutes, close_minutes in extract_time_intervals(candidate.opening_hours):
+        start = max(window_start, open_minutes)
+        end_limit = min(close_minutes, window_end) if window_end is not None else close_minutes
+        if start + duration_minutes <= end_limit:
+            return start
+    return None
+
+
 class CandidateSelector:
     def __init__(
         self,
         place_tool: FinderPlaceTool,
         *,
-        max_candidates_per_block: int = 5,
+        max_candidates_per_block: int = DEFAULT_MAX_CANDIDATES_PER_BLOCK,
+        knowledge_tool: TravelKnowledgeSearchTool | None = None,
     ) -> None:
         self.place_tool = place_tool
         self.max_candidates_per_block = max_candidates_per_block
+        self.knowledge_tool = knowledge_tool or get_default_travel_knowledge_tool()
 
     def _filter_repeated_food_drink(
         self,
@@ -83,16 +232,14 @@ class CandidateSelector:
         selected_by_ref: dict,
         plan_status: FinderPlanStatus,
     ) -> list[FinderPlace]:
-        """Drop finder-suggested food_drink places that look like duplicates of
-        an already-accepted place in the same day. Two places count as
-        duplicates only when they share the same ``place_type`` AND their
-        ``description`` overlap (by token count) meets the configured
-        threshold. User-selected places are preserved because the user
-        explicitly asked for them.
+        """Drop repeated food/drink experiences already used in this day.
+
+        The status field keeps coarse experience signatures for compatibility
+        with the existing contract. User-selected places remain untouched.
         """
 
-        used_types = set(plan_status.used_food_drink_place_types or [])
-        if not used_types:
+        used_signatures = set(plan_status.used_food_drink_place_types or [])
+        if not used_signatures:
             return candidates
         filtered: list[FinderPlace] = []
         for candidate in candidates:
@@ -102,20 +249,33 @@ class CandidateSelector:
             if place_category(candidate) != "food_drink":
                 filtered.append(candidate)
                 continue
-            candidate_type = (
-                candidate.place_type.strip() if candidate.place_type else ""
-            )
-            if not candidate_type or candidate_type not in used_types:
-                filtered.append(candidate)
-                continue
-            duplicate = self._is_food_drink_duplicate(
+            signature = food_drink_experience_signature(
                 candidate,
-                filtered,
+                self.knowledge_tool,
             )
-            if duplicate:
+            if signature is not None and signature in used_signatures:
                 continue
             filtered.append(candidate)
         return filtered
+
+    def _filter_repeated_experiences(
+        self,
+        candidates: list[FinderPlace],
+        selected_by_ref: dict,
+        plan_status: FinderPlanStatus,
+    ) -> list[FinderPlace]:
+        used_groups = set(plan_status.used_experience_groups)
+        if not used_groups:
+            return candidates
+        return [
+            candidate
+            for candidate in candidates
+            if candidate.stable_ref in selected_by_ref
+            or (
+                place_experience_signature(candidate, self.knowledge_tool)
+                not in used_groups
+            )
+        ]
 
     def _is_food_drink_duplicate(
         self,
@@ -217,11 +377,16 @@ class CandidateSelector:
             catalog_candidates = self.place_tool.search(
                 region_key=region_key,
                 target_tags=search_terms,
+                target_categories=query_categories,
                 excluded_place_ids=(
                     set(context.plan_status.used_place_ids) | selected_place_ids
                 ),
                 limit=self.max_candidates_per_block,
                 bbox_filter=context.bbox_filter,
+            )
+            catalog_candidates = self._inside_local_boundary(
+                catalog_candidates,
+                context,
             )
             candidates.extend(
                 self._rerank_for_proximity(
@@ -238,7 +403,28 @@ class CandidateSelector:
             seen.add(candidate.stable_ref)
             unique_candidates.append(candidate)
 
+        if "main_activity" in context.block.role:
+            selected_candidates = [
+                candidate
+                for candidate in unique_candidates
+                if candidate.stable_ref in context.selected_by_ref
+            ]
+            catalog_candidates = [
+                candidate
+                for candidate in unique_candidates
+                if candidate.stable_ref not in context.selected_by_ref
+            ]
+            unique_candidates = [
+                *selected_candidates,
+                *self._prioritize_concrete_main_places(catalog_candidates),
+            ]
+
         unique_candidates = self._filter_repeated_food_drink(
+            unique_candidates,
+            context.selected_by_ref,
+            context.plan_status,
+        )
+        unique_candidates = self._filter_repeated_experiences(
             unique_candidates,
             context.selected_by_ref,
             context.plan_status,
@@ -273,6 +459,56 @@ class CandidateSelector:
                 continue
             return candidate
         return None
+
+    @staticmethod
+    def _prioritize_concrete_main_places(
+        candidates: list[FinderPlace],
+    ) -> list[FinderPlace]:
+        """Prefer a visitable venue/landmark while retaining quality order.
+
+        Retrieval has already ranked relevance, popularity and reviews. This
+        stable partition only prevents a broad area label such as an entire
+        old quarter from becoming the primary stop when a museum, temple or
+        landmark is available in the same shortlist.
+        """
+
+        def specificity(candidate: FinderPlace) -> int:
+            place_type = _normalize_text(candidate.place_type).replace(" ", "_")
+            if any(marker in place_type for marker in _CONCRETE_MAIN_TYPE_MARKERS):
+                return 2
+            if place_type in _GENERIC_ATTRACTION_TYPES:
+                return 0
+            return 1
+
+        return sorted(
+            candidates,
+            key=lambda candidate: (
+                -specificity(candidate),
+                -candidate.review_count,
+                -(candidate.rating or 0),
+            ),
+        )
+
+    @staticmethod
+    def _is_drink_or_snack_only(candidate: FinderPlace) -> bool:
+        normalized_type = (
+            candidate.place_type.strip().casefold().replace(" ", "_")
+            if candidate.place_type
+            else ""
+        )
+        return normalized_type in {
+            "bar",
+            "bakery",
+            "cafe",
+            "cafe;bakery",
+            "coffee",
+            "coffee_shop",
+            "dessert_restaurant",
+            "ice_cream",
+            "night_club",
+            "pub",
+            "tea_house",
+        }
 
     def block_is_available(self, block: DayBlock, user_status: UserStatus) -> bool:
         if not user_status.available_at:
@@ -320,6 +556,41 @@ class CandidateSelector:
             )
         ]
 
+    def _inside_local_boundary(
+        self,
+        candidates: list[FinderPlace],
+        context: CandidateSelectionContext,
+    ) -> list[FinderPlace]:
+        if context.zone_center is not None and context.zone_radius_meters is not None:
+            filtered: list[FinderPlace] = []
+            for candidate in candidates:
+                if candidate.latitude is None or candidate.longitude is None:
+                    continue
+                distance = self._haversine_meters(
+                    context.zone_center,
+                    (candidate.latitude, candidate.longitude),
+                )
+                if distance <= context.zone_radius_meters:
+                    filtered.append(candidate)
+                    continue
+                if (
+                    distance <= FAMOUS_PLACE_MAX_DISTANCE_METERS
+                    and (candidate.rating or 0) >= FAMOUS_PLACE_MIN_RATING
+                    and candidate.review_count >= FAMOUS_PLACE_MIN_REVIEW_COUNT
+                    and candidate.data_confidence in {"high", "verified"}
+                ):
+                    filtered.append(candidate)
+            return filtered
+        if context.brief.allow_region_fallback:
+            return candidates
+        region_key = context.brief.target_region_key or context.brief.target_area
+        return [
+            candidate
+            for candidate in candidates
+            if candidate.region_key == region_key
+            or candidate.region_key.startswith(f"{region_key},")
+        ]
+
     def _haversine_meters(
         self,
         origin: tuple[float, float],
@@ -362,11 +633,6 @@ class CandidateSelector:
                         "món địa phương",
                         "ăn trưa" if "lunch" in block.role else "ăn tối",
                         meal_goal,
-                        *intent_interests,
-                        travel_style,
-                        brief.theme,
-                        *brief.focus_tags,
-                        brief.target_area,
                     )
                     if value
                 )
@@ -393,6 +659,8 @@ class CandidateSelector:
                 day_goal,
                 phase.theme if phase is not None else None,
                 phase.movement_goal if phase is not None else None,
+                block.goal,
+                *block.preferred_experiences,
             )
             if value
         ]
@@ -406,7 +674,7 @@ class CandidateSelector:
                 or bool(semantic_categories({tag}).intersection(primary_categories))
             )
         ]
-        return list(
+        base_terms = list(
             dict.fromkeys(
                 value
                 for value in (
@@ -417,6 +685,12 @@ class CandidateSelector:
                 if value
             )
         )
+        expansion = self.knowledge_tool.expand(
+            base_terms,
+            region_key=brief.target_region_key or macro_plan.region_key,
+            category=brief.primary_activity_category,
+        )
+        return list(dict.fromkeys([*base_terms, *expansion.query_terms]))
 
     def _query_categories(
         self,
@@ -428,6 +702,8 @@ class CandidateSelector:
     ) -> set[str]:
         if block.candidate_category is not None:
             return {block.candidate_category}
+        if brief.primary_activity_category is not None:
+            return {brief.primary_activity_category}
         day_goal = (
             brief.day_part_goals.morning
             if block.role in {"main_activity", "late_main_activity"}
@@ -455,6 +731,16 @@ class CandidateSelector:
                 if value
             }
         )
+        if (
+            "main_activity" in block.role
+            and "attraction" in primary_categories
+            and "food_drink" in primary_categories
+        ):
+            # A mixed day theme such as "heritage and food" must not turn the
+            # primary sightseeing slot into a cafe/restaurant. Meal blocks
+            # handle food separately; an explicitly food-only day remains
+            # eligible for a culinary main experience.
+            primary_categories = {"attraction"}
         focus_categories = semantic_categories(set(brief.focus_tags))
         return (
             primary_categories
@@ -535,6 +821,15 @@ class CandidateSelector:
             return CandidateRejection(*policy_rejection)
         category = place_category(candidate)
         if (
+            block.kind == "meal"
+            and block.role in {"lunch_meal", "dinner_meal"}
+            and self._is_drink_or_snack_only(candidate)
+        ):
+            return CandidateRejection(
+                "meal_venue_mismatch",
+                "A cafe or snack-only venue cannot fill a lunch or dinner slot.",
+            )
+        if (
             block.candidate_category is not None
             and not place_matches_categories(candidate, {block.candidate_category})
         ):
@@ -594,7 +889,7 @@ class CandidateSelector:
                 "Place price level is too high for the trip budget.",
             )
         duration = candidate_duration(candidate, block)
-        if not self._opening_hours_cover_block(candidate, block.time_window, duration):
+        if not self._opening_hours_cover_block(candidate, block, duration):
             return CandidateRejection(
                 "opening_hours_mismatch",
                 "Place opening hours do not cover the planned time window.",
@@ -663,6 +958,24 @@ class CandidateSelector:
                     category=category
                 ),
             )
+        normalized_type = _normalize_text(candidate.place_type).replace(" ", "_")
+        if (
+            "attraction" in query_categories
+            and category == "attraction"
+            and normalized_type in _GENERIC_ATTRACTION_TYPES
+        ):
+            textual_categories = semantic_categories(
+                {
+                    candidate.name,
+                    candidate.description or "",
+                    *candidate.tags,
+                }
+            )
+            if textual_categories and "attraction" not in textual_categories:
+                return CandidateRejection(
+                    "activity_category_mismatch",
+                    "Generic attraction label has stronger evidence for another activity category.",
+                )
         return None
 
     def _is_outdoor(self, candidate: FinderPlace) -> bool:
@@ -676,24 +989,7 @@ class CandidateSelector:
     def _opening_hours_cover_block(
         self,
         candidate: FinderPlace,
-        time_window: str,
+        block: DayBlock,
         duration_minutes: int,
     ) -> bool:
-        if not candidate.opening_hours:
-            return True
-        if is_24_hours(candidate.opening_hours):
-            return True
-        start = parse_clock_minutes(time_window)
-        if start is None:
-            return True
-        end = start + duration_minutes
-        intervals = extract_time_intervals(candidate.opening_hours)
-        for open_minutes, close_minutes in intervals:
-            adjusted_start = start
-            adjusted_end = end
-            if adjusted_start < open_minutes and adjusted_end <= close_minutes - 24 * 60:
-                adjusted_start += 24 * 60
-                adjusted_end += 24 * 60
-            if open_minutes <= adjusted_start and adjusted_end <= close_minutes:
-                return True
-        return False
+        return candidate_feasible_start(candidate, block, duration_minutes) is not None

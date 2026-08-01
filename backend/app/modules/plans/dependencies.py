@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.integrations.llm.factory import get_llm_client, get_ocr_llm_client
+from app.integrations.embeddings import GeminiEmbeddingClient
 from app.integrations.routing import (
     OpenTripPlannerTransitProvider,
     ValhallaRouteProvider,
@@ -40,6 +41,9 @@ from app.modules.plans.planner.research_tool import (
 )
 from app.modules.plans.planner.research_tools_orchestrator import (
     ResearchToolsOrchestrator,
+)
+from app.modules.plans.planner.tourism_zone_research import (
+    RepositoryTourismZoneResearchTool,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.checks.overall_checker import OverallChecker
@@ -76,14 +80,26 @@ def get_plan_service(
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
     research_tools = ResearchToolsOrchestrator(PlaceRepositoryAdapter(db))
+    embedding_client = None
+    if settings.finder_semantic_search_enabled and settings.gemini_api_key:
+        embedding_client = GeminiEmbeddingClient(
+            settings.gemini_api_key,
+            model=settings.gemini_embedding_model,
+            dimensions=settings.gemini_embedding_dimensions,
+            timeout_seconds=settings.gemini_embedding_timeout_seconds,
+        )
     planner = PlannerService(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
         research_tools=research_tools,
+        tourism_zone_tool=RepositoryTourismZoneResearchTool(
+            place_repository,
+            embedding_client,
+        ),
     )
     finder = FinderService(
-        RepositoryFinderPlaceTool(place_repository),
+        RepositoryFinderPlaceTool(place_repository, embedding_client),
         route_optimizer=_get_route_optimizer(),
     )
     main_workflow = MainPlanWorkflow(

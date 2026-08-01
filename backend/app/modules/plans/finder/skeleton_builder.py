@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from app.modules.plans.domain.entities import DayBrief, UserStatus
@@ -27,6 +27,11 @@ class DayBlock:
     preferred_ref: str | None = None
     kind: str = "activity"
     candidate_category: str | None = None
+    earliest_start: str | None = None
+    latest_end: str | None = None
+    min_duration_minutes: int | None = None
+    goal: str | None = None
+    preferred_experiences: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,76 @@ class DaySkeletonBuilder:
         "night": 75,
         "nightlife": 90,
     }
+
+    def apply_flexible_needs(
+        self,
+        skeleton: DaySkeleton,
+        brief: DayBrief,
+    ) -> DaySkeleton:
+        """Overlay soft windows/goals while preserving legacy skeleton roles."""
+
+        activity_needs = {need.role: need for need in brief.activity_needs}
+        meal_needs = {need.role: need for need in brief.meal_needs}
+        day_start = brief.day_window.earliest_start
+        day_end = brief.day_window.latest_end
+        lunch = meal_needs.get("lunch")
+        dinner = meal_needs.get("dinner")
+        lunch_start = lunch.earliest_start if lunch else "11:30"
+        lunch_end = lunch.latest_end if lunch else "13:30"
+        dinner_start = dinner.earliest_start if dinner else "17:30"
+        dinner_end = dinner.latest_end if dinner else "20:00"
+
+        flexible_blocks: list[DayBlock] = []
+        for block in skeleton.blocks:
+            # Source itineraries carry ordering/time evidence of their own.
+            # Keep those explicit slots intact; flexible needs govern only the
+            # Finder-generated day skeleton.
+            if block.role.startswith(("stop_", "url_stop_")):
+                flexible_blocks.append(block)
+                continue
+            if block.kind == "meal":
+                meal_role = "lunch" if "lunch" in block.role else "dinner"
+                need = meal_needs.get(meal_role)
+                flexible_blocks.append(
+                    replace(
+                        block,
+                        earliest_start=(need.earliest_start if need else lunch_start if meal_role == "lunch" else dinner_start),
+                        latest_end=(need.latest_end if need else lunch_end if meal_role == "lunch" else dinner_end),
+                        min_duration_minutes=(need.min_duration_minutes if need else 45),
+                        duration_minutes=(need.max_duration_minutes if need else block.duration_minutes),
+                    )
+                )
+                continue
+            if not block.activity:
+                flexible_blocks.append(block)
+                continue
+
+            if "main" in block.role:
+                need_role = "main"
+            elif "bonus" in block.role:
+                need_role = "bonus"
+            else:
+                need_role = "support"
+            need = activity_needs.get(need_role)
+            if need_role == "main":
+                earliest, latest = day_start, lunch_start
+            elif need_role == "support":
+                earliest, latest = lunch_end, dinner_start
+            else:
+                earliest, latest = dinner_end, day_end
+            flexible_blocks.append(
+                replace(
+                    block,
+                    earliest_start=earliest,
+                    latest_end=latest,
+                    min_duration_minutes=(need.min_duration_minutes if need else 30),
+                    duration_minutes=(need.max_duration_minutes if need else block.duration_minutes),
+                    optional=(not need.required if need else block.optional),
+                    goal=(need.goal if need else None),
+                    preferred_experiences=(tuple(need.preferred_experiences) if need else ()),
+                )
+            )
+        return DaySkeleton(strategy=skeleton.strategy, blocks=tuple(flexible_blocks))
 
     def build(
         self,
@@ -359,6 +434,8 @@ class DaySkeletonBuilder:
             ),
             area_profile=area_profile,
         )
+        if not user_status.available_at:
+            start_min = max(start_min, 9 * 60)
 
         cur = start_min
         b1 = DayBlock("main_activity", self._clock_window(cur, 180), 180, True)
@@ -373,8 +450,8 @@ class DaySkeletonBuilder:
             candidate_category="food_drink",
         )
         cur = lunch_start + 60 + 30
-        b3 = DayBlock("support_activity", self._clock_window(cur, 90), 90, True)
-        cur += 90 + 30
+        b3 = DayBlock("support_activity", self._clock_window(cur, 120), 120, True)
+        cur += 120 + 30
         b4 = DayBlock(
             "break_support_bonus", self._clock_window(cur, 60), 60, False, kind="break"
         )
@@ -413,21 +490,10 @@ class DaySkeletonBuilder:
         intent_constraints: list[str] | None = None,
         area_profile: AreaProfile | None = None,
     ) -> DaySkeleton:
-        """Day skeleton for "many short stops" days (cafe / shop / street food).
+        """Build a short-stop day whose density follows the effective pace.
 
-        Layout::
-
-            09:00-09:45  stop_1                  45'
-            10:00-10:45  stop_2                  45'
-            11:00-12:00  stop_3                  60'
-            12:15-13:15  lunch_meal              60'
-            14:00-14:45  stop_4                  45'
-            15:00-15:45  stop_5                  45'
-            16:00-17:00  stop_6                  60'
-            18:00-19:00  dinner_meal             60'
-            19:30-20:30  stop_7                  60'
-
-        Strategy name: ``"scattered_day"``.
+        Meals are separate from the activity capacity: relaxed, balanced and
+        packed days receive two, three and five short stops respectively.
         """
 
         pace = self._effective_pace(brief.pace, user_status, area_profile)
@@ -442,43 +508,62 @@ class DaySkeletonBuilder:
             area_profile=area_profile,
         )
 
+        stop_count = {
+            TravelPace.relaxed: 2,
+            TravelPace.balanced: 3,
+            TravelPace.packed: 5,
+        }[pace]
+        morning_stop_count = min(3, (stop_count + 1) // 2)
+        blocks: list[DayBlock] = []
         cur = start_min
-        b1 = DayBlock("stop_1", self._clock_window(cur, 45), 45, True)
-        cur += 45 + 15
-        b2 = DayBlock("stop_2", self._clock_window(cur, 45), 45, True)
-        cur += 45 + 15
-        b3 = DayBlock("stop_3", self._clock_window(cur, 60), 60, True)
-        cur += 60 + 15
-        lunch_start = max(12 * 60 + 15, min(13 * 60, cur))
-        b4 = DayBlock(
+        next_stop_number = 1
+        for _ in range(morning_stop_count):
+            duration = 45 if next_stop_number <= 2 else 60
+            blocks.append(
+                DayBlock(
+                    f"stop_{next_stop_number}",
+                    self._clock_window(cur, duration),
+                    duration,
+                    True,
+                )
+            )
+            next_stop_number += 1
+            cur += duration + 15
+
+        lunch_start = max(12 * 60, min(13 * 60, cur))
+        blocks.append(DayBlock(
             "lunch_meal",
             self._clock_window(lunch_start, 60),
             60,
             False,
             kind="meal",
             candidate_category="food_drink",
-        )
+        ))
         cur = lunch_start + 60 + 45
-        b5 = DayBlock("stop_4", self._clock_window(cur, 45), 45, True)
-        cur += 45 + 15
-        b6 = DayBlock("stop_5", self._clock_window(cur, 45), 45, True)
-        cur += 45 + 15
-        b7 = DayBlock("stop_6", self._clock_window(cur, 60), 60, True)
-        cur += 60 + 60
+        while next_stop_number <= stop_count:
+            duration = 45 if next_stop_number < stop_count else 60
+            blocks.append(
+                DayBlock(
+                    f"stop_{next_stop_number}",
+                    self._clock_window(cur, duration),
+                    duration,
+                    True,
+                )
+            )
+            next_stop_number += 1
+            cur += duration + 15
+
         dinner_start = max(18 * 60, min(20 * 60, cur))
-        b8 = DayBlock(
+        blocks.append(DayBlock(
             "dinner_meal",
             self._clock_window(dinner_start, 60),
             60,
             False,
             kind="meal",
             candidate_category="food_drink",
-        )
-        cur = dinner_start + 60 + 30
-        b9 = DayBlock("stop_7", self._clock_window(cur, 60), 60, True, optional=True)
-        cur += 60
-        blocks = [b1, b2, b3, b4, b5, b6, b7, b8, b9]
-        if cur + 30 < 23 * 60:
+        ))
+        cur = dinner_start + 60
+        if cur + 105 < 23 * 60:
             blocks.append(
                 DayBlock(
                     "group_social_activity",

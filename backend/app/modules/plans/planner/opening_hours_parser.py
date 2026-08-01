@@ -24,6 +24,14 @@ from app.modules.plans.finder.time_windows import parse_unbounded_clock_minutes
 
 _SLOT_SEPARATOR = re.compile(r"\s*(?:,|;|\||/|\n|\t| và )\s*")
 _RANGE_SEPARATOR = re.compile(r"\s*[-–—~]\s*")
+_MERIDIEM_CLOCK = re.compile(
+    r"^\s*(\d{1,2})(?::([0-5]\d))?\s*(AM|PM)\s*$",
+    re.IGNORECASE,
+)
+_OPEN_24_HOURS = re.compile(
+    r"^(?:open\s+)?24\s*(?:hours?|hrs?|h)(?:\s+open)?$",
+    re.IGNORECASE,
+)
 
 
 def extract_time_intervals(
@@ -46,7 +54,7 @@ def extract_time_intervals(
     for entry in opening_hours:
         if not isinstance(entry, dict):
             continue
-        if entry.get("is24Hours"):
+        if _entry_is_24_hours(entry):
             intervals.append((0, 24 * 60))
             continue
 
@@ -92,11 +100,42 @@ def _parse_range(chunk: str) -> tuple[int, int] | None:
 def _parse_pair(open_value: object, close_value: object) -> tuple[int, int] | None:
     if not isinstance(open_value, str) or not isinstance(close_value, str):
         return None
-    start = parse_unbounded_clock_minutes(open_value)
-    end = parse_unbounded_clock_minutes(close_value)
+    open_period = _meridiem(open_value)
+    close_period = _meridiem(close_value)
+    start = _parse_human_clock(open_value, fallback_period=close_period)
+    end = _parse_human_clock(close_value, fallback_period=open_period)
     if start is None or end is None:
         return None
     return start, end
+
+
+def _meridiem(value: str) -> str | None:
+    normalized = value.replace("\u202f", " ").replace("\u00a0", " ").strip()
+    match = re.search(r"\b(AM|PM)\b", normalized, re.IGNORECASE)
+    return match.group(1).upper() if match is not None else None
+
+
+def _parse_human_clock(
+    value: str,
+    *,
+    fallback_period: str | None,
+) -> int | None:
+    normalized = value.replace("\u202f", " ").replace("\u00a0", " ").strip()
+    explicit_period = _meridiem(normalized)
+    period = explicit_period or fallback_period
+    candidate = normalized if explicit_period else f"{normalized} {period or ''}"
+    match = _MERIDIEM_CLOCK.fullmatch(candidate.strip())
+    if match is not None:
+        hour = int(match.group(1))
+        if not 1 <= hour <= 12:
+            return None
+        minute = int(match.group(2) or 0)
+        if match.group(3).upper() == "AM":
+            hour = 0 if hour == 12 else hour
+        else:
+            hour = 12 if hour == 12 else hour + 12
+        return hour * 60 + minute
+    return parse_unbounded_clock_minutes(normalized)
 
 
 def is_24_hours(opening_hours: Iterable[dict] | None) -> bool:
@@ -105,8 +144,19 @@ def is_24_hours(opening_hours: Iterable[dict] | None) -> bool:
     if not opening_hours:
         return False
     return all(
-        isinstance(entry, dict) and entry.get("is24Hours") for entry in opening_hours
+        isinstance(entry, dict) and _entry_is_24_hours(entry)
+        for entry in opening_hours
     )
+
+
+def _entry_is_24_hours(entry: dict) -> bool:
+    if entry.get("is24Hours"):
+        return True
+    raw_slots = entry.get("rawTimeSlots")
+    if not isinstance(raw_slots, str):
+        return False
+    normalized = raw_slots.replace("\u202f", " ").replace("\u00a0", " ").strip()
+    return _OPEN_24_HOURS.fullmatch(normalized) is not None
 
 
 def earliest_open_minutes(opening_hours: Iterable[dict] | None) -> int | None:

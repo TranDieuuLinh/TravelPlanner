@@ -1960,7 +1960,7 @@ function Planner() {
                                     <p>
                                       {item.notes
                                         || item.address
-                                        || "Địa điểm được thêm từ nguồn bạn cung cấp."}
+                                        || itineraryItemFallback(item.source)}
                                     </p>
                                   </div>
                                 </article>
@@ -2528,6 +2528,16 @@ function itinerarySourceLabel(
     };
   }
   return null;
+}
+
+function itineraryItemFallback(source: string): string {
+  if (source === "finder_suggestion" || source === "finder") {
+    return "Được Finder đề xuất từ dữ liệu địa điểm trong khu vực.";
+  }
+  if (source === "selected_place") {
+    return "Địa điểm bạn đã chọn cho hành trình này.";
+  }
+  return "Chưa có mô tả cho địa điểm này.";
 }
 
 function paceLabel(pace: string): string {

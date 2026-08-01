@@ -106,6 +106,18 @@ class AreaSurveyService:
             limit=self.max_survey_places,
         )
 
+        # Repository search widens a district/ward query to its parent city.
+        # A survey bbox must describe the requested area itself; otherwise a
+        # local day silently becomes city-wide.
+        strictly_scoped = [
+            place
+            for place in places
+            if place.region_key == region_key
+            or place.region_key.startswith(f"{region_key},")
+        ]
+        if strictly_scoped:
+            places = strictly_scoped
+
         if not places:
             return self._empty_result(region_key)
 

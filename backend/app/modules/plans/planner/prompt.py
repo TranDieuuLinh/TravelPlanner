@@ -11,7 +11,7 @@ from app.modules.plans.dto.agent_contracts import (
 
 
 PLANNER_RESEARCH_PROMPT_VERSION = "journey_research_v2"
-PLANNER_PROMPT_VERSION = "macro_planner_v3"
+PLANNER_PROMPT_VERSION = "macro_planner_v5_flexible_day_needs"
 
 PLANNER_RESEARCH_SYSTEM_PROMPT = """
 You are the creative journey architect for a Vietnamese travel-planning backend.
@@ -70,6 +70,9 @@ Available data in plannerInput:
   Use budget compatibility to calibrate spending expectations.
 - festivalDiscovery: Reference for timing activities around local events
   or avoiding planning during peak holiday periods.
+- tourismZones: Backend-verified visitor areas around real anchor Places. Each
+  zone provides a stable zoneId, center/radius, supported capabilities,
+  category coverage, and anchor Places.
 
 Planning rules:
 1. Return exactly one DayBrief for each requested day, numbered consecutively.
@@ -111,6 +114,32 @@ Planning rules:
     spending expectations.
 15. Consider festivalDiscovery dates when scheduling multi-day trips to avoid
     booking conflicts during major national holidays.
+16. For every local DayBrief, choose tourismZoneRef only from
+    plannerInput.tourismZones. Never invent a zone, Place reference,
+    coordinate, radius, or region key. Copy anchorPlaceRefs only from the
+    selected zone's anchorPlaces.
+17. Set primaryActivityCategory to the actual non-meal purpose of the day
+    (attraction, nature, shopping, entertainment, or food_drink). Cultural,
+    historical, museum, and sightseeing days must use attraction, not
+    food_drink. Meal blocks remain independent.
+18. Keep allowRegionFallback=false for local exploration unless the supplied
+    evidence explicitly requires moving beyond the zone. Keep
+    maxLocalTravelMinutes conservative, normally 15-25 minutes.
+19. anchorPlaceRefs describe verified zone anchors. They are not selected
+    Places and must never be copied into allocatedSelectedPlaceRefs unless the
+    exact same stable reference is present in plannerInput.selectedPlaces.
+20. Describe the day's flexible demand instead of assigning exact place times.
+    dayWindow is the usable boundary of the day. activityNeeds must contain one
+    required main experience, a support experience required for balanced/packed
+    pace but optional for relaxed pace, and an optional bonus experience. Give
+    each need a concrete goal, broad preferredExperiences, and a duration range.
+21. Keep meals independent from the day's theme. mealNeeds must always contain
+    lunch with a practical flexible window. Include dinner when dayWindow extends
+    into the evening. Do not turn coffee, snacks, or a second restaurant into a
+    cultural/sightseeing activity merely to fill activityNeeds.
+22. Do not create fixed break slots. Finder schedules a Place inside each flexible
+    window using opening hours and route feasibility, then inserts rest only when
+    the realized sequence needs it.
 """.strip()
 
 

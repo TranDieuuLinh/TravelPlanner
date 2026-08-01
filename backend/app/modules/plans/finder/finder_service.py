@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from math import cos, radians
 
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.entities import (
@@ -22,12 +23,16 @@ from app.modules.plans.dto.agent_contracts import (
     PlanningAgentName,
     PlanningAgentStatus,
     SelectedPlaceContext,
+    TourismZoneEvidence,
 )
 from app.modules.plans.finder.area_survey import AreaProfile, AreaSurveyService
 from app.modules.plans.finder.candidate_selector import (
     CandidateRejection,
     CandidateSelectionContext,
     CandidateSelector,
+    DEFAULT_MAX_CANDIDATES_PER_BLOCK,
+    FAMOUS_PLACE_MAX_DISTANCE_METERS,
+    candidate_feasible_start,
     candidate_duration,
 )
 from app.modules.plans.finder.day_style_selector import select_day_style
@@ -36,10 +41,15 @@ from app.modules.plans.finder.place_tool import (
     FinderPlace,
     FinderPlaceTool,
     place_category,
+    semantic_categories,
 )
 from app.modules.plans.finder.skeleton_builder import DayBlock, DaySkeletonBuilder
 from app.modules.plans.finder.status_tracker import FinderStatusTracker
 from app.modules.plans.finder.timeline_fitter import TimelineFitter
+from app.modules.plans.finder.time_windows import (
+    format_clock_window,
+    parse_clock_minutes,
+)
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
@@ -48,7 +58,7 @@ class FinderService:
         self,
         place_tool: FinderPlaceTool | None = None,
         *,
-        max_candidates_per_block: int = 5,
+        max_candidates_per_block: int = DEFAULT_MAX_CANDIDATES_PER_BLOCK,
         skeleton_builder: DaySkeletonBuilder | None = None,
         route_optimizer: GeographicRouteOptimizer | None = None,
         candidate_selector: CandidateSelector | None = None,
@@ -164,6 +174,7 @@ class FinderService:
             },
             intent_interests=finder_input.intent.interests,
             travel_style=finder_input.intent.travel_style,
+            tourism_zones=finder_input.tourism_zones,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -215,6 +226,7 @@ class FinderService:
         avoid_modes: set[str],
         intent_interests: list[str],
         travel_style: str,
+        tourism_zones: list[TourismZoneEvidence] | None = None,
     ) -> FinderResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -227,6 +239,9 @@ class FinderService:
         warnings: list[str] = []
         rejected_selected_places: dict[str, CandidateRejection] = {}
         selected_by_ref = {place.stable_ref: place for place in selected_places}
+        zone_by_id = {
+            zone.zone_id: zone for zone in (tourism_zones or [])
+        }
         has_reference_places = any(
             place.source_order is not None
             or any(
@@ -237,6 +252,11 @@ class FinderService:
         )
 
         for brief in macro_plan.day_briefs:
+            tourism_zone = (
+                zone_by_id.get(brief.tourism_zone_ref)
+                if brief.tourism_zone_ref is not None
+                else None
+            )
             day_start_location = committed_user_status.location
             tentative_user_status = committed_user_status.model_copy(deep=True)
             tentative_plan_status = committed_plan_status.model_copy(deep=True)
@@ -306,12 +326,30 @@ class FinderService:
                             self._resolve_finder_place_for_style(
                                 ref, selected_by_ref, region_key
                             )
-                            for ref in brief.allocated_selected_place_refs
+                            for ref in dict.fromkeys(
+                                [
+                                    *brief.allocated_selected_place_refs,
+                                    *brief.anchor_place_refs,
+                                ]
+                            )
                         ],
                         area_profile_distribution=(
                             area_profile.distribution
                             if area_profile is not None
                             else None
+                        ),
+                        focus_categories=semantic_categories(
+                            {
+                                value
+                                for value in (
+                                    brief.theme,
+                                    *brief.focus_tags,
+                                    brief.day_part_goals.morning,
+                                    brief.day_part_goals.afternoon,
+                                    brief.day_part_goals.evening,
+                                )
+                                if value
+                            }
                         ),
                     )
                     skeleton = self.skeleton_builder.build_by_style(
@@ -321,16 +359,55 @@ class FinderService:
                         intent_constraints=intent_constraints,
                         area_profile=area_profile,
                     )
+            skeleton = self.skeleton_builder.apply_flexible_needs(
+                skeleton,
+                brief,
+            )
             tentative_plan_status.current_day = brief.day
             tentative_plan_status.current_strategy = skeleton.strategy
             tentative_plan_status.day_usage = FinderUsage()
             tentative_plan_status.used_food_drink_place_types = []
+            tentative_plan_status.used_experience_groups = []
             day_items: list[PlanItem] = []
             committed_activities: dict[str, tuple[FinderPlace, DayBlock]] = {}
             deferred_slot_warnings: list[str] = []
+            main_anchor_block = next(
+                (
+                    block
+                    for block in skeleton.blocks
+                    if block.activity
+                    and block.kind == "activity"
+                    and "main_activity" in block.role
+                ),
+                None,
+            )
+            main_anchor_selected = main_anchor_block is None
+            day_anchor_center: tuple[float, float] | None = None
 
             for block in skeleton.blocks:
                 tentative_plan_status.current_slot = block.role
+                is_main_anchor = (
+                    main_anchor_block is not None
+                    and block.role == main_anchor_block.role
+                )
+                if (
+                    not main_anchor_selected
+                    and not is_main_anchor
+                    and (block.activity or block.kind == "meal")
+                ):
+                    # A generated day is built around one concrete primary
+                    # destination. Do not create a meals-only/support-only day
+                    # from catalog suggestions when retrieval failed to
+                    # establish that anchor. Core meal placeholders remain in
+                    # the timeline so lunch/dinner semantics are not lost.
+                    if block.kind == "meal":
+                        day_items.append(self._build_non_activity_item(block))
+                        self.status_tracker.apply_break(
+                            tentative_user_status,
+                            tentative_plan_status,
+                            block,
+                        )
+                    continue
                 if not self.candidate_selector.block_is_available(
                     block, tentative_user_status
                 ):
@@ -344,6 +421,15 @@ class FinderService:
                         tentative_plan_status.warnings.append(message)
                     continue
                 if not block.activity and block.kind != "meal":
+                    if (
+                        block.kind == "break"
+                        and not self._break_is_needed(
+                            block,
+                            tentative_user_status,
+                            tentative_plan_status,
+                        )
+                    ):
+                        continue
                     day_items.append(self._build_non_activity_item(block))
                     if block.kind != "social_activity":
                         self.status_tracker.apply_break(
@@ -378,8 +464,26 @@ class FinderService:
                         intent_interests=intent_interests,
                         travel_style=travel_style,
                         bbox_filter=(
-                            area_profile.bbox
+                            self._tourism_zone_bbox(tourism_zone)
+                            if tourism_zone is not None
+                            else area_profile.bbox
                             if area_profile is not None
+                            else None
+                        ),
+                        zone_center=(
+                            day_anchor_center
+                            if day_anchor_center is not None
+                            else
+                            (
+                                tourism_zone.center_latitude,
+                                tourism_zone.center_longitude,
+                            )
+                            if tourism_zone is not None
+                            else None
+                        ),
+                        zone_radius_meters=(
+                            tourism_zone.radius_meters
+                            if tourism_zone is not None
                             else None
                         ),
                     )
@@ -427,6 +531,39 @@ class FinderService:
                     tentative_user_status,
                     tentative_plan_status,
                 )
+                if is_main_anchor:
+                    main_anchor_selected = True
+                    if (
+                        candidate.latitude is not None
+                        and candidate.longitude is not None
+                    ):
+                        day_anchor_center = (
+                            candidate.latitude,
+                            candidate.longitude,
+                        )
+
+            present_roles = {item.role for item in day_items if item.role}
+            break_requirements = {
+                "break_main_support": ("main_activity", "support_activity"),
+                "break_support_bonus": ("support_activity", "bonus_activity"),
+            }
+            retained_items: list[PlanItem] = []
+            blocks_by_role = {block.role: block for block in skeleton.blocks}
+            for item in day_items:
+                required_roles = break_requirements.get(item.role or "")
+                if required_roles and not all(
+                    role in present_roles for role in required_roles
+                ):
+                    block = blocks_by_role.get(item.role or "")
+                    if block is not None:
+                        self.status_tracker.rollback_break(
+                            tentative_user_status,
+                            tentative_plan_status,
+                            block,
+                        )
+                    continue
+                retained_items.append(item)
+            day_items = retained_items
 
             minimum_place_count = (
                 4
@@ -593,6 +730,20 @@ class FinderService:
             )
             warnings.append(message)
             plan_status.warnings.append(message)
+
+    @staticmethod
+    def _break_is_needed(
+        block: DayBlock,
+        user_status: UserStatus,
+        plan_status: FinderPlanStatus,
+    ) -> bool:
+        if block.role == "recovery_break":
+            return True
+        required_rest = user_status.constraints.required_rest_minutes
+        return (
+            required_rest is not None
+            and plan_status.day_usage.rest_minutes < required_rest
+        )
         max_walking = user_status.constraints.max_walking_minutes_per_day
         if max_walking is not None:
             if plan_status.day_usage.walking_minutes > max_walking:
@@ -623,11 +774,22 @@ class FinderService:
             if block.kind == "meal" or place_category(candidate) == "food_drink"
             else "activity"
         )
+        duration_minutes = candidate_duration(candidate, block)
+        block_start = candidate_feasible_start(
+            candidate,
+            block,
+            duration_minutes,
+        )
+        time_window = (
+            format_clock_window(block_start, duration_minutes, bound_to_day=True)
+            if block_start is not None
+            else block.time_window
+        )
         return PlanItem(
             itemId=str(uuid4()),
             placeId=candidate.place_id,
             name=candidate.name,
-            timeWindow=block.time_window,
+            timeWindow=time_window,
             placeType=(
                 "must_visit"
                 if selected_source and mode == "main" and candidate.must_visit
@@ -641,7 +803,7 @@ class FinderService:
             regionKey=candidate.region_key,
             role=block.role,
             source="selected_place" if selected_source else "finder_suggestion",
-            durationMinutes=candidate_duration(candidate, block),
+            durationMinutes=duration_minutes,
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
             sourceProvider=candidate.source_provider,
@@ -669,6 +831,9 @@ class FinderService:
         """
         selected = selected_by_ref.get(ref)
         if selected is None:
+            stored = self.place_tool.get(ref)
+            if stored is not None:
+                return stored
             return FinderPlace(
                 name=ref,
                 placeType="selected_place",
@@ -723,11 +888,9 @@ class FinderService:
         return PlanItem(
             itemId=str(uuid4()),
             name=(
-                "Break between main and support activities"
-                if block.role == "break_main_support"
-                else "Break between support and bonus activities"
-                if block.role == "break_support_bonus"
-                else "Flexible break"
+                "Thá»i gian nghá»‰ vÃ  phá»¥c há»“i"
+                if block.role == "recovery_break"
+                else "Thá»i gian nghá»‰ vÃ  linh hoáº¡t"
             ),
             timeWindow=block.time_window,
             placeType="break",
@@ -735,7 +898,28 @@ class FinderService:
             role=block.role,
             source="finder_rule",
             durationMinutes=block.duration_minutes,
-            notes="No Place is required for this break block.",
+            notes="KhÃ´ng cáº§n chá»n Ä‘á»‹a Ä‘iá»ƒm cho khoáº£ng nghá»‰ nÃ y.",
+        )
+
+    @staticmethod
+    def _tourism_zone_bbox(
+        zone: TourismZoneEvidence,
+    ) -> tuple[float, float, float, float]:
+        retrieval_radius = max(
+            zone.radius_meters,
+            FAMOUS_PLACE_MAX_DISTANCE_METERS,
+        )
+        latitude_delta = retrieval_radius / 111_320
+        longitude_scale = max(
+            0.01,
+            cos(radians(zone.center_latitude)),
+        )
+        longitude_delta = retrieval_radius / (111_320 * longitude_scale)
+        return (
+            zone.center_latitude - latitude_delta,
+            zone.center_longitude - longitude_delta,
+            zone.center_latitude + latitude_delta,
+            zone.center_longitude + longitude_delta,
         )
 
     def _normalize_selected_places(

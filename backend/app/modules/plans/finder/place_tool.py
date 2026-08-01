@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from typing import Protocol
+from math import log10
+from typing import Protocol, Sequence
 
 from pydantic import BaseModel, Field
 
 from app.modules.places.model import Place
+from app.integrations.embeddings.base import EmbeddingClient
+from app.modules.places.semantic import build_finder_query_text
 from app.modules.plans.planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -20,7 +23,10 @@ from app.modules.plans.planner.place_metadata import (
 
 DESCRIPTION_RETRIEVAL_MULTIPLIER = 10
 MIN_DESCRIPTION_RETRIEVAL_LIMIT = 50
-MAX_REPOSITORY_CANDIDATES = 10000
+# Hà Nội currently has ~23k active Places. The hard-filter candidate universe
+# must include the complete city catalog before vector top-K; an arbitrary
+# primary-key slice would silently hide popular embedded Places.
+MAX_REPOSITORY_CANDIDATES = 30000
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +110,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "hai san",
         "restaurant",
         "seafood",
-        "an",
         "an sang",
         "an trua",
         "an toi",
@@ -122,7 +127,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "an toi",
         "nha hang",
         "quan an",
-        "quan",
         "bep",
         "bep nha",
         "quan nho",
@@ -135,7 +139,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "trung nguyen",
         "phuc long",
         "the coffee house",
-        "pho",
         "bun",
         "com",
         "mien",
@@ -540,6 +543,7 @@ class FinderPlaceTool(Protocol):
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
@@ -556,6 +560,22 @@ class FinderPlaceRepository(Protocol):
         limit: int = 10000,
     ) -> list[Place]: ...
 
+    def rank_place_ids_by_embedding(
+        self,
+        place_ids: Sequence[str],
+        query_embedding: list[float],
+        *,
+        embedding_model: str,
+        limit: int,
+    ) -> list[tuple[str, float]]: ...
+
+    def has_place_embeddings(
+        self,
+        region_key: str,
+        *,
+        embedding_model: str,
+    ) -> bool: ...
+
 
 class EmptyFinderPlaceTool:
     def get(self, place_id: str) -> FinderPlace | None:
@@ -566,6 +586,7 @@ class EmptyFinderPlaceTool:
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
@@ -590,9 +611,16 @@ def _inside_bbox(
 
 
 class RepositoryFinderPlaceTool:
-    def __init__(self, repository: FinderPlaceRepository) -> None:
+    def __init__(
+        self,
+        repository: FinderPlaceRepository,
+        embedding_client: EmbeddingClient | None = None,
+    ) -> None:
         self.repository = repository
+        self.embedding_client = embedding_client
         self._scope_cache: dict[str, list[FinderPlace]] = {}
+        self._query_embedding_cache: dict[str, list[float]] = {}
+        self._embedding_coverage_cache: dict[tuple[str, str], bool] = {}
 
     def get(self, place_id: str) -> FinderPlace | None:
         place = self.repository.get(place_id)
@@ -605,25 +633,53 @@ class RepositoryFinderPlaceTool:
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         places = self._load_scoped_candidates(region_key, excluded_place_ids)
-        places = [
-            place
-            for place in places
-            if _matches_target_locality(place, region_key)
-        ]
-        if bbox_filter is not None:
-            places = [place for place in places if _inside_bbox(place, bbox_filter)]
+        if bbox_filter is None:
+            places = [
+                place
+                for place in places
+                if _matches_target_locality(place, region_key)
+            ]
+        else:
+            # A verified zone bbox is more accurate than administrative
+            # region-key text. It intentionally allows a famous place in an
+            # adjacent ward/district when it is physically inside the local
+            # tourism zone. Candidates without coordinates still need the
+            # textual locality evidence to avoid leaking city-wide records.
+            places = [
+                place
+                for place in places
+                if _inside_bbox(place, bbox_filter)
+                and (
+                    place.latitude is not None
+                    and place.longitude is not None
+                    or _matches_target_locality(place, region_key)
+                )
+            ]
         if not places:
             return []
 
         query_terms = _normalized_terms(target_tags)
-        query_categories = semantic_categories(query_terms)
+        query_categories = (
+            set(target_categories)
+            if target_categories is not None
+            else semantic_categories(query_terms)
+        )
+        eligible_places = [
+            place
+            for place in places
+            if place_matches_categories(place, query_categories)
+        ]
+        if not eligible_places:
+            return []
+
         description_ranked = sorted(
-            places,
+            eligible_places,
             key=lambda place: (
                 -_description_relevance(place.description, query_terms),
                 place.name.casefold(),
@@ -639,33 +695,107 @@ class RepositoryFinderPlaceTool:
         ):
             shortlisted = description_ranked[:retrieval_limit]
         else:
-            shortlisted = places
+            shortlisted = eligible_places
 
-        eligible_shortlist = [
-            place
-            for place in shortlisted
-            if place_matches_categories(place, query_categories)
-        ]
-        if not eligible_shortlist:
-            eligible_shortlist = [
-                place
-                for place in places
-                if place_matches_categories(place, query_categories)
+        semantic_scores = self._semantic_scores(
+            places=eligible_places,
+            region_key=region_key,
+            target_tags=target_tags,
+            query_categories=query_categories,
+            limit=retrieval_limit,
+        )
+        if semantic_scores:
+            by_id = {
+                place.place_id: place
+                for place in eligible_places
+                if place.place_id is not None
+            }
+            semantic_shortlist = [
+                by_id[place_id]
+                for place_id in semantic_scores
+                if place_id in by_id
             ]
-        shortlisted = eligible_shortlist
+            semantic_ids = {place.stable_ref for place in semantic_shortlist}
+            shortlisted = [
+                *semantic_shortlist,
+                *[
+                    place
+                    for place in description_ranked
+                    if place.stable_ref not in semantic_ids
+                ],
+            ][:retrieval_limit]
         shortlisted.sort(
             key=lambda place: (
-                -_structured_rerank_score(
-                    place,
-                    region_key=region_key,
-                    query_terms=query_terms,
-                    query_categories=query_categories,
+                -(
+                    semantic_scores.get(place.place_id or "", 0.0) * 1000
+                    + _quality_rerank_score(place) * (3 if semantic_scores else 4)
+                    + min(
+                        100,
+                        _structured_rerank_score(
+                            place,
+                            region_key=region_key,
+                            query_terms=query_terms,
+                            query_categories=query_categories,
+                        ),
+                    )
                 ),
                 -_description_relevance(place.description, query_terms),
                 place.name.casefold(),
             )
         )
         return shortlisted[:limit]
+
+    def _semantic_scores(
+        self,
+        *,
+        places: list[FinderPlace],
+        region_key: str,
+        target_tags: list[str],
+        query_categories: set[str],
+        limit: int,
+    ) -> dict[str, float]:
+        if self.embedding_client is None or not target_tags:
+            return {}
+        rank_method = getattr(self.repository, "rank_place_ids_by_embedding", None)
+        coverage_method = getattr(self.repository, "has_place_embeddings", None)
+        if rank_method is None or coverage_method is None:
+            return {}
+        coverage_key = (region_key, self.embedding_client.model)
+        has_coverage = self._embedding_coverage_cache.get(coverage_key)
+        if has_coverage is None:
+            has_coverage = coverage_method(
+                region_key,
+                embedding_model=self.embedding_client.model,
+            )
+            self._embedding_coverage_cache[coverage_key] = has_coverage
+        if not has_coverage:
+            return {}
+        place_ids = [place.place_id for place in places if place.place_id is not None]
+        if not place_ids:
+            return {}
+        query_text = build_finder_query_text(
+            target_tags=target_tags,
+            query_categories=query_categories,
+            region_key=region_key,
+        )
+        try:
+            query_embedding = self._query_embedding_cache.get(query_text)
+            if query_embedding is None:
+                query_embedding = self.embedding_client.embed_query(query_text)
+                self._query_embedding_cache[query_text] = query_embedding
+            ranked = rank_method(
+                place_ids,
+                query_embedding,
+                embedding_model=self.embedding_client.model,
+                limit=limit,
+            )
+            return {place_id: similarity for place_id, similarity in ranked}
+        except Exception:
+            logger.warning(
+                "Finder semantic retrieval unavailable; using lexical fallback.",
+                exc_info=True,
+            )
+            return {}
 
     def _load_scoped_candidates(
         self,
@@ -846,6 +976,14 @@ def _structured_rerank_score(
         + confidence_score
         + coordinate_score
     )
+
+
+def _quality_rerank_score(place: FinderPlace) -> int:
+    """Score popularity from rating backed by a meaningful review count."""
+
+    rating_score = round(max(0.0, min(place.rating or 0.0, 5.0)) * 4)
+    review_score = min(25, round(log10(max(0, place.review_count) + 1) * 7))
+    return rating_score + review_score
 
 
 def place_matches_categories(

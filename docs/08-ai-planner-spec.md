@@ -19,6 +19,20 @@ Explorer -> Planner -> Finder -> Check -> Main Plan
                               Backup Plan
 ```
 
+### Retrieval địa điểm của Finder
+
+Finder không dùng rating/review để tìm ứng viên từ toàn catalog. Thứ tự bắt buộc
+là `hard filters -> embedding top-K -> quality/distance rerank -> feasibility`.
+Hard filters gồm active status, region hoặc tourism-zone bbox, category và place
+đã dùng/loại trừ. Vector search chỉ nhận các place ID đã vượt qua các điều kiện
+này. Semantic similarity là tín hiệu chính; rating và số review ưu tiên địa điểm
+nổi tiếng trong nhóm đã phù hợp ý định. Khi vector chưa được backfill hoặc provider
+không khả dụng, Finder dùng lexical fallback có kiểm soát.
+
+Vector địa điểm dùng nội dung chuẩn hóa từ name, type/group, description, tags và
+địa chỉ/vùng; không đưa dữ liệu user vào document embedding. Model, content hash
+và thời điểm embedding phải được lưu để có thể phát hiện vector stale và backfill.
+
 `Confirm` là ranh giới quan trọng: claim do AI trích xuất không tự động trở thành
 yêu cầu của user.
 
@@ -198,6 +212,10 @@ của Extractor.
 Planner tạo `MacroPlan` và `DayBriefs`:
 
 - mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
+- mỗi ngày chọn một `tourismZoneRef` từ vùng khách tham quan được backend dựng
+  quanh Place anchor có tọa độ; model không tự sinh tọa độ hay bán kính;
+- `primaryActivityCategory` mô tả mục đích hoạt động chính, tách khỏi meal block;
+  ngày văn hóa/lịch sử dùng `attraction`, không suy thành `food_drink`;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
@@ -207,6 +225,9 @@ Planner tạo `MacroPlan` và `DayBriefs`:
   evidence từ Place active trước khi được mô tả như một khả năng có thật;
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
+- trả `dayWindow`, `activityNeeds` và `mealNeeds`: giữ main/lunch là nhu cầu lõi,
+  support theo pace, dinner theo độ dài ngày và bonus tùy chọn; đây là cửa sổ mềm
+  cùng khoảng duration, không phải lịch giờ cố định;
 - ghi rõ địa điểm nào chưa thể phân bổ.
 - khi có URL itinerary, giữ thứ tự/ngày/timing cue của nguồn; không biến timing
   cue mơ hồ thành giờ chính xác do nguồn xác nhận.
@@ -220,12 +241,16 @@ Finder điền item cụ thể:
   pace (`relaxed=2`, `balanced=3`, `packed=4`);
 - Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- chọn khung giờ theo giờ hoạt động và timing claim;
+- suggestion bị giới hạn cứng trong bán kính của `tourismZoneRef`; fallback region
+  cha chỉ mở rộng tập truy vấn, không được đưa Place ngoài zone vào lịch;
+- chọn Place trước, sau đó chọn giờ khả thi trong cửa sổ mềm theo giờ hoạt động,
+  route và timing claim có provenance;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
-- thêm route leg, thời gian đệm, bữa ăn và nghỉ;
+- thêm route leg, thời gian đệm và bữa ăn lõi; chỉ giữ break khi hai activity
+  thực tế ở hai phía làm khoảng nghỉ đó có ý nghĩa;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
 - lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
