@@ -172,11 +172,42 @@ def _location_key(value: str) -> str:
         for character in normalized
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
-    tokens = [
-        token
-        for token in re.findall(r"[a-z0-9]+", ascii_text)
-        if token not in {"city", "province", "thanh", "pho", "tinh"}
-    ]
-    while tokens and tokens[-1] in {"vietnam", "viet", "nam", "vn"}:
-        tokens.pop()
-    return "-".join(tokens)
+    tokens = re.findall(r"[a-z0-9]+", ascii_text)
+
+    # Destination names arrive from user input, source metadata and place
+    # providers. Treat spelling separators and administrative/country wrappers
+    # as presentation details, not different locations (for example Hanoi,
+    # Ha Noi, Hà Nội, Hanoi City and Hanoi, Vietnam).
+    prefixes = (
+        ("viet", "nam"),
+        ("vietnam",),
+        ("vn",),
+        ("thanh", "pho"),
+        ("city", "of"),
+        ("city",),
+        ("province",),
+        ("tinh",),
+        ("tp",),
+    )
+    suffixes = (
+        ("viet", "nam"),
+        ("vietnam",),
+        ("vn",),
+        ("city",),
+        ("province",),
+        ("tinh",),
+    )
+    previous: tuple[str, ...] | None = None
+    while tuple(tokens) != previous:
+        previous = tuple(tokens)
+        for prefix in prefixes:
+            if tuple(tokens[: len(prefix)]) == prefix:
+                tokens = tokens[len(prefix) :]
+                break
+        for suffix in suffixes:
+            if tuple(tokens[-len(suffix) :]) == suffix:
+                tokens = tokens[: -len(suffix)]
+                break
+
+    key = "".join(tokens)
+    return {"hn": "hanoi"}.get(key, key)

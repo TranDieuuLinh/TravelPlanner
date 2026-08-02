@@ -16,7 +16,10 @@ from app.modules.plans.dto.agent_contracts import (
     TripPlanningSpec,
 )
 from app.modules.plans.planner.planner_service import PlannerService
-from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.planner.region_context import (
+    normalize_region_key,
+    normalize_search_region_key,
+)
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
@@ -65,6 +68,27 @@ def test_normalize_region_key_canonicalizes_explicit_hanoi_alias() -> None:
         == "vn,ha-noi,hoan-kiem"
     )
     assert normalize_region_key("ignored", "vn,hai-phong") == "vn,hai-phong"
+
+
+@pytest.mark.parametrize(
+    ("search_region", "destination", "expected"),
+    [
+        ("Tây Hồ", "Hanoi", "vn,ha-noi,tay-ho"),
+        ("Tay Ho District", "Hà Nội", "vn,ha-noi,tay-ho"),
+        ("Tây Hồ, Hà Nội", "Ha Noi", "vn,ha-noi,tay-ho"),
+        ("Hanoi, Tay Ho", "Hà Nội", "vn,ha-noi,tay-ho"),
+        ("Hà Nội", "Hanoi", "vn,ha-noi"),
+        ("Ninh Bình", "Hanoi", "vn,ninh-binh"),
+        ("Danang", "Hanoi", "vn,da-nang"),
+        ("Saigon", "Hanoi", "vn,ho-chi-minh"),
+    ],
+)
+def test_normalize_search_region_key_preserves_roots_and_scopes_areas(
+    search_region: str,
+    destination: str,
+    expected: str,
+) -> None:
+    assert normalize_search_region_key(search_region, destination) == expected
 
 
 def test_main_workflow_uses_canonical_hanoi_catalog_region() -> None:

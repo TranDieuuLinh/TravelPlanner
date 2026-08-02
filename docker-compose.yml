@@ -37,7 +37,7 @@ services:
       OPENTRIPPLANNER_SCHEDULE_STATUS: development_shifted_2018
       GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
       GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
-      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "1"
+      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
     ports:
       - "8000:8000"
     volumes:

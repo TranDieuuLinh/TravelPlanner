@@ -1265,6 +1265,7 @@ class FinderService:
             itemId=str(uuid4()),
             placeId=candidate.place_id,
             name=candidate.name,
+            address=candidate.address,
             timeWindow=block.time_window,
             placeType=(
                 "must_visit"

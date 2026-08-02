@@ -139,6 +139,8 @@ class ExplorerTimingTrace:
         self,
         url_results: list[UrlReelExtractionResult],
         resolutions: list[PlaceResolution],
+        *,
+        canonical_resolutions: list[PlaceResolution] | None = None,
     ) -> None:
         source_stats = {
             canonicalize_url(result.url): {
@@ -176,6 +178,33 @@ class ExplorerTimingTrace:
                 if resolution.status == "resolved":
                     stats["resolved_count"] += 1
 
+        if canonical_resolutions is not None:
+            for stats in source_stats.values():
+                stats["candidate_count"] = 0
+                stats["resolved_count"] = 0
+                stats["resolved_provider_counts"] = {}
+            for resolution in canonical_resolutions:
+                source_urls = {
+                    canonicalize_url(source.url)
+                    for source in resolution.candidate.sources
+                    if source.type.value == "url" and source.url
+                }
+                for source_url in source_urls:
+                    stats = source_stats.get(source_url)
+                    if stats is None:
+                        continue
+                    stats["candidate_count"] += 1
+                    if resolution.status != "resolved":
+                        continue
+                    stats["resolved_count"] += 1
+                    provider = resolution.provider or "unknown"
+                    resolved_provider_counts = stats[
+                        "resolved_provider_counts"
+                    ]
+                    resolved_provider_counts[provider] = (
+                        resolved_provider_counts.get(provider, 0) + 1
+                    )
+
         self.sources = [
             source.model_copy(
                 update={
@@ -194,6 +223,8 @@ class ExplorerTimingTrace:
     def add_resolution_attempts(
         self,
         resolutions: list[PlaceResolution],
+        *,
+        canonical_resolutions: list[PlaceResolution] | None = None,
     ) -> None:
         self.provider_counts = {}
         self.resolved_provider_counts = {}
@@ -220,6 +251,15 @@ class ExplorerTimingTrace:
                         outcome=attempt.outcome,
                         rejectionReason=attempt.rejection_reason,
                     )
+                )
+        if canonical_resolutions is not None:
+            self.resolved_provider_counts = {}
+            for resolution in canonical_resolutions:
+                if resolution.status != "resolved":
+                    continue
+                provider = resolution.provider or "unknown"
+                self.resolved_provider_counts[provider] = (
+                    self.resolved_provider_counts.get(provider, 0) + 1
                 )
 
     def finish(

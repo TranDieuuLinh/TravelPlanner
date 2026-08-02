@@ -16,6 +16,7 @@ from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.plan_mutation_schema import AddItemRequest, ReorderItemsRequest, UpdateItemRequest
+from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.router import (
     _extract_urls,
     _infer_destination,
@@ -35,6 +36,7 @@ def get_trip_chat_service(
         TripChatRepository(db),
         get_plan_service(db),
         get_plan_mutation_service(db),
+        SqlAlchemyPlaceRepository(db),
     )
 
 

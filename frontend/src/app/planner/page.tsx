@@ -631,7 +631,8 @@ function Planner() {
                   ?? item.order
                 : item.order,
               dayColorKey: dateKeyForTripDay(startDate, item.day),
-              dayLabel: dateLabelForTripDay(startDate, item.day)
+              dayLabel: dateLabelForTripDay(startDate, item.day),
+              timeWindow: `Ngày ${item.day} · ${item.timeWindow}`
             }]
           : []
       );

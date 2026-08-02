@@ -110,7 +110,7 @@ class Settings(BaseSettings):
         le=300.0,
     )
     google_maps_scraper_max_alias_queries: int = Field(
-        default=1,
+        default=2,
         ge=1,
         le=10,
     )

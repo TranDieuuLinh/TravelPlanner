@@ -1348,6 +1348,74 @@ def test_service_combines_stt_and_frame_ocr(tmp_path: Path) -> None:
     assert result.artifacts == MediaArtifacts()
 
 
+def test_service_preserves_frame_evidence_when_stt_times_out(
+    tmp_path: Path,
+) -> None:
+    class MediaWithFrame(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            artifacts, timings = super().prepare(url, work_dir)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            artifacts.frame_paths = [frame_path]
+            return artifacts, timings
+
+    class TimedOutSpeech:
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            language: str | None,
+            initial_prompt: str | None,
+        ) -> SpeechToTextResult:
+            request = httpx.Request(
+                "POST",
+                "https://generativelanguage.googleapis.com/test",
+            )
+            raise httpx.ReadTimeout(
+                "The read operation timed out",
+                request=request,
+            )
+
+    class FakeVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            return FrameVisionResult(
+                text="PLACE: Train Street",
+                places=["Train Street"],
+                status="ok",
+                durationSeconds=0.1,
+            )
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=MediaWithFrame(),
+        speech_to_text=TimedOutSpeech(),  # type: ignore[arg-type]
+        frame_vision=FakeVision(),  # type: ignore[arg-type]
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://example.com/video",
+            destination="Hanoi",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.speech_to_text.status == "failed"
+    assert result.speech_to_text.error == "The read operation timed out"
+    assert result.timings["speechToTextFailed"] == 1.0
+    assert result.frame_vision.status == "ok"
+    assert "Train Street" in result.extracted_context.extracted_places
+
+
 def test_service_backfills_destination_before_stt_and_vision(
     tmp_path: Path,
 ) -> None:

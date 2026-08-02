@@ -72,13 +72,53 @@ def test_alias_enricher_preserves_original_and_adds_bilingual_names() -> None:
     assert enriched[0].vietnamese_names == [
         "Bảo tàng Dân tộc học Việt Nam"
     ]
-    assert enriched[0].alternate_names == ["Ethnology Museum"]
+    assert enriched[0].alternate_names == []
     assert enriched[0].search_names == [
         "Bảo tàng Dân tộc học Việt Nam",
         "Vietnam Museum of Ethnology",
     ]
     assert llm.payload is not None
     assert llm.payload["places"][0]["searchRegion"] == "Hanoi"
+
+
+def test_alias_enricher_keeps_only_one_official_name_per_language() -> None:
+    llm = FakeAliasLLM(
+        json.dumps(
+            {
+                "aliasSets": [
+                    {
+                        "index": 0,
+                        "originalName": "Dong Xuan Market",
+                        "englishNames": [
+                            "Dong Xuan Market",
+                            "Dong Xuan Night Bazaar",
+                        ],
+                        "vietnameseNames": [
+                            "Chợ Đồng Xuân",
+                            "Chợ đêm Đồng Xuân",
+                        ],
+                        "alternateNames": ["Cho Dong Xuan"],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    enriched = asyncio.run(
+        LLMPlaceAliasEnricher(llm).enrich(
+            [UnifiedPlaceCandidate(name="Dong Xuan Market")],
+            destination="Hanoi",
+        )
+    )
+
+    assert enriched[0].vietnamese_names == ["Chợ Đồng Xuân"]
+    assert enriched[0].english_names == ["Dong Xuan Market"]
+    assert enriched[0].alternate_names == []
+    assert enriched[0].search_names == [
+        "Chợ Đồng Xuân",
+        "Dong Xuan Market",
+    ]
 
 
 def test_alias_enricher_fails_open_when_llm_is_unavailable() -> None:

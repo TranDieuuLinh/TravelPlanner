@@ -31,7 +31,7 @@ from app.modules.plans.explorer.timing import (
     ExplorerTimingTrace,
 )
 from app.modules.plans.repository import PlanRepository
-from app.modules.plans.service import PlanService
+from app.modules.plans.service import PlanService, _dedupe_place_resolutions
 from app.shared.errors import AppError
 
 
@@ -431,6 +431,47 @@ def test_url_destination_guardrail_asks_about_conflicting_prompt() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("requested_destination", "source_destination"),
+    [
+        ("Hanoi", "Hà Nội"),
+        ("Ha Noi", "Hanoi"),
+        ("Hà Nội", "Hanoi, Vietnam"),
+        ("HaNoi", "Hà Nội, Việt Nam"),
+        ("HN", "Thành phố Hà Nội"),
+        ("Hanoi City, Vietnam", "TP. Hà Nội"),
+        ("Vietnam, Hanoi", "Hà Nội"),
+    ],
+)
+def test_url_destination_guardrail_accepts_hanoi_spelling_variants(
+    requested_destination: str,
+    source_destination: str,
+) -> None:
+    formatter = RecordingFormatter()
+    formatter.response.explorer.intent.destination = requested_destination
+    service = build_service(
+        formatter,
+        RecordingUrlReels(count=3, search_region=source_destination),
+        RecordingImageOcr(),
+    )
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo chuyến đi Hà Nội từ URL",
+                destination=requested_destination,
+                urls=["https://example.com/hanoi-reel"],
+            )
+        )
+    )
+
+    assert result.explorer.intent.destination == source_destination
+    assert result.explorer.trace["destinationGuardrail"]["status"] in {
+        "matched",
+        "corrected",
+    }
+
+
 def test_explorer_timing_is_returned_and_appended_without_raw_content(
     tmp_path,
 ) -> None:
@@ -534,6 +575,67 @@ def test_explorer_timing_counts_every_provider_attempt() -> None:
     assert trace.resolved_provider_counts == {"google_maps_scraper": 1}
     assert trace.provider_attempts[1].queue_wait_seconds == 0.2
     assert trace.provider_attempts[1].execution_seconds == 1.5
+
+
+def test_resolved_place_metrics_dedupe_aliases_but_keep_unique_places() -> None:
+    source_url = "https://www.tiktok.com/@huy_vivu/video/7591546746916834578"
+
+    def resolved(candidate_name: str, resolved_name: str) -> PlaceResolution:
+        return PlaceResolution.model_validate(
+            {
+                "candidate": {
+                    "name": candidate_name,
+                    "sources": [{"type": "url", "url": source_url}],
+                },
+                "status": "resolved",
+                "provider": "database",
+                "name": resolved_name,
+                "city": "Hà Nội",
+                "latitude": "21.0285",
+                "longitude": "105.8542",
+            }
+        )
+
+    resolutions = [
+        resolved("Bún cá chấm Gốc Đa", "Bún cá chấm Gốc Đa"),
+        resolved("Chè nhà Suvi", "Chè Nhà Suvy"),
+        resolved("Chè nhà Suvy", "Chè Nhà Suvy"),
+        resolved("Phở cuốn Hưng Mai", "Phở Cuốn Hương Mai"),
+        resolved("Bánh tráng bé mi", "Bánh Tráng Bé My"),
+        resolved("Bánh tráng Bé My", "Bánh Tráng Bé My"),
+    ]
+    unique = _dedupe_place_resolutions(resolutions)
+
+    assert [resolution.name for resolution in unique] == [
+        "Bún cá chấm Gốc Đa",
+        "Chè Nhà Suvy",
+        "Phở Cuốn Hương Mai",
+        "Bánh Tráng Bé My",
+    ]
+
+    trace = ExplorerTimingTrace("deduped-intake", url_count=1, image_count=0)
+    trace.add_url_results([_url_result(source_url, count=6)])
+    trace.candidate_count = len(unique)
+    trace.resolved_count = len(unique)
+    trace.persisted_count = len(unique)
+    trace.add_resolution_attempts(
+        resolutions,
+        canonical_resolutions=unique,
+    )
+    trace.add_url_resolution_results(
+        [_url_result(source_url, count=6)],
+        resolutions,
+        canonical_resolutions=unique,
+    )
+    report = trace.finish(status="completed", log_file=None)
+
+    assert report.candidate_count == 4
+    assert report.resolved_count == 4
+    assert report.persisted_count == 4
+    assert report.resolved_provider_counts == {"database": 4}
+    assert report.sources[0].candidate_count == 4
+    assert report.sources[0].resolved_count == 4
+    assert len(report.provider_attempts) == 6
 
 
 def test_image_ocr_is_added_before_formatter_runs() -> None:
