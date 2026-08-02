@@ -6,11 +6,12 @@ from typing import Any
 
 import pytest
 
-from app.modules.places.resolver import PlaceResolution
+from app.modules.places.resolver import PlaceResolution, PlaceResolutionAttempt
 from app.modules.plans.explorer.schema import (
     ExploreBundleDraft,
     ExploreImageContext,
     FullExploreRequest,
+    UnifiedPlaceCandidate,
 )
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
@@ -25,7 +26,10 @@ from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.explorer.response_formatter import (
     _complete_constraint_policy,
 )
-from app.modules.plans.explorer.timing import ExplorerTimingLogger
+from app.modules.plans.explorer.timing import (
+    ExplorerTimingLogger,
+    ExplorerTimingTrace,
+)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.shared.errors import AppError
@@ -458,6 +462,10 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert result.timing_report.resolved_provider_counts == {
         "fake_places": 2
     }
+    assert len(result.timing_report.provider_attempts) == 2
+    assert {
+        attempt.candidate for attempt in result.timing_report.provider_attempts
+    } == {"URL stop 1", "URL stop 2"}
     assert {
         stage.key for stage in result.timing_report.stages
     } >= {
@@ -486,9 +494,46 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert persisted["sources"][0]["resolvedProviderCounts"] == {
         "fake_places": 2
     }
+    assert len(persisted["providerAttempts"]) == 2
     serialized = json.dumps(persisted)
     assert "Private prompt content" not in serialized
     assert "private-query" not in serialized
+
+
+def test_explorer_timing_counts_every_provider_attempt() -> None:
+    candidate = UnifiedPlaceCandidate(name="Resolved Place")
+    resolution = PlaceResolution(
+        candidate=candidate,
+        status="resolved",
+        provider="google_maps_scraper",
+        name=candidate.name,
+        latitude="21.0",
+        longitude="105.8",
+        providerAttempts=[
+            PlaceResolutionAttempt(
+                candidate=candidate.name,
+                provider="database",
+                outcome="unresolved",
+                rejectionReason="not_found",
+            ),
+            PlaceResolutionAttempt(
+                candidate=candidate.name,
+                provider="google_maps_scraper",
+                aliasQueryCount=1,
+                queueWaitSeconds=0.2,
+                executionSeconds=1.5,
+                outcome="resolved",
+            ),
+        ],
+    )
+    trace = ExplorerTimingTrace("intake-attempts", url_count=0, image_count=0)
+
+    trace.add_resolution_attempts([resolution])
+
+    assert trace.provider_counts == {"database": 1, "google_maps_scraper": 1}
+    assert trace.resolved_provider_counts == {"google_maps_scraper": 1}
+    assert trace.provider_attempts[1].queue_wait_seconds == 0.2
+    assert trace.provider_attempts[1].execution_seconds == 1.5
 
 
 def test_image_ocr_is_added_before_formatter_runs() -> None:

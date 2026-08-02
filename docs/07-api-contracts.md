@@ -307,7 +307,8 @@ URL đã xử lý không phải chạy lại media/STT/OCR.
 khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
 `category`, `status` (`resolved | needs_review | merged | ignored`),
 `resolutionReason`, provider/nhãn/address/toạ độ đã xác minh khi có,
-`searchRegion`, canonical `sourceUrls`, source order/day, confidence và
+`searchRegion`, canonical `sourceUrls`, source order/day,
+`extractionConfidence`, `resolutionConfidence`, confidence tương thích cũ và
 `retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có
 đủ danh tính và tọa độ được đưa vào Planner.
 
@@ -328,10 +329,13 @@ URL và số candidate/resolved/persisted. Mỗi source URL còn có
 dùng extraction đã lưu, phải chạy extraction mới, hay chủ động bỏ qua cache;
 `providerCounts` là số candidate provider đã xử lý,
 không đồng nghĩa tất cả đã resolve thành công. Report cấp intake cũng có
-`resolvedProviderCounts` với cùng ý nghĩa. Các stage chạy song song giữ duration
+`resolvedProviderCounts` với cùng ý nghĩa. `providerAttempts` ghi từng attempt
+thực tế với `candidate`, `provider`, `aliasQueryCount`, `queueWaitSeconds`,
+`executionSeconds`, `outcome` và `rejectionReason`; cache hit dùng
+`provider=cache`, `outcome=cache_hit`. Các stage chạy song song giữ duration
 riêng và phải so theo wall time, không cộng STT với frame vision hoặc Formatter
 với place resolution. Report không chứa raw prompt, URL đầy đủ, transcript, OCR
-text hay credential. Runtime nối mỗi report thành một dòng JSON tại
+text, query provider đầy đủ, provider payload hay credential. Runtime nối mỗi report thành một dòng JSON tại
 `backend/var/explorer-timings.jsonl`; dùng
 `cd backend && python scripts/show_explorer_timing.py` để xem lần gần nhất.
 Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `details` an toàn;
@@ -480,10 +484,11 @@ Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrde
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
 `longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
-`sourceProvider` giữ adapter đã resolve candidate (`nominatim`, ...)
+`sourceProvider` giữ adapter đã resolve candidate (`database`,
+`google_maps_scraper`, ...)
 và được chuyển tiếp vào `PlanItem` cùng `sourceRefs`; UI dùng hai field này để
 hiển thị URL nguồn chính xác dưới dạng liên kết, kèm provider resolve như
-`https://www.tiktok.com/... · NOMINATIM`. Card không có URL provenance được phân
+`https://www.tiktok.com/... · GOOGLE MAPS · PLAYWRIGHT`. Card không có URL provenance được phân
 biệt bằng `Finder gợi ý` hoặc `Địa điểm đã chọn`. `PlanItem` cũng trả lại `sourceDay`
 để lần sửa tiếp theo không làm mất phân ngày của nguồn.
 Planner/Finder ưu tiên blueprint URL và giữ thứ tự nguồn. Hard constraint

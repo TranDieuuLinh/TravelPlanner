@@ -74,8 +74,8 @@ def test_alias_enricher_preserves_original_and_adds_bilingual_names() -> None:
     ]
     assert enriched[0].alternate_names == ["Ethnology Museum"]
     assert enriched[0].search_names == [
-        "Vietnam Museum of Ethnology",
         "Bảo tàng Dân tộc học Việt Nam",
+        "Vietnam Museum of Ethnology",
     ]
     assert llm.payload is not None
     assert llm.payload["places"][0]["searchRegion"] == "Hanoi"

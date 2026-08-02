@@ -1347,6 +1347,69 @@ def test_service_combines_stt_and_frame_ocr(tmp_path: Path) -> None:
     assert result.artifacts == MediaArtifacts()
 
 
+def test_service_backfills_destination_before_stt_and_vision(
+    tmp_path: Path,
+) -> None:
+    observed: dict[str, str | None] = {}
+
+    class MediaWithFrame(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            artifacts, timings = super().prepare(url, work_dir)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            artifacts.frame_paths = [frame_path]
+            return artifacts, timings
+
+    class RecordingSpeech(FakeSpeechToText):
+        def transcribe(
+            self,
+            audio_path: Path,
+            *,
+            language: str | None,
+            initial_prompt: str | None,
+        ) -> SpeechToTextResult:
+            observed["prompt"] = initial_prompt
+            return super().transcribe(
+                audio_path,
+                language=language,
+                initial_prompt=initial_prompt,
+            )
+
+    class RecordingVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            observed["visionDestination"] = destination
+            return FrameVisionResult(status="ok", durationSeconds=0.1)
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=MediaWithFrame(),
+        speech_to_text=RecordingSpeech(),
+        frame_vision=RecordingVision(),  # type: ignore[arg-type]
+    )
+
+    service.extract(
+        UrlReelInput(
+            url="https://example.com/video",
+            destination="unspecified",
+            workDir=tmp_path,
+        )
+    )
+
+    assert observed["prompt"] is not None
+    assert "Hanoi" in str(observed["prompt"])
+    assert "unspecified" not in str(observed["prompt"])
+    assert observed["visionDestination"] == "Hanoi"
+
+
 def test_context_extractor_does_not_cap_evidenced_places() -> None:
     visual_places = [
         f"Venue {index:02d} Museum"
@@ -1626,7 +1689,7 @@ def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity
     context = UrlReelContextExtractor().extract(
         metadata=metadata,
         transcript="",
-        destination="Hanoi",
+        destination="unspecified",
     )
 
     assert context.extracted_places == [
@@ -1668,7 +1731,7 @@ def test_context_extractor_parses_numbered_tiktok_caption_without_list_noise() -
     context = UrlReelContextExtractor().extract(
         metadata=metadata,
         transcript="",
-        destination="Hanoi",
+        destination="unspecified",
     )
 
     assert context.extracted_places == [
@@ -1694,6 +1757,42 @@ def test_context_extractor_parses_numbered_tiktok_caption_without_list_noise() -
         "stay tune" in detail.name.casefold()
         for detail in context.extracted_place_details
     )
+    assert {
+        detail.search_region for detail in context.extracted_place_details
+    } == {"Hanoi"}
+
+
+def test_context_extractor_rejects_unsupported_ocr_logos() -> None:
+    metadata = UrlMetadata(
+        originalUrl="https://example.com/hanoi-cafes",
+        canonicalUrl="https://example.com/hanoi-cafes",
+        platform="tiktok",
+        title="Cute cafes in Hanoi",
+    )
+
+    context = UrlReelContextExtractor().extract(
+        metadata=metadata,
+        transcript="",
+        destination="unspecified",
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="SALTPFE",
+                evidence="Visit cute cafes depending on the cafe",
+                activity="Visit cute cafes",
+            ),
+            FrameVisionObservation(
+                order=2,
+                placeName="Cafe Giảng",
+                evidence="Try egg coffee at Cafe Giảng",
+                activity="Try egg coffee",
+            ),
+        ],
+    )
+
+    assert context.extracted_places == ["Cafe Giảng"]
+    assert context.extracted_place_details[0].search_region == "Hanoi"
+    assert context.extracted_place_details[0].confidence == 0.72
 
 
 def test_context_extractor_preserves_numbered_youtube_list_and_splits_stops() -> None:

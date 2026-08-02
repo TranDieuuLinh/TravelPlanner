@@ -182,6 +182,8 @@ export type PlaceCandidateReview = {
   sourceOrder?: number | null;
   sourceDay?: number | null;
   confidence: number;
+  extractionConfidence: number;
+  resolutionConfidence: number;
   retryable: boolean;
 };
 
@@ -298,6 +300,15 @@ export type ExplorerTimingReport = {
   persistedCount: number;
   providerCounts: Record<string, number>;
   resolvedProviderCounts?: Record<string, number>;
+  providerAttempts?: Array<{
+    candidate: string;
+    provider: string;
+    aliasQueryCount: number;
+    queueWaitSeconds: number;
+    executionSeconds: number;
+    outcome: "resolved" | "unresolved" | "error" | "timeout" | "cache_hit";
+    rejectionReason?: string | null;
+  }>;
   logFile?: string | null;
 };
 

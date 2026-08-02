@@ -117,6 +117,7 @@ class ExtractedPlace(BaseModel):
         default_factory=dict,
         alias="sourceEvidence",
     )
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     attributes: list[str] = Field(default_factory=list)
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")

@@ -41,9 +41,8 @@ function sourceLabel(value: string) {
 }
 
 function elapsedSeconds(job: DisplayJob, now: number) {
-  const startedAt = job.status === "running" && job.startedAt
-    ? job.startedAt
-    : job.createdAt;
+  if (!job.startedAt) return 0;
+  const startedAt = job.startedAt;
   const finishedAt = job.finishedAt ? Date.parse(job.finishedAt) : now;
   const startedAtMs = Date.parse(startedAt);
   if (!Number.isFinite(startedAtMs) || !Number.isFinite(finishedAt)) return 0;
@@ -82,23 +81,12 @@ function statusLabel(job: DisplayJob, now: number) {
   }
   if (job.status === "queued") {
     const position = job.queuePosition ? ` · vị trí #${job.queuePosition}` : "";
-    return `Đang chờ đến lượt${position} · ${elapsedLabel(elapsedSeconds(job, now))}`;
+    return `Đang chờ đến lượt${position}`;
   }
   if (job.status === "succeeded") {
     return `${job.forceRefresh ? "Đã phân tích lại" : "Đã hoàn tất"} · ${elapsedLabel(elapsedSeconds(job, now))}`;
   }
   return `Cần thử lại · ${elapsedLabel(elapsedSeconds(job, now))}`;
-}
-
-function timestampLabel(value: string | null): string {
-  if (!value) return "Chưa bắt đầu";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Không xác định";
-  return new Intl.DateTimeFormat("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  }).format(parsed);
 }
 
 function TimingStages({
@@ -141,7 +129,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   cache: "Place cache",
   database: "Places DB",
   google_maps_scraper: "Google Maps · Playwright",
-  nominatim: "Nominatim · OpenStreetMap",
   provisional: "Provisional",
   unknown: "Không xác định"
 };
@@ -171,7 +158,7 @@ function ProviderResults({
   if (!providers.length) return null;
   return (
     <section className="backgroundJobProviderSection">
-      <strong>Provider resolve</strong>
+      <strong>Nguồn xác định địa điểm</strong>
       <dl className="backgroundJobProviders">
         {providers.map((provider) => {
           const processedCount = processed?.[provider] ?? 0;
@@ -179,12 +166,41 @@ function ProviderResults({
           return (
             <div className={resolvedCount > 0 ? "resolved" : "unresolved"} key={provider}>
               <dt>{providerLabel(provider)}</dt>
-              <dd><b>{resolvedCount}</b> resolved · {processedCount} processed</dd>
+              <dd><b>{resolvedCount}</b> xác định được · {processedCount} đã kiểm tra</dd>
             </div>
           );
         })}
       </dl>
     </section>
+  );
+}
+
+function ProviderAttempts({
+  attempts
+}: {
+  attempts: NonNullable<ExplorerTimingReport["providerAttempts"]> | undefined;
+}) {
+  if (!attempts?.length) return null;
+  return (
+    <details className="backgroundJobProviderAttempts">
+      <summary>Chi tiết từng lần resolve ({attempts.length})</summary>
+      <div className="backgroundJobProviderAttemptList">
+        {attempts.map((attempt, index) => (
+          <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
+            <strong>{attempt.candidate}</strong>
+            <span>{providerLabel(attempt.provider)}</span>
+            <span>{attempt.aliasQueryCount} query</span>
+            <span>chờ {timingLabel(attempt.queueWaitSeconds)}</span>
+            <span>chạy {timingLabel(attempt.executionSeconds)}</span>
+            <span>
+              {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
+                ? "đã xác định"
+                : attempt.rejectionReason ?? attempt.outcome}
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -208,18 +224,22 @@ function JobTimingDetails({
       {explorer ? (
         <section className="backgroundJobTimingSummary">
           <header>
-            <strong>Explorer</strong>
+            <strong>Kết quả địa điểm</strong>
             <b>{timingLabel(explorer.totalSeconds)}</b>
           </header>
           <div className="backgroundJobTimingChips">
-            <span>{explorer.candidateCount} candidate</span>
-            <span>{explorer.resolvedCount} resolved</span>
-            <span>{explorer.persistedCount} đã lưu</span>
+            <span>
+              Đã xác định {explorer.resolvedCount} trên {explorer.candidateCount} địa điểm
+            </span>
+            {explorer.candidateCount > explorer.resolvedCount ? (
+              <span>{explorer.candidateCount - explorer.resolvedCount} cần kiểm tra thêm</span>
+            ) : null}
           </div>
           <ProviderResults
             processed={explorer.providerCounts}
             resolved={explorer.resolvedProviderCounts}
           />
+          <ProviderAttempts attempts={explorer.providerAttempts} />
           <TimingStages label="Các bước Explorer" stages={explorer.stages} />
           {explorer.sources.map((source) => (
             <section
@@ -268,12 +288,9 @@ function JobTimingDetails({
       ) : running ? (
         <section className="backgroundJobTimingSummary backgroundJobTimingPending">
           <header>
-            <strong>Explorer · đang thu thập timing</strong>
+            <strong>Đang tìm và xác định địa điểm</strong>
             <b>{elapsedLabel(elapsed)}</b>
           </header>
-          <p>
-            Chi tiết extraction, STT/OCR/vision và provider resolve sẽ xuất hiện tại đây ngay khi Explorer hoàn tất.
-          </p>
         </section>
       ) : null}
       {planner ? (
@@ -486,7 +503,6 @@ export function BackgroundUrlJobs({
             ) : null}
           </div>
           {visibleJobs.map((job) => {
-            const guest = isGuestJob(job);
             return (
               <details className={`backgroundJobRow ${job.status}`} key={job.id}>
                 <summary>
@@ -501,9 +517,24 @@ export function BackgroundUrlJobs({
                 </summary>
                 <div className="backgroundJobDetails">
                   <div className="backgroundJobMeta">
-                    <span><small>Phạm vi</small><strong>{guest ? "Phiên khách · không lưu" : "Tài khoản · lưu bền vững"}</strong></span>
-                    <span><small>Bắt đầu</small><strong>{timestampLabel(job.startedAt)}</strong></span>
-                    <span><small>Tổng thời gian</small><strong>{elapsedLabel(elapsedSeconds(job, now))}</strong></span>
+                    <span>
+                      <small>Địa điểm đã xác định</small>
+                      <strong>
+                        {job.explorerTiming
+                          ? job.explorerTiming.candidateCount > 0
+                            ? `${job.explorerTiming.resolvedCount} trên ${job.explorerTiming.candidateCount} địa điểm`
+                            : "Chưa tìm thấy địa điểm"
+                          : job.status === "running"
+                            ? "Đang tìm kiếm…"
+                            : job.status === "queued"
+                              ? "Chưa bắt đầu"
+                              : "Chưa có kết quả"}
+                      </strong>
+                    </span>
+                    <span>
+                      <small>Thời gian xử lý</small>
+                      <strong>{job.startedAt ? elapsedLabel(elapsedSeconds(job, now)) : "Chưa bắt đầu"}</strong>
+                    </span>
                     <span><small>Lần chạy</small><strong>{job.attemptCount}</strong></span>
                   </div>
                   <JobTimingDetails

@@ -36,7 +36,7 @@ from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
 
 
-URL_EXTRACTION_CACHE_VERSION = 2
+URL_EXTRACTION_CACHE_VERSION = 3
 
 
 class ExplorerPersistenceRepository:

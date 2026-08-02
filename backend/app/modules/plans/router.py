@@ -1,7 +1,6 @@
 import json
 import re
 from typing import Annotated
-from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
@@ -46,6 +45,7 @@ from app.modules.plans.routing.current_location_service import (
 )
 from app.modules.plans.routing.optimizer import RouteUnavailableError
 from app.modules.plans.service import PlanService
+from app.modules.plans.destination_inference import infer_destination_from_urls
 from app.modules.users.model import User
 
 router = APIRouter(prefix="/plans", tags=["plans"])
@@ -449,14 +449,4 @@ def _infer_destination(raw_request: str) -> str:
 
 
 def _infer_destination_from_urls(urls: list[str]) -> str:
-    for url in urls:
-        query = parse_qs(urlsplit(url).query)
-        for value in query.get("q", []):
-            match = re.search(
-                r"(?:what\s+to\s+do|things\s+to\s+do)\s+in\s+(.+?)(?:[?!]|$)",
-                value,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                return match.group(1).strip().title()
-    return ""
+    return infer_destination_from_urls(urls)

@@ -80,3 +80,11 @@ def test_destination_can_be_inferred_from_tiktok_search_query() -> None:
     )
 
     assert destination == "Hanoi"
+
+
+def test_destination_query_inference_remains_global() -> None:
+    destination = _infer_destination_from_urls(
+        ["https://example.com/video?q=things%20to%20do%20in%20paris%3F"]
+    )
+
+    assert destination == "Paris"

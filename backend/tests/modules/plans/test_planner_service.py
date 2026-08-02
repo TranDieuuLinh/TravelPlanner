@@ -779,7 +779,7 @@ def test_merge_selected_places_removes_same_url_identity_variants() -> None:
                 latitude=21.0291,
                 longitude=105.8412,
                 sourceRefs=[source_url],
-                sourceProvider="nominatim",
+                sourceProvider="google_maps_scraper",
             ),
             SelectedPlaceCreate(
                 name="Phố đường tàu Hà Nội",
