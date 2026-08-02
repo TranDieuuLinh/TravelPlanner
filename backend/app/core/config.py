@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     user_post_video_max_bytes: int = 100 * 1024 * 1024
     place_resolver_provider: str = "google_maps_scraper"
     route_provider: str = "valhalla"
+    itinerary_optimizer_mode: str = "route_first"
     valhalla_base_url: str = "http://localhost:8002"
     valhalla_timeout_seconds: float = 15.0
     valhalla_min_interval_seconds: float = Field(default=0.0, ge=0.0)
@@ -171,6 +172,10 @@ class Settings(BaseSettings):
         if self.route_provider not in {"valhalla", "geodesic"}:
             raise ValueError(
                 "ROUTE_PROVIDER must be valhalla or geodesic"
+            )
+        if self.itinerary_optimizer_mode not in {"route_first", "legacy"}:
+            raise ValueError(
+                "ITINERARY_OPTIMIZER_MODE must be route_first or legacy"
             )
         if bool(self.youtube_transcript_worker_url) != bool(
             self.youtube_transcript_worker_token

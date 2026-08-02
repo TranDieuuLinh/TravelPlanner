@@ -212,13 +212,11 @@ function Planner() {
     itemId: string;
     originalName: string;
     name: string;
-    timeWindow: string;
     notes: string;
   } | null>(null);
   const [addingDay, setAddingDay] = useState<number | null>(null);
   const [addName, setAddName] = useState("");
   const [addPlaceType, setAddPlaceType] = useState("attraction");
-  const [addTimeWindow, setAddTimeWindow] = useState("");
   const [addNotes, setAddNotes] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState<PlaceSuggestion | null>(null);
@@ -323,7 +321,6 @@ function Planner() {
           placeId: selectedEditSuggestion?.placeId,
           name: editingItem.name.trim(),
           address: selectedEditSuggestion?.address,
-          timeWindow: editingItem.timeWindow,
           latitude: selectedEditSuggestion?.latitude,
           longitude: selectedEditSuggestion?.longitude,
           notes: editingItem.notes
@@ -362,7 +359,6 @@ function Planner() {
           placeId: selectedSuggestion?.placeId || undefined,
           name: addName.trim(),
           placeType: addPlaceType,
-          timeWindow: addTimeWindow.trim() || undefined,
           notes: addNotes.trim() || undefined,
           address: selectedSuggestion?.address || undefined,
           latitude: selectedSuggestion?.latitude ?? undefined,
@@ -380,7 +376,6 @@ function Planner() {
       );
       setAddingDay(null);
       setAddName("");
-      setAddTimeWindow("");
       setAddNotes("");
       setSelectedSuggestion(null);
       setPlaceSuggestions([]);
@@ -412,26 +407,7 @@ function Planner() {
         }
       });
 
-      let currentMin = 9 * 60;
-      if (rawNewItems[0]?.timeWindow && rawNewItems[0].timeWindow.includes("-")) {
-        const parts = rawNewItems[0].timeWindow.split("-")[0].split(":");
-        if (parts.length === 2) {
-          const h = parseInt(parts[0], 10);
-          const m = parseInt(parts[1], 10);
-          if (!isNaN(h) && !isNaN(m)) currentMin = h * 60 + m;
-        }
-      }
-
-      const newItems = rawNewItems.map((it) => {
-        const dur = getItemDurationMinutes(it.timeWindow);
-        const endMin = Math.min(23 * 60 + 59, currentMin + dur);
-        const sh = String(Math.floor(currentMin / 60)).padStart(2, "0");
-        const sm = String(currentMin % 60).padStart(2, "0");
-        const eh = String(Math.floor(endMin / 60)).padStart(2, "0");
-        const em = String(endMin % 60).padStart(2, "0");
-        currentMin = Math.min(23 * 60 + 44, endMin + 15);
-        return { ...it, timeWindow: `${sh}:${sm}-${eh}:${em}` };
-      });
+      const newItems = rawNewItems;
 
       const newLegs: typeof d.transportLegs = [];
       const locatedItems = newItems.filter((it) => it.latitude != null && it.longitude != null);
@@ -645,7 +621,7 @@ function Planner() {
           ? [{
               name: item.name,
               category: categoryFromPlaceType(item.placeType),
-              address: item.address || `Ngày ${item.day} · ${item.timeWindow}`,
+              address: item.address || `Ngày ${item.day}`,
               latitude: item.latitude ?? null,
               longitude: item.longitude ?? null,
               notes: item.notes,
@@ -1863,7 +1839,6 @@ function Planner() {
                                                 itemId: item.itemId!,
                                                 originalName: item.name,
                                                 name: item.name,
-                                                timeWindow: item.timeWindow,
                                                 notes: item.notes || ""
                                               });
                                               setSelectedEditSuggestion(
@@ -1979,7 +1954,6 @@ function Planner() {
                           onClick={() => {
                             setAddingDay(displayedPlanDay.day);
                             setAddName("");
-                            setAddTimeWindow("");
                             setAddNotes("");
                           }}
                           type="button"
@@ -2095,15 +2069,6 @@ function Planner() {
               <p className="itinerarySearchHint">Chọn một địa điểm trong gợi ý để cập nhật đúng vị trí trên bản đồ.</p>
             ) : null}
             <div className="itineraryMutationField">
-              <label>Khung giờ (VD: 09:00-10:30)</label>
-              <input
-                onChange={(e) => setEditingItem({ ...editingItem, timeWindow: e.target.value })}
-                placeholder="09:00-10:30"
-                type="text"
-                value={editingItem.timeWindow}
-              />
-            </div>
-            <div className="itineraryMutationField">
               <label>Ghi chú trong lịch trình (không phải mô tả địa điểm)</label>
               <textarea
                 onChange={(e) => setEditingItem({ ...editingItem, notes: e.target.value })}
@@ -2189,15 +2154,6 @@ function Planner() {
                 <option value="cafe">Cà phê / Giải khát</option>
                 <option value="hotel">Khách sạn / Lưu trú</option>
               </select>
-            </div>
-            <div className="itineraryMutationField">
-              <label>Khung giờ (Tùy chọn)</label>
-              <input
-                onChange={(e) => setAddTimeWindow(e.target.value)}
-                placeholder="Mặc định tự động xếp giờ"
-                type="text"
-                value={addTimeWindow}
-              />
             </div>
             <div className="itineraryMutationField">
               <label>Ghi chú (Tùy chọn)</label>
@@ -2345,18 +2301,6 @@ function processingDescription(stage: WorkflowStage, intakeKind: IntakeKind): st
     return "Đang đọc nội dung ảnh, nhận diện địa điểm và chuẩn hóa yêu cầu.";
   }
   return "Đang hiểu điểm đến, thời lượng, ngân sách, sở thích và ràng buộc.";
-}
-
-function getItemDurationMinutes(timeWindow?: string): number {
-  if (!timeWindow || !timeWindow.includes("-")) return 60;
-  const [start, end] = timeWindow.split("-");
-  const [sh, sm] = (start || "").split(":").map((n) => parseInt(n, 10));
-  const [eh, em] = (end || "").split(":").map((n) => parseInt(n, 10));
-  if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
-    const diff = (eh * 60 + em) - (sh * 60 + sm);
-    if (diff > 0) return diff;
-  }
-  return 60;
 }
 
 function budgetLevelLabel(level: ExplorerContext["tripSpec"]["budget"]["level"]): string {

@@ -23,6 +23,12 @@ Sử dụng pytest cho domain và service:
   CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
 - điều phối luồng tạo plan;
+- TripThemePlanner trả requirement toàn chuyến và backend chỉ sinh bucket ngày trung
+  tính; URL provenance không có `sourceDay` được phép đổi ngày theo tuyến;
+- itinerary optimizer gom activity gần nhau giữa các ngày, giữ source-day anchor,
+  dùng matrix khi có và bảo toàn thứ tự khi provider lỗi;
+- route-first tạo đúng hai activity và ba bữa mỗi ngày theo thứ tự cố định; meal selector
+  chọn breakfast/lunch/dinner sau activity và không dùng khung giờ;
 - mọi selected place được xếp hoặc có lý do chưa xếp;
 - bảo toàn item đã khóa và tính độc lập của plan dự phòng;
 - trip chat giữ nguyên plan ID qua nhiều revision, nhớ user request trước và

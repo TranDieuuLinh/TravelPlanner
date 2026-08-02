@@ -548,6 +548,7 @@ class PlannerAgentOutput(BaseModel):
     macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     day_briefs_ready: Annotated[bool, Field(alias="dayBriefsReady")] = True
+    trip_themes_ready: Annotated[bool, Field(alias="tripThemesReady")] = True
     unallocated_selected_places: Annotated[
         list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
     ] = Field(default_factory=list)

@@ -270,7 +270,16 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 
 ### Giai đoạn 6: Finder
 
+Ở chế độ route-first, Planner runtime mang tên `TripThemePlannerService`. Nó tạo
+`tripThemes` ở cấp toàn chuyến (theme, focus tags và số activity tối thiểu phải phủ),
+không tạo nội dung theo Ngày 1/Ngày 2. `dayBriefs` trung tính chỉ là projection tương
+thích cho API cũ; PlaceSelector chọn pool toàn chuyến và route optimizer mới quyết định
+activity thuộc ngày nào. Tên/chủ đề hiển thị của ngày được suy ra sau cùng từ cụm Place.
+
 Finder điền item cụ thể:
+
+- theme và day-part goal được dùng để tạo shortlist rộng, không còn là ràng buộc
+  cứng ngăn activity phù hợp được chuyển sang ngày gần hơn về địa lý;
 
 - với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder chỉ bổ
   sung catalog vào ngày hoàn toàn chưa có stop nguồn;
@@ -283,12 +292,14 @@ Finder điền item cụ thể:
   URL của user;
 - Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- chọn khung giờ theo giờ hoạt động và timing claim;
+- ở chế độ `route_first`, không chọn khung giờ và không loại candidate theo giờ mở cửa;
+  timing claim chỉ được giữ làm provenance, chưa dùng để tạo giờ hẹn;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
-- thêm route leg, thời gian đệm, bữa ăn và nghỉ;
+- chốt đúng hai activity chính cho mỗi ngày, tối ưu activity ở cấp toàn chuyến,
+  rồi mới chọn đủ breakfast/lunch/dinner theo các anchor địa lý của tuyến;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
 - lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
@@ -300,6 +311,20 @@ Finder điền item cụ thể:
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
+
+Sau khi `PlaceSelectorService` chọn Place mà chưa gọi route leg chi tiết,
+`RouteFirstItineraryOptimizer` chạy ở cấp toàn chuyến.
+Nó dùng travel-time matrix để giảm tổng thời gian di chuyển bằng cách hoán đổi
+activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `MealStopSelector` chèn
+đủ ba bữa theo thứ tự breakfast → activity 1 → lunch → activity 2 → dinner. Stop nguồn có
+`sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ cố định. Đây là heuristic
+deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm cuối đã chốt;
+không được mô tả như tối ưu toàn cục. Có thể quay lại behavior cũ bằng
+`ITINERARY_OPTIMIZER_MODE=legacy`.
+
+Route-first hiện không tạo lịch theo đồng hồ. Các marker `timeWindow` rất ngắn chỉ tồn tại
+để giữ tương thích schema và thứ tự; UI không cho nhập/sửa giờ và các marker không tham gia
+candidate selection, opening-hours check hoặc timeline fitting.
 
 Adapter Finder dùng `RepositoryFinderPlaceTool` trong runtime để tìm Place đang
 active theo `regionKey` và `focusTags`. Nếu catalog vùng trống nhưng có

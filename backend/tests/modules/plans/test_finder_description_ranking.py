@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from app.modules.places.model import Place
 from app.modules.plans.domain.entities import DayBrief, MacroPlan, TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
@@ -60,6 +62,47 @@ def test_description_retrieval_then_structured_reranking_prefers_nature() -> Non
         "vn,hai-phong,cat-hai,cat-ba",
         "vn,hai-phong,cat-hai",
         "vn,hai-phong",
+    ]
+
+
+def test_structured_reranking_prefers_reviewed_place_over_alphabetic_noise() -> None:
+    repository = FakeFinderRepository(
+        [
+            _place(
+                "alphabetic-noise",
+                "A Generic Museum",
+                "museum",
+                "vn,ha-noi",
+                description="Culture museum in Hanoi.",
+                group="attraction",
+                tags=["culture", "museum"],
+                rating=3.5,
+                review_count=2,
+            ),
+            _place(
+                "reviewed-museum",
+                "Vietnam History Museum",
+                "museum",
+                "vn,ha-noi",
+                description="Culture museum in Hanoi.",
+                group="attraction",
+                tags=["culture", "museum"],
+                rating=4.6,
+                review_count=10_000,
+            ),
+        ]
+    )
+
+    results = RepositoryFinderPlaceTool(repository).search(
+        region_key="vn,ha-noi",
+        target_tags=["culture", "museum"],
+        excluded_place_ids=set(),
+        limit=2,
+    )
+
+    assert [place.place_id for place in results] == [
+        "reviewed-museum",
+        "alphabetic-noise",
     ]
 
 
@@ -170,6 +213,8 @@ def _place(
     description: str,
     group: str,
     tags: list[str],
+    rating: float | None = None,
+    review_count: int = 0,
 ) -> Place:
     return Place(
         id=place_id,
@@ -182,6 +227,8 @@ def _place(
         typical_duration_minutes=60,
         data_confidence="high",
         opening_hours=[],
+        rating=Decimal(str(rating)) if rating is not None else None,
+        review_count=review_count,
         metadata_json={
             "description": description,
             "placeGroup": group,
