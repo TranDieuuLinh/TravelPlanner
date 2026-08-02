@@ -416,7 +416,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
                 placeId="source-place",
                 name="Place from video",
                 sourceRefs=["https://example.com/reel"],
-                sourceProvider="nominatim",
+                sourceProvider="google_maps_scraper",
                 sourceOrder=1,
                 tags=["culture"],
             )
@@ -429,7 +429,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         for item in result.days[0].items
         if item.source != "break"
     ] == ["Place from video"]
-    assert result.days[0].items[0].source_provider == "nominatim"
+    assert result.days[0].items[0].source_provider == "google_maps_scraper"
     assert any(
         item.source == "finder_suggestion"
         for item in result.days[1].items

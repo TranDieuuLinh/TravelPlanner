@@ -27,7 +27,7 @@ canonical để ghi đè `places`.
   URL cho TikTok, YouTube và nguồn URL khác. Không cache media, frame, raw
   provider payload hay toàn bộ transcript.
 - Cache hit bỏ qua media/STT/OCR. Snapshot hit bỏ qua place resolver. Cache miss
-  resolve theo `places DB -> Google Maps Playwright -> Nominatim`.
+  resolve theo `places DB -> Google Maps Playwright`.
 - `notes` chỉ giữ evidence/mẹo ngắn đã chuẩn hóa từ caption/STT/OCR; dữ liệu vận
   hành mới hơn vẫn lấy từ `places` hoặc resolver.
 

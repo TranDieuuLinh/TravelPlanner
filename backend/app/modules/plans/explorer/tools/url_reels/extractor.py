@@ -4,6 +4,11 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+from app.modules.plans.destination_inference import (
+    infer_destination_from_place_names,
+    infer_destination_from_text,
+    usable_destination,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
     ExtractedDestinationStay,
@@ -210,6 +215,11 @@ class UrlReelContextExtractor:
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> ExtractedContext:
         metadata_text = "\n".join(part for part in [metadata.title, metadata.description] if part)
+        effective_destination = (
+            usable_destination(destination)
+            or infer_destination_from_text(metadata.title, metadata.description)
+            or None
+        )
         structured_stt_text = "\n".join(
             observation.evidence
             for observation in speech_observations or []
@@ -225,7 +235,7 @@ class UrlReelContextExtractor:
                     else transcript
                 ),
                 visual_text,
-                destination,
+                effective_destination,
             ]
             if part
         )
@@ -235,20 +245,20 @@ class UrlReelContextExtractor:
             speech_observations=speech_observations or [],
             visual_observations=visual_observations or [],
             visual_places=visual_places or [],
-            destination=destination,
+            destination=effective_destination,
         )
         places = self._extract_places(
             metadata=metadata,
             metadata_text=metadata_text,
             transcript=transcript,
-            destination=destination,
+            destination=effective_destination,
             visual_places=visual_places or [],
             speech_observations=speech_observations,
             visual_observations=visual_observations or [],
         )
         place_details = self._place_details(
             places=places,
-            destination=destination,
+            destination=effective_destination,
             metadata=metadata,
             metadata_text=metadata_text,
             transcript=transcript,
@@ -1014,6 +1024,13 @@ class UrlReelContextExtractor:
         )
         metadata_place = self._metadata_place_name(metadata)
         metadata_search_region = self._metadata_search_region(metadata)
+        inferred_search_region = (
+            metadata_search_region
+            or usable_destination(destination)
+            or infer_destination_from_text(metadata.title, metadata.description)
+            or infer_destination_from_place_names(places)
+            or None
+        )
         authoritative_places = self._authoritative_metadata_places(
             metadata,
             metadata_text,
@@ -1089,6 +1106,8 @@ class UrlReelContextExtractor:
                 )
                 if value
             }
+            if self._is_unsupported_ocr_logo(place, source_evidence):
+                continue
             local_evidence = " ".join(source_evidence.values()) or place
             source_day = transcript_days[order - 1]
             if (
@@ -1149,12 +1168,12 @@ class UrlReelContextExtractor:
             elif observation is not None and observation.activity:
                 source_activity = observation.activity
 
-            search_region = metadata_search_region or destination
+            search_region = inferred_search_region
             if source_day is not None:
                 search_region = (
                     day_regions.get(source_day)
                     or metadata_search_region
-                    or destination
+                    or inferred_search_region
                 )
             if (
                 speech_observation is not None
@@ -1184,6 +1203,10 @@ class UrlReelContextExtractor:
                     source="url_reel",
                     evidence=evidence,
                     sourceEvidence=source_evidence,
+                    confidence=self._place_confidence(
+                        source_evidence,
+                        speech_observation=speech_observation,
+                    ),
                     attributes=self._attributes_for_place(
                         place,
                         local_evidence,
@@ -1204,6 +1227,38 @@ class UrlReelContextExtractor:
                 detail.source_day or 10_000,
             ),
         )
+
+    def _is_unsupported_ocr_logo(
+        self,
+        place: str,
+        source_evidence: dict[str, str],
+    ) -> bool:
+        """Drop a logo guess when OCR evidence never names that venue."""
+        if set(source_evidence) != {"ocr"}:
+            return False
+        place_tokens = self._dedupe_key(place)
+        evidence_tokens = self._dedupe_key(source_evidence["ocr"])
+        return bool(place_tokens and place_tokens not in evidence_tokens)
+
+    def _place_confidence(
+        self,
+        source_evidence: dict[str, str],
+        *,
+        speech_observation: SpeechToTextObservation | None,
+    ) -> float:
+        if "metadata" in source_evidence:
+            score = 0.95
+        elif "caption" in source_evidence:
+            score = 0.88
+        elif speech_observation is not None and "stt" in source_evidence:
+            score = speech_observation.confidence
+        elif "ocr" in source_evidence:
+            score = 0.72
+        else:
+            score = 0.4
+        if len(source_evidence) > 1:
+            score += min(0.1, 0.04 * (len(source_evidence) - 1))
+        return min(1.0, max(0.0, score))
 
     def _matching_observation(
         self,

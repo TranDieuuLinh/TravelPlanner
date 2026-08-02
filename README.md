@@ -63,7 +63,7 @@ VSF_TravelPlanner/
 
 ## Chạy dự án trên máy cá nhân
 
-Docker Compose chỉ dùng cho PostgreSQL và backend:
+Docker Compose chạy PostgreSQL, backend và sidecar Google Maps dùng Playwright:
 
 ```bash
 docker compose up --build
@@ -72,6 +72,8 @@ docker compose up --build
 API và tài liệu API có tại `http://localhost:8000` và
 `http://localhost:8000/docs`. Backend tự chạy Alembic đến revision mới nhất
 trước khi nhận request. Dữ liệu PostgreSQL nằm trong volume `postgres_data`.
+Image sidecar tự cài package Playwright đã pin, Chromium và các thư viện hệ điều
+hành cần thiết khi build; không cần cài Playwright hoặc browser trên máy host.
 Frontend người dùng và Planning Control chạy trực tiếp trên host, không nằm
 trong Docker Compose.
 

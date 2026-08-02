@@ -18,7 +18,6 @@ from app.modules.places.resolver import (
     DatabasePlaceResolver,
     FallbackPlaceResolver,
     GoogleMapsScraperPlaceResolver,
-    NominatimPlaceResolver,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -161,33 +160,24 @@ def get_plan_service(
 def _get_place_resolver(
     place_repository: SqlAlchemyPlaceRepository | None = None,
 ) -> PlaceResolver:
-    nominatim = NominatimPlaceResolver(
-        base_url=settings.nominatim_base_url,
-        user_agent=settings.nominatim_user_agent,
-        timeout_seconds=settings.nominatim_timeout_seconds,
-        min_interval_seconds=settings.nominatim_min_interval_seconds,
-    )
-    if settings.place_resolver_provider == "nominatim":
-        external_resolver: PlaceResolver = nominatim
+    if settings.place_resolver_provider == "google_maps_scraper":
+        external_resolver: PlaceResolver = ProvisionalPlaceResolver()
         if (
             settings.google_maps_scraper_executable
             or settings.google_maps_scraper_work_dir is not None
         ):
-            external_resolver = FallbackPlaceResolver(
-                GoogleMapsScraperPlaceResolver(
-                    executable=settings.google_maps_scraper_executable,
-                    work_dir=settings.google_maps_scraper_work_dir,
-                    timeout_seconds=(
-                        settings.google_maps_scraper_timeout_seconds
-                    ),
-                    max_alias_queries=(
-                        settings.google_maps_scraper_max_alias_queries
-                    ),
-                    max_concurrency=(
-                        settings.google_maps_scraper_max_concurrency
-                    ),
+            external_resolver = GoogleMapsScraperPlaceResolver(
+                executable=settings.google_maps_scraper_executable,
+                work_dir=settings.google_maps_scraper_work_dir,
+                timeout_seconds=(
+                    settings.google_maps_scraper_timeout_seconds
                 ),
-                nominatim,
+                max_alias_queries=(
+                    settings.google_maps_scraper_max_alias_queries
+                ),
+                max_concurrency=(
+                    settings.google_maps_scraper_max_concurrency
+                ),
             )
         if place_repository is not None:
             return FallbackPlaceResolver(

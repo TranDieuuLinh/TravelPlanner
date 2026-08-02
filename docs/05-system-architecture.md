@@ -160,6 +160,10 @@ intake. Timing source còn trả số STT chunk, duration audio, duration từng
 và retry count. `cacheStatus` cùng `cacheLookupSeconds` phân biệt cache hit,
 cache miss và lần chủ động bypass cache mà không ghi URL vào timing log; đây là
 status/count/duration an toàn, không chứa transcript hoặc audio.
+`providerAttempts` ghi từng lần resolve bằng tên candidate đã chuẩn hóa,
+provider, số alias query, thời gian chờ queue, thời gian thực thi, outcome và lý
+do từ chối/timeout. `providerCounts` vì vậy đếm provider thực sự được gọi thay
+vì chỉ provider cuối cùng. Timing không ghi query đầy đủ hoặc provider payload.
 
 URL gửi từ trip chat đã đăng nhập không còn giữ HTTP request mở. Router tách mỗi
 URL thành một `UrlImportJob` bền vững và trả `202 Accepted`; worker trong cùng

@@ -41,6 +41,41 @@ CSV_COLUMNS = [
     "listed_year",
 ]
 
+# The repository's current catalog CSV uses stable English field names while
+# older exports used Vietnamese display labels. Keep both shapes importable so
+# refreshing the catalog does not silently skip every row.
+CSV_COLUMN_ALIASES = {
+    "source_id": ("source_id",),
+    "source_url": ("source_url",),
+    "name": ("name", "Tên lễ hội"),
+    "venue": ("venue_text", "venue", "Địa điểm tổ chức"),
+    "scale_level": ("organization_scale", "scale_level", "Quy mô tổ chức"),
+    "timing": ("schedule_text", "timing", "Thời gian tổ chức"),
+    "province": ("province_text", "province", "Tỉnh/Thành phố"),
+    "district": ("district_text", "district", "Quận/Huyện"),
+    "deity": ("worship_subject", "deity", "Đối tượng thờ phụng"),
+    "ceremony_part": ("ceremony_text", "ceremony_part", "Phần lễ"),
+    "festival_part": (
+        "festival_activities_text",
+        "festival_part",
+        "Phần hội",
+    ),
+    "festival_type": ("festival_type", "Loại lễ hội"),
+    "documentation": ("reference_text", "documentation", "Tư liệu lễ hội"),
+    "protection_measure": (
+        "protection_measures_text",
+        "protection_measure",
+        "Biện pháp bảo vệ",
+    ),
+    "registration_time": (
+        "registration_notice_text",
+        "registration_time",
+        "Thời điểm đăng ký hoặc thông báo",
+    ),
+    "recurrence": ("frequency_text", "recurrence", "Kỳ tổ chức"),
+    "listed_year": ("catalog_year_text", "listed_year", "Năm đưa vào danh mục"),
+}
+
 # Scale level mapping from Vietnamese to internal codes
 SCALE_MAPPING = {
     "cấp quốc gia": "quoc-gia",
@@ -69,6 +104,25 @@ def parse_listed_year(value: str | None) -> int | None:
         return None
 
 
+def normalize_csv_row(csv_row: dict[str, str]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for target, aliases in CSV_COLUMN_ALIASES.items():
+        normalized[target] = next(
+            (
+                str(csv_row.get(alias) or "").strip()
+                for alias in aliases
+                if str(csv_row.get(alias) or "").strip()
+            ),
+            "",
+        )
+    normalized["source_list_url"] = str(csv_row.get("source_list_url") or "").strip()
+    normalized["retrieved_at"] = str(csv_row.get("retrieved_at") or "").strip()
+    normalized["detail_retrieved_at"] = str(
+        csv_row.get("detail_retrieved_at") or ""
+    ).strip()
+    return normalized
+
+
 def row_to_festival(row: dict) -> dict:
     """Convert a CSV row dict to Festival kwargs."""
     return {
@@ -90,7 +144,15 @@ def row_to_festival(row: dict) -> dict:
         "registration_time": row.get("registration_time", "").strip() or None,
         "recurrence": row.get("recurrence", "").strip() or None,
         "listed_year": parse_listed_year(row.get("listed_year")),
-        "metadata_json": {},
+        "metadata_json": {
+            key: value
+            for key, value in {
+                "sourceListUrl": row.get("source_list_url") or None,
+                "retrievedAt": row.get("retrieved_at") or None,
+                "detailRetrievedAt": row.get("detail_retrieved_at") or None,
+            }.items()
+            if value is not None
+        },
     }
 
 
@@ -123,34 +185,8 @@ def import_festivals(csv_path: str | Path, batch_size: int = 500, truncate: bool
         with open(csv_path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
 
-            # Normalize column names
-            # CSV uses Vietnamese column names, map to expected keys
-            column_mapping = {
-                "source_id": "source_id",
-                "source_url": "source_url",
-                "Tên lễ hội": "name",
-                "Địa điểm tổ chức": "venue",
-                "Quy mô tổ chức": "scale_level",
-                "Thời gian tổ chức": "timing",
-                "Tỉnh/Thành phố": "province",
-                "Quận/Huyện": "district",
-                "Đối tượng thờ phụng": "deity",
-                "Phần lễ": "ceremony_part",
-                "Phần hội": "festival_part",
-                "Loại lễ hội": "festival_type",
-                "Tư liệu lễ hội": "documentation",
-                "Biện pháp bảo vệ": "protection_measure",
-                "Thời điểm đăng ký hoặc thông báo": "registration_time",
-                "Kỳ tổ chức": "recurrence",
-                "Năm đưa vào danh mục": "listed_year",
-            }
-
             for csv_row in reader:
-                # Map Vietnamese column names to expected keys
-                row = {}
-                for csv_col, key in column_mapping.items():
-                    row[key] = csv_row.get(csv_col, "")
-
+                row = normalize_csv_row(csv_row)
                 festival_data = row_to_festival(row)
 
                 # Skip rows with empty source_id or name

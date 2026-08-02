@@ -162,7 +162,10 @@ class PlaceCandidateAggregator:
                                     url=result.url,
                                 )
                             ],
-                            confidence=result.extracted_context.confidence,
+                            confidence=(
+                                detail.confidence
+                                or result.extracted_context.confidence
+                            ),
                             preferenceLevel="preferred",
                             attributes=detail.attributes,
                             notes=detail.evidence,

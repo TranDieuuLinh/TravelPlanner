@@ -1,9 +1,7 @@
 "use strict";
 
 const fs = require("fs");
-const {
-  chromium,
-} = require("/opt/ms-playwright-go/1.57.0/package");
+const { chromium } = require("playwright");
 
 function coordinatesFromUrl(value) {
   let decoded = value || "";
@@ -372,9 +370,12 @@ async function lookup(page, query) {
   };
 }
 
-async function lookupQueries(page, queries) {
+async function lookupQueries(page, queries, options = {}) {
   const results = [];
   for (const query of queries) {
+    if (options.shouldContinue && !options.shouldContinue()) {
+      break;
+    }
     const result = await lookup(page, query).catch((error) => {
       process.stderr.write(`Google Maps page lookup failed: ${error.message}\n`);
       return null;

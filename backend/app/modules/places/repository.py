@@ -136,6 +136,47 @@ class SqlAlchemyPlaceRepository:
             )
         )
 
+    def search_active_by_names(
+        self,
+        names: list[str],
+        *,
+        limit: int = 100,
+    ) -> list[Place]:
+        """Find global name/branch matches for candidate aliases.
+
+        This is the second pass for place resolution when a region-scoped
+        lookup misses. Keeping the comparison in SQL avoids loading the whole
+        place catalog into Python.
+        """
+        lookup_names = {
+            " ".join(name.split()).lower()
+            for name in names
+            if name and " ".join(name.split())
+        }
+        if not lookup_names:
+            return []
+        query = (
+            select(Place)
+            .where(
+                Place.deleted_at.is_(None),
+                Place.status == "active",
+                Place.latitude.is_not(None),
+                Place.longitude.is_not(None),
+                or_(
+                    *(
+                        Place.name.ilike(
+                            f"%{_escape_like(name)}%",
+                            escape="\\",
+                        )
+                        for name in lookup_names
+                    )
+                ),
+            )
+            .order_by(Place.region_key, Place.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(query))
+
     def add(self, place: Place) -> Place:
         self.session.add(place)
         return place
@@ -244,6 +285,10 @@ def _validate_region_key(region_key: str) -> None:
         raise ValueError(f"Invalid region_key: {region_key}")
     if any("%" in part or "_" in part for part in parts):
         raise ValueError(f"Invalid region_key wildcard: {region_key}")
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _parse_optional_datetime(value: str) -> datetime | None:

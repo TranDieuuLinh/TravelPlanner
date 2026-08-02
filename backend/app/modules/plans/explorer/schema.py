@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.plans.dto.agent_contracts import (
     ItineraryItemCategory,
@@ -201,9 +201,23 @@ class PlaceCandidateReview(BaseModel):
         Field(default=None, ge=1, le=30, alias="sourceDay"),
     ]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    extraction_confidence: Annotated[
+        float,
+        Field(default=0.0, ge=0.0, le=1.0, alias="extractionConfidence"),
+    ]
+    resolution_confidence: Annotated[
+        float,
+        Field(default=0.0, ge=0.0, le=1.0, alias="resolutionConfidence"),
+    ]
     retryable: bool = True
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def backfill_extraction_confidence(self) -> "PlaceCandidateReview":
+        if self.extraction_confidence == 0.0 and self.confidence > 0.0:
+            self.extraction_confidence = self.confidence
+        return self
 
 
 class ExplorerContextResponse(BaseModel):
@@ -317,6 +331,32 @@ class ExplorerSourceTiming(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ExplorerProviderAttempt(BaseModel):
+    candidate: str
+    provider: str
+    alias_query_count: Annotated[
+        int,
+        Field(default=0, alias="aliasQueryCount"),
+    ]
+    queue_wait_seconds: Annotated[
+        float,
+        Field(default=0.0, alias="queueWaitSeconds"),
+    ]
+    execution_seconds: Annotated[
+        float,
+        Field(default=0.0, alias="executionSeconds"),
+    ]
+    outcome: Literal[
+        "resolved", "unresolved", "error", "timeout", "cache_hit"
+    ]
+    rejection_reason: Annotated[
+        str | None,
+        Field(default=None, alias="rejectionReason"),
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
 class ExplorerTimingReport(BaseModel):
     intake_id: Annotated[str, Field(alias="intakeId")]
     status: str
@@ -335,6 +375,10 @@ class ExplorerTimingReport(BaseModel):
     resolved_provider_counts: Annotated[
         dict[str, int],
         Field(default_factory=dict, alias="resolvedProviderCounts"),
+    ]
+    provider_attempts: Annotated[
+        list[ExplorerProviderAttempt],
+        Field(default_factory=list, alias="providerAttempts"),
     ]
     log_file: Annotated[str | None, Field(default=None, alias="logFile")]
 

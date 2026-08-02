@@ -30,15 +30,14 @@ services:
       BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       APP_ENV: local
       GEMINI_MIN_INTERVAL_SECONDS: "0.0"
-      PLACE_RESOLVER_PROVIDER: nominatim
+      PLACE_RESOLVER_PROVIDER: google_maps_scraper
       ROUTE_PROVIDER: valhalla
       VALHALLA_BASE_URL: http://valhalla:8002
       OPENTRIPPLANNER_BASE_URL: http://opentripplanner:8080/otp/gtfs/v1
       OPENTRIPPLANNER_SCHEDULE_STATUS: development_shifted_2018
-      NOMINATIM_BASE_URL: https://nominatim.openstreetmap.org
-      NOMINATIM_USER_AGENT: VSF-Travel-Planner/0.1 (local-development)
       GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
       GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
+      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "1"
     ports:
       - "8000:8000"
     volumes:
@@ -63,19 +62,15 @@ services:
       start_period: 10s
 
   google-maps-scraper:
-    image: docker.io/gosom/google-maps-scraper:v1.12.1
-    platform: linux/amd64
-    entrypoint:
-      - /opt/ms-playwright-go/1.57.0/node
-      - /runner/google_maps_scraper_worker.js
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.playwright
     environment:
       DISABLE_TELEMETRY: "1"
-      PLAYWRIGHT_DRIVER_PATH: /opt/ms-playwright-go/1.57.0
       GOOGLE_MAPS_SCRAPER_WORK_DIR: /work
       GOOGLE_MAPS_SCRAPER_CONCURRENCY: "2"
+      GOOGLE_MAPS_SCRAPER_STALE_ARTIFACT_SECONDS: "600"
     volumes:
-      - ./backend/scripts/google_maps_scraper_worker.js:/runner/google_maps_scraper_worker.js:ro
-      - ./backend/scripts/google_maps_place_lookup.js:/runner/google_maps_place_lookup.js:ro
       - ./backend/var/google-maps-scraper:/work
     restart: unless-stopped
 

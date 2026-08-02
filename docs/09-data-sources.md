@@ -70,31 +70,50 @@ Explorer tạo alias tra cứu dạng structured gồm `originalName`, `englishN
 ngôn ngữ nào; tên nguồn và provenance luôn được giữ nguyên. LLM không được sinh
 tọa độ hoặc tự quyết định place identity. Các nhóm tên được hợp nhất thành
 `searchNames`; resolver tìm record `active` có tọa độ trong bảng `places` theo
-mọi tên/alias và đúng `region_key` trước. Nhờ vậy source tiếng Việt vẫn match
-được record DB chỉ có tên tiếng Anh và ngược lại. Chỉ candidate không match
-catalog nội bộ mới fallback sang Playwright CLI của Google Maps, sau đó mới
-tới Nominatim
-của `gosom/google-maps-scraper`. Scraper nhận tên gốc và
+mọi tên/alias và đúng `region_key` trước. Nếu lượt này không có kết quả,
+resolver tìm tên/alias trên toàn catalog, gồm tên có hậu tố chi nhánh, và dùng
+`region_key` để ưu tiên thay vì loại bỏ; một kết quả duy nhất được nhận, còn nhiều record trùng tên
+ngoài vùng được giữ unresolved để provider tiếp theo xác minh. Nhờ vậy source
+tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại, đồng
+thời không đoán giữa các thương hiệu/địa điểm trùng tên. Chỉ candidate không
+match catalog nội bộ mới fallback sang Playwright worker của Google Maps.
+Scraper nhận tên gốc và
 alias có cấu trúc qua file input tạm, nhưng chỉ nhận
 kết quả khi tên, vùng, category và latitude/longitude hợp lệ; provider lỗi,
 timeout hoặc mismatch không làm hỏng intake. Alias catalog được lưu trong
 `places.metadata.aliases`, hoặc tách theo `englishNames`, `vietnameseNames`,
 `alternateNames`; `searchNames` tiếp tục được đọc để tương thích dữ liệu cũ.
-Scraper tra tên canonical trước và chỉ gửi các alias còn lại khi kết quả đầu
-không đạt cùng rule xác minh; nhờ đó match rõ ràng không phải chờ nhiều lượt
-Playwright tuần tự.
+Với candidate có alias tiếng Việt, scraper tra tên tiếng
+Việt trước, sau đó mới fallback sang tên nguồn, tên tiếng Anh và alias
+còn lại khi kết quả đầu không đạt rule xác minh. Candidate không có
+alias tiếng Việt tiếp tục tra tên nguồn trước. Nhờ đó match rõ ràng
+không phải chờ nhiều lượt Playwright tuần tự.
+Explorer đồng bộ mặc định chỉ chạy alias mạnh nhất
+(`GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES=1`). Alias bổ sung chỉ được bật có chủ
+đích cho retry/enrichment để không nhân độ trễ Playwright theo số tên song ngữ.
+Khi catalog có nhiều chi nhánh cùng tên, resolver ưu tiên địa chỉ hoặc landmark
+có evidence từ source. Nếu source không nêu rõ chi nhánh, resolver dùng stop đã
+resolve ngay trước/sau trong cùng ngày và cùng URL để tính quãng đường vòng địa
+lý. Chỉ tự chọn khi kết quả tốt nhất cách biệt đủ rõ (tối thiểu 0,75 km và 30%
+so với kết quả thứ hai, đồng thời không lệch anchor quá 15 km); nếu không,
+candidate tiếp tục unresolved và provider sau không được chọn đại kết quả đầu
+tiên; UI phải yêu cầu user chọn. Candidate có địa chỉ/landmark từ source vẫn có
+thể đi qua provider sau để xác minh evidence đó. Đây là heuristic chọn identity,
+không phải route provider hay tối ưu lại thứ tự itinerary.
 Valhalla và OpenTripPlanner không phải geocoder/POI search nên không thay vai
 trò này. Candidate chỉ được nhận khi khớp tên/vùng, loại provider không mâu
-thuẫn rõ và có tọa độ. Public Nominatim xử lý tuần tự để tuân thủ giới hạn một
-request/giây; tải lớn phải dùng Nominatim tự vận hành hoặc một provider
-geocoding khác sau cùng interface.
+thuẫn rõ và có tọa độ. Candidate không khớp catalog và không được Google Maps
+Playwright xác minh sẽ giữ trạng thái unresolved để người dùng xử lý tiếp.
 
 Google Maps scraper không cần API key. Trong Docker Compose, scraper chạy ở
 sidecar `gosom/google-maps-scraper:v1.12.1` với Chromium/Playwright đóng gói
 sẵn. Backend và sidecar trao đổi input/output JSON qua
 `GOOGLE_MAPS_SCRAPER_WORK_DIR`; input được publish bằng atomic rename và mỗi
 sidecar giữ một Chromium browser với hai page slot. Hai candidate có thể
-resolve đồng thời mà không khởi động lại browser cho từng job. Cách này cô lập image AMD64 của
+resolve đồng thời mà không khởi động lại browser cho từng job. Job JSON mang
+`createdAtMs` và `deadlineAtMs`; worker ghi status lúc claim để tách queue wait
+khỏi execution time, kiểm tra cancellation/deadline khi chạy, đóng page của slot
+khi bị hủy và dọn response/error/status/cancellation mồ côi theo TTL. Cách này cô lập image AMD64 của
 upstream khỏi backend ARM64 trên Apple Silicon. Khi chạy native ngoài Compose,
 có thể bỏ `WORK_DIR` và dùng `GOOGLE_MAPS_SCRAPER_EXECUTABLE`. Telemetry bị tắt
 và file tạm được dọn sau mỗi lần resolve. Backend chỉ lưu field đã chuẩn hóa
@@ -106,17 +125,6 @@ không xuất hiện trên trang được để null, không suy diễn. Backend
 bộ payload scrape. Deployment phải tự
 đánh giá điều khoản sử dụng, attribution, retention, tải hệ thống và rủi ro bị
 chặn trước khi bật provider này. Xem ADR-010.
-
-Khi dùng public Nominatim, adapter phải gửi User-Agent nhận diện ứng dụng, tối
-đa một request/giây, cache response, hiển thị attribution OpenStreetMap và có
-khả năng đổi endpoint bằng cấu hình. Adapter yêu cầu kết quả tiếng Việt trước,
-đối chiếu cả tên tiếng Anh và tên thay thế trong `namedetails`, rồi chỉ dùng tên
-tiếng Việt làm nhãn plan khi match được resolve; địa chỉ và tọa độ được chuyển
-tiếp riêng. Tải lớn phải chuyển sang hosted provider hoặc Nominatim tự vận hành.
-Ngoài danh tính, địa chỉ và tọa độ, adapter chuẩn hóa tối đa các field OSM trả
-về gồm loại địa điểm, `opening_hours`, website, điện thoại, Wikidata/Wikipedia,
-operator, cuisine, wheelchair, plus code và tên Anh/Việt. Nominatim không cung
-cấp rating hoặc review; các field đó phải để null thay vì giả lập.
 
 ## Nhập dữ liệu từ URL
 
@@ -148,9 +156,8 @@ instruction.
    Nếu metadata công khai của URL có `place`, `venue` hoặc `location`, giá trị
    này được tạo thành candidate ưu tiên trước caption/STT/OCR và giữ evidence
    `metadata`; địa chỉ/city trong metadata được dùng làm hint cho resolver.
-   Chuỗi resolver cache dùng chung -> catalog nội bộ -> Google Maps scraper ->
-   Nominatim có
-   cấu hình vẫn phải xác minh danh tính và tọa độ trước khi lưu.
+   Chuỗi resolver cache dùng chung -> catalog nội bộ -> Google Maps Playwright
+   vẫn phải xác minh danh tính và tọa độ trước khi lưu.
    Danh sách địa điểm có pin trong caption là blueprint canonical tiếp theo:
    giữ tên và thứ tự caption, tách các street được nêu chung, rồi chỉ dùng
    STT/OCR để bổ sung evidence, activity và address. Tên thành phố trùng
@@ -165,7 +172,7 @@ instruction.
    evidence STT/OCR và tự vượt qua policy chống caption rác. Khi structured STT đã có, Python không
    suy diễn place/day/activity từ transcript tự do.
 7. Tạo alias Anh–Việt có cấu trúc, sau đó chuẩn hóa địa điểm theo chuỗi
-   shared cache -> `places` catalog -> Google Maps scraper -> Nominatim có cấu hình
+   shared cache -> `places` catalog -> Google Maps Playwright
    và gộp trùng.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Kết quả chỉ
    được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
@@ -181,6 +188,12 @@ instruction.
    lấy từ evidence dạng `near/along ...` vào query; scraper phải mở một place
    card cụ thể trước khi đọc tên, địa chỉ và tọa độ, không được coi trang danh
    sách `Kết quả` hoặc tâm bản đồ là một place.
+   Placeholder `unspecified`/`unknown` được coi như thiếu region và không được
+   gửi tới provider. Background URL job bảo toàn destination của chat hoặc suy
+   luận bảo thủ từ query URL, title/caption và vùng chiếm ưu thế trong candidate.
+   Candidate OCR-only bị loại khi evidence không chứa chính tên logo. Nhiều
+   candidate khác tên nhưng trùng Google identity/tọa độ cùng bị trả về
+   `duplicate_provider_identity` thay vì được persist.
 8. Tự động upsert snapshot dùng chung vào `user_must_place` và tạo junction
    `user_must_place_users` chỉ khi provider trả kết quả `resolved` cho địa điểm
    cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
@@ -212,10 +225,13 @@ trả transcript cùng observation gồm order/place/evidence/day/time/activity/
 duration/confidence và search region explicit. Candidate từ STT và frame vision
 được gộp; một nguồn không loại bỏ candidate chỉ xuất hiện ở nguồn còn lại. OCR
 ưu tiên tên hiển thị và thứ tự frame; STT ưu tiên day/time/activity/duration/
-search region; evidence ngắn của hai nguồn được giữ tách biệt. Không
+search region; evidence ngắn của hai nguồn được giữ tách biệt. Mỗi stop giữ
+extraction confidence riêng theo evidence; place resolution tạo resolution
+confidence riêng theo provider và chất lượng match, không sao chép một
+confidence chung của cả video cho mọi stop. Không
 giới hạn số place candidate có evidence được giữ sau bước
-gộp; giới hạn 48 chỉ là số frame video lấy mẫu. Frame được
-chia đều giữa các batch để giảm latency của batch lớn nhất; tối đa năm batch
+gộp; giới hạn 48 chỉ là số frame video lấy mẫu. Frame được chia đều giữa các
+batch để giảm latency của batch lớn nhất; tối đa năm batch
 chạy song song bằng các API key khác nhau trong `GEMINI_OCR_API_KEYS`. STT dùng
 pool riêng `GEMINI_STT_API_KEYS` và chuyển sang key kế tiếp khi key hiện tại trả
 `401`, `403` hoặc `429`; hai pool riêng không được chứa key trùng nhau và chuỗi

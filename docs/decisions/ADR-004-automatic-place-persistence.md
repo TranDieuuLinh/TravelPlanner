@@ -27,9 +27,8 @@ Explorer intake.
 6. Explorer không tự gọi Planner hoặc Finder. Planner downstream nhận nguyên
    envelope, dùng object `explorer` và chuyển tiếp `intakeId + userId`; Finder
    downstream đọc `user_must_place` bằng đúng cặp khóa đó.
-7. Provider nằm sau `PlaceResolver`. Adapter Nominatim là adapter local/MVP có
-   cấu hình và rate limit, không phải quyết định provider bản đồ/route cuối cùng
-   của ADR-002.
+7. Provider nằm sau `PlaceResolver`. Catalog nội bộ và adapter Google Maps
+   Playwright không phải quyết định provider bản đồ/route cuối cùng của ADR-002.
 
 ## An toàn dữ liệu
 
@@ -37,8 +36,8 @@ Explorer intake.
   Explorer.
 - Dữ liệu không chắc chắn vẫn được lưu nhưng không được đánh dấu verified.
 - Lưu provider, external ID, attribution, confidence và `fetchedAt`.
-- Adapter public Nominatim phải gửi User-Agent riêng, tối đa một request mỗi
-  giây, cache kết quả đã lưu và có thể thay thế bằng cấu hình.
+- Adapter bên ngoài phải có timeout, giới hạn concurrency, cache snapshot đã
+  chuẩn hóa và có thể thay thế bằng cấu hình.
 
 ## Hệ quả
 
@@ -46,8 +45,8 @@ Explorer intake.
 - Finder có thể nhận nhầm candidate do OCR hoặc URL extraction; Finder và
   CheckOverall phải sử dụng resolution status/confidence để cảnh báo.
 - Mỗi intake và candidate có provenance truy vết được.
-- Endpoint Explorer có thể chậm theo số candidate vì public Nominatim không cho
-  phép request song song; background job là bước nâng cấp tiếp theo khi tải tăng.
+- Endpoint Explorer có thể chậm theo số candidate và thời gian tải Playwright;
+  background job là bước nâng cấp tiếp theo khi tải tăng.
 - Quyết định này thay thế yêu cầu confirm bắt buộc của ADR-003 trong flow
   Explorer intake, nhưng không thay đổi confirmation ở các nghiệp vụ khác.
 

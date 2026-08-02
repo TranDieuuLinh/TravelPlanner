@@ -106,6 +106,11 @@ và ghi `explorer.trace.destinationGuardrail`. Resolver dùng vùng nguồn làm
 khi extraction đã có đồng thuận. Itinerary nhiều vùng không đạt ngưỡng đồng
 thuận không được tự động đổi trip base chỉ vì một day trip.
 
+Giá trị placeholder như `unspecified` không phải geographic evidence và không
+được nối vào provider query hoặc dùng để reject region. URL-only background job
+bảo toàn destination của chat hoặc suy luận bảo thủ từ query URL, title/caption
+và vùng chiếm ưu thế trong candidate trước khi resolve.
+
 Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `high`.
 Frame được lấy thích nghi theo toàn bộ duration, không quá một frame mỗi giây,
 tối đa 48 frame và xử lý theo
@@ -207,6 +212,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
   reason/provider riêng thay vì biến mất khỏi UI. Retry từ trip chat chỉ gọi
   lại alias enrichment + resolver cho nhóm này, không chạy lại media/STT/OCR;
   Planner tiếp tục chỉ nhận item đã xác minh tọa độ.
+- `extractionConfidence` đo evidence riêng của candidate;
+  `resolutionConfidence` đo identity từ provider. `confidence` cũ tạm giữ nghĩa
+  extraction để tương thích client cũ.
+- Candidate khác tên cùng map tới một Google identity/tọa độ bị trả về
+  `duplicate_provider_identity`, không được persist.
 - Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
   đọc `UserMustPlace` theo cả `intakeId + userId`.
 

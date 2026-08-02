@@ -193,7 +193,7 @@ rounded_box(db_box, fill=DATA_SOFT, outline=DATA)
 text_block(
     process_box,
     "Aggregate → infer coverage → preferences → resolve",
-    "Deduplicate candidates while preserving provenance; Nominatim resolves place identity and coordinates",
+    "Deduplicate candidates while preserving provenance; the places catalog then Google Maps Playwright resolve identity and coordinates",
     title_color=CODE,
 )
 text_block(
