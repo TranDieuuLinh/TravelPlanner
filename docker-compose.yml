@@ -41,6 +41,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./backend/app:/app/app
       - ./backend/var:/app/var
       - ./database/golden_dataset:/database/golden_dataset:ro
     depends_on:

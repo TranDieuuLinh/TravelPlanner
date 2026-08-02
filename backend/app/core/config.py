@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = "local-only-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_minutes: int = 15
+    access_token_minutes: int = 1440
     refresh_token_days: int = 7
     auth_cookie_secure: bool = False
 
@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     momo_ipn_url: str = "http://localhost:8000/api/payments/webhooks/momo"
     preload_url_reel_models: bool = False
     enable_llm_explore_formatter: bool = False
+    conversation_supervisor_enabled: bool = True
+    conversation_supervisor_llm_enabled: bool = True
+    auto_plan_mutation_enabled: bool = True
+    conversation_streaming_enabled: bool = True
+    conversation_turn_timeout_seconds: float = Field(default=120.0, ge=1.0, le=900.0)
+    conversation_turn_stale_after_seconds: float = Field(default=300.0, ge=1.0, le=3600.0)
+    candidate_review_enabled: bool = False
+    weather_enabled: bool = False
+    conversational_backup_enabled: bool = True
+    partner_search_enabled: bool = False
+    realtime_collaboration_enabled: bool = False
+    weatherapi_key: str | None = None
+    weatherapi_base_url: str = "https://api.weatherapi.com/v1"
     gemini_api_key: str | None = None
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None

@@ -164,6 +164,7 @@ class PlanItem(BaseModel):
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
     source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
     source_activity: str | None = Field(default=None, alias="sourceActivity")
+    locked: bool = False
 
     model_config = {"populate_by_name": True}
 

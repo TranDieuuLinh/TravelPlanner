@@ -42,6 +42,7 @@ class UpdateItemRequest(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     notes: str | None = None
     tags: list[str] | None = None
+    locked: bool | None = None
 
     model_config = {"populate_by_name": True}
 
