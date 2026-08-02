@@ -5,6 +5,7 @@ Adds methods required by research tools:
 - list_for_overview
 - list_within_radius  
 - list_all_active
+- list_active_for_region
 """
 
 from __future__ import annotations
@@ -146,6 +147,22 @@ class PlaceRepositoryAdapter:
             .where(
                 Place.deleted_at.is_(None),
                 Place.status == "active",
+            )
+            .order_by(Place.region_key, Place.place_type)
+        )
+        return list(self._session.scalars(query))
+
+    def list_active_for_region(self, region_key: str) -> list[Place]:
+        """List active places inside ``region_key`` and its descendants."""
+        query = (
+            select(Place)
+            .where(
+                Place.deleted_at.is_(None),
+                Place.status == "active",
+                or_(
+                    Place.region_key == region_key,
+                    Place.region_key.like(f"{region_key},%"),
+                ),
             )
             .order_by(Place.region_key, Place.place_type)
         )

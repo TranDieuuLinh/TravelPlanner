@@ -183,6 +183,36 @@ Trip chat URL message -> url_import_jobs (queued) -> single worker
 - `app/integrations/`: provider bên ngoài được đặt sau interface của ứng dụng.
 - `app/db/` và `migrations/`: cấu hình database và thay đổi schema.
 
+### Ranh giới Planner sau refactor evidence
+
+Đường chạy macro planning được chia thành các trách nhiệm tuần tự:
+
+```text
+PlanningContextBuilder
+    -> PlannerEvidenceCollector
+    -> MacroPlanGenerator
+    -> MacroPlanPolicy
+    -> PlannerAgentOutput
+```
+
+- `PlanningContextBuilder` chuẩn hóa intent/trip spec và lấy catalog snapshot.
+- `PlannerEvidenceCollector` tạo một `evidenceBundle` gồm catalog capability,
+  tourism zones và warning.
+- `MacroPlanGenerator` sở hữu structured LLM call cùng repair contract.
+- `MacroPlanPolicy` validate số ngày, region/zone, selected-place allocation và
+  các quy tắc macro-plan trước khi Finder nhận kết quả.
+
+Planner không còn gọi `RegionOverviewTool`; category availability, time/duration
+coverage, data quality, price coverage và geographic coverage dùng cùng catalog
+snapshot. Knowledge Graph sở hữu quan hệ theme/experience/diversity. Finder vẫn
+sở hữu Place cụ thể, timeline và route. Các field research cũ đã được loại khỏi
+`PlannerAgentInput`; prompt đọc một `evidenceBundle` nhỏ.
+
+Destination Discovery là use case đứng trước Planner khi user chưa biết đi đâu.
+Nó xếp hạng region từ budget, duration, interest và Place catalog rồi trả proposal
+có graph coverage. Sau khi user chọn region, core Planner mới dùng Knowledge
+Graph để cấu trúc experience và Finder để chọn Place cụ thể.
+
 ## Ranh giới frontend
 
 - `src/app/`: route, layout và kết hợp page.

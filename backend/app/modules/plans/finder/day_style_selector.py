@@ -126,11 +126,12 @@ def select_day_style(
     selected_places: list[FinderPlace] | None,
     *,
     area_profile_distribution: dict[str, int] | None = None,
+    focus_categories: set[str] | None = None,
 ) -> DayStyleDecision:
     """Pick the day style that best fits the attached places.
 
     ``area_profile_distribution`` is the per-category place count produced by
-    :class:`AreaSurveyService`. It is only consulted as a tie-breaker when
+    regional catalog statistics. It is only consulted as a tie-breaker when
     the user's selected places are empty or balanced.
     """
 
@@ -153,6 +154,7 @@ def select_day_style(
         anchor_count=anchor_count,
         scattered_count=scattered_count,
         distribution=area_profile_distribution,
+        focus_categories=focus_categories,
     )
 
     return DayStyleDecision(
@@ -169,6 +171,7 @@ def _decide(
     anchor_count: int,
     scattered_count: int,
     distribution: dict[str, int] | None,
+    focus_categories: set[str] | None,
 ) -> DayStyle:
     if anchor_count or scattered_count:
         total = anchor_count + scattered_count
@@ -178,6 +181,11 @@ def _decide(
             return DayStyle.anchor_day
         if scattered_ratio >= MAJORITY_THRESHOLD:
             return DayStyle.scattered_day
+
+    # A day explicitly dedicated to food is a crawl of short stops rather
+    # than one restaurant stretched across an anchor-sized activity block.
+    if focus_categories == {"food_drink"}:
+        return DayStyle.scattered_day
 
     # Fallback: ask the area profile. If the area is dominated by short
     # activities (shopping / scattered-type categories outweigh attractions)

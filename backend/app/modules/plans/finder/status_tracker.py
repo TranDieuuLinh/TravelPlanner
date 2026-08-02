@@ -6,7 +6,11 @@ from app.modules.plans.domain.entities import (
     UserStatus,
     UserStatusLocation,
 )
-from app.modules.plans.finder.candidate_selector import candidate_duration
+from app.modules.plans.finder.candidate_selector import (
+    candidate_duration,
+    food_drink_experience_signature,
+    place_experience_signature,
+)
 from app.modules.plans.finder.place_tool import FinderPlace, FinderPlaceTool, place_category
 from app.modules.plans.finder.skeleton_builder import DayBlock
 
@@ -21,7 +25,13 @@ BREAK_EFFECTS = {"energy": 5, "mental": 3}
 MEAL_EFFECTS = {"energy": 5, "mental": 2, "satiety": 20}
 
 
-class FinderStatusTracker:
+class PlanningStateTracker:
+    """Apply and roll back Finder state transitions atomically.
+
+    Candidate constraints belong to ``CandidateSelector``. This component only
+    owns mutable user/plan status and usage accounting.
+    """
+
     def __init__(self, place_tool: FinderPlaceTool) -> None:
         self.place_tool = place_tool
 
@@ -43,10 +53,18 @@ class FinderStatusTracker:
         plan_status.visited_region_counts[candidate.region_key] = (
             plan_status.visited_region_counts.get(candidate.region_key, 0) + 1
         )
-        if place_category(candidate) == "food_drink" and candidate.place_type:
-            place_type = candidate.place_type.strip()
-            if place_type and place_type not in plan_status.used_food_drink_place_types:
-                plan_status.used_food_drink_place_types.append(place_type)
+        signature = food_drink_experience_signature(candidate)
+        if (
+            signature is not None
+            and signature not in plan_status.used_food_drink_place_types
+        ):
+            plan_status.used_food_drink_place_types.append(signature)
+        experience_group = place_experience_signature(candidate)
+        if (
+            experience_group is not None
+            and experience_group not in plan_status.used_experience_groups
+        ):
+            plan_status.used_experience_groups.append(experience_group)
         duration = candidate_duration(candidate, block)
         is_meal = block.kind == "meal"
         self.increment_usage(
@@ -87,6 +105,12 @@ class FinderStatusTracker:
         candidate_ref = candidate.stable_ref
         if candidate_ref in plan_status.used_place_ids:
             plan_status.used_place_ids.remove(candidate_ref)
+        signature = food_drink_experience_signature(candidate)
+        if signature in plan_status.used_food_drink_place_types:
+            plan_status.used_food_drink_place_types.remove(signature)
+        experience_group = place_experience_signature(candidate)
+        if experience_group in plan_status.used_experience_groups:
+            plan_status.used_experience_groups.remove(experience_group)
         if (
             restore_selected
             and candidate_ref not in plan_status.remaining_selected_place_ids
@@ -104,10 +128,19 @@ class FinderStatusTracker:
         else:
             plan_status.visited_region_counts[candidate.region_key] = region_count - 1
         duration = candidate_duration(candidate, block)
+        is_meal = block.kind == "meal"
         for usage in (plan_status.day_usage, plan_status.trip_usage):
-            usage.activity_minutes = max(0, usage.activity_minutes - duration)
+            if is_meal:
+                usage.rest_minutes = max(0, usage.rest_minutes - duration)
+            else:
+                usage.activity_minutes = max(0, usage.activity_minutes - duration)
             usage.place_count = max(0, usage.place_count - 1)
-        if candidate.activity_intensity:
+        if is_meal:
+            self.apply_metric_delta(
+                user_status,
+                {metric: -change for metric, change in MEAL_EFFECTS.items()},
+            )
+        elif candidate.activity_intensity:
             inverse_delta = {
                 metric: -change
                 for metric, change in INTENSITY_EFFECTS.get(
@@ -132,6 +165,19 @@ class FinderStatusTracker:
             rest_minutes=block.duration_minutes,
         )
         self.apply_metric_delta(user_status, BREAK_EFFECTS)
+
+    def rollback_break(
+        self,
+        user_status: UserStatus,
+        plan_status: FinderPlanStatus,
+        block: DayBlock,
+    ) -> None:
+        for usage in (plan_status.day_usage, plan_status.trip_usage):
+            usage.rest_minutes = max(0, usage.rest_minutes - block.duration_minutes)
+        self.apply_metric_delta(
+            user_status,
+            {metric: -change for metric, change in BREAK_EFFECTS.items()},
+        )
 
     def apply_metric_delta(self, user_status: UserStatus, delta: dict[str, int]) -> None:
         for metric, change in delta.items():
@@ -170,3 +216,8 @@ class FinderStatusTracker:
             latitude=accommodation.latitude,
             longitude=accommodation.longitude,
         )
+
+
+# Compatibility alias for callers outside the Finder package. New code should
+# use the name that reflects the component's actual responsibility.
+FinderStatusTracker = PlanningStateTracker

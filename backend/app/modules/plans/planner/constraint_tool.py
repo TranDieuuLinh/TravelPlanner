@@ -304,8 +304,8 @@ def calculate_constraint_research(
             )
         ]
     else:
-        # For text mode, we would need embedding search
-        # For now, use all places (would be replaced by actual semantic search)
+        # Text mode stays inside the resolved catalog region. Knowledge Graph
+        # supplies semantic expansion before concrete Place selection.
         filtered_places = places
 
     # Interest filtering
@@ -495,6 +495,8 @@ class PlaceRepositoryForConstraint(Protocol):
 
     def list_all_active(self) -> list[Place]: ...
 
+    def list_active_for_region(self, region_key: str) -> list[Place]: ...
+
 
 class ConstraintResearchTool:
     """
@@ -514,8 +516,14 @@ class ConstraintResearchTool:
                 input_data.radius_km,
             )
         else:
-            # Text mode: would need semantic search implementation
-            # For now, fetch all and let the function filter
-            places = self._repository.list_all_active()
+            # Destination resolution already produced a stable region key.
+            # Keep text-mode statistics inside that catalog boundary; the
+            # human-readable query is context, not permission to scan every
+            # destination in the database.
+            places = (
+                self._repository.list_active_for_region(input_data.region_key)
+                if input_data.region_key
+                else self._repository.list_all_active()
+            )
 
         return calculate_constraint_research(places, input_data)

@@ -35,10 +35,15 @@ class GeographicRouteOptimizer:
         route_provider: RouteProvider | None = None,
         transit_provider: TransitRouteProvider | None = None,
         matrix_provider: TravelTimeMatrixProvider | None = None,
+        *,
+        transit_enabled: bool = False,
     ) -> None:
         self.route_provider = route_provider
         self.transit_provider = transit_provider
         self.matrix_provider = matrix_provider
+        # Temporary product policy: keep OTP behind the interface but do not
+        # request public-transit routes in normal runtime planning.
+        self.transit_enabled = transit_enabled
 
     def optimize(
         self,
@@ -598,6 +603,7 @@ class GeographicRouteOptimizer:
                 ),
             )
             if self.transit_provider is not None
+            and self.transit_enabled
             and not avoid_transit
             else None
         )

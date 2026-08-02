@@ -84,6 +84,15 @@ def test_user_query_maps_only_food_drink() -> None:
     )
 
 
+def test_cultural_visit_phrase_does_not_become_food_category() -> None:
+    categories = semantic_categories(
+        {"Tham quan Bảo tàng Hồ Chí Minh và tìm hiểu lịch sử"}
+    )
+
+    assert "attraction" in categories
+    assert "food_drink" not in categories
+
+
 # ---------------------------------------------------------------------------
 # Integration: search() over the food query returns only food places
 # ---------------------------------------------------------------------------
@@ -195,3 +204,38 @@ def test_search_food_query_does_not_return_museums() -> None:
     assert food_ids & result_ids, (
         "Expected food places to be returned for a food query"
     )
+
+
+def test_explicit_activity_category_wins_over_mixed_theme_terms() -> None:
+    from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+
+    places = [
+        _make_place(
+            "temple",
+            "Bach Ma Temple",
+            "temple",
+            place_group="attraction",
+            tags=("culture", "history"),
+        ),
+        _make_place(
+            "restaurant",
+            "Old Quarter Restaurant",
+            "restaurant",
+            place_group="food_drink",
+            tags=("food", "local_cuisine"),
+        ),
+    ]
+
+    result = RepositoryFinderPlaceTool(_ListRepo(places)).search(
+        region_key="vn,ha-noi,hoan-kiem",
+        target_tags=[
+            "heritage architecture and Old Quarter food",
+            "food",
+            "temple",
+        ],
+        target_categories={"attraction"},
+        excluded_place_ids=set(),
+        limit=10,
+    )
+
+    assert [place.place_id for place in result] == ["temple"]

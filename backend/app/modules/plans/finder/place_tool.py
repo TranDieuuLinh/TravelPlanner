@@ -3,14 +3,15 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from math import log10
 from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from app.modules.places.model import Place
+from app.modules.places.model import Place, PlaceAmenity, PlaceOpeningHour
 from app.modules.plans.planner.place_metadata import (
-    GOOGLE_TYPES_CATEGORY,
     read_description,
+    read_place_group,
     read_price_level,
     read_rating,
     read_review_count,
@@ -18,9 +19,10 @@ from app.modules.plans.planner.place_metadata import (
 )
 
 
-DESCRIPTION_RETRIEVAL_MULTIPLIER = 10
-MIN_DESCRIPTION_RETRIEVAL_LIMIT = 50
-MAX_REPOSITORY_CANDIDATES = 10000
+# Load the current ~32k catalog before graph/category/metadata ranking. This is
+# a safety ceiling, not a semantic top-K; retrieval must not depend on primary
+# key order hiding valid Places.
+MAX_REPOSITORY_CANDIDATES = 50_000
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
     },
     "attraction": {
         "architecture",
+        "art gallery",
         "attraction",
         "culture",
         "di tich",
@@ -60,6 +63,11 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "quan the",
         "monument",
         "landmark",
+        "local life",
+        "neighborhood walk",
+        "traditional craft",
+        "walking street",
+        "craft village",
         "di san",
         "co do",
         "thanh pho",
@@ -104,7 +112,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "hai san",
         "restaurant",
         "seafood",
-        "an",
         "an sang",
         "an trua",
         "an toi",
@@ -122,7 +129,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "an toi",
         "nha hang",
         "quan an",
-        "quan",
         "bep",
         "bep nha",
         "quan nho",
@@ -135,7 +141,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "trung nguyen",
         "phuc long",
         "the coffee house",
-        "pho",
         "bun",
         "com",
         "mien",
@@ -540,10 +545,13 @@ class FinderPlaceTool(Protocol):
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]: ...
+
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]: ...
 
 
 class FinderPlaceRepository(Protocol):
@@ -556,6 +564,15 @@ class FinderPlaceRepository(Protocol):
         limit: int = 10000,
     ) -> list[Place]: ...
 
+    def list_amenities_for_places(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceAmenity]]: ...
+
+    def list_opening_hours_for_places(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceOpeningHour]]: ...
 
 class EmptyFinderPlaceTool:
     def get(self, place_id: str) -> FinderPlace | None:
@@ -566,10 +583,14 @@ class EmptyFinderPlaceTool:
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
+        return []
+
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]:
         return []
 
 
@@ -590,7 +611,10 @@ def _inside_bbox(
 
 
 class RepositoryFinderPlaceTool:
-    def __init__(self, repository: FinderPlaceRepository) -> None:
+    def __init__(
+        self,
+        repository: FinderPlaceRepository,
+    ) -> None:
         self.repository = repository
         self._scope_cache: dict[str, list[FinderPlace]] = {}
 
@@ -598,74 +622,108 @@ class RepositoryFinderPlaceTool:
         place = self.repository.get(place_id)
         if place is None or place.deleted_at is not None:
             return None
-        return self._to_finder_place(place)
+        amenities = self._load_amenities([place.id]).get(place.id, [])
+        opening_hours = self._load_opening_hours(
+            [place.id] if not place.opening_hours else []
+        ).get(place.id, [])
+        return self._to_finder_place(
+            place,
+            amenities=amenities,
+            opening_hour_rows=opening_hours,
+        )
 
     def search(
         self,
         *,
         region_key: str,
         target_tags: list[str],
+        target_categories: set[str] | None = None,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
         places = self._load_scoped_candidates(region_key, excluded_place_ids)
-        places = [
-            place
-            for place in places
-            if _matches_target_locality(place, region_key)
-        ]
-        if bbox_filter is not None:
-            places = [place for place in places if _inside_bbox(place, bbox_filter)]
+        if bbox_filter is None:
+            places = [
+                place
+                for place in places
+                if _matches_target_locality(place, region_key)
+            ]
+        else:
+            # A verified zone bbox is more accurate than administrative
+            # region-key text. It intentionally allows a famous place in an
+            # adjacent ward/district when it is physically inside the local
+            # tourism zone. Candidates without coordinates still need the
+            # textual locality evidence to avoid leaking city-wide records.
+            places = [
+                place
+                for place in places
+                if _inside_bbox(place, bbox_filter)
+                and (
+                    place.latitude is not None
+                    and place.longitude is not None
+                    or _matches_target_locality(place, region_key)
+                )
+            ]
         if not places:
             return []
 
         query_terms = _normalized_terms(target_tags)
-        query_categories = semantic_categories(query_terms)
-        description_ranked = sorted(
-            places,
-            key=lambda place: (
-                -_description_relevance(place.description, query_terms),
-                place.name.casefold(),
-            ),
+        query_categories = (
+            set(target_categories)
+            if target_categories is not None
+            else semantic_categories(query_terms)
         )
-        retrieval_limit = max(
-            MIN_DESCRIPTION_RETRIEVAL_LIMIT,
-            limit * DESCRIPTION_RETRIEVAL_MULTIPLIER,
-        )
-        if any(
-            _description_relevance(place.description, query_terms) > 0
-            for place in description_ranked
-        ):
-            shortlisted = description_ranked[:retrieval_limit]
-        else:
-            shortlisted = places
-
-        eligible_shortlist = [
+        eligible_places = [
             place
-            for place in shortlisted
+            for place in places
             if place_matches_categories(place, query_categories)
         ]
-        if not eligible_shortlist:
-            eligible_shortlist = [
-                place
-                for place in places
-                if place_matches_categories(place, query_categories)
-            ]
-        shortlisted = eligible_shortlist
-        shortlisted.sort(
+        if not eligible_places:
+            return []
+
+        # Knowledge Graph already expands the day need into concrete query
+        # terms and a hard category. Rank the complete eligible set from
+        # structured catalog evidence; description is optional supporting
+        # evidence, never a prerequisite for retrieval.
+        eligible_places.sort(
             key=lambda place: (
-                -_structured_rerank_score(
-                    place,
-                    region_key=region_key,
-                    query_terms=query_terms,
-                    query_categories=query_categories,
+                -(
+                    _structured_rerank_score(
+                        place,
+                        region_key=region_key,
+                        query_terms=query_terms,
+                        query_categories=query_categories,
+                    )
+                    * 5
+                    + _quality_rerank_score(place) * 2
                 ),
                 -_description_relevance(place.description, query_terms),
                 place.name.casefold(),
             )
         )
-        return shortlisted[:limit]
+        return eligible_places[:limit]
+
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]:
+        """Return an evenly sampled regional catalog without relevance ranking."""
+
+        if limit < 1:
+            return []
+        places = [
+            place
+            for place in self._load_scoped_candidates(region_key, set())
+            if place.region_key == region_key
+            or place.region_key.startswith(f"{region_key},")
+        ]
+        if len(places) <= limit:
+            return places
+        if limit == 1:
+            return [places[len(places) // 2]]
+        indexes = [
+            round(index * (len(places) - 1) / (limit - 1))
+            for index in range(limit)
+        ]
+        return [places[index] for index in indexes]
 
     def _load_scoped_candidates(
         self,
@@ -681,8 +739,18 @@ class RepositoryFinderPlaceTool:
                     scope,
                     limit=MAX_REPOSITORY_CANDIDATES,
                 )
+                place_ids = [place.id for place in raw]
+                amenities = self._load_amenities(place_ids)
+                opening_hours = self._load_opening_hours(
+                    [place.id for place in raw if not place.opening_hours]
+                )
                 self._scope_cache[scope] = [
-                    self._to_finder_place(place) for place in raw
+                    self._to_finder_place(
+                        place,
+                        amenities=amenities.get(place.id, []),
+                        opening_hour_rows=opening_hours.get(place.id, []),
+                    )
+                    for place in raw
                 ]
             for place in self._scope_cache[scope]:
                 if (
@@ -700,9 +768,33 @@ class RepositoryFinderPlaceTool:
             )
         return candidates
 
-    def _to_finder_place(self, place: Place) -> FinderPlace:
+    def _load_amenities(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceAmenity]]:
+        loader = getattr(self.repository, "list_amenities_for_places", None)
+        if loader is None or not place_ids:
+            return {}
+        return loader(place_ids)
+
+    def _load_opening_hours(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceOpeningHour]]:
+        loader = getattr(self.repository, "list_opening_hours_for_places", None)
+        if loader is None or not place_ids:
+            return {}
+        return loader(place_ids)
+
+    def _to_finder_place(
+        self,
+        place: Place,
+        *,
+        amenities: list[PlaceAmenity] | None = None,
+        opening_hour_rows: list[PlaceOpeningHour] | None = None,
+    ) -> FinderPlace:
         metadata = place.metadata_json or {}
-        tags = read_tags(place)
+        tags = read_tags(place, amenities=amenities)
         minimum_duration = _minimum_duration_minutes(metadata)
         if minimum_duration is None and place.typical_duration_minutes:
             minimum_duration = max(15, place.typical_duration_minutes // 2)
@@ -714,11 +806,7 @@ class RepositoryFinderPlaceTool:
             placeType=place.place_type,
             regionKey=place.region_key,
             description=read_description(place),
-            placeGroup=(
-                str(metadata.get("placeGroup"))
-                if metadata.get("placeGroup") is not None
-                else None
-            ),
+            placeGroup=read_place_group(place),
             tags=[str(tag) for tag in tags if isinstance(tag, str)],
             latitude=(
                 float(place.latitude) if place.latitude is not None else None
@@ -737,7 +825,7 @@ class RepositoryFinderPlaceTool:
                 for feature in metadata.get("accessibilityFeatures", [])
                 if isinstance(feature, str)
             ],
-            openingHours=list(place.opening_hours or []),
+            openingHours=_opening_hours_payload(place, opening_hour_rows),
             weatherSensitivity=(
                 str(metadata.get("weatherSensitivity"))
                 if metadata.get("weatherSensitivity") is not None
@@ -839,13 +927,24 @@ def _structured_rerank_score(
         else 0
     )
     return (
-        _description_relevance(place.description, query_terms) * 18
+        # Description is sparse in the current catalog and remains supporting
+        # evidence. Exact graph-expanded type/tag/name matches should lead;
+        # a small prose overlap must not erase a large quality difference.
+        _description_relevance(place.description, query_terms)
         + category_score
         + tag_overlap * 12
         + region_score
         + confidence_score
         + coordinate_score
     )
+
+
+def _quality_rerank_score(place: FinderPlace) -> int:
+    """Score popularity from rating backed by a meaningful review count."""
+
+    rating_score = round(max(0.0, min(place.rating or 0.0, 5.0)) * 4)
+    review_score = min(25, round(log10(max(0, place.review_count) + 1) * 7))
+    return rating_score + review_score
 
 
 def place_matches_categories(
@@ -923,6 +1022,22 @@ def _minimum_duration_minutes(metadata: dict) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _opening_hours_payload(
+    place: Place,
+    rows: list[PlaceOpeningHour] | None,
+) -> list[dict]:
+    if place.opening_hours:
+        return list(place.opening_hours)
+    return [
+        {
+            "dayName": row.day_of_week,
+            "rawTimeSlots": row.time_slots,
+            "is24Hours": False,
+        }
+        for row in rows or []
+    ]
 
 
 def _normalized_terms(values: list[str]) -> set[str]:

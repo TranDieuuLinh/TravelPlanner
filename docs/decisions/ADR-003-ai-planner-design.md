@@ -4,6 +4,9 @@
 - Ngày: 2026-07-27
 - Cập nhật: bước confirm bắt buộc của Explorer intake được ADR-004 thay thế bằng
   tự động lưu kèm resolution status; các phần còn lại vẫn giữ nguyên.
+- Cập nhật 2026-08-01: chuyến Hà Nội local tối đa ba ngày dùng research
+  deterministic từ knowledge graph + Place database để giảm một lượt LLM;
+  chuyến dài, road trip và multi-region vẫn giữ research LLM riêng.
 
 ## Bối cảnh
 
@@ -23,9 +26,9 @@ bởi schema. Thêm pipeline trước Planner nhưng giữ ranh giới xác nh�
 3. Resolve đối chiếu candidate với place chuẩn hóa.
 4. User Confirm tạo `SelectedPlace`; candidate chưa xác nhận không phải intent.
 5. Explorer chuẩn hóa sở thích và xác định nhu cầu hỏi thêm.
-6. Planner chạy một lượt research để đề xuất journey shape/capability query,
-   backend kiểm chứng bằng Place database, rồi lượt thứ hai tạo MacroPlan và
-   DayBrief từ evidence.
+6. Planner tạo research proposal bằng rule + knowledge graph cho chuyến local
+   ngắn, hoặc bằng một lượt LLM cho chuyến phức tạp. Backend luôn kiểm chứng bằng
+   knowledge graph và Place database trước khi lượt LLM MacroPlan tạo DayBrief.
 7. Finder điền item chi tiết bằng địa điểm đã chuẩn hóa.
 8. Check áp dụng validation theo quy tắc và dữ liệu provider.
 9. Backup tạo một phương án riêng được liên kết khi user yêu cầu hoặc khi có rủi

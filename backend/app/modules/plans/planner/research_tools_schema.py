@@ -45,6 +45,8 @@ class CategoryStat(BaseModel):
         Field(alias="avgDailyCost", description="Estimated average daily cost in VND")
     ] = Field(default=None)
 
+    model_config = {"populate_by_name": True}
+
 
 class RegionOverviewOutput(BaseModel):
     """Output from region_overview tool."""
@@ -91,6 +93,17 @@ class ConstraintResearchInput(BaseModel):
         str | None,
         Field(description="Text query for semantic search, e.g. 'khu vực quận 1 Sài Gòn'")
     ] = Field(default=None)
+    region_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            alias="regionKey",
+            description=(
+                "Resolved catalog region used to scope text-mode research. "
+                "The free-text query is context only and must not broaden this boundary."
+            ),
+        ),
+    ]
     # Constraints
     budget: Annotated[
         int | None,
@@ -105,7 +118,7 @@ class ConstraintResearchInput(BaseModel):
         Field(description="List of interests/categories to filter by")
     ] = Field(default_factory=list)
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
     def model_post_init(self, __context) -> None:
         if self.mode == "coordinates":
@@ -134,6 +147,8 @@ class ZoneStat(BaseModel):
         Field(alias="topCategories", description="Top 5 categories in this zone")
     ] = Field(default_factory=list)
 
+    model_config = {"populate_by_name": True}
+
 
 class SpatialStats(BaseModel):
     """Spatial statistics output."""
@@ -146,6 +161,8 @@ class SpatialStats(BaseModel):
         int,
         Field(alias="totalPlacesInRadius", description="Total places in all zones")
     ] = Field(default=0)
+
+    model_config = {"populate_by_name": True}
 
 
 class CategoryBudgetStat(BaseModel):
@@ -164,6 +181,8 @@ class CategoryBudgetStat(BaseModel):
         int | None,
         Field(alias="avgDailyCost", description="Estimated daily cost in VND")
     ] = Field(default=None)
+
+    model_config = {"populate_by_name": True}
 
 
 class CategoryStatsOutput(BaseModel):
@@ -206,6 +225,8 @@ class BudgetCompatibility(BaseModel):
         Field(alias="dailyBudget", description="Per-day budget if duration specified")
     ] = Field(default=None)
 
+    model_config = {"populate_by_name": True}
+
 
 class ConstraintResearchOutput(BaseModel):
     """Output from constraint_research tool."""
@@ -231,8 +252,16 @@ class FestivalDiscoveryInput(BaseModel):
             description="Month filter in Vietnamese format, e.g. 'tháng 4' or 'tháng 4/2026'. None = all festivals"
         )
     ] = Field(default=None)
+    region_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            alias="regionKey",
+            description="Resolved destination region used to exclude unrelated local events",
+        ),
+    ]
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
 
 class Festival(BaseModel):
@@ -255,6 +284,8 @@ class Festival(BaseModel):
         default_factory=list
     )
     description: str | None = Field(default=None)
+
+    model_config = {"populate_by_name": True}
 
 
 class MonthFestivals(BaseModel):
