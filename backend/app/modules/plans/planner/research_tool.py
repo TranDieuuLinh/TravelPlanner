@@ -111,6 +111,31 @@ CAPABILITY_SYNONYMS = {
     "cam_trai": "camping",
 }
 
+CAPABILITY_CATEGORY: dict[str, str] = {
+    "architecture": "attraction",
+    "art_gallery": "attraction",
+    "beach": "nature",
+    "camping": "nature",
+    "coffee": "food_drink",
+    "culture": "attraction",
+    "food": "food_drink",
+    "hiking": "nature",
+    "history_heritage": "attraction",
+    "local_life": "attraction",
+    "museum": "attraction",
+    "mountain": "nature",
+    "nature": "nature",
+    "neighborhood_walk": "attraction",
+    "nightlife": "entertainment",
+    "park": "nature",
+    "sacred_site": "attraction",
+    "scenic_landmark": "attraction",
+    "seafood": "food_drink",
+    "shopping": "shopping",
+    "traditional_craft": "attraction",
+    "wellness": "entertainment",
+}
+
 
 class PlannerResearchPlaceRepository(Protocol):
     def list_active_for_planner_research(
@@ -174,9 +199,19 @@ class RepositoryPlannerResearchTool:
 
         for query in draft.theme_queries:
             scope = query.preferred_region_key or root_region_key
+            requested_categories = {
+                CAPABILITY_CATEGORY[canonical_capability(capability)]
+                for capability in query.capabilities
+                if canonical_capability(capability) in CAPABILITY_CATEGORY
+            }
             expansion = self.knowledge_tool.expand(
                 [query.theme, *query.capabilities],
                 region_key=scope,
+                category=(
+                    next(iter(requested_categories))
+                    if len(requested_categories) == 1
+                    else None
+                ),
             )
             experience_evidence.append(
                 PlannerThemeExperienceEvidence(
@@ -186,6 +221,7 @@ class RepositoryPlannerResearchTool:
                     queryTerms=list(expansion.query_terms),
                     categories=list(expansion.categories),
                     diversityGroups=list(expansion.diversity_groups),
+                    regionKeys=list(expansion.region_keys),
                 )
             )
             scoped_places = (

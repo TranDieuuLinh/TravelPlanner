@@ -19,6 +19,7 @@ class TravelGraphExpansion:
     query_terms: tuple[str, ...] = ()
     categories: tuple[str, ...] = ()
     diversity_groups: tuple[str, ...] = ()
+    region_keys: tuple[str, ...] = ()
 
 
 class TravelKnowledgeSearchTool(Protocol):
@@ -123,6 +124,12 @@ class JsonTravelKnowledgeSearchTool:
                 str(node["diversityGroup"])
                 for node in experiences
                 if node.get("diversityGroup")
+            ),
+            region_keys=_unique(
+                str(region_key)
+                for node_id in matched
+                for region_key in self.nodes[node_id].get("regionKeys", [])
+                if region_key
             ),
         )
 

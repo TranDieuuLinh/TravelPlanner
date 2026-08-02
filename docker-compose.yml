@@ -77,7 +77,6 @@ services:
     restart: unless-stopped
 
   valhalla:
-    profiles: ["routing"]
     image: ghcr.io/valhalla/valhalla-scripted:latest
     environment:
       tile_urls: https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
@@ -91,7 +90,6 @@ services:
       - ./routing-data/valhalla:/custom_files
 
   opentripplanner:
-    profiles: ["routing"]
     image: docker.io/opentripplanner/opentripplanner:2.9.0
     entrypoint: ["/bin/bash", "-c"]
     command:

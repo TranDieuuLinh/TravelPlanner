@@ -125,8 +125,12 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert output.day_briefs_ready is True
     assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
     assert "generator=llm" in output.trace.notes
-    assert "researchPromptVersion=journey_research_v2" in output.trace.notes
-    assert "promptVersion=macro_planner_v5_flexible_day_needs" in output.trace.notes
+    assert (
+        "researchPromptVersion=journey_research_v3_graph_experiences"
+        in output.trace.notes
+    )
+    assert "promptVersion=macro_planner_v6_main_experience_first" in output.trace.notes
+    assert "researchGenerator=deterministic_graph" in output.trace.notes
     assert "snapshotId=snapshot-3" in output.trace.notes
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
@@ -304,17 +308,18 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
         )
     )
 
-    assert len(llm.calls) == 2
-    assert json.loads(llm.calls[0][1])["stage"] == "research"
+    assert len(llm.calls) == 1
+    assert json.loads(llm.calls[0][1])["stage"] == "macro_plan"
     assert "Macro Planner" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "macro_plan"
-    assert payload["promptVersion"] == "macro_planner_v5_flexible_day_needs"
+    assert payload["promptVersion"] == "macro_planner_v6_main_experience_first"
     assert payload["plannerInput"]["regionContext"]["plannerSignals"][
         "candidateAreas"
     ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"
     assert payload["researchProposal"]["varietyStrategy"]
     assert "verifiedResearch" in payload
+    assert payload["researchProposal"]["journeyStyle"] == "local_base"
 
 
 def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
@@ -340,10 +345,11 @@ def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
     assert brief.primary_activity_category == "attraction"
     assert brief.allow_region_fallback is False
     assert output.tourism_zones[0].center_latitude == 21.03
-    research_payload = json.loads(llm.calls[0][1])
-    assert research_payload["plannerInput"]["tourismZones"][0]["zoneId"] == (
+    macro_payload = json.loads(llm.calls[0][1])
+    assert macro_payload["plannerInput"]["tourismZones"][0]["zoneId"] == (
         "hoan-kiem-museum-zone"
     )
+    assert brief.activity_needs[0].must_be_exact_place is True
     assert brief.day_window.earliest_start == "08:30"
     assert [need.role for need in brief.activity_needs] == [
         "main",
@@ -353,6 +359,39 @@ def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
     assert brief.activity_needs[0].required is True
     assert [need.role for need in brief.meal_needs] == ["lunch", "dinner"]
     assert brief.meal_needs[0].earliest_start == "11:30"
+
+
+def test_fast_graph_research_preserves_named_area_phrase() -> None:
+    from app.modules.plans.dto.agent_contracts import PlannerAgentInput
+
+    planner_input = PlannerAgentInput.model_validate(
+        {
+            "intent": {
+                "destination": "Hà Nội",
+                "interests": [
+                    "explore Hanoi Old Quarter",
+                    "temples monuments and historic architecture",
+                ],
+            },
+            "tripSpec": {"days": 1},
+            "regionContext": {
+                "regionKey": "vn,ha-noi",
+                "placeCount": 100,
+                "snapshotRef": {
+                    "regionKey": "vn,ha-noi",
+                    "snapshotId": "test-snapshot",
+                    "catalogVersion": 1,
+                    "algorithmVersion": "test",
+                    "generatedAt": "2026-08-01T00:00:00Z",
+                },
+            },
+        }
+    )
+
+    draft = PlannerService._build_fast_graph_research(planner_input)
+
+    assert draft.theme_queries[0].theme == "explore Hanoi Old Quarter"
+    assert draft.theme_queries[0].capabilities == ["culture"]
 
 
 def test_compound_focus_tag_maps_to_deterministic_activity_category() -> None:

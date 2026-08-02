@@ -214,6 +214,42 @@ def test_semantic_similarity_beats_raw_popularity_when_selecting_zone_anchor() -
     assert zones[0].anchor_places[0].place_id == "local-food"
 
 
+def test_explicit_old_quarter_area_beats_more_popular_unrelated_hanoi_anchor() -> None:
+    repository = FakeRepository(
+        [
+            _place(
+                "old-quarter-museum",
+                "Old Quarter Heritage House",
+                "museum",
+                "vn,ha-noi,old-quarter-hoan-kiem",
+                21.034,
+                105.852,
+                ["culture", "history", "museum"],
+                rating=4.4,
+                reviews=900,
+            ),
+            _place(
+                "west-lake-temple",
+                "Popular West Lake Temple",
+                "temple",
+                "vn,ha-noi,tay-ho",
+                21.047,
+                105.836,
+                ["culture", "history", "temple"],
+                rating=4.9,
+                reviews=30_000,
+            ),
+        ]
+    )
+
+    zones = RepositoryTourismZoneResearchTool(repository).research(
+        root_region_key="vn,ha-noi",
+        interests=["explore Hanoi Old Quarter", "history and architecture"],
+    )
+
+    assert zones[0].anchor_places[0].place_id == "old-quarter-museum"
+
+
 def _place(
     place_id: str,
     name: str,

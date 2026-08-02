@@ -43,6 +43,7 @@ class DayTimeWindow(BaseModel):
 class DayActivityNeed(BaseModel):
     role: Literal["main", "support", "bonus"]
     goal: str
+    experience_type: str | None = Field(default=None, alias="experienceType")
     preferred_experiences: list[str] = Field(
         default_factory=list,
         alias="preferredExperiences",
@@ -60,6 +61,10 @@ class DayActivityNeed(BaseModel):
         alias="maxDurationMinutes",
     )
     required: bool = True
+    must_be_exact_place: bool = Field(
+        default=False,
+        alias="mustBeExactPlace",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -68,6 +73,35 @@ class DayActivityNeed(BaseModel):
         if self.max_duration_minutes < self.min_duration_minutes:
             raise ValueError("maxDurationMinutes must be >= minDurationMinutes")
         return self
+
+
+class DayDiversityPolicy(BaseModel):
+    max_same_experience_per_day: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        alias="maxSameExperiencePerDay",
+    )
+    max_consecutive_food_drink_activities: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        alias="maxConsecutiveFoodDrinkActivities",
+    )
+    avoid_consecutive_place_groups: bool = Field(
+        default=True,
+        alias="avoidConsecutivePlaceGroups",
+    )
+    meal_does_not_count_as_main_experience: bool = Field(
+        default=True,
+        alias="mealDoesNotCountAsMainExperience",
+    )
+    required_main_experience_for_visitor_day: bool = Field(
+        default=True,
+        alias="requiredMainExperienceForVisitorDay",
+    )
+
+    model_config = {"populate_by_name": True}
 
 
 class DayMealNeed(BaseModel):
@@ -134,6 +168,10 @@ class DayBrief(BaseModel):
         default=True,
         alias="allowRegionFallback",
     )
+    main_region_locked: bool = Field(
+        default=False,
+        alias="mainRegionLocked",
+    )
     pace: TravelPace = TravelPace.balanced
     day_part_goals: DayPartGoals = Field(
         default_factory=DayPartGoals,
@@ -154,6 +192,10 @@ class DayBrief(BaseModel):
     meal_needs: list[DayMealNeed] = Field(
         default_factory=list,
         alias="mealNeeds",
+    )
+    diversity_policy: DayDiversityPolicy = Field(
+        default_factory=DayDiversityPolicy,
+        alias="diversityPolicy",
     )
     notes: list[str] = Field(default_factory=list)
 

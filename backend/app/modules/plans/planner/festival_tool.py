@@ -338,6 +338,17 @@ def _festival_matches_month(festival: Festival, target_months: list[int] | None)
     return False
 
 
+def _festival_matches_region(festival: Festival, region_key: str | None) -> bool:
+    if not region_key or festival.scale == SCALE_NATIONAL:
+        return True
+    return any(
+        candidate == region_key
+        or candidate.startswith(f"{region_key},")
+        or region_key.startswith(f"{candidate},")
+        for candidate in festival.region_keys
+    )
+
+
 # ============================================================================
 # Main Calculation Logic
 # ============================================================================
@@ -360,11 +371,14 @@ def calculate_festival_discovery(
     festivals = [
         f for f in FESTIVALS_DATA
         if _festival_matches_month(f, target_months)
+        and _festival_matches_region(f, input_data.region_key)
     ]
 
     # Build by-month index
     by_month: dict[str, list[str]] = {}
     for festival in FESTIVALS_DATA:
+        if not _festival_matches_region(festival, input_data.region_key):
+            continue
         # Extract month from date
         months = set()
         

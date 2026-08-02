@@ -18,6 +18,12 @@ user intent + day goal
   -> Place cụ thể trong timeline
 ```
 
+Planner cũng gọi graph trong bước kiểm chứng research. Mỗi `themeQuery` được
+chuyển thành `experienceEvidence` gồm node đã match, experience node, query term,
+category và diversity group. Với chuyến Hà Nội local tối đa ba ngày, bước này
+thay cho research LLM riêng; chuyến phức tạp vẫn dùng research LLM rồi kiểm chứng
+bằng cùng graph và Place catalog.
+
 Meal query được xử lý riêng. Một ngày tham quan Phố Cổ có thể mở rộng thành đền,
 tượng, bảo tàng và kiến trúc; lunch/dinner không quyết định category của activity.
 

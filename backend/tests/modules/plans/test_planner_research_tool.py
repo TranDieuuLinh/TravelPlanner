@@ -124,6 +124,47 @@ def test_research_tool_does_not_claim_unsupported_capability() -> None:
     assert "hiking" in result.warnings[0]
 
 
+def test_research_tool_expands_hanoi_theme_into_graph_experience_evidence() -> None:
+    repository = FakeResearchRepository(
+        [
+            _place(
+                "history-museum",
+                "Museum of Hanoi History",
+                "museum",
+                "vn,ha-noi,hoan-kiem",
+                21.03,
+                105.85,
+                ["history", "museum", "culture"],
+            )
+        ]
+    )
+    draft = PlannerResearchDraft.model_validate(
+        {
+            "journeyStyle": "local_base",
+            "varietyStrategy": "One precise heritage anchor with complementary walks.",
+            "themeQueries": [
+                {
+                    "theme": "Old Quarter history and architecture",
+                    "capabilities": ["history_heritage", "museum", "architecture"],
+                    "rationale": "Resolve visitor experiences before selecting Places.",
+                }
+            ],
+        }
+    )
+
+    result = RepositoryPlannerResearchTool(repository).verify(
+        draft,
+        root_region_key="vn,ha-noi",
+    )
+
+    evidence = result.experience_evidence[0]
+    assert evidence.theme == "Old Quarter history and architecture"
+    assert "exp:museum" in evidence.experience_node_ids
+    assert "exp:neighborhood-walk" in evidence.experience_node_ids
+    assert "museum" in evidence.diversity_groups
+    assert evidence.categories == ["attraction"]
+
+
 class FakeResearchRepository:
     def __init__(self, places: list[Place]) -> None:
         self.places = places

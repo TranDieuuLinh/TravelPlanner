@@ -76,6 +76,20 @@ _CONCRETE_MAIN_TYPE_MARKERS = {
     "temple",
 }
 _GENERIC_ATTRACTION_TYPES = {"attraction", "tourist_attraction"}
+_BROAD_AREA_TYPES = {
+    "administrative_area",
+    "city",
+    "district",
+    "neighborhood",
+    "region",
+}
+_BROAD_AREA_NAMES = {
+    "hanoi",
+    "hanoi old quarter",
+    "ha noi",
+    "old quarter",
+    "pho co",
+}
 
 def place_experience_signature(
     candidate: FinderPlace,
@@ -129,15 +143,25 @@ def food_drink_experience_signature(
 ) -> str | None:
     """Return a food/drink signature while keeping the public helper stable.
 
-    Generic values such as ``restaurant`` intentionally return ``None``: lunch
-    and dinner may both be restaurants. Specific experiences such as coffee,
-    bun or pho are limited to one stop per day so a food-focused plan remains
-    varied instead of repeating near-identical venues.
+    Specific experiences such as coffee, bun or pho get their graph signature.
+    A generic restaurant receives a coarse fallback signature so it cannot also
+    occupy several non-meal activity slots. Meal blocks explicitly bypass that
+    diversity filter, therefore lunch and dinner may still both be restaurants.
     """
 
     if place_category(candidate) != "food_drink":
         return None
-    return place_experience_signature(candidate, knowledge_tool)
+    signature = place_experience_signature(candidate, knowledge_tool)
+    if signature is not None:
+        return signature
+    normalized_type = _normalize_text(candidate.place_type).replace(" ", "_")
+    if "restaurant" in normalized_type or normalized_type in {
+        "food",
+        "food_court",
+        "fast_food",
+    }:
+        return "generic_restaurant"
+    return None
 
 
 @dataclass(frozen=True)
@@ -231,6 +255,7 @@ class CandidateSelector:
         candidates: list[FinderPlace],
         selected_by_ref: dict,
         plan_status: FinderPlanStatus,
+        block: DayBlock,
     ) -> list[FinderPlace]:
         """Drop repeated food/drink experiences already used in this day.
 
@@ -238,6 +263,8 @@ class CandidateSelector:
         with the existing contract. User-selected places remain untouched.
         """
 
+        if block.kind == "meal":
+            return candidates
         used_signatures = set(plan_status.used_food_drink_place_types or [])
         if not used_signatures:
             return candidates
@@ -403,7 +430,7 @@ class CandidateSelector:
             seen.add(candidate.stable_ref)
             unique_candidates.append(candidate)
 
-        if "main_activity" in context.block.role:
+        if self._is_main_block(context.block):
             selected_candidates = [
                 candidate
                 for candidate in unique_candidates
@@ -423,6 +450,7 @@ class CandidateSelector:
             unique_candidates,
             context.selected_by_ref,
             context.plan_status,
+            context.block,
         )
         unique_candidates = self._filter_repeated_experiences(
             unique_candidates,
@@ -461,6 +489,10 @@ class CandidateSelector:
         return None
 
     @staticmethod
+    def _is_main_block(block: DayBlock) -> bool:
+        return block.need_role == "main" or "main_activity" in block.role
+
+    @staticmethod
     def _prioritize_concrete_main_places(
         candidates: list[FinderPlace],
     ) -> list[FinderPlace]:
@@ -488,6 +520,12 @@ class CandidateSelector:
                 -(candidate.rating or 0),
             ),
         )
+
+    @staticmethod
+    def _is_exact_main_place(candidate: FinderPlace) -> bool:
+        place_type = _normalize_text(candidate.place_type).replace(" ", "_")
+        name = _normalize_text(candidate.name)
+        return place_type not in _BROAD_AREA_TYPES and name not in _BROAD_AREA_NAMES
 
     @staticmethod
     def _is_drink_or_snack_only(candidate: FinderPlace) -> bool:
@@ -563,8 +601,22 @@ class CandidateSelector:
     ) -> list[FinderPlace]:
         if context.zone_center is not None and context.zone_radius_meters is not None:
             filtered: list[FinderPlace] = []
+            locked_main_region = (
+                context.brief.target_region_key
+                if self._is_main_block(context.block)
+                and context.brief.main_region_locked
+                else None
+            )
             for candidate in candidates:
                 if candidate.latitude is None or candidate.longitude is None:
+                    continue
+                if (
+                    locked_main_region is not None
+                    and candidate.region_key != locked_main_region
+                    and not candidate.region_key.startswith(
+                        f"{locked_main_region},"
+                    )
+                ):
                     continue
                 distance = self._haversine_meters(
                     context.zone_center,
@@ -572,6 +624,14 @@ class CandidateSelector:
                 )
                 if distance <= context.zone_radius_meters:
                     filtered.append(candidate)
+                    continue
+                if (
+                    self._is_main_block(context.block)
+                    and context.brief.main_region_locked
+                ):
+                    # Fame may justify a longer detour for an optional/support
+                    # stop, but never replace the day's primary experience
+                    # outside the verified tourism zone selected by Planner.
                     continue
                 if (
                     distance <= FAMOUS_PLACE_MAX_DISTANCE_METERS
@@ -639,9 +699,9 @@ class CandidateSelector:
             )
         day_goal = (
             brief.day_part_goals.morning
-            if block.role in {"main_activity", "late_main_activity"}
+            if self._is_main_block(block)
             else brief.day_part_goals.evening
-            if block.role == "bonus_activity"
+            if block.need_role == "bonus" or block.role == "bonus_activity"
             else brief.day_part_goals.afternoon
         )
         phase = next(
@@ -688,7 +748,10 @@ class CandidateSelector:
         expansion = self.knowledge_tool.expand(
             base_terms,
             region_key=brief.target_region_key or macro_plan.region_key,
-            category=brief.primary_activity_category,
+            category=(
+                next(iter(self._block_semantic_categories(block)), None)
+                or brief.primary_activity_category
+            ),
         )
         return list(dict.fromkeys([*base_terms, *expansion.query_terms]))
 
@@ -702,13 +765,16 @@ class CandidateSelector:
     ) -> set[str]:
         if block.candidate_category is not None:
             return {block.candidate_category}
+        block_categories = self._block_semantic_categories(block)
+        if block_categories:
+            return block_categories
         if brief.primary_activity_category is not None:
             return {brief.primary_activity_category}
         day_goal = (
             brief.day_part_goals.morning
-            if block.role in {"main_activity", "late_main_activity"}
+            if self._is_main_block(block)
             else brief.day_part_goals.evening
-            if block.role == "bonus_activity"
+            if block.need_role == "bonus" or block.role == "bonus_activity"
             else brief.day_part_goals.afternoon
         )
         phase = next(
@@ -732,7 +798,7 @@ class CandidateSelector:
             }
         )
         if (
-            "main_activity" in block.role
+            self._is_main_block(block)
             and "attraction" in primary_categories
             and "food_drink" in primary_categories
         ):
@@ -746,6 +812,16 @@ class CandidateSelector:
             primary_categories
             or focus_categories
             or semantic_categories(set(fallback_terms))
+        )
+
+    @staticmethod
+    def _block_semantic_categories(block: DayBlock) -> set[str]:
+        return semantic_categories(
+            {
+                value
+                for value in (block.goal, *block.preferred_experiences)
+                if value
+            }
         )
 
     def _selected_to_candidate(
@@ -810,6 +886,15 @@ class CandidateSelector:
     ) -> CandidateRejection | None:
         if candidate.name.casefold() in avoided_place_names:
             return CandidateRejection("avoided_by_user", "Place is explicitly avoided by the user.")
+        if (
+            block.must_be_exact_place
+            and not is_selected
+            and not self._is_exact_main_place(candidate)
+        ):
+            return CandidateRejection(
+                "main_requires_exact_place",
+                "The required main experience must resolve to one visitable Place, not a broad area.",
+            )
         policy_rejection = constraint_policy_rejection(
             constraint_policy,
             name=candidate.name,

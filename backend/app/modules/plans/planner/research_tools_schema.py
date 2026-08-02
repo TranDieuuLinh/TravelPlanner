@@ -252,8 +252,16 @@ class FestivalDiscoveryInput(BaseModel):
             description="Month filter in Vietnamese format, e.g. 'tháng 4' or 'tháng 4/2026'. None = all festivals"
         )
     ] = Field(default=None)
+    region_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            alias="regionKey",
+            description="Resolved destination region used to exclude unrelated local events",
+        ),
+    ]
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
 
 class Festival(BaseModel):

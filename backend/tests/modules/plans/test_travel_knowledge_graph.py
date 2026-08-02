@@ -18,10 +18,15 @@ def test_old_quarter_graph_expands_to_precise_visitor_experiences() -> None:
         "exp:monument",
         "exp:museum",
         "exp:heritage-architecture",
+        "exp:art-gallery",
+        "exp:traditional-craft",
+        "exp:neighborhood-walk",
+        "exp:local-life",
     }.issubset(set(expansion.experience_node_ids))
     assert "historic temple" in expansion.query_terms
     assert "historical landmark" in expansion.query_terms
     assert expansion.categories == ("attraction",)
+    assert "vn,ha-noi,hoan-kiem" in expansion.region_keys
 
 
 def test_graph_keeps_food_expansion_out_of_attraction_query() -> None:

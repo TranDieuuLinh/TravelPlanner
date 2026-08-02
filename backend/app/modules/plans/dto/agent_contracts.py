@@ -498,6 +498,9 @@ class PlannerThemeExperienceEvidence(BaseModel):
     diversity_groups: Annotated[
         list[str], Field(alias="diversityGroups")
     ] = Field(default_factory=list)
+    region_keys: Annotated[list[str], Field(alias="regionKeys")] = Field(
+        default_factory=list
+    )
 
     model_config = {"populate_by_name": True}
 

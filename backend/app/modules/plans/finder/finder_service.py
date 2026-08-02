@@ -377,7 +377,10 @@ class FinderService:
                     for block in skeleton.blocks
                     if block.activity
                     and block.kind == "activity"
-                    and "main_activity" in block.role
+                    and (
+                        block.need_role == "main"
+                        or "main_activity" in block.role
+                    )
                 ),
                 None,
             )

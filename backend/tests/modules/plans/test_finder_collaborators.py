@@ -201,7 +201,7 @@ def test_food_experience_signature_groups_similar_stops() -> None:
     ) == "coffee"
     assert food_drink_experience_signature(
         _finder_place("Nhà hàng tổng hợp", "restaurant", tags=["food"])
-    ) is None
+    ) == "generic_restaurant"
 
 
 def test_experience_signature_prefers_name_and_type_over_noisy_description() -> None:
@@ -218,6 +218,15 @@ def test_experience_signature_prefers_name_and_type_over_noisy_description() -> 
     assert place_experience_signature(temple) == "religious_heritage"
 
 
+def test_exact_main_place_rejects_broad_area_but_accepts_named_landmark() -> None:
+    assert CandidateSelector._is_exact_main_place(
+        _finder_place("Hanoi Old Quarter", "neighborhood")
+    ) is False
+    assert CandidateSelector._is_exact_main_place(
+        _finder_place("Temple of Literature", "historical_landmark")
+    ) is True
+
+
 def test_candidate_selector_filters_repeated_food_experience_for_the_day() -> None:
     selector = CandidateSelector(EmptyFinderPlaceTool())
     candidates = [
@@ -230,6 +239,7 @@ def test_candidate_selector_filters_repeated_food_experience_for_the_day() -> No
         candidates,
         {},
         FinderPlanStatus(usedFoodDrinkPlaceTypes=["bun"]),
+        DayBlock("support_activity", "14:00-15:00", 60, True),
     )
 
     assert [place.name for place in filtered] == [
@@ -246,6 +256,7 @@ def test_candidate_selector_keeps_explicitly_selected_repeated_stop() -> None:
         [selected],
         {selected.stable_ref: object()},
         FinderPlanStatus(usedFoodDrinkPlaceTypes=["coffee"]),
+        DayBlock("support_activity", "14:00-15:00", 60, True),
     )
 
     assert filtered == [selected]
@@ -472,6 +483,54 @@ def test_build_scattered_day_emits_expected_layout() -> None:
     assert any(role == "dinner_meal" for role in roles)
     durations = [b.duration_minutes for b in skeleton.blocks if b.role.startswith("stop_")]
     assert all(duration <= 60 for duration in durations)
+
+
+def test_flexible_needs_assign_main_role_to_first_scattered_stop() -> None:
+    from app.modules.plans.domain.entities import DayBrief
+
+    builder = DaySkeletonBuilder()
+    brief = DayBrief.model_validate(
+        {
+            "day": 1,
+            "theme": "Old Quarter heritage",
+            "targetArea": "Hoan Kiem",
+            "pace": "balanced",
+            "activityNeeds": [
+                {
+                    "role": "main",
+                    "goal": "Visit one specific museum",
+                    "experienceType": "museum",
+                    "preferredExperiences": ["museum", "history"],
+                    "required": True,
+                    "mustBeExactPlace": True,
+                },
+                {
+                    "role": "support",
+                    "goal": "Walk through heritage architecture",
+                    "preferredExperiences": ["architecture"],
+                    "required": True,
+                },
+                {
+                    "role": "bonus",
+                    "goal": "Optional gallery",
+                    "preferredExperiences": ["art gallery"],
+                    "required": False,
+                },
+            ],
+        }
+    )
+
+    skeleton = builder.apply_flexible_needs(
+        builder.build_scattered_day(brief, UserStatus()),
+        brief,
+    )
+    stops = [block for block in skeleton.blocks if block.role.startswith("stop_")]
+
+    assert stops[0].need_role == "main"
+    assert stops[0].must_be_exact_place is True
+    assert stops[0].preferred_experiences[0] == "museum"
+    assert stops[1].need_role == "support"
+    assert stops[2].need_role == "bonus"
 
 
 def test_missing_duration_uses_category_default_instead_of_full_anchor_slot() -> None:

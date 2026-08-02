@@ -1,7 +1,10 @@
 from decimal import Decimal
 
 from app.modules.places.model import Place
-from app.modules.plans.planner.constraint_tool import calculate_constraint_research
+from app.modules.plans.planner.constraint_tool import (
+    ConstraintResearchTool,
+    calculate_constraint_research,
+)
 from app.modules.plans.planner.research_tools_schema import (
     CategoryStat,
     ConstraintResearchInput,
@@ -72,3 +75,43 @@ def test_nested_research_schemas_preserve_snake_case_values_and_camel_aliases() 
     assert category.model_dump(by_alias=True)["avgReviewCount"] == 125.0
     assert festival.region_keys == ["vn,ha-noi"]
     assert festival.model_dump(by_alias=True)["regionNames"] == ["Hà Nội"]
+
+
+def test_text_constraint_research_uses_resolved_region_boundary() -> None:
+    hanoi = Place(
+        id="hanoi-museum",
+        name="Hanoi Museum",
+        place_type="museum",
+        region_key="vn,ha-noi,nam-tu-liem",
+        status="active",
+        latitude=Decimal("21.011"),
+        longitude=Decimal("105.785"),
+        data_confidence="high",
+        opening_hours=[],
+        metadata_json={"tags": ["culture"]},
+    )
+
+    class Repository:
+        requested_region: str | None = None
+
+        def list_active_for_region(self, region_key: str) -> list[Place]:
+            self.requested_region = region_key
+            return [hanoi]
+
+        def list_all_active(self) -> list[Place]:
+            raise AssertionError("text-mode Planner research must not scan every region")
+
+        def list_within_radius(self, *args) -> list[Place]:
+            return []
+
+    repository = Repository()
+    result = ConstraintResearchTool(repository).execute(
+        ConstraintResearchInput(
+            mode="text",
+            query="Hà Nội",
+            region_key="vn,ha-noi",
+        )
+    )
+
+    assert repository.requested_region == "vn,ha-noi"
+    assert result.spatial_stats.total_places_in_radius == 1

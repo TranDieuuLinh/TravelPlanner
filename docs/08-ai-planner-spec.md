@@ -53,9 +53,11 @@ trả một plan identity mới. Các địa điểm của plan hiện tại đ�
 `SelectedPlace` cho lần sửa, còn địa điểm user yêu cầu tránh được loại qua
 `avoidPlaces`/constraint của Explorer.
 
-Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
-capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
-lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
+Planner dùng một hoặc hai lượt LLM tùy độ phức tạp. Chuyến Hà Nội local tối đa
+ba ngày dùng research deterministic từ knowledge graph + Place database rồi gọi
+LLM một lần để tạo MacroPlan. Chuyến dài, road trip hoặc multi-region vẫn dùng
+lượt research LLM để đề xuất journey shape và capability cần kiểm chứng trước
+khi lượt Macro Planner tạo `MacroPlan`/`DayBriefs`. Code ứng
 dụng validate số ngày, region key, journey phase và việc phân bổ mọi
 `selectedPlace`. Nếu model bỏ sót một `selectedPlace`, backend giữ địa điểm đó
 trong danh sách chưa phân bổ kèm reason code và cảnh báo thay vì làm mất dữ liệu
@@ -228,6 +230,14 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 - trả `dayWindow`, `activityNeeds` và `mealNeeds`: giữ main/lunch là nhu cầu lõi,
   support theo pace, dinner theo độ dài ngày và bonus tùy chọn; đây là cửa sổ mềm
   cùng khoảng duration, không phải lịch giờ cố định;
+- `activityNeeds.main` luôn là một Place có thể ghé cụ thể, mang
+  `experienceType`, `mustBeExactPlace=true`; area rộng như thành phố, quận hoặc
+  Phố Cổ không được dùng thay địa điểm chính;
+- research nhanh phải giữ nguyên cụm area trong interest của user khi query
+  graph; nếu graph khớp area, `mainRegionLocked=true` giữ main activity trong
+  tourism zone đó, không để popularity kéo main sang khu vực khác;
+- `diversityPolicy` giữ bữa ăn độc lập với main experience và giới hạn lặp cùng
+  nhóm trải nghiệm trong một ngày;
 - ghi rõ địa điểm nào chưa thể phân bổ.
 - khi có URL itinerary, giữ thứ tự/ngày/timing cue của nguồn; không biến timing
   cue mơ hồ thành giờ chính xác do nguồn xác nhận.
@@ -241,8 +251,9 @@ Finder điền item cụ thể:
   pace (`relaxed=2`, `balanced=3`, `packed=4`);
 - Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- suggestion bị giới hạn cứng trong bán kính của `tourismZoneRef`; fallback region
-  cha chỉ mở rộng tập truy vấn, không được đưa Place ngoài zone vào lịch;
+- suggestion ưu tiên bán kính của `tourismZoneRef`; Place nổi tiếng có thể vượt
+  bán kính có kiểm soát, nhưng không được làm vậy cho main activity khi
+  `mainRegionLocked=true`; fallback region cha không được làm mất scope area;
 - chọn Place trước, sau đó chọn giờ khả thi trong cửa sổ mềm theo giờ hoạt động,
   route và timing claim có provenance;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng

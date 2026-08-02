@@ -153,38 +153,50 @@ def test_agent_finder_allows_famous_verified_place_beyond_core_zone() -> None:
         }
     )
 
-    result = finder.fill_agent_plan(
-        FinderAgentInput(
-            intent=PlanningIntent(
-                destination="Hà Nội",
-                travelStyle="local",
-                pace="balanced",
-                interests=["culture"],
-            ),
-            tripSpec=TripPlanningSpec(days=1),
-            macroPlan=macro,
-            tourismZones=[
-                {
-                    "zoneId": "museum-zone",
-                    "regionKey": "vn,ha-noi,ba-dinh",
-                    "centerLatitude": 21.0306,
-                    "centerLongitude": 105.8370,
-                    "radiusMeters": 2500,
-                    "capabilities": ["culture"],
-                    "primaryCategories": ["attraction"],
-                    "categoryCoverage": {"attraction": 1},
-                    "anchorPlaces": [],
-                    "placeCount": 1,
-                    "compactnessScore": 0.8,
-                    "popularityScore": 0.9,
-                }
-            ],
-        )
+    finder_input = FinderAgentInput(
+        intent=PlanningIntent(
+            destination="Hà Nội",
+            travelStyle="local",
+            pace="balanced",
+            interests=["culture"],
+        ),
+        tripSpec=TripPlanningSpec(days=1),
+        macroPlan=macro,
+        tourismZones=[
+            {
+                "zoneId": "museum-zone",
+                "regionKey": "vn,ha-noi,ba-dinh",
+                "centerLatitude": 21.0306,
+                "centerLongitude": 105.8370,
+                "radiusMeters": 2500,
+                "capabilities": ["culture"],
+                "primaryCategories": ["attraction"],
+                "categoryCoverage": {"attraction": 1},
+                "anchorPlaces": [],
+                "placeCount": 1,
+                "compactnessScore": 0.8,
+                "popularityScore": 0.9,
+            }
+        ],
     )
+    result = finder.fill_agent_plan(finder_input)
 
     assert any(
         item.place_id == "famous-museum"
         for item in result.final_days[0].items
+    )
+
+    locked_macro = finder_input.macro_plan.model_copy(deep=True)
+    locked_macro.day_briefs[0] = locked_macro.day_briefs[0].model_copy(
+        update={"main_region_locked": True}
+    )
+    locked_result = finder.fill_agent_plan(
+        finder_input.model_copy(update={"macro_plan": locked_macro})
+    )
+
+    assert all(
+        item.place_id != "famous-museum"
+        for item in locked_result.final_days[0].items
     )
 
 

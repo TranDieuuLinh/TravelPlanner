@@ -20,6 +20,7 @@ from app.modules.plans.planner.place_metadata import (
 )
 from app.modules.plans.planner.research_tool import (
     CAPABILITY_ALIASES,
+    CAPABILITY_CATEGORY,
     canonical_capability,
     place_supports_capability,
 )
@@ -32,20 +33,6 @@ from app.modules.plans.knowledge_graph import (
 DEFAULT_ZONE_RADIUS_METERS = 2_500
 MAX_TOURISM_ZONES = 12
 
-_CAPABILITY_CATEGORY = {
-    "beach": "nature",
-    "camping": "nature",
-    "coffee": "food_drink",
-    "culture": "attraction",
-    "food": "food_drink",
-    "hiking": "nature",
-    "mountain": "nature",
-    "nature": "nature",
-    "nightlife": "entertainment",
-    "seafood": "food_drink",
-    "shopping": "shopping",
-    "wellness": "entertainment",
-}
 _FOOD_CAPABILITIES = {"coffee", "food", "seafood"}
 _GENERIC_ANCHOR_MARKERS = {
     "art_gallery",
@@ -138,6 +125,11 @@ class RepositoryTourismZoneResearchTool:
             if canonical_capability(interest) in CAPABILITY_ALIASES
         }
         food_focused = bool(requested) and requested.issubset(_FOOD_CAPABILITIES)
+        area_expansion = self.knowledge_tool.expand(
+            interests,
+            region_key=root_region_key,
+        )
+        preferred_region_keys = set(area_expansion.region_keys)
         semantic_scores = self._semantic_anchor_scores(
             places_with_coordinates,
             root_region_key=root_region_key,
@@ -166,6 +158,9 @@ class RepositoryTourismZoneResearchTool:
                 continue
             anchors.sort(
                 key=lambda place: (
+                    0
+                    if self._in_preferred_region(place.region_key, preferred_region_keys)
+                    else 1,
                     -semantic_scores.get(str(place.id), -1.0),
                     -self._popularity(place),
                     place.name.casefold(),
@@ -192,6 +187,9 @@ class RepositoryTourismZoneResearchTool:
         # quadratic after the catalogue grew beyond 20k places.
         anchor_specs.sort(
             key=lambda item: (
+                0
+                if self._in_preferred_region(item[0].region_key, preferred_region_keys)
+                else 1,
                 -semantic_scores.get(str(item[0].id), -1.0),
                 -self._popularity(item[0]),
                 item[0].name.casefold(),
@@ -210,6 +208,9 @@ class RepositoryTourismZoneResearchTool:
 
         zones.sort(
             key=lambda zone: (
+                0
+                if self._in_preferred_region(zone.region_key, preferred_region_keys)
+                else 1,
                 (
                     0
                     if (
@@ -226,6 +227,17 @@ class RepositoryTourismZoneResearchTool:
             )
         )
         return zones[: self.max_zones]
+
+    @staticmethod
+    def _in_preferred_region(
+        region_key: str,
+        preferred_region_keys: set[str],
+    ) -> bool:
+        return any(
+            region_key == preferred
+            or region_key.startswith(f"{preferred},")
+            for preferred in preferred_region_keys
+        )
 
     def _semantic_anchor_scores(
         self,
@@ -261,9 +273,9 @@ class RepositoryTourismZoneResearchTool:
         if not eligible_ids:
             return {}
         query_categories = {
-            _CAPABILITY_CATEGORY[capability]
+            CAPABILITY_CATEGORY[capability]
             for capability in requested
-            if capability in _CAPABILITY_CATEGORY
+            if capability in CAPABILITY_CATEGORY
         }
         graph_category = (
             "food_drink"
@@ -319,9 +331,9 @@ class RepositoryTourismZoneResearchTool:
         )
         primary_categories = sorted(
             {
-                _CAPABILITY_CATEGORY[capability]
+                CAPABILITY_CATEGORY[capability]
                 for capability in capabilities
-                if capability in _CAPABILITY_CATEGORY
+                if capability in CAPABILITY_CATEGORY
             }
         )
         anchor_category = self._anchor_category(
@@ -414,13 +426,13 @@ class RepositoryTourismZoneResearchTool:
         coverage: dict[str, int] = defaultdict(int)
         for place in places:
             categories = {
-                _CAPABILITY_CATEGORY[capability]
+                CAPABILITY_CATEGORY[capability]
                 for capability in (
                     capabilities_by_id.get(str(place.id), set())
                     if capabilities_by_id is not None
                     else CAPABILITY_ALIASES
                 )
-                if capability in _CAPABILITY_CATEGORY
+                if capability in CAPABILITY_CATEGORY
                 and (
                     capabilities_by_id is not None
                     or place_supports_capability(place, capability)
@@ -450,9 +462,9 @@ class RepositoryTourismZoneResearchTool:
         if place_type in _GENERIC_ANCHOR_MARKERS:
             return "attraction"
         categories = [
-            _CAPABILITY_CATEGORY[capability]
+            CAPABILITY_CATEGORY[capability]
             for capability in sorted(capabilities)
-            if capability in _CAPABILITY_CATEGORY
+            if capability in CAPABILITY_CATEGORY
         ]
         return categories[0] if categories else "attraction"
 

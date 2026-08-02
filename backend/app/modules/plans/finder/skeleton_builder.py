@@ -32,6 +32,8 @@ class DayBlock:
     min_duration_minutes: int | None = None
     goal: str | None = None
     preferred_experiences: tuple[str, ...] = ()
+    must_be_exact_place: bool = False
+    need_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,7 +111,7 @@ class DaySkeletonBuilder:
             # Source itineraries carry ordering/time evidence of their own.
             # Keep those explicit slots intact; flexible needs govern only the
             # Finder-generated day skeleton.
-            if block.role.startswith(("stop_", "url_stop_")):
+            if block.role.startswith("url_stop_"):
                 flexible_blocks.append(block)
                 continue
             if block.kind == "meal":
@@ -129,9 +131,12 @@ class DaySkeletonBuilder:
                 flexible_blocks.append(block)
                 continue
 
-            if "main" in block.role:
+            if "main" in block.role or block.role == "stop_1":
                 need_role = "main"
-            elif "bonus" in block.role:
+            elif "bonus" in block.role or (
+                block.role.startswith("stop_")
+                and block.role not in {"stop_1", "stop_2"}
+            ):
                 need_role = "bonus"
             else:
                 need_role = "support"
@@ -148,10 +153,33 @@ class DaySkeletonBuilder:
                     earliest_start=earliest,
                     latest_end=latest,
                     min_duration_minutes=(need.min_duration_minutes if need else 30),
-                    duration_minutes=(need.max_duration_minutes if need else block.duration_minutes),
+                    duration_minutes=(
+                        need.max_duration_minutes
+                        if need
+                        else max(block.duration_minutes, 60)
+                        if need_role == "main"
+                        else block.duration_minutes
+                    ),
                     optional=(not need.required if need else block.optional),
                     goal=(need.goal if need else None),
-                    preferred_experiences=(tuple(need.preferred_experiences) if need else ()),
+                    preferred_experiences=(
+                        tuple(
+                            dict.fromkeys(
+                                [
+                                    *(
+                                        [need.experience_type]
+                                        if need and need.experience_type
+                                        else []
+                                    ),
+                                    *(need.preferred_experiences if need else []),
+                                ]
+                            )
+                        )
+                    ),
+                    must_be_exact_place=(
+                        need.must_be_exact_place if need else need_role == "main"
+                    ),
+                    need_role=need_role,
                 )
             )
         return DaySkeleton(strategy=skeleton.strategy, blocks=tuple(flexible_blocks))

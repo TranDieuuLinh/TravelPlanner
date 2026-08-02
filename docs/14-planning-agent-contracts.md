@@ -348,6 +348,7 @@ Output chính:
         "primaryActivityCategory": "attraction",
         "maxLocalTravelMinutes": 20,
         "allowRegionFallback": false,
+        "mainRegionLocked": true,
         "pace": "balanced",
         "dayPartGoals": {
           "morning": "Prioritize culture activities supported in the morning.",
@@ -363,10 +364,12 @@ Output chính:
           {
             "role": "main",
             "goal": "Khám phá di sản trong khu vực",
+            "experienceType": "museum",
             "preferredExperiences": ["museum", "heritage"],
             "minDurationMinutes": 75,
             "maxDurationMinutes": 150,
-            "required": true
+            "required": true,
+            "mustBeExactPlace": true
           },
           {
             "role": "support",
@@ -418,17 +421,21 @@ Planner không nhận toàn bộ danh mục Place hay payload thô của provide
 tool chỉ trả capability counts, region keys và tối đa một số sample Place làm
 evidence.
 
-Planner MVP dùng hai structured LLM call:
+Planner MVP dùng một hoặc hai structured LLM call tùy độ phức tạp:
 
-1. `journey_research_v2` tạo `PlannerResearchDraft`: journey style, chiến lược
-   đa dạng, capability queries và yêu cầu mở rộng vùng.
+1. Chuyến Hà Nội local tối đa ba ngày tạo `PlannerResearchDraft` deterministic
+   từ intent; chuyến phức tạp dùng `journey_research_v3_graph_experiences` để tạo
+   journey style, chiến lược đa dạng, capability queries và yêu cầu mở rộng vùng.
 2. Backend chạy `RepositoryPlannerResearchTool` trên Place active. Capability
    local được match theo taxonomy; region lân cận được xếp từ centroid và khoảng
    cách địa lý, chưa phải route đã xác minh.
+   Mỗi theme đồng thời được mở rộng qua `TravelKnowledgeSearchTool` thành
+   experience query terms, category và diversity groups có version.
 3. Backend tạo `tourismZones` quanh các Place anchor có tọa độ, popularity và
    capability phù hợp. Tâm, bán kính và anchor đều là evidence từ catalog;
    LLM chỉ được chọn `zoneId`, không được tự sinh tọa độ.
-4. `macro_planner_v5_flexible_day_needs` nhận proposal, `PlannerVerifiedResearch` và
+4. `macro_planner_v6_main_experience_first` nhận proposal,
+   `PlannerVerifiedResearch` và
    tourism zones, sau đó sinh
    `PlannerMacroPlanDraft`.
 
@@ -461,7 +468,8 @@ UserStatus: `relaxed` ít block, `anchor_led` trung bình, `multi_stop` nhiều 
 Finder không nhận tọa độ do model tự tạo.
 
 `DayBrief` mô tả nhu cầu thay vì lịch đóng đinh. `dayWindow` là biên ngày;
-`activityNeeds` giữ một main bắt buộc, support tùy pace và bonus tùy chọn;
+`activityNeeds` giữ đúng một main bắt buộc có `mustBeExactPlace=true`, support tùy
+pace và bonus tùy chọn;
 `mealNeeds` giữ các bữa lõi bằng cửa sổ thời gian. Finder chọn Place trước rồi
 chọn giờ khả thi trong cửa sổ theo giờ mở cửa và route. Lunch độc lập với theme;
 coffee hoặc một nhà hàng thứ hai không được dùng để giả làm activity văn hóa.
@@ -609,6 +617,9 @@ Khi DayBrief có `tourismZoneRef`, catalog query ưu tiên bbox và mọi Place 
 2,5 km; địa điểm nổi tiếng có evidence mạnh (rating, số review, confidence) được
 mở rộng có kiểm soát tối đa 8 km. Candidate thiếu tọa độ hoặc xa hơn ngưỡng này bị
 loại; fallback lên region cha không thể làm hành trình rộng không giới hạn.
+Khi graph khớp một area được người dùng nêu rõ, Planner đặt
+`mainRegionLocked=true`: main activity bắt buộc ở trong tourism zone; ngoại lệ
+"địa điểm nổi tiếng" chỉ còn áp dụng cho support/bonus/meal.
 Nếu chưa có zone và `allowRegionFallback=false`, candidate phải thuộc đúng
 `targetRegionKey`. Sau hard boundary, Finder dùng khoảng cách tới
 `UserStatus.location` làm tín hiệu rerank phụ.

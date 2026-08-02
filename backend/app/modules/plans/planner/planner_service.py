@@ -41,6 +41,8 @@ from app.modules.plans.planner.prompt import (
     build_planner_user_payload,
 )
 from app.modules.plans.planner.research_tool import (
+    CAPABILITY_ALIASES,
+    CAPABILITY_CATEGORY,
     EmptyPlannerResearchTool,
     PlannerResearchTool,
     canonical_capability,
@@ -324,7 +326,10 @@ class PlannerService:
                     month = f"tháng {int(parts[1])}"
 
             festival_result = self.research_tools.festival_discovery(
-                FestivalDiscoveryInput(month=month)
+                FestivalDiscoveryInput(
+                    month=month,
+                    regionKey=region_key,
+                )
             )
             planner_input.festival_discovery = festival_result.model_dump(by_alias=True)
         except Exception as e:
@@ -376,14 +381,19 @@ class PlannerService:
         # Run research tools to populate tool results
         planner_input = self._run_research_tools(planner_input)
 
+        research_generator = "llm"
         try:
-            research_raw = await self.llm.generate_json(
-                system_prompt=PLANNER_RESEARCH_SYSTEM_PROMPT,
-                user_payload=build_planner_research_payload(planner_input),
-            )
-            research_draft = PlannerResearchDraft.model_validate_json(
-                research_raw
-            )
+            if self._can_use_fast_graph_research(planner_input):
+                research_draft = self._build_fast_graph_research(planner_input)
+                research_generator = "deterministic_graph"
+            else:
+                research_raw = await self.llm.generate_json(
+                    system_prompt=PLANNER_RESEARCH_SYSTEM_PROMPT,
+                    user_payload=build_planner_research_payload(planner_input),
+                )
+                research_draft = PlannerResearchDraft.model_validate_json(
+                    research_raw
+                )
             verified_research = self.research_tool.verify(
                 research_draft,
                 root_region_key=planner_input.region_context.region_key,
@@ -463,6 +473,7 @@ class PlannerService:
                     "generator=llm",
                     f"repairAttempts={repair_attempts}",
                     f"researchPromptVersion={PLANNER_RESEARCH_PROMPT_VERSION}",
+                    f"researchGenerator={research_generator}",
                     f"promptVersion={PLANNER_PROMPT_VERSION}",
                     f"statisticsStatus={statistics_status}",
                     (
@@ -571,6 +582,22 @@ class PlannerService:
         zone_by_id = {
             zone.zone_id: zone for zone in planner_input.tourism_zones
         }
+        preferred_area_regions = list(
+            dict.fromkeys(
+                region_key
+                for evidence in verified_research.experience_evidence
+                if any(
+                    node_id.startswith("area:")
+                    for node_id in evidence.matched_node_ids
+                )
+                for region_key in evidence.region_keys
+            )
+        )
+        preferred_area_zones = [
+            zone
+            for zone in planner_input.tourism_zones
+            if self._region_matches_any(zone.region_key, preferred_area_regions)
+        ]
         normalized_briefs = []
         for brief in macro.day_briefs:
             zone = None
@@ -580,13 +607,26 @@ class PlannerService:
                     raise ValueError(
                         f"Unknown tourismZoneRef: {brief.tourism_zone_ref}"
                     )
-            elif planner_input.tourism_zones:
+                if (
+                    preferred_area_zones
+                    and zone not in preferred_area_zones
+                ):
+                    # The model may choose a more popular zone even when the
+                    # user's wording names a graph-known visitor area. Treat
+                    # that area edge as a hard geographic scope and let the
+                    # category selector choose an anchor inside it.
+                    zone = None
+            if zone is None and planner_input.tourism_zones:
                 regional_zones = [
                     candidate
                     for candidate in planner_input.tourism_zones
                     if candidate.region_key == brief.target_region_key
                 ]
-                candidate_zones = regional_zones or planner_input.tourism_zones
+                candidate_zones = (
+                    preferred_area_zones
+                    or regional_zones
+                    or planner_input.tourism_zones
+                )
                 available_categories = list(
                     dict.fromkeys(
                         category
@@ -622,10 +662,11 @@ class PlannerService:
                 ),
             )
             if zone is not None and focus_category is not None:
+                focus_zone_pool = preferred_area_zones or planner_input.tourism_zones
                 matching_zone = next(
                     (
                         candidate
-                        for candidate in planner_input.tourism_zones
+                        for candidate in focus_zone_pool
                         if candidate.region_key == zone.region_key
                         and any(
                             anchor.category == focus_category
@@ -638,7 +679,7 @@ class PlannerService:
                     matching_zone = next(
                         (
                             candidate
-                            for candidate in planner_input.tourism_zones
+                            for candidate in focus_zone_pool
                             if any(
                                 anchor.category == focus_category
                                 for anchor in candidate.anchor_places
@@ -650,8 +691,16 @@ class PlannerService:
                     zone = matching_zone
 
             updates = {}
-            if not brief.activity_needs:
-                updates["activity_needs"] = self._default_activity_needs(brief)
+            activity_needs = (
+                brief.activity_needs
+                if brief.activity_needs
+                else self._default_activity_needs(brief)
+            )
+            normalized_activity_needs = self._normalize_activity_needs(
+                activity_needs
+            )
+            if normalized_activity_needs != brief.activity_needs:
+                updates["activity_needs"] = normalized_activity_needs
             if not brief.meal_needs:
                 updates["meal_needs"] = [
                     DayMealNeed(
@@ -673,6 +722,7 @@ class PlannerService:
                 updates["tourism_zone_ref"] = zone.zone_id
                 updates["target_region_key"] = zone.region_key
                 updates["allow_region_fallback"] = False
+                updates["main_region_locked"] = bool(preferred_area_zones)
                 updates["anchor_place_refs"] = [
                     anchor.place_id for anchor in zone.anchor_places
                 ]
@@ -1201,20 +1251,6 @@ class PlannerService:
         brief: DayBrief,
         available_categories: list[str],
     ) -> str | None:
-        category_by_capability = {
-            "beach": "nature",
-            "camping": "nature",
-            "coffee": "food_drink",
-            "culture": "attraction",
-            "food": "food_drink",
-            "hiking": "nature",
-            "mountain": "nature",
-            "nature": "nature",
-            "nightlife": "entertainment",
-            "seafood": "food_drink",
-            "shopping": "shopping",
-            "wellness": "entertainment",
-        }
         scores: dict[str, int] = {}
         weighted_signals = [
             (brief.day_part_goals.morning, 3),
@@ -1225,7 +1261,7 @@ class PlannerService:
         for signal, weight in weighted_signals:
             if not signal:
                 continue
-            category = category_by_capability.get(
+            category = CAPABILITY_CATEGORY.get(
                 canonical_capability(signal)
             )
             if category in available_categories:
@@ -1242,16 +1278,82 @@ class PlannerService:
         )
 
     @staticmethod
+    def _can_use_fast_graph_research(planner_input: PlannerAgentInput) -> bool:
+        style = planner_input.intent.travel_style.strip().casefold().replace("-", "_")
+        return (
+            planner_input.trip_spec.days <= 3
+            and planner_input.region_context.region_key.startswith("vn,ha-noi")
+            and not any(
+                marker in style
+                for marker in ("road_trip", "road trip", "multi_base", "phuot")
+            )
+        )
+
+    @staticmethod
+    def _build_fast_graph_research(
+        planner_input: PlannerAgentInput,
+    ) -> PlannerResearchDraft:
+        requested_themes = list(
+            dict.fromkeys(
+                interest.strip()
+                for interest in planner_input.intent.interests
+                if interest.strip()
+            )
+        )
+        if not requested_themes:
+            requested_themes = [
+                "culture",
+                "history and heritage",
+                "scenic landmark",
+            ]
+
+        theme_queries = []
+        for theme in requested_themes[:6]:
+            capability = canonical_capability(theme)
+            # Keep the raw user phrase as the graph query. Area names such as
+            # "Hanoi Old Quarter" are not capabilities; replacing them with a
+            # generic label discards the strongest geographic signal.
+            if capability not in CAPABILITY_ALIASES:
+                capability = "culture"
+            theme_queries.append(
+                {
+                    "theme": theme,
+                    "capabilities": [capability],
+                    "preferredRegionKey": planner_input.region_context.region_key,
+                    "rationale": (
+                        "Giữ nguyên chủ đề/khu vực người dùng nêu, rồi kiểm chứng "
+                        "bằng knowledge graph và Place active tại Hà Nội."
+                    ),
+                }
+            )
+        return PlannerResearchDraft.model_validate(
+            {
+                "journeyStyle": "local_base",
+                "varietyStrategy": (
+                    "Chọn một trải nghiệm chính có địa điểm cụ thể cho mỗi ngày; "
+                    "dùng graph để bổ sung trải nghiệm khác nhóm và giữ bữa ăn độc lập."
+                ),
+                "themeQueries": theme_queries,
+                "expandBeyondRoot": False,
+                "nearbyCapabilities": [],
+                "maxDistanceKm": 50,
+            }
+        )
+
+    @staticmethod
     def _default_activity_needs(brief: DayBrief) -> list[DayActivityNeed]:
         common_experiences = list(dict.fromkeys(brief.focus_tags))
+        main_experience = common_experiences[0] if common_experiences else None
         return [
             DayActivityNeed(
                 role="main",
                 goal=brief.day_part_goals.morning or brief.theme,
+                experienceType=main_experience,
                 preferredExperiences=common_experiences,
                 minDurationMinutes=75,
                 maxDurationMinutes=150,
                 required=True,
+                mustBeExactPlace=True,
             ),
             DayActivityNeed(
                 role="support",
@@ -1272,31 +1374,58 @@ class PlannerService:
         ]
 
     @staticmethod
+    def _normalize_activity_needs(
+        needs: list[DayActivityNeed],
+    ) -> list[DayActivityNeed]:
+        main_needs = [need for need in needs if need.role == "main"]
+        if len(main_needs) != 1:
+            raise ValueError(
+                "Each DayBrief must contain exactly one required main experience."
+            )
+        normalized: list[DayActivityNeed] = []
+        for need in needs:
+            if need.role != "main":
+                normalized.append(need)
+                continue
+            experience_type = need.experience_type or next(
+                iter(need.preferred_experiences),
+                None,
+            )
+            normalized.append(
+                need.model_copy(
+                    update={
+                        "experience_type": experience_type,
+                        "required": True,
+                        "must_be_exact_place": True,
+                    }
+                )
+            )
+        return normalized
+
+    @staticmethod
+    def _region_matches_any(
+        region_key: str,
+        preferred_region_keys: list[str],
+    ) -> bool:
+        return any(
+            region_key == preferred
+            or region_key.startswith(f"{preferred},")
+            or preferred.startswith(f"{region_key},")
+            for preferred in preferred_region_keys
+        )
+
+    @staticmethod
     def _primary_category_for_day(
         planner_input: PlannerAgentInput,
         brief: DayBrief,
         available_categories: list[str],
     ) -> str | None:
-        category_by_capability = {
-            "beach": "nature",
-            "camping": "nature",
-            "coffee": "food_drink",
-            "culture": "attraction",
-            "food": "food_drink",
-            "hiking": "nature",
-            "mountain": "nature",
-            "nature": "nature",
-            "nightlife": "entertainment",
-            "seafood": "food_drink",
-            "shopping": "shopping",
-            "wellness": "entertainment",
-        }
         day_requested = [
-            category_by_capability.get(canonical_capability(tag))
+            CAPABILITY_CATEGORY.get(canonical_capability(tag))
             for tag in brief.focus_tags
         ]
         requested = [
-            category_by_capability.get(canonical_capability(interest))
+            CAPABILITY_CATEGORY.get(canonical_capability(interest))
             for interest in planner_input.intent.interests
         ]
         for category in (*day_requested, *requested):
