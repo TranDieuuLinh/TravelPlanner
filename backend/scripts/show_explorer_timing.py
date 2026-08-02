@@ -73,6 +73,19 @@ def _print_report(report: dict[str, Any]) -> None:
                 for provider, count in provider_counts.items()
             )
         )
+    attempts = report.get("providerAttempts", [])
+    if attempts:
+        print("Provider attempts")
+        for attempt in attempts:
+            reason = attempt.get("rejectionReason")
+            suffix = f" · {reason}" if reason else ""
+            print(
+                f"  {attempt.get('candidate')} · {attempt.get('provider')} · "
+                f"{attempt.get('aliasQueryCount', 0)} query · "
+                f"queue {attempt.get('queueWaitSeconds', 0):.3f}s · "
+                f"run {attempt.get('executionSeconds', 0):.3f}s · "
+                f"{attempt.get('outcome')}{suffix}"
+            )
     for stage in report.get("stages", []):
         print(
             f"  {stage.get('label', stage.get('key'))}: "

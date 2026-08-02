@@ -167,8 +167,8 @@ class LLMPlaceAliasEnricher:
             search_names = _unique_aliases(
                 candidate.name,
                 [
-                    *english_names,
                     *vietnamese_names,
+                    *english_names,
                     *candidate.search_names,
                     *alternate_names,
                 ],

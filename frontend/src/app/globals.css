@@ -125,6 +125,11 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobProviders dt { overflow: hidden; color: #354b45; font-size: .52rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .backgroundJobProviders dd { margin: 2px 0 0; color: #7a8985; font-size: .48rem; }
 .backgroundJobProviders dd b { color: #176554; }
+.backgroundJobProviderAttempts { color: #52645f; font-size: .52rem; }
+.backgroundJobProviderAttempts summary { cursor: pointer; font-weight: 800; }
+.backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; }
+.backgroundJobProviderAttemptList > div { display: grid; grid-template-columns: minmax(90px,1.4fr) repeat(5,minmax(55px,auto)); gap: 5px; align-items: center; padding: 5px 6px; border-radius: 7px; background: #f5f8f7; }
+.backgroundJobProviderAttemptList strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .backgroundJobSourceTiming { display: grid; gap: 6px; border-top: 1px solid #e8eeeb; padding-top: 8px; }
 .backgroundJobSourceTiming > small { color: #74837f; font-size: .5rem; line-height: 1.4; }
 .backgroundJobTimingPending { border-style: dashed; }
@@ -146,6 +151,7 @@ h1, h2, h3, p { margin-top: 0; }
   .backgroundJobsPanel > summary strong { display: none; }
   .backgroundJobsList { width: calc(100vw - 24px); max-height: calc(100dvh - 136px); }
   .backgroundJobProviders { grid-template-columns: 1fr; }
+  .backgroundJobProviderAttemptList > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 .appBody { min-height: calc(100vh - 64px); }
 .mobileNav { display: none; }

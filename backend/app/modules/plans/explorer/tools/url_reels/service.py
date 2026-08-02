@@ -7,6 +7,10 @@ from tempfile import TemporaryDirectory
 
 import httpx
 
+from app.modules.plans.destination_inference import (
+    infer_destination_from_text,
+    usable_destination,
+)
 from app.modules.plans.explorer.tools.url_reels.extractor import UrlReelContextExtractor
 from app.modules.plans.explorer.tools.url_reels.frame_vision import (
     GeminiReelFrameVision,
@@ -117,6 +121,12 @@ class UrlReelExtractionService:
         timings["prepareSourceWall"] = time.perf_counter() - source_start
         timings.update(media_timings)
 
+        effective_destination = (
+            usable_destination(payload.destination)
+            or infer_destination_from_text(metadata.title, metadata.description)
+            or None
+        )
+
         speech_result = caption_result or SpeechToTextResult(
             text="",
             status="skipped",
@@ -125,9 +135,9 @@ class UrlReelExtractionService:
         vision_result = FrameVisionResult()
         start = time.perf_counter()
         stt_prompt = payload.stt_initial_prompt
-        if stt_prompt is None and payload.destination:
+        if stt_prompt is None and effective_destination:
             stt_prompt = (
-                f"This is a travel itinerary video about {payload.destination}. "
+                f"This is a travel itinerary video about {effective_destination}. "
                 "It may mention destinations, cafes, restaurants, attractions, "
                 "hotels, neighborhoods, and transport."
             )
@@ -147,7 +157,7 @@ class UrlReelExtractionService:
                 executor.submit(
                     (self.frame_vision or GeminiReelFrameVision()).analyze,
                     artifacts.frame_paths,
-                    destination=payload.destination,
+                    destination=effective_destination,
                 )
                 if artifacts.frame_paths
                 else None
@@ -198,7 +208,7 @@ class UrlReelExtractionService:
                 if speech_result.observations
                 else None
             ),
-            "destination": payload.destination,
+            "destination": effective_destination,
         }
         if vision_result.text:
             context_arguments["visual_text"] = vision_result.text

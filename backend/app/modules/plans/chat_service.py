@@ -638,6 +638,14 @@ def _merge_candidate_reviews(
                     saved_review.confidence,
                     next_review.confidence,
                 ),
+                "extraction_confidence": max(
+                    saved_review.extraction_confidence,
+                    next_review.extraction_confidence,
+                ),
+                "resolution_confidence": max(
+                    saved_review.resolution_confidence,
+                    next_review.resolution_confidence,
+                ),
                 "retryable": (
                     saved_review.retryable and next_review.retryable
                     if preferred.status != "resolved"

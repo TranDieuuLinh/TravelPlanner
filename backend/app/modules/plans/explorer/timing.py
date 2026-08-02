@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.modules.plans.explorer.schema import (
+    ExplorerProviderAttempt,
     ExplorerSourceTiming,
     ExplorerTimingReport,
     ExplorerTimingStage,
@@ -62,6 +63,7 @@ class ExplorerTimingTrace:
         self.persisted_count = 0
         self.provider_counts: dict[str, int] = {}
         self.resolved_provider_counts: dict[str, int] = {}
+        self.provider_attempts: list[ExplorerProviderAttempt] = []
 
     def record_stage(
         self,
@@ -153,21 +155,26 @@ class ExplorerTimingTrace:
                 for source in resolution.candidate.sources
                 if source.type.value == "url" and source.url
             }
-            provider = resolution.provider or "unknown"
+            attempts = resolution.provider_attempts or [
+                _synthetic_attempt(resolution)
+            ]
             for source_url in source_urls:
                 stats = source_stats.get(source_url)
                 if stats is None:
                     continue
                 stats["candidate_count"] += 1
                 provider_counts = stats["provider_counts"]
-                provider_counts[provider] = provider_counts.get(provider, 0) + 1
-                if resolution.status != "resolved":
-                    continue
-                stats["resolved_count"] += 1
                 resolved_provider_counts = stats["resolved_provider_counts"]
-                resolved_provider_counts[provider] = (
-                    resolved_provider_counts.get(provider, 0) + 1
-                )
+                for attempt in attempts:
+                    provider_counts[attempt.provider] = (
+                        provider_counts.get(attempt.provider, 0) + 1
+                    )
+                    if attempt.outcome in {"resolved", "cache_hit"}:
+                        resolved_provider_counts[attempt.provider] = (
+                            resolved_provider_counts.get(attempt.provider, 0) + 1
+                        )
+                if resolution.status == "resolved":
+                    stats["resolved_count"] += 1
 
         self.sources = [
             source.model_copy(
@@ -183,6 +190,37 @@ class ExplorerTimingTrace:
             for source, result in zip(self.sources, url_results)
             for stats in [source_stats[canonicalize_url(result.url)]]
         ]
+
+    def add_resolution_attempts(
+        self,
+        resolutions: list[PlaceResolution],
+    ) -> None:
+        self.provider_counts = {}
+        self.resolved_provider_counts = {}
+        self.provider_attempts = []
+        for resolution in resolutions:
+            attempts = resolution.provider_attempts or [
+                _synthetic_attempt(resolution)
+            ]
+            for attempt in attempts:
+                self.provider_counts[attempt.provider] = (
+                    self.provider_counts.get(attempt.provider, 0) + 1
+                )
+                if attempt.outcome in {"resolved", "cache_hit"}:
+                    self.resolved_provider_counts[attempt.provider] = (
+                        self.resolved_provider_counts.get(attempt.provider, 0) + 1
+                    )
+                self.provider_attempts.append(
+                    ExplorerProviderAttempt(
+                        candidate=attempt.candidate,
+                        provider=attempt.provider,
+                        aliasQueryCount=attempt.alias_query_count,
+                        queueWaitSeconds=_seconds(attempt.queue_wait_seconds),
+                        executionSeconds=_seconds(attempt.execution_seconds),
+                        outcome=attempt.outcome,
+                        rejectionReason=attempt.rejection_reason,
+                    )
+                )
 
     def finish(
         self,
@@ -206,6 +244,7 @@ class ExplorerTimingTrace:
             persistedCount=self.persisted_count,
             providerCounts=self.provider_counts,
             resolvedProviderCounts=self.resolved_provider_counts,
+            providerAttempts=self.provider_attempts,
             logFile=log_file,
         )
 
@@ -243,3 +282,14 @@ class ExplorerTimingLogger:
 
 def _seconds(value: float) -> float:
     return round(max(0.0, value), 3)
+
+
+def _synthetic_attempt(resolution: PlaceResolution):
+    from app.modules.places.resolver import PlaceResolutionAttempt
+
+    return PlaceResolutionAttempt(
+        candidate=resolution.candidate.name,
+        provider=resolution.provider or "unknown",
+        outcome=("resolved" if resolution.status == "resolved" else "unresolved"),
+        rejectionReason=resolution.resolution_reason,
+    )

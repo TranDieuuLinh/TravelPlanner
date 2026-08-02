@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     user_post_media_dir: Path = BACKEND_ROOT / "var" / "user-post-media"
     user_post_image_max_bytes: int = 15 * 1024 * 1024
     user_post_video_max_bytes: int = 100 * 1024 * 1024
-    place_resolver_provider: str = "nominatim"
+    place_resolver_provider: str = "google_maps_scraper"
     route_provider: str = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
     valhalla_timeout_seconds: float = 15.0
@@ -101,10 +101,6 @@ class Settings(BaseSettings):
     )
     opentripplanner_timeout_seconds: float = 35.0
     opentripplanner_schedule_status: str = "current"
-    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
-    nominatim_user_agent: str = "VSF-Travel-Planner/0.1 (local-development)"
-    nominatim_timeout_seconds: float = 15.0
-    nominatim_min_interval_seconds: float = 1.0
     google_maps_scraper_executable: str | None = "google-maps-scraper"
     google_maps_scraper_work_dir: Path | None = None
     google_maps_scraper_timeout_seconds: float = Field(
@@ -113,7 +109,7 @@ class Settings(BaseSettings):
         le=300.0,
     )
     google_maps_scraper_max_alias_queries: int = Field(
-        default=3,
+        default=1,
         ge=1,
         le=10,
     )
@@ -164,9 +160,13 @@ class Settings(BaseSettings):
                 "GEMINI_STT_API_KEYS and GEMINI_OCR_API_KEYS must use "
                 "different keys."
             )
-        if self.place_resolver_provider not in {"nominatim", "provisional"}:
+        if self.place_resolver_provider not in {
+            "google_maps_scraper",
+            "provisional",
+        }:
             raise ValueError(
-                "PLACE_RESOLVER_PROVIDER must be nominatim or provisional"
+                "PLACE_RESOLVER_PROVIDER must be google_maps_scraper or "
+                "provisional"
             )
         if self.route_provider not in {"valhalla", "geodesic"}:
             raise ValueError(

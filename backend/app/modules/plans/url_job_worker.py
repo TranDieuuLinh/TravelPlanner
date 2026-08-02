@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_service import TripChatService
+from app.modules.plans.destination_inference import (
+    infer_destination_from_urls,
+    usable_destination,
+)
 from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.plans.url_job_repository import UrlImportJobRepository
@@ -159,7 +163,11 @@ class UrlImportJobWorker:
                     user,
                     content=content,
                     expected_revision=chat.revision,
-                    initial_destination=chat.destination or "unspecified",
+                    initial_destination=(
+                        usable_destination(chat.destination)
+                        or infer_destination_from_urls([job.url])
+                        or "unspecified"
+                    ),
                     urls=[job.url],
                     images=[],
                     force_url_refresh=job.force_refresh,

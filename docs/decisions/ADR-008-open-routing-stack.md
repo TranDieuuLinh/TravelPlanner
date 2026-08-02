@@ -22,8 +22,8 @@ thể thay adapter mà không đổi contract domain.
   ngưỡng 1.500 m chỉ chọn route road chính, route còn lại được giữ trong
   `PlanTransportLeg.alternatives`.
 - Dùng OpenTripPlanner GTFS GraphQL API cho public transit theo lịch.
-- Dùng Nominatim cho place resolution vì Valhalla và OTP không phải POI
-  geocoder.
+- Place resolution dùng catalog nội bộ rồi Google Maps Playwright; Valhalla và
+  OTP không phải POI geocoder.
 - Không dùng API key cho Valhalla hoặc OTP trong cấu hình self-host.
 - Chuẩn hóa provenance thành `valhalla_routing`, `valhalla_matrix` và
   `opentripplanner_transit`.

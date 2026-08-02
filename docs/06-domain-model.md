@@ -120,6 +120,9 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
   chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
   chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
+  Candidate giữ `extractionConfidence` riêng cho chất lượng evidence; kết quả
+  provider giữ `resolutionConfidence` riêng cho độ chắc chắn identity. Trường
+  `confidence` cũ vẫn là extraction confidence trong thời gian tương thích API.
 - `UserMustPlace`: snapshot URL/place dùng chung đã được provider resolve tới
   một địa điểm cụ thể có đủ latitude/longitude. Snapshot có shape tương ứng
   `Place`, thêm `sourceUrl` và `notes`, giữ provenance và có `placeId` nullable
@@ -138,7 +141,7 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
   nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
   hành đã xác minh. `sourceProvider` giữ provider đã resolve candidate để UI có
-  thể phân biệt provenance URL với Nominatim mà không suy đoán từ tên. Stop URL
+  thể phân biệt provenance URL với Google Maps Playwright mà không suy đoán từ tên. Stop URL
   hiển thị nhãn Việt đã resolve; tên candidate gốc vẫn được giữ trên
   `UserMustPlace` cùng evidence.
 - `DestinationStay`: phân bổ một khoảng ngày cho thành phố/khu vực từ heading

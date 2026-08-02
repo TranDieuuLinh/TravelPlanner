@@ -7,8 +7,14 @@ import unicodedata
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import DestinationStay, Plan, UnscheduledPlace
+from app.modules.plans.destination_inference import (
+    infer_destination_from_place_names,
+    infer_destination_from_text,
+    usable_destination,
+)
 from app.modules.places.resolver import (
     PlaceResolution,
+    PlaceResolutionAttempt,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -313,7 +319,17 @@ class PlanService:
                 else None
             )
             if cached is not None:
-                resolutions[index] = cached
+                resolutions[index] = cached.model_copy(
+                    update={
+                        "provider_attempts": [
+                            PlaceResolutionAttempt(
+                                candidate=candidate.name,
+                                provider="cache",
+                                outcome="cache_hit",
+                            )
+                        ]
+                    }
+                )
             else:
                 missing_indexes.append(index)
                 missing_candidates.append(candidate)
@@ -475,11 +491,34 @@ class PlanService:
                 "Retry later or upload screenshots instead of generating an "
                 "empty itinerary."
             )
+        inferred_source_destination = (
+            usable_destination(payload.destination)
+            or infer_destination_from_text(
+                *(
+                    text
+                    for result in url_reel_results
+                    for text in (result.metadata.title, result.metadata.description)
+                )
+            )
+            or infer_destination_from_place_names(
+                [candidate.name for candidate in candidates]
+            )
+            or None
+        )
+        if inferred_source_destination:
+            candidates = [
+                candidate
+                if usable_destination(candidate.search_region)
+                else candidate.model_copy(
+                    update={"search_region": inferred_source_destination}
+                )
+                for candidate in candidates
+            ]
         if self.place_alias_enricher is not None:
             alias_start = time.perf_counter()
             candidates = await self.place_alias_enricher.enrich(
                 candidates,
-                destination=payload.destination,
+                destination=inferred_source_destination or payload.destination,
             )
             trace.record_stage(
                 "placeAliasEnrichment",
@@ -489,7 +528,9 @@ class PlanService:
             )
         source_destination_hint = infer_url_destination_hint(candidates)
         resolution_destination = (
-            source_destination_hint.destination or payload.destination
+            source_destination_hint.destination
+            or inferred_source_destination
+            or payload.destination
         )
         if payload.urls:
             async def format_context():
@@ -564,15 +605,7 @@ class PlanService:
             resolution.status == "resolved"
             for resolution in resolutions
         )
-        for resolution in resolutions:
-            provider = resolution.provider or "unknown"
-            trace.provider_counts[provider] = (
-                trace.provider_counts.get(provider, 0) + 1
-            )
-            if resolution.status == "resolved":
-                trace.resolved_provider_counts[provider] = (
-                    trace.resolved_provider_counts.get(provider, 0) + 1
-                )
+        trace.add_resolution_attempts(resolutions)
         trace.add_url_resolution_results(url_reel_results, resolutions)
         post_processing_start = time.perf_counter()
         schedulable_candidates = [
@@ -1336,8 +1369,33 @@ def _place_candidate_review(
         sourceOrder=candidate.source_order,
         sourceDay=candidate.source_day,
         confidence=candidate.confidence,
+        extractionConfidence=candidate.confidence,
+        resolutionConfidence=_resolution_confidence(
+            resolution,
+            schedulable=schedulable,
+        ),
         retryable=not schedulable,
     )
+
+
+def _resolution_confidence(
+    resolution: PlaceResolution,
+    *,
+    schedulable: bool,
+) -> float:
+    if not schedulable:
+        return 0.0
+    base = {
+        "database": 0.95,
+        "google_maps_scraper": 0.82,
+    }.get(resolution.provider or "", 0.75)
+    if resolution.data_confidence == "low":
+        base -= 0.12
+    elif resolution.data_confidence == "high":
+        base += 0.03
+    if resolution.resolution_reason == "matched_route_context":
+        base -= 0.1
+    return min(1.0, max(0.0, base))
 
 
 def _candidate_from_review(
@@ -1355,7 +1413,7 @@ def _candidate_from_review(
             )
             for url in review.source_urls
         ],
-        confidence=review.confidence,
+        confidence=(review.extraction_confidence or review.confidence),
         sourceOrder=review.source_order,
         sourceDay=review.source_day,
     )
