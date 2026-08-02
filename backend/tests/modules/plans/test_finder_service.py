@@ -200,7 +200,7 @@ def test_agent_finder_allows_famous_verified_place_beyond_core_zone() -> None:
     )
 
 
-def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
+def test_finder_uses_fixed_skeleton_and_retries_candidates() -> None:
     places = {
         "selected-main": _place(
             "selected-main",
@@ -263,14 +263,14 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
 
     day = result.days[0]
     assert [item.role for item in day.items] == [
+        "breakfast_meal",
         "main_activity",
         "lunch_meal",
         "support_activity",
         "dinner_meal",
-        "group_social_activity",
     ]
-    assert day.items[0].source == "selected_place"
-    assert day.items[2].source == "finder_suggestion"
+    assert day.items[1].source == "selected_place"
+    assert day.items[3].source == "finder_suggestion"
     assert result.final_plan_status.used_place_ids == [
         "selected-main",
         "support",
@@ -280,7 +280,7 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
         "culture": 2,
     }
     assert result.final_user_status.metrics.physical == 65
-    assert result.final_user_status.metrics.energy == 75
+    assert result.final_user_status.metrics.energy == 80
     assert result.final_user_status.location is not None
     assert result.final_user_status.location.place_id == "hotel-a"
     assert result.unscheduled_places == []
@@ -360,6 +360,7 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
         for item in day.items
         if item.place_id is not None
     }
+    assert scheduled_by_role["breakfast_meal"].place_id == "coffee-only"
     assert scheduled_by_role["lunch_meal"].place_id == "local-lunch"
     assert scheduled_by_role["support_activity"].place_id == "gallery"
     assert scheduled_by_role["dinner_meal"].place_id == "local-dinner"
@@ -368,23 +369,76 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
         item.notes != "Selected by deterministic Finder candidate loop."
         for item in day.items
     )
-    social = next(
-        item for item in day.items if item.role == "group_social_activity"
-    )
-    assert "-" in social.time_window
-    assert social.notes == "Tính năng gợi ý hoạt động nhóm sẽ sớm ra mắt."
     meal_queries = [
         query
         for query in tool.search_queries
         if "local cuisine" in query
     ]
-    assert len(meal_queries) == 2
+    assert len(meal_queries) == 3
     assert all("món địa phương" in query for query in meal_queries)
     assert all("culture" not in query for query in meal_queries)
     assert all("Culture and food" not in query for query in meal_queries)
     assert all("Hoàn Kiếm" not in query for query in meal_queries)
     assert 25 in tool.search_limits
     assert not any("unresolved meal placeholder" in warning for warning in result.warnings)
+
+
+def test_food_support_prefers_snack_stop_and_is_reserved_from_meals() -> None:
+    restaurant = _place(
+        "restaurant",
+        "Full meal restaurant",
+        tags=["food", "restaurant"],
+        intensity=None,
+        place_type="restaurant",
+    )
+    snack_cafe = _place(
+        "snack-cafe",
+        "Dessert and snack cafe",
+        tags=["food", "snack", "dessert"],
+        intensity=None,
+        place_type="cafe",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {
+                "selected-main": _place(
+                    "selected-main",
+                    "Main attraction",
+                    tags=["culture"],
+                    intensity="light",
+                ),
+                "restaurant": restaurant,
+                "snack-cafe": snack_cafe,
+            },
+            search_order=["restaurant", "snack-cafe"],
+        )
+    )
+
+    result = finder.fill_main_plan(
+        _macro_plan(),
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="selected-main",
+                name="Main attraction",
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+    )
+
+    support = next(
+        item
+        for item in result.days[0].items
+        if item.role == "support_activity"
+    )
+    assert support.place_id == "snack-cafe"
+    scheduled_ids = [
+        item.place_id
+        for item in result.days[0].items
+        if item.place_id is not None
+    ]
+    assert scheduled_ids.count("snack-cafe") == 1
 
 
 def test_finder_uses_proximity_to_break_relevance_ties() -> None:
@@ -440,6 +494,58 @@ def test_finder_uses_proximity_to_break_relevance_ties() -> None:
         if item.role == "support_activity"
     )
     assert support.place_id == "near-culture"
+
+
+def test_finder_selects_all_activities_before_meals() -> None:
+    class RecordingSelector:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str | None]] = []
+
+        @staticmethod
+        def block_is_available(block, user_status) -> bool:
+            return True
+
+        def select(self, context):
+            destination_ref = (
+                context.corridor_destination.stable_ref
+                if context.corridor_destination is not None
+                else None
+            )
+            self.calls.append((context.block.role, destination_ref))
+            is_meal = context.block.kind == "meal"
+            return FinderPlace(
+                placeId=context.block.role,
+                name=context.block.role,
+                placeType="restaurant" if is_meal else "museum",
+                regionKey="vn,ha-noi,hoan-kiem",
+                tags=["food"] if is_meal else ["culture"],
+                latitude=21.03,
+                longitude=105.85,
+                typicalDurationMinutes=60,
+                activityIntensity=None if is_meal else "light",
+            )
+
+    selector = RecordingSelector()
+    finder = FinderService(
+        FakeFinderPlaceTool({}, search_order=[]),
+        candidate_selector=selector,  # type: ignore[arg-type]
+    )
+
+    result = finder.fill_main_plan(_macro_plan(), _intent(), [])
+
+    assert [role for role, _ in selector.calls] == [
+        "main_activity",
+        "support_activity",
+        "breakfast_meal",
+        "lunch_meal",
+        "dinner_meal",
+    ]
+    assert selector.calls[2][1] == "main_activity"
+    assert selector.calls[3][1] == "support_activity"
+    assert selector.calls[4][1] is None
+    assert len(
+        [item for item in result.days[0].items if item.timeline_category == "activity"]
+    ) == 2
 
 
 def test_reference_only_mode_never_adds_catalog_places() -> None:
@@ -527,7 +633,7 @@ def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
     assert result.days[0].items == []
 
 
-def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
+def test_reference_intake_fills_missing_activity_before_empty_days() -> None:
     source = _place(
         "source-place",
         "Place from video",
@@ -537,9 +643,9 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
     catalog = _place(
         "catalog-place",
         "Finder suggestion",
-        tags=["food"],
+        tags=["culture"],
         intensity="light",
-        place_type="restaurant",
+        place_type="attraction",
     )
     finder = FinderService(
         FakeFinderPlaceTool(
@@ -568,7 +674,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
                 theme="Finder fill",
                 targetArea="Hà Nội",
                 targetRegionKey="vn,ha-noi",
-                focusTags=["food"],
+                focusTags=["culture"],
             ),
         ],
     )
@@ -592,16 +698,25 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
     assert [
         item.name
         for item in result.days[0].items
-        if item.source != "break"
+        if item.source == "selected_place"
     ] == ["Place from video"]
-    assert result.days[0].items[0].source_provider == "nominatim"
+    source_item = next(
+        item
+        for item in result.days[0].items
+        if item.source == "selected_place"
+    )
+    assert source_item.source_provider == "nominatim"
     assert any(
+        item.source == "finder_suggestion"
+        for item in result.days[0].items
+    )
+    assert not any(
         item.source == "finder_suggestion"
         for item in result.days[1].items
     )
 
 
-def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
+def test_low_user_capacity_keeps_fixed_day_frame() -> None:
     finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
     user_status = UserStatus.model_validate(
         {
@@ -619,11 +734,11 @@ def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
         user_status=user_status,
     )
 
-    assert result.days[0].strategy == "relaxed"
+    assert result.days[0].strategy == "two_activity_day"
     assert [item.role for item in result.days[0].items] == [
+        "breakfast_meal",
         "lunch_meal",
         "dinner_meal",
-        "group_social_activity",
     ]
 
 
@@ -751,7 +866,9 @@ def test_finder_rejects_place_outside_opening_hours() -> None:
 
     result = finder.fill_main_plan(_macro_plan(), _intent(), [])
 
-    assert result.days[0].items[0].name == "Morning museum"
+    assert next(
+        item for item in result.days[0].items if item.place_id is not None
+    ).name == "Morning museum"
     assert "closed-morning" in result.final_plan_status.rejected_candidate_ids
 
 
@@ -837,8 +954,10 @@ def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
 
     result = finder.fill_main_plan(_macro_plan(), intent, [])
 
-    assert result.days[0].strategy == "indoor_safe"
-    assert result.days[0].items[0].name == "Indoor gallery"
+    assert result.days[0].strategy == "two_activity_day"
+    assert next(
+        item for item in result.days[0].items if item.place_id is not None
+    ).name == "Indoor gallery"
     assert "outdoor" in result.final_plan_status.rejected_candidate_ids
 
 
@@ -873,7 +992,9 @@ def test_constraint_policy_rejects_cemetery_and_keeps_coastal_place() -> None:
 
     result = finder.fill_main_plan(_macro_plan(), intent, [])
 
-    assert result.days[0].items[0].place_id == "coastal"
+    assert next(
+        item for item in result.days[0].items if item.place_id is not None
+    ).place_id == "coastal"
     assert "cemetery" in result.final_plan_status.rejected_candidate_ids
 
 
@@ -954,31 +1075,6 @@ class FakeFinderPlaceTool:
         ][:limit]
 
 
-def test_day_style_can_resolve_catalog_tourism_anchor_without_selected_place() -> None:
-    anchor = _place(
-        "museum-anchor",
-        "Museum anchor",
-        tags=["culture"],
-        intensity="light",
-        place_type="museum",
-    )
-    finder = FinderService(
-        FakeFinderPlaceTool(
-            {"museum-anchor": anchor},
-            search_order=[],
-        )
-    )
-
-    resolved = finder._resolve_finder_place_for_style(
-        "museum-anchor",
-        {},
-        "vn,ha-noi",
-    )
-
-    assert resolved.place_id == "museum-anchor"
-    assert resolved.place_type == "museum"
-
-
 def _macro_plan() -> MacroPlan:
     return MacroPlan(
         title="Hà Nội",
@@ -1039,7 +1135,7 @@ def _place(
     )
 
 
-def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
+def test_source_itinerary_uses_fixed_two_activity_frame() -> None:
     macro = _macro_plan().model_copy(
         update={
             "day_briefs": [
@@ -1074,9 +1170,12 @@ def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
         allow_finder_suggestions=False,
     )
 
-    assert [item.name for item in result.days[0].items] == ["Late place 1"]
-    assert result.unscheduled_places[0].name == "Late place 2"
-    assert result.unscheduled_places[0].reason_code == "timeline_overflow"
+    assert [
+        item.name
+        for item in result.days[0].items
+        if item.source == "selected_place"
+    ] == ["Late place 1", "Late place 2"]
+    assert result.unscheduled_places == []
     assert all(
         int(item.time_window[:2]) < 24
         and int(item.time_window.split("-", 1)[1][:2]) < 24

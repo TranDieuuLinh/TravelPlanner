@@ -1,6 +1,6 @@
 # ADR-011: Semantic retrieval cho Finder bằng Gemini Embedding và pgvector
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Đã được ADR-013 thay thế cho runtime Planner/Finder
 - Ngày: 2026-08-01
 
 ## Bối cảnh

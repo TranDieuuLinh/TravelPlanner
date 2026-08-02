@@ -20,3 +20,8 @@ backend/var/*.jsonl
 backend/.runlogs/
 
 auto-crawl/
+backend/var/
+
+crawl_knowledge_travel/
+database/backups/
+*.dump

@@ -25,7 +25,13 @@ BREAK_EFFECTS = {"energy": 5, "mental": 3}
 MEAL_EFFECTS = {"energy": 5, "mental": 2, "satiety": 20}
 
 
-class FinderStatusTracker:
+class PlanningStateTracker:
+    """Apply and roll back Finder state transitions atomically.
+
+    Candidate constraints belong to ``CandidateSelector``. This component only
+    owns mutable user/plan status and usage accounting.
+    """
+
     def __init__(self, place_tool: FinderPlaceTool) -> None:
         self.place_tool = place_tool
 
@@ -122,10 +128,19 @@ class FinderStatusTracker:
         else:
             plan_status.visited_region_counts[candidate.region_key] = region_count - 1
         duration = candidate_duration(candidate, block)
+        is_meal = block.kind == "meal"
         for usage in (plan_status.day_usage, plan_status.trip_usage):
-            usage.activity_minutes = max(0, usage.activity_minutes - duration)
+            if is_meal:
+                usage.rest_minutes = max(0, usage.rest_minutes - duration)
+            else:
+                usage.activity_minutes = max(0, usage.activity_minutes - duration)
             usage.place_count = max(0, usage.place_count - 1)
-        if candidate.activity_intensity:
+        if is_meal:
+            self.apply_metric_delta(
+                user_status,
+                {metric: -change for metric, change in MEAL_EFFECTS.items()},
+            )
+        elif candidate.activity_intensity:
             inverse_delta = {
                 metric: -change
                 for metric, change in INTENSITY_EFFECTS.get(
@@ -201,3 +216,8 @@ class FinderStatusTracker:
             latitude=accommodation.latitude,
             longitude=accommodation.longitude,
         )
+
+
+# Compatibility alias for callers outside the Finder package. New code should
+# use the name that reflects the component's actual responsibility.
+FinderStatusTracker = PlanningStateTracker

@@ -105,7 +105,7 @@ class DayDiversityPolicy(BaseModel):
 
 
 class DayMealNeed(BaseModel):
-    role: Literal["lunch", "dinner"]
+    role: Literal["breakfast", "lunch", "dinner"]
     earliest_start: str = Field(alias="earliestStart")
     latest_end: str = Field(alias="latestEnd")
     min_duration_minutes: int = Field(

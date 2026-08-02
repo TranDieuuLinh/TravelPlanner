@@ -1,6 +1,6 @@
 """Tests for the bounding-box pre-filter inside the Finder place tool.
 
-When the AreaSurveyService has computed a bbox for the target region, the
+When the regional statistics profile provides a bbox for the target region, the
 tool uses it to drop candidates that fall outside it. The bbox is opt-in:
 omitting it falls back to the existing string-based region-key match.
 """

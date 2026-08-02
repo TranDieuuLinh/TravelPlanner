@@ -1,0 +1,1109 @@
+{
+  "schemaVersion": "travel-knowledge-graph.v2",
+  "regionKey": "vn,ha-noi",
+  "regionAliases": [
+    "Hanoi",
+    "Ha Noi",
+    "Hà Nội"
+  ],
+  "nodes": [
+    {
+      "id": "area:old-quarter",
+      "kind": "area",
+      "label": "Hanoi Old Quarter",
+      "aliases": [
+        "old quarter",
+        "pho co",
+        "phố cổ"
+      ],
+      "regionKeys": [
+        "vn,ha-noi,hoan-kiem",
+        "vn,ha-noi,old-quarter-hoan-kiem",
+        "vn,ha-noi,hang-dao-hoan-kiem"
+      ],
+      "evidenceRefs": [
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    },
+    {
+      "id": "area:ba-dinh",
+      "kind": "area",
+      "label": "Ba Dinh",
+      "aliases": [
+        "ba dinh",
+        "ba đình"
+      ],
+      "regionKeys": [
+        "vn,ha-noi,ba-dinh",
+        "vn,ha-noi,dien-bien-ba-dinh",
+        "vn,ha-noi,ngoc-ha"
+      ],
+      "evidenceRefs": [
+        {
+          "sourceId": "wikidata:f62a96dad466e45426fc6bc6",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        }
+      ]
+    },
+    {
+      "id": "area:west-lake",
+      "kind": "area",
+      "label": "West Lake",
+      "aliases": [
+        "west lake",
+        "ho tay",
+        "hồ tây",
+        "lakeside"
+      ],
+      "regionKeys": [
+        "vn,ha-noi,tay-ho"
+      ],
+      "evidenceRefs": [
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    },
+    {
+      "id": "theme:heritage",
+      "kind": "theme",
+      "label": "Hanoi heritage",
+      "aliases": [
+        "history",
+        "historic",
+        "heritage",
+        "culture",
+        "cultural",
+        "di san",
+        "di sản",
+        "lich su",
+        "lịch sử",
+        "kien truc",
+        "kiến trúc"
+      ],
+      "evidenceRefs": [
+        {
+          "sourceId": "dsvh:09a21f1935ff790d20760c7f",
+          "confidence": 0.9,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "dsvh:67292bdd8d81294175408f6b",
+          "confidence": 0.9,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "wikidata:2103efdd4e39622be5f20cff",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:446f7491a71e498477eade45",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:7e760d308d53f613e644fe15",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:86320629b8d300a03fb2c5c9",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:9d82908fb94465b565746e17",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:a2866ed7c3301a53581e3e8d",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        }
+      ]
+    },
+    {
+      "id": "theme:food",
+      "kind": "theme",
+      "label": "Hanoi food",
+      "aliases": [
+        "food",
+        "cuisine",
+        "am thuc",
+        "ẩm thực",
+        "local food",
+        "traditional food"
+      ],
+      "evidenceRefs": [
+        {
+          "sourceId": "vietnam_travel:2013259582928e45982d5e63",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "vietnam_travel:6351b6e6f6ae95546b71f043",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "vietnam_travel:710e5e21b815a8f36feb368a",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "vietnam_travel:df869f3cdfdfe5002ada9482",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "vietnam_travel:f31af9831a66e0ad5bc16b81",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    },
+    {
+      "id": "theme:relaxation",
+      "kind": "theme",
+      "label": "Relaxed Hanoi",
+      "aliases": [
+        "relaxed",
+        "relaxation",
+        "thu gian",
+        "thư giãn",
+        "lakeside relaxation"
+      ]
+    },
+    {
+      "id": "exp:temple",
+      "kind": "experience",
+      "label": "historic temple",
+      "aliases": [
+        "temple",
+        "pagoda",
+        "den",
+        "đền",
+        "chua",
+        "chùa",
+        "dinh",
+        "đình"
+      ],
+      "searchTerms": [
+        "Buddhist temple",
+        "historic temple",
+        "pagoda",
+        "shrine"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "religious_heritage",
+      "weight": 1.0,
+      "evidenceRefs": [
+        {
+          "sourceId": "dsvh:67292bdd8d81294175408f6b",
+          "confidence": 0.9,
+          "matchMethod": "title-or-url-region+title-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:monument",
+      "kind": "experience",
+      "label": "monument and statue",
+      "aliases": [
+        "monument",
+        "statue",
+        "memorial",
+        "tuong",
+        "tượng"
+      ],
+      "searchTerms": [
+        "historical landmark",
+        "monument",
+        "memorial",
+        "statue"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "monument",
+      "weight": 0.95,
+      "evidenceRefs": [
+        {
+          "sourceId": "wikidata:2103efdd4e39622be5f20cff",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:bbe970cb0575c6a564aed1f9",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:d00ec35ffd4cad745898e405",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:museum",
+      "kind": "experience",
+      "label": "history museum",
+      "aliases": [
+        "museum",
+        "bao tang",
+        "bảo tàng"
+      ],
+      "searchTerms": [
+        "history museum",
+        "cultural museum",
+        "historic site"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "museum",
+      "weight": 1.0,
+      "evidenceRefs": [
+        {
+          "sourceId": "wikidata:18e80d8ccdc21f940c7b8e96",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:8b63bbd66e7acebb21125b8d",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:8f2e32e2cfd23183502c0477",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:a22ec4e57b55b6421ac66185",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:ce6cf60307b369f4734b36d4",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:d97068d159b503a44c530d67",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "wikidata:f62a96dad466e45426fc6bc6",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "vietnam_travel:58776f4dbdc6bf5061121671",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:heritage-architecture",
+      "kind": "experience",
+      "label": "heritage architecture",
+      "aliases": [
+        "architecture",
+        "historic architecture",
+        "kien truc",
+        "kiến trúc"
+      ],
+      "searchTerms": [
+        "heritage building",
+        "ancient gate",
+        "historic house",
+        "cultural center"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "heritage_architecture",
+      "weight": 0.9,
+      "evidenceRefs": [
+        {
+          "sourceId": "dsvh:67292bdd8d81294175408f6b",
+          "confidence": 0.9,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "wikidata:446f7491a71e498477eade45",
+          "confidence": 0.9,
+          "matchMethod": "structured-region+structured-node"
+        },
+        {
+          "sourceId": "vietnam_travel:bb5a0c8d2c7be9bb6967dc67",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:art-gallery",
+      "kind": "experience",
+      "label": "art gallery",
+      "aliases": [
+        "gallery",
+        "fine arts",
+        "art gallery",
+        "nghe thuat",
+        "nghệ thuật"
+      ],
+      "searchTerms": [
+        "art gallery",
+        "fine arts exhibition",
+        "contemporary art space"
+      ],
+      "evidenceTerms": [
+        "art gallery",
+        "fine arts",
+        "gallery",
+        "phòng trưng bày",
+        "triển lãm mỹ thuật"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "art_gallery",
+      "weight": 0.82,
+      "evidenceRefs": [
+        {
+          "sourceId": "vietnam_travel:58776f4dbdc6bf5061121671",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:traditional-craft",
+      "kind": "experience",
+      "label": "traditional craft",
+      "aliases": [
+        "craft",
+        "handicraft",
+        "traditional craft",
+        "lang nghe",
+        "làng nghề"
+      ],
+      "searchTerms": [
+        "traditional craft",
+        "handicraft workshop",
+        "artisan space"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "traditional_craft",
+      "weight": 0.78
+    },
+    {
+      "id": "exp:neighborhood-walk",
+      "kind": "experience",
+      "label": "historic neighborhood walk",
+      "aliases": [
+        "neighborhood walk",
+        "walking street",
+        "old quarter walk",
+        "pho di bo",
+        "phố đi bộ"
+      ],
+      "searchTerms": [
+        "historic walking street",
+        "old quarter walk",
+        "pedestrian street"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "neighborhood_walk",
+      "weight": 0.86
+    },
+    {
+      "id": "exp:local-life",
+      "kind": "experience",
+      "label": "local neighborhood life",
+      "aliases": [
+        "local life",
+        "local market",
+        "community life",
+        "doi song dia phuong",
+        "đời sống địa phương"
+      ],
+      "searchTerms": [
+        "local market",
+        "community cultural space",
+        "traditional neighborhood"
+      ],
+      "placeCategory": "attraction",
+      "diversityGroup": "local_life",
+      "weight": 0.75
+    },
+    {
+      "id": "exp:city-park",
+      "kind": "experience",
+      "label": "city park and garden",
+      "aliases": [
+        "park",
+        "garden",
+        "city park",
+        "cong vien",
+        "công viên"
+      ],
+      "searchTerms": [
+        "public park",
+        "botanical garden",
+        "city garden"
+      ],
+      "placeCategory": "nature",
+      "diversityGroup": "park",
+      "weight": 0.8
+    },
+    {
+      "id": "exp:lake-walk",
+      "kind": "experience",
+      "label": "lakeside walk",
+      "aliases": [
+        "lake",
+        "lakeside",
+        "ho",
+        "hồ",
+        "walk by the lake"
+      ],
+      "searchTerms": [
+        "lake",
+        "lakeside promenade",
+        "public garden",
+        "scenic viewpoint"
+      ],
+      "placeCategory": "nature",
+      "diversityGroup": "lakeside",
+      "weight": 0.9,
+      "evidenceRefs": [
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:coffee",
+      "kind": "experience",
+      "label": "Hanoi coffee",
+      "aliases": [
+        "coffee",
+        "cafe",
+        "ca phe",
+        "cà phê",
+        "egg coffee"
+      ],
+      "searchTerms": [
+        "coffee shop",
+        "egg coffee",
+        "historic cafe"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "coffee",
+      "weight": 0.9,
+      "evidenceRefs": [
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    },
+    {
+      "id": "exp:pho",
+      "kind": "experience",
+      "label": "pho",
+      "aliases": [
+        "pho",
+        "phở"
+      ],
+      "searchTerms": [
+        "pho restaurant",
+        "Vietnamese noodle soup"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "pho",
+      "weight": 0.9
+    },
+    {
+      "id": "exp:bun",
+      "kind": "experience",
+      "label": "bun dishes",
+      "aliases": [
+        "bun",
+        "bún",
+        "bun cha",
+        "bún chả",
+        "bun bo",
+        "bún bò"
+      ],
+      "searchTerms": [
+        "bun cha",
+        "Vietnamese vermicelli"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "bun",
+      "weight": 0.9
+    },
+    {
+      "id": "exp:noodles",
+      "kind": "experience",
+      "label": "noodle dishes",
+      "aliases": [
+        "noodle",
+        "ramen",
+        "mi",
+        "mì"
+      ],
+      "searchTerms": [
+        "noodle restaurant"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "noodles",
+      "weight": 0.7
+    },
+    {
+      "id": "exp:pizza",
+      "kind": "experience",
+      "label": "pizza",
+      "aliases": [
+        "pizza"
+      ],
+      "searchTerms": [
+        "pizza restaurant"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "pizza",
+      "weight": 0.5
+    },
+    {
+      "id": "exp:hotpot",
+      "kind": "experience",
+      "label": "hotpot",
+      "aliases": [
+        "hotpot",
+        "lau",
+        "lẩu"
+      ],
+      "searchTerms": [
+        "hotpot restaurant"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "hotpot",
+      "weight": 0.7
+    },
+    {
+      "id": "exp:seafood",
+      "kind": "experience",
+      "label": "seafood",
+      "aliases": [
+        "seafood",
+        "hai san",
+        "hải sản"
+      ],
+      "searchTerms": [
+        "seafood restaurant"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "seafood",
+      "weight": 0.7
+    },
+    {
+      "id": "exp:dessert",
+      "kind": "experience",
+      "label": "dessert",
+      "aliases": [
+        "dessert",
+        "ice cream",
+        "kem",
+        "che",
+        "chè",
+        "banh ngot",
+        "bánh ngọt"
+      ],
+      "searchTerms": [
+        "dessert shop",
+        "ice cream"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "dessert",
+      "weight": 0.6
+    },
+    {
+      "id": "exp:tea",
+      "kind": "experience",
+      "label": "tea",
+      "aliases": [
+        "tea",
+        "tra",
+        "trà",
+        "tea house",
+        "tra sua",
+        "trà sữa"
+      ],
+      "searchTerms": [
+        "tea house"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "tea",
+      "weight": 0.6
+    },
+    {
+      "id": "exp:bar",
+      "kind": "experience",
+      "label": "bar and beer",
+      "aliases": [
+        "bar",
+        "pub",
+        "beer",
+        "bia"
+      ],
+      "searchTerms": [
+        "bar",
+        "local craft beer"
+      ],
+      "placeCategory": "food_drink",
+      "diversityGroup": "bar",
+      "weight": 0.5,
+      "evidenceRefs": [
+        {
+          "sourceId": "vietnam_travel:3e09ae1ac45c35eeb5fa78d7",
+          "confidence": 0.82,
+          "matchMethod": "title-or-url-region+title-node"
+        },
+        {
+          "sourceId": "wikivoyage:0b9ea5a3d048f45177703289",
+          "confidence": 0.78,
+          "matchMethod": "structured-region+section-node"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "source": "area:old-quarter",
+      "target": "theme:heritage",
+      "relation": "SUPPORTS_THEME",
+      "weight": 1.0
+    },
+    {
+      "source": "area:old-quarter",
+      "target": "theme:food",
+      "relation": "SUPPORTS_THEME",
+      "weight": 0.8
+    },
+    {
+      "source": "area:ba-dinh",
+      "target": "theme:heritage",
+      "relation": "SUPPORTS_THEME",
+      "weight": 1.0
+    },
+    {
+      "source": "area:west-lake",
+      "target": "theme:relaxation",
+      "relation": "SUPPORTS_THEME",
+      "weight": 1.0
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:temple",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 1.0
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:monument",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.95
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:museum",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 1.0
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:heritage-architecture",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.9
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:art-gallery",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.72
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:traditional-craft",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.75
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:neighborhood-walk",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.88
+    },
+    {
+      "source": "theme:heritage",
+      "target": "exp:local-life",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.7
+    },
+    {
+      "source": "theme:relaxation",
+      "target": "exp:city-park",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.82
+    },
+    {
+      "source": "theme:food",
+      "target": "exp:coffee",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.9
+    },
+    {
+      "source": "theme:food",
+      "target": "exp:pho",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.9
+    },
+    {
+      "source": "theme:food",
+      "target": "exp:bun",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 0.9
+    },
+    {
+      "source": "theme:relaxation",
+      "target": "exp:lake-walk",
+      "relation": "INCLUDES_EXPERIENCE",
+      "weight": 1.0
+    },
+    {
+      "source": "exp:coffee",
+      "target": "exp:coffee",
+      "relation": "TOO_SIMILAR",
+      "weight": 1.0
+    },
+    {
+      "source": "exp:pho",
+      "target": "exp:noodles",
+      "relation": "TOO_SIMILAR",
+      "weight": 0.7
+    },
+    {
+      "source": "exp:bun",
+      "target": "exp:noodles",
+      "relation": "TOO_SIMILAR",
+      "weight": 0.7
+    },
+    {
+      "source": "exp:museum",
+      "target": "exp:neighborhood-walk",
+      "relation": "COMPLEMENTS",
+      "weight": 0.85
+    },
+    {
+      "source": "exp:temple",
+      "target": "exp:heritage-architecture",
+      "relation": "COMPLEMENTS",
+      "weight": 0.85
+    },
+    {
+      "source": "exp:art-gallery",
+      "target": "exp:traditional-craft",
+      "relation": "COMPLEMENTS",
+      "weight": 0.75
+    }
+  ],
+  "sources": [
+    {
+      "id": "dsvh:09a21f1935ff790d20760c7f",
+      "sourceName": "dsvh",
+      "title": "Di tích lịch sử và khảo cổ Khu Trung tâm Hoàng Thành Thăng Long - Hà Nội",
+      "sourceUrl": "https://dsvh.gov.vn/di-tich-lich-su-va-khao-co-khu-trung-tam-hoang-thanh-thang-long-ha-noi-2945",
+      "license": "official-reference-with-attribution",
+      "retrievedAt": "2026-08-02T04:53:43.553590+00:00",
+      "contentSha256": "8333034a4ebc84f3643017f0f93748959b91a562753ed7edde960ab68de4d39c",
+      "recordType": "vietnam_cultural_heritage"
+    },
+    {
+      "id": "dsvh:67292bdd8d81294175408f6b",
+      "sourceName": "dsvh",
+      "title": "Di tích lịch sử và kiến trúc nghệ thuật đền Phù Đổng (huyện Gia Lâm, thành phố Hà Nội)",
+      "sourceUrl": "https://dsvh.gov.vn/di-tich-lich-su-va-kien-truc-nghe-thuat-den-phu-dong-huyen-gia-lam-thanh-pho-ha-noi-2977",
+      "license": "official-reference-with-attribution",
+      "retrievedAt": "2026-08-02T04:54:25.727922+00:00",
+      "contentSha256": "c53a91617ad1fec7e2ba439a0f0f8aa765630678ac4eab0f6aa1068c9d8c9084",
+      "recordType": "vietnam_cultural_heritage"
+    },
+    {
+      "id": "vietnam_travel:2013259582928e45982d5e63",
+      "sourceName": "vietnam_travel",
+      "title": "Must-try food in Hanoi RESEARCH",
+      "sourceUrl": "https://vietnam.travel/things-to-do/must-try-food-in-hanoi",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:11:05.159940+00:00",
+      "contentSha256": "c204e5795e61104aaaa17e1ca432351f435efd2e7209f7478149c3cd997a34d7",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:3e09ae1ac45c35eeb5fa78d7",
+      "sourceName": "vietnam_travel",
+      "title": "An inside guide to Hanoi's bar scene",
+      "sourceUrl": "https://vietnam.travel/things-to-do/inside-guide-hanois-bar-scene",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:22:21.744206+00:00",
+      "contentSha256": "fe844b1fb473cf6e57d0bcb3ebb0861760d0fb22933f5c4948e9d68ce8809afc",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:58776f4dbdc6bf5061121671",
+      "sourceName": "vietnam_travel",
+      "title": "Vietnam National Fine Arts Museum: A must-see destination in Hanoi",
+      "sourceUrl": "https://vietnam.travel/things-to-do/vietnam-national-fine-arts-museum-must-see-destination-hanoi",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:02:17.588914+00:00",
+      "contentSha256": "80b56ccf3bd3b363ff9cec0bc62173ef6d8079a80c532b9e6aa71fc1830f5ead",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:6351b6e6f6ae95546b71f043",
+      "sourceName": "vietnam_travel",
+      "title": "Famous Hanoi Food and International Fine Dining",
+      "sourceUrl": "https://vietnam.travel/things-to-do/famous-hanoi-food-and-international-fine-dining",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:06:28.492016+00:00",
+      "contentSha256": "4bf214a3f60b8a14b24ced142c088f81367e2b9cdb41cd0340db3abe72db002e",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:710e5e21b815a8f36feb368a",
+      "sourceName": "vietnam_travel",
+      "title": "Ha Noi Food Guide: The best street food dishes to sample",
+      "sourceUrl": "https://vietnam.travel/things-to-do/ha-noi-food-guide-best-street-food-dishes-sample",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:03:09.790072+00:00",
+      "contentSha256": "c9afde4172a7f3b721dd2e77072669cd93a7ce4ffdd79f6b56a21b42766d2fd8",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:bb5a0c8d2c7be9bb6967dc67",
+      "sourceName": "vietnam_travel",
+      "title": "5 Hanoi cafes for architecture enthusiasts",
+      "sourceUrl": "https://vietnam.travel/things-to-do/5-ha-noi-cafes-architecture-enthusiasts",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:23:00.346805+00:00",
+      "contentSha256": "39c3bda3fedcf78b4cb5ca3e72842d8114809c891aa63338196b924258e43d25",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:df869f3cdfdfe5002ada9482",
+      "sourceName": "vietnam_travel",
+      "title": "Love Vietnamese food, grab your MICHELIN Guide Hanoi & Ho Chi Minh City",
+      "sourceUrl": "https://vietnam.travel/things-to-do/love-vietnamese-food-grab-your-michelin-guide-hanoi-ho-chi-minh-city",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T05:04:31.185075+00:00",
+      "contentSha256": "9d68092b04eabb2e3d650fc4fd3c9e293720d3645682aa1496b7db927fb423dd",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "vietnam_travel:f31af9831a66e0ad5bc16b81",
+      "sourceName": "vietnam_travel",
+      "title": "A Tour of Hanoi: Exploring Its Charm, Street Food, and Historical Traces",
+      "sourceUrl": "https://vietnam.travel/things-to-do/tour-hanoi-exploring-its-charm-street-food-and-historical-traces",
+      "license": "official-reference",
+      "retrievedAt": "2026-08-02T04:58:54.758533+00:00",
+      "contentSha256": "9adfea76b00b1e81c1afc394b4164f43d9f5aa0b85d440e03c0dc32606c3528f",
+      "recordType": "official_travel_article"
+    },
+    {
+      "id": "wikidata:18e80d8ccdc21f940c7b8e96",
+      "sourceName": "wikidata",
+      "title": "Bảo tàng Phụ nữ Việt Nam",
+      "sourceUrl": "https://www.wikidata.org/entity/Q10743287",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "4c9aab8325248a3c115a60c3f710a402bb208e6fdc338ed4db6460d2aca413d8",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:2103efdd4e39622be5f20cff",
+      "sourceName": "wikidata",
+      "title": "Tượng đài Lê Thái tổ",
+      "sourceUrl": "https://www.wikidata.org/entity/Q18737219",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:45:07.347430+00:00",
+      "contentSha256": "42f0c688fcb3d4a7377f8300eb324bca86effef2b146e4087fec48790cbfa346",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:446f7491a71e498477eade45",
+      "sourceName": "wikidata",
+      "title": "Chợ Đồng Xuân",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1094375",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:45:07.346696+00:00",
+      "contentSha256": "034bd3c0c0b1f0b8ea0b591b06d8c1f1fb144ba9461c9658b0a5e1ee064a0a2c",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:7e760d308d53f613e644fe15",
+      "sourceName": "wikidata",
+      "title": "Nhà thờ Cửa Bắc",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1088224",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:46:34.788518+00:00",
+      "contentSha256": "076f0278bc98bdad02c61241258e106046345cdf696645805ef79f759df62dc9",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:86320629b8d300a03fb2c5c9",
+      "sourceName": "wikidata",
+      "title": "Nhà thờ Phùng Khoang",
+      "sourceUrl": "https://www.wikidata.org/entity/Q7189862",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:46:34.789518+00:00",
+      "contentSha256": "418cc9024544b848e1ec12f917b92680113e52b23628e57d3046a4c5dade3043",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:8b63bbd66e7acebb21125b8d",
+      "sourceName": "wikidata",
+      "title": "Nhà tù Hỏa Lò",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1359941",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "41950dba762ec7ff3c86e5eabfd34bb6ac423334c253c2942d27ca2dbdba828a",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:8f2e32e2cfd23183502c0477",
+      "sourceName": "wikidata",
+      "title": "Bảo tàng Dân tộc học Việt Nam",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1048345",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "cd81e9678abeaf90b268803a522baf49d081fdef4cba81407104b29139895c9f",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:9d82908fb94465b565746e17",
+      "sourceName": "wikidata",
+      "title": "Nhà thờ Lớn Hà Nội",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1923783",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:45:07.347430+00:00",
+      "contentSha256": "9896e51053dad568580526d1dba91745ea0d7bcd0a321fff8df4c68ccd06d125",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:a22ec4e57b55b6421ac66185",
+      "sourceName": "wikidata",
+      "title": "Bảo tàng Cách mạng Việt Nam",
+      "sourceUrl": "https://www.wikidata.org/entity/Q5370340",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "b7aa3238aaa2f5dda7677d7f1e285ed2936fe1e595f597977eed6b78ff930506",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:a2866ed7c3301a53581e3e8d",
+      "sourceName": "wikidata",
+      "title": "Nhà thờ Hàm Long",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1932222",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:46:34.789518+00:00",
+      "contentSha256": "eaad0f4e3546deb8b96145ce8828025db161cd14d93fa3d002416c9ff4a769c9",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:bbe970cb0575c6a564aed1f9",
+      "sourceName": "wikidata",
+      "title": "Giếng Thiên Quang",
+      "sourceUrl": "https://www.wikidata.org/entity/Q110923596",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:45:07.346696+00:00",
+      "contentSha256": "e7fb79dec41d765fc77218987c31843d8e40d9b0f479ab519dab6d22ffb9eaf8",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:ce6cf60307b369f4734b36d4",
+      "sourceName": "wikidata",
+      "title": "Khu di tích Phủ Chủ tịch",
+      "sourceUrl": "https://www.wikidata.org/entity/Q5370392",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "55c36d5ca47363a326acbb59003a76109724bb26f18856e2f2c369f3d7fc5e96",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:d00ec35ffd4cad745898e405",
+      "sourceName": "wikidata",
+      "title": "Văn Miếu – Quốc Tử Giám",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1202019",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:45:07.347430+00:00",
+      "contentSha256": "8e10622e0e53e994ab61e5126de38dd8079f760b832ad54154ad4fcd89b6e04f",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:d97068d159b503a44c530d67",
+      "sourceName": "wikidata",
+      "title": "Bảo tàng Hà Nội",
+      "sourceUrl": "https://www.wikidata.org/entity/Q1835176",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "fdad8f8033539dc6f604cf273e76f8dd6b1fd3a888a316e0db393a1c600484b6",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikidata:f62a96dad466e45426fc6bc6",
+      "sourceName": "wikidata",
+      "title": "Bảo tàng Chiến thắng B52",
+      "sourceUrl": "https://www.wikidata.org/entity/Q10743280",
+      "license": "CC0-1.0",
+      "retrievedAt": "2026-08-02T04:44:45.819450+00:00",
+      "contentSha256": "7ad59a646d1c213f76fd6f5deb939b5ac6a28e79a76fa47c1535a5292f0a2df2",
+      "recordType": "wikidata_entity"
+    },
+    {
+      "id": "wikivoyage:0b9ea5a3d048f45177703289",
+      "sourceName": "wikivoyage",
+      "title": "Hanoi",
+      "sourceUrl": "https://en.wikivoyage.org/wiki/Hanoi",
+      "license": "CC-BY-SA-4.0",
+      "retrievedAt": "2026-08-02T04:32:39.372270+00:00",
+      "contentSha256": "86fc93ff5e7e6a9eead9361afc24058047d80edf02888737a00b7d1968c87f99",
+      "recordType": "travel_guide"
+    }
+  ],
+  "build": {
+    "builtAt": "2026-08-02T06:21:44.985506+00:00",
+    "sourceSchemaVersion": "travel-source-record.v1",
+    "inputRecordCount": 914,
+    "regionRelevantRecordCount": 53,
+    "linkedSourceCount": 26,
+    "unlinkedRegionRelevantRecordCount": 27,
+    "evidencedNodeCount": 13,
+    "evidenceLinkCount": 37,
+    "method": "deterministic-high-signal-linking.v1"
+  }
+}

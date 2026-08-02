@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, log10, radians, sin, sqrt
 
 from app.modules.plans.domain.constraint_policy import (
     ConstraintPolicy,
@@ -51,6 +51,35 @@ _QUICK_FOOD_PLACE_TYPES = {
     "che",
     "bingsu",
     "tra_sua",
+}
+
+_LIGHT_FOOD_ACTIVITY_TYPES = {
+    *_QUICK_FOOD_PLACE_TYPES,
+    "an_vat",
+    "cafe;bakery",
+    "dessert_restaurant",
+    "do_an_vat",
+    "fast_food",
+    "food_court",
+    "meal_takeaway",
+    "o_an_vat",
+    "tea_house",
+    "tiem_an_vat",
+}
+_LIGHT_FOOD_ACTIVITY_MARKERS = {
+    "an vat",
+    "bakery",
+    "banh ngot",
+    "bingsu",
+    "cafe",
+    "che",
+    "coffee",
+    "dessert",
+    "ice cream",
+    "snack",
+    "street food",
+    "tea",
+    "tra sua",
 }
 
 _CATEGORY_DEFAULT_DURATION_MINUTES = {
@@ -189,6 +218,8 @@ class CandidateSelectionContext:
     bbox_filter: tuple[float, float, float, float] | None = None
     zone_center: tuple[float, float] | None = None
     zone_radius_meters: int | None = None
+    corridor_destination: FinderPlace | None = None
+    reserved_place_ids: frozenset[str] = frozenset()
 
 
 def candidate_duration(candidate: FinderPlace, block: DayBlock) -> int:
@@ -216,11 +247,16 @@ def candidate_feasible_start(
     duration_minutes: int,
 ) -> int | None:
     preferred_start = parse_clock_minutes(block.time_window)
-    window_start = (
+    flexible_start = (
         parse_clock_minutes(block.earliest_start)
         if block.earliest_start
-        else preferred_start
+        else None
     )
+    window_start = max(
+        start
+        for start in (preferred_start, flexible_start)
+        if start is not None
+    ) if preferred_start is not None or flexible_start is not None else None
     window_end = (
         parse_clock_minutes(block.latest_end)
         if block.latest_end
@@ -406,7 +442,9 @@ class CandidateSelector:
                 target_tags=search_terms,
                 target_categories=query_categories,
                 excluded_place_ids=(
-                    set(context.plan_status.used_place_ids) | selected_place_ids
+                    set(context.plan_status.used_place_ids)
+                    | selected_place_ids
+                    | set(context.reserved_place_ids)
                 ),
                 limit=self.max_candidates_per_block,
                 bbox_filter=context.bbox_filter,
@@ -415,13 +453,31 @@ class CandidateSelector:
                 catalog_candidates,
                 context,
             )
-            candidates.extend(
-                self._rerank_for_proximity(
-                    catalog_candidates,
-                    context.user_status,
+            if context.block.kind == "activity":
+                candidates.extend(
+                    self._rerank_activities_by_popularity(
+                        catalog_candidates,
+                        context.user_status,
+                    )
                 )
-            )
+            else:
+                candidates.extend(
+                    self._rerank_for_proximity(
+                        catalog_candidates,
+                        context.user_status,
+                        corridor_destination=(
+                            context.corridor_destination
+                            if context.block.kind == "meal"
+                            else None
+                        ),
+                    )
+                )
 
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.stable_ref not in context.reserved_place_ids
+        ]
         unique_candidates: list[FinderPlace] = []
         seen: set[str] = set()
         for candidate in candidates:
@@ -429,22 +485,6 @@ class CandidateSelector:
                 continue
             seen.add(candidate.stable_ref)
             unique_candidates.append(candidate)
-
-        if self._is_main_block(context.block):
-            selected_candidates = [
-                candidate
-                for candidate in unique_candidates
-                if candidate.stable_ref in context.selected_by_ref
-            ]
-            catalog_candidates = [
-                candidate
-                for candidate in unique_candidates
-                if candidate.stable_ref not in context.selected_by_ref
-            ]
-            unique_candidates = [
-                *selected_candidates,
-                *self._prioritize_concrete_main_places(catalog_candidates),
-            ]
 
         unique_candidates = self._filter_repeated_food_drink(
             unique_candidates,
@@ -548,6 +588,26 @@ class CandidateSelector:
             "tea_house",
         }
 
+    @staticmethod
+    def _is_light_food_activity(candidate: FinderPlace) -> bool:
+        normalized_type = _normalize_text(candidate.place_type).replace(" ", "_")
+        if normalized_type in _LIGHT_FOOD_ACTIVITY_TYPES:
+            return True
+        normalized_evidence = _normalize_text(
+            " ".join(
+                [
+                    candidate.name,
+                    candidate.description or "",
+                    *candidate.tags,
+                ]
+            )
+        )
+        padded_evidence = f" {normalized_evidence} "
+        return any(
+            f" {marker} " in padded_evidence
+            for marker in _LIGHT_FOOD_ACTIVITY_MARKERS
+        )
+
     def block_is_available(self, block: DayBlock, user_status: UserStatus) -> bool:
         if not user_status.available_at:
             return True
@@ -561,15 +621,94 @@ class CandidateSelector:
         self,
         candidates: list[FinderPlace],
         user_status: UserStatus,
+        *,
+        corridor_destination: FinderPlace | None = None,
     ) -> list[FinderPlace]:
         location = user_status.location
+        destination = (
+            (
+                corridor_destination.latitude,
+                corridor_destination.longitude,
+            )
+            if corridor_destination is not None
+            and corridor_destination.latitude is not None
+            and corridor_destination.longitude is not None
+            else None
+        )
         if (
             location is None
             or location.latitude is None
             or location.longitude is None
         ):
+            if destination is not None:
+                ranked_from_destination = list(enumerate(candidates))
+                return [
+                    candidate
+                    for _, candidate in sorted(
+                    ranked_from_destination,
+                    key=lambda entry: (
+                        self._haversine_meters(
+                            (entry[1].latitude, entry[1].longitude),
+                            destination,
+                        )
+                        if entry[1].latitude is not None
+                        and entry[1].longitude is not None
+                        else float("inf"),
+                        entry[0],
+                        -(entry[1].review_count or 0),
+                        -(entry[1].rating or 0.0),
+                        entry[1].name.casefold(),
+                    ),
+                    )
+                ]
             return candidates
         origin = (location.latitude, location.longitude)
+        if destination is not None:
+            direct_distance = self._haversine_meters(origin, destination)
+            corridor_ranked: list[tuple[float, float, int, FinderPlace]] = []
+            for relevance_rank, candidate in enumerate(candidates):
+                if candidate.latitude is None or candidate.longitude is None:
+                    corridor_ranked.append(
+                        (float("inf"), float("inf"), relevance_rank, candidate)
+                    )
+                    continue
+                coordinate = (candidate.latitude, candidate.longitude)
+                distance_from_origin = self._haversine_meters(origin, coordinate)
+                distance_to_destination = self._haversine_meters(
+                    coordinate,
+                    destination,
+                )
+                detour = max(
+                    0.0,
+                    distance_from_origin + distance_to_destination - direct_distance,
+                )
+                midpoint_imbalance = abs(
+                    distance_from_origin - distance_to_destination
+                )
+                # Detour is the primary signal. A small midpoint and relevance
+                # penalty avoids choosing a venue at either endpoint or a weak
+                # venue merely because it is a few metres closer to the line.
+                corridor_score = (
+                    detour
+                    + midpoint_imbalance * 0.15
+                    + relevance_rank * 150
+                )
+                corridor_ranked.append(
+                    (corridor_score, detour, relevance_rank, candidate)
+                )
+            return [
+                candidate
+                for _, _, _, candidate in sorted(
+                    corridor_ranked,
+                    key=lambda entry: (
+                        entry[0],
+                        entry[1],
+                        entry[2],
+                        entry[3].name.casefold(),
+                    ),
+                )
+            ]
+
         ranked: list[tuple[float, float, FinderPlace]] = []
         for relevance_rank, candidate in enumerate(candidates):
             if candidate.latitude is None or candidate.longitude is None:
@@ -590,6 +729,57 @@ class CandidateSelector:
                     entry[0],
                     entry[1],
                     entry[2].name.casefold(),
+                ),
+            )
+        ]
+
+    def _rerank_activities_by_popularity(
+        self,
+        candidates: list[FinderPlace],
+        user_status: UserStatus,
+    ) -> list[FinderPlace]:
+        """Prefer proven popularity, then use distance as a tie-breaker."""
+
+        location = user_status.location
+        origin = (
+            (location.latitude, location.longitude)
+            if location is not None
+            and location.latitude is not None
+            and location.longitude is not None
+            else None
+        )
+        ranked: list[tuple[float, int, float, float, int, FinderPlace]] = []
+        for relevance_rank, candidate in enumerate(candidates):
+            rating = max(0.0, min(candidate.rating or 0.0, 5.0))
+            reviews = max(0, candidate.review_count)
+            popularity = rating * log10(reviews + 10)
+            distance = (
+                self._haversine_meters(
+                    origin,
+                    (candidate.latitude, candidate.longitude),
+                )
+                if origin is not None
+                and candidate.latitude is not None
+                and candidate.longitude is not None
+                else float("inf")
+            )
+            ranked.append(
+                (
+                    -popularity,
+                    -reviews,
+                    -rating,
+                    distance,
+                    relevance_rank,
+                    candidate,
+                )
+            )
+        return [
+            candidate
+            for *_, candidate in sorted(
+                ranked,
+                key=lambda entry: (
+                    *entry[:-1],
+                    entry[-1].name.casefold(),
                 ),
             )
         ]
@@ -678,11 +868,23 @@ class CandidateSelector:
         travel_style: str,
     ) -> list[str]:
         if block.kind == "meal":
-            meal_goal = (
-                brief.day_part_goals.lunch
+            meal_role = (
+                "breakfast"
+                if "breakfast" in block.role
+                else "lunch"
                 if "lunch" in block.role
-                else brief.day_part_goals.evening
+                else "dinner"
             )
+            meal_goal = {
+                "breakfast": brief.day_part_goals.morning,
+                "lunch": brief.day_part_goals.lunch,
+                "dinner": brief.day_part_goals.evening,
+            }[meal_role]
+            localized_meal = {
+                "breakfast": "ăn sáng",
+                "lunch": "ăn trưa",
+                "dinner": "ăn tối",
+            }[meal_role]
             return list(
                 dict.fromkeys(
                     value
@@ -691,7 +893,7 @@ class CandidateSelector:
                         "local food",
                         "local cuisine",
                         "món địa phương",
-                        "ăn trưa" if "lunch" in block.role else "ăn tối",
+                        localized_meal,
                         meal_goal,
                     )
                     if value
@@ -905,6 +1107,27 @@ class CandidateSelector:
         if policy_rejection is not None:
             return CandidateRejection(*policy_rejection)
         category = place_category(candidate)
+        is_support_activity = (
+            block.kind == "activity"
+            and (
+                block.need_role == "support"
+                or block.role.startswith(("support_activity", "finder_support"))
+            )
+        )
+        if (
+            is_support_activity
+            and not is_selected
+            and category == "food_drink"
+            and not self._is_light_food_activity(candidate)
+        ):
+            return CandidateRejection(
+                "support_food_requires_light_stop",
+                (
+                    "A food-themed support activity must be a light snack, "
+                    "cafe, bakery, dessert or food-market stop rather than "
+                    "a full restaurant meal."
+                ),
+            )
         if (
             block.kind == "meal"
             and block.role in {"lunch_meal", "dinner_meal"}

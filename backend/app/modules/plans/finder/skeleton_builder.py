@@ -45,8 +45,8 @@ class DaySkeleton:
 class DaySkeletonBuilder:
     _MIN_ACTIVITY_COUNT = {
         TravelPace.relaxed: 2,
-        TravelPace.balanced: 3,
-        TravelPace.packed: 4,
+        TravelPace.balanced: 2,
+        TravelPace.packed: 2,
     }
     _SUPPLEMENTAL_WINDOWS = (
         ("09:30-11:00", 90),
@@ -101,6 +101,9 @@ class DaySkeletonBuilder:
         day_end = brief.day_window.latest_end
         lunch = meal_needs.get("lunch")
         dinner = meal_needs.get("dinner")
+        breakfast = meal_needs.get("breakfast")
+        breakfast_start = breakfast.earliest_start if breakfast else "07:00"
+        breakfast_end = breakfast.latest_end if breakfast else "09:00"
         lunch_start = lunch.earliest_start if lunch else "11:30"
         lunch_end = lunch.latest_end if lunch else "13:30"
         dinner_start = dinner.earliest_start if dinner else "17:30"
@@ -115,13 +118,24 @@ class DaySkeletonBuilder:
                 flexible_blocks.append(block)
                 continue
             if block.kind == "meal":
-                meal_role = "lunch" if "lunch" in block.role else "dinner"
+                meal_role = (
+                    "breakfast"
+                    if "breakfast" in block.role
+                    else "lunch"
+                    if "lunch" in block.role
+                    else "dinner"
+                )
                 need = meal_needs.get(meal_role)
+                default_start, default_end = {
+                    "breakfast": (breakfast_start, breakfast_end),
+                    "lunch": (lunch_start, lunch_end),
+                    "dinner": (dinner_start, dinner_end),
+                }[meal_role]
                 flexible_blocks.append(
                     replace(
                         block,
-                        earliest_start=(need.earliest_start if need else lunch_start if meal_role == "lunch" else dinner_start),
-                        latest_end=(need.latest_end if need else lunch_end if meal_role == "lunch" else dinner_end),
+                        earliest_start=(need.earliest_start if need else default_start),
+                        latest_end=(need.latest_end if need else default_end),
                         min_duration_minutes=(need.min_duration_minutes if need else 45),
                         duration_minutes=(need.max_duration_minutes if need else block.duration_minutes),
                     )
@@ -183,6 +197,73 @@ class DaySkeletonBuilder:
                 )
             )
         return DaySkeleton(strategy=skeleton.strategy, blocks=tuple(flexible_blocks))
+
+    def build_two_activity_day(
+        self,
+        brief: DayBrief,
+        user_status: UserStatus,
+        *,
+        intent_constraints: list[str] | None = None,
+        area_profile: AreaProfile | None = None,
+    ) -> DaySkeleton:
+        """Temporary fixed frame: three meals around two core activities."""
+
+        pace = self._effective_pace(brief.pace, user_status, area_profile)
+        main_start = self._extract_start_minutes(
+            user_status,
+            default_minutes=self._default_start_minutes(
+                pace,
+                user_status,
+                intent_constraints,
+                area_profile,
+            ),
+            area_profile=area_profile,
+        )
+        breakfast_start = max(7 * 60, main_start - 60)
+        lunch_start = max(11 * 60 + 30, main_start + 3 * 60 + 30)
+        support_start = max(13 * 60 + 30, lunch_start + 90)
+        dinner_start = max(18 * 60, support_start + 3 * 60)
+        return DaySkeleton(
+            strategy="two_activity_day",
+            blocks=(
+                DayBlock(
+                    "breakfast_meal",
+                    self._clock_window(breakfast_start, 60),
+                    60,
+                    False,
+                    kind="meal",
+                    candidate_category="food_drink",
+                ),
+                DayBlock(
+                    "main_activity",
+                    self._clock_window(main_start, 180),
+                    180,
+                    True,
+                ),
+                DayBlock(
+                    "lunch_meal",
+                    self._clock_window(lunch_start, 60),
+                    60,
+                    False,
+                    kind="meal",
+                    candidate_category="food_drink",
+                ),
+                DayBlock(
+                    "support_activity",
+                    self._clock_window(support_start, 150),
+                    150,
+                    True,
+                ),
+                DayBlock(
+                    "dinner_meal",
+                    self._clock_window(dinner_start, 60),
+                    60,
+                    False,
+                    kind="meal",
+                    candidate_category="food_drink",
+                ),
+            ),
+        )
 
     def build(
         self,
@@ -536,6 +617,9 @@ class DaySkeletonBuilder:
             area_profile=area_profile,
         )
 
+        # Keep the legacy style-specific builder stable for callers that use
+        # it directly. Runtime Finder uses ``build_two_activity_day`` while
+        # the temporary fixed-day product frame is active.
         stop_count = {
             TravelPace.relaxed: 2,
             TravelPace.balanced: 3,
@@ -641,66 +725,71 @@ class DaySkeletonBuilder:
         ordered = sorted(
             selected_places,
             key=lambda place: (place.source_order or 10_000, place.name.casefold()),
+        )[:2]
+        activity_windows = (
+            ("08:30-11:30", 180, "main"),
+            ("13:30-16:00", 150, "support"),
         )
-        cursor = 8 * 60
-        blocks: list[DayBlock] = []
-        for place in ordered:
-            duration = (
-                place.source_duration_minutes
-                or self._source_default_duration(place.source_time_hint)
-            )
-            hinted_start = self._source_start(place.source_time_hint)
-            start = max(cursor, hinted_start) if hinted_start is not None else cursor
-            end = start + duration
-            blocks.append(
-                DayBlock(
-                    role=f"url_stop_{place.source_order or len(blocks) + 1}",
-                    time_window=format_clock_window(start, duration, bound_to_day=True),
-                    duration_minutes=duration,
-                    activity=True,
-                    preferred_ref=place.stable_ref,
+        activity_blocks: list[DayBlock] = []
+        for index, (time_window, duration, need_role) in enumerate(activity_windows):
+            place = ordered[index] if index < len(ordered) else None
+            if place is not None:
+                activity_blocks.append(
+                    DayBlock(
+                        role=f"url_stop_{place.source_order or index + 1}",
+                        time_window=time_window,
+                        duration_minutes=min(
+                            duration,
+                            place.source_duration_minutes or duration,
+                        ),
+                        activity=True,
+                        preferred_ref=place.stable_ref,
+                        need_role=need_role,
+                    )
                 )
-            )
-            cursor = end + 10
-        if not supplement_sparse_day:
-            return DaySkeleton(
-                strategy="source_itinerary",
-                blocks=tuple(blocks),
-            )
+            elif supplement_sparse_day:
+                activity_blocks.append(
+                    DayBlock(
+                        role="finder_support_1",
+                        time_window=time_window,
+                        duration_minutes=duration,
+                        activity=True,
+                        need_role=need_role,
+                    )
+                )
 
-        target_count = self.minimum_activity_count(brief.pace)
-        missing_count = max(0, target_count - len(blocks))
-        source_intervals = [
-            self._window_interval(block.time_window)
-            for block in blocks
+        combined = [
+            DayBlock(
+                "breakfast_meal",
+                "07:30-08:30",
+                60,
+                False,
+                kind="meal",
+                candidate_category="food_drink",
+            ),
+            *activity_blocks[:1],
+            DayBlock(
+                "lunch_meal",
+                "11:30-12:30",
+                60,
+                False,
+                kind="meal",
+                candidate_category="food_drink",
+            ),
+            *activity_blocks[1:2],
+            DayBlock(
+                "dinner_meal",
+                "18:00-19:00",
+                60,
+                False,
+                kind="meal",
+                candidate_category="food_drink",
+            ),
         ]
-        supplemental_blocks: list[DayBlock] = []
-        for time_window, duration in self._SUPPLEMENTAL_WINDOWS:
-            if len(supplemental_blocks) >= missing_count:
-                break
-            interval = self._window_interval(time_window)
-            if any(
-                self._intervals_overlap(interval, source_interval, buffer=10)
-                for source_interval in source_intervals
-            ):
-                continue
-            supplemental_blocks.append(
-                DayBlock(
-                    role=f"finder_support_{len(supplemental_blocks) + 1}",
-                    time_window=time_window,
-                    duration_minutes=duration,
-                    activity=True,
-                )
-            )
-
-        combined = sorted(
-            [*blocks, *supplemental_blocks],
-            key=lambda block: self._window_interval(block.time_window)[0],
-        )
         return DaySkeleton(
             strategy=(
                 "source_itinerary_supplemented"
-                if supplemental_blocks
+                if len(ordered) < 2 and supplement_sparse_day
                 else "source_itinerary"
             ),
             blocks=tuple(combined),

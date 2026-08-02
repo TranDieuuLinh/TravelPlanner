@@ -1,4 +1,9 @@
-from app.modules.plans.knowledge_graph import get_default_travel_knowledge_tool
+import pytest
+
+from app.modules.plans.knowledge_graph import (
+    JsonTravelKnowledgeSearchTool,
+    get_default_travel_knowledge_tool,
+)
 
 
 def test_old_quarter_graph_expands_to_precise_visitor_experiences() -> None:
@@ -27,6 +32,13 @@ def test_old_quarter_graph_expands_to_precise_visitor_experiences() -> None:
     assert "historical landmark" in expansion.query_terms
     assert expansion.categories == ("attraction",)
     assert "vn,ha-noi,hoan-kiem" in expansion.region_keys
+    assert expansion.source_evidence
+    assert all(
+        item.source_url.startswith("https://")
+        for item in expansion.source_evidence
+    )
+    assert all(item.license for item in expansion.source_evidence)
+    assert any("exp:museum" in item.node_ids for item in expansion.source_evidence)
 
 
 def test_graph_keeps_food_expansion_out_of_attraction_query() -> None:
@@ -68,3 +80,22 @@ def test_hanoi_graph_does_not_leak_into_an_unsupported_region() -> None:
     )
 
     assert expansion.query_terms == ()
+    assert expansion.source_evidence == ()
+
+
+def test_graph_loader_rejects_dangling_edges() -> None:
+    with pytest.raises(ValueError, match="existing nodes"):
+        JsonTravelKnowledgeSearchTool(
+            {
+                "schemaVersion": "travel-knowledge-graph.test",
+                "regionKey": "vn,test",
+                "nodes": [{"id": "theme:test", "kind": "theme", "label": "Test"}],
+                "edges": [
+                    {
+                        "source": "theme:test",
+                        "target": "exp:missing",
+                        "relation": "INCLUDES_EXPERIENCE",
+                    }
+                ],
+            }
+        )

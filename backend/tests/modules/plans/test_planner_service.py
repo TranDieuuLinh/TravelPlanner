@@ -22,6 +22,7 @@ from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.planner.generation import MacroPlanGenerator
 from app.modules.plans.schema import (
     BackupPlanCreate,
     MainPlanCreate,
@@ -135,10 +136,7 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
     )
-    assert output.macro_plan.day_briefs[0].focus_tags[:2] == [
-        "culture",
-        "food",
-    ]
+    assert output.macro_plan.day_briefs[0].focus_tags == ["culture"]
     assert output.macro_plan.day_briefs[0].allocated_selected_place_refs == [
         "place-van-mieu"
     ]
@@ -201,25 +199,28 @@ def test_url_itinerary_respects_pace_capacity_and_keeps_source_order() -> None:
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
     assert plan.days[0].strategy == "source_itinerary"
-    assert [item.name for item in plan.days[0].items] == [
-        place.name for place in source_places[:3]
+    scheduled_source_items = [
+        item for item in plan.days[0].items if item.source == "selected_place"
+    ]
+    assert [item.name for item in scheduled_source_items] == [
+        place.name for place in source_places[:2]
     ]
     assert [item.name for item in plan.unscheduled_places] == [
-        place.name for place in source_places[3:]
+        place.name for place in source_places[2:]
     ]
     assert {
         item.reason_code for item in plan.unscheduled_places
     } == {"no_day_capacity"}
-    assert [item.source_order for item in plan.days[0].items] == [1, 2, 3]
-    assert plan.days[0].items[0].time_window == "08:00-08:45"
-    assert plan.days[0].items[-1].time_window == "09:55-10:40"
-    assert plan.days[0].items[1].notes == "Order an egg coffee."
-    assert len(plan.days[0].transport_legs) == 2
+    assert [item.source_order for item in scheduled_source_items] == [1, 2]
+    assert scheduled_source_items[0].time_window == "08:30-09:15"
+    assert scheduled_source_items[1].time_window == "13:30-14:15"
+    assert scheduled_source_items[1].notes == "Order an egg coffee."
+    assert len(plan.days[0].transport_legs) == 1
 
 
 @pytest.mark.parametrize(
     ("stop_count", "requested_days", "scheduled_count"),
-    [(10, 4, 10), (20, 6, 18)],
+    [(10, 4, 8), (20, 6, 12)],
 )
 def test_url_itinerary_without_source_days_fills_every_stop(
     stop_count: int,
@@ -314,9 +315,9 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "macro_plan"
     assert payload["promptVersion"] == "macro_planner_v6_main_experience_first"
-    assert payload["plannerInput"]["regionContext"]["plannerSignals"][
-        "candidateAreas"
-    ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"
+    assert payload["evidenceBundle"]["catalog"]["candidateAreas"][0][
+        "regionKey"
+    ] == "vn,ha-noi,hoan-kiem"
     assert payload["researchProposal"]["varietyStrategy"]
     assert "verifiedResearch" in payload
     assert payload["researchProposal"]["journeyStyle"] == "local_base"
@@ -346,7 +347,7 @@ def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
     assert brief.allow_region_fallback is False
     assert output.tourism_zones[0].center_latitude == 21.03
     macro_payload = json.loads(llm.calls[0][1])
-    assert macro_payload["plannerInput"]["tourismZones"][0]["zoneId"] == (
+    assert macro_payload["evidenceBundle"]["tourismZones"][0]["zoneId"] == (
         "hoan-kiem-museum-zone"
     )
     assert brief.activity_needs[0].must_be_exact_place is True
@@ -357,8 +358,34 @@ def test_planner_hydrates_day_brief_from_verified_tourism_zone() -> None:
         "bonus",
     ]
     assert brief.activity_needs[0].required is True
-    assert [need.role for need in brief.meal_needs] == ["lunch", "dinner"]
-    assert brief.meal_needs[0].earliest_start == "11:30"
+    assert [need.role for need in brief.meal_needs] == [
+        "breakfast",
+        "lunch",
+        "dinner",
+    ]
+    assert brief.meal_needs[0].earliest_start == "07:00"
+
+
+def test_planner_accepts_zone_coverage_when_anchor_category_differs() -> None:
+    service = PlannerService(
+        FakeStatisticsProvider(),
+        FakePlannerLLM(),
+        tourism_zone_tool=MixedCategoryTourismZoneTool(),
+    )
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent().model_copy(update={"interests": ["nature"]}),
+            trip_spec=TripPlanningSpec(days=1),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    brief = output.macro_plan.day_briefs[0]
+    assert brief.tourism_zone_ref == "mixed-category-zone"
+    assert brief.primary_activity_category == "nature"
+    assert brief.anchor_place_refs == ["museum-anchor"]
 
 
 def test_fast_graph_research_preserves_named_area_phrase() -> None:
@@ -388,7 +415,7 @@ def test_fast_graph_research_preserves_named_area_phrase() -> None:
         }
     )
 
-    draft = PlannerService._build_fast_graph_research(planner_input)
+    draft = MacroPlanGenerator._build_local_research(planner_input)
 
     assert draft.theme_queries[0].theme == "explore Hanoi Old Quarter"
     assert draft.theme_queries[0].capabilities == ["culture"]
@@ -480,9 +507,14 @@ def test_planner_reports_confirmed_places_over_day_capacity() -> None:
         len(day.allocated_selected_place_refs)
         for day in output.macro_plan.day_briefs
     )
-    assert allocated == 6
-    assert output.unallocated_selected_places[0].place.place_id == "place-7"
-    assert output.unallocated_selected_places[0].reason_code == "no_day_capacity"
+    assert allocated == 4
+    assert {
+        item.place.place_id for item in output.unallocated_selected_places
+    } == {"place-5", "place-6", "place-7"}
+    assert all(
+        item.reason_code == "no_day_capacity"
+        for item in output.unallocated_selected_places
+    )
 
 
 def test_planner_does_not_allocate_explicitly_avoided_place() -> None:
@@ -708,7 +740,9 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
     assert plan.macro_plan.day_briefs[0].allocated_selected_place_refs == [
         "place-van-mieu"
     ]
-    assert plan.days[0].items[0].name == "Văn Miếu"
+    assert next(
+        item for item in plan.days[0].items if item.source == "selected_place"
+    ).name == "Văn Miếu"
 
 
 def test_main_workflow_accepts_confirmed_explorer_context() -> None:
@@ -749,7 +783,9 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
     assert plan.status.value == "draft"
     assert plan.check_report is not None
     assert plan.check_report.status == "needs_backup"
-    assert plan.days[0].items[0].name == "Văn Miếu"
+    assert next(
+        item for item in plan.days[0].items if item.source == "selected_place"
+    ).name == "Văn Miếu"
 
 
 def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
@@ -791,8 +827,12 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
         service.create_main_plan_from_explorer_with_timing(payload)
     )
 
-    assert plan.days[0].items[0].name == "Bún chả Hàng Quạt"
-    assert plan.days[0].items[0].source_refs == [
+    persisted_item = next(
+        item
+        for item in plan.days[0].items
+        if item.name == "Bún chả Hàng Quạt"
+    )
+    assert persisted_item.source_refs == [
         "https://www.tiktok.com/@brandneweats/video/7662905162960243989"
     ]
     assert timing.status == "completed"
@@ -840,12 +880,19 @@ def test_plan_service_expands_days_to_fit_merged_selected_places() -> None:
 
     plan = asyncio.run(service.create_main_plan_from_explorer(payload))
 
-    assert plan.intent.days == 3
-    assert len(plan.days) == 3
+    assert plan.intent.days == 4
+    assert len(plan.days) == 4
     assert plan.unscheduled_places == []
 
 
-def test_plan_service_automatically_expands_days_for_url_places() -> None:
+@pytest.mark.parametrize(
+    ("place_count", "expected_days"),
+    [(5, 3), (6, 3), (7, 4)],
+)
+def test_plan_service_automatically_expands_days_for_url_places(
+    place_count: int,
+    expected_days: int,
+) -> None:
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=_planner(FakeStatisticsProvider()),
@@ -872,21 +919,24 @@ def test_plan_service_automatically_expands_days_for_url_places() -> None:
                     "sourceOrder": index,
                     "sourceDay": 1,
                 }
-                for index in range(1, 8)
+                for index in range(1, place_count + 1)
             ],
         }
     )
 
     plan = asyncio.run(service.create_main_plan_from_explorer(payload))
 
-    assert plan.intent.days == 3
-    assert len(plan.days) == 3
+    assert plan.intent.days == expected_days
+    assert len(plan.days) == expected_days
     assert {
         item.name
         for day in plan.days
         for item in day.items
         if item.source == "selected_place"
-    } == {f"TikTok Place {index}" for index in range(1, 8)}
+    } == {
+        f"TikTok Place {index}"
+        for index in range(1, place_count + 1)
+    }
     assert plan.unscheduled_places == []
 
 
@@ -935,8 +985,12 @@ def test_main_workflow_accepts_planning_context() -> None:
 
     assert plan.intent.days == 2
     assert len(plan.days) == 2
-    assert plan.days[0].items[0].place_id == "place-van-mieu"
-    assert plan.days[1].items[0].place_id == "place-ho-guom"
+    assert any(
+        item.place_id == "place-van-mieu" for item in plan.days[0].items
+    )
+    assert any(
+        item.place_id == "place-ho-guom" for item in plan.days[1].items
+    )
     assert plan.status.value == "draft"
     assert plan.check_report is not None
     assert plan.check_report.status == "needs_backup"
@@ -1046,7 +1100,11 @@ def test_backup_preserves_optional_confirmed_place() -> None:
     ]
     assert [item.name for item in preserved] == ["Optional Place"]
     assert preserved[0].source_refs == ["source-1"]
-    assert main_plan.days[0].items[0].place_type == "selected_place"
+    assert next(
+        item
+        for item in main_plan.days[0].items
+        if item.source == "selected_place"
+    ).place_type == "selected_place"
 
 
 def test_backup_avoid_outdoor_uses_tags_not_place_name() -> None:
@@ -1146,10 +1204,62 @@ class FakeTourismZoneTool:
         ]
 
 
+class MixedCategoryTourismZoneTool:
+    def research(
+        self,
+        *,
+        root_region_key: str,
+        interests: list[str],
+    ) -> list[TourismZoneEvidence]:
+        assert root_region_key == "vn,ha-noi"
+        assert interests == ["nature"]
+        return [
+            TourismZoneEvidence.model_validate(
+                {
+                    "zoneId": "mixed-category-zone",
+                    "regionKey": "vn,ha-noi,hoan-kiem",
+                    "centerLatitude": 21.03,
+                    "centerLongitude": 105.85,
+                    "radiusMeters": 2500,
+                    "capabilities": ["culture", "nature"],
+                    "primaryCategories": ["attraction", "nature"],
+                    "categoryCoverage": {"attraction": 5, "nature": 3},
+                    "anchorPlaces": [
+                        {
+                            "placeId": "museum-anchor",
+                            "name": "Museum Anchor",
+                            "category": "attraction",
+                            "latitude": 21.03,
+                            "longitude": 105.85,
+                            "rating": 4.7,
+                            "reviewCount": 1000,
+                            "popularityScore": 0.9,
+                        }
+                    ],
+                    "placeCount": 8,
+                    "compactnessScore": 0.8,
+                    "popularityScore": 0.9,
+                }
+            )
+        ]
+
+
 class FakePlannerLLM:
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        assert response_schema
+        return await self.generate_json(system_prompt, user_payload)
+
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
         planner_input = envelope["plannerInput"]
+        evidence_bundle = envelope.get("evidenceBundle", {})
+        catalog_evidence = evidence_bundle.get("catalog", {})
         intent = planner_input["intent"]
         trip_spec = planner_input["tripSpec"]
         context = planner_input["regionContext"]
@@ -1260,7 +1370,7 @@ class FakePlannerLLM:
             allocated_by_day[day].append(stable_ref)
             allocation_index += 1
 
-        candidate_areas = context["plannerSignals"].get("candidateAreas", [])
+        candidate_areas = catalog_evidence.get("candidateAreas", [])
         target_region = (
             candidate_areas[0]["regionKey"]
             if candidate_areas
@@ -1268,7 +1378,6 @@ class FakePlannerLLM:
         )
         focus = (
             intent["interests"]
-            or context["plannerSignals"].get("dominantTags", [])
             or ["local"]
         )
         day_briefs = [
@@ -1281,7 +1390,6 @@ class FakePlannerLLM:
                     dict.fromkeys(
                         [
                             focus[(day - 1) % len(focus)],
-                            *context["plannerSignals"].get("dominantTags", [])[:2],
                         ]
                     )
                 ),

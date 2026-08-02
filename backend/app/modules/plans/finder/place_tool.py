@@ -4,16 +4,14 @@ import logging
 import re
 import unicodedata
 from math import log10
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from app.modules.places.model import Place
-from app.integrations.embeddings.base import EmbeddingClient
-from app.modules.places.semantic import build_finder_query_text
+from app.modules.places.model import Place, PlaceAmenity, PlaceOpeningHour
 from app.modules.plans.planner.place_metadata import (
-    GOOGLE_TYPES_CATEGORY,
     read_description,
+    read_place_group,
     read_price_level,
     read_rating,
     read_review_count,
@@ -21,12 +19,10 @@ from app.modules.plans.planner.place_metadata import (
 )
 
 
-DESCRIPTION_RETRIEVAL_MULTIPLIER = 10
-MIN_DESCRIPTION_RETRIEVAL_LIMIT = 50
-# Hà Nội currently has ~23k active Places. The hard-filter candidate universe
-# must include the complete city catalog before vector top-K; an arbitrary
-# primary-key slice would silently hide popular embedded Places.
-MAX_REPOSITORY_CANDIDATES = 30000
+# Load the current ~32k catalog before graph/category/metadata ranking. This is
+# a safety ceiling, not a semantic top-K; retrieval must not depend on primary
+# key order hiding valid Places.
+MAX_REPOSITORY_CANDIDATES = 50_000
 
 logger = logging.getLogger(__name__)
 
@@ -555,6 +551,8 @@ class FinderPlaceTool(Protocol):
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]: ...
 
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]: ...
+
 
 class FinderPlaceRepository(Protocol):
     def get(self, place_id: str) -> Place | None: ...
@@ -566,22 +564,15 @@ class FinderPlaceRepository(Protocol):
         limit: int = 10000,
     ) -> list[Place]: ...
 
-    def rank_place_ids_by_embedding(
+    def list_amenities_for_places(
         self,
-        place_ids: Sequence[str],
-        query_embedding: list[float],
-        *,
-        embedding_model: str,
-        limit: int,
-    ) -> list[tuple[str, float]]: ...
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceAmenity]]: ...
 
-    def has_place_embeddings(
+    def list_opening_hours_for_places(
         self,
-        region_key: str,
-        *,
-        embedding_model: str,
-    ) -> bool: ...
-
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceOpeningHour]]: ...
 
 class EmptyFinderPlaceTool:
     def get(self, place_id: str) -> FinderPlace | None:
@@ -597,6 +588,9 @@ class EmptyFinderPlaceTool:
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[FinderPlace]:
+        return []
+
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]:
         return []
 
 
@@ -620,19 +614,23 @@ class RepositoryFinderPlaceTool:
     def __init__(
         self,
         repository: FinderPlaceRepository,
-        embedding_client: EmbeddingClient | None = None,
     ) -> None:
         self.repository = repository
-        self.embedding_client = embedding_client
         self._scope_cache: dict[str, list[FinderPlace]] = {}
-        self._query_embedding_cache: dict[str, list[float]] = {}
-        self._embedding_coverage_cache: dict[tuple[str, str], bool] = {}
 
     def get(self, place_id: str) -> FinderPlace | None:
         place = self.repository.get(place_id)
         if place is None or place.deleted_at is not None:
             return None
-        return self._to_finder_place(place)
+        amenities = self._load_amenities([place.id]).get(place.id, [])
+        opening_hours = self._load_opening_hours(
+            [place.id] if not place.opening_hours else []
+        ).get(place.id, [])
+        return self._to_finder_place(
+            place,
+            amenities=amenities,
+            opening_hour_rows=opening_hours,
+        )
 
     def search(
         self,
@@ -684,124 +682,48 @@ class RepositoryFinderPlaceTool:
         if not eligible_places:
             return []
 
-        description_ranked = sorted(
-            eligible_places,
-            key=lambda place: (
-                -_description_relevance(place.description, query_terms),
-                place.name.casefold(),
-            ),
-        )
-        retrieval_limit = max(
-            MIN_DESCRIPTION_RETRIEVAL_LIMIT,
-            limit * DESCRIPTION_RETRIEVAL_MULTIPLIER,
-        )
-        if any(
-            _description_relevance(place.description, query_terms) > 0
-            for place in description_ranked
-        ):
-            shortlisted = description_ranked[:retrieval_limit]
-        else:
-            shortlisted = eligible_places
-
-        semantic_scores = self._semantic_scores(
-            places=eligible_places,
-            region_key=region_key,
-            target_tags=target_tags,
-            query_categories=query_categories,
-            limit=retrieval_limit,
-        )
-        if semantic_scores:
-            by_id = {
-                place.place_id: place
-                for place in eligible_places
-                if place.place_id is not None
-            }
-            semantic_shortlist = [
-                by_id[place_id]
-                for place_id in semantic_scores
-                if place_id in by_id
-            ]
-            semantic_ids = {place.stable_ref for place in semantic_shortlist}
-            shortlisted = [
-                *semantic_shortlist,
-                *[
-                    place
-                    for place in description_ranked
-                    if place.stable_ref not in semantic_ids
-                ],
-            ][:retrieval_limit]
-        shortlisted.sort(
+        # Knowledge Graph already expands the day need into concrete query
+        # terms and a hard category. Rank the complete eligible set from
+        # structured catalog evidence; description is optional supporting
+        # evidence, never a prerequisite for retrieval.
+        eligible_places.sort(
             key=lambda place: (
                 -(
-                    semantic_scores.get(place.place_id or "", 0.0) * 1000
-                    + _quality_rerank_score(place) * (3 if semantic_scores else 4)
-                    + min(
-                        100,
-                        _structured_rerank_score(
-                            place,
-                            region_key=region_key,
-                            query_terms=query_terms,
-                            query_categories=query_categories,
-                        ),
+                    _structured_rerank_score(
+                        place,
+                        region_key=region_key,
+                        query_terms=query_terms,
+                        query_categories=query_categories,
                     )
+                    * 5
+                    + _quality_rerank_score(place) * 2
                 ),
                 -_description_relevance(place.description, query_terms),
                 place.name.casefold(),
             )
         )
-        return shortlisted[:limit]
+        return eligible_places[:limit]
 
-    def _semantic_scores(
-        self,
-        *,
-        places: list[FinderPlace],
-        region_key: str,
-        target_tags: list[str],
-        query_categories: set[str],
-        limit: int,
-    ) -> dict[str, float]:
-        if self.embedding_client is None or not target_tags:
-            return {}
-        rank_method = getattr(self.repository, "rank_place_ids_by_embedding", None)
-        coverage_method = getattr(self.repository, "has_place_embeddings", None)
-        if rank_method is None or coverage_method is None:
-            return {}
-        coverage_key = (region_key, self.embedding_client.model)
-        has_coverage = self._embedding_coverage_cache.get(coverage_key)
-        if has_coverage is None:
-            has_coverage = coverage_method(
-                region_key,
-                embedding_model=self.embedding_client.model,
-            )
-            self._embedding_coverage_cache[coverage_key] = has_coverage
-        if not has_coverage:
-            return {}
-        place_ids = [place.place_id for place in places if place.place_id is not None]
-        if not place_ids:
-            return {}
-        query_text = build_finder_query_text(
-            target_tags=target_tags,
-            query_categories=query_categories,
-            region_key=region_key,
-        )
-        try:
-            query_embedding = self._query_embedding_cache.get(query_text)
-            if query_embedding is None:
-                query_embedding = self.embedding_client.embed_query(query_text)
-                self._query_embedding_cache[query_text] = query_embedding
-            ranked = rank_method(
-                place_ids,
-                query_embedding,
-                embedding_model=self.embedding_client.model,
-                limit=limit,
-            )
-            return {place_id: similarity for place_id, similarity in ranked}
-        except Exception:
-            logger.warning(
-                "Finder semantic retrieval unavailable; using lexical fallback.",
-                exc_info=True,
-            )
-            return {}
+    def list_region(self, region_key: str, *, limit: int) -> list[FinderPlace]:
+        """Return an evenly sampled regional catalog without relevance ranking."""
+
+        if limit < 1:
+            return []
+        places = [
+            place
+            for place in self._load_scoped_candidates(region_key, set())
+            if place.region_key == region_key
+            or place.region_key.startswith(f"{region_key},")
+        ]
+        if len(places) <= limit:
+            return places
+        if limit == 1:
+            return [places[len(places) // 2]]
+        indexes = [
+            round(index * (len(places) - 1) / (limit - 1))
+            for index in range(limit)
+        ]
+        return [places[index] for index in indexes]
 
     def _load_scoped_candidates(
         self,
@@ -817,8 +739,18 @@ class RepositoryFinderPlaceTool:
                     scope,
                     limit=MAX_REPOSITORY_CANDIDATES,
                 )
+                place_ids = [place.id for place in raw]
+                amenities = self._load_amenities(place_ids)
+                opening_hours = self._load_opening_hours(
+                    [place.id for place in raw if not place.opening_hours]
+                )
                 self._scope_cache[scope] = [
-                    self._to_finder_place(place) for place in raw
+                    self._to_finder_place(
+                        place,
+                        amenities=amenities.get(place.id, []),
+                        opening_hour_rows=opening_hours.get(place.id, []),
+                    )
+                    for place in raw
                 ]
             for place in self._scope_cache[scope]:
                 if (
@@ -836,9 +768,33 @@ class RepositoryFinderPlaceTool:
             )
         return candidates
 
-    def _to_finder_place(self, place: Place) -> FinderPlace:
+    def _load_amenities(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceAmenity]]:
+        loader = getattr(self.repository, "list_amenities_for_places", None)
+        if loader is None or not place_ids:
+            return {}
+        return loader(place_ids)
+
+    def _load_opening_hours(
+        self,
+        place_ids: list[str],
+    ) -> dict[str, list[PlaceOpeningHour]]:
+        loader = getattr(self.repository, "list_opening_hours_for_places", None)
+        if loader is None or not place_ids:
+            return {}
+        return loader(place_ids)
+
+    def _to_finder_place(
+        self,
+        place: Place,
+        *,
+        amenities: list[PlaceAmenity] | None = None,
+        opening_hour_rows: list[PlaceOpeningHour] | None = None,
+    ) -> FinderPlace:
         metadata = place.metadata_json or {}
-        tags = read_tags(place)
+        tags = read_tags(place, amenities=amenities)
         minimum_duration = _minimum_duration_minutes(metadata)
         if minimum_duration is None and place.typical_duration_minutes:
             minimum_duration = max(15, place.typical_duration_minutes // 2)
@@ -850,11 +806,7 @@ class RepositoryFinderPlaceTool:
             placeType=place.place_type,
             regionKey=place.region_key,
             description=read_description(place),
-            placeGroup=(
-                str(metadata.get("placeGroup"))
-                if metadata.get("placeGroup") is not None
-                else None
-            ),
+            placeGroup=read_place_group(place),
             tags=[str(tag) for tag in tags if isinstance(tag, str)],
             latitude=(
                 float(place.latitude) if place.latitude is not None else None
@@ -873,7 +825,7 @@ class RepositoryFinderPlaceTool:
                 for feature in metadata.get("accessibilityFeatures", [])
                 if isinstance(feature, str)
             ],
-            openingHours=list(place.opening_hours or []),
+            openingHours=_opening_hours_payload(place, opening_hour_rows),
             weatherSensitivity=(
                 str(metadata.get("weatherSensitivity"))
                 if metadata.get("weatherSensitivity") is not None
@@ -975,7 +927,10 @@ def _structured_rerank_score(
         else 0
     )
     return (
-        _description_relevance(place.description, query_terms) * 18
+        # Description is sparse in the current catalog and remains supporting
+        # evidence. Exact graph-expanded type/tag/name matches should lead;
+        # a small prose overlap must not erase a large quality difference.
+        _description_relevance(place.description, query_terms)
         + category_score
         + tag_overlap * 12
         + region_score
@@ -1067,6 +1022,22 @@ def _minimum_duration_minutes(metadata: dict) -> int | None:
     if isinstance(value, int) and value > 0:
         return value
     return None
+
+
+def _opening_hours_payload(
+    place: Place,
+    rows: list[PlaceOpeningHour] | None,
+) -> list[dict]:
+    if place.opening_hours:
+        return list(place.opening_hours)
+    return [
+        {
+            "dayName": row.day_of_week,
+            "rawTimeSlots": row.time_slots,
+            "is24Hours": False,
+        }
+        for row in rows or []
+    ]
 
 
 def _normalized_terms(values: list[str]) -> set[str]:

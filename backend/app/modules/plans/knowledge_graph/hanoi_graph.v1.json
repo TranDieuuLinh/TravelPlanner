@@ -1,6 +1,7 @@
 {
   "schemaVersion": "travel-knowledge-graph.v1",
   "regionKey": "vn,ha-noi",
+  "regionAliases": ["Hanoi", "Ha Noi", "Hà Nội"],
   "nodes": [
     {"id":"area:old-quarter","kind":"area","label":"Hanoi Old Quarter","aliases":["old quarter","pho co","phố cổ"],"regionKeys":["vn,ha-noi,hoan-kiem","vn,ha-noi,old-quarter-hoan-kiem","vn,ha-noi,hang-dao-hoan-kiem"]},
     {"id":"area:ba-dinh","kind":"area","label":"Ba Dinh","aliases":["ba dinh","ba đình"],"regionKeys":["vn,ha-noi,ba-dinh","vn,ha-noi,dien-bien-ba-dinh","vn,ha-noi,ngoc-ha"]},
@@ -12,7 +13,7 @@
     {"id":"exp:monument","kind":"experience","label":"monument and statue","aliases":["monument","statue","memorial","tuong","tượng"],"searchTerms":["historical landmark","monument","memorial","statue"],"placeCategory":"attraction","diversityGroup":"monument","weight":0.95},
     {"id":"exp:museum","kind":"experience","label":"history museum","aliases":["museum","bao tang","bảo tàng"],"searchTerms":["history museum","cultural museum","historic site"],"placeCategory":"attraction","diversityGroup":"museum","weight":1.0},
     {"id":"exp:heritage-architecture","kind":"experience","label":"heritage architecture","aliases":["architecture","historic architecture","kien truc","kiến trúc"],"searchTerms":["heritage building","ancient gate","historic house","cultural center"],"placeCategory":"attraction","diversityGroup":"heritage_architecture","weight":0.9},
-    {"id":"exp:art-gallery","kind":"experience","label":"art gallery","aliases":["gallery","fine arts","art gallery","nghe thuat","nghệ thuật"],"searchTerms":["art gallery","fine arts exhibition","contemporary art space"],"placeCategory":"attraction","diversityGroup":"art_gallery","weight":0.82},
+    {"id":"exp:art-gallery","kind":"experience","label":"art gallery","aliases":["gallery","fine arts","art gallery","nghe thuat","nghệ thuật"],"searchTerms":["art gallery","fine arts exhibition","contemporary art space"],"evidenceTerms":["art gallery","fine arts","gallery","phòng trưng bày","triển lãm mỹ thuật"],"placeCategory":"attraction","diversityGroup":"art_gallery","weight":0.82},
     {"id":"exp:traditional-craft","kind":"experience","label":"traditional craft","aliases":["craft","handicraft","traditional craft","lang nghe","làng nghề"],"searchTerms":["traditional craft","handicraft workshop","artisan space"],"placeCategory":"attraction","diversityGroup":"traditional_craft","weight":0.78},
     {"id":"exp:neighborhood-walk","kind":"experience","label":"historic neighborhood walk","aliases":["neighborhood walk","walking street","old quarter walk","pho di bo","phố đi bộ"],"searchTerms":["historic walking street","old quarter walk","pedestrian street"],"placeCategory":"attraction","diversityGroup":"neighborhood_walk","weight":0.86},
     {"id":"exp:local-life","kind":"experience","label":"local neighborhood life","aliases":["local life","local market","community life","doi song dia phuong","đời sống địa phương"],"searchTerms":["local market","community cultural space","traditional neighborhood"],"placeCategory":"attraction","diversityGroup":"local_life","weight":0.75},

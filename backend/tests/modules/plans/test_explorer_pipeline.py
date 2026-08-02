@@ -330,7 +330,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     assert image.data == b""
 
 
-def test_url_without_requested_duration_allows_sparse_last_day_fill() -> None:
+def test_url_without_requested_duration_uses_two_activities_per_day() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=10)
     service = build_service(formatter, url_reels, RecordingImageOcr())
@@ -345,10 +345,10 @@ def test_url_without_requested_duration_allows_sparse_last_day_fill() -> None:
         )
     )
 
-    assert result.explorer.trip_spec.days == 4
-    assert result.allow_finder_suggestions is True
+    assert result.explorer.trip_spec.days == 5
+    assert result.allow_finder_suggestions is False
     assert any(
-        "inferred as 4 days" in assumption
+        "inferred as 5 days" in assumption
         for assumption in result.explorer.assumptions
     )
 

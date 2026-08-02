@@ -472,6 +472,7 @@ def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
         lambda _: 120.0,
     )
     monkeypatch.setattr(settings, "url_reel_stt_chunk_seconds", 45.0)
+    monkeypatch.setattr(settings, "url_reel_stt_max_concurrency", 3)
 
     def fake_split(
         source: Path,

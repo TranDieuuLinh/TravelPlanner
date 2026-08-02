@@ -123,14 +123,20 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
         for item in result.days[0].items
         if item.place_id is not None
     ]
-    assert scheduled_place_ids == ["national-park", "restaurant"]
+    assert set(scheduled_place_ids) == {"national-park", "restaurant"}
     assert "hotel" not in scheduled_place_ids
     restaurant_item = next(
         item
         for item in result.days[0].items
         if item.place_id == "restaurant"
     )
-    assert restaurant_item.role == "lunch_meal"
+    assert restaurant_item.role == "breakfast_meal"
+    activity_item = next(
+        item
+        for item in result.days[0].items
+        if item.place_id == "national-park"
+    )
+    assert activity_item.role == "main_activity"
 
 
 def test_quality_breaks_ties_after_category_and_description_match() -> None:

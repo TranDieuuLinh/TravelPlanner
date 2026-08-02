@@ -26,18 +26,38 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Backfill semantic embeddings for active catalog places."
     )
-    parser.add_argument("--region-key", default="vn,ha-noi")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--region-key", default="vn,ha-noi")
+    scope.add_argument(
+        "--all-regions",
+        action="store_true",
+        help="Backfill every active place regardless of region_key.",
+    )
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--commit-every", type=int, default=10)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument(
+        "--requests-per-second",
+        type=float,
+        default=2.0,
+        help="Global request start rate across all workers (default: 2).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    if args.limit < 1 or args.commit_every < 1 or args.workers < 1:
-        raise SystemExit("--limit, --commit-every and --workers must be positive")
+    if (
+        args.limit < 1
+        or args.commit_every < 1
+        or args.workers < 1
+        or args.requests_per_second <= 0
+    ):
+        raise SystemExit(
+            "--limit, --commit-every, --workers and --requests-per-second "
+            "must be positive"
+        )
     if not settings.gemini_api_key:
         raise SystemExit("GEMINI_API_KEY is required for embedding backfill")
 
@@ -46,16 +66,18 @@ def main() -> int:
         model=settings.gemini_embedding_model,
         dimensions=settings.gemini_embedding_dimensions,
         timeout_seconds=settings.gemini_embedding_timeout_seconds,
+        min_interval_seconds=1.0 / args.requests_per_second,
     )
+    region_key = None if args.all_regions else args.region_key
     with SessionLocal() as session:
         repository = SqlAlchemyPlaceRepository(session)
         places = repository.list_places_needing_embeddings(
-            args.region_key,
+            region_key,
             embedding_model=client.model,
             limit=args.limit,
         )
         print(
-            f"Selected {len(places)} places in {args.region_key} "
+            f"Selected {len(places)} places in {region_key or 'all regions'} "
             f"for {client.model}/{client.dimensions}."
         )
         if args.dry_run:

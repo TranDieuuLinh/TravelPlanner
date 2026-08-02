@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import logging
-
-from pydantic import ValidationError
-
 from app.integrations.llm.base import LLMClient
 from app.modules.plans.domain.entities import (
     CheckReport,
@@ -19,145 +15,72 @@ from app.modules.plans.dto.agent_contracts import (
     AgentTrace,
     PlannerAgentInput,
     PlannerAgentOutput,
-    PlannerResearchDraft,
     PlannerMacroPlanDraft,
+    PlannerResearchDraft,
     PlannerVerifiedResearch,
     PlanningAgentName,
     PlanningAgentStatus,
-    PlanningIntent,
     PlanningMode,
     PlanWorkingState,
     SelectedPlaceContext,
     TripPlanningSpec,
     UnallocatedSelectedPlace,
 )
+from app.modules.plans.planner.evidence import (
+    PlannerEvidenceCollector,
+)
+from app.modules.plans.planner.context_builder import PlanningContextBuilder
+from app.modules.plans.planner.generation import (
+    MacroPlanGenerator,
+)
 from app.modules.plans.planner.prompt import (
     PLANNER_PROMPT_VERSION,
     PLANNER_RESEARCH_PROMPT_VERSION,
-    PLANNER_RESEARCH_SYSTEM_PROMPT,
-    PLANNER_SYSTEM_PROMPT,
-    build_planner_repair_payload,
-    build_planner_research_payload,
-    build_planner_user_payload,
 )
 from app.modules.plans.planner.research_tool import (
-    CAPABILITY_ALIASES,
     CAPABILITY_CATEGORY,
-    EmptyPlannerResearchTool,
     PlannerResearchTool,
     canonical_capability,
 )
 from app.modules.plans.planner.tourism_zone_research import (
-    EmptyTourismZoneResearchTool,
     TourismZoneResearchTool,
 )
 from app.modules.plans.planner.region_context import (
     PlannerStatisticsProvider,
-    load_region_statistics_context,
-)
-from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
-from app.modules.plans.planner.research_tools_schema import (
-    ConstraintResearchInput,
-    FestivalDiscoveryInput,
-    RegionOverviewInput,
 )
 from app.modules.preferences.schema import (
     LongTermPreferenceProfile,
     PreferenceDimension,
 )
 
-logger = logging.getLogger(__name__)
-PLANNER_MAX_REPAIR_ATTEMPTS = 3
-
-CONSTRAINT_RADIUS_KM = 50.0
-
-
-def _build_constraint_input(
-    *,
-    planner_input: PlannerAgentInput,
-    trip_spec: TripPlanningSpec,
-) -> ConstraintResearchInput | None:
-    """Build a ``ConstraintResearchInput`` that the schema will accept.
-
-    The research tool requires real coordinates when ``mode='coordinates'``.
-    When the planner has no geocoded location we fall back to ``mode='text'``
-    and forward the destination string. Returns ``None`` when neither
-    option can be satisfied so the caller skips the tool entirely.
-    """
-
-    interests = list(planner_input.intent.interests or [])
-    budget = getattr(trip_spec.budget, "target_amount", None) if trip_spec.budget else None
-    duration = trip_spec.days
-
-    center = _centroid_from_selected_places(planner_input.selected_places)
-    if center is not None:
-        center_lat, center_lng = center
-        return ConstraintResearchInput.model_validate(
-            {
-                "mode": "coordinates",
-                "centerLat": center_lat,
-                "centerLng": center_lng,
-                "radiusKm": CONSTRAINT_RADIUS_KM,
-                "budget": budget,
-                "duration": duration,
-                "interests": interests,
-            }
-        )
-
-    query = (planner_input.intent.destination or "").strip()
-    if not query:
-        return None
-
-    return ConstraintResearchInput.model_validate(
-        {
-            "mode": "text",
-            "query": query,
-            "regionKey": planner_input.region_context.region_key,
-            "budget": budget,
-            "duration": duration,
-            "interests": interests,
-        }
-    )
-
-
-def _centroid_from_selected_places(
-    selected_places: list[SelectedPlaceContext],
-) -> tuple[float, float] | None:
-    """Return the average latitude/longitude of selected places, if available."""
-
-    coords: list[tuple[float, float]] = []
-    for place in selected_places:
-        latitude = getattr(place, "latitude", None)
-        longitude = getattr(place, "longitude", None)
-        if latitude is None or longitude is None:
-            continue
-        try:
-            coords.append((float(latitude), float(longitude)))
-        except (TypeError, ValueError):
-            continue
-    if not coords:
-        return None
-    average_lat = sum(lat for lat, _ in coords) / len(coords)
-    average_lng = sum(lng for _, lng in coords) / len(coords)
-    return average_lat, average_lng
-
-
-class PlannerService:
+class _PlannerOrchestrator:
+    """Coordinate context, evidence and generation without owning policies."""
     def __init__(
         self,
         statistics_provider: PlannerStatisticsProvider,
         llm: LLMClient,
         research_tool: PlannerResearchTool | None = None,
-        research_tools: ResearchToolsOrchestrator | None = None,
         tourism_zone_tool: TourismZoneResearchTool | None = None,
+        evidence_collector: PlannerEvidenceCollector | None = None,
+        generator: MacroPlanGenerator | None = None,
+        context_builder: PlanningContextBuilder | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
-        self.llm = llm
-        self.research_tool = research_tool or EmptyPlannerResearchTool()
-        self.research_tools = research_tools
-        self.tourism_zone_tool = (
-            tourism_zone_tool or EmptyTourismZoneResearchTool()
+        self.context_builder = context_builder or PlanningContextBuilder(
+            statistics_provider
         )
+        self.evidence_collector = evidence_collector or PlannerEvidenceCollector(
+            tourism_zone_tool=tourism_zone_tool,
+        )
+        self.generator = generator or MacroPlanGenerator(
+            llm,
+            research_tool,
+        )
+        # Compatibility aliases for existing runtime introspection. Execution
+        # is owned by the composed collaborators above.
+        self.llm = llm
+        self.research_tool = self.generator.research_tool
+        self.tourism_zone_tool = self.evidence_collector.tourism_zone_tool
 
     async def create_main_macro_plan(
         self,
@@ -230,123 +153,26 @@ class PlannerService:
         check_report: CheckReport | None = None,
         preference_profile: LongTermPreferenceProfile | None = None,
     ) -> tuple[PlannerAgentInput, str]:
-        region_context, statistics_status = load_region_statistics_context(
-            self.statistics_provider,
-            region_key,
+        return self.context_builder.build(
+            mode=mode,
+            intent=intent,
+            trip_spec=trip_spec,
+            region_key=region_key,
+            selected_places=selected_places,
+            plan_state=plan_state,
+            original_macro_plan=original_macro_plan,
+            check_report=check_report,
+            preference_profile=preference_profile,
         )
-        planning_intent = PlanningIntent(
-            destination=intent.destination,
-            travelStyle=intent.travel_style,
-            pace=intent.pace,
-            interests=intent.interests,
-            mustVisitPlaces=intent.must_visit_places,
-            avoidPlaces=intent.avoid_places,
-            constraints=intent.constraints,
-            constraintPolicy=intent.constraint_policy,
-            clarifyingQuestions=intent.clarifying_questions,
-        )
-        return (
-            PlannerAgentInput(
-                mode=mode,
-                intent=planning_intent,
-                tripSpec=trip_spec,
-                regionContext=region_context,
-                selectedPlaces=selected_places,
-                preferenceProfile=(
-                    preference_profile or LongTermPreferenceProfile()
-                ),
-                planState=plan_state or PlanWorkingState(),
-                originalMacroPlan=original_macro_plan,
-                checkReport=check_report,
-            ),
-            statistics_status,
-        )
-
-    def _run_research_tools(
-        self,
-        planner_input: PlannerAgentInput,
-    ) -> PlannerAgentInput:
-        """
-        Run research tools and populate tool results into planner_input.
-        
-        This method executes:
-        1. region_overview - for overview statistics
-        2. constraint_research - if coordinates/interests provided
-        3. festival_discovery - for seasonal planning
-        """
-        try:
-            planner_input.tourism_zones = self.tourism_zone_tool.research(
-                root_region_key=planner_input.region_context.region_key,
-                interests=planner_input.intent.interests,
-            )
-        except Exception:
-            logger.exception("tourism_zone_research tool failed")
-
-        if self.research_tools is None:
-            return planner_input
-
-        region_key = planner_input.region_context.region_key
-        trip_spec = planner_input.trip_spec
-
-        # 1. Always run region_overview for base statistics
-        try:
-            overview_result = self.research_tools.region_overview(
-                RegionOverviewInput(region_key=region_key)
-            )
-            planner_input.region_overview = overview_result.model_dump(by_alias=True)
-        except Exception as e:
-            logger.warning("region_overview tool failed: %s", e)
-
-        # 2. Run constraint_research if we have coordinates or interests
-        has_constraints = (
-            planner_input.intent.constraints
-            or planner_input.intent.interests
-            or trip_spec.budget
-        )
-        if has_constraints and self.research_tools:
-            try:
-                constraint_input = _build_constraint_input(
-                    planner_input=planner_input,
-                    trip_spec=trip_spec,
-                )
-                if constraint_input is not None:
-                    result = self.research_tools.constraint_research(constraint_input)
-                    planner_input.constraint_research = result.model_dump(by_alias=True)
-            except Exception:
-                logger.exception("constraint_research tool failed")
-
-        # 3. Run festival_discovery for seasonal awareness
-        try:
-            # Extract month from start_date if available
-            month = None
-            if trip_spec.start_date:
-                # Parse date like "2026-04-15"
-                parts = trip_spec.start_date.split("-")
-                if len(parts) >= 2:
-                    month = f"tháng {int(parts[1])}"
-
-            festival_result = self.research_tools.festival_discovery(
-                FestivalDiscoveryInput(
-                    month=month,
-                    regionKey=region_key,
-                )
-            )
-            planner_input.festival_discovery = festival_result.model_dump(by_alias=True)
-        except Exception as e:
-            logger.warning("festival_discovery tool failed: %s", e)
-
-        return planner_input
 
     async def _create_plan(
         self,
         planner_input: PlannerAgentInput,
         statistics_status: str,
     ) -> PlannerAgentOutput:
-        ready = (
-            planner_input.region_context.active_place_count > 0
-            or bool(planner_input.selected_places)
-        )
-        statistics_warnings = self._statistics_warnings(planner_input)
+        evidence = self.evidence_collector.collect(planner_input)
+        planner_input = evidence.apply_to(planner_input)
+        ready = evidence.can_plan or bool(planner_input.selected_places)
         if not ready:
             return PlannerAgentOutput(
                 mode=planner_input.mode,
@@ -359,7 +185,7 @@ class PlannerService:
                 tripSpec=planner_input.trip_spec,
                 dayBriefsReady=False,
                 tourismZones=planner_input.tourism_zones,
-                warnings=statistics_warnings,
+                warnings=evidence.warnings,
                 trace=AgentTrace(
                     agent=PlanningAgentName.planner,
                     status=PlanningAgentStatus.blocked,
@@ -378,81 +204,27 @@ class PlannerService:
                 ),
             )
 
-        # Run research tools to populate tool results
-        planner_input = self._run_research_tools(planner_input)
-
-        research_generator = "llm"
-        try:
-            if self._can_use_fast_graph_research(planner_input):
-                research_draft = self._build_fast_graph_research(planner_input)
-                research_generator = "deterministic_graph"
-            else:
-                research_raw = await self.llm.generate_json(
-                    system_prompt=PLANNER_RESEARCH_SYSTEM_PROMPT,
-                    user_payload=build_planner_research_payload(planner_input),
-                )
-                research_draft = PlannerResearchDraft.model_validate_json(
-                    research_raw
-                )
-            verified_research = self.research_tool.verify(
-                research_draft,
-                root_region_key=planner_input.region_context.region_key,
-            )
-        except ValidationError as exc:
-            raise RuntimeError(
-                "LLM Planner returned an invalid research contract."
-            ) from exc
-
-        raw = await self.llm.generate_json(
-            system_prompt=PLANNER_SYSTEM_PROMPT,
-            user_payload=build_planner_user_payload(
-                planner_input,
-                research_draft,
-                verified_research,
-            ),
-        )
-        repair_attempts = 0
-        while True:
-            try:
-                draft = self._parse_and_validate_macro_draft(
+        generation = await self.generator.generate(
+            planner_input,
+            evidence_payload=evidence.model_dump(mode="json", by_alias=True),
+            validate_macro_draft=lambda raw, research, verified: (
+                self._parse_and_validate_macro_draft(
                     planner_input,
                     raw,
-                    research_draft,
-                    verified_research,
+                    research,
+                    verified,
                 )
-                break
-            except (ValidationError, ValueError) as exc:
-                feedback = self._validation_feedback(exc)
-                if repair_attempts >= PLANNER_MAX_REPAIR_ATTEMPTS:
-                    logger.warning(
-                        "Planner MacroPlan contract remained invalid "
-                        "after %s repair attempts: %s",
-                        repair_attempts,
-                        feedback,
-                    )
-                    raise RuntimeError(
-                        "LLM Planner returned an invalid MacroPlan contract "
-                        f"after {repair_attempts} repair attempts."
-                    ) from exc
-
-                repair_attempts += 1
-                raw = await self.llm.generate_json(
-                    system_prompt=PLANNER_SYSTEM_PROMPT,
-                    user_payload=build_planner_repair_payload(
-                        planner_input,
-                        research_draft,
-                        verified_research,
-                        previous_output=raw,
-                        validation_feedback=feedback,
-                    ),
-                )
+            ),
+        )
+        draft = generation.draft
+        verified_research = generation.verified_research
 
         warnings = list(
             dict.fromkeys(
                 [
                     *draft.warnings,
                     *verified_research.warnings,
-                    *statistics_warnings,
+                    *evidence.warnings,
                 ]
             )
         )
@@ -471,9 +243,9 @@ class PlannerService:
                 summary="AI đã tạo MacroPlan từ context và thống kê khu vực nhỏ.",
                 notes=[
                     "generator=llm",
-                    f"repairAttempts={repair_attempts}",
+                    f"repairAttempts={generation.repair_attempts}",
                     f"researchPromptVersion={PLANNER_RESEARCH_PROMPT_VERSION}",
-                    f"researchGenerator={research_generator}",
+                    f"researchGenerator={generation.research_generator}",
                     f"promptVersion={PLANNER_PROMPT_VERSION}",
                     f"statisticsStatus={statistics_status}",
                     (
@@ -492,6 +264,9 @@ class PlannerService:
             ),
         )
 
+class MacroPlanPolicy:
+    """Validate and normalize a generated MacroPlan against verified evidence."""
+
     def _parse_and_validate_macro_draft(
         self,
         planner_input: PlannerAgentInput,
@@ -506,20 +281,6 @@ class PlannerService:
             research_draft,
             verified_research,
         )
-
-    @staticmethod
-    def _validation_feedback(exc: ValidationError | ValueError) -> str:
-        if isinstance(exc, ValidationError):
-            fields = [
-                (
-                    ".".join(str(part) for part in error["loc"])
-                    + ":"
-                    + str(error["type"])
-                )
-                for error in exc.errors()[:10]
-            ]
-            return "Schema validation failed at " + ", ".join(fields)
-        return str(exc)
 
     def _validate_and_normalize_draft(
         self,
@@ -643,10 +404,7 @@ class PlannerService:
                     (
                         candidate
                         for candidate in candidate_zones
-                        if any(
-                            anchor.category == preferred_category
-                            for anchor in candidate.anchor_places
-                        )
+                        if preferred_category in candidate.primary_categories
                     ),
                     candidate_zones[0],
                 )
@@ -668,10 +426,7 @@ class PlannerService:
                         candidate
                         for candidate in focus_zone_pool
                         if candidate.region_key == zone.region_key
-                        and any(
-                            anchor.category == focus_category
-                            for anchor in candidate.anchor_places
-                        )
+                        and focus_category in candidate.primary_categories
                     ),
                     None,
                 )
@@ -680,10 +435,7 @@ class PlannerService:
                         (
                             candidate
                             for candidate in focus_zone_pool
-                            if any(
-                                anchor.category == focus_category
-                                for anchor in candidate.anchor_places
-                            )
+                            if focus_category in candidate.primary_categories
                         ),
                         None,
                     )
@@ -703,6 +455,13 @@ class PlannerService:
                 updates["activity_needs"] = normalized_activity_needs
             if not brief.meal_needs:
                 updates["meal_needs"] = [
+                    DayMealNeed(
+                        role="breakfast",
+                        earliestStart="07:00",
+                        latestEnd="09:00",
+                        minDurationMinutes=30,
+                        maxDurationMinutes=60,
+                    ),
                     DayMealNeed(
                         role="lunch",
                         earliestStart="11:30",
@@ -737,20 +496,19 @@ class PlannerService:
             normalized_brief = (
                 brief.model_copy(update=updates) if updates else brief
             )
-            if (
-                zone is not None
-                and normalized_brief.primary_activity_category is not None
-                and zone.anchor_places
-                and not any(
-                    anchor.category
-                    == normalized_brief.primary_activity_category
-                    for anchor in zone.anchor_places
-                )
-            ):
-                raise ValueError(
-                    "tourismZoneRef anchor category does not match "
-                    "primaryActivityCategory."
-                )
+            if zone is not None and normalized_brief.primary_activity_category:
+                supported_categories = set(zone.primary_categories) or {
+                    anchor.category for anchor in zone.anchor_places
+                }
+                if (
+                    supported_categories
+                    and normalized_brief.primary_activity_category
+                    not in supported_categories
+                ):
+                    raise ValueError(
+                        "tourismZoneRef does not support "
+                        "primaryActivityCategory."
+                    )
             normalized_briefs.append(normalized_brief)
         if normalized_briefs != macro.day_briefs:
             macro = macro.model_copy(update={"day_briefs": normalized_briefs})
@@ -991,11 +749,7 @@ class PlannerService:
         *,
         selected_by_ref: dict[str, SelectedPlaceContext],
     ) -> PlannerMacroPlanDraft:
-        capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[planner_input.intent.pace.value]
+        capacity = 2
         overflow_refs: list[str] = []
         normalized_briefs = []
         for brief in draft.macro_plan.day_briefs:
@@ -1020,8 +774,8 @@ class PlannerService:
                 place=selected_by_ref[ref],
                 reasonCode="no_day_capacity",
                 reason=(
-                    f"The selected {planner_input.intent.pace.value} pace "
-                    f"allows at most {capacity} activities per day."
+                    f"The current day frame allows at most {capacity} "
+                    "activities per day."
                 ),
             )
             for ref in overflow_refs
@@ -1094,11 +848,7 @@ class PlannerService:
             return draft
 
         trip_days = planner_input.trip_spec.days
-        activity_capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[planner_input.intent.pace.value]
+        activity_capacity = 2
         assigned_days: dict[str, int] = {}
         out_of_range: list[SelectedPlaceContext] = []
         over_capacity: list[SelectedPlaceContext] = []
@@ -1226,8 +976,7 @@ class PlannerService:
                 reasonCode="no_day_capacity",
                 reason=(
                     f"Day {place.source_day} exceeds the "
-                    f"{activity_capacity}-activity capacity for the selected "
-                    "pace."
+                    f"current {activity_capacity}-activity day capacity."
                     if place.source_day is not None
                     else (
                         f"The requested {trip_days}-day trip has no remaining "
@@ -1278,69 +1027,6 @@ class PlannerService:
         )
 
     @staticmethod
-    def _can_use_fast_graph_research(planner_input: PlannerAgentInput) -> bool:
-        style = planner_input.intent.travel_style.strip().casefold().replace("-", "_")
-        return (
-            planner_input.trip_spec.days <= 3
-            and planner_input.region_context.region_key.startswith("vn,ha-noi")
-            and not any(
-                marker in style
-                for marker in ("road_trip", "road trip", "multi_base", "phuot")
-            )
-        )
-
-    @staticmethod
-    def _build_fast_graph_research(
-        planner_input: PlannerAgentInput,
-    ) -> PlannerResearchDraft:
-        requested_themes = list(
-            dict.fromkeys(
-                interest.strip()
-                for interest in planner_input.intent.interests
-                if interest.strip()
-            )
-        )
-        if not requested_themes:
-            requested_themes = [
-                "culture",
-                "history and heritage",
-                "scenic landmark",
-            ]
-
-        theme_queries = []
-        for theme in requested_themes[:6]:
-            capability = canonical_capability(theme)
-            # Keep the raw user phrase as the graph query. Area names such as
-            # "Hanoi Old Quarter" are not capabilities; replacing them with a
-            # generic label discards the strongest geographic signal.
-            if capability not in CAPABILITY_ALIASES:
-                capability = "culture"
-            theme_queries.append(
-                {
-                    "theme": theme,
-                    "capabilities": [capability],
-                    "preferredRegionKey": planner_input.region_context.region_key,
-                    "rationale": (
-                        "Giữ nguyên chủ đề/khu vực người dùng nêu, rồi kiểm chứng "
-                        "bằng knowledge graph và Place active tại Hà Nội."
-                    ),
-                }
-            )
-        return PlannerResearchDraft.model_validate(
-            {
-                "journeyStyle": "local_base",
-                "varietyStrategy": (
-                    "Chọn một trải nghiệm chính có địa điểm cụ thể cho mỗi ngày; "
-                    "dùng graph để bổ sung trải nghiệm khác nhóm và giữ bữa ăn độc lập."
-                ),
-                "themeQueries": theme_queries,
-                "expandBeyondRoot": False,
-                "nearbyCapabilities": [],
-                "maxDistanceKm": 50,
-            }
-        )
-
-    @staticmethod
     def _default_activity_needs(brief: DayBrief) -> list[DayActivityNeed]:
         common_experiences = list(dict.fromkeys(brief.focus_tags))
         main_experience = common_experiences[0] if common_experiences else None
@@ -1361,7 +1047,7 @@ class PlannerService:
                 preferredExperiences=common_experiences,
                 minDurationMinutes=45,
                 maxDurationMinutes=120,
-                required=brief.pace.value != "relaxed",
+                required=True,
             ),
             DayActivityNeed(
                 role="bonus",
@@ -1473,32 +1159,8 @@ class PlannerService:
                 "Long multi-base or road-trip plans require at least two phases."
             )
 
-    def _statistics_warnings(
-        self,
-        planner_input: PlannerAgentInput,
-    ) -> list[str]:
-        context = planner_input.region_context
-        warnings: list[str] = []
-        if context.active_place_count == 0:
-            warnings.append(
-                f"Không có Place active cho {context.region_key}; Finder chỉ "
-                "có thể dùng các địa điểm người dùng đã chọn."
-            )
-            return warnings
 
-        eligible_quality = context.planner_eligible.get(
-            "dataQuality",
-            context.data_quality,
-        )
-        missing_hours = int(eligible_quality.get("missingOpeningHours", 0))
-        if missing_hours > context.active_place_count / 2:
-            warnings.append(
-                "Hơn một nửa Place active chưa có giờ mở cửa; Finder phải "
-                "xác minh tính khả thi theo thời gian."
-            )
-        stale_data = int(eligible_quality.get("staleOperationalData", 0))
-        if stale_data:
-            warnings.append(
-                f"{stale_data} Place active có dữ liệu vận hành đã cũ."
-            )
-        return warnings
+class PlannerService(_PlannerOrchestrator, MacroPlanPolicy):
+    """Public Planner facade preserving the existing workflow contract."""
+
+    pass

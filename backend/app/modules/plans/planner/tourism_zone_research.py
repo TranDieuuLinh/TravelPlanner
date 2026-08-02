@@ -6,9 +6,7 @@ import unicodedata
 from collections import defaultdict
 from typing import Protocol
 
-from app.integrations.embeddings.base import EmbeddingClient
 from app.modules.places.model import Place
-from app.modules.places.semantic import build_finder_query_text
 from app.modules.plans.dto.agent_contracts import (
     TourismZoneAnchor,
     TourismZoneEvidence,
@@ -84,14 +82,12 @@ class RepositoryTourismZoneResearchTool:
     def __init__(
         self,
         repository: TourismZonePlaceRepository,
-        embedding_client: EmbeddingClient | None = None,
         *,
         radius_meters: int = DEFAULT_ZONE_RADIUS_METERS,
         max_zones: int = MAX_TOURISM_ZONES,
         knowledge_tool: TravelKnowledgeSearchTool | None = None,
     ) -> None:
         self.repository = repository
-        self.embedding_client = embedding_client
         self.radius_meters = radius_meters
         self.max_zones = max_zones
         self.knowledge_tool = knowledge_tool or get_default_travel_knowledge_tool()
@@ -130,14 +126,6 @@ class RepositoryTourismZoneResearchTool:
             region_key=root_region_key,
         )
         preferred_region_keys = set(area_expansion.region_keys)
-        semantic_scores = self._semantic_anchor_scores(
-            places_with_coordinates,
-            root_region_key=root_region_key,
-            interests=interests,
-            requested=requested,
-            food_focused=food_focused,
-            capabilities_by_id=capabilities_by_id,
-        )
         grouped: dict[str, list[Place]] = defaultdict(list)
         for place in places_with_coordinates:
             grouped[place.region_key].append(place)
@@ -161,7 +149,6 @@ class RepositoryTourismZoneResearchTool:
                     0
                     if self._in_preferred_region(place.region_key, preferred_region_keys)
                     else 1,
-                    -semantic_scores.get(str(place.id), -1.0),
                     -self._popularity(place),
                     place.name.casefold(),
                 )
@@ -190,7 +177,6 @@ class RepositoryTourismZoneResearchTool:
                 0
                 if self._in_preferred_region(item[0].region_key, preferred_region_keys)
                 else 1,
-                -semantic_scores.get(str(item[0].id), -1.0),
                 -self._popularity(item[0]),
                 item[0].name.casefold(),
             )
@@ -219,7 +205,6 @@ class RepositoryTourismZoneResearchTool:
                     else 1
                 ),
                 -len(set(zone.capabilities).intersection(requested)),
-                -semantic_scores.get(zone.anchor_places[0].place_id, -1.0),
                 -zone.popularity_score,
                 -zone.compactness_score,
                 -zone.place_count,
@@ -238,73 +223,6 @@ class RepositoryTourismZoneResearchTool:
             or region_key.startswith(f"{preferred},")
             for preferred in preferred_region_keys
         )
-
-    def _semantic_anchor_scores(
-        self,
-        places: list[Place],
-        *,
-        root_region_key: str,
-        interests: list[str],
-        requested: set[str],
-        food_focused: bool,
-        capabilities_by_id: dict[str, set[str]],
-    ) -> dict[str, float]:
-        if self.embedding_client is None or not interests:
-            return {}
-        coverage_method = getattr(self.repository, "has_place_embeddings", None)
-        rank_method = getattr(self.repository, "rank_place_ids_by_embedding", None)
-        if coverage_method is None or rank_method is None:
-            return {}
-        if not coverage_method(
-            root_region_key,
-            embedding_model=self.embedding_client.model,
-        ):
-            return {}
-        eligible_ids = [
-            str(place.id)
-            for place in places
-            if self._eligible_anchor(
-                place,
-                requested=requested,
-                food_focused=food_focused,
-                capabilities=capabilities_by_id[str(place.id)],
-            )
-        ]
-        if not eligible_ids:
-            return {}
-        query_categories = {
-            CAPABILITY_CATEGORY[capability]
-            for capability in requested
-            if capability in CAPABILITY_CATEGORY
-        }
-        graph_category = (
-            "food_drink"
-            if food_focused
-            else "attraction"
-            if requested.difference(_FOOD_CAPABILITIES)
-            else None
-        )
-        graph_expansion = self.knowledge_tool.expand(
-            interests,
-            region_key=root_region_key,
-            category=graph_category,
-        )
-        query_text = build_finder_query_text(
-            target_tags=[*interests, *graph_expansion.query_terms],
-            query_categories=query_categories,
-            region_key=root_region_key,
-        )
-        try:
-            query_embedding = self.embedding_client.embed_query(query_text)
-            ranked = rank_method(
-                eligible_ids,
-                query_embedding,
-                embedding_model=self.embedding_client.model,
-                limit=min(1_000, len(eligible_ids)),
-            )
-        except Exception:
-            return {}
-        return {place_id: similarity for place_id, similarity in ranked}
 
     def _build_zone(
         self,

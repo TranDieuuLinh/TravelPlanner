@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from uuid import uuid4
 
@@ -103,7 +105,7 @@ def test_add_item_success():
         notes="Ăn trưa ngon",
     )
 
-    result = service.add_item(plan, req)
+    result = asyncio.run(service.add_item(plan, req))
     assert result.affected_days == [1]
 
     day1 = result.plan.days[0]
@@ -118,9 +120,9 @@ def test_add_item_invalid_day():
     service = PlanMutationService()
     plan = make_sample_plan()
 
-    req = AddItemRequest(day=99, name="Invalid Day Place")
+    req = AddItemRequest(day=3, name="Invalid Day Place")
     with pytest.raises(AppError) as exc_info:
-        service.add_item(plan, req)
+        asyncio.run(service.add_item(plan, req))
     assert exc_info.value.status_code == 404
 
 
@@ -133,7 +135,14 @@ def test_update_item_success():
         notes="Đi dạo quanh hồ",
     )
 
-    result = service.update_item(plan, day_number=1, item_id="item-1-1", request=req)
+    result = asyncio.run(
+        service.update_item(
+            plan,
+            day_number=1,
+            item_id="item-1-1",
+            request=req,
+        )
+    )
     updated_item = result.plan.days[0].items[0]
     assert updated_item.name == "Hồ Gươm (Hồ Hoàn Kiếm)"
     assert updated_item.notes == "Đi dạo quanh hồ"

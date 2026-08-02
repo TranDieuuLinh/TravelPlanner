@@ -131,7 +131,7 @@ def select_day_style(
     """Pick the day style that best fits the attached places.
 
     ``area_profile_distribution`` is the per-category place count produced by
-    :class:`AreaSurveyService`. It is only consulted as a tie-breaker when
+    regional catalog statistics. It is only consulted as a tie-breaker when
     the user's selected places are empty or balanced.
     """
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from threading import Lock
+import time
 
 import httpx
 
@@ -20,6 +22,7 @@ class GeminiEmbeddingClient:
         model: str = "gemini-embedding-2",
         dimensions: int = 768,
         timeout_seconds: float = 30.0,
+        min_interval_seconds: float = 0.0,
     ) -> None:
         raw_keys = api_key.split(",") if isinstance(api_key, str) else list(api_key)
         self._api_keys = tuple(key.strip() for key in raw_keys if key.strip())
@@ -28,6 +31,11 @@ class GeminiEmbeddingClient:
         self._model = model
         self._dimensions = dimensions
         self._timeout_seconds = timeout_seconds
+        self._min_interval_seconds = max(0.0, min_interval_seconds)
+        self._key_lock = Lock()
+        self._next_key_index = 0
+        self._request_lock = Lock()
+        self._next_request_at = 0.0
 
     @property
     def model(self) -> str:
@@ -57,8 +65,9 @@ class GeminiEmbeddingClient:
             },
         }
         last_error: Exception | None = None
-        for api_key in self._api_keys:
+        for api_key in self._keys_for_request():
             try:
+                self._wait_for_request_slot()
                 response = httpx.post(
                     GEMINI_EMBED_URL.format(model=self._model),
                     headers={
@@ -80,6 +89,23 @@ class GeminiEmbeddingClient:
             except (httpx.HTTPError, KeyError, TypeError, ValueError, RuntimeError) as exc:
                 last_error = exc
         raise RuntimeError("Gemini embedding request failed for all configured keys.") from last_error
+
+    def _keys_for_request(self) -> tuple[str, ...]:
+        """Start each request at the next key while retaining full failover."""
+
+        with self._key_lock:
+            start = self._next_key_index
+            self._next_key_index = (start + 1) % len(self._api_keys)
+        return self._api_keys[start:] + self._api_keys[:start]
+
+    def _wait_for_request_slot(self) -> None:
+        if self._min_interval_seconds <= 0:
+            return
+        with self._request_lock:
+            delay = self._next_request_at - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            self._next_request_at = time.monotonic() + self._min_interval_seconds
 
 
 def _unit_normalize(vector: list[float]) -> list[float]:

@@ -20,7 +20,7 @@ from app.modules.plans.finder.candidate_selector import (
 )
 from app.modules.plans.finder.place_tool import EmptyFinderPlaceTool, FinderPlace
 from app.modules.plans.finder.skeleton_builder import DayBlock, DaySkeletonBuilder
-from app.modules.plans.finder.status_tracker import FinderStatusTracker
+from app.modules.plans.finder.status_tracker import PlanningStateTracker
 from app.modules.plans.finder.time_windows import (
     format_clock,
     format_clock_window,
@@ -97,7 +97,7 @@ def test_status_tracker_applies_and_rolls_back_activity_effects() -> None:
         {"metrics": {"physical": 80, "energy": 80}}
     )
     plan_status = FinderPlanStatus()
-    tracker = FinderStatusTracker(EmptyFinderPlaceTool())
+    tracker = PlanningStateTracker(EmptyFinderPlaceTool())
 
     tracker.apply_activity(candidate, block, user_status, plan_status)
 
@@ -132,7 +132,7 @@ def test_status_tracker_break_increments_rest_and_updates_mood() -> None:
         {"metrics": {"energy": 60, "mental": 60}}
     )
     plan_status = FinderPlanStatus()
-    tracker = FinderStatusTracker(EmptyFinderPlaceTool())
+    tracker = PlanningStateTracker(EmptyFinderPlaceTool())
 
     tracker.apply_break(user_status, plan_status, block)
 
@@ -140,6 +140,38 @@ def test_status_tracker_break_increments_rest_and_updates_mood() -> None:
     assert plan_status.trip_usage.rest_minutes == 60
     assert user_status.metrics.energy == 65
     assert user_status.metrics.mental == 63
+
+
+def test_state_tracker_rolls_back_meal_usage_and_metrics_symmetrically() -> None:
+    candidate = FinderPlace(
+        placeId="meal",
+        name="Lunch",
+        placeType="restaurant",
+        regionKey="vn,ha-noi",
+        typicalDurationMinutes=60,
+    )
+    block = DayBlock("lunch_meal", "12:00-13:00", 60, True, kind="meal")
+    user_status = UserStatus.model_validate(
+        {"metrics": {"energy": 60, "mental": 60, "satiety": 40}}
+    )
+    plan_status = FinderPlanStatus()
+    tracker = PlanningStateTracker(EmptyFinderPlaceTool())
+
+    tracker.apply_activity(candidate, block, user_status, plan_status)
+    tracker.rollback_activity(
+        candidate,
+        block,
+        user_status,
+        plan_status,
+        restore_selected=False,
+    )
+
+    assert plan_status.day_usage.rest_minutes == 0
+    assert plan_status.trip_usage.rest_minutes == 0
+    assert plan_status.day_usage.activity_minutes == 0
+    assert user_status.metrics.energy == 60
+    assert user_status.metrics.mental == 60
+    assert user_status.metrics.satiety == 40
 
 
 def test_regular_break_is_hidden_without_explicit_rest_need() -> None:
@@ -296,6 +328,79 @@ def test_main_activity_prefers_concrete_landmark_over_broad_area_label() -> None
         "Bach Ma Temple",
         "Hanoi Old Quarter",
     ]
+
+
+def test_activity_ranking_prefers_popularity_before_distance() -> None:
+    selector = CandidateSelector(EmptyFinderPlaceTool())
+    near = FinderPlace(
+        placeId="near",
+        name="Near activity",
+        placeType="museum",
+        regionKey="vn,ha-noi",
+        latitude=21.0301,
+        longitude=105.8501,
+        rating=4.2,
+        reviewCount=120,
+    )
+    popular = FinderPlace(
+        placeId="popular",
+        name="Popular activity",
+        placeType="museum",
+        regionKey="vn,ha-noi",
+        latitude=21.0800,
+        longitude=105.9000,
+        rating=4.8,
+        reviewCount=8_000,
+    )
+    user_status = UserStatus.model_validate(
+        {"location": {"latitude": 21.03, "longitude": 105.85}}
+    )
+
+    ranked = selector._rerank_activities_by_popularity(
+        [near, popular],
+        user_status,
+    )
+
+    assert [place.place_id for place in ranked] == ["popular", "near"]
+
+
+def test_meal_ranking_prefers_main_support_corridor() -> None:
+    selector = CandidateSelector(EmptyFinderPlaceTool())
+    near_main = FinderPlace(
+        placeId="near-main",
+        name="Near main",
+        placeType="restaurant",
+        regionKey="vn,ha-noi",
+        latitude=21.0301,
+        longitude=105.8501,
+    )
+    midpoint = FinderPlace(
+        placeId="midpoint",
+        name="Route midpoint",
+        placeType="restaurant",
+        regionKey="vn,ha-noi",
+        latitude=21.0400,
+        longitude=105.8600,
+    )
+    destination = FinderPlace(
+        placeId="support",
+        name="Support",
+        placeType="attraction",
+        regionKey="vn,ha-noi",
+        latitude=21.0500,
+        longitude=105.8700,
+    )
+    user_status = UserStatus.model_validate(
+        {"location": {"latitude": 21.03, "longitude": 105.85}}
+    )
+
+    ranked = selector._rerank_for_proximity(
+        [near_main, midpoint],
+        user_status,
+        corridor_destination=destination,
+    )
+
+    assert ranked[0].place_id == "midpoint"
 
 
 def test_generic_food_street_cannot_fill_attraction_activity() -> None:

@@ -304,8 +304,8 @@ def calculate_constraint_research(
             )
         ]
     else:
-        # For text mode, we would need embedding search
-        # For now, use all places (would be replaced by actual semantic search)
+        # Text mode stays inside the resolved catalog region. Knowledge Graph
+        # supplies semantic expansion before concrete Place selection.
         filtered_places = places
 
     # Interest filtering

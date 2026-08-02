@@ -165,7 +165,11 @@ def test_navigation_order_prefers_provider_time_over_geo_distance() -> None:
 def test_route_optimizer_exposes_transit_as_alternative_for_dated_trip() -> None:
     provider = FakeRouteProvider(walking_distance=1800)
     transit = FakeTransitRouteProvider()
-    optimizer = GeographicRouteOptimizer(provider, transit)
+    optimizer = GeographicRouteOptimizer(
+        provider,
+        transit,
+        transit_enabled=True,
+    )
 
     _, legs = optimizer.optimize(
         [
@@ -190,7 +194,11 @@ def test_route_optimizer_exposes_transit_as_alternative_for_dated_trip() -> None
 def test_route_optimizer_exposes_current_transit_for_undated_trip() -> None:
     provider = FakeRouteProvider(walking_distance=1800)
     transit = FakeTransitRouteProvider()
-    optimizer = GeographicRouteOptimizer(provider, transit)
+    optimizer = GeographicRouteOptimizer(
+        provider,
+        transit,
+        transit_enabled=True,
+    )
 
     _, legs = optimizer.optimize(
         [
@@ -212,7 +220,11 @@ def test_route_optimizer_exposes_current_transit_for_undated_trip() -> None:
 def test_route_optimizer_selects_transit_when_user_prefers_bus() -> None:
     provider = FakeRouteProvider(walking_distance=1800)
     transit = FakeTransitRouteProvider()
-    optimizer = GeographicRouteOptimizer(provider, transit)
+    optimizer = GeographicRouteOptimizer(
+        provider,
+        transit,
+        transit_enabled=True,
+    )
 
     _, legs = optimizer.optimize(
         [

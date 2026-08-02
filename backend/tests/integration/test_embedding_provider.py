@@ -39,3 +39,28 @@ def test_gemini_embedding_contract_and_normalization(monkeypatch) -> None:
     }
     assert vector == [0.6, 0.8, 0.0]
     assert math.isclose(sum(value * value for value in vector), 1.0)
+
+
+def test_gemini_embedding_rotates_starting_key_between_requests(monkeypatch) -> None:
+    used_keys: list[str] = []
+
+    def fake_post(url: str, **kwargs) -> httpx.Response:
+        used_keys.append(kwargs["headers"]["x-goog-api-key"])
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            request=request,
+            json={"embedding": {"values": [1.0, 0.0, 0.0]}},
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = GeminiEmbeddingClient(
+        "key-1,key-2,key-3",
+        model="gemini-embedding-2",
+        dimensions=3,
+    )
+
+    for text in ("one", "two", "three", "four"):
+        client.embed_document(text)
+
+    assert used_keys == ["key-1", "key-2", "key-3", "key-1"]

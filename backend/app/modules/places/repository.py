@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import (
     Place,
+    PlaceAmenity,
+    PlaceOpeningHour,
     PlaceRegionCatalogState,
     PlaceRegionSnapshot,
 )
@@ -168,29 +170,33 @@ class SqlAlchemyPlaceRepository:
 
     def list_places_needing_embeddings(
         self,
-        region_key: str,
+        region_key: str | None,
         *,
         embedding_model: str,
         limit: int,
     ) -> list[Place]:
-        _validate_region_key(region_key)
-        query = (
-            select(Place)
-            .where(
-                Place.deleted_at.is_(None),
-                Place.status == "active",
+        filters = [
+            Place.deleted_at.is_(None),
+            Place.status == "active",
+            or_(
+                Place.embedding.is_(None),
+                Place.embedding_model != embedding_model,
+                Place.embedding_model.is_(None),
+                Place.embedded_at.is_(None),
+                Place.embedded_at < Place.updated_at,
+            ),
+        ]
+        if region_key is not None:
+            _validate_region_key(region_key)
+            filters.append(
                 or_(
                     Place.region_key == region_key,
                     Place.region_key.like(f"{region_key},%"),
-                ),
-                or_(
-                    Place.embedding.is_(None),
-                    Place.embedding_model != embedding_model,
-                    Place.embedding_model.is_(None),
-                    Place.embedded_at.is_(None),
-                    Place.embedded_at < Place.updated_at,
-                ),
+                )
             )
+        query = (
+            select(Place)
+            .where(*filters)
             .order_by(
                 Place.review_count.desc().nullslast(),
                 Place.rating.desc().nullslast(),
@@ -199,6 +205,36 @@ class SqlAlchemyPlaceRepository:
             .limit(limit)
         )
         return list(self.session.scalars(query))
+
+    def list_amenities_for_places(
+        self,
+        place_ids: Sequence[str],
+    ) -> dict[str, list[PlaceAmenity]]:
+        grouped: dict[str, list[PlaceAmenity]] = {}
+        for place_id_chunk in _chunks(place_ids):
+            rows = self.session.scalars(
+                select(PlaceAmenity)
+                .where(PlaceAmenity.place_id.in_(place_id_chunk))
+                .order_by(PlaceAmenity.place_id, PlaceAmenity.id)
+            )
+            for row in rows:
+                grouped.setdefault(row.place_id, []).append(row)
+        return grouped
+
+    def list_opening_hours_for_places(
+        self,
+        place_ids: Sequence[str],
+    ) -> dict[str, list[PlaceOpeningHour]]:
+        grouped: dict[str, list[PlaceOpeningHour]] = {}
+        for place_id_chunk in _chunks(place_ids):
+            rows = self.session.scalars(
+                select(PlaceOpeningHour)
+                .where(PlaceOpeningHour.place_id.in_(place_id_chunk))
+                .order_by(PlaceOpeningHour.place_id, PlaceOpeningHour.day_of_week)
+            )
+            for row in rows:
+                grouped.setdefault(row.place_id, []).append(row)
+        return grouped
 
     def list_active_for_planner_research(
         self,
@@ -311,6 +347,28 @@ class SqlAlchemyPlaceRepository:
                 Place.region_key.like(f"{region_key},%"),
             )
         )
+
+    def list_active_for_destination_discovery(
+        self,
+        *,
+        limit: int = 50_000,
+    ) -> list[Place]:
+        query = (
+            select(Place)
+            .where(
+                Place.deleted_at.is_(None),
+                Place.status == "active",
+            )
+            .order_by(Place.region_key, Place.id)
+            .limit(limit)
+        )
+        return list(self.session.scalars(query))
+
+
+def _chunks(values: Sequence[str], *, size: int = 1000) -> Iterator[list[str]]:
+    unique_values = list(dict.fromkeys(values))
+    for start in range(0, len(unique_values), size):
+        yield unique_values[start : start + size]
 
 
 def _as_utc_iso(value: datetime) -> str:

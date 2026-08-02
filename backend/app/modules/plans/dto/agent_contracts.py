@@ -481,6 +481,23 @@ class PlannerNearbyRegionEvidence(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlannerKnowledgeSourceEvidence(BaseModel):
+    """A licensed source supporting one or more graph nodes."""
+
+    source_id: Annotated[str, Field(alias="sourceId")]
+    source_name: Annotated[str, Field(alias="sourceName")]
+    title: str
+    source_url: Annotated[str, Field(alias="sourceUrl")]
+    license: str
+    retrieved_at: Annotated[str, Field(alias="retrievedAt")]
+    confidence: float = Field(ge=0, le=1)
+    node_ids: Annotated[list[str], Field(alias="nodeIds")] = Field(
+        default_factory=list
+    )
+
+    model_config = {"populate_by_name": True}
+
+
 class PlannerThemeExperienceEvidence(BaseModel):
     """Knowledge-graph expansion for one proposed journey theme."""
 
@@ -501,6 +518,10 @@ class PlannerThemeExperienceEvidence(BaseModel):
     region_keys: Annotated[list[str], Field(alias="regionKeys")] = Field(
         default_factory=list
     )
+    source_evidence: Annotated[
+        list[PlannerKnowledgeSourceEvidence],
+        Field(alias="sourceEvidence"),
+    ] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
@@ -578,29 +599,6 @@ class PlannerAgentInput(BaseModel):
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
     check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
-    # === Research Tools Results ===
-    # Optional tool results that can be pre-populated before calling planner
-    region_overview: Annotated[
-        dict | None,
-        Field(
-            alias="regionOverview",
-            description="Pre-computed region overview statistics from region_overview tool"
-        )
-    ] = Field(default=None)
-    constraint_research: Annotated[
-        dict | None,
-        Field(
-            alias="constraintResearch",
-            description="Pre-computed constraint research results from constraint_research tool"
-        )
-    ] = Field(default=None)
-    festival_discovery: Annotated[
-        dict | None,
-        Field(
-            alias="festivalDiscovery",
-            description="Pre-computed festival discovery results from festival_discovery tool"
-        )
-    ] = Field(default=None)
     tourism_zones: Annotated[
         list[TourismZoneEvidence],
         Field(default_factory=list, alias="tourismZones"),

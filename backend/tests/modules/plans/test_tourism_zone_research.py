@@ -25,37 +25,6 @@ class FakeRepository:
         ][:limit]
 
 
-class FakeSemanticRepository(FakeRepository):
-    def has_place_embeddings(self, region_key: str, *, embedding_model: str) -> bool:
-        return True
-
-    def rank_place_ids_by_embedding(
-        self,
-        place_ids: list[str],
-        query_embedding: list[float],
-        *,
-        embedding_model: str,
-        limit: int,
-    ) -> list[tuple[str, float]]:
-        scores = {"local-food": 0.93, "pizza": 0.42}
-        return sorted(
-            ((place_id, scores.get(place_id, 0.0)) for place_id in place_ids),
-            key=lambda item: -item[1],
-        )[:limit]
-
-
-class FakeEmbeddingClient:
-    model = "test-embedding"
-    dimensions = 3
-
-    def embed_query(self, text: str) -> list[float]:
-        assert "traditional Hanoi food" in text
-        return [1.0, 0.0, 0.0]
-
-    def embed_document(self, text: str, *, title: str | None = None) -> list[float]:
-        return [1.0, 0.0, 0.0]
-
-
 def test_culture_research_builds_zone_around_popular_visitor_anchor() -> None:
     repository = FakeRepository(
         [
@@ -175,8 +144,8 @@ def test_natural_language_food_and_coffee_interests_use_food_anchor() -> None:
     assert zones[0].anchor_places[0].place_id == "local-food"
 
 
-def test_semantic_similarity_beats_raw_popularity_when_selecting_zone_anchor() -> None:
-    repository = FakeSemanticRepository(
+def test_popularity_selects_zone_anchor_without_embedding_runtime() -> None:
+    repository = FakeRepository(
         [
             _place(
                 "pizza",
@@ -203,15 +172,12 @@ def test_semantic_similarity_beats_raw_popularity_when_selecting_zone_anchor() -
         ]
     )
 
-    zones = RepositoryTourismZoneResearchTool(
-        repository,
-        FakeEmbeddingClient(),
-    ).research(
+    zones = RepositoryTourismZoneResearchTool(repository).research(
         root_region_key="vn,ha-noi",
         interests=["traditional Hanoi food"],
     )
 
-    assert zones[0].anchor_places[0].place_id == "local-food"
+    assert zones[0].anchor_places[0].place_id == "pizza"
 
 
 def test_explicit_old_quarter_area_beats_more_popular_unrelated_hanoi_anchor() -> None:

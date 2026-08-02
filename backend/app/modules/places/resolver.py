@@ -5,6 +5,7 @@ import json
 import os
 import re
 import signal
+import sys
 import tempfile
 import time
 import unicodedata
@@ -440,7 +441,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 encoding="utf-8",
             )
             process = await asyncio.create_subprocess_exec(
-                self.executable,
+                *self._executable_command(),
                 "-input",
                 str(input_path),
                 "-results",
@@ -483,6 +484,26 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             return _load_google_maps_output(
                 results_path.read_text(encoding="utf-8")
             )
+
+    def _executable_command(self) -> list[str]:
+        """Return a cross-platform command for binaries or Python scripts."""
+
+        if not self.executable:
+            raise ValueError("Google Maps scraper executable is missing.")
+        executable_path = Path(self.executable)
+        if executable_path.is_file():
+            try:
+                with executable_path.open("r", encoding="utf-8") as script:
+                    first_line = script.readline()
+            except (OSError, UnicodeDecodeError):
+                first_line = ""
+            if executable_path.suffix.casefold() == ".py" or (
+                os.name == "nt"
+                and first_line.startswith("#!")
+                and "python" in first_line.casefold()
+            ):
+                return [sys.executable, self.executable]
+        return [self.executable]
 
     async def _search_via_worker(
         self,

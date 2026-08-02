@@ -1,32 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from app.modules.places.model import Place
 from app.modules.places.semantic import (
     build_place_embedding_text,
     place_embedding_content_hash,
 )
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.knowledge_graph import get_default_travel_knowledge_tool
 
 
-class FakeEmbeddingClient:
-    model = "gemini-embedding-2"
-    dimensions = 3
-
-    def embed_query(self, text: str) -> list[float]:
-        assert "local food" in text
-        return [1.0, 0.0, 0.0]
-
-    def embed_document(self, text: str, *, title: str | None = None) -> list[float]:
-        return [1.0, 0.0, 0.0]
-
-
-class FakeSemanticRepository:
-    def __init__(self, places: list[Place], scores: dict[str, float]) -> None:
+class FakePlaceRepository:
+    def __init__(self, places: list[Place]) -> None:
         self.places = places
-        self.scores = scores
-        self.semantic_candidate_ids: list[str] = []
 
     def get(self, place_id: str) -> Place | None:
         return next((place for place in self.places if place.id == place_id), None)
@@ -39,32 +24,8 @@ class FakeSemanticRepository:
             or place.region_key.startswith(f"{region_key},")
         ][:limit]
 
-    def rank_place_ids_by_embedding(
-        self,
-        place_ids: Sequence[str],
-        query_embedding: list[float],
-        *,
-        embedding_model: str,
-        limit: int,
-    ) -> list[tuple[str, float]]:
-        self.semantic_candidate_ids = list(place_ids)
-        assert embedding_model == "gemini-embedding-2"
-        return sorted(
-            ((place_id, self.scores[place_id]) for place_id in place_ids),
-            key=lambda item: -item[1],
-        )[:limit]
-
-    def has_place_embeddings(
-        self,
-        region_key: str,
-        *,
-        embedding_model: str,
-    ) -> bool:
-        return True
-
-
-def test_embedding_shortlist_precedes_popularity_reranking() -> None:
-    repository = FakeSemanticRepository(
+def test_graph_terms_and_structured_evidence_precede_popularity() -> None:
+    repository = FakePlaceRepository(
         [
             _place(
                 "local-noodles",
@@ -87,14 +48,19 @@ def test_embedding_shortlist_precedes_popularity_reranking() -> None:
                 rating=4.9,
                 review_count=30_000,
             ),
-        ],
-        scores={"local-noodles": 0.91, "popular-pizza": 0.62},
+        ]
     )
-    tool = RepositoryFinderPlaceTool(repository, FakeEmbeddingClient())
+    tool = RepositoryFinderPlaceTool(repository)
+    expansion = get_default_travel_knowledge_tool().expand(
+        ["local food", "traditional Hanoi cuisine"],
+        region_key="vn,ha-noi,hoan-kiem",
+        category="food_drink",
+    )
 
     results = tool.search(
         region_key="vn,ha-noi,hoan-kiem",
-        target_tags=["local food", "traditional Hanoi cuisine"],
+        target_tags=list(expansion.query_terms),
+        target_categories=set(expansion.categories),
         excluded_place_ids=set(),
         limit=2,
     )
@@ -103,10 +69,6 @@ def test_embedding_shortlist_precedes_popularity_reranking() -> None:
         "local-noodles",
         "popular-pizza",
     ]
-    assert set(repository.semantic_candidate_ids) == {
-        "local-noodles",
-        "popular-pizza",
-    }
 
 
 def test_place_embedding_hash_changes_with_semantic_content() -> None:
@@ -123,29 +85,10 @@ def test_place_embedding_hash_changes_with_semantic_content() -> None:
     assert place_embedding_content_hash(place) != original_hash
 
 
-def test_no_embedding_coverage_uses_fallback_without_provider_call() -> None:
-    class NoCoverageRepository(FakeSemanticRepository):
-        def has_place_embeddings(
-            self,
-            region_key: str,
-            *,
-            embedding_model: str,
-        ) -> bool:
-            return False
-
-    class FailingIfCalledEmbeddingClient(FakeEmbeddingClient):
-        def embed_query(self, text: str) -> list[float]:
-            raise AssertionError("provider must not be called without vector coverage")
-
-    repository = NoCoverageRepository(
-        [_place("local", "Bún chả Hà Nội", "restaurant")],
-        scores={"local": 0.9},
-    )
-
-    results = RepositoryFinderPlaceTool(
-        repository,
-        FailingIfCalledEmbeddingClient(),
-    ).search(
+def test_place_without_description_is_retrieved_from_structured_fields() -> None:
+    place = _place("local", "Bún chả Hà Nội", "restaurant")
+    place.metadata_json.pop("description", None)
+    results = RepositoryFinderPlaceTool(FakePlaceRepository([place])).search(
         region_key="vn,ha-noi,hoan-kiem",
         target_tags=["local food"],
         excluded_place_ids=set(),

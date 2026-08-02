@@ -222,6 +222,19 @@ class RepositoryPlannerResearchTool:
                     categories=list(expansion.categories),
                     diversityGroups=list(expansion.diversity_groups),
                     regionKeys=list(expansion.region_keys),
+                    sourceEvidence=[
+                        {
+                            "sourceId": evidence.source_id,
+                            "sourceName": evidence.source_name,
+                            "title": evidence.title,
+                            "sourceUrl": evidence.source_url,
+                            "license": evidence.license,
+                            "retrievedAt": evidence.retrieved_at,
+                            "confidence": evidence.confidence,
+                            "nodeIds": list(evidence.node_ids),
+                        }
+                        for evidence in expansion.source_evidence
+                    ],
                 )
             )
             scoped_places = (

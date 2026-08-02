@@ -41,7 +41,6 @@ class Settings(BaseSettings):
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
-    finder_semantic_search_enabled: bool = True
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = Field(default=768, ge=128, le=2000)
     gemini_embedding_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)

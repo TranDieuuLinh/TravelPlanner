@@ -21,17 +21,19 @@ Explorer -> Planner -> Finder -> Check -> Main Plan
 
 ### Retrieval địa điểm của Finder
 
-Finder không dùng rating/review để tìm ứng viên từ toàn catalog. Thứ tự bắt buộc
-là `hard filters -> embedding top-K -> quality/distance rerank -> feasibility`.
-Hard filters gồm active status, region hoặc tourism-zone bbox, category và place
-đã dùng/loại trừ. Vector search chỉ nhận các place ID đã vượt qua các điều kiện
-này. Semantic similarity là tín hiệu chính; rating và số review ưu tiên địa điểm
-nổi tiếng trong nhóm đã phù hợp ý định. Khi vector chưa được backfill hoặc provider
-không khả dụng, Finder dùng lexical fallback có kiểm soát.
+Finder dùng retrieval deterministic theo thứ tự `Knowledge Graph expansion ->
+hard filters -> structured relevance/quality rerank -> feasibility`. Hard filters
+gồm active status, region hoặc tourism-zone bbox, category và Place đã dùng/loại
+trừ. Graph chuyển theme/goal thành experience query terms, category và diversity
+group. Rerank dùng type/group, tags, region, rating, review, confidence và tọa độ;
+description chỉ là evidence phụ vì catalog hiện có độ phủ mô tả thấp. Runtime
+Planner/Finder không gọi embedding provider hoặc vector search.
 
-Vector địa điểm dùng nội dung chuẩn hóa từ name, type/group, description, tags và
-địa chỉ/vùng; không đưa dữ liệu user vào document embedding. Model, content hash
-và thời điểm embedding phải được lưu để có thể phát hiện vector stale và backfill.
+Finder lấy `AreaProfile` tối giản từ snapshot thống kê vùng đã lưu, gồm phân bố
+category, bounding box, khung giờ hoạt động điển hình và mức walkability khi có
+bằng chứng. Catalog chỉ được lấy mẫu làm fallback khi snapshot chưa khả dụng.
+Rating/review, price, top-place và insight dạng văn bản không còn được Area Survey
+tính lại vì không được Finder sử dụng và đã trùng với thống kê catalog.
 
 `Confirm` là ranh giới quan trọng: claim do AI trích xuất không tự động trở thành
 yêu cầu của user.
@@ -246,18 +248,28 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 
 Finder điền item cụ thể:
 
-- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder chỉ bổ
-  sung catalog khi ngày trống hoặc số stop nguồn thấp hơn mức tối thiểu theo
-  pace (`relaxed=2`, `balanced=3`, `packed=4`);
+- tạm thời mọi ngày dùng khung cố định `breakfast -> main activity -> lunch ->
+  support activity -> dinner`, tức hai activity và ba bữa ăn;
+- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước theo sức chứa hai
+  activity/ngày; số ngày là `ceil(activity nguồn / 2)` và ngày lẻ được Finder bổ
+  sung một activity từ catalog;
 - Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
 - suggestion ưu tiên bán kính của `tourismZoneRef`; Place nổi tiếng có thể vượt
   bán kính có kiểm soát, nhưng không được làm vậy cho main activity khi
   `mainRegionLocked=true`; fallback region cha không được làm mất scope area;
-- chọn Place trước, sau đó chọn giờ khả thi trong cửa sổ mềm theo giờ hoạt động,
+- chọn toàn bộ activity của ngày trước, rồi mới chọn ba địa điểm ăn uống; bữa
+  sáng nằm gần đường tới main, bữa trưa ưu tiên hành lang main-support và bữa
+  tối gần support;
+- activity đã chọn được reserve trước khi fill meal, nên một Place không thể vừa
+  là bữa ăn vừa lặp lại ở activity phía sau; support mang chủ đề ẩm thực chỉ dùng
+  điểm ăn nhẹ như café, bakery, dessert, snack hoặc food market, không dùng nhà
+  hàng đầy đủ như một activity phụ;
+- sau khi lọc cứng theo Graph/category, region và constraint, activity được
+  rerank theo popularity kết hợp rating và số review; khoảng cách chỉ là tín
+  hiệu sau popularity;
+- sau khi chọn Place, chọn giờ khả thi trong cửa sổ mềm theo giờ hoạt động,
   route và timing claim có provenance;
-- rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
-  category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - thêm route leg, thời gian đệm và bữa ăn lõi; chỉ giữ break khi hai activity
@@ -267,9 +279,8 @@ Finder điền item cụ thể:
 - lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
   geometry, `fetchedAt`, `source=valhalla_routing`, `verified=true`, còn lỗi
   provider fallback về ước tính địa lý `verified=false`;
-- với trip có `startDate`, lấy thêm OpenTripPlanner theo giờ kết thúc stop;
-  chọn transit khi user ưu tiên bus/train, nếu không giữ làm alternative; không
-  gọi timetable hiện tại cho trip chưa có ngày;
+- tạm thời không gọi OpenTripPlanner và không tạo lựa chọn bus/transit; interface
+  provider vẫn được giữ để có thể bật lại sau;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
@@ -359,8 +370,8 @@ tuyến đường hoặc danh tính địa điểm.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
-- Mỗi ngày áp sức chứa activity theo pace: `relaxed=2`, `balanced=3`,
-  `packed=5`. Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
+- Trong khung MVP hiện tại, mỗi ngày có đúng hai activity không phụ thuộc pace.
+  Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
   khi merge địa điểm của revision cũ với intake mới; nếu duration được giữ cố
   định, phần vượt sức chứa phải vào `UnscheduledPlace`.
 - `timeWindow` phải nằm trọn trong một ngày địa phương. Sau khi cộng thời gian
