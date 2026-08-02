@@ -13,8 +13,11 @@ model/migration với schema mục tiêu chưa triển khai.
 | `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
 | `explorer_intakes` | Implemented | Identity của từng lần Explorer xử lý input, migration `20260730_0012` |
-| `user_must_place` | Implemented | Candidate, attributes và dữ liệu resolve đầy đủ theo `intakeId`, migrations `20260728_0004` và `20260729_0007` |
+| `user_must_place` | Implemented | Snapshot URL/place dùng chung, place-shaped + `source_url` + `notes` |
+| `user_must_place_users` | Implemented | Junction nhiều-nhiều giữa snapshot, user và Explorer intake |
+| `url_extraction_cache` | Implemented | `ExtractedContext` chuẩn hóa dùng chung theo canonical URL |
 | `trip_chat_plan_revisions` | Implemented | Snapshot plan/Explorer bất biến và `intake_id` tạo revision, migrations `20260730_0011` và `20260730_0012` |
+| `url_import_jobs.explorer_timing`, `url_import_jobs.planner_timing` | Implemented | Snapshot timing riêng cho từng URL job, migration `20260801_0024` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
 | `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
 | `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
@@ -102,16 +105,17 @@ kiện ghi vào `user_must_place`.
 
 ### `user_must_place`
 
-Lưu candidate đã resolve tới địa điểm cụ thể có đủ latitude/longitude theo chế
-độ không hỏi lại user. Candidate provisional/unresolved, thiếu tọa độ hoặc match
-rộng tới thành phố/quốc gia không được ghi vào bảng này. Bảng tham chiếu
-`explorer_intakes` nhưng không có FK hoặc thao tác ghi sang `places`.
+Lưu snapshot dùng chung của candidate đã resolve tới địa điểm cụ thể có đủ
+latitude/longitude. Candidate provisional/unresolved, thiếu tọa độ hoặc match
+rộng không được ghi. Snapshot có các field tương ứng `places`, thêm
+`source_url`, `notes` và `place_id` nullable. Các field provenance/itinerary cũ
+được giữ để tương thích. Ownership nằm ở `user_must_place_users`, không còn phụ
+thuộc vòng đời intake đầu tiên.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid/string PK | Opaque ID |
-| `intake_id` | FK `explorer_intakes.id` | Correlation ID trả cùng Explorer JSON |
-| `user_id` | varchar, nullable | Khóa owner trả cùng response; Finder query cùng `intake_id` |
+| `intake_id`, `user_id` | varchar, nullable | Legacy compatibility; ownership mới nằm ở junction table |
 | `destination` | varchar | Điểm đến của intake |
 | `candidate_key` | varchar | Khóa gộp trùng trong intake |
 | `candidate_name` | varchar | Tên được trích xuất |
@@ -132,8 +136,26 @@ rộng tới thành phố/quốc gia không được ghi vào bảng này. Bản
 | `fetched_at` | timestamptz, nullable | Độ mới dữ liệu |
 | `attribution` | text, nullable | Attribution của provider |
 | `resolution_status` | varchar | Schema giữ giá trị lịch sử; runtime mới chỉ ghi `resolved` |
+| `place_id` | FK `places.id`, nullable | Catalog identity khi resolver match DB nội bộ |
+| `name`, `place_type`, `region_key`, `status` | varchar, nullable | Các field identity tương ứng `places` |
+| `opening_hours` | json | Giờ mở cửa đã chuẩn hóa, mặc định `[]` |
+| `typical_duration_minutes` | integer, nullable | Thời lượng từ catalog/provider/source |
+| `source_platform`, `source_link`, `source_url` | varchar/text, nullable | Provider và canonical URL nguồn |
+| `plus_code`, `rating`, `review_count` | nullable | Snapshot field tương ứng `places` |
+| `source_fetched_at`, `revision`, `metadata`, `deleted_at` | mixed | Freshness, version, metadata chuẩn hóa và soft delete |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+
+### `user_must_place_users`
+
+Junction table gồm `user_must_place_id`, `user_id`, `intake_id` và
+`created_at`. Unique theo `(intake_id, user_must_place_id)`.
+
+### `url_extraction_cache`
+
+Khóa chính `source_url` là canonical URL. Bảng giữ `platform`, JSON
+`extracted_context`, `fetched_at`, `updated_at`; không giữ media, frame, raw
+payload hoặc toàn bộ transcript.
 
 ### `place_external_refs`
 

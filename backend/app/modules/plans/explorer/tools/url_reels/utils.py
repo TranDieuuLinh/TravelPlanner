@@ -61,11 +61,23 @@ def extract_youtube_video_id(url: str) -> str | None:
 
 
 def detect_platform(url: str) -> str:
-    host = urlsplit(url).netloc.lower()
-    if "tiktok.com" in host:
+    parts = urlsplit(url)
+    host = parts.netloc.lower().split(":", 1)[0].removeprefix("www.")
+    if host == "tiktok.com" or host.endswith(".tiktok.com"):
         return "tiktok"
-    if "instagram.com" in host:
+    if host == "instagram.com" or host.endswith(".instagram.com"):
         return "instagram"
-    if "youtube.com" in host or "youtu.be" in host:
+    if host == "youtube.com" or host.endswith(".youtube.com"):
+        path_parts = parts.path.strip("/").split("/")
+        if len(path_parts) >= 2 and path_parts[0].casefold() == "shorts":
+            return "youtube_shorts"
         return "youtube"
+    if host == "youtu.be":
+        return "youtube"
+    if (
+        host in {"facebook.com", "fb.com", "fb.watch"}
+        or host.endswith(".facebook.com")
+        or host.endswith(".fb.com")
+    ):
+        return "facebook"
     return "unknown"

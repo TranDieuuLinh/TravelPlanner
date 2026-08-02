@@ -1,7 +1,8 @@
-# ADR-009: Caption-first transcript cho YouTube
+# ADR-009: Caption-only transcript cho YouTube long-form
 
 - Trạng thái: Accepted
 - Ngày: 2026-07-31
+- Cập nhật: 2026-08-01
 
 ## Bối cảnh
 
@@ -16,31 +17,42 @@ theo IP hoặc thay đổi mà không báo trước, nên không thể là đư�
 
 ## Quyết định
 
-1. URL YouTube hợp lệ thử caption bằng `youtube-transcript-api` trước, ưu tiên
-   danh sách ngôn ngữ của intake và fallback sang caption khả dụng đầu tiên.
-2. Caption rỗng, bị tắt, không tồn tại, video không truy cập được hoặc request bị
-   chặn đều trả quyền điều khiển về pipeline hiện có:
-   `yt-dlp -> ffmpeg -> Gemini Audio STT`.
-3. Khi caption thành công, không tải video và không gọi Gemini STT/frame vision.
-   Kết quả ghi `speechToText.source=youtube_captions`; fallback Gemini ghi
-   `source=gemini_audio`.
-4. Media chỉ nằm trong thư mục tạm và bị xóa sau request như trước.
-5. Gemini STT fallback mặc định một request đồng thời và khoảng cách khởi chạy
-   sáu giây trong mỗi tiến trình. `429` dùng `Retry-After` với trần 60 giây.
-   Concurrency có thể cấu hình tăng sau khi operator xác minh quota project.
+1. URL YouTube long-form hợp lệ kiểm tra cache PostgreSQL theo
+   `videoId + language`, sau đó
+   thử caption bằng `youtube-transcript-api`, ưu tiên danh sách ngôn ngữ của
+   intake và fallback sang caption khả dụng đầu tiên. Caption thành công được
+   cache dài hạn; lỗi provider không được cache.
+2. Request provider được giới hạn nhịp và request đồng thời cho cùng video được
+   dedupe trong mỗi process. Nếu IP backend bị chặn hoặc provider unavailable,
+   runtime có thể gọi HTTP transcript worker do operator tự vận hành trên kết
+   nối dân dụng, xác thực bằng shared bearer token. Worker chỉ nhận video ID và
+   language list; không nhận cookie người dùng.
+3. `no_captions` của YouTube long-form trả HTTP 422
+   `YOUTUBE_CAPTIONS_NOT_FOUND`. `blocked` và
+   `unavailable` trả lỗi retryable `YOUTUBE_CAPTIONS_UNAVAILABLE` sau worker.
+   Không trạng thái nào tải YouTube media hoặc gọi audio STT.
+4. Khi caption long-form thành công, không tải video và không gọi Gemini
+   STT/frame vision.
+   Kết quả ghi `speechToText.source=youtube_captions`; cache hit ghi
+   `source=youtube_captions_cache`.
+5. URL YouTube có path `/shorts/{videoId}` được nhận diện là
+   `youtube_shorts` và dùng pipeline media ngắn hiện có: audio STT song song với
+   sampled-frame vision/OCR. URL `youtu.be/{videoId}` không mang tín hiệu Shorts
+   nên được xử lý như YouTube long-form caption-only.
 6. Không tự động cấu hình proxy hoặc cookie để vượt giới hạn truy cập của
    YouTube. Nội dung private, age-restricted hoặc cần đăng nhập vẫn được coi là
-   unavailable và dùng fallback hợp lệ/manual input.
+   unavailable và trả lỗi retryable.
 
 ## Hệ quả
 
-- Video có caption không dùng quota Gemini STT và không cần download media.
+- YouTube long-form không dùng quota Gemini STT và không download media;
+  YouTube Shorts dùng cùng quota và media pipeline với các Reel khác.
 - Caption YouTube không có structured travel observations; Extractor chỉ dùng
-  nó như transcript evidence. Structured observations vẫn đến từ Gemini khi
-  chạy audio fallback.
-- Video có thông tin chỉ xuất hiện trên hình có thể cần screenshot do user tải
-  lên khi caption-first đã đủ để bỏ qua media.
-- Limiter là trong từng process. Triển khai nhiều worker cần limiter phân tán
+  nó như transcript evidence.
+- Video không có caption hoặc có thông tin chỉ xuất hiện trên hình không được
+  import qua URL YouTube trong contract này.
+- Cache caption dùng bảng `youtube_transcript_cache`.
+- Limiter/dedupe là trong từng process. Triển khai nhiều worker cần limiter phân tán
   hoặc quota gateway nếu cần đảm bảo RPM toàn hệ thống.
 - Cần theo dõi version `youtube-transcript-api` vì connector phụ thuộc endpoint
   web không được YouTube cam kết ổn định.

@@ -167,6 +167,45 @@ class UnifiedPlaceCandidate(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PlaceCandidateReview(BaseModel):
+    candidate_id: Annotated[str, Field(alias="candidateId")]
+    name: str
+    category: ItineraryItemCategory = ItineraryItemCategory.other
+    status: Literal["resolved", "needs_review", "merged", "ignored"]
+    resolution_reason: Annotated[
+        str | None,
+        Field(default=None, alias="resolutionReason"),
+    ]
+    provider: str | None = None
+    resolved_name: Annotated[
+        str | None,
+        Field(default=None, alias="resolvedName"),
+    ]
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    search_region: Annotated[
+        str | None,
+        Field(default=None, alias="searchRegion"),
+    ]
+    source_urls: Annotated[
+        list[str],
+        Field(default_factory=list, alias="sourceUrls"),
+    ]
+    source_order: Annotated[
+        int | None,
+        Field(default=None, ge=1, alias="sourceOrder"),
+    ]
+    source_day: Annotated[
+        int | None,
+        Field(default=None, ge=1, le=30, alias="sourceDay"),
+    ]
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    retryable: bool = True
+
+    model_config = {"populate_by_name": True}
+
+
 class ExplorerContextResponse(BaseModel):
     mode: Literal["confirmed", "vague", "partial", "anchor"] = "confirmed"
     intent: PlanningIntent
@@ -187,6 +226,10 @@ class ExplorerContextResponse(BaseModel):
     preference_snapshot: Annotated[
         PreferenceSnapshot,
         Field(default_factory=PreferenceSnapshot, alias="preferenceSnapshot"),
+    ]
+    candidate_reviews: Annotated[
+        list[PlaceCandidateReview],
+        Field(default_factory=list, alias="candidateReviews"),
     ]
     trace: dict[str, Any] = Field(default_factory=dict)
 
@@ -222,6 +265,14 @@ class ExplorerSourceTiming(BaseModel):
     source_index: Annotated[int, Field(alias="sourceIndex")]
     platform: str
     total_seconds: Annotated[float, Field(alias="totalSeconds")]
+    cache_status: Annotated[
+        str,
+        Field(default="unknown", alias="cacheStatus"),
+    ]
+    cache_lookup_seconds: Annotated[
+        float,
+        Field(default=0.0, alias="cacheLookupSeconds"),
+    ]
     stages: list[ExplorerTimingStage] = Field(default_factory=list)
     sampled_frames: Annotated[int, Field(default=0, alias="sampledFrames")]
     speech_status: Annotated[str, Field(alias="speechStatus")]

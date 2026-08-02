@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_user, require_csrf
 from app.modules.plans.chat_repository import TripChatRepository
-from app.modules.plans.chat_schema import TripChatCreate, TripChatRead, TripChatSummaryRead
+from app.modules.plans.chat_schema import (
+    RetryCandidateResolutionsRequest,
+    TripChatCreate,
+    TripChatRead,
+    TripChatSummaryRead,
+)
 from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
@@ -29,7 +34,7 @@ def get_trip_chat_service(
     return TripChatService(
         TripChatRepository(db),
         get_plan_service(db),
-        get_plan_mutation_service(),
+        get_plan_mutation_service(db),
     )
 
 
@@ -115,6 +120,23 @@ async def amend_trip_chat(
             payload.clear_data()
 
 
+@router.post(
+    "/{chat_id}/candidate-resolutions/retry",
+    response_model=TripChatRead,
+)
+async def retry_trip_chat_candidate_resolutions(
+    chat_id: str,
+    payload: RetryCandidateResolutionsRequest,
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return await service.retry_candidate_resolutions(
+        chat_id,
+        current_user,
+        expected_revision=payload.expected_revision,
+    )
+
+
 @router.post("/{chat_id}/plan/items", response_model=TripChatRead)
 async def add_trip_chat_item(
     chat_id: str,
@@ -173,8 +195,8 @@ def remove_trip_chat_item(
 def reorder_trip_chat_items(
     chat_id: str,
     day: int,
-    payload: ReorderItemsRequest,
     expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    item_ids: Annotated[list[str], Form(alias="itemIds")],
     service: Annotated[TripChatService, Depends(get_trip_chat_service)],
     current_user: Annotated[User, Depends(require_csrf)],
 ) -> TripChatRead:
@@ -183,6 +205,5 @@ def reorder_trip_chat_items(
         current_user,
         expected_revision=expected_revision,
         day=day,
-        payload=payload,
+        payload=ReorderItemsRequest(itemIds=item_ids),
     )
-

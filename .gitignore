@@ -17,6 +17,7 @@ coverage/
 *.db*
 *.sqlite3
 backend/var/*.jsonl
+backend/var/user-post-media/
 backend/.runlogs/
 
 auto-crawl/

@@ -166,6 +166,25 @@ export type PreferenceSnapshot = {
   effectiveProfile: LongTermPreferenceProfile;
 };
 
+export type PlaceCandidateReview = {
+  candidateId: string;
+  name: string;
+  category: PlaceCategory;
+  status: "resolved" | "needs_review" | "merged" | "ignored";
+  resolutionReason?: string | null;
+  provider?: string | null;
+  resolvedName?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  searchRegion?: string | null;
+  sourceUrls: string[];
+  sourceOrder?: number | null;
+  sourceDay?: number | null;
+  confidence: number;
+  retryable: boolean;
+};
+
 export type ExplorerContext = {
   intent: {
     destination: string;
@@ -175,6 +194,13 @@ export type ExplorerContext = {
     mustVisitPlaces: string[];
     avoidPlaces: string[];
     constraints: string[];
+    destinationStays?: Array<{
+      name: string;
+      durationDays: number;
+      startDay: number;
+      endDay: number;
+      sourceRefs: string[];
+    }>;
     clarifyingQuestions: string[];
   };
   tripSpec: {
@@ -193,6 +219,18 @@ export type ExplorerContext = {
   assumptions: string[];
   missingInfoQuestions: string[];
   preferenceSnapshot: PreferenceSnapshot;
+  candidateReviews?: PlaceCandidateReview[];
+  trace?: {
+    destinationGuardrail?: {
+      status: "matched" | "corrected";
+      authority: "url_evidence";
+      requestedDestination: string;
+      sourceDestination: string;
+      supportingStopCount: number;
+      locatedStopCount: number;
+    };
+    [key: string]: unknown;
+  };
 };
 
 export type ExplorePlace = {
@@ -230,6 +268,8 @@ export type ExplorerSourceTiming = {
   sourceIndex: number;
   platform: string;
   totalSeconds: number;
+  cacheStatus?: "hit" | "miss" | "bypassed" | "unknown";
+  cacheLookupSeconds?: number;
   stages: ExplorerTimingStage[];
   sampledFrames: number;
   speechStatus: string;
@@ -315,12 +355,33 @@ export type TripChatSummary = {
 };
 
 export type TripChat = TripChatSummary & {
+  currentIntakeId?: string | null;
   currentPlan: TravelPlan | null;
   currentExplorer: ExplorerContext | null;
   latestExplorerTiming?: ExplorerTimingReport | null;
   latestPlannerTiming?: PlanTimingReport | null;
   messages: TripChatMessage[];
 };
+
+export type UrlImportJob = {
+  id: string;
+  chatId: string;
+  url: string;
+  forceRefresh: boolean;
+  status: "queued" | "running" | "succeeded" | "failed";
+  queuePosition: number | null;
+  attemptCount: number;
+  resultRevision: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  explorerTiming: ExplorerTimingReport | null;
+  plannerTiming: PlanTimingReport | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type UrlImportJobBatch = { jobs: UrlImportJob[] };
 
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
   return apiFetch<TravelPlan>("/plans/main", {
@@ -344,19 +405,21 @@ export async function exploreFullIntake(input: {
   rawRequest: string;
   urls?: string[];
   images?: File[];
-}): Promise<ExploreResponse> {
+  forceRefresh?: boolean;
+}, signal?: AbortSignal): Promise<ExploreResponse> {
   const form = new FormData();
   form.append("rawRequest", input.rawRequest);
+  form.append("forceRefresh", String(input.forceRefresh ?? false));
   for (const url of input.urls ?? []) {
     form.append("urls", url);
   }
   for (const image of input.images ?? []) {
     form.append("images", image);
   }
-
   return apiFetch<ExploreResponse>("/plans/explore/full/intake", {
     method: "POST",
-    body: form
+    body: form,
+    signal
   });
 }
 
@@ -411,6 +474,7 @@ export async function createPlanFromExplorer(input: {
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
   allowFinderSuggestions?: boolean;
+  signal?: AbortSignal;
 }): Promise<PlanGenerationResult> {
   const selectedPlaces = input.selectedPlaces ?? [];
 
@@ -418,6 +482,7 @@ export async function createPlanFromExplorer(input: {
     "/plans/main/from-explorer",
     {
     method: "POST",
+    signal: input.signal,
     body: JSON.stringify({
       intent: input.context.intent,
       tripSpec: input.context.tripSpec,
@@ -506,8 +571,62 @@ export async function amendTripChat(input: {
   });
 }
 
+export async function retryTripChatCandidateResolutions(input: {
+  chatId: string;
+  expectedRevision: number;
+}): Promise<TripChat> {
+  return apiFetch<TripChat>(
+    `/trip-chats/${input.chatId}/candidate-resolutions/retry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision: input.expectedRevision })
+    }
+  );
+}
+
+export async function enqueueTripChatUrls(input: {
+  chatId: string;
+  content: string;
+  expectedRevision: number;
+  urls: string[];
+  forceRefresh?: boolean;
+}): Promise<UrlImportJobBatch> {
+  const form = new FormData();
+  form.append("content", input.content);
+  form.append("expectedRevision", String(input.expectedRevision));
+  for (const url of input.urls) form.append("urls", url);
+  form.append("forceRefresh", String(input.forceRefresh ?? false));
+  return apiFetch<UrlImportJobBatch>(`/trip-chats/${input.chatId}/url-jobs`, {
+    method: "POST",
+    body: form
+  });
+}
+
+export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
+  return apiFetch<UrlImportJobBatch>("/url-import-jobs");
+}
+
+export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {
+  return apiFetch<UrlImportJob>(`/url-import-jobs/${jobId}/retry`, {
+    method: "POST"
+  });
+}
+
+export async function reprocessUrlImportJob(jobId: string): Promise<UrlImportJob> {
+  return apiFetch<UrlImportJob>(`/url-import-jobs/${jobId}/reprocess`, {
+    method: "POST"
+  });
+}
+
+export async function deleteUrlImportJob(jobId: string): Promise<void> {
+  return apiFetch<void>(`/url-import-jobs/${jobId}`, {
+    method: "DELETE"
+  });
+}
+
 export type AddItemInput = {
   day: number;
+  placeId?: string | null;
   name: string;
   address?: string | null;
   placeType?: string;
@@ -521,6 +640,7 @@ export type AddItemInput = {
 };
 
 export type UpdateItemInput = {
+  placeId?: string | null;
   name?: string | null;
   address?: string | null;
   placeType?: string | null;
@@ -540,6 +660,7 @@ export async function addTripChatItem(input: {
   const form = new FormData();
   form.append("expectedRevision", String(input.expectedRevision));
   form.append("day", String(input.item.day));
+  if (input.item.placeId) form.append("placeId", input.item.placeId);
   form.append("name", input.item.name);
   if (input.item.address) form.append("address", input.item.address);
   if (input.item.placeType) form.append("placeType", input.item.placeType);
@@ -564,11 +685,14 @@ export async function updateTripChatItem(input: {
 }): Promise<TripChat> {
   const form = new FormData();
   form.append("expectedRevision", String(input.expectedRevision));
+  if (input.item.placeId !== undefined) form.append("placeId", input.item.placeId || "");
   if (input.item.name) form.append("name", input.item.name);
   if (input.item.address !== undefined) form.append("address", input.item.address || "");
   if (input.item.placeType) form.append("placeType", input.item.placeType);
   if (input.item.timeWindow !== undefined) form.append("timeWindow", input.item.timeWindow || "");
   if (input.item.durationMinutes != null) form.append("durationMinutes", String(input.item.durationMinutes));
+  if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
+  if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.notes !== undefined) form.append("notes", input.item.notes || "");
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
@@ -623,4 +747,3 @@ export async function reorderTripChatItem(input: {
     body: form
   });
 }
-

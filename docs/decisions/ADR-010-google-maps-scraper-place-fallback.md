@@ -18,19 +18,25 @@ hành.
 
 ## Quyết định
 
-- Giữ thứ tự resolve:
-  `places DB -> Nominatim -> google-maps-scraper (nếu cấu hình)`.
-  Nominatim được ưu tiên vì HTTP lookup nhẹ hơn; Playwright chỉ khởi
-  động cho candidate mà hai nguồn trước không resolve được.
+- Thứ tự resolve hiện hành là:
+  `shared URL/place cache -> places DB -> google-maps-scraper (nếu cấu hình)
+  -> Nominatim`.
+  Cache dùng snapshot đã chuẩn hóa, không dùng lại payload thô. Playwright được
+  ưu tiên sau catalog nội bộ để thu thập snapshot Google Maps đầy đủ hơn;
+  Nominatim là fallback cuối khi scraper không resolve được.
 - Gọi trực tiếp executable `google-maps-scraper`; không dùng API key.
-- Ghi tên gốc và tối đa số alias đã cấu hình vào file input tạm, luôn kèm
-  `searchRegion` và address hint khi có; đọc JSON output rồi xóa thư mục tạm.
+- Tra tên gốc trước, luôn kèm `searchRegion` và address hint khi có. Chỉ khi
+  kết quả đầu chưa đạt rule xác minh mới ghi tối đa số alias đã cấu hình vào
+  job tiếp theo; đọc JSON output rồi xóa thư mục tạm.
 - Chạy subprocess không qua shell, giới hạn concurrency/depth và kill process
   khi vượt timeout. Telemetry của CLI được tắt.
 - Chỉ trả `resolved` khi kết quả khớp tên, không lệch vùng/category rõ ràng và
   có tọa độ trong miền hợp lệ.
 - Chuẩn hóa output vào `PlaceResolution`; không đưa payload thô của scraper vào
   domain hoặc log.
+- Worker Playwright thu thập các field tóm tắt đang hiển thị mà không mở review
+  feed: rating, tổng số review, giờ mở cửa, plus code, website, điện thoại và mô
+  tả. Field thiếu được để null; nội dung từng review không thuộc place resolver.
 - Chấp nhận cả field `longitude` hiện tại và field legacy `longtitude` của
   upstream để tương thích version.
 - Thiếu binary, timeout, process lỗi hoặc kết quả mismatch không làm hỏng
@@ -62,9 +68,8 @@ kiểm tra RAM, throttling và CAPTCHA.
 
 - Có thêm nguồn tọa độ cho alias địa phương mà không làm `PlaceResolver` phụ
   thuộc payload Google Maps.
-- Candidate Nominatim resolve được không còn chịu timeout khởi động
-  Playwright. Resolve vẫn có thể chậm cho các alias chỉ Google Maps tìm thấy;
-  timeout bảo vệ request Explorer.
+- Cache hit và catalog hit không khởi động Playwright. Cache miss có thể chậm
+  hơn vì Google Maps chạy trước Nominatim; timeout vẫn bảo vệ request Explorer.
 - Operator chịu trách nhiệm tự host, quota/tài nguyên, proxy nếu cần, review
   điều khoản sử dụng, attribution và retention trước khi bật provider.
 - Dữ liệu scrape không được mặc nhiên xem là chính xác; rule match và freshness

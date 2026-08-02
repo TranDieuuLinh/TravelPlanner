@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 
 from app.modules.plans.chat_model import TripChat
 from app.modules.plans.chat_repository import TripChatRepository
@@ -11,6 +12,7 @@ from app.modules.plans.explorer.schema import (
     ExploreTripSpecInput,
     ExplorerContextResponse,
     ExplorerTimingReport,
+    PlaceCandidateReview,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.plan_mutation_schema import (
@@ -63,6 +65,7 @@ class TripChatService:
         initial_destination: str,
         urls: list[str],
         images: list[ImageUploadPayload],
+        force_url_refresh: bool = False,
     ) -> TripChatRead:
         if not content.strip():
             raise AppError(
@@ -85,7 +88,7 @@ class TripChatService:
             else None
         )
         current_explorer = (
-            ExplorerContextResponse.model_validate(chat.current_explorer)
+            self._explorer_with_revision_sources(chat)
             if chat.current_explorer is not None
             else None
         )
@@ -123,7 +126,13 @@ class TripChatService:
             images=images,
             trip_spec=trip_spec,
             user_state=user_state,
+            force_url_refresh=force_url_refresh,
         )
+        if current_explorer is not None:
+            explore.explorer.candidate_reviews = _merge_candidate_reviews(
+                current_explorer.candidate_reviews,
+                explore.explorer.candidate_reviews,
+            )
         next_plan, planner_timing = await (
             self.plan_service.create_main_plan_from_explorer_with_timing(
                 MainPlanFromExplorerCreate(
@@ -131,7 +140,14 @@ class TripChatService:
                     tripSpec=explore.explorer.trip_spec,
                     intakeId=explore.intake_id,
                     userId=str(user.id),
-                    selectedPlaces=self._selected_places_from(current_plan),
+                    selectedPlaces=self._selected_places_from(
+                        current_plan,
+                        (
+                            current_explorer.candidate_reviews
+                            if current_explorer is not None
+                            else []
+                        ),
+                    ),
                     preferenceProfile=(
                         explore.explorer.preference_snapshot.effective_profile
                     ),
@@ -158,10 +174,21 @@ class TripChatService:
         saved = self.repository.save_revision(
             chat,
             user_content=content,
-            attachment_names=[image.file_name for image in images],
+            attachment_names=[
+                *[image.file_name for image in images],
+            ],
             assistant_content=assistant_content,
             plan_payload=next_plan.model_dump(mode="json", by_alias=True),
             explorer_payload=explore.explorer.model_dump(mode="json", by_alias=True),
+            explorer_timing_payload=(
+                explore.timing_report.model_dump(mode="json", by_alias=True)
+                if explore.timing_report is not None
+                else None
+            ),
+            planner_timing_payload=planner_timing.model_dump(
+                mode="json",
+                by_alias=True,
+            ),
             intake_id=explore.intake_id,
             destination=explore.explorer.intent.destination,
             title=title,
@@ -205,10 +232,14 @@ class TripChatService:
             f"Latest user amendment: {content}"
         )
 
-    def _selected_places_from(self, plan: Plan | None) -> list[SelectedPlaceCreate]:
+    def _selected_places_from(
+        self,
+        plan: Plan | None,
+        candidate_reviews: list[PlaceCandidateReview] | None = None,
+    ) -> list[SelectedPlaceCreate]:
         if plan is None:
             return []
-        return [
+        scheduled = [
             SelectedPlaceCreate(
                 name=item.name,
                 placeId=item.place_id,
@@ -236,8 +267,22 @@ class TripChatService:
             )
             for day in plan.days
             for item in day.items
+            # Finder output is disposable and must not become user intent on
+            # the next URL revision. Otherwise suggestions accumulate across
+            # generations and consume the requested trip capacity.
             if item.place_type not in {"break", "free_time"}
+            and item.source in {"selected_place", "manual"}
         ]
+        # A previous URL revision may have put a resolved source place in
+        # UnscheduledPlace. Rehydrate it from Explorer provenance so the next
+        # URL revision cannot silently lose it; PlanService will expand days
+        # and dedupe it against already scheduled items.
+        resolved_url_places = [
+            _selected_place_from_review(review)
+            for review in (candidate_reviews or [])
+            if review.status == "resolved" and review.source_urls
+        ]
+        return [*scheduled, *resolved_url_places]
 
     def _title(self, chat: TripChat, explore: ExploreIntakeResponse) -> str:
         if chat.title != "Chuyến đi mới":
@@ -262,6 +307,17 @@ class TripChatService:
         latest_timing: ExplorerTimingReport | None = None,
         latest_planner_timing: PlanTimingReport | None = None,
     ) -> TripChatRead:
+        if latest_timing is None and chat.latest_explorer_timing is not None:
+            latest_timing = ExplorerTimingReport.model_validate(
+                chat.latest_explorer_timing
+            )
+        if (
+            latest_planner_timing is None
+            and chat.latest_planner_timing is not None
+        ):
+            latest_planner_timing = PlanTimingReport.model_validate(
+                chat.latest_planner_timing
+            )
         summary = self._summary(chat)
         return TripChatRead(
             **summary.model_dump(),
@@ -270,15 +326,129 @@ class TripChatService:
                 if chat.current_plan is not None
                 else None
             ),
-            currentExplorer=(
-                ExplorerContextResponse.model_validate(chat.current_explorer)
-                if chat.current_explorer is not None
-                else None
-            ),
+            currentIntakeId=chat.current_intake_id,
+            currentExplorer=self._explorer_with_revision_sources(chat),
             latestExplorerTiming=latest_timing,
             latestPlannerTiming=latest_planner_timing,
             messages=chat.messages,
         )
+
+    def _explorer_with_revision_sources(
+        self,
+        chat: TripChat,
+    ) -> ExplorerContextResponse | None:
+        if chat.current_explorer is None:
+            return None
+        current = ExplorerContextResponse.model_validate(chat.current_explorer)
+        reviews: list[PlaceCandidateReview] = []
+        for revision in chat.plan_revisions:
+            revision_explorer = ExplorerContextResponse.model_validate(
+                revision.explorer_payload
+            )
+            reviews = _merge_candidate_reviews(
+                reviews,
+                revision_explorer.candidate_reviews,
+            )
+        reviews = _merge_candidate_reviews(reviews, current.candidate_reviews)
+        return current.model_copy(update={"candidate_reviews": reviews})
+
+    async def retry_candidate_resolutions(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại trước khi thử lại địa điểm.",
+            )
+        if chat.current_explorer is None or chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_EXPLORER",
+                "Chưa có kết quả Explorer để thử resolve lại.",
+            )
+        explorer = ExplorerContextResponse.model_validate(chat.current_explorer)
+        pending_before = {
+            review.candidate_id
+            for review in explorer.candidate_reviews
+            if review.status == "needs_review"
+        }
+        if not pending_before:
+            raise AppError(
+                409,
+                "NO_CANDIDATES_TO_RETRY",
+                "Không còn địa điểm nào cần resolve lại.",
+            )
+        reviews = await self.plan_service.retry_candidate_reviews(
+            explorer.candidate_reviews,
+            destination=explorer.intent.destination,
+        )
+        newly_resolved = [
+            review
+            for review in reviews
+            if review.candidate_id in pending_before
+            and review.status == "resolved"
+        ]
+        updated_explorer = explorer.model_copy(
+            update={"candidate_reviews": reviews}
+        )
+        current_plan = Plan.model_validate(chat.current_plan)
+        next_plan = current_plan
+        planner_timing: PlanTimingReport | None = None
+        if newly_resolved:
+            selected_places = [
+                *self._selected_places_from(current_plan),
+                *[_selected_place_from_review(review) for review in newly_resolved],
+            ]
+            next_plan, planner_timing = await (
+                self.plan_service.create_main_plan_from_explorer_with_timing(
+                    MainPlanFromExplorerCreate(
+                        intent=updated_explorer.intent,
+                        tripSpec=updated_explorer.trip_spec,
+                        intakeId=chat.current_intake_id,
+                        userId=str(user.id),
+                        selectedPlaces=selected_places,
+                        preferenceProfile=(
+                            updated_explorer.preference_snapshot.effective_profile
+                        ),
+                        allowFinderSuggestions=not any(
+                            review.source_urls for review in reviews
+                        ),
+                    )
+                )
+            )
+            next_plan = next_plan.model_copy(update={"id": current_plan.id})
+            self.plan_service.repository.save(next_plan)
+
+        revision = chat.revision + 1
+        still_pending = sum(
+            review.status == "needs_review" for review in reviews
+        )
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=(
+                f"Đã xác minh thêm {len(newly_resolved)} địa điểm; "
+                f"còn {still_pending} địa điểm cần xem lại "
+                f"(bản sửa đổi {revision}). Video, STT và OCR không chạy lại."
+            ),
+            plan_payload=next_plan.model_dump(mode="json", by_alias=True),
+            explorer_payload=updated_explorer.model_dump(
+                mode="json",
+                by_alias=True,
+            ),
+            planner_timing_payload=(
+                planner_timing.model_dump(mode="json", by_alias=True)
+                if planner_timing is not None
+                else None
+            ),
+            revision=revision,
+        )
+        return self._read(saved)
 
     async def add_item(
         self,
@@ -431,6 +601,98 @@ def _explicit_day_count(content: str) -> int | None:
     return int(match.group(1)) if match is not None else None
 
 
+def _merge_candidate_reviews(
+    current: list[PlaceCandidateReview],
+    incoming: list[PlaceCandidateReview],
+) -> list[PlaceCandidateReview]:
+    """Keep candidate provenance across sequential URL import jobs."""
+    merged = [review.model_copy(deep=True) for review in current]
+    for next_review in incoming:
+        matching_index = next(
+            (
+                index
+                for index, saved_review in enumerate(merged)
+                if _same_candidate(saved_review, next_review)
+            ),
+            None,
+        )
+        if matching_index is None:
+            merged.append(next_review.model_copy(deep=True))
+            continue
+
+        saved_review = merged[matching_index]
+        source_urls = list(
+            dict.fromkeys([*saved_review.source_urls, *next_review.source_urls])
+        )
+        preferred = (
+            next_review
+            if next_review.status == "resolved"
+            and saved_review.status != "resolved"
+            else saved_review
+        )
+        merged[matching_index] = preferred.model_copy(
+            update={
+                "candidate_id": saved_review.candidate_id,
+                "source_urls": source_urls,
+                "confidence": max(
+                    saved_review.confidence,
+                    next_review.confidence,
+                ),
+                "retryable": (
+                    saved_review.retryable and next_review.retryable
+                    if preferred.status != "resolved"
+                    else False
+                ),
+            }
+        )
+    return merged
+
+
+def _same_candidate(
+    left: PlaceCandidateReview,
+    right: PlaceCandidateReview,
+) -> bool:
+    if (
+        left.latitude is not None
+        and left.longitude is not None
+        and right.latitude is not None
+        and right.longitude is not None
+    ):
+        return (
+            round(left.latitude, 5),
+            round(left.longitude, 5),
+        ) == (
+            round(right.latitude, 5),
+            round(right.longitude, 5),
+        )
+
+    left_names = {
+        key
+        for value in (left.name, left.resolved_name)
+        if value and (key := _candidate_name_key(value))
+    }
+    right_names = {
+        key
+        for value in (right.name, right.resolved_name)
+        if value and (key := _candidate_name_key(value))
+    }
+    if not left_names.intersection(right_names):
+        return False
+    left_region = _candidate_name_key(left.address or left.search_region or "")
+    right_region = _candidate_name_key(right.address or right.search_region or "")
+    return not left_region or not right_region or left_region == right_region
+
+
+def _candidate_name_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.strip().casefold())
+    without_marks = "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return re.sub(r"[^a-z0-9]+", "", without_marks)
+
+
 def _requests_more_days(content: str) -> bool:
     normalized = " ".join(content.casefold().split())
     return any(
@@ -453,4 +715,23 @@ def _is_reference_item(source_refs: list[str]) -> bool:
     return any(
         ref == "ocr" or ref.startswith(("http://", "https://"))
         for ref in source_refs
+    )
+
+
+def _selected_place_from_review(
+    review: PlaceCandidateReview,
+) -> SelectedPlaceCreate:
+    return SelectedPlaceCreate(
+        name=review.resolved_name or review.name,
+        address=review.address,
+        priority=1,
+        mustVisit=True,
+        preferenceLevel="must_visit",
+        latitude=review.latitude,
+        longitude=review.longitude,
+        tags=[review.category.value],
+        sourceRefs=review.source_urls,
+        sourceProvider=review.provider,
+        sourceOrder=review.source_order,
+        sourceDay=review.source_day,
     )

@@ -1,0 +1,308 @@
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+from sqlalchemy import case, delete, func, select, update
+from sqlalchemy.orm import Session
+
+from app.modules.plans.chat_model import TripChat
+from app.modules.plans.url_job_model import UrlImportJob
+from app.modules.plans.url_job_schema import UrlImportJobRead
+from app.shared.errors import AppError
+
+
+ACTIVE_JOB_STATUSES = ("queued", "running")
+
+
+class UrlImportJobRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def enqueue(
+        self,
+        *,
+        chat_id: str,
+        user_id: int,
+        expected_revision: int,
+        urls: list[str],
+        request_content: str,
+        force_refresh: bool = False,
+    ) -> list[UrlImportJob]:
+        chat = self.db.scalar(
+            select(TripChat).where(
+                TripChat.id == chat_id,
+                TripChat.user_id == user_id,
+            )
+        )
+        if chat is None:
+            raise AppError(404, "TRIP_CHAT_NOT_FOUND", "Không tìm thấy cuộc trò chuyện chuyến đi.")
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
+            )
+        jobs = [
+            UrlImportJob(
+                id=str(uuid4()),
+                user_id=user_id,
+                chat_id=chat_id,
+                url=url,
+                request_content=request_content,
+                force_refresh=force_refresh,
+                batch_position=batch_position,
+                status="queued",
+            )
+            for batch_position, url in enumerate(urls)
+        ]
+        self.db.add_all(jobs)
+        self.db.commit()
+        for job in jobs:
+            self.db.refresh(job)
+        return jobs
+
+    def list_for_user(self, user_id: int, *, limit: int = 40) -> list[UrlImportJob]:
+        active_first = case(
+            (UrlImportJob.status == "running", 0),
+            (UrlImportJob.status == "queued", 1),
+            else_=2,
+        )
+        statement = (
+            select(UrlImportJob)
+            .where(UrlImportJob.user_id == user_id)
+            .order_by(active_first, UrlImportJob.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(statement))
+
+    def get_for_user(self, job_id: str, user_id: int) -> UrlImportJob:
+        job = self.db.scalar(
+            select(UrlImportJob).where(
+                UrlImportJob.id == job_id,
+                UrlImportJob.user_id == user_id,
+            )
+        )
+        if job is None:
+            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ URL.")
+        return job
+
+    def recover_interrupted(self) -> int:
+        result = self.db.execute(
+            update(UrlImportJob)
+            .where(UrlImportJob.status == "running")
+            .values(status="queued", started_at=None, updated_at=datetime.now(UTC))
+            .execution_options(synchronize_session=False)
+        )
+        self.db.commit()
+        return result.rowcount or 0
+
+    def fail_stale_running(self, *, timeout_seconds: float) -> int:
+        cutoff = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
+        result = self.db.execute(
+            update(UrlImportJob)
+            .where(
+                UrlImportJob.status == "running",
+                (UrlImportJob.started_at.is_(None))
+                | (UrlImportJob.started_at <= cutoff),
+            )
+            .values(
+                status="failed",
+                error_code="URL_IMPORT_TIMEOUT",
+                error_message=(
+                    "Tác vụ trích xuất đã quá thời gian cho phép. "
+                    "Hãy thử lại URL này."
+                ),
+                finished_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        self.db.commit()
+        return result.rowcount or 0
+
+    def claim_next(self) -> UrlImportJob | None:
+        running_count = self.db.scalar(
+            select(func.count()).select_from(UrlImportJob).where(
+                UrlImportJob.status == "running"
+            )
+        )
+        if running_count:
+            return None
+        statement = (
+            select(UrlImportJob)
+            .where(UrlImportJob.status == "queued")
+            .order_by(
+                UrlImportJob.created_at.asc(),
+                UrlImportJob.batch_position.asc(),
+                UrlImportJob.id.asc(),
+            )
+            .limit(1)
+        )
+        if self.db.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update(skip_locked=True)
+        job = self.db.scalar(statement)
+        if job is None:
+            return None
+        job.status = "running"
+        job.started_at = datetime.now(UTC)
+        job.finished_at = None
+        job.error_code = None
+        job.error_message = None
+        job.attempt_count += 1
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def succeed(self, job_id: str, revision: int) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None:
+            return
+        chat = self.db.get(TripChat, job.chat_id)
+        job.status = "succeeded"
+        job.result_revision = revision
+        job.explorer_timing = (
+            chat.latest_explorer_timing if chat is not None else None
+        )
+        job.planner_timing = (
+            chat.latest_planner_timing if chat is not None else None
+        )
+        job.finished_at = datetime.now(UTC)
+        self.db.commit()
+
+    def fail(self, job_id: str, *, code: str, message: str) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None:
+            return
+        job.status = "failed"
+        job.error_code = code[:64]
+        job.error_message = message[:1000]
+        job.finished_at = datetime.now(UTC)
+        self.db.commit()
+
+    def retry(self, job_id: str, user_id: int) -> UrlImportJob:
+        job = self.get_for_user(job_id, user_id)
+        if job.status != "failed":
+            raise AppError(409, "URL_IMPORT_JOB_NOT_FAILED", "Chỉ có thể thử lại tác vụ đã thất bại.")
+        # A failed run may have stopped during media/STT/OCR and must restart
+        # from fresh source data instead of trusting a partial or stale cache.
+        job.force_refresh = True
+        job.status = "queued"
+        job.started_at = None
+        job.finished_at = None
+        job.error_code = None
+        job.error_message = None
+        job.explorer_timing = None
+        job.planner_timing = None
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def reprocess(self, job_id: str, user_id: int) -> UrlImportJob:
+        source_job = self.get_for_user(job_id, user_id)
+        if source_job.status not in {"succeeded", "failed"}:
+            raise AppError(
+                409,
+                "URL_IMPORT_JOB_NOT_FINISHED",
+                "Chỉ có thể phân tích lại tác vụ đã kết thúc.",
+                details={"status": source_job.status},
+            )
+        job = UrlImportJob(
+            id=str(uuid4()),
+            user_id=source_job.user_id,
+            chat_id=source_job.chat_id,
+            url=source_job.url,
+            request_content=source_job.request_content,
+            # A completed run already has a valid normalized extraction cache.
+            # Re-run aggregation, resolution and planning from that cache;
+            # media/STT/OCR are intentionally not repeated.
+            force_refresh=False,
+            batch_position=0,
+            status="queued",
+        )
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def delete_queued(self, job_id: str, user_id: int) -> None:
+        result = self.db.execute(
+            delete(UrlImportJob).where(
+                UrlImportJob.id == job_id,
+                UrlImportJob.user_id == user_id,
+                UrlImportJob.status == "queued",
+            )
+        )
+        if result.rowcount:
+            self.db.commit()
+            return
+
+        job = self.get_for_user(job_id, user_id)
+        raise AppError(
+            409,
+            "URL_IMPORT_JOB_NOT_QUEUED",
+            "Chỉ có thể xóa URL đang chờ.",
+            details={"status": job.status},
+        )
+
+    def delete_running(self, job_id: str) -> bool:
+        """Delete a job only after its in-process task has been cancelled."""
+        result = self.db.execute(
+            delete(UrlImportJob).where(
+                UrlImportJob.id == job_id,
+                UrlImportJob.status == "running",
+            )
+        )
+        self.db.commit()
+        return bool(result.rowcount)
+
+    def delete_terminal(self, job_id: str, user_id: int) -> None:
+        result = self.db.execute(
+            delete(UrlImportJob).where(
+                UrlImportJob.id == job_id,
+                UrlImportJob.user_id == user_id,
+                UrlImportJob.status.in_(("succeeded", "failed")),
+            )
+        )
+        if result.rowcount:
+            self.db.commit()
+            return
+
+        job = self.get_for_user(job_id, user_id)
+        raise AppError(
+            409,
+            "URL_IMPORT_JOB_NOT_FINISHED",
+            "Chỉ có thể xóa tác vụ đã hoàn tất hoặc thất bại.",
+            details={"status": job.status},
+        )
+
+    def read(self, job: UrlImportJob) -> UrlImportJobRead:
+        position: int | None = None
+        if job.status == "queued":
+            queued_ids = list(
+                self.db.scalars(
+                    select(UrlImportJob.id)
+                    .where(UrlImportJob.status == "queued")
+                    .order_by(
+                        UrlImportJob.created_at.asc(),
+                        UrlImportJob.batch_position.asc(),
+                        UrlImportJob.id.asc(),
+                    )
+                )
+            )
+            position = queued_ids.index(job.id) + 1
+        return UrlImportJobRead(
+            id=job.id,
+            chatId=job.chat_id,
+            url=job.url,
+            forceRefresh=job.force_refresh,
+            status=job.status,
+            queuePosition=position,
+            attemptCount=job.attempt_count,
+            resultRevision=job.result_revision,
+            errorCode=job.error_code,
+            errorMessage=job.error_message,
+            explorerTiming=job.explorer_timing,
+            plannerTiming=job.planner_timing,
+            createdAt=job.created_at,
+            startedAt=job.started_at,
+            finishedAt=job.finished_at,
+        )

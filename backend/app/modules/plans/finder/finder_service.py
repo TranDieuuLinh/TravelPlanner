@@ -328,6 +328,9 @@ class FinderService:
             day_items: list[PlanItem] = []
             committed_activities: dict[str, tuple[FinderPlace, DayBlock]] = {}
             deferred_slot_warnings: list[str] = []
+            finder_suggestion_limit = self.skeleton_builder.minimum_activity_count(
+                brief.pace
+            )
 
             for block in skeleton.blocks:
                 tentative_plan_status.current_slot = block.role
@@ -354,13 +357,14 @@ class FinderService:
                     continue
 
                 allow_suggestions_for_block = allow_suggestions_for_day
-                if block.kind == "meal" and allow_finder_suggestions:
-                    # Meal blocks always draw from the finder catalog. The
-                    # ``has_reference_places`` gate is about respecting the
-                    # user's reference itinerary for activity slots; meals
-                    # need evidence-backed places regardless of whether the
-                    # user attached a URL.
-                    allow_suggestions_for_block = True
+                finder_suggestion_count = sum(
+                    item.source == "finder_suggestion" for item in day_items
+                )
+                if (
+                    allow_suggestions_for_block
+                    and finder_suggestion_count >= finder_suggestion_limit
+                ):
+                    allow_suggestions_for_block = False
                 candidate = self.candidate_selector.select(
                     CandidateSelectionContext(
                         macro_plan=macro_plan,
@@ -377,6 +381,14 @@ class FinderService:
                         rejected_selected_places=rejected_selected_places,
                         intent_interests=intent_interests,
                         travel_style=travel_style,
+                        occupied_items=[
+                            *(
+                                item
+                                for completed_day in days
+                                for item in completed_day.items
+                            ),
+                            *day_items,
+                        ],
                         bbox_filter=(
                             area_profile.bbox
                             if area_profile is not None

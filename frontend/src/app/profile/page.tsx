@@ -11,7 +11,7 @@ import {
 } from "@/components/ProfileVisitedMap";
 import { APIError } from "@/lib/api";
 import { getPurchasedPlans, getUserFavorites } from "@/lib/marketplace";
-import { getProfileShowcase } from "@/lib/users";
+import { createProfilePost, getProfileShowcase } from "@/lib/users";
 import type { BuyerPlan, ListingSummary } from "@/types/marketplace";
 import type { ProfileShowcase } from "@/types/profile";
 
@@ -40,6 +40,14 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [bio, setBio] = useState("");
   const [preferences, setPreferences] = useState("");
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
+  const [postType, setPostType] = useState<"post" | "reel">("post");
+  const [postCaption, setPostCaption] = useState("");
+  const [postMedia, setPostMedia] = useState<File | null>(null);
+  const [postMediaPreview, setPostMediaPreview] = useState("");
+  const [postLocation, setPostLocation] = useState("");
+  const [postBusy, setPostBusy] = useState(false);
+  const [postMessage, setPostMessage] = useState("");
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login?next=/profile");
@@ -52,6 +60,16 @@ export default function ProfilePage() {
     setBio(user.bio ?? "");
     setPreferences(user.travelPreferences.join(", "));
   }, [user]);
+
+  useEffect(() => {
+    if (!postMedia) {
+      setPostMediaPreview("");
+      return;
+    }
+    const previewUrl = URL.createObjectURL(postMedia);
+    setPostMediaPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [postMedia]);
 
   useEffect(() => {
     if (!user) return;
@@ -129,6 +147,38 @@ export default function ProfilePage() {
     }
   }
 
+  async function publishPost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!postLocation.trim()) {
+      setPostMessage("Bạn phải gắn địa điểm trước khi đăng.");
+      return;
+    }
+    if (!postMedia) {
+      setPostMessage(`Bạn cần chọn ${postType === "reel" ? "video" : "ảnh"} từ thiết bị.`);
+      return;
+    }
+    setPostBusy(true);
+    setPostMessage("");
+    try {
+      const post = await createProfilePost({
+        contentType: postType,
+        caption: postCaption.trim(),
+        media: postMedia,
+        locationName: postLocation.trim(),
+      });
+      setShowcase((current) => ({ ...current, posts: [post, ...current.posts] }));
+      setPostCaption("");
+      setPostMedia(null);
+      setPostLocation("");
+      setPostComposerOpen(false);
+      setActiveTab("posts");
+    } catch (reason) {
+      setPostMessage(reason instanceof APIError ? reason.message : "Không thể đăng nội dung.");
+    } finally {
+      setPostBusy(false);
+    }
+  }
+
   const initial = user.fullName.charAt(0).toUpperCase();
   const canApplyForCreator =
     user.role !== "admin" &&
@@ -153,9 +203,9 @@ export default function ProfilePage() {
               Chỉnh sửa hồ sơ
             </button>
             <Link className="profileCreateButton" href="/planner">Tạo plan</Link>
-            {user.role === "creator" ? (
-              <Link className="profileUtilityLink" href="/creator/listings/new">Đăng bài viết</Link>
-            ) : null}
+            <button className="profileUtilityLink profilePublishLink" onClick={() => setPostComposerOpen(true)} type="button">
+              ＋ Đăng bài viết
+            </button>
             {user.role === "admin" ? (
               <Link className="profileUtilityLink" href="/admin/listings">Quản trị</Link>
             ) : null}
@@ -179,6 +229,79 @@ export default function ProfilePage() {
           </div>
         </div>
       </section>
+
+      {postComposerOpen ? (
+        <div aria-modal="true" className="profilePostComposer" role="dialog">
+          <button aria-label="Đóng trình đăng bài" className="profilePostComposerBackdrop" onClick={() => setPostComposerOpen(false)} type="button" />
+          <section className="profilePostComposerPanel">
+            <header>
+              <div>
+                <span>Chia sẻ chuyến đi</span>
+                <h2>Tạo bài viết mới</h2>
+              </div>
+              <button aria-label="Đóng" onClick={() => setPostComposerOpen(false)} type="button">×</button>
+            </header>
+            <form onSubmit={publishPost}>
+              <div aria-label="Loại nội dung" className="profilePostTypePicker" role="group">
+                <button aria-pressed={postType === "post"} className={postType === "post" ? "active" : ""} onClick={() => { setPostType("post"); setPostMedia(null); setPostMessage(""); }} type="button">
+                  ▧ Post ảnh
+                </button>
+                <button aria-pressed={postType === "reel"} className={postType === "reel" ? "active" : ""} onClick={() => { setPostType("reel"); setPostMedia(null); setPostMessage(""); }} type="button">
+                  ▶ Reels
+                </button>
+              </div>
+              <label htmlFor="post-media-file">{postType === "reel" ? "Video" : "Ảnh"} từ thiết bị</label>
+              <label className={postMediaPreview ? "profileMediaPicker hasPreview" : "profileMediaPicker"} htmlFor="post-media-file">
+                <input
+                  accept={postType === "reel" ? "video/mp4,video/webm,video/quicktime" : "image/jpeg,image/png,image/webp"}
+                  id="post-media-file"
+                  key={postType}
+                  onChange={(event) => {
+                    const selected = event.target.files?.[0] ?? null;
+                    const maxBytes = postType === "reel" ? 100 * 1024 * 1024 : 15 * 1024 * 1024;
+                    if (selected && selected.size > maxBytes) {
+                      setPostMedia(null);
+                      setPostMessage(`Tệp vượt quá giới hạn ${postType === "reel" ? "100" : "15"} MB.`);
+                      event.target.value = "";
+                      return;
+                    }
+                    setPostMedia(selected);
+                    setPostMessage("");
+                  }}
+                  required
+                  type="file"
+                />
+                {postMediaPreview ? (
+                  postType === "reel" ? (
+                    <video aria-label="Xem trước video" controls muted playsInline src={postMediaPreview} />
+                  ) : (
+                    <img alt="Xem trước ảnh đã chọn" src={postMediaPreview} />
+                  )
+                ) : (
+                  <span>
+                    <strong>＋ Chọn {postType === "reel" ? "video" : "ảnh"}</strong>
+                    <small>{postType === "reel" ? "MP4, WebM hoặc MOV · tối đa 100 MB" : "JPEG, PNG hoặc WebP · tối đa 15 MB"}</small>
+                  </span>
+                )}
+                {postMedia ? <em>{postMedia.name}</em> : null}
+              </label>
+              <label htmlFor="post-caption">Chú thích</label>
+              <textarea id="post-caption" maxLength={2200} onChange={(event) => setPostCaption(event.target.value)} placeholder="Kể lại khoảnh khắc trong chuyến đi..." required rows={4} value={postCaption} />
+              <label htmlFor="post-location">Địa điểm <strong>* bắt buộc</strong></label>
+              <div className="profileLocationInput">
+                <span aria-hidden="true">⌖</span>
+                <input id="post-location" maxLength={255} onChange={(event) => setPostLocation(event.target.value)} placeholder="Ví dụ: Hồ Hoàn Kiếm, Hà Nội" required value={postLocation} />
+              </div>
+              <p className="profilePostPrivacyNote">Bài đăng sẽ hiển thị công khai trong Khám phá và trên hồ sơ của bạn.</p>
+              {postMessage ? <p className="profilePostMessage" role="alert">{postMessage}</p> : null}
+              <footer>
+                <button className="profileEditButton" onClick={() => setPostComposerOpen(false)} type="button">Hủy</button>
+                <button className="profileCreateButton" disabled={postBusy} type="submit">{postBusy ? "Đang đăng..." : "Chia sẻ"}</button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {editing ? (
         <section className="instagramEditPanel">
@@ -288,7 +411,12 @@ export default function ProfilePage() {
           <section className="instagramPostGrid" aria-label="Bài viết đã đăng">
             {showcase.posts.map((post) => (
               <article className="instagramPostCard" key={post.id}>
-                <img alt={post.locationName || post.caption} src={post.mediaUrl} />
+                {post.contentType === "reel" ? (
+                  <video aria-label={post.caption} muted playsInline preload="metadata" src={post.mediaUrl} />
+                ) : (
+                  <img alt={post.locationName || post.caption} src={post.mediaUrl} />
+                )}
+                <span className="instagramPostType">{post.contentType === "reel" ? "▶ Reel" : "▧ Post"}</span>
                 <div className="instagramPostOverlay">
                   {post.locationName ? <strong>⌖ {post.locationName}</strong> : null}
                   <p>{post.caption}</p>

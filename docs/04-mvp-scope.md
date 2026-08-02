@@ -1,5 +1,12 @@
 # Phạm vi MVP
 
+## Nhóm du lịch theo quốc gia
+
+Feed Khám phá có một dải nhóm du lịch công khai theo 195 quốc gia. Người dùng
+chưa đăng nhập có thể xem và tìm theo tên quốc gia; thành viên đã đăng nhập có
+thể tham gia nhóm. MVP hiện chỉ lưu membership và hiển thị trạng thái thành viên,
+chưa bao gồm bài đăng, moderation hay chat riêng trong nhóm.
+
 ## Kết quả cần đạt
 
 MVP phải chứng minh được hai hành trình hoàn chỉnh:
@@ -23,6 +30,11 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
   giới quốc gia, tô quốc gia từ tọa độ `Place` và hiển thị các cột mốc suy ra ở
   phía client. Dấu chân hiện có là dữ liệu người dùng tự đánh dấu; chỉ được gắn
   nhãn “Có chuyến đi trong Planner” sau khi có liên kết tới chuyến đã hoàn thành.
+- User đang đăng nhập có thể chọn ảnh/video từ điện thoại hoặc máy tính để đăng
+  `post` hoặc `reel`; location tag là bắt buộc. Metadata bài được lưu trong
+  PostgreSQL, media qua storage adapter và nội dung hiển thị công khai ở cả lưới
+  Hồ sơ lẫn feed Khám phá. Adapter hiện tại lưu vào volume local; object storage
+  production, moderation, bình luận và reaction thật chưa nằm trong lát cắt này.
 - Quyền traveler, host, creator, buyer và admin được kiểm tra phía server.
 - Trip riêng tư, thành viên với quyền host/editor/viewer và audit cơ bản.
 - Lưu plan, version, import, listing, order và entitlement trong PostgreSQL.
@@ -107,6 +119,15 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Bản sao cá nhân từ đúng plan version đã mua.
 - Buyer có thể đưa bản sao vào Planner để đổi ràng buộc hoặc thêm URL.
 - Rating/review từ buyer đủ điều kiện và luồng report.
+
+### Nhóm du lịch công khai
+
+- Duyệt và tìm nhóm theo quốc gia, mở trang bảng tin từ toàn bộ card.
+- Khách chưa đăng nhập có thể đọc bài viết trong nhóm công khai.
+- User đang hoạt động có thể đăng bài văn bản trong mọi nhóm công khai; tham gia
+  nhóm là hành động theo dõi riêng, không phải điều kiện để đăng.
+- Giao diện nhóm hiện chỉ hỗ trợ bài viết văn bản; media, bình luận, reaction và
+  kiểm duyệt nâng cao chưa nằm trong phạm vi đã triển khai.
 
 ### Vận hành
 

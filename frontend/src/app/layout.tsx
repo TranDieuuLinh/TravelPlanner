@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
@@ -12,6 +12,13 @@ export const metadata: Metadata = {
     icon: "/images/penguin-logo.png",
     apple: "/images/penguin-logo.png",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#f5f7f3",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

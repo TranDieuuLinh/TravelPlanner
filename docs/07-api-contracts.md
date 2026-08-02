@@ -4,6 +4,23 @@ Base URL: `/api`. Các field trong JSON response sử dụng camelCase.
 
 ## Điểm cuối hiện tại
 
+### Nhóm du lịch
+
+- `GET /api/travel-groups?query=`: danh sách nhóm quốc gia công khai; có thể xem
+  khi chưa đăng nhập. Khi có session, mỗi item trả thêm `isMember` đúng với user.
+- `PUT /api/travel-groups/{groupId}/membership`: tham gia nhóm công khai; yêu cầu
+  đăng nhập và CSRF. Request lặp lại không tạo membership trùng.
+- `GET /api/travel-groups/{groupId}`: xem thông tin nhóm và tối đa 50 bài viết
+  mới nhất; nhóm công khai cho phép đọc khi chưa đăng nhập.
+- `POST /api/travel-groups/{groupId}/posts`: đăng bài văn bản tối đa 2.000 ký tự;
+  yêu cầu user đang hoạt động và CSRF, nhưng không bắt buộc đã tham gia nhóm.
+
+Mỗi group trả `countryCode`, `countryName`, `name`, `photoUrl`, `memberCount`,
+`isMember` và `isPublic`.
+
+Group detail trả `group`, `posts` và `totalPosts`. Mỗi post trả `id`, `content`,
+`createdAt` và `author` gồm `id`, `fullName`, `avatarUrl`.
+
 ### Kiểm tra trạng thái
 
 `GET /health`
@@ -21,6 +38,12 @@ Base URL: `/api`. Các field trong JSON response sử dụng camelCase.
 - `GET /api/me`: lấy user hiện tại.
 - `PATCH /api/me/profile`: sửa hồ sơ; yêu cầu CSRF header.
 - `GET /api/me/showcase`: lấy các địa điểm đã đi và bài viết của user hiện tại.
+- `POST /api/me/posts`: multipart tạo `post` hoặc `reel`; yêu cầu CSRF và các
+  field `contentType`, `caption`, `locationName`, `media`. `post` nhận JPEG/PNG/WebP
+  tối đa 15 MB; `reel` nhận MP4/WebM/MOV tối đa 100 MB. Backend kiểm tra chữ ký
+  file và tự sinh `mediaUrl`; client không gửi URL media.
+- `GET /api/posts?limit=30&offset=0`: feed bài công khai mới nhất; không yêu cầu
+  đăng nhập và trả thêm `authorName`, `authorAvatarUrl`.
 - `POST /api/me/visited-places`: đánh dấu hoặc cập nhật một `placeId` đã đi; yêu
   cầu CSRF header và Place phải có tọa độ hợp lệ.
 - `POST /api/me/creator-application`: gửi yêu cầu creator; yêu cầu CSRF header.
@@ -45,6 +68,7 @@ Response showcase:
   "posts": [
     {
       "id": "post_uuid",
+      "contentType": "post",
       "caption": "Hội An ngày nắng",
       "mediaUrl": "https://example.com/hoi-an.jpg",
       "locationName": "Phố cổ Hội An",
@@ -82,11 +106,15 @@ client không được tự chọn role.
 - `POST /api/plans/main/from-context`
 - `POST /api/plans/current-location-route`
 - `POST /api/plans/day-directions`
+- `GET /api/plans/places/search?query={text}&destination={destination}`: trả tối
+  đa 8 gợi ý có tọa độ từ catalog `places` đang active. Search không phân biệt
+  dấu và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
+  geocoding bên ngoài.
 - `POST /api/plans/{planId}/backup`
 
 ### Trip chat và lịch sử chỉnh sửa
 
-Các endpoint sau yêu cầu đăng nhập; thao tác POST/DELETE yêu cầu CSRF:
+Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 
 - `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
 - `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
@@ -96,6 +124,31 @@ Các endpoint sau yêu cầu đăng nhập; thao tác POST/DELETE yêu cầu CSR
   message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
   hiện tại.
+- `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job
+  FIFO và trả `202 Accepted` ngay; dùng cho message có URL, không có ảnh. Field
+  form `forceRefresh=true` tạo job phân tích lại, bỏ qua extraction cache.
+- `GET /api/url-import-jobs`: lấy tối đa 40 job của user hiện tại để hiển thị
+  notification toàn ứng dụng; user không đọc được job của tài khoản khác.
+- `POST /api/url-import-jobs/{jobId}/retry`: đưa riêng một job thất bại về cuối
+  hàng chờ và đặt `forceRefresh=true` để chạy lại toàn bộ từ media/STT/OCR. Job
+  vượt deadline trả trạng thái `failed`, `errorCode` là `URL_IMPORT_TIMEOUT` và
+  không chặn URL kế tiếp.
+- `POST /api/url-import-jobs/{jobId}/reprocess`: tạo một job mới từ job đã
+  kết thúc thành công, dùng extraction cache rồi chạy lại aggregation/dedupe,
+  resolve và Planner; giữ nguyên job cũ trong lịch sử và trả `202 Accepted`.
+- `DELETE /api/url-import-jobs/{jobId}`: xóa job `queued`, hoặc dừng task và xóa
+  job `running`, của user hiện tại; trả `204 No Content`. Khi dừng job đang chạy,
+  worker giải phóng FIFO và nhận job kế tiếp ngay. Job `succeeded` hoặc `failed`
+  cũng có thể được xóa khỏi lịch sử; revision plan đã tạo không bị ảnh hưởng.
+- `POST /api/trip-chats/{chatId}/plan/items`: thêm item thủ công.
+- `PATCH /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: sửa item.
+  Khi user chọn một kết quả từ place search, form gửi cùng `placeId`, `name`,
+  `address`, `latitude` và `longitude`; backend lưu đồng bộ identity và tọa độ
+  thay vì chỉ đổi tên hiển thị.
+- `DELETE /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: xóa item.
+- `PUT /api/trip-chats/{chatId}/plan/days/{day}/items/reorder`: lưu thứ tự item
+  mới của một ngày. Request dùng `multipart/form-data` với `expectedRevision`
+  và các field `itemIds` lặp lại theo đúng thứ tự hiển thị mong muốn.
 
 Request gửi message dùng `multipart/form-data`:
 
@@ -111,6 +164,11 @@ ghi đè con trỏ `currentPlan` nhưng giữ nguyên `currentPlan.id`; snapshot
 ở `trip_chat_plan_revisions`.
 
 Response detail:
+
+Hai timing report gần nhất được lưu cùng trip chat, vì vậy `GET` detail vẫn trả
+chúng sau khi URL job chạy nền hoàn tất hoặc khi user mở lại lịch sử. UI dùng
+`totalSeconds` cho timer của Explorer và Planner + Finder, còn `stages` cho nhật
+ký thời gian chi tiết.
 
 ```json
 {
@@ -145,6 +203,57 @@ Nếu `expectedRevision` đã cũ, backend trả HTTP 409 với code
 `VERSION_CONFLICT`. Lookup luôn lọc đồng thời `chatId + currentUser.id`; tài
 khoản khác nhận `TRIP_CHAT_NOT_FOUND`.
 
+Request tạo background URL job dùng `multipart/form-data` với `content`,
+`expectedRevision`, `forceRefresh` tùy chọn và các field `urls` lặp lại. Backend
+cũng nhận URL nằm trong `content`, loại trùng và giới hạn 20 URL/lần. Mỗi URL
+tạo một resource riêng:
+
+```json
+{
+  "jobs": [
+    {
+      "id": "job_uuid",
+      "chatId": "chat_uuid",
+      "url": "https://www.youtube.com/watch?v=...",
+      "forceRefresh": false,
+      "status": "queued",
+      "queuePosition": 1,
+      "attemptCount": 0,
+      "resultRevision": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "2026-08-01T08:00:00Z",
+      "startedAt": null,
+      "finishedAt": null
+    }
+  ]
+}
+```
+
+Worker xử lý một URL mỗi lần trên toàn hàng chờ của deployment. User có thể gửi
+prompt thường, thêm batch URL khác hoặc điều hướng sang route khác trong khi job
+chạy. Tiến độ chỉ hiển thị trong panel task toàn ứng dụng, không chèn message
+trạng thái vào transcript và không disable chat composer. Mỗi task có thể mở để
+xem thời điểm bắt đầu, tổng elapsed, attempt và timing stage có sẵn. Job thành
+công lưu và trả riêng `explorerTiming` cùng `plannerTiming`, để UI đặt toàn bộ
+nhật ký timing dưới đúng URL thay vì hiển thị trong cột chat Planner. Khi job thành công,
+`resultRevision` trỏ tới revision chat mới; khi thất
+bại, các URL sau vẫn tiếp tục và UI cho retry riêng. URL mạng nội bộ/private bị
+từ chối trước khi enqueue.
+
+Guest không gọi các endpoint `/url-import-jobs`: AppShell giữ queue trong memory
+và lần lượt gọi Explorer intake rồi `main/from-explorer`. Kết quả/timing chỉ nằm
+trong runtime trình duyệt, không tạo trip chat, job row hoặc plan revision trong
+database. Queue sống qua điều hướng client-side nhưng không sống qua reload/đóng
+tab. Khi user đăng nhập, client tiếp tục dùng contract job bền vững phía trên.
+
+UI chỉ hiển thị **Chạy lại** và không bắt user chọn stage kỹ thuật. Job thành
+công được reprocess từ extraction cache; job thất bại được retry toàn bộ với
+`forceRefresh=true`. Endpoint retry resolution riêng vẫn tồn tại cho workflow
+nội bộ/advanced nhưng không phải control chính trên danh sách job. Cache hiện
+tại không bị xóa trước; chỉ khi intake mới lưu thành công thì kết quả extraction
+mới ghi đè cache, nên job lỗi không làm mất fallback cũ.
+
 Request Explorer intake dùng `multipart/form-data`. UI hiển thị một chat
 composer duy nhất: người dùng nhập prompt hoặc dán URL vào cùng trường nội dung,
 và đính kèm ảnh ngay trong composer. Backend chọn nhánh xử lý dựa trên dữ liệu
@@ -162,29 +271,61 @@ Form fields:
 - `userState`: tùy chọn; JSON object gồm locale, timezone, travelStyle và
   travelPreferences. Khi đã đăng nhập, backend tự lấy `userId` và preference
   profile từ session/database, không tin `userId` do client khai báo.
+- `forceRefresh`: boolean tùy chọn; khi `true`, URL intake bỏ qua extraction
+  cache và chạy lại media/STT/OCR. Nút **Chạy lại** của phiên khách tự đặt field
+  này theo trạng thái: `true` sau lỗi và `false` sau lượt thành công.
 - `images`: tùy chọn; nhiều file ảnh JPEG, PNG, WebP, HEIC hoặc HEIF.
+
+Nếu YouTube chặn caption ở cả backend và worker fallback, response trả HTTP 503
+với code `YOUTUBE_CAPTIONS_UNAVAILABLE` để client cho phép retry; lỗi truy cập
+không được coi nhầm là video không có caption. Nếu provider xác nhận video không
+có public caption, response trả HTTP 422 `YOUTUBE_CAPTIONS_NOT_FOUND`. YouTube
+long-form không có fallback tải media hoặc STT. URL YouTube có path
+`/shorts/{videoId}` được nhận diện là `youtube_shorts` và chạy cùng pipeline
+media STT + frame vision/OCR của TikTok video, Instagram Reels và Facebook
+Reels. URL `youtu.be/{videoId}` không mang tín hiệu loại nội dung nên giữ contract
+caption-only.
 
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
 tả khác. Giá trị mặc định hiện tại là `local`.
 
-Output công khai chỉ chứa `intakeId`, `userId` và JSON `explorer` với intent,
+Output công khai chứa `intakeId`, `userId` và JSON `explorer` với intent,
 tripSpec, assumptions, missingInfoQuestions và `preferenceSnapshot`.
 `preferenceSnapshot.signals` là tín hiệu ngắn hạn của intake;
 `effectiveProfile` là profile đã merge để Planner dùng. `placeCandidates` là contract
+`candidateReviews` an toàn để hiển thị, và timing. Raw payload vẫn chỉ lưu hành
 nội bộ giữa extractor, aggregator, resolver và repository; không trả cho client.
 
 Không công khai raw OCR, transcript, URL result hoặc debug. Backend tự động gộp
-candidate trùng, giữ mọi source URL, resolve place và lưu toàn bộ kết quả chỉ
-vào PostgreSQL table `user_must_place`. Flow này không ghi vào `places` và không
-lưu Explorer context.
+candidate trùng, giữ source URL, resolve place và upsert snapshot dùng chung vào
+`user_must_place`; `user_must_place_users` giữ quan hệ user/intake. Flow không
+ghi đè `places`. `url_extraction_cache` chỉ giữ `ExtractedContext` chuẩn hóa để
+URL đã xử lý không phải chạy lại media/STT/OCR.
+
+`explorer.candidateReviews[]` giữ candidate có evidence sau aggregation kể cả
+khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
+`category`, `status` (`resolved | needs_review | merged | ignored`),
+`resolutionReason`, provider/nhãn/address/toạ độ đã xác minh khi có,
+`searchRegion`, canonical `sourceUrls`, source order/day, confidence và
+`retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có
+đủ danh tính và tọa độ được đưa vào Planner.
+
+`POST /api/trip-chats/{chatId}/candidate-resolutions/retry` nhận
+`{"expectedRevision": N}`. Endpoint chỉ chạy alias enrichment + place resolver
+cho item `needs_review`; không tải lại URL, không chạy STT/OCR. Khi có item mới
+resolve, service tạo revision chat mới và dựng lại plan hiện tại để đưa các
+địa điểm vừa xác minh vào lịch trình. Endpoint yêu cầu đăng nhập, CSRF và kiểm
+tra optimistic revision; response là `TripChatRead` mới nhất.
 
 Explorer response có thêm `timingReport` để debug latency. Report dùng cùng
 `intakeId`, gồm `totalSeconds`, các stage cấp Explorer, timing chi tiết theo từng
 URL và số candidate/resolved/persisted. Mỗi source URL còn có
 `extractedPlaceCount`, `candidateCount`, `resolvedCount`, `providerCounts` và
 `resolvedProviderCounts`, cùng `sttChunkCount`, `sttAudioDurationSeconds`,
-`sttChunkDurationSeconds` và `sttChunkRetryCount`;
+`sttChunkDurationSeconds` và `sttChunkRetryCount`. Hai field
+`cacheStatus` (`hit`, `miss`, `bypassed`) và `cacheLookupSeconds` cho biết source
+dùng extraction đã lưu, phải chạy extraction mới, hay chủ động bỏ qua cache;
 `providerCounts` là số candidate provider đã xử lý,
 không đồng nghĩa tất cả đã resolve thành công. Report cấp intake cũng có
 `resolvedProviderCounts` với cùng ý nghĩa. Các stage chạy song song giữ duration
@@ -193,6 +334,11 @@ với place resolution. Report không chứa raw prompt, URL đầy đủ, trans
 text hay credential. Runtime nối mỗi report thành một dòng JSON tại
 `backend/var/explorer-timings.jsonl`; dùng
 `cd backend && python scripts/show_explorer_timing.py` để xem lần gần nhất.
+Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `details` an toàn;
+đồng thời tách `processed` từ `resolved` cho từng provider ở cấp intake và từng
+URL. Trong khi HTTP Explorer vẫn đang chạy, UI chỉ hiển thị tổng timer và trạng
+thái đang thu thập; timing chi tiết xuất hiện sau khi Explorer trả report, không
+suy đoán provider hoặc duration trung gian ở client.
 
 Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
 `food`, `cafe`, `hotel`, `transport`, `free_time`, `nature`, `culture`,
@@ -229,7 +375,25 @@ Candidate có thể có `attributes` chuẩn hóa và mặc định
 thể giữ trip base là Hà Nội nhưng gán `searchRegion=Ninh Bình` cho toàn bộ stop
 Day 2 sau khi STT nói rõ đây là day trip Ninh Bình. Resolver tìm theo
 `candidateName + addressHint + searchRegion`, lưu riêng `resolvedName` và
-`resolutionReason`; tên provider không ghi đè tên nguồn của stop URL.
+`resolutionReason`. Plan/UI hiển thị `resolvedName` đã xác minh và ưu tiên nhãn
+Việt; `candidateName` vẫn được giữ trong record provenance, không bị mất.
+
+Heading cấp thành phố có duration không nằm trong `placeCandidates`. Explorer
+trả nó trong `intent.destinationStays`, ví dụ:
+
+```json
+{
+  "name": "Hanoi",
+  "durationDays": 2,
+  "startDay": 1,
+  "endDay": 2,
+  "sourceRefs": ["https://www.instagram.com/reel/example"]
+}
+```
+
+Planner phải áp `targetArea=Hanoi` cho cả Ngày 1 và Ngày 2. Nếu intake chỉ có
+city stay và chưa có venue cụ thể, `allowFinderSuggestions=false` và hai ngày
+được trả về với danh sách item trống.
 
 Response tổng quát:
 
@@ -301,14 +465,26 @@ Nếu intake URL/OCR không có `tripSpec.days` explicit, Explorer suy ra số n
 `sourceDay`; nếu nguồn không gán ngày, dùng số ngày tối thiểu theo số stop và
 pace để không làm mất stop. Giá trị user nói rõ luôn được giữ nguyên.
 
+Với intake URL, nếu destination trong prompt/trip hiện tại xung đột với vùng
+đồng thuận từ `searchRegion` hoặc thành phố của các stop URL đã resolve, endpoint
+trả HTTP `409`, code `DESTINATION_CLARIFICATION_REQUIRED`, kèm
+`requestedDestination`, `sourceDestination` và ba choice
+`keep_prompt_destination`, `create_separate_reel_trip` hoặc
+`follow_reel_destination`. Planner không chạy và plan hiện tại không bị thay đổi
+trước khi user làm rõ. Chỉ khi prompt và reel cùng
+vùng nhưng formatter trả sai, backend mới tự sửa formatter output và ghi
+`explorer.trace.destinationGuardrail`. Itinerary nhiều vùng không đủ đồng thuận
+không tự động đổi trip base theo một day trip.
+
 Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
 `longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
 `sourceProvider` giữ adapter đã resolve candidate (`nominatim`, ...)
 và được chuyển tiếp vào `PlanItem` cùng `sourceRefs`; UI dùng hai field này để
-gắn nhãn như `Từ URL TikTok · NOMINATIM`. Card không có URL provenance được phân biệt
-bằng `Finder gợi ý` hoặc `Địa điểm đã chọn`. `PlanItem` cũng trả lại `sourceDay`
+hiển thị URL nguồn chính xác dưới dạng liên kết, kèm provider resolve như
+`https://www.tiktok.com/... · NOMINATIM`. Card không có URL provenance được phân
+biệt bằng `Finder gợi ý` hoặc `Địa điểm đã chọn`. `PlanItem` cũng trả lại `sourceDay`
 để lần sửa tiếp theo không làm mất phân ngày của nguồn.
 Planner/Finder ưu tiên blueprint URL và giữ thứ tự nguồn. Hard constraint
 explicit vẫn thắng; timing cue không được mô tả như giờ hoạt động đã xác minh.

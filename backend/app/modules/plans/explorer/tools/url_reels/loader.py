@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from yt_dlp import YoutubeDL
 from yt_dlp.networking.impersonate import ImpersonateTarget
-from yt_dlp.utils import DownloadError, ExtractorError
+from yt_dlp.utils import DownloadError, ExtractorError, YoutubeDLError
 
+from app.core.config import settings
 from app.modules.plans.explorer.tools.url_reels.schema import UrlMetadata
 from app.modules.plans.explorer.tools.url_reels.utils import QuietYtdlpLogger, canonicalize_url, detect_platform
 
@@ -16,6 +17,9 @@ class UrlReelLoader:
             "no_warnings": True,
             "skip_download": True,
             "logger": QuietYtdlpLogger(),
+            "socket_timeout": settings.url_reel_network_timeout_seconds,
+            "retries": 1,
+            "extractor_retries": 1,
         }
         info = None
         failures: list[Exception] = []
@@ -39,7 +43,7 @@ class UrlReelLoader:
                         download=False,
                     )
                 break
-            except (DownloadError, ExtractorError) as exc:
+            except (DownloadError, ExtractorError, YoutubeDLError) as exc:
                 failures.append(exc)
         if info is None and failures:
             info = {"extractorError": str(failures[-1])}

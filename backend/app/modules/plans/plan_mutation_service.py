@@ -1,6 +1,12 @@
+import unicodedata
 from uuid import uuid4
 
-from app.modules.places.resolver import PlaceResolver, ProvisionalPlaceResolver
+from app.modules.places.resolver import (
+    PlaceLookupRecord,
+    PlaceLookupRepository,
+    PlaceResolver,
+    ProvisionalPlaceResolver,
+)
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import Plan, PlanDay, PlanItem
 from app.modules.plans.domain.enums import PlanStatus
@@ -21,10 +27,12 @@ class PlanMutationService:
     def __init__(
         self,
         place_resolver: PlaceResolver | None = None,
+        place_repository: PlaceLookupRepository | None = None,
         route_optimizer: GeographicRouteOptimizer | None = None,
         checker: OverallChecker | None = None,
     ) -> None:
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
+        self.place_repository = place_repository
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
         self.checker = checker or OverallChecker()
 
@@ -37,6 +45,10 @@ class PlanMutationService:
         if not cleaned:
             return []
         dest = (destination or "").strip()
+
+        if self.place_repository is not None:
+            return self._search_catalog(cleaned, dest)
+
         candidate = UnifiedPlaceCandidate(
             name=cleaned,
             search_region=dest,
@@ -57,6 +69,45 @@ class PlanMutationService:
         except Exception:
             pass
         return suggestions
+
+    def _search_catalog(
+        self,
+        query: str,
+        destination: str,
+        *,
+        limit: int = 8,
+    ) -> list[PlaceSuggestion]:
+        from app.modules.plans.planner.region_context import normalize_region_key
+
+        region_key = normalize_region_key(destination) if destination else None
+        records = self.place_repository.list_active_for_planner_research(
+            region_key,
+            limit=5000,
+        )
+        query_key = _search_key(query)
+        ranked: list[tuple[int, str, PlaceLookupRecord]] = []
+        for record in records:
+            if record.latitude is None or record.longitude is None:
+                continue
+            scores = [
+                score
+                for name in _record_search_names(record)
+                if (score := _suggestion_score(query_key, _search_key(name))) is not None
+            ]
+            if scores:
+                ranked.append((min(scores), _search_key(record.name), record))
+
+        ranked.sort(key=lambda item: (item[0], item[1]))
+        return [
+            PlaceSuggestion(
+                name=record.name,
+                address=record.address,
+                latitude=float(record.latitude),
+                longitude=float(record.longitude),
+                placeId=record.id,
+            )
+            for _score, _name, record in ranked[:limit]
+        ]
 
     async def add_item(self, plan: Plan, request: AddItemRequest) -> MutationResponse:
         day = self._get_day(plan, request.day)
@@ -92,7 +143,7 @@ class PlanMutationService:
 
         new_item = PlanItem(
             itemId=str(uuid4()),
-            placeId=place_id,
+            placeId=request.place_id or place_id,
             name=request.name,
             address=address,
             timeWindow=time_window,
@@ -332,3 +383,49 @@ class PlanMutationService:
         start_h, start_m = divmod(start_min, 60)
         end_h, end_m = divmod(end_min, 60)
         return f"{start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d}"
+
+
+def _search_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if not unicodedata.combining(character)
+    )
+    return " ".join(without_marks.replace("đ", "d").split())
+
+
+def _record_search_names(record: PlaceLookupRecord) -> list[str]:
+    metadata = record.metadata_json if isinstance(record.metadata_json, dict) else {}
+    names = [record.name]
+    for key in (
+        "aliases",
+        "englishNames",
+        "vietnameseNames",
+        "alternateNames",
+        "searchNames",
+    ):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            names.append(value)
+        elif isinstance(value, list):
+            names.extend(item for item in value if isinstance(item, str))
+    for key in ("originalName", "officialName", "nameEn", "nameVi"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            names.append(value)
+    return names
+
+
+def _suggestion_score(query: str, candidate: str) -> int | None:
+    if not query or not candidate:
+        return None
+    if candidate == query:
+        return 0
+    if candidate.startswith(query):
+        return 1
+    if any(word.startswith(query) for word in candidate.split()):
+        return 2
+    if query in candidate:
+        return 3
+    return None

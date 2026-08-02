@@ -128,18 +128,18 @@ export default function CreatorListingsPage() {
 
                 return (
                   <tr key={item.id}>
-                    <td>
+                    <td data-label="Tên Listing">
                       <strong>{latestVersion?.title || "Chưa có tiêu đề"}</strong>
                       <span className="tableSubtext">{latestVersion?.destination} ({latestVersion?.durationDays} ngày)</span>
                     </td>
-                    <td><span className="badge category">{latestVersion?.category}</span></td>
-                    <td><strong>{latestVersion?.priceAmount?.toLocaleString("vi-VN")} VND</strong></td>
-                    <td>
+                    <td data-label="Danh mục"><span className="badge category">{latestVersion?.category}</span></td>
+                    <td data-label="Giá bán"><strong>{latestVersion?.priceAmount?.toLocaleString("vi-VN")} VND</strong></td>
+                    <td data-label="Trạng thái">
                       <span className={`badge status-${status}`}>
                         {status === "published" ? "Đã phát hành" : status === "unpublished" ? "Ngừng bán" : "Bản nháp"}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Phiên bản">
                       <span className={`badge mod-${modStatus}`}>
                         v{latestVersion?.version} ({modStatus === "pending_review" ? "Đang chờ duyệt" : modStatus === "approved" ? "Đã duyệt" : modStatus === "rejected" ? "Từ chối" : modStatus === "published" ? "Đã xuất bản" : "Nháp"})
                       </span>
@@ -147,7 +147,7 @@ export default function CreatorListingsPage() {
                         <p className="rejectReason">Lý do: {latestVersion.rejectionReason}</p>
                       ) : null}
                     </td>
-                    <td>
+                    <td data-label="Thao tác">
                       <div className="tableActions">
                         <Link className="actionLink" href={`/creator/listings/${item.id}/edit`}>
                           Chỉnh sửa

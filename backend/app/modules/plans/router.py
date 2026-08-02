@@ -84,6 +84,7 @@ async def explore_full_intake(
     urls: Annotated[list[str] | None, Form()] = None,
     trip_spec_json: Annotated[str | None, Form(alias="tripSpec")] = None,
     user_state_json: Annotated[str | None, Form(alias="userState")] = None,
+    force_refresh: Annotated[bool, Form(alias="forceRefresh")] = False,
     images: Annotated[list[UploadFile] | None, File()] = None,
 ) -> ExploreIntakeResponse:
     try:
@@ -112,6 +113,7 @@ async def explore_full_intake(
             images=uploaded_images,
             trip_spec=trip_spec,
             user_state=user_state,
+            force_url_refresh=force_refresh,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

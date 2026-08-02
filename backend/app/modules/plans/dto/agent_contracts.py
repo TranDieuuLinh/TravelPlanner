@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.modules.plans.domain.entities import (
     CheckReport,
+    DestinationStay,
     FinderPlanStatus,
     MacroPlan,
     PlanDay,
@@ -275,6 +276,10 @@ class PlanningIntent(BaseModel):
     must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
     avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+    destination_stays: Annotated[
+        list[DestinationStay],
+        Field(default_factory=list, alias="destinationStays"),
+    ]
     constraint_policy: Annotated[
         ConstraintPolicy,
         Field(default_factory=ConstraintPolicy, alias="constraintPolicy"),

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -34,6 +34,16 @@ class UserVisitedPlace(Base):
 
 class UserPost(Base):
     __tablename__ = "user_posts"
+    __table_args__ = (
+        CheckConstraint(
+            "content_type IN ('post', 'reel')",
+            name="ck_user_posts_content_type",
+        ),
+        CheckConstraint(
+            "length(trim(location_name)) > 0",
+            name="ck_user_posts_location_required",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -43,7 +53,10 @@ class UserPost(Base):
     )
     caption: Mapped[str] = mapped_column(Text, nullable=False)
     media_url: Mapped[str] = mapped_column(String(1000), nullable=False)
-    location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="post", index=True
+    )
+    location_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -2,10 +2,12 @@ from uuid import uuid4
 
 from fastapi import status
 
-from app.modules.profiles.model import UserVisitedPlace
+from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.profiles.repository import ProfileRepository
 from app.modules.profiles.schema import (
     ProfileShowcaseRead,
+    ExplorePostRead,
+    UserPostCreate,
     UserPostRead,
     VisitedPlaceCreate,
     VisitedPlaceRead,
@@ -78,6 +80,52 @@ class ProfileService:
             visitedAt=visited.visited_at,
             note=visited.note,
         )
+
+    def create_post(self, user: User, payload: UserPostCreate) -> UserPostRead:
+        post = self.profiles.add_post(
+            UserPost(
+                id=str(uuid4()),
+                user_id=user.id,
+                content_type=payload.content_type,
+                caption=payload.caption,
+                media_url=str(payload.media_url),
+                location_name=payload.location_name,
+            )
+        )
+        self.profiles.commit()
+        return UserPostRead.model_validate(post)
+
+    def normalize_post_text(self, caption: str, location_name: str) -> tuple[str, str]:
+        normalized_caption = caption.strip()
+        normalized_location = location_name.strip()
+        field_errors: dict[str, str] = {}
+        if not normalized_caption:
+            field_errors["caption"] = "Chú thích không được để trống."
+        if not normalized_location:
+            field_errors["locationName"] = "Bạn phải gắn địa điểm trước khi đăng."
+        if field_errors:
+            raise AppError(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "VALIDATION_ERROR",
+                "Dữ liệu gửi lên không hợp lệ.",
+                field_errors=field_errors,
+            )
+        return normalized_caption, normalized_location
+
+    def list_public_posts(self, *, limit: int, offset: int) -> list[ExplorePostRead]:
+        return [
+            ExplorePostRead(
+                id=post.id,
+                contentType=post.content_type,
+                caption=post.caption,
+                mediaUrl=post.media_url,
+                locationName=post.location_name,
+                createdAt=post.created_at,
+                authorName=author.full_name,
+                authorAvatarUrl=author.avatar_url,
+            )
+            for post, author in self.profiles.list_public_posts(limit=limit, offset=offset)
+        ]
 
     def update_profile(self, user: User, payload: ProfileUpdate) -> User:
         updated = self.users.update_profile(user, payload)

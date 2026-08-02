@@ -29,7 +29,7 @@ from app.modules.plans.schema import (
     SelectedPlaceCreate,
 )
 from app.modules.plans.repository import PlanRepository
-from app.modules.plans.service import PlanService
+from app.modules.plans.service import PlanService, _merge_selected_places
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.shared.errors import AppError
@@ -91,6 +91,47 @@ def test_main_workflow_uses_canonical_hanoi_catalog_region() -> None:
 
     assert statistics.requested_region_keys == ["vn,ha-noi"]
     assert plan.macro_plan.region_key == "vn,ha-noi"
+
+
+def test_city_stay_spans_two_empty_days_without_becoming_place() -> None:
+    workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=_planner(FakeStatisticsProvider()),
+        finder=FinderService(),
+    )
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {
+                "destination": "Hanoi",
+                "travelStyle": "local",
+                "pace": "balanced",
+                "destinationStays": [
+                    {
+                        "name": "Hanoi",
+                        "durationDays": 2,
+                        "startDay": 1,
+                        "endDay": 2,
+                        "sourceRefs": [
+                            "https://www.instagram.com/reel/example"
+                        ],
+                    }
+                ],
+            },
+            "tripSpec": {"days": 2},
+            "selectedPlaces": [],
+            "allowFinderSuggestions": False,
+        }
+    )
+
+    plan = asyncio.run(workflow.run_from_explorer(payload))
+
+    assert [brief.target_area for brief in plan.macro_plan.day_briefs] == [
+        "Hanoi",
+        "Hanoi",
+    ]
+    assert len(plan.days) == 2
+    assert all(day.items == [] for day in plan.days)
+    assert all("Hanoi" in day.theme for day in plan.days)
 
 
 def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
@@ -729,7 +770,35 @@ def test_plan_service_expands_days_to_fit_merged_selected_places() -> None:
     assert plan.unscheduled_places == []
 
 
-def test_plan_service_automatically_expands_days_for_url_places() -> None:
+def test_merge_selected_places_removes_same_url_identity_variants() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/42"
+    merged = _merge_selected_places(
+        [
+            SelectedPlaceCreate(
+                name="Phố đường tàu",
+                latitude=21.0291,
+                longitude=105.8412,
+                sourceRefs=[source_url],
+                sourceProvider="nominatim",
+            ),
+            SelectedPlaceCreate(
+                name="Phố đường tàu Hà Nội",
+                placeId="train-street",
+                latitude=21.0292,
+                longitude=105.8413,
+                sourceRefs=[source_url],
+                sourceProvider="database",
+            ),
+        ],
+        [],
+    )
+
+    assert len(merged) == 1
+    assert merged[0].name == "Phố đường tàu Hà Nội"
+    assert merged[0].place_id == "train-street"
+
+
+def test_plan_service_expands_days_to_schedule_all_url_places() -> None:
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         planner=_planner(FakeStatisticsProvider()),

@@ -4,6 +4,7 @@ export type APIErrorBody = {
   code?: string;
   message?: string;
   detail?: string | { message?: string };
+  details?: Record<string, unknown>;
   fieldErrors?: Record<string, string>;
   requestId?: string;
 };
@@ -12,6 +13,7 @@ export class APIError extends Error {
   status: number;
   code: string;
   fieldErrors: Record<string, string>;
+  details: Record<string, unknown>;
   requestId?: string;
 
   constructor(status: number, body: APIErrorBody) {
@@ -20,6 +22,7 @@ export class APIError extends Error {
     this.status = status;
     this.code = body.code ?? "REQUEST_FAILED";
     this.fieldErrors = body.fieldErrors ?? {};
+    this.details = body.details ?? {};
     this.requestId = body.requestId;
   }
 }

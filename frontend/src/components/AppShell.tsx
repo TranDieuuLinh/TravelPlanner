@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { BackgroundUrlJobs } from "@/components/BackgroundUrlJobs";
 
 const nav = [
   { href: "/reels", label: "Khám phá", icon: "▶" },
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav aria-label="Điều hướng chính" className="desktopNav">
             {dynamicNav.map((item) => (
               <Link
+                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
                 className={pathname.startsWith(item.href) ? "navItem active" : "navItem"}
                 href={item.href}
                 key={item.href}
@@ -45,6 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="shellActions">
+            <BackgroundUrlJobs authenticated={Boolean(user)} enabled={!loading} />
             {!loading && !user ? (
               <Link className="accountLink" href="/login">
                 Đăng nhập
@@ -72,6 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav aria-label="Điều hướng di động" className="mobileNav">
         {mobileNav.map((item) => (
           <Link
+            aria-current={pathname.startsWith(item.href) ? "page" : undefined}
             className={pathname.startsWith(item.href) ? "mobileItem active" : "mobileItem"}
             href={item.href}
             key={item.href}

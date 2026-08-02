@@ -22,11 +22,19 @@ from app.modules.places.model import (
     PlaceRegionSnapshot,
     PlaceReview,
 )
-from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
+from app.modules.plans.explorer.model import (
+    ExplorerIntake,
+    UrlExtractionCacheEntry,
+    UserMustPlace,
+    UserMustPlaceUser,
+    YouTubeTranscriptCacheEntry,
+)
 from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.planning_runs.model import PlanningRun, PlanningRunStage
 from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.users.model import User
+from app.modules.travel_groups.model import TravelGroup, TravelGroupMembership, TravelGroupPost
 
 __all__ = [
     "AuditEvent",
@@ -55,8 +63,15 @@ __all__ = [
     "TripChat",
     "TripChatMessage",
     "TripChatPlanRevision",
+    "UrlImportJob",
     "User",
     "UserMustPlace",
+    "UserMustPlaceUser",
+    "UrlExtractionCacheEntry",
+    "YouTubeTranscriptCacheEntry",
     "UserPost",
     "UserVisitedPlace",
+    "TravelGroup",
+    "TravelGroupMembership",
+    "TravelGroupPost",
 ]

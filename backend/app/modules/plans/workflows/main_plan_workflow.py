@@ -86,6 +86,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            destinationStays=payload.intent.destination_stays,
             constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
@@ -135,6 +136,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=payload.intent.must_visit_places,
             avoidPlaces=payload.intent.avoid_places,
             constraints=payload.intent.constraints,
+            destinationStays=payload.intent.destination_stays,
             constraintPolicy=payload.intent.constraint_policy,
             clarifyingQuestions=payload.intent.clarifying_questions,
         )
@@ -430,6 +432,7 @@ class MainPlanWorkflow:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            destinationStays=intent.destination_stays,
             constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )

@@ -66,11 +66,19 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 ## Quyền riêng tư
 
 - Chỉ thu thập dữ liệu cần thiết cho tính năng.
+- Bài `post`/`reel` trên Hồ sơ là nội dung công khai: giao diện phải báo rõ trước
+  khi đăng; backend lấy tác giả từ session, yêu cầu CSRF, bắt buộc location tag,
+  giới hạn kích thước, allowlist MIME, kiểm tra chữ ký file và thay tên gốc bằng
+  UUID. Không suy diễn location tag thành vị trí thời gian thực.
 - Giải thích lý do cần vị trí, contact, media hoặc URL được nhập.
 - Mặc định plan và thành viên nhóm ở trạng thái riêng tư.
 - Trip chat luôn được query bằng cả chat ID và authenticated user ID. Message
   history và plan snapshot là dữ liệu riêng tư; ảnh upload chỉ xử lý trong
   request, database chỉ lưu tên attachment chứ không lưu bytes.
+- URL job của guest chỉ giữ URL, trạng thái, timing và kết quả plan trong memory
+  của tab; không tạo trip chat hoặc job row trong database và bị xóa khi reload
+  hoặc đóng tab. Endpoint intake vẫn phải áp dụng validation URL/SSRF như luồng
+  authenticated.
 - Xác định thời gian lưu prompt, nội dung nguồn, log, lịch sử trip và hồ sơ tài
   chính.
 - Hỗ trợ export và xóa dữ liệu khi pháp luật cho phép.

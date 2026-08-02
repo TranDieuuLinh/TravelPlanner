@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from difflib import SequenceMatcher
 
 from app.modules.plans.dto.agent_contracts import PlaceCandidateHint
 from app.modules.plans.explorer.schema import (
@@ -38,7 +39,9 @@ class PlaceCandidateAggregator:
         destination_key = _dedupe_key(destination)
         merged: dict[str, UnifiedPlaceCandidate] = {}
         order: list[str] = []
+        aliases: dict[str, str] = {}
         for candidate in candidates:
+            candidate = _recover_place_name_from_evidence(candidate)
             if not is_credible_url_candidate(candidate):
                 continue
             candidate = candidate.model_copy(
@@ -49,18 +52,51 @@ class PlaceCandidateAggregator:
                 }
             )
             name_key = _dedupe_key(candidate.name)
-            key = _candidate_key(candidate) or name_key
+            identity_key = _place_identity_key(candidate.name, destination)
+            # Candidate identity comes only from its normalized place name.
+            # sourceOrder is sequencing metadata: independent STT/OCR/caption
+            # observations frequently reuse the same order, so using it as an
+            # identity key silently merges unrelated venues.
+            candidate_aliases = [
+                alias
+                for alias in (identity_key, name_key)
+                if alias
+            ]
+            key = next(
+                (
+                    aliases[alias]
+                    for alias in candidate_aliases
+                    if alias in aliases
+                ),
+                "",
+            )
+            if not key:
+                key = next(
+                    (
+                        existing_key
+                        for existing_key, existing in merged.items()
+                        if _same_place_name(
+                            existing.name,
+                            candidate.name,
+                            destination,
+                        )
+                    ),
+                    identity_key or name_key,
+                )
             if not name_key or name_key == destination_key:
                 continue
             if key not in merged:
                 merged[key] = candidate.model_copy(deep=True)
                 order.append(key)
+                for alias in candidate_aliases:
+                    aliases[alias] = key
                 continue
             merged[key] = _merge(
                 merged[key],
                 candidate,
-                preserve_current_name=key.startswith("url-order:"),
             )
+            for alias in candidate_aliases:
+                aliases[alias] = key
         result = [merged[key] for key in order]
         result.sort(
             key=lambda candidate: (
@@ -153,6 +189,42 @@ class PlaceCandidateAggregator:
                 for name in result.extracted_context.extracted_places
             )
         return candidates
+
+
+def _recover_place_name_from_evidence(
+    candidate: UnifiedPlaceCandidate,
+) -> UnifiedPlaceCandidate:
+    """Recover a concise place label when extraction appended commentary.
+
+    STT/OCR frequently contains a clean repeated label even when the merged
+    ``name`` also contains the following review sentence. Only accept an
+    evidenced replacement that is already contained in the original label and
+    independently passes the URL-candidate policy.
+    """
+    if is_credible_url_candidate(candidate):
+        return candidate
+
+    original_tokens = _word_tokens(candidate.name)
+    for source in ("stt", "ocr", "metadata", "caption"):
+        evidence = candidate.source_evidence.get(source)
+        if not evidence:
+            continue
+        recovered = re.sub(
+            r"^\s*(?:#?\d{1,2}[.)]|number\s+(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten))\s*",
+            "",
+            evidence,
+            flags=re.IGNORECASE,
+        ).strip(" .,;:-")
+        recovered_tokens = _word_tokens(recovered)
+        if (
+            not recovered_tokens
+            or not _contains_token_sequence(original_tokens, recovered_tokens)
+        ):
+            continue
+        updated = candidate.model_copy(update={"name": recovered})
+        if is_credible_url_candidate(updated):
+            return updated
+    return candidate
 
 
 def _merge(
@@ -255,17 +327,74 @@ def _dedupe_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", without_marks)
 
 
-def _candidate_key(candidate: UnifiedPlaceCandidate) -> str:
-    if candidate.source_order is None:
-        return ""
-    source_url = next(
-        (
-            source.url
-            for source in candidate.sources
-            if source.type is PlaceCandidateSourceType.url and source.url
-        ),
-        None,
+def _word_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFD", value.strip().casefold())
+    without_marks = "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return re.findall(r"[a-z0-9]+", without_marks)
+
+
+def _place_identity_key(name: str, destination: str) -> str:
+    name_tokens = _identity_tokens(name, destination)
+    return "identity:" + "".join(name_tokens) if name_tokens else ""
+
+
+def _identity_tokens(name: str, destination: str) -> list[str]:
+    name_tokens = _word_tokens(name)
+    destination_tokens = _word_tokens(destination)
+    if not name_tokens:
+        return []
+    if destination_tokens:
+        destination_width = len(destination_tokens)
+        index = 0
+        stripped: list[str] = []
+        while index < len(name_tokens):
+            if name_tokens[index:index + destination_width] == destination_tokens:
+                index += destination_width
+                continue
+            if name_tokens[index] == "".join(destination_tokens):
+                index += 1
+                continue
+            stripped.append(name_tokens[index])
+            index += 1
+        name_tokens = stripped
+    while (
+        len(name_tokens) > 2
+        and name_tokens[0] in {"a", "an", "the", "very", "famous"}
+    ):
+        name_tokens = name_tokens[1:]
+    return name_tokens
+
+
+def _same_place_name(left: str, right: str, destination: str) -> bool:
+    left_tokens = _identity_tokens(left, destination)
+    right_tokens = _identity_tokens(right, destination)
+    if not left_tokens or not right_tokens:
+        return False
+    if left_tokens == right_tokens:
+        return True
+    if len(left_tokens) != len(right_tokens):
+        return False
+    differences = 0
+    for left_token, right_token in zip(left_tokens, right_tokens, strict=True):
+        if left_token == right_token:
+            continue
+        if (
+            min(len(left_token), len(right_token)) < 3
+            or SequenceMatcher(None, left_token, right_token).ratio() < 0.8
+        ):
+            return False
+        differences += 1
+    return differences == 1
+
+
+def _contains_token_sequence(values: list[str], expected: list[str]) -> bool:
+    if len(expected) > len(values):
+        return False
+    return any(
+        values[index:index + len(expected)] == expected
+        for index in range(len(values) - len(expected) + 1)
     )
-    if source_url is None:
-        return ""
-    return f"url-order:{source_url}:{candidate.source_order}"

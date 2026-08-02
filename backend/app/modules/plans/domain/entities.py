@@ -7,6 +7,18 @@ from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 
 
+class DestinationStay(BaseModel):
+    """A day range assigned to a city/region, not a schedulable Place."""
+
+    name: str = Field(min_length=1)
+    duration_days: int = Field(ge=1, le=30, alias="durationDays")
+    start_day: int = Field(ge=1, le=30, alias="startDay")
+    end_day: int = Field(ge=1, le=30, alias="endDay")
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+
+    model_config = {"populate_by_name": True}
+
+
 class TravelIntent(BaseModel):
     destination: str
     days: int
@@ -17,6 +29,10 @@ class TravelIntent(BaseModel):
     must_visit_places: list[str] = Field(default_factory=list, alias="mustVisitPlaces")
     avoid_places: list[str] = Field(default_factory=list, alias="avoidPlaces")
     constraints: list[str] = Field(default_factory=list)
+    destination_stays: list[DestinationStay] = Field(
+        default_factory=list,
+        alias="destinationStays",
+    )
     constraint_policy: ConstraintPolicy = Field(
         default_factory=ConstraintPolicy,
         alias="constraintPolicy",

@@ -9,13 +9,34 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
+from app.modules.plans.explorer.model import (
+    ExplorerIntake,
+    UrlExtractionCacheEntry,
+    UserMustPlace,
+    UserMustPlaceUser,
+)
+from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
+from app.modules.plans.explorer.tools.url_reels.schema import (
+    ExtractedContext,
+    ExtractedPlace,
+    MediaArtifacts,
+    SpeechToTextResult,
+    UrlMetadata,
+    UrlReelExtractionResult,
+)
+from app.modules.plans.explorer.tools.url_reels.utils import (
+    canonicalize_url,
+    detect_platform,
+)
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
 )
 from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
+
+
+URL_EXTRACTION_CACHE_VERSION = 2
 
 
 class ExplorerPersistenceRepository:
@@ -29,6 +50,7 @@ class ExplorerPersistenceRepository:
         user_id: str | None,
         destination: str,
         resolutions: list[PlaceResolution],
+        url_results: list[UrlReelExtractionResult] | None = None,
     ) -> None:
         self.session.add(
             ExplorerIntake(
@@ -37,6 +59,7 @@ class ExplorerPersistenceRepository:
                 destination=destination,
             )
         )
+        self._save_url_cache(url_results or [])
         for resolution in resolutions:
             if not _is_persistable_resolution(
                 resolution,
@@ -44,16 +67,20 @@ class ExplorerPersistenceRepository:
             ):
                 continue
             candidate = resolution.candidate
-            self.session.add(
-                UserMustPlace(
+            source_url = _candidate_source_url(candidate)
+            candidate_key = _shared_candidate_key(candidate, destination)
+            must_place = self._find_shared_place(
+                source_url=source_url,
+                candidate_key=candidate_key,
+                candidate_name=candidate.name,
+            )
+            if must_place is None:
+                must_place = UserMustPlace(
                     id=str(uuid4()),
                     intake_id=intake_id,
                     user_id=user_id,
                     destination=destination,
-                    candidate_key=_candidate_key(
-                        candidate.name,
-                        destination,
-                    ),
+                    candidate_key=candidate_key,
                     candidate_name=candidate.name,
                     category=candidate.category.value,
                     address_hint=candidate.address_hint,
@@ -65,7 +92,7 @@ class ExplorerPersistenceRepository:
                     attributes_json=list(candidate.attributes),
                     source_evidence_json=dict(candidate.source_evidence),
                     confidence=Decimal(str(candidate.confidence)),
-                    notes=candidate.notes,
+                    notes=_place_notes(candidate),
                     resolved_name=resolution.name,
                     address=resolution.address,
                     city=resolution.city,
@@ -88,7 +115,45 @@ class ExplorerPersistenceRepository:
                     source_time_hint=candidate.source_time_hint,
                     source_activity=candidate.source_activity,
                     source_duration_minutes=candidate.source_duration_minutes,
+                    place_id=resolution.place_id,
+                    name=resolution.name,
+                    place_type=(
+                        resolution.place_type or candidate.category.value
+                    ),
+                    region_key=(
+                        resolution.region_key
+                        or normalize_region_key(resolution.city or destination)
+                    ),
+                    status=resolution.place_status or "active",
+                    opening_hours=list(resolution.opening_hours),
+                    typical_duration_minutes=(
+                        resolution.typical_duration_minutes
+                        or candidate.source_duration_minutes
+                    ),
+                    source_platform=(
+                        resolution.source_platform or resolution.provider
+                    ),
+                    source_link=resolution.source_link or source_url,
+                    source_url=source_url,
+                    plus_code=resolution.plus_code,
+                    rating=resolution.rating,
+                    review_count=resolution.review_count,
+                    source_fetched_at=(
+                        resolution.fetched_at
+                    ),
+                    revision=resolution.place_revision,
+                    metadata_json={
+                        **resolution.place_metadata,
+                        "candidateName": candidate.name,
+                        "sourceEvidence": dict(candidate.source_evidence),
+                    },
                 )
+                self.session.add(must_place)
+                self.session.flush()
+            self._link_user(
+                must_place=must_place,
+                intake_id=intake_id,
+                user_id=user_id,
             )
         self.session.commit()
 
@@ -99,12 +164,16 @@ class ExplorerPersistenceRepository:
     ) -> list[SelectedPlaceCreate]:
         rows = list(self.session.scalars(
             select(UserMustPlace)
+            .join(
+                UserMustPlaceUser,
+                UserMustPlaceUser.user_must_place_id == UserMustPlace.id,
+            )
             .where(
-                UserMustPlace.intake_id == intake_id,
+                UserMustPlaceUser.intake_id == intake_id,
                 (
-                    UserMustPlace.user_id == user_id
+                    UserMustPlaceUser.user_id == _numeric_user_id(user_id)
                     if user_id is not None
-                    else UserMustPlace.user_id.is_(None)
+                    else UserMustPlaceUser.user_id.is_(None)
                 ),
             )
             .order_by(UserMustPlace.created_at, UserMustPlace.id)
@@ -119,15 +188,10 @@ class ExplorerPersistenceRepository:
         )
         return [
             SelectedPlaceCreate(
-                # Preserve the source label in URL itineraries. Provider
-                # resolution contributes coordinates/address, but a broad
-                # match such as "Hà Nội" must not replace "Văn Miếu" in the
-                # plan or collapse two distinct source stops.
-                name=(
-                    must_place.candidate_name
-                    if must_place.source_order is not None
-                    else must_place.resolved_name
-                ),
+                # Display the verified provider label in plans. The original
+                # caption/OCR spelling remains in candidate_name and evidence
+                # on UserMustPlace for provenance and debugging.
+                name=must_place.resolved_name,
                 address=must_place.address,
                 priority=_priority_from_confidence(must_place.confidence),
                 mustVisit=must_place.preference_level == "must_visit",
@@ -170,9 +234,251 @@ class ExplorerPersistenceRepository:
             if _is_schedulable_must_place(must_place)
         ]
 
+    def load_cached_url_result(
+        self,
+        url: str,
+    ) -> UrlReelExtractionResult | None:
+        source_url = canonicalize_url(url)
+        cached = self.session.get(UrlExtractionCacheEntry, source_url)
+        if cached is None:
+            rows = self._rows_for_source_url(source_url)
+            if not rows:
+                return None
+            context = _context_from_shared_places(rows)
+            platform = detect_platform(source_url)
+        else:
+            if (
+                cached.extracted_context_json.get("_cacheVersion")
+                != URL_EXTRACTION_CACHE_VERSION
+            ):
+                return None
+            context = ExtractedContext.model_validate(
+                cached.extracted_context_json
+            )
+            platform = cached.platform
+        return UrlReelExtractionResult(
+            url=source_url,
+            platform=platform,
+            metadata=UrlMetadata(
+                originalUrl=url,
+                canonicalUrl=source_url,
+                platform=platform,
+            ),
+            artifacts=MediaArtifacts(),
+            speechToText=SpeechToTextResult(
+                text="",
+                status="cached",
+                source="shared_url_cache",
+                durationSeconds=0,
+            ),
+            extractedContext=context,
+            timings={"sharedUrlCache": 0.0},
+        )
+
+    def _rows_for_source_url(self, source_url: str) -> list[UserMustPlace]:
+        exact = list(self.session.scalars(
+            select(UserMustPlace).where(UserMustPlace.source_url == source_url)
+        ))
+        if exact:
+            return exact
+        return [
+            row
+            for row in self.session.scalars(
+                select(UserMustPlace).where(UserMustPlace.source_url.is_not(None))
+            )
+            if row.source_url and canonicalize_url(row.source_url) == source_url
+        ]
+
+    def find_cached_resolution(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution | None:
+        source_url = _candidate_source_url(candidate)
+        if source_url is None:
+            return None
+        row = self._find_shared_place(
+            source_url=source_url,
+            candidate_key=_shared_candidate_key(candidate, destination),
+            candidate_name=candidate.name,
+        )
+        if row is None or row.deleted_at is not None:
+            return None
+        return PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider=row.provider or row.source_platform or "shared_url_cache",
+            externalId=row.external_id,
+            placeId=row.place_id,
+            name=row.name or row.resolved_name,
+            placeType=row.place_type or row.category,
+            address=row.address,
+            city=row.city,
+            country=row.country,
+            countryCode=row.country_code,
+            regionKey=row.region_key,
+            primaryArea=row.primary_area,
+            latitude=row.latitude,
+            longitude=row.longitude,
+            description=row.description,
+            placeStatus=row.status,
+            openingHours=list(row.opening_hours or []),
+            typicalDurationMinutes=row.typical_duration_minutes,
+            sourcePlatform=row.source_platform,
+            sourceLink=row.source_link,
+            plusCode=row.plus_code,
+            rating=row.rating,
+            reviewCount=row.review_count,
+            dataConfidence=row.data_confidence,
+            fetchedAt=row.source_fetched_at or row.fetched_at,
+            placeRevision=row.revision,
+            placeMetadata=dict(row.metadata_json or {}),
+            attribution=row.attribution,
+        )
+
+    def _save_url_cache(self, results: list[UrlReelExtractionResult]) -> None:
+        for result in results:
+            source_url = canonicalize_url(result.metadata.canonical_url or result.url)
+            row = self.session.get(UrlExtractionCacheEntry, source_url)
+            payload = result.extracted_context.model_dump(
+                mode="json", by_alias=True
+            )
+            payload["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
+            if row is None:
+                self.session.add(
+                    UrlExtractionCacheEntry(
+                        source_url=source_url,
+                        platform=result.platform,
+                        extracted_context_json=payload,
+                    )
+                )
+            else:
+                row.platform = result.platform
+                row.extracted_context_json = payload
+
+    def _find_shared_place(
+        self,
+        *,
+        source_url: str | None,
+        candidate_key: str,
+        candidate_name: str,
+    ) -> UserMustPlace | None:
+        if source_url is None:
+            return None
+        rows = list(self.session.scalars(
+            select(UserMustPlace).where(UserMustPlace.source_url == source_url)
+        ))
+        normalized_name = _slug(candidate_name)
+        return next(
+            (
+                row for row in rows
+                if row.candidate_key == candidate_key
+                or _slug(row.candidate_name) == normalized_name
+            ),
+            None,
+        )
+
+    def _link_user(
+        self,
+        *,
+        must_place: UserMustPlace,
+        intake_id: str,
+        user_id: str | None,
+    ) -> None:
+        existing = self.session.scalar(
+            select(UserMustPlaceUser).where(
+                UserMustPlaceUser.intake_id == intake_id,
+                UserMustPlaceUser.user_must_place_id == must_place.id,
+            )
+        )
+        if existing is not None:
+            return
+        numeric_user_id = (
+            int(user_id) if user_id is not None and user_id.isdigit() else None
+        )
+        self.session.add(
+            UserMustPlaceUser(
+                id=str(uuid4()),
+                user_must_place_id=must_place.id,
+                user_id=numeric_user_id,
+                intake_id=intake_id,
+            )
+        )
+
 
 def _candidate_key(name: str, destination: str) -> str:
     return f"{_slug(destination)}:{_slug(name)}"
+
+
+def _candidate_source_url(candidate: UnifiedPlaceCandidate) -> str | None:
+    source_url = next(
+        (source.url for source in candidate.sources if source.url),
+        None,
+    )
+    return canonicalize_url(source_url) if source_url else None
+
+
+def _shared_candidate_key(
+    candidate: UnifiedPlaceCandidate,
+    destination: str,
+) -> str:
+    return (
+        _slug(candidate.name)
+        if _candidate_source_url(candidate)
+        else _candidate_key(candidate.name, destination)
+    )
+
+
+def _place_notes(candidate: UnifiedPlaceCandidate) -> str | None:
+    parts = [
+        value.strip()
+        for value in [candidate.notes, *candidate.source_evidence.values()]
+        if value and value.strip()
+    ]
+    unique = list(dict.fromkeys(parts))
+    return "\n".join(unique) or None
+
+
+def _context_from_shared_places(
+    rows: list[UserMustPlace],
+) -> ExtractedContext:
+    details = [
+        ExtractedPlace(
+            name=row.candidate_name,
+            category=row.category,
+            address=row.address_hint or row.address,
+            searchRegion=row.search_region or row.city,
+            evidence=row.notes,
+            sourceEvidence=dict(row.source_evidence_json or {}),
+            attributes=list(row.attributes_json or []),
+            sourceOrder=row.source_order,
+            sourceDay=row.source_day,
+            sourceTimeHint=row.source_time_hint,
+            sourceActivity=row.source_activity,
+            sourceDurationMinutes=row.source_duration_minutes,
+        )
+        for row in sorted(
+            rows,
+            key=lambda item: (
+                item.source_order is None,
+                item.source_order or 10_000,
+                item.created_at,
+                item.id,
+            ),
+        )
+    ]
+    return ExtractedContext(
+        extractedPlaces=[place.name for place in details],
+        extractedPlaceDetails=details,
+        confidence=max((float(row.confidence) for row in rows), default=0.0),
+    )
+
+
+def _numeric_user_id(user_id: str | None) -> int | None:
+    if user_id is None:
+        return None
+    return int(user_id) if user_id.isdigit() else -1
 
 
 def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:

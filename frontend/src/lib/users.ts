@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api";
 import type { CurrentUser } from "@/components/AuthProvider";
-import type { ProfileShowcase } from "@/types/profile";
+import type { ExplorePost, ProfilePost, ProfileShowcase } from "@/types/profile";
 
 export async function listUsers(): Promise<CurrentUser[]> {
   return apiFetch<CurrentUser[]>("/users");
@@ -36,4 +36,25 @@ export async function getPlannerPreview(input: {
 
 export async function getProfileShowcase(): Promise<ProfileShowcase> {
   return apiFetch<ProfileShowcase>("/me/showcase");
+}
+
+export async function createProfilePost(input: {
+  contentType: "post" | "reel";
+  caption: string;
+  media: File;
+  locationName: string;
+}): Promise<ProfilePost> {
+  const body = new FormData();
+  body.append("contentType", input.contentType);
+  body.append("caption", input.caption);
+  body.append("locationName", input.locationName);
+  body.append("media", input.media);
+  return apiFetch<ProfilePost>("/me/posts", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getExplorePosts(): Promise<ExplorePost[]> {
+  return apiFetch<ExplorePost[]>("/posts?limit=30");
 }

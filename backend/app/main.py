@@ -1,5 +1,7 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -7,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
+from starlette.staticfiles import StaticFiles
 
 from app.api_router import api_router
 from app.core.config import settings
@@ -21,6 +24,7 @@ from app.db.seed import seed_demo_marketplace
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     preload_audio_model,
 )
+from app.modules.plans.url_job_worker import UrlImportJobWorker
 from app.shared.errors import AppError
 from app.shared.schemas import APIMessage
 
@@ -28,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     with SessionLocal() as db:
         seed_demo_marketplace(db)
     if settings.preload_url_reel_models:
@@ -37,7 +41,18 @@ async def lifespan(_: FastAPI):
             logger.info("URL reel audio model preloaded")
         except Exception:
             logger.exception("URL reel audio model preload failed")
-    yield
+    url_worker = UrlImportJobWorker(SessionLocal)
+    app.state.url_import_worker = url_worker
+    worker_task = asyncio.create_task(
+        url_worker.run_forever(), name="url-import-worker"
+    )
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker_task
+        del app.state.url_import_worker
 
     if getattr(settings, "preload_url_reel_models", False):
         try:
@@ -47,6 +62,12 @@ async def lifespan(_: FastAPI):
             logger.exception("URL reel audio model preload failed")
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+settings.user_post_media_dir.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/media/posts",
+    StaticFiles(directory=settings.user_post_media_dir),
+    name="user_post_media",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,14 +99,17 @@ async def rate_limit_wrapper(request: Request, call_next):
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    content = {
+        "code": exc.code,
+        "message": exc.message,
+        "fieldErrors": exc.field_errors,
+        "requestId": getattr(request.state, "request_id", uuid4().hex),
+    }
+    if exc.details:
+        content["details"] = exc.details
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "code": exc.code,
-            "message": exc.message,
-            "fieldErrors": exc.field_errors,
-            "requestId": getattr(request.state, "request_id", uuid4().hex),
-        },
+        content=content,
     )
 
 

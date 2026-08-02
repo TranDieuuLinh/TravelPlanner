@@ -33,6 +33,16 @@ class PlaceLookupRecord(Protocol):
     latitude: Decimal | None
     longitude: Decimal | None
     data_confidence: str
+    region_key: str
+    status: str
+    opening_hours: list[dict]
+    typical_duration_minutes: int | None
+    source_platform: str | None
+    source_link: str | None
+    plus_code: str | None
+    rating: Decimal | None
+    review_count: int | None
+    revision: int
     source_fetched_at: datetime | None
     metadata_json: dict
 
@@ -70,6 +80,21 @@ class PlaceResolution(BaseModel):
     )
     fetched_at: datetime | None = Field(default=None, alias="fetchedAt")
     attribution: str | None = None
+    place_id: str | None = Field(default=None, alias="placeId")
+    place_type: str | None = Field(default=None, alias="placeType")
+    region_key: str | None = Field(default=None, alias="regionKey")
+    place_status: str | None = Field(default=None, alias="placeStatus")
+    opening_hours: list[dict] = Field(default_factory=list, alias="openingHours")
+    typical_duration_minutes: int | None = Field(
+        default=None, alias="typicalDurationMinutes"
+    )
+    source_platform: str | None = Field(default=None, alias="sourcePlatform")
+    source_link: str | None = Field(default=None, alias="sourceLink")
+    plus_code: str | None = Field(default=None, alias="plusCode")
+    rating: Decimal | None = None
+    review_count: int | None = Field(default=None, alias="reviewCount")
+    place_revision: int = Field(default=1, alias="placeRevision")
+    place_metadata: dict = Field(default_factory=dict, alias="placeMetadata")
 
     model_config = {"populate_by_name": True}
 
@@ -256,7 +281,9 @@ class DatabasePlaceResolver(PlaceResolver):
             status="resolved",
             provider=self.provider_name,
             externalId=record.id,
+            placeId=record.id,
             name=record.name,
+            placeType=record.place_type,
             address=record.address or candidate.address_hint,
             city=record.city or search_region,
             country=record.country,
@@ -274,6 +301,19 @@ class DatabasePlaceResolver(PlaceResolver):
                 if record.data_confidence in {"low", "medium", "high"}
                 else "medium"
             ),
+            regionKey=getattr(record, "region_key", region_key),
+            placeStatus=getattr(record, "status", "active"),
+            openingHours=list(getattr(record, "opening_hours", []) or []),
+            typicalDurationMinutes=getattr(
+                record, "typical_duration_minutes", None
+            ),
+            sourcePlatform=getattr(record, "source_platform", None),
+            sourceLink=getattr(record, "source_link", None),
+            plusCode=getattr(record, "plus_code", None),
+            rating=getattr(record, "rating", None),
+            reviewCount=getattr(record, "review_count", None),
+            placeRevision=getattr(record, "revision", 1),
+            placeMetadata=metadata,
             fetchedAt=record.source_fetched_at,
             attribution=(
                 _optional_text(metadata.get("attribution"))
@@ -294,6 +334,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         work_dir: Path | None = None,
         timeout_seconds: float = 45.0,
         max_alias_queries: int = 3,
+        max_concurrency: int = 2,
     ) -> None:
         if not executable and work_dir is None:
             raise ValueError(
@@ -303,6 +344,27 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         self.work_dir = work_dir
         self.timeout_seconds = timeout_seconds
         self.max_alias_queries = max_alias_queries
+        self.max_concurrency = max(1, max_concurrency)
+
+    async def resolve_many(
+        self,
+        candidates: list[UnifiedPlaceCandidate],
+        *,
+        destination: str,
+    ) -> list[PlaceResolution]:
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
+        async def resolve_one(
+            candidate: UnifiedPlaceCandidate,
+        ) -> PlaceResolution:
+            async with semaphore:
+                return await self.resolve(candidate, destination=destination)
+
+        return list(
+            await asyncio.gather(
+                *(resolve_one(candidate) for candidate in candidates)
+            )
+        )
 
     async def resolve(
         self,
@@ -315,11 +377,22 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         queries = _google_maps_alias_queries(
             candidate_names,
             address_hint=candidate.address_hint,
+            context_hint=_candidate_context_hint(candidate),
             search_region=search_region,
             limit=self.max_alias_queries,
         )
         try:
-            payload = await self._search(queries)
+            # Query the strongest canonical/context combination first so a
+            # successful lookup does not pay for every bilingual alias. Keep
+            # the remaining aliases as a quality-preserving fallback.
+            payload = await self._search(queries[:1])
+            if len(queries) > 1 and not _google_maps_payload_is_usable(
+                payload,
+                candidate_names=candidate_names,
+                search_region=search_region,
+                candidate_category=candidate.category.value,
+            ):
+                payload.extend(await self._search(queries[1:]))
         except (
             OSError,
             ValueError,
@@ -353,29 +426,14 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         longitude = _as_decimal(
             result.get("longitude", result.get("longtitude"))
         )
-        name_matches = any(
-            _token_names_match(_name_tokens(name), _name_tokens(title))
-            for name in candidate_names
-        )
-        region_matches = _google_maps_result_matches_region(
-            result,
-            search_region=search_region,
-        )
-        category_compatible = _category_compatible(
-            candidate.category.value,
-            result,
-        )
         coordinates_valid = _coordinates_valid(latitude, longitude)
-        rejection_reasons = [
-            reason
-            for condition, reason in (
-                (not name_matches, "name_mismatch"),
-                (region_matches is False, "region_mismatch"),
-                (category_compatible is False, "category_mismatch"),
-                (not coordinates_valid, "coordinates_missing"),
-            )
-            if condition
-        ]
+        rejection_reasons = _google_maps_rejection_reasons(
+            result,
+            candidate_names=candidate_names,
+            search_region=search_region,
+            candidate_category=candidate.category.value,
+            coordinates_valid=coordinates_valid,
+        )
         status = "resolved" if not rejection_reasons else "unresolved"
         complete_address = result.get("complete_address")
         complete_address_dict = (
@@ -395,7 +453,15 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 or _optional_text(result.get("cid"))
                 or _optional_text(result.get("data_id"))
             ),
-            name=title,
+            name=(
+                candidate.vietnamese_names[0]
+                if candidate.vietnamese_names
+                else title
+            ),
+            placeType=(
+                _optional_text(result.get("category"))
+                or candidate.category.value
+            ),
             address=address,
             city=(
                 _optional_text(complete_address_dict.get("city"))
@@ -414,6 +480,26 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             latitude=latitude,
             longitude=longitude,
             description=_google_maps_description(result),
+            placeStatus="active" if status == "resolved" else "unverified",
+            openingHours=_normalized_opening_hours(
+                result.get("opening_hours")
+            ),
+            sourcePlatform=self.provider_name,
+            sourceLink=_optional_text(result.get("link")),
+            plusCode=_optional_text(result.get("plus_code")),
+            rating=_rating_decimal(
+                result.get("review_rating", result.get("rating"))
+            ),
+            reviewCount=_non_negative_int(
+                result.get("reviews", result.get("review_count"))
+            ),
+            placeMetadata=_compact_metadata(
+                {
+                    "category": result.get("category"),
+                    "website": result.get("website"),
+                    "phone": result.get("phone"),
+                }
+            ),
             dataConfidence="medium" if status == "resolved" else "low",
             fetchedAt=datetime.now(timezone.utc),
             attribution="Google Maps data via gosom/google-maps-scraper",
@@ -611,7 +697,12 @@ class NominatimPlaceResolver(PlaceResolver):
             if isinstance(result.get("namedetails"), dict)
             else {}
         )
-        name = _localized_name(namedetails, result) or candidate.name
+        name = _resolved_display_name(
+            candidate,
+            namedetails=namedetails,
+            result=result,
+            search_region=search_region,
+        )
         importance = _as_float(result.get("importance"))
         name_matches = _any_name_matches(
             candidate_names,
@@ -655,6 +746,8 @@ class NominatimPlaceResolver(PlaceResolver):
             if isinstance(extra_tags, dict)
             else None
         )
+        osm_type = _optional_text(result.get("osm_type"))
+        osm_id = _optional_text(result.get("osm_id"))
         return PlaceResolution(
             candidate=candidate,
             status=status,
@@ -686,6 +779,31 @@ class NominatimPlaceResolver(PlaceResolver):
             latitude=_as_decimal(result.get("lat")),
             longitude=_as_decimal(result.get("lon")),
             description=description,
+            placeType=(
+                _optional_text(result.get("type"))
+                or _optional_text(result.get("addresstype"))
+                or _optional_text(result.get("class"))
+                or candidate.category.value
+            ),
+            placeStatus="active" if status == "resolved" else "unverified",
+            openingHours=_provider_opening_hours(
+                extra_tags.get("opening_hours")
+                if isinstance(extra_tags, dict)
+                else None,
+                source_format="openstreetmap",
+            ),
+            sourcePlatform="openstreetmap",
+            sourceLink=(
+                f"https://www.openstreetmap.org/{osm_type}/{osm_id}"
+                if osm_type in {"node", "way", "relation"} and osm_id
+                else None
+            ),
+            plusCode=(
+                _optional_text(extra_tags.get("plus_code"))
+                if isinstance(extra_tags, dict)
+                else None
+            ),
+            placeMetadata=_nominatim_metadata(extra_tags, namedetails),
             dataConfidence=confidence,
             fetchedAt=datetime.now(timezone.utc),
             attribution=_optional_text(result.get("licence")),
@@ -780,6 +898,78 @@ def _as_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _as_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _non_negative_int(value: Any) -> int | None:
+    parsed = _as_int(value)
+    return parsed if parsed is not None and parsed >= 0 else None
+
+
+def _rating_decimal(value: Any) -> Decimal | None:
+    parsed = _as_decimal(value)
+    if parsed is None or parsed < Decimal("0") or parsed > Decimal("5"):
+        return None
+    return parsed
+
+
+def _normalized_opening_hours(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _provider_opening_hours(
+    value: Any,
+    *,
+    source_format: str,
+) -> list[dict[str, Any]]:
+    raw = _optional_text(value)
+    if not raw:
+        return []
+    return [
+        {
+            "rawTimeSlots": raw,
+            "is24Hours": raw.casefold() in {"24/7", "24 hours", "24 giờ"},
+            "sourceFormat": source_format,
+        }
+    ]
+
+
+def _compact_metadata(values: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: normalized
+        for key, value in values.items()
+        if (normalized := _optional_text(value)) is not None
+    }
+
+
+def _nominatim_metadata(
+    extra_tags: Any,
+    namedetails: dict[str, Any],
+) -> dict[str, Any]:
+    tags = extra_tags if isinstance(extra_tags, dict) else {}
+    return _compact_metadata(
+        {
+            "website": tags.get("website") or tags.get("contact:website"),
+            "phone": tags.get("phone") or tags.get("contact:phone"),
+            "wikidata": tags.get("wikidata"),
+            "wikipedia": tags.get("wikipedia"),
+            "operator": tags.get("operator"),
+            "cuisine": tags.get("cuisine"),
+            "wheelchair": tags.get("wheelchair"),
+            "englishName": namedetails.get("name:en"),
+            "vietnameseName": namedetails.get("name:vi"),
+        }
+    )
+
+
 def _as_float(value: Any) -> float:
     try:
         return float(value)
@@ -817,6 +1007,38 @@ def _localized_name(
         if value:
             return value
     return _optional_text(result.get("name"))
+
+
+def _resolved_display_name(
+    candidate: UnifiedPlaceCandidate,
+    *,
+    namedetails: dict[str, Any],
+    result: dict[str, Any],
+    search_region: str,
+) -> str:
+    if candidate.vietnamese_names:
+        return candidate.vietnamese_names[0]
+    provider_name = _localized_name(namedetails, result)
+    candidate_names = _candidate_lookup_names(candidate)
+    provider_has_candidate_match = _any_name_matches(
+        candidate_names,
+        display_name=_optional_text(result.get("display_name")),
+        provider_name=provider_name or "",
+        namedetails=namedetails,
+    )
+    if (
+        provider_name
+        and provider_has_candidate_match
+        and _normalized(provider_name) != _normalized(search_region)
+    ):
+        return provider_name
+    return next(
+        iter(
+            candidate.vietnamese_names
+            or candidate.english_names
+            or [candidate.name]
+        )
+    )
 
 
 def _database_name_keys(record: PlaceLookupRecord) -> set[str]:
@@ -879,17 +1101,58 @@ def _google_maps_alias_queries(
     candidate_names: list[str],
     *,
     address_hint: str | None,
+    context_hint: str | None = None,
     search_region: str,
     limit: int,
 ) -> list[str]:
-    return [
+    queries: list[str] = []
+    if candidate_names and context_hint:
+        queries.append(
+            ", ".join(
+                _single_line(part)
+                for part in (
+                    candidate_names[0],
+                    address_hint,
+                    context_hint,
+                    search_region,
+                )
+                if part and _single_line(part)
+            )
+        )
+    queries.extend(
         ", ".join(
             _single_line(part)
             for part in (name, address_hint, search_region)
             if part and _single_line(part)
         )
         for name in candidate_names[:limit]
+    )
+    return list(dict.fromkeys(queries))
+
+
+def _candidate_context_hint(
+    candidate: UnifiedPlaceCandidate,
+) -> str | None:
+    """Extract a short nearby-place hint from evidenced location wording."""
+    texts = [
+        *candidate.source_evidence.values(),
+        candidate.source_activity or "",
     ]
+    place_suffix = (
+        r"(?:train\s+street|walking\s+street|night\s+market|old\s+quarter|"
+        r"street|lake|market|cathedral|temple|museum|station)"
+    )
+    for text in texts:
+        match = re.search(
+            rf"\b(?:along|near|beside|by|next\s+to|around|on)\s+(?:the\s+)?"
+            rf"(?P<hint>[a-z0-9À-ỹĐđ'’-]+(?:\s+[a-z0-9À-ỹĐđ'’-]+){{0,3}}\s+"
+            rf"{place_suffix})\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            return _single_line(match.group("hint"))
+    return None
 
 
 def _load_google_maps_output(value: str) -> list[dict[str, Any]]:
@@ -957,10 +1220,72 @@ def _best_google_maps_result(
             int(matches_name),
             int(matches_region is not False),
             int(category_compatible is not False),
-            _as_float(result.get("review_rating")),
+            _as_float(
+                result.get("review_rating", result.get("rating"))
+            ),
         )
 
     return max(payload, key=score)
+
+
+def _google_maps_payload_is_usable(
+    payload: list[dict[str, Any]],
+    *,
+    candidate_names: list[str],
+    search_region: str,
+    candidate_category: str,
+) -> bool:
+    if not payload:
+        return False
+    result = _best_google_maps_result(
+        payload,
+        candidate_names=candidate_names,
+        search_region=search_region,
+        candidate_category=candidate_category,
+    )
+    return not _google_maps_rejection_reasons(
+        result,
+        candidate_names=candidate_names,
+        search_region=search_region,
+        candidate_category=candidate_category,
+        coordinates_valid=_coordinates_valid(
+            _as_decimal(result.get("latitude")),
+            _as_decimal(result.get("longitude", result.get("longtitude"))),
+        ),
+    )
+
+
+def _google_maps_rejection_reasons(
+    result: dict[str, Any],
+    *,
+    candidate_names: list[str],
+    search_region: str,
+    candidate_category: str,
+    coordinates_valid: bool,
+) -> list[str]:
+    title = _optional_text(result.get("title")) or ""
+    name_matches = any(
+        _token_names_match(_name_tokens(name), _name_tokens(title))
+        for name in candidate_names
+    )
+    region_matches = _google_maps_result_matches_region(
+        result,
+        search_region=search_region,
+    )
+    category_compatible = _category_compatible(
+        candidate_category,
+        result,
+    )
+    return [
+        reason
+        for condition, reason in (
+            (not name_matches, "name_mismatch"),
+            (region_matches is False, "region_mismatch"),
+            (category_compatible is False, "category_mismatch"),
+            (not coordinates_valid, "coordinates_missing"),
+        )
+        if condition
+    ]
 
 
 def _google_maps_address(result: dict[str, Any]) -> str | None:
@@ -979,7 +1304,7 @@ def _google_maps_address(result: dict[str, Any]) -> str | None:
 
 
 def _google_maps_description(result: dict[str, Any]) -> str | None:
-    descriptions = result.get("descriptions")
+    descriptions = result.get("descriptions", result.get("description"))
     if isinstance(descriptions, list):
         return next(
             (
@@ -1187,7 +1512,8 @@ def _name_tokens(value: str) -> list[str]:
         for character in decomposed
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
-    return re.findall(r"[a-z0-9]+", without_marks)
+    tokens = re.findall(r"[a-z0-9]+", without_marks)
+    return ["theater" if token == "theatre" else token for token in tokens]
 
 
 def _result_matches_region(
@@ -1239,12 +1565,14 @@ def _category_compatible(
             provider_values
             & {
                 "natural",
+                "water",
                 "tourism",
                 "historic",
                 "peak",
                 "cave_entrance",
                 "attraction",
                 "viewpoint",
+                "lake",
             }
         )
     if candidate_category in {"culture", "attraction"}:

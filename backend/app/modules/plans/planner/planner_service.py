@@ -223,6 +223,7 @@ class PlannerService:
             mustVisitPlaces=intent.must_visit_places,
             avoidPlaces=intent.avoid_places,
             constraints=intent.constraints,
+            destinationStays=intent.destination_stays,
             constraintPolicy=intent.constraint_policy,
             clarifyingQuestions=intent.clarifying_questions,
         )
@@ -503,6 +504,34 @@ class PlannerService:
         actual_days = [brief.day for brief in macro.day_briefs]
         if actual_days != expected_days:
             raise ValueError("MacroPlan must contain consecutive requested days.")
+
+        if planner_input.intent.destination_stays:
+            stay_by_day = {
+                day: stay
+                for stay in planner_input.intent.destination_stays
+                for day in range(stay.start_day, stay.end_day + 1)
+            }
+            normalized_briefs = []
+            for brief in macro.day_briefs:
+                stay = stay_by_day.get(brief.day)
+                if stay is None:
+                    normalized_briefs.append(brief)
+                    continue
+                theme = brief.theme
+                if stay.name.casefold() not in theme.casefold():
+                    theme = f"{stay.name} · {theme}"
+                normalized_briefs.append(
+                    brief.model_copy(
+                        update={
+                            "target_area": stay.name,
+                            "theme": theme,
+                        }
+                    )
+                )
+            macro = macro.model_copy(
+                update={"day_briefs": normalized_briefs}
+            )
+            draft = draft.model_copy(update={"macro_plan": macro})
 
         allowed_regions = {
             planner_input.region_context.region_key,
