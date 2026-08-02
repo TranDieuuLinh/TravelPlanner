@@ -50,12 +50,14 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
             "Selected museum",
             tags=["culture"],
             intensity="moderate",
+            address="1 Selected Street, Ha Noi",
         ),
         "support": _place(
             "support",
             "Local restaurant",
             tags=["food"],
             intensity="light",
+            address="2 Support Street, Ha Noi",
         ),
         "too-heavy": _place(
             "too-heavy",
@@ -114,6 +116,8 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     ]
     assert day.items[0].source == "selected_place"
     assert day.items[2].source == "finder_suggestion"
+    assert day.items[0].address == "1 Selected Street, Ha Noi"
+    assert day.items[2].address == "2 Support Street, Ha Noi"
     assert result.final_plan_status.used_place_ids == [
         "selected-main",
         "support",
@@ -128,6 +132,46 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     assert result.final_user_status.location is not None
     assert result.final_user_status.location.place_id == "hotel-a"
     assert result.unscheduled_places == []
+
+
+def test_finder_preserves_address_from_selected_place_without_catalog_id() -> None:
+    finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
+    macro_plan = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            "Hanoi Train Street (South)"
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                name="Hanoi Train Street (South)",
+                address="3 Trần Phú, Hoàn Kiếm, Hà Nội",
+                latitude=21.0291,
+                longitude=105.8425,
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=False,
+    )
+
+    selected_item = next(
+        item
+        for item in result.days[0].items
+        if item.source == "selected_place"
+    )
+    assert selected_item.address == "3 Trần Phú, Hoàn Kiếm, Hà Nội"
 
 
 def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
@@ -902,10 +946,12 @@ def _place(
     place_type: str = "attraction",
     latitude: float = 21.03,
     longitude: float = 105.85,
+    address: str | None = None,
 ) -> FinderPlace:
     return FinderPlace(
         placeId=place_id,
         name=name,
+        address=address,
         placeType=place_type,
         regionKey="vn,ha-noi,hoan-kiem",
         tags=tags,

@@ -1066,6 +1066,7 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(23,105,170,.2
 .candidateMapPopup strong { font-size: .72rem; }
 .candidateMapPopup small { color: var(--brand-dark); font-size: .56rem; font-weight: 800; }
 .candidateMapPopup span { color: var(--muted); font-size: .62rem; line-height: 1.4; }
+.candidateMapPopup .candidateMapPopupAddress { padding-left: 15px; background: no-repeat left 2px / 11px 11px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2362716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); }
 .candidateMapPopup p { margin: 2px 0 0; color: #596762; font-size: .59rem; line-height: 1.4; }
 
 @keyframes statusPulse {

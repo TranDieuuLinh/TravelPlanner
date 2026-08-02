@@ -645,7 +645,7 @@ function Planner() {
           ? [{
               name: item.name,
               category: categoryFromPlaceType(item.placeType),
-              address: item.address || `Ngày ${item.day} · ${item.timeWindow}`,
+              address: item.address ?? null,
               latitude: item.latitude ?? null,
               longitude: item.longitude ?? null,
               notes: item.notes,
@@ -655,7 +655,8 @@ function Planner() {
                   ?? item.order
                 : item.order,
               dayColorKey: dateKeyForTripDay(startDate, item.day),
-              dayLabel: dateLabelForTripDay(startDate, item.day)
+              dayLabel: dateLabelForTripDay(startDate, item.day),
+              timeWindow: `Ngày ${item.day} · ${item.timeWindow}`
             }]
           : []
       );

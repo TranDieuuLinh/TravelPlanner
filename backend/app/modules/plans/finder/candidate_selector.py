@@ -547,6 +547,7 @@ class CandidateSelector:
             if stored_place is not None:
                 return stored_place.model_copy(
                     update={
+                        "address": selected.address or stored_place.address,
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
                         "source_provider": selected.source_provider,
@@ -561,6 +562,7 @@ class CandidateSelector:
         return FinderPlace(
             placeId=selected.place_id,
             name=selected.name,
+            address=selected.address,
             placeType="selected_place",
             regionKey=selected.region_key or brief.target_region_key or brief.target_area,
             tags=selected.tags,

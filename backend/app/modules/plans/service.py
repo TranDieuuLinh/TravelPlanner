@@ -601,16 +601,25 @@ class PlanService:
                     )
                 }
             )
+        canonical_resolutions = _dedupe_place_resolutions(resolutions)
+        trace.candidate_count = len(canonical_resolutions)
         trace.resolved_count = sum(
             resolution.status == "resolved"
-            for resolution in resolutions
+            for resolution in canonical_resolutions
         )
-        trace.add_resolution_attempts(resolutions)
-        trace.add_url_resolution_results(url_reel_results, resolutions)
+        trace.add_resolution_attempts(
+            resolutions,
+            canonical_resolutions=canonical_resolutions,
+        )
+        trace.add_url_resolution_results(
+            url_reel_results,
+            resolutions,
+            canonical_resolutions=canonical_resolutions,
+        )
         post_processing_start = time.perf_counter()
         schedulable_candidates = [
             resolution.candidate
-            for resolution in resolutions
+            for resolution in canonical_resolutions
             if resolution.status == "resolved"
             and is_schedulable_place(
                 is_url_source=has_url_source(resolution.candidate),
@@ -629,7 +638,7 @@ class PlanService:
                 resolution,
                 destination=explorer.intent.destination,
             )
-            for resolution in resolutions
+            for resolution in canonical_resolutions
         ]
         source_coverage_days = _candidate_coverage_days(
             schedulable_candidates,
@@ -721,7 +730,7 @@ class PlanService:
                 intake_id=intake_id,
                 user_id=payload.user_state.user_id,
                 destination=explorer.intent.destination,
-                resolutions=resolutions,
+                resolutions=canonical_resolutions,
                 url_results=url_reel_results,
             )
             trace.persisted_count = len(schedulable_candidates)
@@ -1146,6 +1155,78 @@ def _merge_selected_places(
             place,
         )
     return merged
+
+
+def _dedupe_place_resolutions(
+    resolutions: list[PlaceResolution],
+) -> list[PlaceResolution]:
+    """Collapse resolved spelling variants to the Planner's place identity."""
+    unique: list[PlaceResolution] = []
+    selected_places: list[SelectedPlaceCreate | None] = []
+    for resolution in resolutions:
+        selected = _selected_place_from_resolution(resolution)
+        duplicate_index = next(
+            (
+                index
+                for index, current in enumerate(selected_places)
+                if selected is not None
+                and current is not None
+                and _same_selected_place(current, selected)
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            unique.append(resolution)
+            selected_places.append(selected)
+            continue
+
+        current = selected_places[duplicate_index]
+        assert current is not None and selected is not None
+        preferred = _prefer_selected_place(current, selected)
+        if _resolution_preference_score(resolution) > (
+            _resolution_preference_score(unique[duplicate_index])
+        ):
+            unique[duplicate_index] = resolution
+        selected_places[duplicate_index] = preferred
+    return unique
+
+
+def _selected_place_from_resolution(
+    resolution: PlaceResolution,
+) -> SelectedPlaceCreate | None:
+    if resolution.status != "resolved":
+        return None
+    return SelectedPlaceCreate(
+        placeId=resolution.place_id,
+        name=resolution.name or resolution.candidate.name,
+        latitude=(
+            float(resolution.latitude)
+            if resolution.latitude is not None
+            else None
+        ),
+        longitude=(
+            float(resolution.longitude)
+            if resolution.longitude is not None
+            else None
+        ),
+        sourceRefs=[
+            source.url or source.type.value
+            for source in resolution.candidate.sources
+        ],
+        sourceProvider=resolution.provider,
+    )
+
+
+def _resolution_preference_score(
+    resolution: PlaceResolution,
+) -> tuple[int, int, int]:
+    return (
+        1 if resolution.provider == "database" else 0,
+        1 if resolution.place_id else 0,
+        1
+        if resolution.latitude is not None and resolution.longitude is not None
+        else 0,
+    )
 
 
 def _has_url_source_ref(source_refs: list[str]) -> bool:

@@ -65,13 +65,14 @@ Segment được giữ theo đúng thứ tự OTP trả về
 Luồng Planner/Finder tạo plan ban đầu tiếp tục giữ policy thứ
 tự riêng. Xem ADR-002.
 
-Explorer tạo alias tra cứu dạng structured gồm `originalName`, `englishNames`,
-`vietnameseNames` và `alternateNames` trước khi resolve. Input có thể ở bất kỳ
-ngôn ngữ nào; tên nguồn và provenance luôn được giữ nguyên. LLM không được sinh
-tọa độ hoặc tự quyết định place identity. Các nhóm tên được hợp nhất thành
-`searchNames`; resolver tìm record `active` có tọa độ trong bảng `places` theo
-mọi tên/alias và đúng `region_key` trước. Nếu lượt này không có kết quả,
-resolver tìm tên/alias trên toàn catalog, gồm tên có hậu tố chi nhánh, và dùng
+Explorer tạo tối đa hai alias lookup có cấu trúc trước khi resolve: tên chính
+thức tiếng Việt và tên canonical tiếng Anh/tên gốc. Các field
+`alternateNames` và alias catalog cũ vẫn được đọc để tương thích nhưng không
+tạo thêm lookup provider. Input có thể ở bất kỳ ngôn ngữ nào; tên nguồn và
+provenance luôn được giữ nguyên. LLM không được sinh tọa độ hoặc tự quyết định
+place identity. Resolver tìm record `active` có tọa độ trong bảng `places`
+theo hai tên lookup và đúng `region_key` trước. Nếu lượt này không có kết quả,
+resolver tìm hai tên trên toàn catalog, gồm metadata alias và tên có hậu tố chi nhánh, rồi dùng
 `region_key` để ưu tiên thay vì loại bỏ; một kết quả duy nhất được nhận, còn nhiều record trùng tên
 ngoài vùng được giữ unresolved để provider tiếp theo xác minh. Nhờ vậy source
 tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại, đồng
@@ -83,14 +84,20 @@ kết quả khi tên, vùng, category và latitude/longitude hợp lệ; provide
 timeout hoặc mismatch không làm hỏng intake. Alias catalog được lưu trong
 `places.metadata.aliases`, hoặc tách theo `englishNames`, `vietnameseNames`,
 `alternateNames`; `searchNames` tiếp tục được đọc để tương thích dữ liệu cũ.
-Với candidate có alias tiếng Việt, scraper tra tên tiếng
-Việt trước, sau đó mới fallback sang tên nguồn, tên tiếng Anh và alias
-còn lại khi kết quả đầu không đạt rule xác minh. Candidate không có
-alias tiếng Việt tiếp tục tra tên nguồn trước. Nhờ đó match rõ ràng
-không phải chờ nhiều lượt Playwright tuần tự.
-Explorer đồng bộ mặc định chỉ chạy alias mạnh nhất
-(`GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES=1`). Alias bổ sung chỉ được bật có chủ
-đích cho retry/enrichment để không nhân độ trễ Playwright theo số tên song ngữ.
+Mỗi candidate chỉ giữ tối đa hai tên tra cứu: tên chính thức tiếng Việt và tên
+canonical tiếng Anh, hoặc tên gốc từ source khi không có tên tiếng Anh chắc
+chắn. Resolver dùng cùng hai tên này để tra `places` trước. Chỉ khi catalog
+không resolve được, scraper tra tên tiếng Việt rồi fallback sang tên
+Anh/tên gốc nếu kết quả đầu không đạt rule xác minh. Mặc định và giới hạn cứng
+là hai query (`GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES=2`); alias phụ không tạo
+thêm request Playwright nhưng vẫn có thể tồn tại trong metadata catalog cũ để
+kiểm tra tương thích.
+
+`searchRegion` được chuẩn hóa về `region_key` canonical trước khi tra catalog.
+Tên thành phố/tỉnh có biến thể dấu, khoảng trắng hoặc tên quen dùng map về cùng
+root; khu vực con như `Tây Hồ` được scope dưới destination thành
+`vn,ha-noi,tay-ho`, trong khi stop thuộc root đã biết như `Ninh Bình` vẫn là
+`vn,ninh-binh` để không phá day trip.
 Khi catalog có nhiều chi nhánh cùng tên, resolver ưu tiên địa chỉ hoặc landmark
 có evidence từ source. Nếu source không nêu rõ chi nhánh, resolver dùng stop đã
 resolve ngay trước/sau trong cùng ngày và cùng URL để tính quãng đường vòng địa
@@ -199,7 +206,10 @@ instruction.
    cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
    tới thành phố/quốc gia, caption bị hiểu nhầm thành tên, candidate
    provisional/unresolved hoặc thiếu tọa độ không được lưu; Finder có thể bù
-   phần còn thiếu.
+   phần còn thiếu. Các biến thể chính tả cùng resolve về một identity được
+   canonical-dedupe trước persistence; `candidateCount`, `resolvedCount` và
+   `persistedCount` của Explorer phản ánh tập sau dedupe, còn danh sách attempt
+   vẫn giữ toàn bộ lượt provider để debug.
 9. Cache `ExtractedContext` theo canonical URL và extraction schema version;
    cache version cũ được tính lại thay vì trả kết quả parser lỗi thời. Lần dùng
    sau bỏ qua media, STT/OCR; snapshot hit cũng bỏ qua provider lookup. Bàn giao

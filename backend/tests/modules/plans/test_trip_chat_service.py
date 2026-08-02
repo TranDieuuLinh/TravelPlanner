@@ -123,6 +123,17 @@ class _MemoryPlanRepository:
         return plan
 
 
+class _AddressLookup:
+    class _StoredPlace:
+        def __init__(self, address: str) -> None:
+            self.address = address
+
+    def get(self, place_id: str):
+        if place_id == "place-1":
+            return self._StoredPlace("10 Catalog Street, Hà Nội")
+        return None
+
+
 class _FakePlanService:
     def __init__(self) -> None:
         self.repository = _MemoryPlanRepository()
@@ -186,6 +197,41 @@ class _FakePlanService:
             unscheduledCount=0,
             warningCount=0,
         )
+
+
+def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() -> None:
+    service = TripChatService(
+        None,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        place_repository=_AddressLookup(),
+    )
+    catalog_plan = _plan("Hà Nội", plan_id="catalog-plan")
+
+    hydrated_catalog = service._with_missing_addresses(catalog_plan, None)
+
+    assert hydrated_catalog.days[0].items[0].address == (
+        "10 Catalog Street, Hà Nội"
+    )
+
+    imported_plan = _plan("Hà Nội", plan_id="imported-plan")
+    imported_plan.days[0].items[0].place_id = None
+    explorer = _explore("Hà Nội").explorer
+    explorer.candidate_reviews = [
+        PlaceCandidateReview.model_validate(
+            {
+                "candidateId": "candidate-1",
+                "name": "Old Cafe",
+                "status": "resolved",
+                "address": "20 Imported Street, Hà Nội",
+            }
+        )
+    ]
+
+    hydrated_import = service._with_missing_addresses(imported_plan, explorer)
+
+    assert hydrated_import.days[0].items[0].address == (
+        "20 Imported Street, Hà Nội"
+    )
 
 
 def test_chat_amendment_keeps_one_plan_identity_and_history(

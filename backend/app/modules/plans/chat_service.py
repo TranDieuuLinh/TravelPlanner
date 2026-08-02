@@ -1,11 +1,12 @@
 import json
 import re
 import unicodedata
+from typing import Protocol
 
 from app.modules.plans.chat_model import TripChat
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import TripChatRead, TripChatSummaryRead
-from app.modules.plans.domain.entities import Plan
+from app.modules.plans.domain.entities import Plan, PlanItem
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
@@ -29,16 +30,26 @@ from app.modules.users.model import User
 from app.shared.errors import AppError
 
 
+class _AddressedPlace(Protocol):
+    address: str | None
+
+
+class _PlaceAddressRepository(Protocol):
+    def get(self, place_id: str) -> _AddressedPlace | None: ...
+
+
 class TripChatService:
     def __init__(
         self,
         repository: TripChatRepository,
         plan_service: PlanService,
         mutation_service: PlanMutationService | None = None,
+        place_repository: _PlaceAddressRepository | None = None,
     ) -> None:
         self.repository = repository
         self.plan_service = plan_service
         self.mutation_service = mutation_service or PlanMutationService()
+        self.place_repository = place_repository
 
 
     def create(self, user: User, title: str | None = None) -> TripChatRead:
@@ -319,19 +330,56 @@ class TripChatService:
                 chat.latest_planner_timing
             )
         summary = self._summary(chat)
+        current_explorer = self._explorer_with_revision_sources(chat)
+        current_plan = (
+            self._with_missing_addresses(
+                Plan.model_validate(chat.current_plan),
+                current_explorer,
+            )
+            if chat.current_plan is not None
+            else None
+        )
         return TripChatRead(
             **summary.model_dump(),
-            currentPlan=(
-                Plan.model_validate(chat.current_plan)
-                if chat.current_plan is not None
-                else None
-            ),
+            currentPlan=current_plan,
             currentIntakeId=chat.current_intake_id,
-            currentExplorer=self._explorer_with_revision_sources(chat),
+            currentExplorer=current_explorer,
             latestExplorerTiming=latest_timing,
             latestPlannerTiming=latest_planner_timing,
             messages=chat.messages,
         )
+
+    def _with_missing_addresses(
+        self,
+        plan: Plan,
+        explorer: ExplorerContextResponse | None,
+    ) -> Plan:
+        hydrated = plan.model_copy(deep=True)
+        reviews = [
+            review
+            for review in (explorer.candidate_reviews if explorer else [])
+            if review.status == "resolved" and review.address
+        ]
+        for day in hydrated.days:
+            for item in day.items:
+                if item.address:
+                    continue
+                if item.place_id and self.place_repository is not None:
+                    stored = self.place_repository.get(item.place_id)
+                    if stored is not None and stored.address:
+                        item.address = stored.address
+                        continue
+                matching_review = next(
+                    (
+                        review
+                        for review in reviews
+                        if _review_matches_plan_item(review, item)
+                    ),
+                    None,
+                )
+                if matching_review is not None:
+                    item.address = matching_review.address
+        return hydrated
 
     def _explorer_with_revision_sources(
         self,
@@ -699,6 +747,28 @@ def _candidate_name_key(value: str) -> str:
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "", without_marks)
+
+
+def _review_matches_plan_item(
+    review: PlaceCandidateReview,
+    item: PlanItem,
+) -> bool:
+    if (
+        review.latitude is not None
+        and review.longitude is not None
+        and item.latitude is not None
+        and item.longitude is not None
+        and (round(review.latitude, 5), round(review.longitude, 5))
+        == (round(item.latitude, 5), round(item.longitude, 5))
+    ):
+        return True
+    item_name = _candidate_name_key(item.name)
+    review_names = {
+        _candidate_name_key(name)
+        for name in (review.name, review.resolved_name)
+        if name
+    }
+    return bool(item_name and item_name in review_names)
 
 
 def _requests_more_days(content: str) -> bool:

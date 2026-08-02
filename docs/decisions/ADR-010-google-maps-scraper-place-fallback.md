@@ -23,10 +23,11 @@ hành.
   Cache dùng snapshot đã chuẩn hóa, không dùng lại payload thô. Playwright được
   ưu tiên sau catalog nội bộ để thu thập snapshot Google Maps đầy đủ hơn.
 - Gọi trực tiếp executable `google-maps-scraper`; không dùng API key.
-- Tra tên tiếng Việt trước khi candidate có alias tiếng Việt; nếu
-  không có thì tra tên gốc trước. Luôn kèm `searchRegion` và address hint
-  khi có. Explorer đồng bộ mặc định chỉ chạy alias mạnh nhất; alias bổ sung
-  phải được cấu hình riêng cho retry/enrichment. Đọc JSON output rồi xóa thư
+- Candidate chỉ có tối đa hai tên lookup: tên chính thức tiếng Việt và tên
+  canonical tiếng Anh/tên gốc. Cả hai được tra trong `places` theo
+  `region_key` canonical trước; Google Maps chỉ nhận fallback khi DB miss.
+  Scraper tra tiếng Việt trước rồi tên Anh/tên gốc, luôn kèm `searchRegion` và
+  address hint khi có, và không gửi quá hai query. Đọc JSON output rồi xóa thư
   mục tạm.
 - Chạy subprocess không qua shell, giới hạn concurrency/depth và kill process
   khi vượt timeout. Telemetry của CLI được tắt.

@@ -14,6 +14,7 @@ export type PlannerMapPlace = ExplorePlace & {
   mapOrder: number;
   dayColorKey: string;
   dayLabel: string;
+  timeWindow: string;
 };
 
 export type PlannerMapRoute = {
@@ -200,11 +201,14 @@ export function PlannerMap({
       popup.className = "candidateMapPopup";
       const name = document.createElement("strong");
       name.textContent = `${place.mapOrder}. ${place.name}`;
-      const detail = document.createElement("span");
-      detail.textContent = place.address || "Địa điểm do Explorer đề xuất";
       const day = document.createElement("small");
       day.textContent = place.dayLabel;
-      popup.append(name, day, detail);
+      const time = document.createElement("span");
+      time.textContent = place.timeWindow;
+      const address = document.createElement("span");
+      address.className = "candidateMapPopupAddress";
+      address.textContent = place.address || "Chưa có địa chỉ";
+      popup.append(name, day, time, address);
       if (place.notes) {
         const description = document.createElement("p");
         description.textContent = place.notes;

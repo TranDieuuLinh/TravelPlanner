@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Iterator, Protocol
 from uuid import uuid4
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
@@ -164,9 +164,15 @@ class SqlAlchemyPlaceRepository:
                 Place.longitude.is_not(None),
                 or_(
                     *(
-                        Place.name.ilike(
-                            f"%{_escape_like(name)}%",
-                            escape="\\",
+                        or_(
+                            Place.name.ilike(
+                                f"%{_escape_like(name)}%",
+                                escape="\\",
+                            ),
+                            cast(Place.metadata_json, Text).ilike(
+                                f"%{_escape_like(name)}%",
+                                escape="\\",
+                            ),
                         )
                         for name in lookup_names
                     )

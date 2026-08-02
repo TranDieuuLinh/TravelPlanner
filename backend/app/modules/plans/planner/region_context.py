@@ -11,10 +11,31 @@ from app.modules.plans.domain.entities import RegionSnapshotReference
 from app.modules.plans.dto.agent_contracts import RegionStatisticsContext
 
 
-_HANOI_CORE_SLUGS = {
-    "ha-noi",
-    "hanoi",
-    "hn",
+_ROOT_REGION_ALIASES = {
+    "ha-noi": "ha-noi",
+    "hanoi": "ha-noi",
+    "hn": "ha-noi",
+    "hai-phong": "hai-phong",
+    "haiphong": "hai-phong",
+    "hung-yen": "hung-yen",
+    "hungyen": "hung-yen",
+    "ho-chi-minh": "ho-chi-minh",
+    "ho-chi-minh-city": "ho-chi-minh",
+    "hcmc": "ho-chi-minh",
+    "sai-gon": "ho-chi-minh",
+    "saigon": "ho-chi-minh",
+    "da-nang": "da-nang",
+    "danang": "da-nang",
+    "ninh-binh": "ninh-binh",
+    "ninhbinh": "ninh-binh",
+    "hoi-an": "hoi-an",
+    "hoian": "hoi-an",
+    "hue": "hue",
+    "thua-thien-hue": "hue",
+    "da-lat": "da-lat",
+    "dalat": "da-lat",
+    "sa-pa": "sa-pa",
+    "sapa": "sa-pa",
 }
 _VIETNAM_QUALIFIERS = (
     "viet-nam",
@@ -48,19 +69,43 @@ def normalize_region_key(destination: str, explicit_region_key: str | None = Non
     slug = _slugify(destination)
     if not slug:
         raise ValueError("destination cannot be normalized to a region_key")
-    if _is_hanoi_alias(slug):
-        return "vn,ha-noi"
-    return f"vn,{slug}"
+    return f"vn,{_canonical_root_slug(slug) or slug}"
+
+
+def normalize_search_region_key(search_region: str, destination: str) -> str:
+    """Resolve a stop region to a canonical catalog hierarchy.
+
+    Known cities/provinces remain roots, which preserves day trips. A district
+    or neighborhood is scoped beneath the trip destination so names such as
+    ``Tây Hồ`` search ``vn,ha-noi,tay-ho`` instead of the nonexistent
+    ``vn,tay-ho`` root.
+    """
+    destination_key = normalize_region_key(destination)
+    search_slug = _slugify(search_region)
+    if not search_slug:
+        return destination_key
+
+    root_slug, area_slug = _split_root_and_area(search_slug)
+    if root_slug:
+        return ",".join(
+            part for part in ("vn", root_slug, area_slug) if part
+        )
+
+    area_slug = _strip_administrative_qualifiers(search_slug)
+    destination_root = destination_key.split(",", maxsplit=2)[1]
+    if area_slug == destination_root:
+        return destination_key
+    return f"{destination_key},{area_slug}"
 
 
 def _canonicalize_explicit_region_key(region_key: str) -> str:
     parts = region_key.split(",")
-    if len(parts) >= 2 and parts[0] == "vn" and _is_hanoi_alias(parts[1]):
-        parts[1] = "ha-noi"
+    if len(parts) >= 2 and parts[0] == "vn":
+        parts[1] = _canonical_root_slug(parts[1]) or parts[1]
     return ",".join(parts)
 
 
-def _is_hanoi_alias(slug: str) -> bool:
+def _canonical_root_slug(slug: str) -> str | None:
     candidate = slug
     previous = None
     while candidate != previous:
@@ -69,7 +114,48 @@ def _is_hanoi_alias(slug: str) -> bool:
         candidate = _strip_suffix(candidate, _VIETNAM_QUALIFIERS)
         candidate = _strip_prefix(candidate, _CITY_QUALIFIERS)
         candidate = _strip_suffix(candidate, _CITY_QUALIFIERS)
-    return candidate in _HANOI_CORE_SLUGS
+    return _ROOT_REGION_ALIASES.get(candidate)
+
+
+def _split_root_and_area(slug: str) -> tuple[str | None, str | None]:
+    canonical_root = _canonical_root_slug(slug)
+    if canonical_root:
+        return canonical_root, None
+    for alias in sorted(_ROOT_REGION_ALIASES, key=len, reverse=True):
+        canonical_root = _ROOT_REGION_ALIASES[alias]
+        for prefix, suffix in (
+            (f"{alias}-", ""),
+            ("", f"-{alias}"),
+        ):
+            if prefix and slug.startswith(prefix):
+                area = slug[len(prefix) :]
+            elif suffix and slug.endswith(suffix):
+                area = slug[: -len(suffix)]
+            else:
+                continue
+            area = _strip_administrative_qualifiers(area)
+            if area:
+                return canonical_root, area
+    return None, None
+
+
+def _strip_administrative_qualifiers(slug: str) -> str:
+    qualifiers = (
+        "district",
+        "quan",
+        "huyen",
+        "thi-xa",
+        "phuong",
+        "xa",
+        "ward",
+    )
+    candidate = slug
+    previous = None
+    while candidate != previous:
+        previous = candidate
+        candidate = _strip_prefix(candidate, qualifiers)
+        candidate = _strip_suffix(candidate, qualifiers)
+    return candidate
 
 
 def _strip_prefix(value: str, qualifiers: tuple[str, ...]) -> str:

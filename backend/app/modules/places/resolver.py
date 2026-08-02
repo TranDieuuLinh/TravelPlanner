@@ -393,10 +393,16 @@ class DatabasePlaceResolver(PlaceResolver):
         *,
         destination: str,
     ) -> list[PlaceLookupRecord]:
-        from app.modules.plans.planner.region_context import normalize_region_key
+        from app.modules.plans.planner.region_context import (
+            normalize_search_region_key,
+        )
 
         search_region = _effective_search_region(candidate, destination)
-        region_key = normalize_region_key(search_region) if search_region else None
+        region_key = (
+            normalize_search_region_key(search_region, destination)
+            if search_region
+            else None
+        )
         candidate_names = _candidate_lookup_names(candidate)
         records = self.repository.list_active_for_planner_research(region_key)
         matches = [
@@ -489,7 +495,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         executable: str | None = None,
         work_dir: Path | None = None,
         timeout_seconds: float = 45.0,
-        max_alias_queries: int = 1,
+        max_alias_queries: int = 2,
         max_concurrency: int = 2,
     ) -> None:
         if not executable and work_dir is None:
@@ -957,11 +963,31 @@ def _effective_search_region(
     candidate: UnifiedPlaceCandidate,
     destination: str,
 ) -> str:
-    return (
-        usable_destination(candidate.search_region)
-        or usable_destination(destination)
-        or ""
+    candidate_region = usable_destination(candidate.search_region)
+    destination_region = usable_destination(destination)
+    if not candidate_region:
+        return destination_region or ""
+    if not destination_region:
+        return candidate_region
+
+    from app.modules.plans.planner.region_context import (
+        normalize_region_key,
+        normalize_search_region_key,
     )
+
+    search_key = normalize_search_region_key(
+        candidate_region,
+        destination_region,
+    )
+    destination_key = normalize_region_key(destination_region)
+    if (
+        search_key.startswith(f"{destination_key},")
+        and _normalized(destination_region) not in _normalized(candidate_region)
+    ):
+        return f"{candidate_region}, {destination_region}"
+    if search_key == destination_key:
+        return destination_region
+    return candidate_region
 
 
 def _reject_duplicate_google_identities(
@@ -1385,21 +1411,36 @@ def _haversine_km(
 def _candidate_lookup_names(
     candidate: UnifiedPlaceCandidate,
 ) -> list[str]:
-    """Return lookup names with Vietnamese provider queries first."""
-    return list(
-        dict.fromkeys(
-            name
-            for name in (
-                *candidate.vietnamese_names,
-                candidate.original_name,
-                candidate.name,
-                *candidate.english_names,
-                *candidate.alternate_names,
-                *candidate.search_names,
-            )
-            if name
+    """Return at most one Vietnamese and one English/source lookup name."""
+    vietnamese_name = next(iter(candidate.vietnamese_names), None)
+    if vietnamese_name:
+        ordered_names = (
+            vietnamese_name,
+            *candidate.english_names[:1],
+            candidate.original_name,
+            candidate.name,
+            *candidate.search_names,
         )
-    )
+    else:
+        ordered_names = (
+            candidate.original_name,
+            candidate.name,
+            *candidate.english_names[:1],
+            *candidate.search_names,
+        )
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for raw_name in ordered_names:
+        name = _single_line(raw_name or "")
+        key = _normalized(name)
+        if not name or not key or key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+        if len(names) == 2:
+            break
+    return names
 
 
 def _database_confidence_score(value: str) -> int:
@@ -1424,28 +1465,19 @@ def _google_maps_alias_queries(
     search_region: str,
     limit: int,
 ) -> list[str]:
-    queries: list[str] = []
-    if candidate_names and context_hint:
-        queries.append(
-            ", ".join(
-                _single_line(part)
-                for part in (
-                    candidate_names[0],
-                    address_hint,
-                    context_hint,
-                    search_region,
-                )
-                if part and _single_line(part)
-            )
-        )
-    queries.extend(
+    queries = [
         ", ".join(
             _single_line(part)
-            for part in (name, address_hint, search_region)
+            for part in (
+                name,
+                address_hint,
+                context_hint if index == 0 else None,
+                search_region,
+            )
             if part and _single_line(part)
         )
-        for name in candidate_names[:limit]
-    )
+        for index, name in enumerate(candidate_names[: min(limit, 2)])
+    ]
     return list(dict.fromkeys(queries))
 
 

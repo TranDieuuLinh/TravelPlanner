@@ -165,7 +165,7 @@ class UrlReelExtractionService:
             if speech_future is not None:
                 try:
                     speech_result = speech_future.result()
-                except RuntimeError as exc:
+                except (RuntimeError, httpx.HTTPError) as exc:
                     timings["speechToTextFailed"] = 1.0
                     speech_result = SpeechToTextResult(
                         text="",

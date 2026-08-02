@@ -51,9 +51,15 @@ class FakePlaceRepository:
 
 
 class FakeGoogleMapsScraperResolver(GoogleMapsScraperPlaceResolver):
-    def __init__(self, results_by_query: dict[str, list[dict[str, Any]]]) -> None:
+    def __init__(
+        self,
+        results_by_query: dict[str, list[dict[str, Any]]],
+        *,
+        max_alias_queries: int = 2,
+    ) -> None:
         super().__init__(
             executable="google-maps-scraper-test",
+            max_alias_queries=max_alias_queries,
         )
         self.results_by_query = results_by_query
         self.queries: list[str] = []
@@ -210,18 +216,21 @@ def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
     assert result.provider_attempts[0].outcome == "resolved"
 
 
-def test_google_maps_scraper_defaults_to_one_synchronous_alias_query() -> None:
+def test_google_maps_scraper_defaults_to_two_official_alias_queries() -> None:
     candidate = UnifiedPlaceCandidate(
         name="English Place",
+        englishNames=["Canonical English Place"],
         vietnameseNames=["Địa điểm tiếng Việt"],
+        alternateNames=["Unused nickname"],
+        searchNames=["Unused legacy alias"],
         searchRegion="Hà Nội",
     )
     resolver = FakeGoogleMapsScraperResolver(
         {
             "Địa điểm tiếng Việt, Hà Nội": [],
-            "English Place, Hà Nội": [
+            "Canonical English Place, Hà Nội": [
                 {
-                    "title": "English Place",
+                    "title": "Canonical English Place",
                     "address": "Hà Nội",
                     "latitude": 21.0,
                     "longitude": 105.8,
@@ -232,9 +241,37 @@ def test_google_maps_scraper_defaults_to_one_synchronous_alias_query() -> None:
 
     result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
 
-    assert resolver.queries == ["Địa điểm tiếng Việt, Hà Nội"]
+    assert resolver.queries == [
+        "Địa điểm tiếng Việt, Hà Nội",
+        "Canonical English Place, Hà Nội",
+    ]
+    assert result.status == "resolved"
+    assert result.provider_attempts[0].alias_query_count == 2
+
+
+def test_google_maps_caps_legacy_alias_setting_at_two_queries() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Source Name",
+        originalName="Source Name",
+        vietnameseNames=["Tên chính thức"],
+        englishNames=["Canonical Name"],
+        alternateNames=["Nickname"],
+        searchNames=["Legacy Alias"],
+        searchRegion="Tây Hồ",
+    )
+    resolver = FakeGoogleMapsScraperResolver(
+        {},
+        max_alias_queries=10,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert resolver.queries == [
+        "Tên chính thức, Tây Hồ, Hà Nội",
+        "Canonical Name, Tây Hồ, Hà Nội",
+    ]
     assert result.status == "unresolved"
-    assert result.provider_attempts[0].alias_query_count == 1
+    assert result.provider_attempts[0].alias_query_count == 2
 
 
 def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
@@ -730,7 +767,7 @@ def test_database_resolver_falls_back_to_global_name_when_region_misses() -> Non
         )
     )
 
-    assert repository.region_keys == ["vn,tay-ho"]
+    assert repository.region_keys == ["vn,ha-noi,tay-ho"]
     assert repository.global_name_searches == [["Hidden Garden"]]
     assert result.status == "resolved"
     assert result.provider == "database"
