@@ -39,6 +39,10 @@ class TripChatSummaryRead(BaseModel):
 
 
 class TripChatRead(TripChatSummaryRead):
+    current_intake_id: Annotated[
+        str | None,
+        Field(default=None, alias="currentIntakeId"),
+    ]
     current_plan: Annotated[Plan | None, Field(alias="currentPlan")]
     current_explorer: Annotated[
         ExplorerContextResponse | None,
@@ -53,3 +57,9 @@ class TripChatRead(TripChatSummaryRead):
         Field(default=None, alias="latestPlannerTiming"),
     ]
     messages: list[TripChatMessageRead]
+
+
+class RetryCandidateResolutionsRequest(BaseModel):
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+
+    model_config = {"populate_by_name": True}

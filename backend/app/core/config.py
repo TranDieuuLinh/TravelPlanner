@@ -58,9 +58,39 @@ class Settings(BaseSettings):
     url_reel_vision_batch_size: int = 10
     url_reel_vision_max_concurrency: int = 5
     url_reel_vision_media_resolution: str = "MEDIA_RESOLUTION_MEDIUM"
+    url_reel_network_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+    )
+    url_reel_subprocess_timeout_seconds: float = Field(
+        default=180.0,
+        ge=10.0,
+        le=600.0,
+    )
+    url_import_job_timeout_seconds: float = Field(
+        default=900.0,
+        ge=30.0,
+        le=3600.0,
+    )
+    youtube_transcript_min_interval_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=60.0,
+    )
+    youtube_transcript_worker_url: str | None = None
+    youtube_transcript_worker_token: str | None = None
+    youtube_transcript_worker_timeout_seconds: float = Field(
+        default=20.0,
+        ge=1.0,
+        le=120.0,
+    )
     explorer_timing_log_path: Path = (
         BACKEND_ROOT / "var" / "explorer-timings.jsonl"
     )
+    user_post_media_dir: Path = BACKEND_ROOT / "var" / "user-post-media"
+    user_post_image_max_bytes: int = 15 * 1024 * 1024
+    user_post_video_max_bytes: int = 100 * 1024 * 1024
     place_resolver_provider: str = "nominatim"
     route_provider: str = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
@@ -86,6 +116,11 @@ class Settings(BaseSettings):
         default=3,
         ge=1,
         le=10,
+    )
+    google_maps_scraper_max_concurrency: int = Field(
+        default=2,
+        ge=1,
+        le=4,
     )
 
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
@@ -136,6 +171,13 @@ class Settings(BaseSettings):
         if self.route_provider not in {"valhalla", "geodesic"}:
             raise ValueError(
                 "ROUTE_PROVIDER must be valhalla or geodesic"
+            )
+        if bool(self.youtube_transcript_worker_url) != bool(
+            self.youtube_transcript_worker_token
+        ):
+            raise ValueError(
+                "YOUTUBE_TRANSCRIPT_WORKER_URL and "
+                "YOUTUBE_TRANSCRIPT_WORKER_TOKEN must be configured together"
             )
         if not self.database_url.startswith(
             ("postgresql://", "postgresql+psycopg://")

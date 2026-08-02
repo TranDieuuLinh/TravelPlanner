@@ -38,6 +38,7 @@ from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     GeminiAudioSpeechToText,
     _gemini_stt_rate_limiter,
 )
+from app.modules.plans.explorer.tools.url_reels.utils import detect_platform
 
 
 class FakeLoader:
@@ -74,6 +75,15 @@ class FailingMedia:
     ) -> tuple[MediaArtifacts, dict[str, float]]:
         (work_dir / "partial.mp4").write_bytes(b"partial")
         raise RuntimeError("download failed")
+
+
+class UnavailableMedia:
+    def prepare(
+        self,
+        url: str,
+        work_dir: Path,
+    ) -> tuple[MediaArtifacts, dict[str, float]]:
+        return MediaArtifacts(), {"mediaUnavailable": 1.0}
 
 
 class FakeSpeechToText:
@@ -192,6 +202,26 @@ def test_cleans_media_inside_caller_owned_work_directory(tmp_path: Path) -> None
     assert result.artifacts == MediaArtifacts()
 
 
+def test_metadata_places_do_not_require_image_upload_when_media_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=UnavailableMedia(),
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.tiktok.com/@creator/video/123",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.extracted_context.extracted_places == ["Hoan Kiem Lake"]
+    assert result.needs_image_upload is False
+
+
 def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
     rendezvous = Barrier(2, timeout=1)
 
@@ -272,7 +302,67 @@ def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
     assert result.needs_image_upload is False
 
 
-def test_youtube_without_caption_downloads_media_for_gemini_stt(
+def test_youtube_short_uses_media_stt_and_frame_vision(tmp_path: Path) -> None:
+    class YouTubeShortLoader(FakeLoader):
+        def load_metadata(self, url: str) -> UrlMetadata:
+            metadata = super().load_metadata(url)
+            return metadata.model_copy(update={"platform": "youtube_shorts"})
+
+    class MediaWithFrame(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            artifacts, timings = super().prepare(url, work_dir)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            artifacts.frame_paths = [frame_path]
+            return artifacts, timings
+
+    class CaptionMustNotRun:
+        def fetch(self, *args: object, **kwargs: object):
+            raise AssertionError("YouTube Shorts must use the media pipeline")
+
+    class FakeVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            return FrameVisionResult(
+                text="PLACE: Train Street",
+                places=["Train Street"],
+                status="ok",
+                durationSeconds=0.1,
+            )
+
+    service = UrlReelExtractionService(
+        loader=YouTubeShortLoader(),
+        media=MediaWithFrame(),
+        speech_to_text=FakeSpeechToText(),
+        frame_vision=FakeVision(),  # type: ignore[arg-type]
+        youtube_transcript=CaptionMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.youtube.com/shorts/abc123DEF45",
+            destination="Hanoi",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.platform == "youtube_shorts"
+    assert result.speech_to_text.text == "Hoan Kiem Lake"
+    assert result.frame_vision.status == "ok"
+    assert "Hoan Kiem Lake" in result.extracted_context.extracted_places
+    assert "Train Street" in result.extracted_context.extracted_places
+    assert result.timings["downloadVideo"] == 0.1
+
+
+def test_youtube_without_caption_skips_media_and_stt(
     tmp_path: Path,
 ) -> None:
     class MissingCaptionExtractor:
@@ -281,13 +371,27 @@ def test_youtube_without_caption_downloads_media_for_gemini_stt(
             url: str,
             *,
             languages: str | None,
-        ) -> None:
-            return None
+        ) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="",
+                source="youtube_captions",
+                status="no_captions",
+                error="youtube_no_captions",
+                durationSeconds=0.01,
+            )
+
+    class MediaMustNotRun:
+        def prepare(self, url: str, work_dir: Path):
+            raise AssertionError("YouTube media download is disabled")
+
+    class SpeechMustNotRun:
+        def transcribe(self, *args: object, **kwargs: object):
+            raise AssertionError("YouTube STT is disabled")
 
     service = UrlReelExtractionService(
         loader=FakeLoader(),
-        media=FakeMedia(),
-        speech_to_text=FakeSpeechToText(),
+        media=MediaMustNotRun(),  # type: ignore[arg-type]
+        speech_to_text=SpeechMustNotRun(),  # type: ignore[arg-type]
         youtube_transcript=MissingCaptionExtractor(),  # type: ignore[arg-type]
         context_extractor=FakeContextExtractor(),
     )
@@ -299,9 +403,75 @@ def test_youtube_without_caption_downloads_media_for_gemini_stt(
         )
     )
 
-    assert result.speech_to_text.text == "Hoan Kiem Lake"
-    assert result.timings["youtubeTranscriptFallback"] == 1.0
-    assert result.timings["downloadVideo"] == 0.1
+    assert result.speech_to_text.status == "no_captions"
+    assert result.artifacts == MediaArtifacts()
+    assert result.timings["youtubeTranscriptUnavailable"] == 1.0
+    assert result.timings["mediaDownloadSkipped"] == 1.0
+
+
+def test_youtube_ip_block_requests_transcript_without_media_or_stt(
+    tmp_path: Path,
+) -> None:
+    class BlockedCaptionExtractor:
+        def fetch(
+            self,
+            url: str,
+            *,
+            languages: str | None,
+        ) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="",
+                source="youtube_captions",
+                status="blocked",
+                error="youtube_ip_blocked",
+                durationSeconds=0.01,
+            )
+
+    class MediaMustNotRun:
+        def prepare(self, url: str, work_dir: Path):
+            raise AssertionError("IP block must not be treated as no captions")
+
+    class SpeechMustNotRun:
+        def transcribe(self, *args: object, **kwargs: object):
+            raise AssertionError("YouTube STT is disabled")
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=MediaMustNotRun(),  # type: ignore[arg-type]
+        speech_to_text=SpeechMustNotRun(),  # type: ignore[arg-type]
+        youtube_transcript=BlockedCaptionExtractor(),  # type: ignore[arg-type]
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.youtube.com/watch?v=abc123DEF45",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.speech_to_text.status == "blocked"
+    assert result.timings["mediaDownloadSkipped"] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("url", "platform"),
+    [
+        ("https://youtu.be/abc123DEF45", "youtube"),
+        ("https://www.youtube.com/watch?v=abc123DEF45", "youtube"),
+        ("https://m.youtube.com/shorts/abc123DEF45", "youtube_shorts"),
+        ("https://www.tiktok.com/@creator/video/123", "tiktok"),
+        ("https://www.instagram.com/reel/ABC123/", "instagram"),
+        ("https://www.facebook.com/reel/123", "facebook"),
+        ("https://fb.watch/ABC123/", "facebook"),
+    ],
+)
+def test_detects_url_extraction_platform(url: str, platform: str) -> None:
+    assert detect_platform(url) == platform
+
+
+def test_platform_detection_does_not_accept_domain_suffix_spoofing() -> None:
+    assert detect_platform("https://youtube.com.attacker.example/shorts/123") == "unknown"
 
 
 def test_photo_url_requires_uploaded_image() -> None:
@@ -749,6 +919,77 @@ def test_context_extractor_merges_structured_stt_and_ocr_provenance() -> None:
         "stt": "visit Cafe Dinh for egg coffee",
         "ocr": "Cafe Dinh (Egg Coffee)",
     }
+
+
+def test_context_extractor_treats_city_duration_as_stay_not_place() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.instagram.com/reel/example",
+            canonicalUrl="https://www.instagram.com/reel/example",
+            platform="instagram",
+            title="Vietnam itinerary",
+        ),
+        transcript="",
+        speech_observations=[],
+        destination="unspecified",
+        visual_text="PLACE: [unidentified] | Hanoi - 2 days",
+    )
+
+    assert context.extracted_places == []
+    assert context.extracted_place_details == []
+    assert [
+        stay.model_dump(mode="json", by_alias=True)
+        for stay in context.destination_stays
+    ] == [
+        {
+            "name": "Hanoi",
+            "durationDays": 2,
+            "startDay": 1,
+            "endDay": 2,
+            "sourceOrder": 1,
+            "evidence": "Hanoi - 2 days",
+        }
+    ]
+
+
+def test_context_extractor_spreads_consecutive_city_stays_across_days() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.instagram.com/reel/example",
+            canonicalUrl="https://www.instagram.com/reel/example",
+            platform="instagram",
+        ),
+        transcript="",
+        speech_observations=[],
+        destination="unspecified",
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="Hanoi - 2 days",
+                evidence="Hanoi - 2 days",
+            ),
+            FrameVisionObservation(
+                order=2,
+                placeName="Ninh Binh - 1 day",
+                evidence="Ninh Binh - 1 day",
+            ),
+            FrameVisionObservation(
+                order=3,
+                placeName="Hoi An - 1 day",
+                evidence="Hoi An - 1 day",
+            ),
+        ],
+    )
+
+    assert context.extracted_places == []
+    assert [
+        (stay.name, stay.start_day, stay.end_day)
+        for stay in context.destination_stays
+    ] == [
+        ("Hanoi", 1, 2),
+        ("Ninh Binh", 3, 3),
+        ("Hoi An", 4, 4),
+    ]
 
 
 def test_context_extractor_prioritizes_tagged_metadata_location() -> None:
@@ -1403,6 +1644,105 @@ def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity
         "Don't skip" not in detail.name
         for detail in context.extracted_place_details
     )
+
+
+def test_context_extractor_parses_numbered_tiktok_caption_without_list_noise() -> None:
+    url = "https://www.tiktok.com/@tereveling_/video/7667982507035348244"
+    caption = (
+        "10 things to do when you are in Hanoi 🇻🇳 "
+        "1. Hanoi Train Street 2. St. Joseph’s Cathedral 3. Giang Cafe "
+        "4. Hanoi Old Quarter 5. Visit Cute Cafes in Hanoi "
+        "6. Ho Chi Minh Mausoleum 7. Tran Quoc Pagoda "
+        "8. Shopping at Ba Trieu Street 9. Hoa Lo Prison "
+        "10. GO! Supermarket/Lotte Mart Stay tune for more. "
+        "Hanoi is really fun to explore. #hanoi #vietnam"
+    )
+    metadata = UrlMetadata(
+        originalUrl=url,
+        canonicalUrl=url,
+        platform="tiktok",
+        title="10 things to do when you are in Hanoi",
+        description=caption,
+    )
+
+    context = UrlReelContextExtractor().extract(
+        metadata=metadata,
+        transcript="",
+        destination="Hanoi",
+    )
+
+    assert context.extracted_places == [
+        "Hanoi Train Street",
+        "St. Joseph’s Cathedral",
+        "Giang Cafe",
+        "Hanoi Old Quarter",
+        "Ho Chi Minh Mausoleum",
+        "Tran Quoc Pagoda",
+        "Ba Trieu Street",
+        "Hoa Lo Prison",
+        "GO! Supermarket",
+        "Lotte Mart",
+    ]
+    assert [
+        detail.source_order for detail in context.extracted_place_details
+    ] == list(range(1, 11))
+    assert all(
+        detail.source_evidence.get("caption")
+        for detail in context.extracted_place_details
+    )
+    assert not any(
+        "stay tune" in detail.name.casefold()
+        for detail in context.extracted_place_details
+    )
+
+
+def test_context_extractor_preserves_numbered_youtube_list_and_splits_stops() -> None:
+    url = "https://www.youtube.com/watch?v=example"
+    transcript = (
+        "Number one is Huen Kim Lake and Non Temple. "
+        "Number two is Beer Street. Number three is to eat on the street. "
+        "Number four is St. Joseph Cathedral. Number five is Tranquac Pagota. "
+        "Number six is Halo prison. Number seven is Tang Long Water Puppet Theater. "
+        "Number eight is Ho Chi Min Mausoleum / Badin Square / 1pillar Pagota. "
+        "Number nine is Train Street. Number ten is Ninben."
+    )
+    metadata = UrlMetadata(
+        originalUrl=url,
+        canonicalUrl=url,
+        platform="youtube",
+        title="Top 10 things to do",
+    )
+
+    context = UrlReelContextExtractor().extract(
+        metadata=metadata,
+        transcript=transcript,
+        destination="Hanoi",
+    )
+
+    # The source has ten numbered activities, but item three is not a named
+    # place and items one/eight contain several independently resolvable stops.
+    assert context.extracted_places == [
+        "Huen Kim Lake",
+        "Non Temple",
+        "Beer Street",
+        "St Joseph Cathedral",
+        "Tranquac Pagota",
+        "Halo prison",
+        "Tang Long Water Puppet Theater",
+        "Ho Chi Min Mausoleum",
+        "Badin Square",
+        "1pillar Pagota",
+        "Train Street",
+        "Ninben",
+    ]
+    assert [item.source_order for item in context.extracted_place_details] == list(
+        range(1, 13)
+    )
+    by_name = {
+        item.name: item
+        for item in context.extracted_place_details
+    }
+    assert by_name["Tranquac Pagota"].category.value == "culture"
 
 
 class TemporaryDirectoryStub:

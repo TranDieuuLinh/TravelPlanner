@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -30,6 +31,15 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
+from app.modules.plans.explorer.tools.url_reels.transcript_cache import (
+    SqlAlchemyYouTubeTranscriptCache,
+)
+from app.modules.plans.explorer.tools.url_reels.transcript_worker import (
+    HttpYouTubeTranscriptWorker,
+)
+from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
+    YouTubeTranscriptExtractor,
+)
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
@@ -55,9 +65,13 @@ from app.modules.preferences.service import PreferenceLearningService
 from app.modules.users.repository import UserRepository
 
 
-def get_plan_mutation_service() -> PlanMutationService:
+def get_plan_mutation_service(
+    db: Annotated[Session, Depends(get_db)],
+) -> PlanMutationService:
+    place_repository = SqlAlchemyPlaceRepository(db)
     return PlanMutationService(
-        place_resolver=_get_place_resolver(),
+        place_resolver=_get_place_resolver(place_repository),
+        place_repository=place_repository,
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
     )
@@ -76,6 +90,31 @@ def get_plan_service(
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
     research_tools = ResearchToolsOrchestrator(PlaceRepositoryAdapter(db))
+    transcript_worker = (
+        HttpYouTubeTranscriptWorker(
+            base_url=settings.youtube_transcript_worker_url,
+            token=settings.youtube_transcript_worker_token,
+            timeout_seconds=(
+                settings.youtube_transcript_worker_timeout_seconds
+            ),
+        )
+        if (
+            settings.youtube_transcript_worker_url
+            and settings.youtube_transcript_worker_token
+        )
+        else None
+    )
+    transcript_session_factory = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db.get_bind(),
+    )
+    youtube_transcript = YouTubeTranscriptExtractor(
+        cache=SqlAlchemyYouTubeTranscriptCache(
+            transcript_session_factory
+        ),
+        worker=transcript_worker,
+    )
     planner = PlannerService(
         statistics,
         llm_client,
@@ -103,7 +142,9 @@ def get_plan_service(
         main_workflow=main_workflow,
         backup_workflow=backup_workflow,
         image_ocr=ImageOcrService(get_ocr_llm_client()),
-        url_reels=UrlReelExtractionService(),
+        url_reels=UrlReelExtractionService(
+            youtube_transcript=youtube_transcript
+        ),
         place_resolver=_get_place_resolver(place_repository),
         place_alias_enricher=LLMPlaceAliasEnricher(llm_client),
         explorer_persistence=ExplorerPersistenceRepository(db),
@@ -132,7 +173,6 @@ def _get_place_resolver(
             or settings.google_maps_scraper_work_dir is not None
         ):
             external_resolver = FallbackPlaceResolver(
-                nominatim,
                 GoogleMapsScraperPlaceResolver(
                     executable=settings.google_maps_scraper_executable,
                     work_dir=settings.google_maps_scraper_work_dir,
@@ -142,7 +182,11 @@ def _get_place_resolver(
                     max_alias_queries=(
                         settings.google_maps_scraper_max_alias_queries
                     ),
+                    max_concurrency=(
+                        settings.google_maps_scraper_max_concurrency
+                    ),
                 ),
+                nominatim,
             )
         if place_repository is not None:
             return FallbackPlaceResolver(

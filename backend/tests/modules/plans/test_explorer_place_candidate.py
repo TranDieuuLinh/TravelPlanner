@@ -164,6 +164,33 @@ def test_explorer_merges_duplicate_candidates_and_preserves_sources() -> None:
     }
 
 
+def test_explorer_merges_destination_suffix_variants_across_source_orders() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/42"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Phố đường tàu",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.8,
+                sourceOrder=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Phố đường tàu Hà Nội",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=2,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].source_order == 1
+
+
 def test_explorer_keeps_url_stops_omitted_by_formatter() -> None:
     url = "https://example.com/hanoi-reel"
     candidates = PlaceCandidateAggregator().aggregate(
@@ -222,7 +249,7 @@ def test_explorer_keeps_url_stops_omitted_by_formatter() -> None:
     assert candidates[1].sources[0].url == url
 
 
-def test_explorer_merges_localized_url_stop_by_source_order() -> None:
+def test_explorer_does_not_merge_localized_names_only_by_source_order() -> None:
     url = "https://example.com/hanoi-reel"
     candidates = PlaceCandidateAggregator().aggregate(
         destination="Hà Nội",
@@ -267,13 +294,91 @@ def test_explorer_merges_localized_url_stop_by_source_order() -> None:
         ],
     )
 
-    assert len(candidates) == 1
-    assert candidates[0].name == "Bảo tàng Dân tộc học Việt Nam"
-    assert candidates[0].confidence == 0.95
-    assert candidates[0].search_names == ["Museum of Ethnology"]
+    assert len(candidates) == 2
+    assert [candidate.name for candidate in candidates] == [
+        "Bảo tàng Dân tộc học Việt Nam",
+        "Museum of Ethnology",
+    ]
+    assert candidates[1].confidence == 0.95
     assert candidates[0].source_activity == (
         "Khám phá nhà truyền thống và hiện vật."
     )
+
+
+def test_explorer_keeps_distinct_url_places_with_same_source_order() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/42"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Nhà thờ Lớn Hà Nội",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Văn Miếu - Quốc Tử Giám",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Hồ Hoàn Kiếm",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=1,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert [candidate.name for candidate in candidates] == [
+        "Nhà thờ Lớn Hà Nội",
+        "Văn Miếu - Quốc Tử Giám",
+        "Hồ Hoàn Kiếm",
+    ]
+    assert {candidate.source_order for candidate in candidates} == {1}
+
+
+def test_explorer_merges_minor_spelling_and_descriptive_place_variants() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/42"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hà Nội",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Hoan Kim Lake",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.8,
+                sourceOrder=1,
+            ),
+            UnifiedPlaceCandidate(
+                name="Hoan Kiem Lake",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=2,
+            ),
+            UnifiedPlaceCandidate(
+                name="train street",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.8,
+                sourceOrder=3,
+            ),
+            UnifiedPlaceCandidate(
+                name="a very famous train street",
+                sources=[{"type": "url", "url": source_url}],
+                confidence=0.9,
+                sourceOrder=4,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert len(candidates) == 2
+    assert [candidate.source_order for candidate in candidates] == [1, 3]
 
 
 def test_explorer_rejects_caption_or_multi_place_list_as_one_url_candidate() -> None:
@@ -308,3 +413,85 @@ def test_explorer_rejects_caption_or_multi_place_list_as_one_url_candidate() -> 
 
     assert [candidate.name for candidate in candidates] == ["Train Street"]
     assert candidates[0].source_activity is None
+
+
+def test_explorer_recovers_concise_place_name_from_evidence() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/imperial-citadel"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hanoi",
+        generated=[
+            UnifiedPlaceCandidate(
+                name=(
+                    "Imperial Citadel of Thang Long, a UNESCO World Heritage "
+                    "site, but I still think it's underrated"
+                ),
+                category="culture",
+                sources=[{"type": "url", "url": source_url}],
+                sourceEvidence={
+                    "ocr": "2. Imperial Citadel of Thang Long",
+                    "stt": "Imperial Citadel of Thang Long",
+                },
+                confidence=0.95,
+                sourceOrder=2,
+            )
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].name == "Imperial Citadel of Thang Long"
+    assert candidates[0].source_evidence["ocr"] == (
+        "2. Imperial Citadel of Thang Long"
+    )
+
+
+def test_brandneweats_hanoi_cache_aggregates_to_eight_places() -> None:
+    source_url = (
+        "https://www.tiktok.com/@brandneweats/video/7662905162960243989"
+    )
+    names = [
+        "St Joseph's Cathedral",
+        "Temple of Literature",
+        "Hoan Kim Lake",
+        "Coffee 74",
+        "Hoan Kiem Lake",
+        (
+            "Imperial Citadel of Thang Long, a UNESCO World Heritage site, "
+            "but I still think it's underrated"
+        ),
+        "Beer Street",
+        "train street",
+        "Hanoi Train Street",
+        "a very famous train street",
+        "Giao Mua",
+    ]
+    generated = [
+        UnifiedPlaceCandidate(
+            name=name,
+            sources=[{"type": "url", "url": source_url}],
+            sourceEvidence=(
+                {
+                    "ocr": "2. Imperial Citadel of Thang Long",
+                    "stt": "Imperial Citadel of Thang Long",
+                }
+                if name.startswith("Imperial Citadel")
+                else {}
+            ),
+            confidence=1.0,
+        )
+        for name in names
+    ]
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hanoi",
+        generated=generated,
+        explicit=[],
+        url_results=[],
+    )
+
+    assert len(candidates) == 8
+    assert "Imperial Citadel of Thang Long" in {
+        candidate.name for candidate in candidates
+    }

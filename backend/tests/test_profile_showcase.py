@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.modules.places.model import Place
+from app.integrations.media import LocalPostMediaStorage
 from app.modules.profiles.model import UserPost, UserVisitedPlace
+from app.modules.profiles.router import get_post_media_storage
 from app.modules.users.model import User
+from app.main import app
 from tests.helpers import csrf_headers
 
 
@@ -73,6 +76,7 @@ def test_profile_showcase_returns_only_authenticated_users_content(
                 user_id=other_user.id,
                 caption="Nội dung riêng",
                 media_url="https://images.example.com/private.jpg",
+                location_name="Địa điểm của người khác",
             ),
         ]
     )
@@ -110,3 +114,95 @@ def test_user_can_mark_resolved_place_as_visited(
     assert response.json()["placeId"] == place.id
     assert response.json()["visitedAt"] == "2026-07-20"
     assert db_session.query(UserVisitedPlace).filter_by(place_id=place.id).count() == 1
+
+
+def test_user_can_publish_post_or_reel_with_required_location(
+    registered_client: TestClient,
+    db_session: Session,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "post-media"
+    app.dependency_overrides[get_post_media_storage] = lambda: LocalPostMediaStorage(
+        media_root,
+        image_max_bytes=1024 * 1024,
+        video_max_bytes=1024 * 1024,
+    )
+    response = registered_client.post(
+        "/api/me/posts",
+        headers=csrf_headers(registered_client),
+        data={
+            "contentType": "reel",
+            "caption": "Một vòng quanh hồ lúc sáng sớm.",
+            "locationName": "  Hồ Hoàn Kiếm, Hà Nội  ",
+        },
+        files={"media": ("ho-guom.mp4", b"\x00\x00\x00\x18ftypmp42video", "video/mp4")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["contentType"] == "reel"
+    assert response.json()["locationName"] == "Hồ Hoàn Kiếm, Hà Nội"
+    assert response.json()["mediaUrl"].startswith("http://testserver/media/posts/")
+    assert len(list(media_root.iterdir())) == 1
+    assert db_session.query(UserPost).filter_by(content_type="reel").count() == 1
+
+    feed = registered_client.get("/api/posts")
+    assert feed.status_code == 200
+    assert feed.json()[0]["caption"] == "Một vòng quanh hồ lúc sáng sớm."
+    assert feed.json()[0]["authorName"] == "Nguyễn Minh Tuấn"
+    assert "userId" not in feed.json()[0]
+
+
+def test_publish_post_requires_csrf_and_location(
+    registered_client: TestClient,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "post-media"
+    app.dependency_overrides[get_post_media_storage] = lambda: LocalPostMediaStorage(
+        media_root,
+        image_max_bytes=1024 * 1024,
+        video_max_bytes=1024 * 1024,
+    )
+    payload = {
+        "contentType": "post",
+        "caption": "Một chiều nhiều nắng.",
+        "locationName": "Hội An",
+    }
+    image_file = {"media": ("hoi-an.jpg", b"\xff\xd8\xff\xe0image", "image/jpeg")}
+    no_csrf = registered_client.post("/api/me/posts", data=payload, files=image_file)
+    assert no_csrf.status_code == 403
+
+    missing_location = registered_client.post(
+        "/api/me/posts",
+        headers=csrf_headers(registered_client),
+        data={**payload, "locationName": "   "},
+        files=image_file,
+    )
+    assert missing_location.status_code == 422
+    assert missing_location.json()["code"] == "VALIDATION_ERROR"
+    assert not media_root.exists() or not list(media_root.iterdir())
+
+
+def test_publish_post_rejects_file_type_that_does_not_match_post_kind(
+    registered_client: TestClient,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "post-media"
+    app.dependency_overrides[get_post_media_storage] = lambda: LocalPostMediaStorage(
+        media_root,
+        image_max_bytes=1024 * 1024,
+        video_max_bytes=1024 * 1024,
+    )
+    response = registered_client.post(
+        "/api/me/posts",
+        headers=csrf_headers(registered_client),
+        data={
+            "contentType": "post",
+            "caption": "Sai loại tệp.",
+            "locationName": "Hội An",
+        },
+        files={"media": ("video.mp4", b"\x00\x00\x00\x18ftypmp42video", "video/mp4")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["code"] == "POST_MEDIA_TYPE_UNSUPPORTED"
+    assert not list(media_root.iterdir())

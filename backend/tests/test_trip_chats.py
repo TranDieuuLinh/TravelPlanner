@@ -1,4 +1,4 @@
-from app.modules.plans.chat_model import TripChatMessage, TripChatPlanRevision
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
 from tests.helpers import csrf_headers
 
 
@@ -140,3 +140,80 @@ def test_user_cannot_delete_another_users_trip_chat(registered_client) -> None:
 
     assert response.status_code == 404
     assert response.json()["code"] == "TRIP_CHAT_NOT_FOUND"
+
+
+def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội cuối tuần"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "reorder-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội cuối tuần",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội cuối tuần",
+            "destination": "Hà Nội",
+            "dayBriefs": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "coffee-9",
+                        "name": "Coffee 9",
+                        "timeWindow": "09:00-10:00",
+                        "placeType": "cafe",
+                        "source": "url",
+                    },
+                    {
+                        "itemId": "bo-kho-phuong-dung",
+                        "name": "Bò khô Phương Dung",
+                        "timeWindow": "10:15-11:15",
+                        "placeType": "food",
+                        "source": "selected_place",
+                    },
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.put(
+        f"/api/trip-chats/{chat_id}/plan/days/1/items/reorder",
+        data={
+            "expectedRevision": "1",
+            "itemIds": ["bo-kho-phuong-dung", "coffee-9"],
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert [item["itemId"] for item in body["currentPlan"]["days"][0]["items"]] == [
+        "bo-kho-phuong-dung",
+        "coffee-9",
+    ]

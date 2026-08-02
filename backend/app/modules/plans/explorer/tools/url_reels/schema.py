@@ -132,9 +132,26 @@ class ExtractedPlace(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ExtractedDestinationStay(BaseModel):
+    """A city/region heading that allocates days but is not a visitable stop."""
+
+    name: str = Field(min_length=1)
+    duration_days: int = Field(ge=1, le=30, alias="durationDays")
+    start_day: int = Field(ge=1, le=30, alias="startDay")
+    end_day: int = Field(ge=1, le=30, alias="endDay")
+    source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
+    evidence: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class ExtractedContext(BaseModel):
     extracted_places: list[str] = Field(default_factory=list, alias="extractedPlaces")
     extracted_place_details: list[ExtractedPlace] = Field(default_factory=list, alias="extractedPlaceDetails")
+    destination_stays: list[ExtractedDestinationStay] = Field(
+        default_factory=list,
+        alias="destinationStays",
+    )
     interests: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     confidence: float = 0.0

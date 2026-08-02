@@ -19,6 +19,8 @@ class TripChat(Base):
     destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_explorer: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    latest_explorer_timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    latest_planner_timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_intake_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

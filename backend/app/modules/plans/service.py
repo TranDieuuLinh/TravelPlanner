@@ -1,14 +1,25 @@
 import asyncio
+import hashlib
 import math
+import re
 import time
+import unicodedata
 from uuid import uuid4
 
-from app.modules.plans.domain.entities import Plan
-from app.modules.places.resolver import PlaceResolver, ProvisionalPlaceResolver
+from app.modules.plans.domain.entities import DestinationStay, Plan, UnscheduledPlace
+from app.modules.places.resolver import (
+    PlaceResolution,
+    PlaceResolver,
+    ProvisionalPlaceResolver,
+)
 from app.modules.places.alias_enricher import PlaceAliasEnricher
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.explorer.place_candidate_aggregator import (
     PlaceCandidateAggregator,
+)
+from app.modules.plans.explorer.destination_guardrail import (
+    enforce_url_destination,
+    infer_url_destination_hint,
 )
 from app.modules.plans.explorer.place_policy import (
     has_url_source,
@@ -18,9 +29,12 @@ from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
+    PlaceCandidateReview,
+    PlaceCandidateSource,
     PlaceCandidateSourceType,
     ExploreTripSpecInput,
     FullExploreRequest,
+    UnifiedPlaceCandidate,
 )
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService, ImageUploadPayload
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -28,6 +42,7 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelInput,
 )
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
+from app.modules.plans.explorer.tools.url_reels.utils import canonicalize_url
 from app.modules.plans.explorer.timing import (
     ExplorerTimingLogger,
     ExplorerTimingTrace,
@@ -48,6 +63,7 @@ from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.users.repository import UserRepository
+from app.shared.errors import AppError
 
 
 DEFAULT_TRIP_DAYS = 3
@@ -149,6 +165,7 @@ class PlanService:
         images: list[ImageUploadPayload],
         trip_spec: ExploreTripSpecInput | None = None,
         user_state: UserPlanningState | None = None,
+        force_url_refresh: bool = False,
     ) -> ExploreIntakeResponse:
         intake_id = str(uuid4())
         run_input = {
@@ -203,6 +220,7 @@ class PlanService:
                     return await self._extract_urls(
                         urls,
                         destination=destination,
+                        bypass_cache=force_url_refresh,
                     )
                 finally:
                     if urls:
@@ -248,21 +266,102 @@ class PlanService:
         urls: list[str],
         *,
         destination: str,
+        bypass_cache: bool = False,
     ) -> list[UrlReelExtractionResult]:
-        return list(
-            await asyncio.gather(
-                *(
-                    asyncio.to_thread(
-                        self.url_reels.extract,
-                        UrlReelInput(
-                            url=url,
-                            destination=destination,
+        async def extract_or_load(url: str) -> UrlReelExtractionResult:
+            cache_lookup_started = time.perf_counter()
+            if self.explorer_persistence is not None and not bypass_cache:
+                cached = self.explorer_persistence.load_cached_url_result(url)
+                if cached is not None:
+                    return _with_url_cache_timing(
+                        cached,
+                        status="hit",
+                        duration_seconds=(
+                            time.perf_counter() - cache_lookup_started
                         ),
                     )
-                    for url in urls
-                )
+            cache_status = "bypassed" if bypass_cache else "miss"
+            cache_lookup_seconds = time.perf_counter() - cache_lookup_started
+            extracted = await asyncio.to_thread(
+                self.url_reels.extract,
+                UrlReelInput(url=url, destination=destination),
             )
+            return _with_url_cache_timing(
+                extracted,
+                status=cache_status,
+                duration_seconds=cache_lookup_seconds,
+            )
+
+        return list(await asyncio.gather(*(extract_or_load(url) for url in urls)))
+
+    async def _resolve_places(
+        self,
+        candidates,
+        *,
+        destination: str,
+    ):
+        resolutions = [None] * len(candidates)
+        missing_candidates = []
+        missing_indexes = []
+        for index, candidate in enumerate(candidates):
+            cached = (
+                self.explorer_persistence.find_cached_resolution(
+                    candidate,
+                    destination=destination,
+                )
+                if self.explorer_persistence is not None
+                else None
+            )
+            if cached is not None:
+                resolutions[index] = cached
+            else:
+                missing_indexes.append(index)
+                missing_candidates.append(candidate)
+        if missing_candidates:
+            fresh = await self.place_resolver.resolve_many(
+                missing_candidates,
+                destination=destination,
+            )
+            for index, resolution in zip(missing_indexes, fresh, strict=True):
+                resolutions[index] = resolution
+        return [resolution for resolution in resolutions if resolution is not None]
+
+    async def retry_candidate_reviews(
+        self,
+        reviews: list[PlaceCandidateReview],
+        *,
+        destination: str,
+    ) -> list[PlaceCandidateReview]:
+        retry_reviews = [
+            review
+            for review in reviews
+            if review.status == "needs_review" and review.retryable
+        ]
+        if not retry_reviews:
+            return reviews
+        candidates = [_candidate_from_review(review) for review in retry_reviews]
+        if self.place_alias_enricher is not None:
+            candidates = await self.place_alias_enricher.enrich(
+                candidates,
+                destination=destination,
+            )
+        resolutions = await self.place_resolver.resolve_many(
+            candidates,
+            destination=destination,
         )
+        retried = {
+            review.candidate_id: _place_candidate_review(
+                resolution,
+                destination=destination,
+                candidate_id=review.candidate_id,
+            )
+            for review, resolution in zip(
+                retry_reviews,
+                resolutions,
+                strict=True,
+            )
+        }
+        return [retried.get(review.candidate_id, review) for review in reviews]
 
     async def _format_resolve_and_persist(
         self,
@@ -273,13 +372,19 @@ class PlanService:
         trace: ExplorerTimingTrace,
     ) -> ExploreIntakeResponse:
         explicitly_requested_days = payload.trip_spec.days
+        destination_stays = _url_destination_stays(url_reel_results)
         has_reference_input = bool(
             payload.urls or payload.image_contexts
         )
         provisional_reference_days = _url_result_coverage_days(
             url_reel_results
         )
-        if payload.trip_spec.days is None and has_reference_input:
+        if payload.trip_spec.days is None and destination_stays:
+            payload = payload.model_copy(deep=True)
+            payload.trip_spec.days = max(
+                stay.end_day for stay in destination_stays
+            )
+        elif payload.trip_spec.days is None and has_reference_input:
             payload = payload.model_copy(deep=True)
             payload.trip_spec.days = max(
                 DEFAULT_TRIP_DAYS,
@@ -322,16 +427,53 @@ class PlanService:
                 aggregation_start,
             )
         trace.candidate_count = len(candidates)
+        captionless_youtube_urls = [
+            result.url
+            for result in url_reel_results
+            if (
+                result.platform == "youtube"
+                and result.speech_to_text.status == "no_captions"
+            )
+        ]
+        if captionless_youtube_urls:
+            raise AppError(
+                422,
+                "YOUTUBE_CAPTIONS_NOT_FOUND",
+                (
+                    "This YouTube video has no public captions, so it cannot "
+                    "be imported. YouTube audio download and STT are disabled."
+                ),
+                details={"sourceCount": len(captionless_youtube_urls)},
+            )
+        unavailable_youtube_urls = [
+            result.url
+            for result in url_reel_results
+            if (
+                result.platform == "youtube"
+                and result.speech_to_text.status in {"blocked", "unavailable"}
+            )
+        ]
+        if unavailable_youtube_urls:
+            raise AppError(
+                503,
+                "YOUTUBE_CAPTIONS_UNAVAILABLE",
+                (
+                    "YouTube captions are temporarily unavailable from both "
+                    "the backend and the configured fallback worker. Retry later."
+                ),
+                details={"sourceCount": len(unavailable_youtube_urls)},
+            )
         if (
             payload.urls
             and not candidates
             and url_reel_results
+            and not destination_stays
         ):
             raise RuntimeError(
                 "No evidenced locations could be extracted from the URL. "
                 "The media may be unavailable or OCR/STT may have failed. "
-                "Retry later, upload screenshots, or paste the caption instead "
-                "of generating an empty itinerary."
+                "Retry later or upload screenshots instead of generating an "
+                "empty itinerary."
             )
         if self.place_alias_enricher is not None:
             alias_start = time.perf_counter()
@@ -345,6 +487,10 @@ class PlanService:
                 alias_start,
                 details={"candidateCount": len(candidates)},
             )
+        source_destination_hint = infer_url_destination_hint(candidates)
+        resolution_destination = (
+            source_destination_hint.destination or payload.destination
+        )
         if payload.urls:
             async def format_context():
                 started_at = time.perf_counter()
@@ -363,9 +509,9 @@ class PlanService:
             async def resolve_places():
                 started_at = time.perf_counter()
                 try:
-                    return await self.place_resolver.resolve_many(
+                    return await self._resolve_places(
                         candidates,
-                        destination=payload.destination,
+                        destination=resolution_destination,
                     )
                 finally:
                     trace.record_stage(
@@ -379,11 +525,17 @@ class PlanService:
                 format_context(),
                 resolve_places(),
             )
+            explorer = enforce_url_destination(
+                explorer,
+                requested_destination=payload.destination,
+                resolutions=resolutions,
+                extraction_hint=source_destination_hint,
+            )
         else:
             explorer = draft.explorer
             resolution_start = time.perf_counter()
             try:
-                resolutions = await self.place_resolver.resolve_many(
+                resolutions = await self._resolve_places(
                     candidates,
                     destination=explorer.intent.destination,
                 )
@@ -394,6 +546,20 @@ class PlanService:
                     resolution_start,
                     details={"candidateCount": len(candidates)},
                 )
+        if destination_stays:
+            inferred_destination = explorer.intent.destination.strip()
+            if inferred_destination.casefold() in {"", "unspecified"}:
+                inferred_destination = destination_stays[0].name
+            explorer = explorer.model_copy(
+                update={
+                    "intent": explorer.intent.model_copy(
+                        update={
+                            "destination": inferred_destination,
+                            "destination_stays": destination_stays,
+                        }
+                    )
+                }
+            )
         trace.resolved_count = sum(
             resolution.status == "resolved"
             for resolution in resolutions
@@ -425,12 +591,24 @@ class PlanService:
                 country=resolution.country,
             )
         ]
+        candidate_reviews = [
+            _place_candidate_review(
+                resolution,
+                destination=explorer.intent.destination,
+            )
+            for resolution in resolutions
+        ]
         source_coverage_days = _candidate_coverage_days(
             schedulable_candidates,
             pace=explorer.intent.pace.value,
         )
         effective_days = (
             explicitly_requested_days
+            or (
+                max(stay.end_day for stay in destination_stays)
+                if destination_stays
+                else None
+            )
             or (
                 max(DEFAULT_TRIP_DAYS, source_coverage_days)
                 if has_reference_input
@@ -440,7 +618,15 @@ class PlanService:
             or DEFAULT_TRIP_DAYS
         )
         explorer.trip_spec.days = effective_days
-        if (
+        if explicitly_requested_days is None and destination_stays:
+            explorer.assumptions = [
+                *explorer.assumptions,
+                (
+                    f"Trip duration was inferred as {effective_days} days "
+                    "from explicit city-stay headings in the URL."
+                ),
+            ]
+        elif (
             explicitly_requested_days is None
             and source_coverage_days > DEFAULT_TRIP_DAYS
         ):
@@ -457,8 +643,8 @@ class PlanService:
                 *explorer.assumptions,
                 (
                     f"The default {DEFAULT_TRIP_DAYS}-day duration was kept. "
-                    "Finder may add catalog Places to empty or sparse days "
-                    "in the URL/OCR itinerary."
+                    "Finder may add catalog Places only to empty days in the "
+                    "URL/OCR itinerary."
                 ),
             ]
         preference_snapshot = self.preference_learning.enrich_snapshot(
@@ -486,7 +672,10 @@ class PlanService:
             update={"effective_profile": effective_profile}
         )
         explorer = explorer.model_copy(
-            update={"preference_snapshot": preference_snapshot}
+            update={
+                "preference_snapshot": preference_snapshot,
+                "candidate_reviews": candidate_reviews,
+            }
         )
         trace.record_stage(
             "postProcessing",
@@ -500,6 +689,7 @@ class PlanService:
                 user_id=payload.user_state.user_id,
                 destination=explorer.intent.destination,
                 resolutions=resolutions,
+                url_results=url_reel_results,
             )
             trace.persisted_count = len(schedulable_candidates)
         if preference_user is not None and self.user_repository is not None:
@@ -523,7 +713,9 @@ class PlanService:
             userId=payload.user_state.user_id,
             explorer=explorer,
             allowFinderSuggestions=(
-                not has_reference_input
+                False
+                if destination_stays and not schedulable_candidates
+                else not has_reference_input
                 or _source_days_need_finder(
                     schedulable_candidates,
                     days=effective_days,
@@ -653,26 +845,77 @@ class PlanService:
                     payload.user_id,
                 ),
             )
-        should_expand_days = (
-            payload.expand_days_to_fit_selected_places
-            or _has_url_selected_places(selected_places)
+        # URL-backed places are source requirements, not optional suggestions.
+        # Grow the plan until every resolved URL place has normal day capacity,
+        # even when the original/requested duration was shorter.
+        expand_for_url_places = any(
+            _has_url_source_ref(place.source_refs)
+            for place in selected_places
         )
-        if should_expand_days:
+        disable_suggestions_for_url_overflow = False
+        if (
+            payload.expand_days_to_fit_selected_places
+            or expand_for_url_places
+        ):
             required_days = _required_days_for_selected_places(
                 selected_places,
                 pace=payload.intent.pace.value,
             )
             if required_days > payload.trip_spec.days:
+                disable_suggestions_for_url_overflow = expand_for_url_places
                 payload = payload.model_copy(
                     update={
                         "trip_spec": payload.trip_spec.model_copy(
                             update={"days": required_days}
-                        )
+                        ),
+                        "allow_finder_suggestions": (
+                            False
+                            if disable_suggestions_for_url_overflow
+                            else payload.allow_finder_suggestions
+                        ),
                     }
                 )
-        plan, timing_report = await self.main_workflow.run_from_explorer_with_timing(
-            payload.model_copy(update={"selected_places": selected_places})
+        workflow_payload = payload.model_copy(
+            update={"selected_places": selected_places}
         )
+        plan, timing_report = await (
+            self.main_workflow.run_from_explorer_with_timing(workflow_payload)
+        )
+        # Count-based capacity handles normal overflow. A route-aware timeline
+        # can still push a URL stop past midnight; retry with extra days rather
+        # than returning that source place as optional/unscheduled. Hard policy
+        # rejections are intentionally not bypassed.
+        for _ in range(3):
+            retryable_url_overflow = _retryable_url_unscheduled_places(
+                plan,
+                selected_places,
+            )
+            if not retryable_url_overflow or workflow_payload.trip_spec.days >= 30:
+                break
+            extra_days = max(
+                1,
+                math.ceil(
+                    len(retryable_url_overflow)
+                    / _selected_place_capacity(payload.intent.pace.value)
+                ),
+            )
+            next_days = min(
+                30,
+                workflow_payload.trip_spec.days + extra_days,
+            )
+            workflow_payload = workflow_payload.model_copy(
+                update={
+                    "trip_spec": workflow_payload.trip_spec.model_copy(
+                        update={"days": next_days}
+                    ),
+                    "allow_finder_suggestions": False,
+                }
+            )
+            plan, timing_report = await (
+                self.main_workflow.run_from_explorer_with_timing(
+                    workflow_payload
+                )
+            )
         self.repository.save(plan)
         return plan, timing_report
 
@@ -698,6 +941,9 @@ class PlanService:
 def _url_result_coverage_days(
     results: list[UrlReelExtractionResult],
 ) -> int:
+    destination_stays = _url_destination_stays(results)
+    if destination_stays:
+        return max(stay.end_day for stay in destination_stays)
     details = [
         detail
         for result in results
@@ -720,6 +966,28 @@ def _url_result_coverage_days(
         math.ceil(len(details) / 3),
         max(source_days, default=0),
     )
+
+
+def _url_destination_stays(
+    results: list[UrlReelExtractionResult],
+) -> list[DestinationStay]:
+    stays: list[DestinationStay] = []
+    next_day = 1
+    for result in results:
+        for extracted in result.extracted_context.destination_stays:
+            start_day = max(next_day, extracted.start_day)
+            end_day = min(30, start_day + extracted.duration_days - 1)
+            stays.append(
+                DestinationStay(
+                    name=extracted.name,
+                    durationDays=end_day - start_day + 1,
+                    startDay=start_day,
+                    endDay=end_day,
+                    sourceRefs=[result.url],
+                )
+            )
+            next_day = end_day + 1
+    return stays
 
 
 def _candidate_coverage_days(
@@ -773,10 +1041,10 @@ def _source_days_need_finder(
             for source in candidate.sources
         )
     ]
-    minimum_activity_count = {
+    capacity = {
         "relaxed": 2,
         "balanced": 3,
-        "packed": 4,
+        "packed": 5,
     }.get(pace, 3)
     explicit_counts = {day: 0 for day in range(1, days + 1)}
     unassigned_count = 0
@@ -789,29 +1057,159 @@ def _source_days_need_finder(
             continue
         explicit_counts[candidate.source_day] += 1
 
-    missing_slots = sum(
-        max(0, minimum_activity_count - count)
-        for count in explicit_counts.values()
+    # Pack candidates without a source day the same way Planner does. Finder
+    # is needed only for requested days with no URL coverage; it must not pad
+    # every sparse reference day up to a generic activity quota.
+    for day in explicit_counts:
+        assigned = min(
+            max(0, capacity - explicit_counts[day]),
+            unassigned_count,
+        )
+        explicit_counts[day] += assigned
+        unassigned_count -= assigned
+        if unassigned_count == 0:
+            break
+    return any(count == 0 for count in explicit_counts.values())
+
+
+def _with_url_cache_timing(
+    result: UrlReelExtractionResult,
+    *,
+    status: str,
+    duration_seconds: float,
+) -> UrlReelExtractionResult:
+    """Attach safe cache telemetry without adding a source URL to the log."""
+    return result.model_copy(
+        update={
+            "timings": {
+                **result.timings,
+                "urlCacheLookup": duration_seconds,
+                "urlCacheHit": 1.0 if status == "hit" else 0.0,
+                "urlCacheBypassed": 1.0 if status == "bypassed" else 0.0,
+            }
+        }
     )
-    return unassigned_count < missing_slots
 
 
 def _merge_selected_places(
     explicit: list[SelectedPlaceCreate],
     persisted: list[SelectedPlaceCreate],
 ) -> list[SelectedPlaceCreate]:
-    merged = list(explicit)
-    seen = {
-        (place.place_id or place.name).strip().casefold()
-        for place in merged
-    }
-    for place in persisted:
-        key = (place.place_id or place.name).strip().casefold()
-        if key in seen:
+    merged: list[SelectedPlaceCreate] = []
+    for place in [*explicit, *persisted]:
+        duplicate_index = next(
+            (
+                index
+                for index, current in enumerate(merged)
+                if _same_selected_place(current, place)
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            merged.append(place)
             continue
-        merged.append(place)
-        seen.add(key)
+        merged[duplicate_index] = _prefer_selected_place(
+            merged[duplicate_index],
+            place,
+        )
     return merged
+
+
+def _has_url_source_ref(source_refs: list[str]) -> bool:
+    return any(
+        source.startswith(("http://", "https://"))
+        for source in source_refs
+    )
+
+
+def _same_selected_place(
+    left: SelectedPlaceCreate,
+    right: SelectedPlaceCreate,
+) -> bool:
+    if left.place_id and right.place_id and left.place_id == right.place_id:
+        return True
+
+    left_tokens = set(_selected_place_tokens(left.name))
+    right_tokens = set(_selected_place_tokens(right.name))
+    if not left_tokens or not right_tokens:
+        return False
+    names_overlap = (
+        left_tokens == right_tokens
+        or (
+            min(len(left_tokens), len(right_tokens)) >= 2
+            and (
+                left_tokens.issubset(right_tokens)
+                or right_tokens.issubset(left_tokens)
+            )
+        )
+    )
+    if not names_overlap:
+        return False
+
+    shared_sources = set(left.source_refs) & set(right.source_refs)
+    if any(source.startswith(("http://", "https://")) for source in shared_sources):
+        return True
+    if all(
+        value is not None
+        for value in (
+            left.latitude,
+            left.longitude,
+            right.latitude,
+            right.longitude,
+        )
+    ):
+        return _coordinate_distance_meters(left, right) <= 250
+    return left_tokens == right_tokens
+
+
+def _selected_place_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFD", value.strip().casefold())
+    without_marks = "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return re.findall(r"[a-z0-9]+", without_marks)
+
+
+def _coordinate_distance_meters(
+    left: SelectedPlaceCreate,
+    right: SelectedPlaceCreate,
+) -> float:
+    assert left.latitude is not None and left.longitude is not None
+    assert right.latitude is not None and right.longitude is not None
+    latitude_scale = 111_320
+    mean_latitude = math.radians((left.latitude + right.latitude) / 2)
+    longitude_scale = latitude_scale * math.cos(mean_latitude)
+    latitude_delta = (left.latitude - right.latitude) * latitude_scale
+    longitude_delta = (left.longitude - right.longitude) * longitude_scale
+    return math.hypot(latitude_delta, longitude_delta)
+
+
+def _prefer_selected_place(
+    current: SelectedPlaceCreate,
+    incoming: SelectedPlaceCreate,
+) -> SelectedPlaceCreate:
+    def score(place: SelectedPlaceCreate) -> tuple[int, int, int]:
+        return (
+            1 if place.source_provider == "database" else 0,
+            1 if place.place_id else 0,
+            1 if place.latitude is not None and place.longitude is not None else 0,
+        )
+
+    preferred = incoming if score(incoming) > score(current) else current
+    return preferred.model_copy(
+        update={
+            "source_refs": list(dict.fromkeys([
+                *current.source_refs,
+                *incoming.source_refs,
+            ])),
+            "tags": list(dict.fromkeys([*current.tags, *incoming.tags])),
+            "notes": preferred.notes or current.notes or incoming.notes,
+            "source_order": current.source_order or incoming.source_order,
+            "source_day": current.source_day or incoming.source_day,
+        }
+    )
 
 
 def _required_days_for_selected_places(
@@ -819,11 +1217,7 @@ def _required_days_for_selected_places(
     *,
     pace: str,
 ) -> int:
-    capacity = {
-        "relaxed": 2,
-        "balanced": 3,
-        "packed": 5,
-    }.get(pace, 3)
+    capacity = _selected_place_capacity(pace)
     occupancy: dict[int, int] = {}
     required_days = 1
     ordered_places = sorted(
@@ -843,11 +1237,125 @@ def _required_days_for_selected_places(
     return min(30, required_days)
 
 
-def _has_url_selected_places(
+def _selected_place_capacity(pace: str) -> int:
+    return {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
+
+
+def _retryable_url_unscheduled_places(
+    plan: Plan,
     selected_places: list[SelectedPlaceCreate],
-) -> bool:
-    return any(
-        source_ref.startswith(("http://", "https://"))
+) -> list[UnscheduledPlace]:
+    retryable_reasons = {
+        "no_day_capacity",
+        "no_available_slot",
+        "planner_omitted_selected_place",
+        "source_day_out_of_range",
+        "timeline_overflow",
+    }
+    url_place_ids = {
+        place.place_id
         for place in selected_places
-        for source_ref in place.source_refs
+        if place.place_id and _has_url_source_ref(place.source_refs)
+    }
+    url_place_names = {
+        "".join(_selected_place_tokens(place.name))
+        for place in selected_places
+        if _has_url_source_ref(place.source_refs)
+    }
+    return [
+        item
+        for item in plan.unscheduled_places
+        if item.reason_code in retryable_reasons
+        and (
+            (item.place_id is not None and item.place_id in url_place_ids)
+            or "".join(_selected_place_tokens(item.name)) in url_place_names
+        )
+    ]
+
+
+def _place_candidate_review(
+    resolution: PlaceResolution,
+    *,
+    destination: str,
+    candidate_id: str | None = None,
+) -> PlaceCandidateReview:
+    candidate = resolution.candidate
+    source_urls = list(
+        dict.fromkeys(
+            canonicalize_url(source.url)
+            for source in candidate.sources
+            if source.url
+        )
+    )
+    schedulable = (
+        resolution.status == "resolved"
+        and is_schedulable_place(
+            is_url_source=has_url_source(candidate),
+            resolution_status=resolution.status,
+            latitude=resolution.latitude,
+            longitude=resolution.longitude,
+            candidate_name=candidate.name,
+            resolved_name=resolution.name,
+            city=resolution.city,
+            destination=destination,
+            country=resolution.country,
+        )
+    )
+    identity = "|".join(
+        [
+            candidate.name.casefold(),
+            str(candidate.source_order or ""),
+            *source_urls,
+        ]
+    )
+    return PlaceCandidateReview(
+        candidateId=(
+            candidate_id
+            or hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+        ),
+        name=candidate.name,
+        category=candidate.category,
+        status="resolved" if schedulable else "needs_review",
+        resolutionReason=(
+            None
+            if schedulable
+            else resolution.resolution_reason
+            or "identity_or_coordinates_unverified"
+        ),
+        provider=resolution.provider,
+        resolvedName=resolution.name if schedulable else None,
+        address=resolution.address if schedulable else candidate.address_hint,
+        latitude=float(resolution.latitude) if schedulable else None,
+        longitude=float(resolution.longitude) if schedulable else None,
+        searchRegion=candidate.search_region,
+        sourceUrls=source_urls,
+        sourceOrder=candidate.source_order,
+        sourceDay=candidate.source_day,
+        confidence=candidate.confidence,
+        retryable=not schedulable,
+    )
+
+
+def _candidate_from_review(
+    review: PlaceCandidateReview,
+) -> UnifiedPlaceCandidate:
+    return UnifiedPlaceCandidate(
+        name=review.name,
+        category=review.category,
+        addressHint=review.address,
+        searchRegion=review.search_region,
+        sources=[
+            PlaceCandidateSource(
+                type=PlaceCandidateSourceType.url,
+                url=url,
+            )
+            for url in review.source_urls
+        ],
+        confidence=review.confidence,
+        sourceOrder=review.source_order,
+        sourceDay=review.source_day,
     )

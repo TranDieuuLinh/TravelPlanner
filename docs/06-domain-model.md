@@ -1,5 +1,18 @@
 # Mô hình miền nghiệp vụ
 
+## Travel Group
+
+- `TravelGroup`: một nhóm công khai gắn duy nhất với `countryCode`, có tên quốc
+  gia, tên nhóm, ảnh mặc định và visibility.
+- `TravelGroupMembership`: liên kết duy nhất giữa user và group, lưu thời điểm
+  tham gia. Thao tác tham gia là idempotent.
+- `TravelGroupPost`: bài viết văn bản thuộc một group công khai và một user tác
+  giả. Bất kỳ user đang hoạt động nào cũng có thể đăng; membership không phải
+  điều kiện đăng bài. Khách chưa đăng nhập vẫn có thể đọc bảng tin công khai.
+
+Danh mục ban đầu gồm 193 quốc gia thành viên Liên Hợp Quốc và hai quốc gia quan
+sát viên, tổng cộng 195 nhóm. Việc là thành viên không cấp thêm role hệ thống.
+
 ## Mô hình đã triển khai
 
 ### Người dùng
@@ -51,8 +64,12 @@ nhất và giữ nguyên plan ID khi user yêu cầu AI sửa tiếp.
 - `TripChatPlanRevision`: snapshot plan và Explorer context bất biến sau mỗi lần
   tạo hoặc sửa thành công, kèm `intakeId` đã sinh ra snapshot đó.
 - `ExplorerIntake`: identity bền vững cho mỗi lần Explorer xử lý input; là
-  parent của các record `UserMustPlace`, kể cả khi intake không resolve được
-  địa điểm nào.
+  parent của junction `UserMustPlaceUser`, kể cả khi intake không resolve được
+  địa điểm nào. Snapshot `UserMustPlace` có thể được nhiều intake/user dùng.
+- `UrlImportJob`: một URL thuộc trip chat và user, giữ thứ tự trong batch,
+  trạng thái `queued/running/succeeded/failed`, số lần chạy, lỗi an toàn và
+  revision kết quả. Job được lưu trước khi worker xử lý nên không phụ thuộc tab
+  Planner còn mở.
 
 Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-up trong
 cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;
@@ -94,19 +111,26 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   connector, thời điểm lấy và chính sách lưu.
 - `SourceArtifact`: metadata, caption, transcript, frame reference hoặc văn bản
   được phép lưu; không đồng nhất artifact với instruction cho model.
+- `YouTubeTranscriptCacheEntry`: cache caption đã lấy thành công theo
+  `videoId + language`, gồm transcript, nguồn, cờ auto-generated và
+  `fetchedAt/updatedAt`. Cache này phục vụ tái sử dụng connector và tách khỏi
+  preference profile; request lỗi không được ghi vào cache.
 - `SourceClaim`: một thông tin được trích xuất như địa điểm, hoạt động, thời điểm,
   giá hoặc mẹo, kèm evidence span, confidence và trạng thái xác nhận.
 - `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
   chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
   chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
-- `UserMustPlace`: candidate của intake đã được provider resolve tới một địa
-  điểm cụ thể có đủ latitude/longitude; giữ source URL, address, description,
-  provider, `searchRegion`, `sourceEvidence` tách theo
-  `stt`/`ocr`/`caption` và độ mới ngay trên record. Candidate
+- `UserMustPlace`: snapshot URL/place dùng chung đã được provider resolve tới
+  một địa điểm cụ thể có đủ latitude/longitude. Snapshot có shape tương ứng
+  `Place`, thêm `sourceUrl` và `notes`, giữ provenance và có `placeId` nullable
+  khi match catalog. `UserMustPlaceUser` liên kết nhiều-nhiều snapshot với user
+  và intake. Record giữ `sourceEvidence` tách theo `stt`/`ocr`/`caption` và độ
+  mới. Candidate
   provisional/unresolved, thiếu tọa độ hoặc chỉ match rộng tới thành phố/quốc
-  gia không được lưu vào bảng này. `candidateName` luôn là nhãn từ nguồn;
-  `resolvedName` là kết quả provider riêng, không tự ghi đè nhãn nguồn của stop
-  URL. Flow Explorer không tạo hoặc cập nhật `Place`.
+  gia không được lưu vào bảng này. `candidateName` luôn giữ nhãn từ nguồn;
+  `resolvedName` là nhãn provider đã xác minh, ưu tiên tiếng Việt khi alias có
+  sẵn. Plan/UI dùng `resolvedName`; provenance vẫn dùng `candidateName`. Flow
+  Explorer không tạo hoặc cập nhật `Place`.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
@@ -114,9 +138,13 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
   nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
   hành đã xác minh. `sourceProvider` giữ provider đã resolve candidate để UI có
-  thể phân biệt provenance URL với Nominatim mà không suy đoán từ tên. Stop
-  URL luôn giữ tên candidate đã tổng hợp từ evidence;
-  provider chỉ bổ sung identity, địa chỉ và tọa độ khi match đã resolve.
+  thể phân biệt provenance URL với Nominatim mà không suy đoán từ tên. Stop URL
+  hiển thị nhãn Việt đã resolve; tên candidate gốc vẫn được giữ trên
+  `UserMustPlace` cùng evidence.
+- `DestinationStay`: phân bổ một khoảng ngày cho thành phố/khu vực từ heading
+  của nguồn (ví dụ `Hanoi - 2 days`). Đây là context cấp hành trình, không phải
+  `Place` hay `SelectedPlace`; stay hai ngày tạo hai `DayBrief` cùng
+  `targetArea` và có thể để trống item để người dùng bổ sung sau.
 - `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
   chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
   `sourceTypes`), không giữ raw prompt/OCR/transcript.
@@ -175,7 +203,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - `Achievement` và `UserAchievement`
 - `UserVisitedPlace`: dấu mốc riêng của user cho một `Place` đã chuẩn hóa, gồm
   ngày đi và ghi chú; một user chỉ có một dấu mốc hiện tại trên mỗi place.
-- `UserPost`: bài viết/media do user đăng và hiển thị trong lưới hồ sơ cá nhân.
+- `UserPost`: bài viết/media công khai do user đăng, gồm `contentType` (`post` hoặc
+  `reel`), caption, URL media do storage adapter tạo, location tag bắt buộc và thời điểm tạo. Nội dung
+  hiển thị trong lưới hồ sơ cá nhân và feed Khám phá; tác giả luôn lấy từ session.
 - `CreatorMetric` hoặc analytics event được tổng hợp
 - `AuditEvent`
 
@@ -186,6 +216,12 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - AI không được thay đổi `TripItem` đã khóa khi chỉnh sửa theo phạm vi.
 - Mỗi trip chat chỉ thuộc một user; user khác không được đọc hoặc sửa chat.
 - Revision của trip chat tăng đúng một đơn vị sau mỗi lần Planner hoàn thành.
+- Tại một thời điểm worker URL chỉ claim một job; URL trong cùng batch được claim
+  theo thứ tự user đã dán. Lỗi một job không xóa hoặc chặn retry riêng các job
+  còn lại. User được xóa job `queued` hoặc dừng và xóa job `running` của chính
+  mình; worker phải hủy xử lý và giải phóng FIFO trước khi endpoint xác nhận.
+  User được xóa job `succeeded` hoặc `failed` của chính mình khỏi lịch sử hiển
+  thị; thao tác này không xóa revision plan mà job đã tạo.
 - Follow-up giữ nguyên plan ID hiện tại; snapshot revision trước không bị sửa.
 - Follow-up yêu cầu tăng số ngày được phép suy ra duration tối thiểu từ toàn bộ
   địa điểm cũ và mới sau khi merge. Follow-up không yêu cầu tăng ngày phải giữ
@@ -194,12 +230,22 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   `UserMustPlace` khi đã resolve tới danh tính cụ thể và có đủ latitude,
   longitude. Candidate provisional/unresolved hoặc thiếu tọa độ bị loại trước
   persistence và không được chuyển thành `SelectedPlace`.
+- Mọi `SelectedPlace` đã resolve có provenance URL là input bắt buộc của plan.
+  Planner tự tăng số ngày, tối đa giới hạn schema, để tạo đủ capacity thay vì
+  đưa overflow thông thường vào `UnscheduledPlace`. Finder suggestion chỉ được
+  dùng ở capacity còn trống và không được chiếm chỗ của URL place. Revision URL
+  tiếp theo phải phục hồi cả URL place đã resolve từ Explorer history, kể cả
+  khi revision cũ chưa xếp được nó.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
   được lưu hay đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa
   thay thế.
+- Heading dạng `thành phố - N ngày` được giữ thành `DestinationStay`, không
+  resolve thành stop. Khi URL chỉ có stay và chưa có venue cụ thể, Finder không
+  tự thêm place; plan giữ các ngày trống trong đúng thành phố.
 - Planner downstream nhận trực tiếp Explorer context và không đọc
-  `UserMustPlace`. Finder downstream dùng cả `intakeId + userId` để đọc đúng
-  record `UserMustPlace`; Explorer không điều phối hai module này.
+  `UserMustPlace`. Finder downstream dùng `intakeId + userId` qua junction
+  `UserMustPlaceUser` để đọc đúng snapshot dùng chung; Explorer không điều phối
+  hai module này.
 - Địa điểm đã xác nhận phải được xếp hoặc xuất hiện trong `UnscheduledPlace` kèm
   lý do, không được âm thầm bỏ.
 - Source claim luôn trỏ tới import và evidence; dữ liệu provider bổ sung phải có

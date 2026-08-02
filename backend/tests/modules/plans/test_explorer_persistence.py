@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import ExplorerIntake, UserMustPlace
+from app.modules.plans.explorer.model import (
+    ExplorerIntake,
+    UrlExtractionCacheEntry,
+    UserMustPlace,
+    UserMustPlaceUser,
+)
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 
 
@@ -14,7 +19,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -84,6 +89,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         assert inspect(engine).get_table_names() == [
             "explorer_intakes",
             "user_must_place",
+            "user_must_place_users",
         ]
         selected_places = repository.load_must_places("intake-1", None)
         assert len(selected_places) == 1
@@ -108,11 +114,120 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
     engine.dispose()
 
 
-def test_url_itinerary_preserves_source_name_after_provider_resolution() -> None:
+def test_stale_url_extraction_cache_is_recomputed() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[UrlExtractionCacheEntry.__table__],
+    )
+    url = "https://www.tiktok.com/@tereveling_/video/7667982507035348244"
+
+    with Session(engine) as session:
+        session.add(
+            UrlExtractionCacheEntry(
+                source_url=url,
+                platform="tiktok",
+                extracted_context_json={
+                    "extractedPlaces": ["Hoa Lo Prison 10"],
+                    "extractedPlaceDetails": [],
+                },
+            )
+        )
+        session.commit()
+
+        assert ExplorerPersistenceRepository(session).load_cached_url_result(
+            url
+        ) is None
+
+    engine.dispose()
+
+
+def test_same_url_place_is_shared_across_multiple_intakes() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ExplorerIntake.__table__,
+            UserMustPlace.__table__,
+            UserMustPlaceUser.__table__,
+            UrlExtractionCacheEntry.__table__,
+        ],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Hoan Kiem Lake",
+                "category": "nature",
+                "sources": [{
+                    "type": "url",
+                    "url": "https://www.youtube.com/watch?v=shared01&utm_source=x",
+                }],
+                "sourceEvidence": {
+                    "stt": "Visit before 8am for a quieter walk.",
+                    "ocr": "Hoan Kiem Lake",
+                },
+                "confidence": 0.9,
+            },
+            "status": "resolved",
+            "provider": "google_maps_scraper",
+            "externalId": "google-hoan-kiem",
+            "name": "Hồ Hoàn Kiếm",
+            "placeType": "nature",
+            "address": "Hoàn Kiếm, Hà Nội",
+            "city": "Hà Nội",
+            "country": "Việt Nam",
+            "countryCode": "VN",
+            "latitude": "21.0287000",
+            "longitude": "105.8522000",
+            "rating": "4.7",
+            "reviewCount": 12000,
+            "placeStatus": "active",
+            "dataConfidence": "medium",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-shared-1",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+        repository.save(
+            intake_id="intake-shared-2",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        shared_places = list(session.scalars(select(UserMustPlace)))
+        links = list(session.scalars(select(UserMustPlaceUser)))
+        assert len(shared_places) == 1
+        assert len(links) == 2
+        assert shared_places[0].source_url == (
+            "https://www.youtube.com/watch?v=shared01"
+        )
+        assert shared_places[0].name == "Hồ Hoàn Kiếm"
+        assert shared_places[0].rating == Decimal("4.70")
+        assert "Visit before 8am" in (shared_places[0].notes or "")
+        assert len(repository.load_must_places("intake-shared-1", None)) == 1
+        assert len(repository.load_must_places("intake-shared-2", None)) == 1
+        cached = repository.load_cached_url_result(
+            "https://www.youtube.com/watch?v=shared01&utm_campaign=again"
+        )
+        assert cached is not None
+        assert cached.speech_to_text.status == "cached"
+        assert cached.extracted_context.extracted_places == ["Hoan Kiem Lake"]
+
+    engine.dispose()
+
+
+def test_url_itinerary_displays_resolved_vietnamese_name() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -154,7 +269,7 @@ def test_url_itinerary_preserves_source_name_after_provider_resolution() -> None
             None,
         )
 
-        assert selected[0].name == "Museum of Ethnology"
+        assert selected[0].name == "Bảo tàng Dân tộc học Việt Nam"
         assert selected[0].address == (
             "Đường Nguyễn Văn Huyên, Cầu Giấy, Hà Nội, Việt Nam"
         )
@@ -168,7 +283,7 @@ def test_url_itinerary_drops_source_name_when_provider_match_is_only_city() -> N
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -217,7 +332,7 @@ def test_url_itinerary_rejects_destination_alias_resolved_to_airport() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     resolution = PlaceResolution.model_validate(
         {
@@ -265,7 +380,7 @@ def test_explorer_does_not_persist_unresolved_candidates_without_coordinates() -
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     unresolved = PlaceResolution.model_validate(
         {
@@ -327,7 +442,7 @@ def test_explorer_does_not_persist_provisional_candidate_with_coordinates() -> N
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     provisional = PlaceResolution.model_validate(
         {
@@ -365,7 +480,7 @@ def test_explorer_drops_high_confidence_url_stop_without_verified_identity() -> 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[ExplorerIntake.__table__, UserMustPlace.__table__],
+        tables=[ExplorerIntake.__table__, UserMustPlace.__table__, UserMustPlaceUser.__table__],
     )
     unresolved_activity = PlaceResolution.model_validate(
         {

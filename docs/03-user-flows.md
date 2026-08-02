@@ -28,6 +28,14 @@
    nhận mới trở thành `SelectedPlace` của Planner.
 7. Import thất bại không được làm mất URL hoặc các kết quả đã trích xuất từ
    nguồn khác.
+8. UI hiển thị riêng số candidate đã xác minh và candidate `needs_review`.
+   Candidate chưa resolve vẫn giữ tên nguồn và lý do, còn Planner chỉ xếp item
+   có tọa độ đã xác minh.
+9. Tác vụ đã kết thúc chỉ hiển thị một thao tác **Chạy lại**. Nếu lượt trước đã
+   thành công, hệ thống dùng extraction cache hợp lệ rồi chạy lại từ
+   aggregation/dedupe, resolve và Planner. Nếu lượt trước thất bại, hệ thống
+   chạy lại toàn bộ từ media/STT/OCR với `forceRefresh=true`. UI không yêu cầu
+   user chọn bước kỹ thuật cần retry.
 
 ### 3. Explorer làm rõ chuyến đi
 
@@ -128,6 +136,21 @@ chốt Main Plan.
 9. Nếu không có listing phù hợp, ngữ cảnh tìm kiếm được chuyển sang Explorer để
    tạo plan mới.
 
+## Người dùng chia sẻ bài viết du lịch
+
+1. Từ Hồ sơ, user đang đăng nhập mở trình tạo bài và chọn `post` (ảnh) hoặc
+   `reel` (video), sau đó chọn file từ thư viện điện thoại hoặc máy tính.
+2. User nhập caption và bắt buộc gắn tên địa điểm. Request thiếu media, hoặc địa
+   điểm chỉ có khoảng trắng, bị từ chối cả phía client và server.
+3. Bài được lưu dưới danh tính user hiện tại; client không được tự khai báo tác
+   giả.
+4. Backend kiểm tra loại, chữ ký và kích thước file, đổi sang tên ngẫu nhiên rồi
+   lưu qua media storage adapter. Sau khi đăng, nội dung xuất hiện trong lưới Hồ
+   sơ và feed Khám phá công khai,
+   mới nhất trước. Feed luôn hiển thị loại nội dung, tác giả và location tag.
+5. Nội dung cộng đồng không mặc nhiên là listing Marketplace và không hiển thị
+   giá hay tuyên bố đã được kiểm chứng như một plan creator.
+
 ## Nhà sáng tạo tạo và xuất bản plan
 
 1. Đăng nhập và hoàn tất hồ sơ/xác minh creator khi được yêu cầu.
@@ -147,7 +170,7 @@ chốt Main Plan.
 ## Các luồng ngoại lệ quan trọng
 
 - URL không được hỗ trợ hoặc nội dung riêng tư: giữ URL, nêu lý do và cho phép
-  nhập caption/địa điểm thủ công.
+  retry hoặc thêm địa điểm qua flow chỉnh sửa plan.
 - Không truy cập được caption/transcript: xử lý phần metadata có sẵn và đánh dấu
   dữ liệu còn thiếu; không giả vờ đã hiểu toàn bộ video.
 - Độ tin cậy thấp hoặc nhiều địa điểm trùng tên: yêu cầu người dùng chọn, không

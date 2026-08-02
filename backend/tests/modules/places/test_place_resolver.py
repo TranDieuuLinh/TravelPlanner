@@ -133,7 +133,7 @@ def test_runtime_wires_database_before_nominatim(
     assert isinstance(resolver.fallback, NominatimPlaceResolver)
 
 
-def test_runtime_wires_google_maps_scraper_after_database_and_nominatim(
+def test_runtime_wires_google_maps_scraper_after_database_before_nominatim(
     monkeypatch: Any,
 ) -> None:
     monkeypatch.setattr(
@@ -157,16 +157,17 @@ def test_runtime_wires_google_maps_scraper_after_database_and_nominatim(
     assert isinstance(resolver, FallbackPlaceResolver)
     assert isinstance(resolver.primary, DatabasePlaceResolver)
     assert isinstance(resolver.fallback, FallbackPlaceResolver)
-    assert isinstance(resolver.fallback.primary, NominatimPlaceResolver)
     assert isinstance(
-        resolver.fallback.fallback,
+        resolver.fallback.primary,
         GoogleMapsScraperPlaceResolver,
     )
+    assert isinstance(resolver.fallback.fallback, NominatimPlaceResolver)
 
 
 def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
     candidate = UnifiedPlaceCandidate(
         name="Ethnology Museum",
+        vietnameseNames=["Bảo tàng Dân tộc học Việt Nam"],
         searchNames=["Bảo tàng Dân tộc học Việt Nam"],
         category="culture",
         searchRegion="Hà Nội",
@@ -203,6 +204,7 @@ def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
     ]
     assert result.status == "resolved"
     assert result.provider == "google_maps_scraper"
+    assert result.name == "Bảo tàng Dân tộc học Việt Nam"
     assert result.external_id == "ChIJ-test"
     assert str(result.latitude) == "21.0403"
     assert str(result.longitude) == "105.798"
@@ -263,10 +265,7 @@ def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
     assert result.provider == "google_maps_scraper"
     assert str(result.latitude) == "21.07"
     assert str(result.longitude) == "105.82"
-    assert scraper.queries == [
-        "Hidden Garden, Hà Nội",
-        "Vườn Ẩn, Hà Nội",
-    ]
+    assert scraper.queries == ["Hidden Garden, Hà Nội"]
 
 
 def test_google_maps_scraper_rejects_wrong_region() -> None:
@@ -297,6 +296,44 @@ def test_google_maps_scraper_rejects_wrong_region() -> None:
     assert result.resolution_reason == "region_mismatch"
 
 
+def test_google_maps_scraper_uses_evidenced_nearby_place_context() -> None:
+    contextual_query = "Coffee 74, Hanoi train street, Hanoi"
+    candidate = UnifiedPlaceCandidate(
+        name="Coffee 74",
+        category="cafe",
+        searchRegion="Hanoi",
+        sourceEvidence={
+            "ocr": "Coffee 74 beer storefront along the Hanoi train street",
+        },
+        sourceActivity=(
+            "watching trains pass by while having drinks at Coffee 74"
+        ),
+    )
+    resolver = FakeGoogleMapsScraperResolver(
+        {
+            contextual_query: [
+                {
+                    "title": "Coffee 74",
+                    "category": "Cafe",
+                    "address": "5 Trần Phú, Hoàn Kiếm, Hà Nội",
+                    "latitude": 21.0295,
+                    "longitude": 105.8430,
+                    "place_id": "coffee-74-tran-phu",
+                }
+            ]
+        }
+    )
+
+    result = asyncio.run(
+        resolver.resolve(candidate, destination="Hanoi")
+    )
+
+    assert resolver.queries == [contextual_query]
+    assert result.status == "resolved"
+    assert result.external_id == "coffee-74-tran-phu"
+    assert result.address == "5 Trần Phú, Hoàn Kiếm, Hà Nội"
+
+
 def test_google_maps_scraper_runs_cli_without_api_key(
     tmp_path: Path,
 ) -> None:
@@ -317,7 +354,20 @@ results_path.write_text(json.dumps([{
     "address": "Hoàn Kiếm, Hà Nội",
     "latitude": 21.028,
     "longitude": 105.852,
-    "place_id": "cli-place-id"
+    "place_id": "cli-place-id",
+    "review_rating": 4.7,
+    "review_count": 1284,
+    "plus_code": "2VJ2+P2 Hoàn Kiếm, Hà Nội",
+    "website": "https://example.com/place",
+    "phone": "+84 24 1234 5678",
+    "descriptions": ["Điểm tham quan lịch sử."],
+    "opening_hours": [{
+        "dayOfWeek": 1,
+        "dayName": "Thứ Hai",
+        "rawTimeSlots": "08:00–17:00",
+        "is24Hours": False,
+        "sourceFormat": "google_maps"
+    }]
 }]), encoding="utf-8")
 """,
         encoding="utf-8",
@@ -342,6 +392,16 @@ results_path.write_text(json.dumps([{
     assert result.external_id == "cli-place-id"
     assert str(result.latitude) == "21.028"
     assert str(result.longitude) == "105.852"
+    assert str(result.rating) == "4.7"
+    assert result.review_count == 1284
+    assert result.plus_code == "2VJ2+P2 Hoàn Kiếm, Hà Nội"
+    assert result.description == "Điểm tham quan lịch sử."
+    assert result.opening_hours[0]["dayOfWeek"] == 1
+    assert result.place_metadata == {
+        "category": "Tourist attraction",
+        "website": "https://example.com/place",
+        "phone": "+84 24 1234 5678",
+    }
 
 
 def test_google_maps_scraper_uses_shared_worker_without_api_key(
@@ -394,6 +454,52 @@ def test_google_maps_scraper_uses_shared_worker_without_api_key(
     assert result.status == "resolved"
     assert result.provider == "google_maps_scraper"
     assert result.external_id == "worker-place-id"
+
+
+def test_google_maps_scraper_resolves_many_with_bounded_concurrency() -> None:
+    class TrackingResolver(GoogleMapsScraperPlaceResolver):
+        def __init__(self) -> None:
+            super().__init__(
+                executable="google-maps-scraper-test",
+                max_concurrency=2,
+            )
+            self.active = 0
+            self.maximum_active = 0
+
+        async def resolve(
+            self,
+            candidate: UnifiedPlaceCandidate,
+            *,
+            destination: str,
+        ) -> PlaceResolution:
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return PlaceResolution(
+                candidate=candidate,
+                status="unresolved",
+                name=candidate.name,
+                city=destination,
+            )
+
+    resolver = TrackingResolver()
+    candidates = [
+        UnifiedPlaceCandidate(name=f"Place {index}")
+        for index in range(4)
+    ]
+
+    results = asyncio.run(
+        resolver.resolve_many(candidates, destination="Hà Nội")
+    )
+
+    assert resolver.maximum_active == 2
+    assert [result.name for result in results] == [
+        "Place 0",
+        "Place 1",
+        "Place 2",
+        "Place 3",
+    ]
 
 
 def test_database_resolver_matches_bilingual_alias_before_provider() -> None:
@@ -571,7 +677,17 @@ def test_nominatim_resolver_maps_provider_result_to_place_contract() -> None:
                     "country_code": "vn",
                 },
                 "extratags": {
-                    "description": "Nhà hàng chuyên món mì Quảng."
+                    "description": "Nhà hàng chuyên món mì Quảng.",
+                    "opening_hours": "Mo-Su 06:00-22:00",
+                    "website": "https://example.com/mi-quang",
+                    "contact:phone": "+84 236 123 4567",
+                    "wikidata": "Q123456",
+                    "cuisine": "vietnamese",
+                },
+                "type": "restaurant",
+                "namedetails": {
+                    "name:vi": "Mì Quảng Bà Mua",
+                    "name:en": "Ba Mua Quang Noodles",
                 },
                 "licence": "Data © OpenStreetMap contributors",
             }
@@ -593,6 +709,24 @@ def test_nominatim_resolver_maps_provider_result_to_place_contract() -> None:
     assert result.country_code == "VN"
     assert str(result.latitude) == "16.0592"
     assert result.data_confidence == "high"
+    assert result.place_type == "restaurant"
+    assert result.source_platform == "openstreetmap"
+    assert result.source_link == "https://www.openstreetmap.org/node/123"
+    assert result.opening_hours == [
+        {
+            "rawTimeSlots": "Mo-Su 06:00-22:00",
+            "is24Hours": False,
+            "sourceFormat": "openstreetmap",
+        }
+    ]
+    assert result.place_metadata == {
+        "website": "https://example.com/mi-quang",
+        "phone": "+84 236 123 4567",
+        "wikidata": "Q123456",
+        "cuisine": "vietnamese",
+        "englishName": "Ba Mua Quang Noodles",
+        "vietnameseName": "Mì Quảng Bà Mua",
+    }
 
 
 def test_nominatim_resolver_keeps_unmatched_candidate_without_question() -> None:
@@ -671,6 +805,80 @@ def test_nominatim_resolver_prefers_vietnamese_name_and_best_matching_result() -
     assert "Nguyễn Văn Huyên" in result.address
     assert str(result.latitude) == "21.0403"
     assert str(result.longitude) == "105.7980"
+
+
+def test_nominatim_accepts_lake_for_nature_candidate_and_keeps_matching_alias() -> None:
+    resolver = FakeNominatimResolver(
+        [
+            {
+                "osm_type": "relation",
+                "osm_id": 789,
+                "name": "Hồ Hoàn Kiếm",
+                "display_name": "Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội, Việt Nam",
+                "lat": "21.0287",
+                "lon": "105.8521",
+                "class": "water",
+                "type": "lake",
+                "address": {"city": "Hà Nội", "country": "Việt Nam"},
+                "namedetails": {
+                    "name": "Hồ Hoàn Kiếm",
+                    "name:en": "Hoan Kiem Lake",
+                    "name:vi": "Hồ Hoàn Kiếm",
+                },
+            }
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Huen Kim Lake",
+        originalName="Huen Kim Lake",
+        englishNames=["Hoan Kiem Lake"],
+        vietnameseNames=["Hồ Hoàn Kiếm"],
+        searchNames=["Hoan Kiem Lake", "Hồ Hoàn Kiếm"],
+        category="nature",
+        sources=[{"type": "url", "url": "https://example.com/youtube"}],
+        confidence=0.9,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.name == "Hồ Hoàn Kiếm"
+
+
+def test_nominatim_uses_candidate_official_name_when_localized_label_is_generic() -> None:
+    resolver = FakeNominatimResolver(
+        [
+            {
+                "osm_type": "way",
+                "osm_id": 790,
+                "name": "Hà Nội",
+                "display_name": "St. Joseph's Cathedral, Hà Nội, Việt Nam",
+                "lat": "21.0283",
+                "lon": "105.8540",
+                "class": "amenity",
+                "type": "place_of_worship",
+                "address": {"city": "Hà Nội", "country": "Việt Nam"},
+                "namedetails": {
+                    "name:vi": "Hà Nội",
+                    "name:en": "St. Joseph's Cathedral",
+                },
+            }
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="St Joseph Cathedral",
+        englishNames=["St. Joseph's Cathedral"],
+        vietnameseNames=["Nhà thờ Lớn Hà Nội"],
+        searchNames=["St. Joseph's Cathedral", "Nhà thờ Lớn Hà Nội"],
+        category="culture",
+        sources=[{"type": "url", "url": "https://example.com/youtube"}],
+        confidence=0.9,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.name == "Nhà thờ Lớn Hà Nội"
 
 
 def test_nominatim_rejects_hang_mua_phone_shop_false_match() -> None:

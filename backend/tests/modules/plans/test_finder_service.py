@@ -433,6 +433,140 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
     )
 
 
+def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
+    source = _place(
+        "source-train-street",
+        "Phố đường tàu",
+        tags=["culture"],
+        intensity="light",
+        latitude=21.0291,
+        longitude=105.8412,
+    )
+    duplicate = _place(
+        "catalog-train-street",
+        "Phố đường tàu Hà Nội",
+        tags=["culture"],
+        intensity="light",
+        latitude=21.0292,
+        longitude=105.8413,
+    )
+    unique = _place(
+        "catalog-museum",
+        "Bảo tàng Phụ nữ Việt Nam",
+        tags=["culture"],
+        intensity="light",
+    )
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            {
+                source.place_id: source,
+                duplicate.place_id: duplicate,
+                unique.place_id: unique,
+            },
+            search_order=[duplicate.place_id, unique.place_id],
+        )
+    )
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Stops from URL",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                allocatedSelectedPlaceRefs=[source.place_id],
+            ),
+            DayBrief(
+                day=2,
+                theme="Finder fill",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture"],
+            ),
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId=source.place_id,
+                name=source.name,
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=1,
+                tags=["culture"],
+                latitude=source.latitude,
+                longitude=source.longitude,
+            )
+        ],
+        allow_finder_suggestions=True,
+    )
+
+    names = [item.name for day in result.days for item in day.items]
+    assert "Phố đường tàu" in names
+    assert "Phố đường tàu Hà Nội" not in names
+    assert "Bảo tàng Phụ nữ Việt Nam" in names
+
+
+def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
+    names = [
+        "Museum",
+        "Temple",
+        "Lake",
+        "Garden",
+        "Theatre",
+        "Gallery",
+        "Citadel",
+    ]
+    places = {
+        f"catalog-{index}": _place(
+            f"catalog-{index}",
+            name,
+            tags=["culture"],
+            intensity="light",
+        )
+        for index, name in enumerate(names, start=1)
+    }
+    finder = FinderService(
+        FakeFinderPlaceTool(
+            places,
+            search_order=list(places),
+        )
+    )
+    macro_plan = MacroPlan(
+        title="Hà Nội",
+        destination="Hà Nội",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Finder-only day",
+                targetArea="Hà Nội",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture"],
+                pace="packed",
+            )
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent().model_copy(update={"pace": TravelPace.packed}),
+        [],
+        allow_finder_suggestions=True,
+    )
+
+    suggestions = [
+        item
+        for item in result.days[0].items
+        if item.source == "finder_suggestion"
+    ]
+    assert len(suggestions) == 4
+
+
 def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
     finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
     user_status = UserStatus.model_validate(

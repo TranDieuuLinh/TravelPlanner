@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import asin, cos, radians, sin, sqrt
 
 from app.modules.plans.domain.constraint_policy import (
@@ -11,6 +11,7 @@ from app.modules.plans.domain.entities import (
     DayBrief,
     FinderPlanStatus,
     MacroPlan,
+    PlanItem,
     UserStatus,
 )
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
@@ -52,6 +53,7 @@ class CandidateSelectionContext:
     rejected_selected_places: dict[str, CandidateRejection]
     intent_interests: list[str]
     travel_style: str
+    occupied_items: list[PlanItem] = field(default_factory=list)
     bbox_filter: tuple[float, float, float, float] | None = None
 
 
@@ -223,6 +225,15 @@ class CandidateSelector:
                 limit=self.max_candidates_per_block,
                 bbox_filter=context.bbox_filter,
             )
+            catalog_candidates = [
+                candidate
+                for candidate in catalog_candidates
+                if not self._duplicates_existing_identity(
+                    candidate,
+                    selected_places=context.selected_by_ref.values(),
+                    occupied_items=context.occupied_items,
+                )
+            ]
             candidates.extend(
                 self._rerank_for_proximity(
                     catalog_candidates,
@@ -273,6 +284,70 @@ class CandidateSelector:
                 continue
             return candidate
         return None
+
+    def _duplicates_existing_identity(
+        self,
+        candidate: FinderPlace,
+        *,
+        selected_places,
+        occupied_items: list[PlanItem],
+    ) -> bool:
+        return any(
+            self._same_place_identity(candidate, existing)
+            for existing in [*selected_places, *occupied_items]
+        )
+
+    def _same_place_identity(self, left, right) -> bool:
+        left_id = getattr(left, "place_id", None)
+        right_id = getattr(right, "place_id", None)
+        if left_id and right_id and left_id == right_id:
+            return True
+
+        left_tokens = self._identity_tokens(getattr(left, "name", ""))
+        right_tokens = self._identity_tokens(getattr(right, "name", ""))
+        if not left_tokens or not right_tokens:
+            return False
+        if left_tokens == right_tokens:
+            return True
+        if (
+            min(len(left_tokens), len(right_tokens)) < 2
+            or not (
+                left_tokens.issubset(right_tokens)
+                or right_tokens.issubset(left_tokens)
+            )
+        ):
+            return False
+
+        coordinates = (
+            getattr(left, "latitude", None),
+            getattr(left, "longitude", None),
+            getattr(right, "latitude", None),
+            getattr(right, "longitude", None),
+        )
+        if any(value is None for value in coordinates):
+            return True
+        return self._haversine_meters(
+            (coordinates[0], coordinates[1]),
+            (coordinates[2], coordinates[3]),
+        ) <= 750
+
+    @staticmethod
+    def _identity_tokens(value: str) -> set[str]:
+        tokens = _normalize_text(value).split()
+        normalized: list[str] = []
+        index = 0
+        while index < len(tokens):
+            if tokens[index:index + 2] == ["ca", "phe"]:
+                normalized.append("cafe")
+                index += 2
+                continue
+            token = "cafe" if tokens[index] == "coffee" else tokens[index]
+            if not token.isdigit():
+                normalized.append(token)
+            index += 1
+        if len(normalized) >= 4 and normalized[-2:] == ["ha", "noi"]:
+            normalized = normalized[:-2]
+        return set(normalized)
 
     def block_is_available(self, block: DayBlock, user_status: UserStatus) -> bool:
         if not user_status.available_at:

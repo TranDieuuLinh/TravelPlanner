@@ -1,3 +1,7 @@
+import asyncio
+from decimal import Decimal
+from types import SimpleNamespace
+
 import pytest
 from uuid import uuid4
 
@@ -103,7 +107,7 @@ def test_add_item_success():
         notes="Ăn trưa ngon",
     )
 
-    result = service.add_item(plan, req)
+    result = asyncio.run(service.add_item(plan, req))
     assert result.affected_days == [1]
 
     day1 = result.plan.days[0]
@@ -118,9 +122,9 @@ def test_add_item_invalid_day():
     service = PlanMutationService()
     plan = make_sample_plan()
 
-    req = AddItemRequest(day=99, name="Invalid Day Place")
+    req = AddItemRequest(day=3, name="Invalid Day Place")
     with pytest.raises(AppError) as exc_info:
-        service.add_item(plan, req)
+        asyncio.run(service.add_item(plan, req))
     assert exc_info.value.status_code == 404
 
 
@@ -133,10 +137,67 @@ def test_update_item_success():
         notes="Đi dạo quanh hồ",
     )
 
-    result = service.update_item(plan, day_number=1, item_id="item-1-1", request=req)
+    result = asyncio.run(
+        service.update_item(plan, day_number=1, item_id="item-1-1", request=req)
+    )
     updated_item = result.plan.days[0].items[0]
     assert updated_item.name == "Hồ Gươm (Hồ Hoàn Kiếm)"
     assert updated_item.notes == "Đi dạo quanh hồ"
+
+
+def test_search_place_suggestions_uses_catalog_aliases_without_accents():
+    place = SimpleNamespace(
+        id="place-coffee-9",
+        name="Coffee 9",
+        place_type="cafe",
+        address="9 Phố Cà Phê, Hà Nội",
+        city="Hà Nội",
+        country="Việt Nam",
+        country_code="vn",
+        primary_area="Hoàn Kiếm",
+        latitude=Decimal("21.0285"),
+        longitude=Decimal("105.8542"),
+        data_confidence="high",
+        source_fetched_at=None,
+        metadata_json={"vietnameseNames": ["Cà phê 9"]},
+    )
+
+    class FakePlaceRepository:
+        def list_active_for_planner_research(self, region_key=None, *, limit=5000):
+            assert region_key == "vn,ha-noi"
+            return [place]
+
+    service = PlanMutationService(place_repository=FakePlaceRepository())
+
+    suggestions = asyncio.run(
+        service.search_place_suggestions("ca phe", destination="Hà Nội")
+    )
+
+    assert [suggestion.place_id for suggestion in suggestions] == ["place-coffee-9"]
+    assert suggestions[0].name == "Coffee 9"
+    assert suggestions[0].latitude == 21.0285
+
+
+def test_update_item_keeps_selected_catalog_identity_and_coordinates():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+    request = UpdateItemRequest(
+        placeId="place-coffee-9",
+        name="Coffee 9",
+        address="9 Phố Cà Phê, Hà Nội",
+        latitude=21.02,
+        longitude=105.85,
+    )
+
+    result = asyncio.run(
+        service.update_item(plan, day_number=1, item_id="item-1-1", request=request)
+    )
+
+    updated_item = result.plan.days[0].items[0]
+    assert updated_item.place_id == "place-coffee-9"
+    assert updated_item.address == "9 Phố Cà Phê, Hà Nội"
+    assert updated_item.latitude == 21.02
+    assert updated_item.longitude == 105.85
 
 
 def test_remove_item_success():

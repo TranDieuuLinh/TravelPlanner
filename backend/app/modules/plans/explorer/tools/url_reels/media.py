@@ -7,7 +7,7 @@ from pathlib import Path
 
 from yt_dlp import YoutubeDL
 from yt_dlp.networking.impersonate import ImpersonateTarget
-from yt_dlp.utils import DownloadError, UnsupportedError
+from yt_dlp.utils import DownloadError, UnsupportedError, YoutubeDLError
 
 from app.core.config import settings
 from app.modules.plans.explorer.tools.url_reels.schema import MediaArtifacts
@@ -37,6 +37,10 @@ class UrlReelMediaExtractor:
             "quiet": True,
             "no_warnings": True,
             "logger": QuietYtdlpLogger(),
+            "socket_timeout": settings.url_reel_network_timeout_seconds,
+            "retries": 1,
+            "fragment_retries": 1,
+            "extractor_retries": 1,
         }
         failures: list[Exception] = []
         for options in (
@@ -56,7 +60,7 @@ class UrlReelMediaExtractor:
                 with YoutubeDL(options) as ydl:
                     ydl.download([url])
                 break
-            except (DownloadError, UnsupportedError) as exc:
+            except (DownloadError, UnsupportedError, YoutubeDLError) as exc:
                 failures.append(exc)
                 for partial in work_dir.glob(f"reel_{key}.*"):
                     partial.unlink(missing_ok=True)
@@ -92,6 +96,7 @@ class UrlReelMediaExtractor:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=settings.url_reel_subprocess_timeout_seconds,
         )
         return audio_path
 
@@ -140,6 +145,7 @@ class UrlReelMediaExtractor:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=settings.url_reel_subprocess_timeout_seconds,
         )
         return sorted(frame_dir.glob("frame_*.jpg"))[:maximum_frames]
 
@@ -160,9 +166,15 @@ class UrlReelMediaExtractor:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=settings.url_reel_subprocess_timeout_seconds,
             )
             duration = float(result.stdout.strip())
-        except (FileNotFoundError, ValueError, subprocess.CalledProcessError):
+        except (
+            FileNotFoundError,
+            ValueError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ):
             return None
         return duration if duration > 0 else None
 
@@ -204,11 +216,19 @@ class UrlReelMediaExtractor:
             )
             try:
                 audio_path = audio_future.result()
-            except (FileNotFoundError, subprocess.CalledProcessError):
+            except (
+                FileNotFoundError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ):
                 timings["audioUnavailable"] = 1.0
             try:
                 frame_paths = frames_future.result()
-            except (FileNotFoundError, subprocess.CalledProcessError):
+            except (
+                FileNotFoundError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ):
                 timings["framesUnavailable"] = 1.0
         timings["prepareSignalsWall"] = time.perf_counter() - start
         timings["sampledFrames"] = float(len(frame_paths))

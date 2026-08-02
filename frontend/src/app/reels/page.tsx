@@ -7,7 +7,11 @@ import { useAuth } from "@/components/AuthProvider";
 import { APIError } from "@/lib/api";
 import { searchListings } from "@/lib/marketplace";
 import { createCheckoutSession } from "@/lib/orders";
+import { getTravelGroups, joinTravelGroup } from "@/lib/travel-groups";
+import { getExplorePosts } from "@/lib/users";
 import type { ListingSummary, ListingVersion } from "@/types/marketplace";
+import type { ExplorePost } from "@/types/profile";
+import type { TravelGroup } from "@/types/travel-groups";
 
 const categoryLabels: Record<string, string> = {
   budget: "Tiết kiệm",
@@ -81,6 +85,25 @@ function MapPinIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m16 16 4 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function MembersIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17" cy="9" r="2.3" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3.5 19c.5-3.5 2.3-5.3 5.5-5.3s5 1.8 5.5 5.3M14.4 14.2c3.2-.6 5.2 1 5.8 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
 function vnd(amount: number, currency: string) {
   try {
     return new Intl.NumberFormat("vi-VN", {
@@ -115,6 +138,7 @@ function getCover(version: ListingVersion) {
 }
 
 type PromotionType = "video" | "post";
+type TravelGroupFilter = "all" | "mine";
 
 function getPromotionType(version: ListingVersion): PromotionType {
   const mediaUrl = version.mediaUrls?.[0] ?? "";
@@ -145,9 +169,27 @@ export default function ReelsPage() {
   const [cartIds, setCartIds] = useState<string[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [listings, setListings] = useState<ListingSummary[]>([]);
+  const [listingCache, setListingCache] = useState<Record<string, ListingSummary>>({});
+  const [reelQuery, setReelQuery] = useState("");
+  const [listingQuery, setListingQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [travelGroups, setTravelGroups] = useState<TravelGroup[]>([]);
+  const [groupQuery, setGroupQuery] = useState("");
+  const [groupFilter, setGroupFilter] = useState<TravelGroupFilter>("all");
+  const [groupsLoading, setGroupsLoading] = useState(true);
+  const [groupsError, setGroupsError] = useState("");
+  const [communityPosts, setCommunityPosts] = useState<ExplorePost[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(true);
+  const [joiningGroupId, setJoiningGroupId] = useState<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+
+  useEffect(() => {
+    const debounceId = window.setTimeout(() => {
+      setListingQuery(reelQuery.trim());
+    }, 300);
+    return () => window.clearTimeout(debounceId);
+  }, [reelQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,8 +198,22 @@ export default function ReelsPage() {
       setLoading(true);
       setError("");
       try {
-        const data = await searchListings({ page: 1, pageSize: 12, sort: "newest" });
-        if (!cancelled) setListings(data.items);
+        const data = await searchListings({
+          page: 1,
+          pageSize: 12,
+          query: listingQuery || undefined,
+          sort: "newest",
+        });
+        if (!cancelled) {
+          setListings(data.items);
+          setListingCache((current) => {
+            const next = { ...current };
+            data.items.forEach((listing) => {
+              next[listing.id] = listing;
+            });
+            return next;
+          });
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof APIError ? err.message : "Không thể tải nội dung quảng bá.");
       } finally {
@@ -166,6 +222,48 @@ export default function ReelsPage() {
     }
 
     void loadListings();
+    return () => {
+      cancelled = true;
+    };
+  }, [listingQuery, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTravelGroups() {
+      setGroupsLoading(true);
+      setGroupsError("");
+      try {
+        const data = await getTravelGroups();
+        if (!cancelled) setTravelGroups(data.items);
+      } catch (err) {
+        if (!cancelled) {
+          setGroupsError(err instanceof APIError ? err.message : "Không thể tải nhóm du lịch.");
+        }
+      } finally {
+        if (!cancelled) setGroupsLoading(false);
+      }
+    }
+
+    void loadTravelGroups();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCommunityLoading(true);
+    void getExplorePosts()
+      .then((posts) => {
+        if (!cancelled) setCommunityPosts(posts);
+      })
+      .catch(() => {
+        if (!cancelled) setCommunityPosts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCommunityLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -192,9 +290,27 @@ export default function ReelsPage() {
 
   const visibleReels = reels;
 
+  const visibleCommunityPosts = useMemo(() => {
+    const query = listingQuery.toLocaleLowerCase("vi");
+    if (!query) return communityPosts;
+    return communityPosts.filter((post) =>
+      [post.caption, post.locationName, post.authorName]
+        .some((value) => value.toLocaleLowerCase("vi").includes(query))
+    );
+  }, [communityPosts, listingQuery]);
+
+  const visibleTravelGroups = useMemo(() => {
+    const normalizedQuery = groupQuery.trim().toLocaleLowerCase("vi");
+    return travelGroups.filter((group) => {
+      if (groupFilter === "mine" && !group.isMember) return false;
+      return !normalizedQuery
+        || group.countryName.toLocaleLowerCase("vi").includes(normalizedQuery);
+    });
+  }, [groupFilter, groupQuery, travelGroups]);
+
   const cartListings = useMemo(
-    () => cartIds.map((id) => listings.find((listing) => listing.id === id)).filter((item): item is ListingSummary => Boolean(item)),
-    [cartIds, listings]
+    () => cartIds.map((id) => listingCache[id]).filter((item): item is ListingSummary => Boolean(item)),
+    [cartIds, listingCache]
   );
 
   const activeViewer = viewerIndex === null ? null : visibleReels[viewerIndex];
@@ -267,11 +383,201 @@ export default function ReelsPage() {
     }
   }
 
+  async function handleJoinGroup(group: TravelGroup) {
+    if (group.isMember) return;
+    if (!user) {
+      router.push("/login?next=/reels");
+      return;
+    }
+
+    setJoiningGroupId(group.id);
+    try {
+      const membership = await joinTravelGroup(group.id);
+      setTravelGroups((current) => current.map((item) => item.id === group.id
+        ? { ...item, isMember: membership.isMember, memberCount: membership.memberCount }
+        : item));
+    } catch (err) {
+      setGroupsError(err instanceof APIError ? err.message : "Chưa thể tham gia nhóm.");
+    } finally {
+      setJoiningGroupId(null);
+    }
+  }
+
   return (
     <main className="pageWidth reelsPage">
+      <section aria-labelledby="travel-groups-title" className="travelGroupsSection">
+        <div className="travelGroupsHeading">
+          <div>
+            <h2 id="travel-groups-title">Nhóm du lịch</h2>
+          </div>
+          <div className="travelGroupControls">
+            <div aria-label="Lọc nhóm du lịch" className="travelGroupFilters" role="group">
+              <button
+                aria-pressed={groupFilter === "all"}
+                className={groupFilter === "all" ? "active" : ""}
+                onClick={() => setGroupFilter("all")}
+                type="button"
+              >
+                Tất cả
+              </button>
+              <button
+                aria-pressed={groupFilter === "mine"}
+                className={groupFilter === "mine" ? "active" : ""}
+                onClick={() => setGroupFilter("mine")}
+                type="button"
+              >
+                Nhóm của tôi
+              </button>
+            </div>
+            <label className="travelGroupSearch">
+              <SearchIcon />
+              <span className="srOnly">Tìm theo tên quốc gia</span>
+              <input
+                onChange={(event) => setGroupQuery(event.target.value)}
+                placeholder="Tìm tên quốc gia..."
+                type="search"
+                value={groupQuery}
+              />
+            </label>
+          </div>
+        </div>
+
+        {groupsError ? <p className="travelGroupsError" role="alert">{groupsError}</p> : null}
+
+        {groupsLoading ? (
+          <div aria-label="Đang tải nhóm du lịch" className="travelGroupsRail">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div aria-hidden="true" className="travelGroupCard travelGroupSkeleton" key={index} />
+            ))}
+          </div>
+        ) : visibleTravelGroups.length ? (
+          <div className="travelGroupsRail" tabIndex={0}>
+            {visibleTravelGroups.map((group) => (
+              <article className="travelGroupCard" key={group.id}>
+                <div aria-hidden="true" className="travelGroupArt">
+                  <img alt="" loading="lazy" src="/images/penguin-globe-logo.png" />
+                </div>
+                <div className="travelGroupShade" />
+                <Link
+                  aria-label={`Mở nhóm ${group.name}`}
+                  className="travelGroupOpen"
+                  href={`/groups/${group.id}`}
+                />
+                <span className="travelGroupPublic">Nhóm công khai</span>
+                <div className="travelGroupInfo">
+                  <h3>{group.countryName}</h3>
+                  <div>
+                    <span><MembersIcon /> {group.memberCount.toLocaleString("vi-VN")} thành viên</span>
+                    <button
+                      className={group.isMember ? "isMember" : ""}
+                      disabled={group.isMember || joiningGroupId === group.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleJoinGroup(group);
+                      }}
+                      type="button"
+                    >
+                      {joiningGroupId === group.id ? "Đang tham gia..." : group.isMember ? "✓ Thành viên" : "Tham gia"}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="travelGroupsEmpty">
+            {groupFilter === "mine" && !user ? (
+              <>
+                <span>Đăng nhập để xem các nhóm bạn đã tham gia.</span>
+                <Link href="/login?next=/reels">Đăng nhập</Link>
+              </>
+            ) : groupFilter === "mine" ? (
+              groupQuery.trim()
+                ? `Không tìm thấy nhóm đã tham gia phù hợp với “${groupQuery}”.`
+                : "Bạn chưa tham gia nhóm du lịch nào."
+            ) : groupQuery.trim() ? (
+              `Không tìm thấy quốc gia phù hợp với “${groupQuery}”.`
+            ) : (
+              "Chưa có nhóm du lịch công khai."
+            )}
+          </div>
+        )}
+      </section>
+
       <header className="reelsHeader">
         <h1>Khám phá</h1>
+        <form
+          className="reelSearch"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setListingQuery(reelQuery.trim());
+          }}
+          role="search"
+        >
+          <SearchIcon />
+          <label className="srOnly" htmlFor="reel-search">Tìm kiếm reels</label>
+          <input
+            id="reel-search"
+            onChange={(event) => setReelQuery(event.target.value)}
+            placeholder="Tìm reels theo điểm đến, tiêu đề..."
+            type="search"
+            value={reelQuery}
+          />
+          {reelQuery ? (
+            <button
+              aria-label="Xóa nội dung tìm kiếm reels"
+              onClick={() => {
+                setReelQuery("");
+                setListingQuery("");
+              }}
+              type="button"
+            >
+              ×
+            </button>
+          ) : null}
+        </form>
       </header>
+
+      {communityLoading ? (
+        <section aria-label="Đang tải bài viết cộng đồng" className="communityExploreGrid communityExploreLoading">
+          {Array.from({ length: 3 }).map((_, index) => <div className="communityExploreSkeleton" key={index} />)}
+        </section>
+      ) : visibleCommunityPosts.length ? (
+        <section aria-labelledby="community-posts-title" className="communityExploreSection">
+          <div className="communityExploreHeading">
+            <div>
+              <span>Cộng đồng VSF</span>
+              <h2 id="community-posts-title">Khoảnh khắc mới nhất</h2>
+            </div>
+            {user ? <button onClick={() => router.push("/profile")} type="button">＋ Đăng bài</button> : null}
+          </div>
+          <div className="communityExploreGrid">
+            {visibleCommunityPosts.map((post) => (
+              <article className="communityExploreCard" key={post.id}>
+                <div className="communityExploreMedia">
+                  {post.contentType === "reel" ? (
+                    <video controls loop muted playsInline preload="metadata" src={post.mediaUrl} />
+                  ) : (
+                    <img alt={post.caption} loading="lazy" src={post.mediaUrl} />
+                  )}
+                  <div className="communityExploreShade" />
+                  <span className={`reelContentType ${post.contentType === "reel" ? "video" : "post"}`}>
+                    {post.contentType === "reel" ? "Reel" : "Bài post"}
+                  </span>
+                  <span className="communityLocationTag"><MapPinIcon /> {post.locationName}</span>
+                  <div className="communityExploreCopy">
+                    <div className="communityAuthor">
+                      {post.authorAvatarUrl ? <img alt="" src={post.authorAvatarUrl} /> : <span>{post.authorName.charAt(0).toUpperCase()}</span>}
+                      <strong>{post.authorName}</strong>
+                    </div>
+                    <p>{post.caption}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {loading ? (
         <div className="reelsGrid" aria-label="Đang tải nội dung quảng bá">
@@ -288,6 +594,21 @@ export default function ReelsPage() {
             <span>{error}</span>
           </div>
           <Link href="/explore">Về Khám phá</Link>
+        </div>
+      ) : reels.length === 0 && listingQuery ? (
+        <div className="emptyState reelSearchEmpty">
+          <h2>Không tìm thấy reels phù hợp</h2>
+          <p>Không có kết quả cho “{listingQuery}”. Hãy thử tên điểm đến, tiêu đề hoặc creator khác.</p>
+          <button
+            className="primaryBtn"
+            onClick={() => {
+              setReelQuery("");
+              setListingQuery("");
+            }}
+            type="button"
+          >
+            Xóa tìm kiếm
+          </button>
         </div>
       ) : reels.length === 0 ? (
         <div className="emptyState">
@@ -403,7 +724,6 @@ export default function ReelsPage() {
         >
           <button aria-label="Đóng trình xem" className="promotionViewerClose" onClick={() => setViewerIndex(null)} type="button">×</button>
           <button aria-label="Nội dung trước" className="promotionViewerNav previous" disabled={viewerIndex === 0} onClick={() => moveViewer(-1)} type="button">↑</button>
-          <button aria-label="Nội dung tiếp theo" className="promotionViewerNav next" disabled={viewerIndex === visibleReels.length - 1} onClick={() => moveViewer(1)} type="button">↓</button>
 
           <article className="promotionViewerStage" key={activeViewer.listing.id}>
             {activeViewer.type === "video" ? (

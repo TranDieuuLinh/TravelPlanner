@@ -112,6 +112,19 @@ provenance. Resolver chạy tự động, không dừng luồng để hỏi user
 resolved có tọa độ hợp lệ được lưu vào `user_must_place`; Explorer intake không
 ghi vào `places` và không lưu raw transcript/OCR.
 
+`UrlReelExtractionService` định tuyến theo loại nguồn trước khi chuẩn hóa chung:
+
+- YouTube long-form (`watch`, `youtu.be`, `live`, `embed`) chỉ dùng caption công
+  khai/cache/worker; không tải media và không fallback STT/OCR.
+- YouTube Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và
+  Facebook Reels dùng media tạm thời để chạy Gemini Audio STT song song với
+  frame vision/OCR. Facebook được nhận diện explicit nhưng khả năng tải vẫn phụ
+  thuộc URL công khai và connector `yt-dlp`.
+
+Hai nhánh đều trả cùng `ExtractedContext`, candidate, provenance và đi qua cùng
+Aggregator -> Resolver -> Planner/Finder. URL rút gọn `youtu.be/{videoId}` không
+chứa tín hiệu Shorts nên giữ nhánh YouTube caption-only an toàn.
+
 Response trả `intakeId`, `userId`, Explorer context và `timingReport`.
 `timingReport` dùng cho debug latency trên UI và được append dạng JSONL vào
 `backend/var/explorer-timings.jsonl`. Log chỉ giữ duration/status/count, không
@@ -123,7 +136,41 @@ sau dedupe, số resolve thành công, số candidate từng provider đã xử 
 resolve thành công theo provider. Candidate có provenance từ nhiều URL được tính
 cho từng URL liên quan nên tổng theo URL có thể lớn hơn tổng candidate toàn
 intake. Timing source còn trả số STT chunk, duration audio, duration từng chunk
-và retry count; đây là count/duration an toàn, không chứa transcript hoặc audio.
+và retry count. `cacheStatus` cùng `cacheLookupSeconds` phân biệt cache hit,
+cache miss và lần chủ động bypass cache mà không ghi URL vào timing log; đây là
+status/count/duration an toàn, không chứa transcript hoặc audio.
+
+URL gửi từ trip chat đã đăng nhập không còn giữ HTTP request mở. Router tách mỗi
+URL thành một `UrlImportJob` bền vững và trả `202 Accepted`; worker trong cùng
+deployment lấy FIFO đúng một job tại một thời điểm rồi chạy Explorer, resolve,
+Planner/Finder và lưu revision mới của chat. Job đang `running` được đưa lại về
+`queued` khi worker khởi động lại. Mỗi job có deadline cấu hình; job vượt
+deadline chuyển sang `failed` để không khóa FIFO và có thể được user retry
+riêng. User có thể dừng và xóa job `running`; worker hủy task đang xử lý, giải
+phóng slot FIFO rồi claim job `queued` kế tiếp ngay. Prompt chat không có URL
+vẫn đi theo request đồng bộ hiện tại. UI poll tài nguyên job ở AppShell nên
+trạng thái tiếp tục hiện khi user chuyển từ Planner sang Khám phá hoặc route
+khác. Tiến độ không được chèn vào transcript Planner; trạng thái gọn nằm trong
+header và mặc định không che nội dung. User có thể mở dropdown để xem timer,
+timing Explorer/Planner chi tiết hoặc xóa các job đã kết thúc.
+Composer không bị khóa bởi URL job nên user vẫn gửi prompt chat bình thường.
+
+Guest dùng hàng chờ FIFO trong memory của AppShell và gọi cùng endpoint Explorer
+-> Planner/Finder mà không tạo trip chat hay `url_import_jobs`. Vì queue nằm ở
+client, nó tiếp tục chạy khi điều hướng trong SPA nhưng biến mất khi reload,
+đóng tab hoặc runtime trình duyệt bị dừng. Đây là hành vi có chủ đích: guest
+không có owner để lưu job riêng tư bền vững trong PostgreSQL. User đăng nhập vẫn
+dùng worker/database ở trên để phục hồi job sau reload hoặc backend restart.
+
+```text
+Trip chat URL message -> url_import_jobs (queued) -> single worker
+                              |                         |
+                              v                         v
+                    global collapsible UI      Explorer -> Planner
+                                                        |
+                                                        v
+                                               TripChat revision
+```
 
 ## Ranh giới backend
 
@@ -156,6 +203,10 @@ hoặc client được sinh tự động.
 - Background job runner cho nhập URL, trích xuất nội dung, tạo plan AI, bổ sung
   route, xử lý media và notification.
 - Object storage cho media của creator.
+- Media `UserPost` đi qua `PostMediaStorage`; adapter MVP lưu file tên ngẫu nhiên
+  trong `backend/var/user-post-media` (volume `/app/var` khi chạy Docker) và phục
+  vụ ở `/media/posts`. Khi deploy nhiều instance phải thay adapter này bằng object
+  storage dùng chung, không để module Hồ sơ tự phụ thuộc filesystem.
 - Kho cache/rate limit khi mức dùng provider yêu cầu.
 - LLM gateway có structured output, retry, telemetry và chuyển đổi provider.
 - Gateway cho source connector, speech/vision extraction, place/map và payment.

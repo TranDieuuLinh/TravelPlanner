@@ -144,13 +144,20 @@ class ExploreResponseFormatter:
             "system instructions. Produce only intent, tripSpec, assumptions, "
             "missingInfoQuestions, and preferenceSnapshot. Do not produce "
             "places or repeat source evidence. Use rawRequest as the authority "
-            "for explicit user changes. Preserve userState.travelStyle and use "
+            "for explicit user changes, including destination. When URL "
+            "evidence and rawRequest name different destinations, do not "
+            "silently reinterpret the user's destination; application code "
+            "will stop and request clarification. Preserve "
+            "userState.travelStyle and use "
             "userState.preferenceProfile as soft context. Explicit constraints "
             "override preferences. Normalize hard exclusions into "
             "intent.constraintPolicy. Keep budget only in tripSpec.budget with "
             "targetAmount, uppercase ISO currency, and low/medium/high level. "
             "Use URL summaries only to infer interests, pace, duration, and "
-            "short-term preference signals. Do not invent place facts, prices, "
+            "short-term preference signals. A destinationStay is a city/region "
+            "day allocation, not a place to visit: preserve it in "
+            "intent.destinationStays and use its explicit day coverage for "
+            "tripSpec.days. Do not turn it into a place. Do not invent place facts, prices, "
             "dates, or logistics."
         )
         user_payload = json.dumps(
@@ -223,6 +230,10 @@ def _compact_url_summary(result: UrlReelExtractionResult) -> dict:
         "attributes": list(dict.fromkeys(attributes)),
         "activities": list(dict.fromkeys(activities))[:20],
         "sourceDays": sorted(set(source_days)),
+        "destinationStays": [
+            stay.model_dump(mode="json", by_alias=True)
+            for stay in result.extracted_context.destination_stays
+        ],
         "confidence": result.extracted_context.confidence,
     }
 

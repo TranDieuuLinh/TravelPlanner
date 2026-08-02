@@ -64,6 +64,22 @@ def get_optional_current_user(
     return user
 
 
+def get_optional_active_user(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> User | None:
+    """Resolve a valid active session without requiring authentication."""
+    token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token, ACCESS_TOKEN_TYPE)
+        user = UserRepository(db).get_by_id(token_user_id(payload))
+    except Exception:
+        return None
+    return user if user and user.status == "active" else None
+
+
 def require_active_user(user: Annotated[User, Depends(get_current_user)]) -> User:
     return user
 

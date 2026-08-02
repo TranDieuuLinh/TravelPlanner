@@ -21,6 +21,7 @@ from app.modules.places.resolver import PlaceResolution
 logger = logging.getLogger(__name__)
 
 _DURATION_LABELS = {
+    "urlCacheLookup": "Tra cache URL",
     "totalExtraction": "Tổng URL extractor",
     "loadMetadata": "Đọc metadata",
     "prepareSourceWall": "Chuẩn bị nguồn (wall)",
@@ -89,6 +90,16 @@ class ExplorerTimingTrace:
                 platform=result.platform,
                 totalSeconds=_seconds(
                     result.timings.get("totalExtraction", 0.0)
+                ),
+                cacheStatus=(
+                    "bypassed"
+                    if result.timings.get("urlCacheBypassed") == 1.0
+                    else "hit"
+                    if result.timings.get("urlCacheHit") == 1.0
+                    else "miss"
+                ),
+                cacheLookupSeconds=_seconds(
+                    result.timings.get("urlCacheLookup", 0.0)
                 ),
                 stages=[
                     ExplorerTimingStage(

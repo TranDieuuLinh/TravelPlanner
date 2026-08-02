@@ -13,10 +13,16 @@ export interface VisitedPlace {
 
 export interface ProfilePost {
   id: string;
+  contentType: "post" | "reel";
   caption: string;
   mediaUrl: string;
-  locationName?: string | null;
+  locationName: string;
   createdAt: string;
+}
+
+export interface ExplorePost extends ProfilePost {
+  authorName: string;
+  authorAvatarUrl?: string | null;
 }
 
 export interface ProfileShowcase {

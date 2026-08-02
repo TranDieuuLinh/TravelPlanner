@@ -72,13 +72,17 @@ tọa độ hoặc tự quyết định place identity. Các nhóm tên được
 `searchNames`; resolver tìm record `active` có tọa độ trong bảng `places` theo
 mọi tên/alias và đúng `region_key` trước. Nhờ vậy source tiếng Việt vẫn match
 được record DB chỉ có tên tiếng Anh và ngược lại. Chỉ candidate không match
-catalog nội bộ mới fallback sang Nominatim, sau đó mới tới Playwright CLI
+catalog nội bộ mới fallback sang Playwright CLI của Google Maps, sau đó mới
+tới Nominatim
 của `gosom/google-maps-scraper`. Scraper nhận tên gốc và
 alias có cấu trúc qua file input tạm, nhưng chỉ nhận
 kết quả khi tên, vùng, category và latitude/longitude hợp lệ; provider lỗi,
 timeout hoặc mismatch không làm hỏng intake. Alias catalog được lưu trong
 `places.metadata.aliases`, hoặc tách theo `englishNames`, `vietnameseNames`,
 `alternateNames`; `searchNames` tiếp tục được đọc để tương thích dữ liệu cũ.
+Scraper tra tên canonical trước và chỉ gửi các alias còn lại khi kết quả đầu
+không đạt cùng rule xác minh; nhờ đó match rõ ràng không phải chờ nhiều lượt
+Playwright tuần tự.
 Valhalla và OpenTripPlanner không phải geocoder/POI search nên không thay vai
 trò này. Candidate chỉ được nhận khi khớp tên/vùng, loại provider không mâu
 thuẫn rõ và có tọa độ. Public Nominatim xử lý tuần tự để tuân thủ giới hạn một
@@ -94,7 +98,12 @@ resolve đồng thời mà không khởi động lại browser cho từng job. C
 upstream khỏi backend ARM64 trên Apple Silicon. Khi chạy native ngoài Compose,
 có thể bỏ `WORK_DIR` và dùng `GOOGLE_MAPS_SCRAPER_EXECUTABLE`. Telemetry bị tắt
 và file tạm được dọn sau mỗi lần resolve. Backend chỉ lưu field đã chuẩn hóa
-cần cho place resolution, không lưu toàn bộ payload scrape. Deployment phải tự
+cần cho place resolution và enrichment tóm tắt: tên, category, địa chỉ, tọa độ,
+Google identity/link khi tìm được, rating, tổng số review, giờ mở cửa, plus code,
+website, điện thoại và mô tả đang hiển thị. Resolver không mở hoặc lưu nội dung
+từng review; review chi tiết thuộc pipeline import/bảng `reviews` riêng. Field
+không xuất hiện trên trang được để null, không suy diễn. Backend không lưu toàn
+bộ payload scrape. Deployment phải tự
 đánh giá điều khoản sử dụng, attribution, retention, tải hệ thống và rủi ro bị
 chặn trước khi bật provider này. Xem ADR-010.
 
@@ -104,6 +113,10 @@ khả năng đổi endpoint bằng cấu hình. Adapter yêu cầu kết quả t
 đối chiếu cả tên tiếng Anh và tên thay thế trong `namedetails`, rồi chỉ dùng tên
 tiếng Việt làm nhãn plan khi match được resolve; địa chỉ và tọa độ được chuyển
 tiếp riêng. Tải lớn phải chuyển sang hosted provider hoặc Nominatim tự vận hành.
+Ngoài danh tính, địa chỉ và tọa độ, adapter chuẩn hóa tối đa các field OSM trả
+về gồm loại địa điểm, `opening_hours`, website, điện thoại, Wikidata/Wikipedia,
+operator, cuisine, wheelchair, plus code và tên Anh/Việt. Nominatim không cung
+cấp rating hoặc review; các field đó phải để null thay vì giả lập.
 
 ## Nhập dữ liệu từ URL
 
@@ -116,10 +129,18 @@ instruction.
 2. Nhận diện nguồn và chọn connector theo allowlist.
 3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
 4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
-5. Với URL YouTube, thử lấy caption công khai bằng `youtube-transcript-api`
-   trước. Nếu có caption thủ công hoặc tự sinh, dùng nó làm transcript và không
-   tải video. Nếu caption thiếu, bị tắt, bị chặn hoặc lỗi thì mới tải video,
-   tách audio và dùng Gemini STT. Với media fallback và các nguồn video khác,
+5. Với URL YouTube long-form, kiểm tra cache PostgreSQL theo
+   `videoId + language`, rồi thử caption công khai bằng
+   `youtube-transcript-api`. Request đồng thời cho cùng
+   video được dedupe trong process và các fetch mới bị giới hạn nhịp. Caption
+   thành công được cache dài hạn và dùng làm transcript mà không tải video. Nếu
+   IP backend bị chặn, runtime có thể gọi worker do operator tự vận hành trên
+   kết nối dân dụng; chỉ video ID và language list được gửi, không gửi cookie
+   người dùng. `no_captions` trả lỗi `YOUTUBE_CAPTIONS_NOT_FOUND`;
+   `blocked`/`unavailable` trả lỗi retryable sau khi worker thất bại. YouTube
+   long-form không tải video, không tách audio và không gọi STT/OCR. YouTube
+   Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook
+   Reels tải media công khai tạm thời rồi
    Gemini Audio trả `transcript` cùng structured STT observations bằng
    `responseJsonSchema`; frame vision trả structured OCR observations trên frame
    lấy mẫu. STT và frame vision chạy song song. OCR cũng chạy trên
@@ -127,30 +148,52 @@ instruction.
    Nếu metadata công khai của URL có `place`, `venue` hoặc `location`, giá trị
    này được tạo thành candidate ưu tiên trước caption/STT/OCR và giữ evidence
    `metadata`; địa chỉ/city trong metadata được dùng làm hint cho resolver.
-   Chuỗi resolver catalog nội bộ -> Nominatim -> Google Maps scraper có
+   Chuỗi resolver cache dùng chung -> catalog nội bộ -> Google Maps scraper ->
+   Nominatim có
    cấu hình vẫn phải xác minh danh tính và tọa độ trước khi lưu.
    Danh sách địa điểm có pin trong caption là blueprint canonical tiếp theo:
    giữ tên và thứ tự caption, tách các street được nêu chung, rồi chỉ dùng
    STT/OCR để bổ sung evidence, activity và address. Tên thành phố trùng
    destination (kể cả alias như `Hanoi` so với `Hanoi, Vietnam`) không được
    resolve hoặc lưu như một stop.
+   Heading thành phố có duration như `Hanoi - 2 days` được chuẩn hóa thành
+   `destinationStay` phủ hai ngày và bị loại khỏi danh sách stop; duration không
+   được hiểu thành một phần tên địa điểm.
 6. Validate JSON, gộp/dedupe STT + OCR + caption, giữ evidence theo từng nguồn
-   rồi chuyển thành place candidate. Khi structured STT đã có, Python không
+   rồi chuyển thành place candidate. Nếu tên candidate dính thêm câu review,
+   bước gộp chỉ phục hồi nhãn ngắn hơn khi nhãn đó xuất hiện nguyên vẹn trong
+   evidence STT/OCR và tự vượt qua policy chống caption rác. Khi structured STT đã có, Python không
    suy diễn place/day/activity từ transcript tự do.
 7. Tạo alias Anh–Việt có cấu trúc, sau đó chuẩn hóa địa điểm theo chuỗi
-   `places` catalog -> Nominatim -> Google Maps scraper có cấu hình
+   shared cache -> `places` catalog -> Google Maps scraper -> Nominatim có cấu hình
    và gộp trùng.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Kết quả chỉ
    được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
    không mâu thuẫn rõ với category nguồn. `candidateName` và `resolvedName`
-   được lưu riêng; mismatch giữ `resolutionReason` để truy vết.
-8. Tự động lưu vào `user_must_place` chỉ khi provider trả kết quả `resolved` cho
-   địa điểm cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
+   được lưu riêng; Plan/UI dùng `resolvedName` ưu tiên tiếng Việt, còn
+   `candidateName` giữ provenance. Mismatch giữ `resolutionReason` để truy vết.
+   Google Maps scraper resolve nhiều candidate với mức song song có giới hạn
+   bởi `GOOGLE_MAPS_SCRAPER_MAX_CONCURRENCY` (mặc định 2); thứ tự kết quả vẫn
+   theo thứ tự candidate nguồn. Caption dạng danh sách `1. ... 2. ...` được
+   tách theo marker số trước heuristic để dấu chấm trong tên như
+   `St. Joseph's Cathedral` không làm mất địa điểm hoặc dính số thứ tự kế tiếp.
+   Với tên thương hiệu trùng nhau, resolver có thể thêm nearby-place hint ngắn
+   lấy từ evidence dạng `near/along ...` vào query; scraper phải mở một place
+   card cụ thể trước khi đọc tên, địa chỉ và tọa độ, không được coi trang danh
+   sách `Kết quả` hoặc tâm bản đồ là một place.
+8. Tự động upsert snapshot dùng chung vào `user_must_place` và tạo junction
+   `user_must_place_users` chỉ khi provider trả kết quả `resolved` cho địa điểm
+   cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
    tới thành phố/quốc gia, caption bị hiểu nhầm thành tên, candidate
    provisional/unresolved hoặc thiếu tọa độ không được lưu; Finder có thể bù
    phần còn thiếu.
-9. Bàn giao `intakeId + userId + explorer` cho Planner downstream. Finder
-   downstream đọc record theo cả `intakeId + userId`.
+9. Cache `ExtractedContext` theo canonical URL và extraction schema version;
+   cache version cũ được tính lại thay vì trả kết quả parser lỗi thời. Lần dùng
+   sau bỏ qua media, STT/OCR; snapshot hit cũng bỏ qua provider lookup. Bàn giao
+   `intakeId + userId + explorer` cho Planner downstream; Finder đọc snapshot
+   qua junction theo `intakeId + userId`. Job có `forceRefresh=true` bỏ qua cache
+   để chạy lại toàn bộ extraction; cache cũ chỉ được ghi đè sau khi intake mới
+   thành công, không bị xóa ngay khi enqueue.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
 
 Với URL, Extractor là nguồn duy nhất tạo `UnifiedPlaceCandidate`. Formatter nhận
@@ -188,7 +231,7 @@ ghép theo chunk order và dedupe observation tại vùng overlap. Mức song so
 giảm khi thiếu key hoặc batch. Kết quả vẫn được hợp nhất theo
 thứ tự frame gốc. Nếu một batch lỗi nhưng batch khác thành công, evidence thành
 công vẫn được giữ. Nếu URL không tạo được địa điểm có evidence, API trả lỗi có
-hướng dẫn retry/upload screenshot/dán caption thay vì trả itinerary `Ready` với
+hướng dẫn retry hoặc upload screenshot thay vì trả itinerary `Ready` với
 0 địa điểm.
 
 Preference learning chỉ lưu tín hiệu chuẩn hóa và source type. Không sao chép
@@ -200,9 +243,11 @@ raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào
 | Trạng thái | Hành vi |
 | --- | --- |
 | Được hỗ trợ và công khai | Chạy toàn bộ pipeline |
-| Thiếu transcript/caption | Dùng phần dữ liệu có sẵn, báo rõ giới hạn |
-| Riêng tư hoặc cần đăng nhập | Không vượt quyền truy cập; cho nhập thủ công |
-| Không được hỗ trợ | Giữ URL và cho dán caption/thêm place |
+| YouTube long-form xác nhận không có caption | Trả `YOUTUBE_CAPTIONS_NOT_FOUND`; không tải media/STT |
+| Caption provider long-form bị chặn/unavailable | Thử worker riêng, sau đó trả lỗi retryable |
+| TikTok/Instagram/Facebook Reel hoặc URL `/shorts/` công khai | Chạy STT + frame vision/OCR rồi chuẩn hóa chung |
+| Riêng tư hoặc cần đăng nhập | Không vượt quyền truy cập; báo unavailable |
+| Không được hỗ trợ | Giữ URL và cho thêm place bằng flow chỉnh sửa plan |
 | Provider timeout | Giữ kết quả từng phần và retry |
 | Nội dung bị xóa | Giữ provenance tối thiểu theo chính sách, đánh dấu unavailable |
 
@@ -212,7 +257,7 @@ MVP hỗ trợ end-to-end ít nhất một nguồn video ngắn ưu tiên và UR
 khai thông thường. TikTok là use case sản phẩm ưu tiên, nhưng connector cụ thể
 chỉ được công bố sau ADR xác nhận cách truy cập hợp lệ, độ ổn định và chi phí.
 Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI phải công bố rõ nguồn
-được hỗ trợ và luôn có fallback nhập caption/place thủ công.
+được hỗ trợ; người dùng vẫn có thể thêm place qua flow chỉnh sửa plan.
 
 ### Xung đột dữ liệu
 

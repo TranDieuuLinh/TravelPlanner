@@ -12,10 +12,13 @@ Sử dụng pytest cho domain và service:
 
 - phân tích sở thích và tạo câu hỏi làm rõ;
 - chuyển artifact thành claim/candidate và gộp địa điểm trùng;
+- YouTube caption cache hit không gọi provider, request cùng video được dedupe,
+  IP block thử worker, còn mọi trạng thái thiếu caption đều không tải media/STT;
 - URL candidate chỉ được tạo bởi Extractor, không bị Formatter sinh lại;
 - Formatter và Resolver bắt đầu song song với intake URL;
 - timing report giữ cùng `intakeId`, có đủ stage chính và không ghi raw
-  prompt/URL/transcript/OCR vào JSONL;
+  prompt/URL/transcript/OCR vào JSONL; timing từng URL phân biệt cache hit,
+  cache miss và bypass;
 - timing Planner/Finder có tổng wall-clock, đủ stage Planner, Finder và
   CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
@@ -38,6 +41,13 @@ Chạy test FastAPI với database cô lập:
 - isolation của trip chat theo user và contract camelCase của chat history;
 - xử lý idempotent khi generate/checkout/webhook;
 - vòng đời import job, retry từng bước và giữ kết quả từng phần;
+- batch URL tạo đúng một job cho mỗi URL, chỉ claim job kế tiếp sau khi job đang
+  chạy kết thúc, tự kết thúc job quá deadline, giữ thứ tự batch, retry riêng và
+  cô lập danh sách theo user; xóa job `queued`, hủy/xóa job `running` rồi chạy
+  ngay job kế tiếp, cập nhật lại vị trí hàng chờ và không cho user thao tác job
+  của tài khoản khác; xóa job đã hoàn tất/thất bại mà không ảnh hưởng plan
+  revision; phân tích lại job đã kết thúc phải tạo job mới có
+  `forceRefresh=true` và không ghi đè lịch sử job cũ;
 - source connector, place resolution và provenance persistence;
 - rollback transaction và xung đột dữ liệu.
 

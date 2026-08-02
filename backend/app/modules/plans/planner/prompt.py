@@ -111,6 +111,10 @@ Planning rules:
     spending expectations.
 15. Consider festivalDiscovery dates when scheduling multi-day trips to avoid
     booking conflicts during major national holidays.
+16. intent.destinationStays are city/region day allocations, never visitable
+    Places. Set each covered DayBrief.targetArea to that stay name and do not
+    invent or allocate an itinerary item for the city heading itself. A stay
+    with startDay=1 and endDay=2 must cover both day 1 and day 2.
 """.strip()
 
 

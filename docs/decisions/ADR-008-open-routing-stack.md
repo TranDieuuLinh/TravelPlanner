@@ -1,4 +1,4 @@
-# ADR-008: Valhalla và OpenTripPlanner thay HERE
+# ADR-008: Routing tự vận hành với Valhalla và OpenTripPlanner
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-07-31
@@ -6,8 +6,8 @@
 
 ## Bối cảnh
 
-Planner cần route ô tô, đi bộ, matrix và public transit nhưng không muốn phụ
-thuộc API key hoặc quota thương mại của HERE. Hệ thống đã có interface
+Planner cần route ô tô, đi bộ, matrix và public transit mà không phụ thuộc API
+key hoặc quota thương mại theo request. Hệ thống đã có interface
 `RouteProvider`, `TravelTimeMatrixProvider` và `TransitRouteProvider`, nên có
 thể thay adapter mà không đổi contract domain.
 
@@ -40,7 +40,6 @@ thể thay adapter mà không đổi contract domain.
 
 ## Hệ quả
 
-- Không còn `HERE_API_KEY` hoặc adapter HERE trong runtime.
 - Không có phí license/API theo request khi self-host, nhưng có chi phí máy chủ,
   cập nhật OSM/GTFS và giám sát dịch vụ.
 - Chất lượng bus phụ thuộc trực tiếp vào độ phủ và độ mới của GTFS tại khu vực.

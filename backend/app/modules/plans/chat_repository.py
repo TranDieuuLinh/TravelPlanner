@@ -29,7 +29,10 @@ class TripChatRepository:
     def get(self, chat_id: str, user_id: int) -> TripChat:
         statement = (
             select(TripChat)
-            .options(selectinload(TripChat.messages))
+            .options(
+                selectinload(TripChat.messages),
+                selectinload(TripChat.plan_revisions),
+            )
             .where(TripChat.id == chat_id, TripChat.user_id == user_id)
         )
         chat = self.db.scalar(statement)
@@ -51,6 +54,8 @@ class TripChatRepository:
         assistant_content: str,
         plan_payload: dict,
         explorer_payload: dict,
+        explorer_timing_payload: dict | None,
+        planner_timing_payload: dict | None,
         intake_id: str,
         destination: str,
         title: str,
@@ -70,6 +75,8 @@ class TripChatRepository:
                 destination=destination,
                 current_plan=plan_payload,
                 current_explorer=explorer_payload,
+                latest_explorer_timing=explorer_timing_payload,
+                latest_planner_timing=planner_timing_payload,
                 current_intake_id=intake_id,
                 revision=revision,
                 updated_at=now,
@@ -126,9 +133,20 @@ class TripChatRepository:
         action_summary: str,
         plan_payload: dict,
         revision: int,
+        explorer_payload: dict | None = None,
+        planner_timing_payload: dict | None = None,
     ) -> TripChat:
         now = datetime.now(UTC)
         next_sequence = (revision * 2) - 1
+        updated_values = {
+            "current_plan": plan_payload,
+            "revision": revision,
+            "updated_at": now,
+        }
+        if explorer_payload is not None:
+            updated_values["current_explorer"] = explorer_payload
+        if planner_timing_payload is not None:
+            updated_values["latest_planner_timing"] = planner_timing_payload
         result = self.db.execute(
             update(TripChat)
             .where(
@@ -136,11 +154,7 @@ class TripChatRepository:
                 TripChat.user_id == chat.user_id,
                 TripChat.revision == revision - 1,
             )
-            .values(
-                current_plan=plan_payload,
-                revision=revision,
-                updated_at=now,
-            )
+            .values(**updated_values)
             .execution_options(synchronize_session=False)
         )
         if result.rowcount != 1:
@@ -168,11 +182,14 @@ class TripChatRepository:
                     revision=revision,
                     intake_id=chat.current_intake_id,
                     plan_payload=plan_payload,
-                    explorer_payload=chat.current_explorer or {},
+                    explorer_payload=(
+                        explorer_payload
+                        if explorer_payload is not None
+                        else chat.current_explorer or {}
+                    ),
                     created_at=now,
                 ),
             ]
         )
         self.db.commit()
         return self.get(chat.id, chat.user_id)
-

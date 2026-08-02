@@ -14,6 +14,7 @@ from app.modules.plans.explorer.schema import (
 )
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
+    ExtractedDestinationStay,
     ExtractedPlace,
     MediaArtifacts,
     SpeechToTextResult,
@@ -27,6 +28,7 @@ from app.modules.plans.explorer.response_formatter import (
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
+from app.shared.errors import AppError
 
 
 class RecordingFormatter:
@@ -74,10 +76,12 @@ class RecordingUrlReels:
         *,
         count: int = 1,
         source_days: list[int | None] | None = None,
+        search_region: str | None = None,
     ) -> None:
         self.inputs: list[Any] = []
         self.count = count
         self.source_days = source_days
+        self.search_region = search_region
 
     def extract(self, payload: Any) -> UrlReelExtractionResult:
         self.inputs.append(payload)
@@ -85,6 +89,7 @@ class RecordingUrlReels:
             payload.url,
             count=self.count,
             source_days=self.source_days,
+            search_region=self.search_region,
         )
 
 
@@ -110,12 +115,16 @@ class RecordingImageOcr:
 
 
 class RecordingResolver:
+    def __init__(self) -> None:
+        self.requested_destinations: list[str] = []
+
     async def resolve_many(
         self,
         candidates: list[Any],
         *,
         destination: str,
     ) -> list[PlaceResolution]:
+        self.requested_destinations.append(destination)
         return [
             PlaceResolution(
                 candidate=candidate,
@@ -128,6 +137,30 @@ class RecordingResolver:
                 dataConfidence="high",
             )
             for candidate in candidates
+        ]
+
+
+class MixedResolver(RecordingResolver):
+    async def resolve_many(
+        self,
+        candidates: list[Any],
+        *,
+        destination: str,
+    ) -> list[PlaceResolution]:
+        self.requested_destinations.append(destination)
+        return [
+            PlaceResolution(
+                candidate=candidate,
+                status="resolved" if index == 0 else "unresolved",
+                resolutionReason=None if index == 0 else "not_found",
+                provider="fake_places",
+                name=candidate.name,
+                city=destination,
+                latitude="21.0285" if index == 0 else None,
+                longitude="105.8542" if index == 0 else None,
+                dataConfidence="high" if index == 0 else "low",
+            )
+            for index, candidate in enumerate(candidates)
         ]
 
 
@@ -152,7 +185,10 @@ def _url_result(
     *,
     count: int,
     source_days: list[int | None] | None = None,
+    search_region: str | None = None,
     needs_image_upload: bool = False,
+    platform: str = "tiktok",
+    speech_status: str = "skipped",
 ) -> UrlReelExtractionResult:
     days = source_days or [None] * count
     details = [
@@ -160,22 +196,23 @@ def _url_result(
             name=f"URL stop {index}",
             sourceOrder=index,
             sourceDay=days[index - 1],
+            searchRegion=search_region,
         )
         for index in range(1, count + 1)
     ]
     return UrlReelExtractionResult(
         url=url,
-        platform="tiktok",
+        platform=platform,
         metadata=UrlMetadata(
             originalUrl=url,
             canonicalUrl=url,
-            platform="tiktok",
+            platform=platform,
         ),
         artifacts=MediaArtifacts(),
         needsImageUpload=needs_image_upload,
         speechToText=SpeechToTextResult(
             text="",
-            status="skipped",
+            status=speech_status,
             durationSeconds=0,
         ),
         extractedContext=ExtractedContext(
@@ -192,6 +229,43 @@ def _url_result(
             "sampledFrames": 4.0,
         },
     )
+
+
+def test_force_url_refresh_bypasses_cached_extraction() -> None:
+    formatter = RecordingFormatter()
+    url_reels = RecordingUrlReels(count=10)
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+    cached = _url_result("https://example.com/video", count=6)
+
+    class CachedPersistence:
+        def load_cached_url_result(self, _url: str) -> UrlReelExtractionResult:
+            return cached
+
+    service.explorer_persistence = CachedPersistence()  # type: ignore[assignment]
+
+    normal = asyncio.run(
+        service._extract_urls(
+            [cached.url],
+            destination="Hà Nội",
+        )
+    )
+    refreshed = asyncio.run(
+        service._extract_urls(
+            [cached.url],
+            destination="Hà Nội",
+            bypass_cache=True,
+        )
+    )
+
+    assert len(normal[0].extracted_context.extracted_places) == 6
+    assert len(refreshed[0].extracted_context.extracted_places) == 10
+    assert normal[0].timings["urlCacheHit"] == 1.0
+    assert normal[0].timings["urlCacheBypassed"] == 0.0
+    assert refreshed[0].timings["urlCacheHit"] == 0.0
+    assert refreshed[0].timings["urlCacheBypassed"] == 1.0
+    assert normal[0].timings["urlCacheLookup"] >= 0.0
+    assert refreshed[0].timings["urlCacheLookup"] >= 0.0
+    assert len(url_reels.inputs) == 1
 
 
 def test_plain_prompt_goes_directly_to_formatter() -> None:
@@ -218,6 +292,39 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     assert formatter.url_reel_results == []
 
 
+def test_youtube_without_public_captions_returns_clear_error() -> None:
+    formatter = RecordingFormatter()
+
+    class CaptionlessYouTube:
+        def extract(self, payload: Any) -> UrlReelExtractionResult:
+            return _url_result(
+                payload.url,
+                count=0,
+                platform="youtube",
+                speech_status="no_captions",
+            )
+
+    service = build_service(
+        formatter,
+        CaptionlessYouTube(),  # type: ignore[arg-type]
+        RecordingImageOcr(),
+    )
+
+    with pytest.raises(AppError) as caught:
+        asyncio.run(
+            service.explore_full(
+                FullExploreRequest(
+                    rawRequest="https://www.youtube.com/watch?v=abc123DEF45",
+                    destination="Hanoi",
+                    urls=["https://www.youtube.com/watch?v=abc123DEF45"],
+                )
+            )
+        )
+
+    assert caught.value.status_code == 422
+    assert caught.value.code == "YOUTUBE_CAPTIONS_NOT_FOUND"
+
+
 def test_url_is_extracted_before_formatter_runs() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=1)
@@ -239,6 +346,85 @@ def test_url_is_extracted_before_formatter_runs() -> None:
     assert formatter.context_called is True
     assert formatter.url_reel_results is not None
     assert formatter.url_reel_results[0].url == "https://example.com/reel"
+
+
+def test_explorer_preserves_unresolved_candidates_for_review_and_retry() -> None:
+    formatter = RecordingFormatter()
+    service = build_service(
+        formatter,
+        RecordingUrlReels(count=2),
+        RecordingImageOcr(),
+    )
+    service.place_resolver = MixedResolver()  # type: ignore[assignment]
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="Tạo chuyến đi từ URL",
+                destination="Hội An",
+                urls=["https://example.com/reel"],
+            )
+        )
+    )
+
+    assert [
+        review.status for review in result.explorer.candidate_reviews
+    ] == ["resolved", "needs_review"]
+    pending = result.explorer.candidate_reviews[1]
+    assert pending.name == "URL stop 2"
+    assert pending.resolution_reason == "not_found"
+    assert pending.source_urls == ["https://example.com/reel"]
+
+    service.place_resolver = RecordingResolver()  # type: ignore[assignment]
+    retried = asyncio.run(
+        service.retry_candidate_reviews(
+            result.explorer.candidate_reviews,
+            destination="Hội An",
+        )
+    )
+
+    assert [review.status for review in retried] == [
+        "resolved",
+        "resolved",
+    ]
+    assert retried[1].candidate_id == pending.candidate_id
+
+
+def test_url_destination_guardrail_asks_about_conflicting_prompt() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.explorer.intent.destination = "Hội An"
+    url_reels = RecordingUrlReels(count=3, search_region="Hà Nội")
+    service = build_service(formatter, url_reels, RecordingImageOcr())
+    resolver = RecordingResolver()
+    service.place_resolver = resolver  # type: ignore[assignment]
+
+    with pytest.raises(AppError) as caught:
+        asyncio.run(
+            service.explore_full(
+                FullExploreRequest(
+                    rawRequest="Dùng reel này nhưng tạo lịch trình Hội An",
+                    destination="Hội An",
+                    urls=["https://example.com/hanoi-reel"],
+                )
+            )
+        )
+
+    assert resolver.requested_destinations == ["Hà Nội"]
+    assert caught.value.status_code == 409
+    assert caught.value.code == "DESTINATION_CLARIFICATION_REQUIRED"
+    assert "giữ Hội An" in caught.value.message
+    assert "tạo một chuyến Hà Nội riêng" in caught.value.message
+    assert "đổi chuyến đi hiện tại sang Hà Nội" in caught.value.message
+    assert caught.value.field_errors == {}
+    assert caught.value.details == {
+        "requestedDestination": "Hội An",
+        "sourceDestination": "Hà Nội",
+        "choices": [
+            "keep_prompt_destination",
+            "create_separate_reel_trip",
+            "follow_reel_destination",
+        ],
+    }
 
 
 def test_explorer_timing_is_returned_and_appended_without_raw_content(
@@ -285,6 +471,12 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     persisted = json.loads(log_path.read_text(encoding="utf-8"))
     assert persisted["intakeId"] == result.intake_id
     assert persisted["sources"][0]["sampledFrames"] == 4
+    assert persisted["sources"][0]["cacheStatus"] == "miss"
+    assert persisted["sources"][0]["cacheLookupSeconds"] >= 0.0
+    assert any(
+        stage["key"] == "urlCacheLookup"
+        for stage in persisted["sources"][0]["stages"]
+    )
     assert persisted["sources"][0]["extractedPlaceCount"] == 2
     assert persisted["sources"][0]["candidateCount"] == 2
     assert persisted["sources"][0]["resolvedCount"] == 2
@@ -330,7 +522,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
     assert image.data == b""
 
 
-def test_url_without_requested_duration_allows_sparse_last_day_fill() -> None:
+def test_url_without_requested_duration_does_not_fill_sparse_covered_day() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=10)
     service = build_service(formatter, url_reels, RecordingImageOcr())
@@ -346,7 +538,7 @@ def test_url_without_requested_duration_allows_sparse_last_day_fill() -> None:
     )
 
     assert result.explorer.trip_spec.days == 4
-    assert result.allow_finder_suggestions is True
+    assert result.allow_finder_suggestions is False
     assert any(
         "inferred as 4 days" in assumption
         for assumption in result.explorer.assumptions
@@ -465,6 +657,53 @@ def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None
     assert result.allow_finder_suggestions is True
 
 
+def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
+    formatter = RecordingFormatter()
+    formatter.response.explorer.intent.destination = "unspecified"
+
+    class CityStayUrlReels:
+        def extract(self, payload: Any) -> UrlReelExtractionResult:
+            result = _url_result(payload.url, count=0)
+            return result.model_copy(
+                update={
+                    "extracted_context": ExtractedContext(
+                        destinationStays=[
+                            ExtractedDestinationStay(
+                                name="Hanoi",
+                                durationDays=2,
+                                startDay=1,
+                                endDay=2,
+                                sourceOrder=1,
+                                evidence="Hanoi - 2 days",
+                            )
+                        ],
+                        confidence=0.9,
+                    )
+                }
+            )
+
+    service = build_service(
+        formatter,
+        CityStayUrlReels(),  # type: ignore[arg-type]
+        RecordingImageOcr(),
+    )
+
+    result = asyncio.run(
+        service.explore_full(
+            FullExploreRequest(
+                rawRequest="https://www.instagram.com/reel/example",
+                destination="unspecified",
+                urls=["https://www.instagram.com/reel/example"],
+            )
+        )
+    )
+
+    assert result.explorer.intent.destination == "Hanoi"
+    assert result.explorer.trip_spec.days == 2
+    assert result.explorer.intent.destination_stays[0].name == "Hanoi"
+    assert result.allow_finder_suggestions is False
+
+
 def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=20)
@@ -534,7 +773,10 @@ def test_url_formatter_and_resolver_run_concurrently() -> None:
             )
         )
 
-        assert result.explorer.intent.destination == "Hội An"
+        assert result.explorer.intent.destination == "Hà Nội"
+        assert result.explorer.trace["destinationGuardrail"]["status"] == (
+            "corrected"
+        )
         assert formatter.context_called is True
 
     asyncio.run(scenario())

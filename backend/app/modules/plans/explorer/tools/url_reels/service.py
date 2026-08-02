@@ -78,8 +78,9 @@ class UrlReelExtractionService:
             metadata_result = self.loader.load_metadata(payload.url)
             return metadata_result, time.perf_counter() - start
 
+        platform = detect_platform(payload.url)
         caption_result: SpeechToTextResult | None = None
-        if detect_platform(payload.url) == "youtube":
+        if platform == "youtube":
             with ThreadPoolExecutor(max_workers=2) as executor:
                 metadata_future = executor.submit(load_metadata)
                 transcript_future = executor.submit(
@@ -89,16 +90,16 @@ class UrlReelExtractionService:
                 )
                 metadata, metadata_duration = metadata_future.result()
                 caption_result = transcript_future.result()
-            if caption_result is None:
-                artifacts, media_timings = self.media.prepare(
-                    canonicalize_url(payload.url),
-                    work_dir=work_dir,
-                )
-                media_timings["youtubeTranscriptFallback"] = 1.0
-            else:
+            if caption_result.status == "ok" and caption_result.text:
                 artifacts = MediaArtifacts()
                 media_timings = {
                     "youtubeTranscriptAvailable": 1.0,
+                    "mediaDownloadSkipped": 1.0,
+                }
+            else:
+                artifacts = MediaArtifacts()
+                media_timings = {
+                    "youtubeTranscriptUnavailable": 1.0,
                     "mediaDownloadSkipped": 1.0,
                 }
         else:
@@ -139,7 +140,7 @@ class UrlReelExtractionService:
                     language=payload.stt_language,
                     initial_prompt=stt_prompt,
                 )
-                if caption_result is None and artifacts.audio_path is not None
+                if platform != "youtube" and artifacts.audio_path is not None
                 else None
             )
             vision_future = (
@@ -192,7 +193,11 @@ class UrlReelExtractionService:
         context_arguments = {
             "metadata": metadata,
             "transcript": speech_result.text,
-            "speech_observations": speech_result.observations,
+            "speech_observations": (
+                speech_result.observations
+                if speech_result.observations
+                else None
+            ),
             "destination": payload.destination,
         }
         if vision_result.text:
@@ -218,9 +223,12 @@ class UrlReelExtractionService:
             metadata=metadata,
             artifacts=artifacts,
             needsImageUpload=(
+                platform != "youtube"
+                and
                 not speech_result.text
                 and artifacts.audio_path is None
                 and not artifacts.frame_paths
+                and not context.extracted_places
             ),
             speechToText=speech_result,
             frameVision=vision_result,

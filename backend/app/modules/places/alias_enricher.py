@@ -108,6 +108,10 @@ class LLMPlaceAliasEnricher:
                     "existingAliases": candidate.search_names,
                     "searchRegion": candidate.search_region or destination,
                     "category": candidate.category.value,
+                    "evidence": {
+                        key: value[:500]
+                        for key, value in candidate.source_evidence.items()
+                    },
                 }
                 for index, candidate in enumerate(candidates)
             ],
@@ -120,7 +124,10 @@ class LLMPlaceAliasEnricher:
                     "return official/common lookup names for the same physical place "
                     "in englishNames and vietnameseNames. Put other genuine names, "
                     "spellings, or nicknames in alternateNames. The input may be in "
-                    "any language. Do not literally translate an unknown brand, "
+                    "any language and may contain phonetic automatic-caption "
+                    "errors. Use the destination and the other places in the same "
+                    "list to recover an official name only when the identity is "
+                    "clear. Do not literally translate an unknown brand, "
                     "invent an identity, address, coordinates, or another attraction. "
                     "Use an empty array for any uncertain group. Preserve every index."
                 ),

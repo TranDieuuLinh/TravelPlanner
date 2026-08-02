@@ -16,6 +16,7 @@ class PlaceSuggestion(BaseModel):
 
 class AddItemRequest(BaseModel):
     day: Annotated[int, Field(ge=1, le=30)]
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")] = None
     name: str = Field(min_length=1, max_length=255)
     address: str | None = None
     place_type: Annotated[str, Field(alias="placeType")] = "attraction"
@@ -31,6 +32,7 @@ class AddItemRequest(BaseModel):
 
 
 class UpdateItemRequest(BaseModel):
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")] = None
     name: str | None = Field(default=None, min_length=1, max_length=255)
     address: str | None = None
     place_type: Annotated[str | None, Field(default=None, alias="placeType")] = None
