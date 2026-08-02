@@ -1050,11 +1050,7 @@ def _candidate_coverage_days(
     ]
     if not source_candidates:
         return 0
-    capacity = {
-        "relaxed": 2,
-        "balanced": 3,
-        "packed": 5,
-    }.get(pace, 3)
+    capacity = 2
     source_days = [
         candidate.source_day
         for candidate in source_candidates
@@ -1083,11 +1079,7 @@ def _source_days_need_finder(
             for source in candidate.sources
         )
     ]
-    capacity = {
-        "relaxed": 2,
-        "balanced": 3,
-        "packed": 5,
-    }.get(pace, 3)
+    capacity = 2
     explicit_counts = {day: 0 for day in range(1, days + 1)}
     unassigned_count = 0
     for candidate in source_candidates:
@@ -1352,11 +1344,8 @@ def _required_days_for_selected_places(
 
 
 def _selected_place_capacity(pace: str) -> int:
-    return {
-        "relaxed": 2,
-        "balanced": 3,
-        "packed": 5,
-    }.get(pace, 3)
+    del pace
+    return 2
 
 
 def _retryable_url_unscheduled_places(

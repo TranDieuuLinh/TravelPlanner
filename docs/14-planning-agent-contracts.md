@@ -474,6 +474,25 @@ block. Break block không bắt buộc có Place. Budget/route chưa được t�
 khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
 sinh số.
 
+Ở runtime `route_first`, theme ngày chỉ là tín hiệu mềm cho candidate retrieval.
+Planner runtime được đặt tên `TripThemePlannerService` và trả `macroPlan.tripThemes`
+ở cấp toàn chuyến. Mỗi requirement gồm `theme`, `focusTags`, `minimumActivities` và
+`targetRegionKeys`; Planner không sở hữu việc gán requirement hoặc selected Place vào
+ngày. `dayBriefs` được backend sinh như bucket tương thích, với theme trung tính.
+Vai trò Finder được đặt tên runtime là `PlaceSelectorService`; đây là module
+deterministic, không phải AI agent. Sau khi PlaceSelector đã chọn Place mà chưa tính
+walking/car/transit leg, `RouteFirstItineraryOptimizer` có thể hoán đổi activity
+thông thường giữa các ngày để giảm tổng travel-time matrix, rồi tối ưu thứ tự trong
+từng ngày. Mỗi ngày có đúng hai activity chính. Sau khi activity đã chốt,
+`MealStopSelector` chọn đủ breakfast, lunch và dinner theo tuyến rồi route leg chi tiết
+mới được enrich cho nghiệm cuối. Stop URL/OCR có provenance, `sourceDay`
+hoặc `sourceOrder` không được chuyển ngày. `ITINERARY_OPTIMIZER_MODE=legacy` giữ
+behavior cũ để rollback.
+
+Thứ tự route-first là breakfast → activity 1 → lunch → activity 2 → dinner. Runtime
+tạm thời không xếp giờ hoặc lọc opening hours. `timeWindow` vẫn bắt buộc trong schema cũ
+nhưng chỉ là marker thứ tự nội bộ; UI không hiển thị và không cho người dùng nhập/sửa giờ.
+
 Catalog retrieval của Finder dùng hai tầng. Tầng đầu rank mô tả Place theo query
 được tạo từ `DayBrief.theme`, `focusTags`, `dayPartGoals`, target area và
 `JourneyPhase` chứa ngày hiện tại, sau đó lấy shortlist. Tầng hai rerank bằng
@@ -507,11 +526,10 @@ Trước khi commit candidate, Finder kiểm tra:
 - accessibility feature đáp ứng toàn bộ `accessibilityNeeds`;
 - constraint `avoid_outdoor` dựa trên type/tag, không suy luận chỉ từ tên.
 
-Meal block là slot có candidate category `food_drink`, không còn mặc định luôn
-tạo `Lunch break`/`Dinner break`. Finder đưa `local food`, `local cuisine`, sở
-thích, theme và mục tiêu của ngày vào truy vấn. Nếu không có Place hợp lệ,
-Finder giữ meal placeholder có `source=finder_rule` và trả planning warning để
-không mô tả plan như đã hoàn thiện.
+Trong route-first, meal không còn là block đầu vào. Selector chọn activity trước, rồi
+tìm ba Place `food_drink` riêng biệt: breakfast gần activity đầu, lunch giảm detour giữa
+hai activity và dinner gần activity cuối. Nếu catalog không đủ ba Place hợp lệ, Finder
+giữ placeholder tương ứng và trả planning warning để không mô tả plan như đã hoàn thiện.
 
 Trong shortlist đã được rank theo relevance, Finder dùng khoảng cách tới
 `UserStatus.location` làm tín hiệu phụ để tránh chọn các Place đúng chủ đề nhưng

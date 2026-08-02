@@ -5,7 +5,13 @@ import logging
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
-from app.modules.plans.domain.entities import CheckReport, MacroPlan, TravelIntent
+from app.modules.plans.domain.entities import (
+    CheckReport,
+    DayBrief,
+    MacroPlan,
+    TravelIntent,
+    TripThemeRequirement,
+)
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
@@ -329,13 +335,14 @@ class PlannerService:
                 ),
                 tripSpec=planner_input.trip_spec,
                 dayBriefsReady=False,
+                tripThemesReady=False,
                 warnings=statistics_warnings,
                 trace=AgentTrace(
                     agent=PlanningAgentName.planner,
                     status=PlanningAgentStatus.blocked,
                     summary=(
                         "Không có Place active hoặc địa điểm đã chọn để tạo "
-                        "MacroPlan."
+                        "TripThemePlan."
                     ),
                     notes=[
                         "generator=llm",
@@ -426,13 +433,17 @@ class PlannerService:
             macroPlan=draft.macro_plan,
             tripSpec=planner_input.trip_spec,
             dayBriefsReady=True,
+            tripThemesReady=True,
             unallocatedSelectedPlaces=draft.unallocated_selected_places,
             assumptions=draft.assumptions,
             warnings=warnings,
             trace=AgentTrace(
                 agent=PlanningAgentName.planner,
                 status=PlanningAgentStatus.completed,
-                summary="AI đã tạo MacroPlan từ context và thống kê khu vực nhỏ.",
+                summary=(
+                    "TripThemePlanner đã tạo yêu cầu trải nghiệm "
+                    "toàn chuyến từ context và thống kê khu vực."
+                ),
                 notes=[
                     "generator=llm",
                     f"repairAttempts={repair_attempts}",
@@ -498,12 +509,20 @@ class PlannerService:
                 "journey_style": research_draft.journey_style,
             }
         )
+        macro = self._project_trip_themes_to_route_buckets(planner_input, macro)
         draft = draft.model_copy(update={"macro_plan": macro})
 
         expected_days = list(range(1, planner_input.trip_spec.days + 1))
         actual_days = [brief.day for brief in macro.day_briefs]
         if actual_days != expected_days:
             raise ValueError("MacroPlan must contain consecutive requested days.")
+        if sum(
+            requirement.minimum_activities
+            for requirement in macro.trip_themes
+        ) > planner_input.trip_spec.days * 2:
+            raise ValueError(
+                "Trip theme requirements exceed the two-activity daily capacity."
+            )
 
         if planner_input.intent.destination_stays:
             stay_by_day = {
@@ -567,6 +586,15 @@ class PlannerService:
             if brief.target_region_key not in allowed_regions:
                 raise ValueError(
                     f"Unknown targetRegionKey: {brief.target_region_key}"
+                )
+        for requirement in macro.trip_themes:
+            unknown_theme_regions = (
+                set(requirement.target_region_keys) - allowed_regions
+            )
+            if unknown_theme_regions:
+                raise ValueError(
+                    "Trip theme references an unknown targetRegionKey: "
+                    f"{sorted(unknown_theme_regions)[0]}"
                 )
 
         self._validate_journey_phases(
@@ -797,6 +825,121 @@ class PlannerService:
             update={"unallocated_selected_places": normalized_unallocated}
         )
 
+    @staticmethod
+    def _project_trip_themes_to_route_buckets(
+        planner_input: PlannerAgentInput,
+        macro: AgentMacroPlan,
+    ) -> AgentMacroPlan:
+        """Create compatibility day buckets without assigning themes to days."""
+
+        trip_themes = list(macro.trip_themes)
+        if not trip_themes:
+            seen: set[tuple[str, tuple[str, ...]]] = set()
+            for brief in macro.day_briefs:
+                key = (brief.theme.casefold(), tuple(brief.focus_tags))
+                if key in seen:
+                    continue
+                seen.add(key)
+                trip_themes.append(
+                    TripThemeRequirement(
+                        theme=brief.theme,
+                        focusTags=brief.focus_tags,
+                        minimumActivities=1,
+                        targetRegionKeys=(
+                            [brief.target_region_key]
+                            if brief.target_region_key
+                            else []
+                        ),
+                    )
+                )
+        if not trip_themes:
+            trip_themes = [
+                TripThemeRequirement(
+                    theme=interest,
+                    focusTags=[interest],
+                    minimumActivities=1,
+                )
+                for interest in planner_input.intent.interests
+            ] or [
+                TripThemeRequirement(
+                    theme="Trải nghiệm địa phương",
+                    focusTags=["local"],
+                    minimumActivities=1,
+                )
+            ]
+
+        # Legacy LLM/test payloads may still provide dayBriefs. Preserve them as
+        # an adapter. New v4 responses leave the list empty and take this path.
+        if macro.day_briefs:
+            return macro.model_copy(update={"trip_themes": trip_themes})
+
+        all_tags = list(
+            dict.fromkeys(
+                tag
+                for requirement in trip_themes
+                for tag in requirement.focus_tags
+            )
+        )
+        allocated_by_day: dict[int, list[str]] = {
+            day: [] for day in range(1, planner_input.trip_spec.days + 1)
+        }
+        next_day = 1
+        for place in sorted(
+            planner_input.selected_places,
+            key=lambda value: (
+                value.source_day or 10_000,
+                value.source_order or 10_000,
+                value.name.casefold(),
+            ),
+        ):
+            day = (
+                place.source_day
+                if place.source_day is not None
+                and place.source_day in allocated_by_day
+                else next_day
+            )
+            if len(allocated_by_day[day]) >= 2:
+                available_day = next(
+                    (
+                        candidate_day
+                        for candidate_day, refs in allocated_by_day.items()
+                        if len(refs) < 2
+                    ),
+                    None,
+                )
+                if available_day is None:
+                    continue
+                day = available_day
+            allocated_by_day[day].append(place.stable_ref)
+            next_day = day % planner_input.trip_spec.days + 1
+
+        stay_by_day = {
+            day: stay
+            for stay in planner_input.intent.destination_stays
+            for day in range(stay.start_day, stay.end_day + 1)
+        }
+        route_buckets = [
+            DayBrief(
+                day=day,
+                theme="Tối ưu theo tuyến",
+                targetArea=(
+                    stay_by_day[day].name
+                    if day in stay_by_day
+                    else planner_input.intent.destination
+                ),
+                targetRegionKey=planner_input.region_context.region_key,
+                focusTags=all_tags,
+                allocatedSelectedPlaceRefs=allocated_by_day[day],
+                notes=[
+                    "Compatibility bucket; themes and Places are not owned by this day."
+                ],
+            )
+            for day in range(1, planner_input.trip_spec.days + 1)
+        ]
+        return macro.model_copy(
+            update={"trip_themes": trip_themes, "day_briefs": route_buckets}
+        )
+
     def _enforce_day_activity_capacity(
         self,
         planner_input: PlannerAgentInput,
@@ -804,11 +947,7 @@ class PlannerService:
         *,
         selected_by_ref: dict[str, SelectedPlaceContext],
     ) -> PlannerMacroPlanDraft:
-        capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[planner_input.intent.pace.value]
+        capacity = 2
         overflow_refs: list[str] = []
         normalized_briefs = []
         for brief in draft.macro_plan.day_briefs:
@@ -833,8 +972,7 @@ class PlannerService:
                 place=selected_by_ref[ref],
                 reasonCode="no_day_capacity",
                 reason=(
-                    f"The selected {planner_input.intent.pace.value} pace "
-                    f"allows at most {capacity} activities per day."
+                    f"Route-first allows at most {capacity} main activities per day."
                 ),
             )
             for ref in overflow_refs
@@ -907,11 +1045,7 @@ class PlannerService:
             return draft
 
         trip_days = planner_input.trip_spec.days
-        activity_capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[planner_input.intent.pace.value]
+        activity_capacity = 2
         assigned_days: dict[str, int] = {}
         out_of_range: list[SelectedPlaceContext] = []
         over_capacity: list[SelectedPlaceContext] = []

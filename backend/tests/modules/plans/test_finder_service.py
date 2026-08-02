@@ -17,6 +17,9 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import FinderPlace
+from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
+from app.modules.plans.place_selector import PlaceSelectorService
+from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
 def test_agent_finder_reads_budget_level_from_trip_spec() -> None:
@@ -474,6 +477,117 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
     assert any(
         item.source == "finder_suggestion"
         for item in result.days[1].items
+    )
+
+
+def test_route_first_supplements_reference_days_with_catalog_places() -> None:
+    source = _place(
+        "source-place",
+        "Place from video",
+        tags=["culture"],
+        intensity="light",
+    )
+    catalog_places = {
+        "catalog-museum": _place(
+            "catalog-museum",
+            "Nearby museum",
+            tags=["culture"],
+            intensity="light",
+        ),
+        "catalog-lake": _place(
+            "catalog-lake",
+            "Nearby lake",
+            tags=["nature"],
+            intensity="light",
+        ),
+        "catalog-food": _place(
+            "catalog-food",
+            "Nearby lunch restaurant",
+            tags=["food"],
+            intensity="light",
+            place_type="restaurant",
+            latitude=21.031,
+            longitude=105.851,
+        ),
+        "catalog-dinner": _place(
+            "catalog-dinner",
+            "Nearby dinner cafe",
+            tags=["food"],
+            intensity="light",
+            place_type="cafe",
+            latitude=21.032,
+            longitude=105.852,
+        ),
+        "catalog-breakfast": _place(
+            "catalog-breakfast",
+            "Nearby breakfast cafe",
+            tags=["food", "cafe", "breakfast"],
+            intensity="light",
+            place_type="cafe",
+            latitude=21.029,
+            longitude=105.849,
+        ),
+    }
+    tool = FakeFinderPlaceTool(
+        {source.place_id: source, **catalog_places},
+        search_order=list(catalog_places),
+    )
+    finder = PlaceSelectorService(
+        tool,
+        route_optimizer=RouteFirstItineraryOptimizer(
+            GeographicRouteOptimizer()
+        ),
+    )
+    macro_plan = MacroPlan(
+        title="Hanoi",
+        destination="Hanoi",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=1,
+                theme="Culture",
+                targetArea="Hanoi",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture", "food"],
+                allocatedSelectedPlaceRefs=[source.place_id],
+            )
+        ],
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId=source.place_id,
+                name=source.name,
+                sourceRefs=["https://example.com/reel"],
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=True,
+    )
+
+    real_items = [item for item in result.days[0].items if item.place_id]
+    assert len(real_items) == 5
+    assert [item.role for item in real_items] == [
+        "breakfast_meal",
+        "main_activity_1",
+        "lunch_meal",
+        "main_activity_2",
+        "dinner_meal",
+    ]
+    assert sum(item.timeline_category == "activity" for item in real_items) == 2
+    assert sum(item.timeline_category == "food" for item in real_items) == 3
+    assert any(item.name == source.name for item in real_items)
+    assert any(item.source == "finder_suggestion" for item in real_items)
+    assert not any(
+        item.place_type == "meal" and item.source == "finder_rule"
+        for item in result.days[0].items
+    )
+    assert not any(
+        item.role == "group_social_activity"
+        for item in result.days[0].items
     )
 
 
