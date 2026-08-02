@@ -81,6 +81,48 @@ class DaySkeletonBuilder:
         "nightlife": 90,
     }
 
+    def build_route_first_activities(
+        self,
+        brief: DayBrief,
+        selected_places: list[SelectedPlaceContext],
+    ) -> DaySkeleton:
+        """Build exactly two activity slots; meals are selected afterwards.
+
+        The compact clock values are compatibility-only ordering markers.
+        Route-first selection, meal choice and validation do not use them as
+        real appointment times.
+        """
+
+        ordered = sorted(
+            selected_places,
+            key=lambda place: (
+                place.source_day or brief.day,
+                place.source_order or 10_000,
+                place.priority,
+                place.name.casefold(),
+            ),
+        )
+        preferred_refs = [place.stable_ref for place in ordered[:2]]
+        return DaySkeleton(
+            strategy="two_activities_route_first",
+            blocks=tuple(
+                DayBlock(
+                    role=f"main_activity_{index + 1}",
+                    time_window=(
+                        "00:01-00:02" if index == 0 else "00:03-00:04"
+                    ),
+                    duration_minutes=120,
+                    activity=True,
+                    preferred_ref=(
+                        preferred_refs[index]
+                        if index < len(preferred_refs)
+                        else None
+                    ),
+                )
+                for index in range(2)
+            ),
+        )
+
     def build(
         self,
         brief: DayBrief,

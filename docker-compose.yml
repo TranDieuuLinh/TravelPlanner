@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # Existing development volumes may still contain the experimental
+    # `places.embedding` vector column. Keep a pgvector-capable PostgreSQL
+    # image so those volumes remain readable after the feature-code revert.
+    image: pgvector/pgvector:0.8.2-pg16
     environment:
       POSTGRES_DB: vsf_travel
       POSTGRES_USER: vsf

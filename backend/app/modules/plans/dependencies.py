@@ -41,10 +41,11 @@ from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
-from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
+from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
-from app.modules.plans.planner.planner_service import PlannerService
+from app.modules.plans.trip_theme_planner import TripThemePlannerService
 from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
@@ -115,15 +116,15 @@ def get_plan_service(
         ),
         worker=transcript_worker,
     )
-    planner = PlannerService(
+    planner = TripThemePlannerService(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
         research_tools=research_tools,
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         RepositoryFinderPlaceTool(place_repository),
-        route_optimizer=_get_route_optimizer(),
+        route_optimizer=_get_itinerary_optimizer(),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -218,6 +219,13 @@ def _get_route_optimizer() -> GeographicRouteOptimizer:
             ),
         )
     return GeographicRouteOptimizer()
+
+
+def _get_itinerary_optimizer():
+    legacy = _get_route_optimizer()
+    if settings.itinerary_optimizer_mode == "legacy":
+        return legacy
+    return RouteFirstItineraryOptimizer(legacy)
 
 
 def get_current_location_route_service() -> CurrentLocationRouteService:

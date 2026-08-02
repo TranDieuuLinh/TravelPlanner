@@ -166,7 +166,7 @@ def test_planner_uses_snapshot_and_accounts_for_selected_places() -> None:
     assert "snapshotRef" not in output.macro_plan.model_dump(by_alias=True)
     assert "generator=llm" in output.trace.notes
     assert "researchPromptVersion=journey_research_v2" in output.trace.notes
-    assert "promptVersion=macro_planner_v3" in output.trace.notes
+    assert "promptVersion=trip_theme_planner_v4" in output.trace.notes
     assert "snapshotId=snapshot-3" in output.trace.notes
     assert output.macro_plan.day_briefs[0].target_region_key == (
         "vn,ha-noi,hoan-kiem"
@@ -238,24 +238,22 @@ def test_url_itinerary_respects_pace_capacity_and_keeps_source_order() -> None:
 
     assert plan.days[0].strategy == "source_itinerary"
     assert [item.name for item in plan.days[0].items] == [
-        place.name for place in source_places[:3]
+        place.name for place in source_places[:2]
     ]
     assert [item.name for item in plan.unscheduled_places] == [
-        place.name for place in source_places[3:]
+        place.name for place in source_places[2:]
     ]
     assert {
         item.reason_code for item in plan.unscheduled_places
     } == {"no_day_capacity"}
-    assert [item.source_order for item in plan.days[0].items] == [1, 2, 3]
-    assert plan.days[0].items[0].time_window == "08:00-08:45"
-    assert plan.days[0].items[-1].time_window == "09:55-10:40"
+    assert [item.source_order for item in plan.days[0].items] == [1, 2]
     assert plan.days[0].items[1].notes == "Order an egg coffee."
-    assert len(plan.days[0].transport_legs) == 2
+    assert len(plan.days[0].transport_legs) == 1
 
 
 @pytest.mark.parametrize(
     ("stop_count", "requested_days", "scheduled_count"),
-    [(10, 4, 10), (20, 6, 18)],
+    [(10, 4, 8), (20, 6, 12)],
 )
 def test_url_itinerary_without_source_days_fills_every_stop(
     stop_count: int,
@@ -346,15 +344,41 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
 
     assert len(llm.calls) == 2
     assert json.loads(llm.calls[0][1])["stage"] == "research"
-    assert "Macro Planner" in llm.system_prompt
+    assert "Trip Theme Planner" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "macro_plan"
-    assert payload["promptVersion"] == "macro_planner_v3"
+    assert payload["promptVersion"] == "trip_theme_planner_v4"
     assert payload["plannerInput"]["regionContext"]["plannerSignals"][
         "candidateAreas"
     ][0]["regionKey"] == "vn,ha-noi,hoan-kiem"
     assert payload["researchProposal"]["varietyStrategy"]
     assert "verifiedResearch" in payload
+
+
+def test_trip_theme_planner_projects_requirements_to_neutral_route_buckets() -> None:
+    service = PlannerService(FakeStatisticsProvider(), TripThemeOnlyLLM())
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=2),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert [theme.theme for theme in output.macro_plan.trip_themes] == [
+        "Lịch sử",
+        "Nghệ thuật",
+    ]
+    assert all(
+        brief.theme == "Tối ưu theo tuyến"
+        for brief in output.macro_plan.day_briefs
+    )
+    assert all(
+        brief.focus_tags == ["history", "art"]
+        for brief in output.macro_plan.day_briefs
+    )
 
 
 def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> None:
@@ -405,9 +429,14 @@ def test_planner_reports_confirmed_places_over_day_capacity() -> None:
         len(day.allocated_selected_place_refs)
         for day in output.macro_plan.day_briefs
     )
-    assert allocated == 6
-    assert output.unallocated_selected_places[0].place.place_id == "place-7"
-    assert output.unallocated_selected_places[0].reason_code == "no_day_capacity"
+    assert allocated == 4
+    assert {
+        item.place.place_id for item in output.unallocated_selected_places
+    } == {"place-5", "place-6", "place-7"}
+    assert all(
+        item.reason_code == "no_day_capacity"
+        for item in output.unallocated_selected_places
+    )
 
 
 def test_planner_does_not_allocate_explicitly_avoided_place() -> None:
@@ -765,8 +794,8 @@ def test_plan_service_expands_days_to_fit_merged_selected_places() -> None:
 
     plan = asyncio.run(service.create_main_plan_from_explorer(payload))
 
-    assert plan.intent.days == 3
-    assert len(plan.days) == 3
+    assert plan.intent.days == 4
+    assert len(plan.days) == 4
     assert plan.unscheduled_places == []
 
 
@@ -832,8 +861,8 @@ def test_plan_service_expands_days_to_schedule_all_url_places() -> None:
 
     plan = asyncio.run(service.create_main_plan_from_explorer(payload))
 
-    assert plan.intent.days == 3
-    assert len(plan.days) == 3
+    assert plan.intent.days == 4
+    assert len(plan.days) == 4
     assert {
         item.name
         for day in plan.days
@@ -1259,6 +1288,31 @@ class RecordingPlannerLLM(FakePlannerLLM):
         self.user_payload = user_payload
         self.calls.append((system_prompt, user_payload))
         return await super().generate_json(system_prompt, user_payload)
+
+
+class TripThemeOnlyLLM(FakePlannerLLM):
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        raw = await super().generate_json(system_prompt, user_payload)
+        envelope = json.loads(user_payload)
+        if envelope["stage"] == "research":
+            return raw
+        draft = json.loads(raw)
+        draft["macroPlan"]["tripThemes"] = [
+            {
+                "theme": "Lịch sử",
+                "focusTags": ["history"],
+                "minimumActivities": 1,
+                "targetRegionKeys": ["vn,ha-noi"],
+            },
+            {
+                "theme": "Nghệ thuật",
+                "focusTags": ["art"],
+                "minimumActivities": 1,
+                "targetRegionKeys": ["vn,ha-noi"],
+            },
+        ]
+        draft["macroPlan"]["dayBriefs"] = []
+        return json.dumps(draft, ensure_ascii=False)
 
 
 class OmittingSelectedPlaceLLM(FakePlannerLLM):

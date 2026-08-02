@@ -90,6 +90,26 @@ class JourneyPhase(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TripThemeRequirement(BaseModel):
+    """A must-cover experience at trip scope, never assigned to a day here."""
+
+    theme: str
+    focus_tags: list[str] = Field(default_factory=list, alias="focusTags")
+    minimum_activities: int = Field(
+        default=1,
+        ge=1,
+        le=30,
+        alias="minimumActivities",
+    )
+    target_region_keys: list[str] = Field(
+        default_factory=list,
+        alias="targetRegionKeys",
+    )
+    notes: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
 class MacroPlan(BaseModel):
     title: str
     destination: str
@@ -99,7 +119,13 @@ class MacroPlan(BaseModel):
         default_factory=list,
         alias="journeyPhases",
     )
-    day_briefs: list[DayBrief] = Field(alias="dayBriefs")
+    trip_themes: list[TripThemeRequirement] = Field(
+        default_factory=list,
+        alias="tripThemes",
+    )
+    # Compatibility projection for Finder/API consumers. Route-first Planner
+    # returns tripThemes and the backend creates neutral day buckets itself.
+    day_briefs: list[DayBrief] = Field(default_factory=list, alias="dayBriefs")
 
     model_config = {"populate_by_name": True}
 

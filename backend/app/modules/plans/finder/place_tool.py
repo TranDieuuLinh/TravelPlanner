@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from math import log10
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -646,12 +647,16 @@ class RepositoryFinderPlaceTool:
             for place in shortlisted
             if place_matches_categories(place, query_categories)
         ]
-        if not eligible_shortlist:
-            eligible_shortlist = [
+        if len(eligible_shortlist) < limit:
+            shortlisted_refs = {
+                place.stable_ref for place in eligible_shortlist
+            }
+            eligible_shortlist.extend(
                 place
                 for place in places
                 if place_matches_categories(place, query_categories)
-            ]
+                and place.stable_ref not in shortlisted_refs
+            )
         shortlisted = eligible_shortlist
         shortlisted.sort(
             key=lambda place: (
@@ -838,6 +843,21 @@ def _structured_rerank_score(
         if place.latitude is not None and place.longitude is not None
         else 0
     )
+    popularity_score = min(
+        48,
+        round(log10(max(0, place.review_count) + 1) * 12),
+    )
+    rating_score = (
+        round((place.rating - 3.5) * 12)
+        if place.rating is not None
+        else 0
+    )
+    normalized_name = _normalize_text(place.name)
+    name_quality_penalty = 0
+    if len(normalized_name) <= 3:
+        name_quality_penalty -= 25
+    if re.fullmatch(r"\d+(?:\s+\w+){0,3}", normalized_name):
+        name_quality_penalty -= 30
     return (
         _description_relevance(place.description, query_terms) * 18
         + category_score
@@ -845,6 +865,9 @@ def _structured_rerank_score(
         + region_score
         + confidence_score
         + coordinate_score
+        + popularity_score
+        + rating_score
+        + name_quality_penalty
     )
 
 

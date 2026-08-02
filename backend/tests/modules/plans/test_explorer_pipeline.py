@@ -537,10 +537,10 @@ def test_url_without_requested_duration_does_not_fill_sparse_covered_day() -> No
         )
     )
 
-    assert result.explorer.trip_spec.days == 4
+    assert result.explorer.trip_spec.days == 5
     assert result.allow_finder_suggestions is False
     assert any(
-        "inferred as 4 days" in assumption
+        "inferred as 5 days" in assumption
         for assumption in result.explorer.assumptions
     )
 

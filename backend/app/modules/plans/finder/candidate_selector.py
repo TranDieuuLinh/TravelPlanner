@@ -31,6 +31,19 @@ from app.modules.plans.planner.opening_hours_parser import (
 )
 
 
+NON_TOURISM_PLACE_TYPES = {
+    "courthouse",
+    "embassy",
+    "fire_station",
+    "hospital",
+    "local_government_office",
+    "police",
+    "post_office",
+    "school",
+    "university",
+}
+
+
 @dataclass(frozen=True)
 class CandidateRejection:
     reason_code: str
@@ -53,6 +66,8 @@ class CandidateSelectionContext:
     rejected_selected_places: dict[str, CandidateRejection]
     intent_interests: list[str]
     travel_style: str
+    strict_day_theme: bool = True
+    enforce_opening_hours: bool = True
     occupied_items: list[PlanItem] = field(default_factory=list)
     bbox_filter: tuple[float, float, float, float] | None = None
 
@@ -164,12 +179,15 @@ class CandidateSelector:
             context.block,
             intent_interests=context.intent_interests,
             travel_style=context.travel_style,
+            strict_day_theme=context.strict_day_theme,
         )
         query_categories = self._query_categories(
             context.macro_plan,
             context.brief,
             context.block,
             fallback_terms=search_terms,
+            intent_interests=context.intent_interests,
+            strict_day_theme=context.strict_day_theme,
         )
         if context.block.preferred_ref is not None:
             selected = context.selected_by_ref.get(context.block.preferred_ref)
@@ -190,6 +208,7 @@ class CandidateSelector:
                 intent_constraints=context.intent_constraints,
                 constraint_policy=context.constraint_policy,
                 budget_level=context.budget_level,
+                enforce_opening_hours=context.enforce_opening_hours,
             )
             if rejection is None:
                 return candidate
@@ -211,6 +230,25 @@ class CandidateSelector:
 
         region_key = context.brief.target_region_key or context.brief.target_area
         if context.allow_finder_suggestions and region_key.startswith("vn,"):
+            catalog_search_terms = search_terms
+            if not context.strict_day_theme and context.block.kind != "meal":
+                catalog_search_terms = list(
+                    dict.fromkeys(
+                        [
+                            *sorted(query_categories),
+                            *(
+                                term
+                                for term in search_terms
+                                if (
+                                    not semantic_categories({term})
+                                    or semantic_categories({term}).issubset(
+                                        query_categories
+                                    )
+                                )
+                            ),
+                        ]
+                    )
+                )
             selected_place_ids = {
                 place.place_id
                 for place in context.selected_by_ref.values()
@@ -218,7 +256,7 @@ class CandidateSelector:
             }
             catalog_candidates = self.place_tool.search(
                 region_key=region_key,
-                target_tags=search_terms,
+                target_tags=catalog_search_terms,
                 excluded_place_ids=(
                     set(context.plan_status.used_place_ids) | selected_place_ids
                 ),
@@ -273,6 +311,7 @@ class CandidateSelector:
                 intent_constraints=context.intent_constraints,
                 constraint_policy=context.constraint_policy,
                 budget_level=context.budget_level,
+                enforce_opening_hours=context.enforce_opening_hours,
             )
             if rejection is not None:
                 if rejection.reason_code == "slot_category_mismatch":
@@ -381,7 +420,10 @@ class CandidateSelector:
                     origin,
                     (candidate.latitude, candidate.longitude),
                 )
-                combined_rank = relevance_rank + min(distance / 2_000, 3)
+                # Repository order already represents semantic/quality rank.
+                # Compress that rank so a strong nearby candidate can beat a
+                # marginally higher-ranked place on the other side of a city.
+                combined_rank = relevance_rank * 0.02 + distance / 2_000
             ranked.append((combined_rank, distance, candidate))
         return [
             candidate
@@ -420,6 +462,7 @@ class CandidateSelector:
         *,
         intent_interests: list[str],
         travel_style: str,
+        strict_day_theme: bool = True,
     ) -> list[str]:
         if block.kind == "meal":
             meal_goal = (
@@ -481,12 +524,25 @@ class CandidateSelector:
                 or bool(semantic_categories({tag}).intersection(primary_categories))
             )
         ]
+        if not strict_day_theme:
+            compatible_focus_tags = list(brief.focus_tags)
+            route_first_categories = semantic_categories(
+                set([*compatible_focus_tags, *primary_values])
+            )
+            fallback_values = (
+                []
+                if route_first_categories
+                else [*intent_interests, travel_style]
+            )
+        else:
+            fallback_values = []
         return list(
             dict.fromkeys(
                 value
                 for value in (
                     *compatible_focus_tags,
                     *primary_values,
+                    *fallback_values,
                     brief.target_area,
                 )
                 if value
@@ -500,9 +556,23 @@ class CandidateSelector:
         block: DayBlock,
         *,
         fallback_terms: list[str],
+        intent_interests: list[str] | None = None,
+        strict_day_theme: bool = True,
     ) -> set[str]:
         if block.candidate_category is not None:
             return {block.candidate_category}
+
+        def for_slot(categories: set[str]) -> set[str]:
+            if block.kind != "meal" and "food_drink" in categories:
+                non_food = categories - {"food_drink"}
+                return non_food or {
+                    "attraction",
+                    "entertainment",
+                    "nature",
+                    "shopping",
+                }
+            return categories
+
         day_goal = (
             brief.day_part_goals.morning
             if block.role in {"main_activity", "late_main_activity"}
@@ -531,7 +601,15 @@ class CandidateSelector:
             }
         )
         focus_categories = semantic_categories(set(brief.focus_tags))
-        return (
+        if not strict_day_theme:
+            global_categories = semantic_categories(set(intent_interests or []))
+            return for_slot(
+                primary_categories
+                or focus_categories
+                or global_categories
+                or semantic_categories(set(fallback_terms))
+            )
+        return for_slot(
             primary_categories
             or focus_categories
             or semantic_categories(set(fallback_terms))
@@ -596,6 +674,7 @@ class CandidateSelector:
         intent_constraints: list[str],
         constraint_policy: ConstraintPolicy,
         budget_level: str,
+        enforce_opening_hours: bool = True,
     ) -> CandidateRejection | None:
         if candidate.name.casefold() in avoided_place_names:
             return CandidateRejection("avoided_by_user", "Place is explicitly avoided by the user.")
@@ -609,6 +688,26 @@ class CandidateSelector:
         if policy_rejection is not None:
             return CandidateRejection(*policy_rejection)
         category = place_category(candidate)
+        normalized_place_type = (
+            candidate.place_type.strip().casefold().replace(" ", "_")
+        )
+        if (
+            not is_selected
+            and normalized_place_type in NON_TOURISM_PLACE_TYPES
+        ):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                "The catalogue type is not a visitable tourism activity.",
+            )
+        if (
+            not is_selected
+            and block.role in {"main_activity_1", "main_activity_2"}
+            and self._has_non_visit_name(candidate)
+        ):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                "A service counter or ticket office is not a main activity.",
+            )
         if (
             block.candidate_category is not None
             and not place_matches_categories(candidate, {block.candidate_category})
@@ -628,6 +727,21 @@ class CandidateSelector:
             return CandidateRejection(
                 "activity_category_mismatch",
                 f"Place category {category} cannot fill a regular activity block.",
+            )
+        if (
+            not is_selected
+            and block.kind != "meal"
+            and (
+                category == "food_drink"
+                or (
+                    block.role in {"main_activity_1", "main_activity_2"}
+                    and self._has_strong_food_name(candidate)
+                )
+            )
+        ):
+            return CandidateRejection(
+                "activity_category_mismatch",
+                "A food venue cannot replace a regular sightseeing activity.",
             )
         semantic_rejection = self._semantic_category_rejection(
             candidate,
@@ -669,7 +783,14 @@ class CandidateSelector:
                 "Place price level is too high for the trip budget.",
             )
         duration = candidate_duration(candidate, block)
-        if not self._opening_hours_cover_block(candidate, block.time_window, duration):
+        if (
+            enforce_opening_hours
+            and not self._opening_hours_cover_block(
+                candidate,
+                block.time_window,
+                duration,
+            )
+        ):
             return CandidateRejection(
                 "opening_hours_mismatch",
                 "Place opening hours do not cover the planned time window.",
@@ -708,6 +829,45 @@ class CandidateSelector:
                 "Place intensity is outside the user's allowed activity intensities.",
             )
         return None
+
+    @staticmethod
+    def _has_strong_food_name(candidate: FinderPlace) -> bool:
+        normalized = f" {_normalize_text(candidate.name)} "
+        markers = (
+            " restaurant ",
+            " cafe ",
+            " coffee ",
+            " bakery ",
+            " bistro ",
+            " kitchen ",
+            " cuisine ",
+            " street food ",
+            " vegan ",
+            " bun ",
+            " pho ",
+            " com ",
+            " banh ",
+            " quan an ",
+            " nha hang ",
+            " bar dine ",
+            " bar and dine ",
+            " bar & dine ",
+        )
+        return any(marker in normalized for marker in markers)
+
+    @staticmethod
+    def _has_non_visit_name(candidate: FinderPlace) -> bool:
+        normalized = f" {_normalize_text(candidate.name)} "
+        return any(
+            marker in normalized
+            for marker in (
+                " ticketing counter ",
+                " ticket counter ",
+                " ticket office ",
+                " booking office ",
+                " information counter ",
+            )
+        )
 
     def _semantic_category_rejection(
         self,

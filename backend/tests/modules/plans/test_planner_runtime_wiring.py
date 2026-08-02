@@ -14,6 +14,9 @@ from app.main import app
 from app.modules.places.model import Place
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
+from app.modules.plans.place_selector import PlaceSelectorService
+from app.modules.plans.trip_theme_planner import TripThemePlannerService
 from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
@@ -64,6 +67,12 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                         ["culture"],
                     ),
                     _place(
+                        "place-gallery",
+                        "City Art Gallery",
+                        "art_gallery",
+                        ["culture", "art"],
+                    ),
+                    _place(
                         "place-restaurant",
                         "Local Restaurant",
                         "restaurant",
@@ -74,6 +83,12 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                         "Old Quarter Coffee",
                         "cafe",
                         ["coffee"],
+                    ),
+                    _place(
+                        "place-bakery",
+                        "Morning Bakery",
+                        "bakery",
+                        ["food", "breakfast"],
                     ),
                 ]
             )
@@ -87,6 +102,18 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
             assert isinstance(
                 service.main_workflow.planner.research_tool,
                 RepositoryPlannerResearchTool,
+            )
+            assert isinstance(
+                service.main_workflow.finder.route_optimizer,
+                RouteFirstItineraryOptimizer,
+            )
+            assert isinstance(
+                service.main_workflow.finder,
+                PlaceSelectorService,
+            )
+            assert isinstance(
+                service.main_workflow.planner,
+                TripThemePlannerService,
             )
 
             plan = asyncio.run(
@@ -107,7 +134,14 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                 for item in day.items
                 if item.place_id
             ]
-            assert len(committed_items) == 3
+            assert len(committed_items) == 5
+            assert [item.role for item in committed_items] == [
+                "breakfast_meal",
+                "main_activity_1",
+                "lunch_meal",
+                "main_activity_2",
+                "dinner_meal",
+            ]
             assert all(
                 item.source == "finder_suggestion"
                 for item in committed_items
@@ -132,8 +166,10 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     db_session.add_all(
         [
             _place("context-museum", "Context Museum", "museum", ["culture"]),
+            _place("context-gallery", "Context Gallery", "art_gallery", ["culture"]),
             _place("context-food", "Context Food", "restaurant", ["food"]),
             _place("context-cafe", "Context Cafe", "cafe", ["coffee"]),
+            _place("context-bakery", "Context Bakery", "bakery", ["breakfast"]),
         ]
     )
     db_session.commit()
@@ -167,7 +203,14 @@ def test_context_endpoint_builds_plan_from_normalized_input(
             for item in body["days"][0]["items"]
             if item["placeId"] is not None
         ]
-    ) == 3
+    ) == 5
+    assert [item["role"] for item in body["days"][0]["items"]] == [
+        "breakfast_meal",
+        "main_activity_1",
+        "lunch_meal",
+        "main_activity_2",
+        "dinner_meal",
+    ]
     assert body["status"] == "locked"
     assert body["checkReport"]["status"] == "passed"
 

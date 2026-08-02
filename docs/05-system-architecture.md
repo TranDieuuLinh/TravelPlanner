@@ -28,6 +28,10 @@ PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backen
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
 động FastAPI; ứng dụng không dùng `create_all()` để âm thầm thay đổi schema.
+Docker dùng image `pgvector/pgvector:0.8.2-pg16` để các development volume từng
+áp dụng migration embedding đã revert vẫn đọc được kiểu `vector`. Runtime hiện
+không dùng embedding search; revision compatibility chỉ giữ Alembic và dữ liệu
+cũ có thể khởi động, không tuyên bố semantic retrieval đã được triển khai.
 
 `/api/plans/explore/full` và `/api/plans/explore/full/intake` chỉ hoạt động khi
 Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
@@ -64,6 +68,23 @@ trên bản đồ, WALK được vẽ bằng nét chấm, BUS bằng nét liền
 đổi lựa chọn chỉ thay geometry đã trả về ở client. Các lựa chọn đang chọn được
 ghép trên cùng bản đồ. Backend không lưu tọa độ, lựa
 chọn hoặc chặng điều hướng vào plan, database hay timing log.
+
+Luồng tạo plan mặc định dùng `ITINERARY_OPTIMIZER_MODE=route_first`.
+`TripThemePlannerService` chỉ xác định các trải nghiệm bắt buộc ở cấp toàn chuyến qua
+`tripThemes`; nó không chia theme theo ngày. Backend sinh bucket ngày trung tính để giữ
+API cũ, sau đó PlaceSelector và route optimizer mới phân hoạt động theo cụm địa lý.
+`PlaceSelectorService` chọn candidate mà không gọi route pedestrian/auto/transit;
+sau đó module `plans/itinerary_optimizer` dùng một travel-time matrix
+để hoán đổi hai activity chính mỗi ngày giữa các ngày và tối ưu thứ tự trong từng ngày.
+Sau đó `MealStopSelector` chọn đủ ba bữa quanh hai activity, tạo thứ tự
+breakfast → activity 1 → lunch → activity 2 → dinner. Stop URL/OCR có provenance hoặc
+ngày/thứ tự nguồn không bị di chuyển. Chỉ khi allocation và thứ tự cuối cùng đã chốt,
+legacy route gateway mới
+bổ sung walking/car/transit leg chi tiết. Theme ngày là tín hiệu mềm và không nằm
+trong hàm mục tiêu route. Chế độ
+`legacy` giữ nguyên `GeographicRouteOptimizer` cũ để rollback. Xem ADR-012.
+Route-first hiện không lập giờ; `timeWindow` chỉ là marker thứ tự tương thích schema và
+không xuất hiện trong UI.
 
 ### Pipeline Explorer intake hiện tại
 
