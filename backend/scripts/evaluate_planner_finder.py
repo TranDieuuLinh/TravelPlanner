@@ -103,10 +103,7 @@ async def run_evaluation() -> dict[str, Any]:
             assert all(
                 _window_start_minutes(item.time_window) >= 15 * 60
                 for item in _activity_items(constrained_plan)
-            ), [
-                (item.name, item.time_window)
-                for item in _activity_items(constrained_plan)
-            ]
+            )
 
             selection_plan = await service.create_main_plan_from_context(
                 _context(
@@ -244,22 +241,9 @@ class DeterministicPlannerLLM:
     async def generate_profile_plan(self, prompt: str) -> str:
         return json.dumps({"summary": prompt}, ensure_ascii=False)
 
-    async def generate_structured_json(
-        self,
-        system_prompt: str,
-        user_payload: str,
-        *,
-        response_schema: dict,
-    ) -> str:
-        assert response_schema
-        return await self.generate_json(system_prompt, user_payload)
-
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
         planner_input = envelope["plannerInput"]
-        catalog_evidence = envelope.get("evidenceBundle", {}).get(
-            "catalog", {}
-        )
         intent = planner_input["intent"]
         trip_spec = planner_input["tripSpec"]
         context = planner_input["regionContext"]
@@ -366,7 +350,7 @@ class DeterministicPlannerLLM:
             allocated_by_day[day].append(stable_ref)
             allocation_index += 1
 
-        candidate_areas = catalog_evidence.get("candidateAreas", [])
+        candidate_areas = context["plannerSignals"].get("candidateAreas", [])
         target_region = (
             candidate_areas[0]["regionKey"]
             if candidate_areas
@@ -374,6 +358,7 @@ class DeterministicPlannerLLM:
         )
         focus = (
             intent["interests"]
+            or context["plannerSignals"].get("dominantTags", [])
             or ["local"]
         )
         day_briefs = [
@@ -387,6 +372,7 @@ class DeterministicPlannerLLM:
                         [
                             focus[(day - 1) % len(focus)],
                             *focus,
+                            *context["plannerSignals"].get("dominantTags", [])[:2],
                         ]
                     )
                 ),

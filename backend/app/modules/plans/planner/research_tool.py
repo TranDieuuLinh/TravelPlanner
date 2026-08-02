@@ -11,12 +11,7 @@ from app.modules.plans.dto.agent_contracts import (
     PlannerCapabilityEvidence,
     PlannerNearbyRegionEvidence,
     PlannerResearchDraft,
-    PlannerThemeExperienceEvidence,
     PlannerVerifiedResearch,
-)
-from app.modules.plans.knowledge_graph import (
-    TravelKnowledgeSearchTool,
-    get_default_travel_knowledge_tool,
 )
 from app.modules.plans.planner.place_metadata import read_place_group, read_tags
 
@@ -28,58 +23,8 @@ CAPABILITY_ALIASES: dict[str, set[str]] = {
     "hiking": {"hiking", "trekking", "trail", "mountain", "leo_nui"},
     "food": {"food", "restaurant", "local_food", "street_food", "am_thuc"},
     "coffee": {"coffee", "cafe", "coffee_shop"},
-    "culture": {
-        "culture",
-        "heritage",
-        "old_quarter",
-        "pho_co",
-        "van_hoa",
-    },
-    "history_heritage": {
-        "history",
-        "historic",
-        "historical_landmark",
-        "historical_place",
-        "heritage",
-        "memorial",
-        "di_san",
-        "lich_su",
-    },
-    "museum": {"museum", "bao_tang"},
-    "sacred_site": {
-        "church",
-        "pagoda",
-        "place_of_worship",
-        "shrine",
-        "temple",
-        "den",
-        "chua",
-    },
-    "architecture": {"architecture", "historic_house", "kien_truc"},
-    "art_gallery": {"art_gallery", "gallery", "fine_arts", "nghe_thuat"},
-    "traditional_craft": {
-        "craft",
-        "craft_village",
-        "handicraft",
-        "traditional_craft",
-        "lang_nghe",
-    },
-    "neighborhood_walk": {
-        "neighborhood_walk",
-        "old_quarter_walk",
-        "walking_street",
-        "pho_di_bo",
-    },
-    "local_life": {"local_life", "local_market", "community", "doi_song"},
-    "scenic_landmark": {
-        "landmark",
-        "monument",
-        "scenic_spot",
-        "statue",
-        "tuong",
-    },
+    "culture": {"culture", "museum", "heritage", "historic"},
     "nature": {"nature", "park", "garden", "waterfall", "forest"},
-    "park": {"park", "public_garden", "garden", "cong_vien"},
     "nightlife": {"nightlife", "bar", "pub", "nightclub"},
     "camping": {"camping", "campsite"},
     "shopping": {"shopping", "market", "mall"},
@@ -96,44 +41,8 @@ CAPABILITY_SYNONYMS = {
     "am_thuc": "food",
     "ca_phe": "coffee",
     "van_hoa": "culture",
-    "lich_su": "history_heritage",
-    "di_san": "history_heritage",
-    "bao_tang": "museum",
-    "den_chua": "sacred_site",
-    "kien_truc": "architecture",
-    "nghe_thuat": "art_gallery",
-    "lang_nghe": "traditional_craft",
-    "pho_di_bo": "neighborhood_walk",
-    "doi_song_dia_phuong": "local_life",
-    "danh_thang": "scenic_landmark",
-    "cong_vien": "park",
     "thien_nhien": "nature",
     "cam_trai": "camping",
-}
-
-CAPABILITY_CATEGORY: dict[str, str] = {
-    "architecture": "attraction",
-    "art_gallery": "attraction",
-    "beach": "nature",
-    "camping": "nature",
-    "coffee": "food_drink",
-    "culture": "attraction",
-    "food": "food_drink",
-    "hiking": "nature",
-    "history_heritage": "attraction",
-    "local_life": "attraction",
-    "museum": "attraction",
-    "mountain": "nature",
-    "nature": "nature",
-    "neighborhood_walk": "attraction",
-    "nightlife": "entertainment",
-    "park": "nature",
-    "sacred_site": "attraction",
-    "scenic_landmark": "attraction",
-    "seafood": "food_drink",
-    "shopping": "shopping",
-    "traditional_craft": "attraction",
-    "wellness": "entertainment",
 }
 
 
@@ -177,12 +86,10 @@ class RepositoryPlannerResearchTool:
         *,
         sample_limit: int = 3,
         nearby_limit: int = 8,
-        knowledge_tool: TravelKnowledgeSearchTool | None = None,
     ) -> None:
         self.repository = repository
         self.sample_limit = sample_limit
         self.nearby_limit = nearby_limit
-        self.knowledge_tool = knowledge_tool or get_default_travel_knowledge_tool()
 
     def verify(
         self,
@@ -194,49 +101,10 @@ class RepositoryPlannerResearchTool:
             root_region_key
         )
         capability_evidence: list[PlannerCapabilityEvidence] = []
-        experience_evidence: list[PlannerThemeExperienceEvidence] = []
         warnings: list[str] = []
 
         for query in draft.theme_queries:
             scope = query.preferred_region_key or root_region_key
-            requested_categories = {
-                CAPABILITY_CATEGORY[canonical_capability(capability)]
-                for capability in query.capabilities
-                if canonical_capability(capability) in CAPABILITY_CATEGORY
-            }
-            expansion = self.knowledge_tool.expand(
-                [query.theme, *query.capabilities],
-                region_key=scope,
-                category=(
-                    next(iter(requested_categories))
-                    if len(requested_categories) == 1
-                    else None
-                ),
-            )
-            experience_evidence.append(
-                PlannerThemeExperienceEvidence(
-                    theme=query.theme,
-                    matchedNodeIds=list(expansion.matched_node_ids),
-                    experienceNodeIds=list(expansion.experience_node_ids),
-                    queryTerms=list(expansion.query_terms),
-                    categories=list(expansion.categories),
-                    diversityGroups=list(expansion.diversity_groups),
-                    regionKeys=list(expansion.region_keys),
-                    sourceEvidence=[
-                        {
-                            "sourceId": evidence.source_id,
-                            "sourceName": evidence.source_name,
-                            "title": evidence.title,
-                            "sourceUrl": evidence.source_url,
-                            "license": evidence.license,
-                            "retrievedAt": evidence.retrieved_at,
-                            "confidence": evidence.confidence,
-                            "nodeIds": list(evidence.node_ids),
-                        }
-                        for evidence in expansion.source_evidence
-                    ],
-                )
-            )
             scoped_places = (
                 local_places
                 if scope == root_region_key
@@ -286,7 +154,6 @@ class RepositoryPlannerResearchTool:
         return PlannerVerifiedResearch(
             capabilityEvidence=capability_evidence,
             nearbyRegions=nearby_regions,
-            experienceEvidence=experience_evidence,
             warnings=list(dict.fromkeys(warnings)),
         )
 
@@ -371,19 +238,7 @@ class RepositoryPlannerResearchTool:
 
 def canonical_capability(value: str) -> str:
     normalized = _normalized_label(value)
-    direct = CAPABILITY_SYNONYMS.get(normalized, normalized)
-    if direct in CAPABILITY_ALIASES:
-        return direct
-    matches = [
-        (len(alias), capability)
-        for capability, aliases in CAPABILITY_ALIASES.items()
-        for alias in aliases
-        if _contains_label(normalized, alias)
-    ]
-    if not matches:
-        return direct
-    # Prefer the most specific phrase (for example local_food over food).
-    return max(matches, key=lambda item: (item[0], item[1]))[1]
+    return CAPABILITY_SYNONYMS.get(normalized, normalized)
 
 
 def place_supports_capability(place: Place, capability: str) -> bool:

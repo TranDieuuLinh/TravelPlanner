@@ -75,10 +75,6 @@ class PlaceRepositoryForTools(Protocol):
         """List all active places."""
         ...
 
-    def list_active_for_region(self, region_key: str) -> list[Place]:
-        """List active places inside a resolved region and its descendants."""
-        ...
-
 
 class ResearchToolsOrchestrator:
     """

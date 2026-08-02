@@ -97,7 +97,6 @@ class BackupPlanWorkflow:
                 macroPlan=macro_plan,
                 selectedPlaces=selected_places,
                 userStatus=main_plan.initial_user_status,
-                tourismZones=planner_output.tourism_zones,
             )
         )
         unscheduled_places = [

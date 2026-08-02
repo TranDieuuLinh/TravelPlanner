@@ -1,6 +1,6 @@
 """Tests for the bounding-box pre-filter inside the Finder place tool.
 
-When the regional statistics profile provides a bbox for the target region, the
+When the AreaSurveyService has computed a bbox for the target region, the
 tool uses it to drop candidates that fall outside it. The bbox is opt-in:
 omitting it falls back to the existing string-based region-key match.
 """
@@ -113,19 +113,8 @@ def test_search_drops_places_outside_bbox() -> None:
         "no-coords", "vn,ha-noi,hoan-kiem",
         lat=None, lon=None, name="Missing coordinates",
     )
-    adjacent_but_near = _fixture_place(
-        "near-adjacent",
-        "vn,ha-noi,cua-nam",
-        lat=21.025,
-        lon=105.855,
-        name="Nearby place across ward boundary",
-    )
 
-    tool = RepositoryFinderPlaceTool(
-        _ListRepo(
-            [in_hoan_kiem, in_long_bien, no_coords, adjacent_but_near]
-        )
-    )
+    tool = RepositoryFinderPlaceTool(_ListRepo([in_hoan_kiem, in_long_bien, no_coords]))
 
     result = tool.search(
         region_key="vn,ha-noi,hoan-kiem",
@@ -139,7 +128,6 @@ def test_search_drops_places_outside_bbox() -> None:
     assert "in-hk" in place_ids
     assert "in-lb" not in place_ids
     assert "no-coords" in place_ids
-    assert "near-adjacent" in place_ids
 
 
 def test_search_without_bbox_falls_back_to_region_match() -> None:

@@ -13,7 +13,7 @@ from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.routing.provider import RouteCalculation
 
 
-def test_current_location_route_returns_only_road_choices(
+def test_current_location_route_returns_provider_geometry_and_transit_choice(
     client: TestClient,
 ) -> None:
     road = FakeRoadProvider()
@@ -56,8 +56,18 @@ def test_current_location_route_returns_only_road_choices(
     assert body["geometryCoordinates"][0] == [10.7769, 106.7009]
     assert [choice["mode"] for choice in body["alternatives"]] == [
         "ride_hailing",
+        "public_transit",
     ]
-    assert transit.departure_times == []
+    transit_choice = body["alternatives"][1]
+    assert transit_choice["details"]["segments"][0]["fromPlace"] == (
+        "Vị trí của bạn"
+    )
+    assert transit_choice["details"]["segments"][-1]["toPlace"] == (
+        "Bưu điện Thành phố"
+    )
+    assert transit.departure_times == [
+        datetime.fromisoformat("2026-07-30T09:00:00+07:00")
+    ]
 
 
 def test_current_location_route_rejects_invalid_coordinates(
@@ -136,13 +146,12 @@ def test_day_directions_rejects_empty_destination_list(
     assert response.status_code == 422
 
 
-def test_day_directions_ignores_bus_and_uses_road_routes(
+def test_day_directions_forces_bus_and_advances_departure_time(
     client: TestClient,
 ) -> None:
     transit = FakeTransitProvider()
-    road = FakeRoadProvider()
     service = CurrentLocationRouteService(
-        GeographicRouteOptimizer(road, transit)
+        GeographicRouteOptimizer(transit_provider=transit)
     )
     app.dependency_overrides[get_current_location_route_service] = (
         lambda: service
@@ -170,9 +179,14 @@ def test_day_directions_ignores_bus_and_uses_road_routes(
     )
 
     assert response.status_code == 200
-    assert [leg["mode"] for leg in response.json()] == ["walk", "walk"]
-    assert road.requested_modes == ["pedestrian", "car"] * 2
-    assert transit.departure_times == []
+    assert [leg["mode"] for leg in response.json()] == [
+        "public_transit",
+        "public_transit",
+    ]
+    assert transit.departure_times == [
+        datetime.fromisoformat("2026-07-31T09:00:00+07:00"),
+        datetime.fromisoformat("2026-07-31T09:12:00+07:00"),
+    ]
 
 
 def test_day_directions_returns_recommended_routes_with_per_leg_choices(
@@ -213,11 +227,26 @@ def test_day_directions_returns_recommended_routes_with_per_leg_choices(
     assert [
         {option["mode"] for option in leg["alternatives"]}
         for leg in legs
-    ] == [{"ride_hailing"}, {"ride_hailing"}]
-    assert transit.departure_times == []
+    ] == [{"car", "public_transit"}, {"car", "public_transit"}]
+    transit_choices = [
+        next(
+            option
+            for option in leg["alternatives"]
+            if option["mode"] == "public_transit"
+        )
+        for leg in legs
+    ]
+    assert [
+        option["details"]["segments"][0]["fromPlace"]
+        for option in transit_choices
+    ] == ["Vị trí của bạn", "Điểm 1"]
+    assert [
+        option["details"]["segments"][-1]["toPlace"]
+        for option in transit_choices
+    ] == ["Điểm 1", "Điểm 2"]
 
 
-def test_day_directions_does_not_request_transit_for_later_legs(
+def test_day_directions_uses_itinerary_time_for_later_legs(
     client: TestClient,
 ) -> None:
     transit = FakeTransitProvider()
@@ -251,10 +280,15 @@ def test_day_directions_does_not_request_transit_for_later_legs(
     )
 
     assert response.status_code == 200
-    assert transit.departure_times == []
+    assert transit.departure_times == [
+        datetime.fromisoformat("2026-08-01T00:15:00+07:00"),
+        datetime.fromisoformat("2026-08-01T00:15:00+07:00"),
+        datetime.fromisoformat("2026-08-01T10:00:00+07:00"),
+        datetime.fromisoformat("2026-08-01T10:00:00+07:00"),
+    ]
 
 
-def test_day_directions_bus_request_does_not_call_transit(
+def test_day_directions_normalizes_utc_to_hanoi_time(
     client: TestClient,
 ) -> None:
     transit = FakeTransitProvider()
@@ -289,8 +323,10 @@ def test_day_directions_bus_request_does_not_call_transit(
     )
 
     assert response.status_code == 200
-    assert transit.departure_times == []
-    assert all(leg["mode"] == "walk" for leg in response.json())
+    assert [value.isoformat() for value in transit.departure_times] == [
+        "2026-08-01T00:15:00+07:00",
+        "2026-08-01T10:00:00+07:00",
+    ]
 
 
 def test_day_directions_omits_transit_choice_when_provider_has_no_route(
@@ -324,16 +360,14 @@ def test_day_directions_omits_transit_choice_when_provider_has_no_route(
     assert response.status_code == 200
     leg = response.json()[0]
     assert leg["mode"] == "walk"
-    assert {option["mode"] for option in leg["alternatives"]} == {
-        "ride_hailing"
-    }
+    assert {option["mode"] for option in leg["alternatives"]} == {"car"}
     assert all(
         option["source"] != "geodesic_estimate"
         for option in leg["alternatives"]
     )
 
 
-def test_day_directions_forced_bus_falls_back_without_calling_transit(
+def test_day_directions_rejects_forced_bus_without_provider_route(
     client: TestClient,
 ) -> None:
     service = CurrentLocationRouteService(
@@ -361,9 +395,10 @@ def test_day_directions_forced_bus_falls_back_without_calling_transit(
         },
     )
 
-    assert response.status_code == 200
-    assert response.json()[0]["mode"] == "walk"
-    assert response.json()[0]["source"] == "geodesic_estimate"
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Không có tuyến phương tiện công cộng cho chặng này."
+    )
 
 
 def test_day_directions_preserves_itinerary_stop_order(

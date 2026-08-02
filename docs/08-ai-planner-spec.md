@@ -19,22 +19,6 @@ Explorer -> Planner -> Finder -> Check -> Main Plan
                               Backup Plan
 ```
 
-### Retrieval địa điểm của Finder
-
-Finder dùng retrieval deterministic theo thứ tự `Knowledge Graph expansion ->
-hard filters -> structured relevance/quality rerank -> feasibility`. Hard filters
-gồm active status, region hoặc tourism-zone bbox, category và Place đã dùng/loại
-trừ. Graph chuyển theme/goal thành experience query terms, category và diversity
-group. Rerank dùng type/group, tags, region, rating, review, confidence và tọa độ;
-description chỉ là evidence phụ vì catalog hiện có độ phủ mô tả thấp. Runtime
-Planner/Finder không gọi embedding provider hoặc vector search.
-
-Finder lấy `AreaProfile` tối giản từ snapshot thống kê vùng đã lưu, gồm phân bố
-category, bounding box, khung giờ hoạt động điển hình và mức walkability khi có
-bằng chứng. Catalog chỉ được lấy mẫu làm fallback khi snapshot chưa khả dụng.
-Rating/review, price, top-place và insight dạng văn bản không còn được Area Survey
-tính lại vì không được Finder sử dụng và đã trùng với thống kê catalog.
-
 `Confirm` là ranh giới quan trọng: claim do AI trích xuất không tự động trở thành
 yêu cầu của user.
 
@@ -56,17 +40,19 @@ trả một plan identity mới. Các địa điểm của plan hiện tại đ�
 `avoidPlaces`/constraint của Explorer.
 
 Message có URL của user đã đăng nhập được tách thành một job bền vững cho từng
-URL và trả về ngay. Worker FIFO gọi lại workflow Explorer–Planner/Finder rồi ghi
-revision hoàn chỉnh vào trip chat. Nếu chat thay đổi trong lúc URL đang chạy,
-worker nạp revision mới nhất và retry optimistic conflict có giới hạn. Mỗi
-revision giữ toàn bộ URL place đã resolve, gộp trùng theo identity/provenance và
-tự tăng duration khi cần để không làm mất stop nguồn.
+URL và trả về ngay. Worker FIFO chỉ chạy một job mỗi lần, gọi lại chính workflow
+Explorer–Planner/Finder rồi ghi revision hoàn chỉnh vào trip chat. Vì vậy user
+có thể tiếp tục chat hoặc rời Planner; AppShell poll trạng thái job độc lập với
+page. Nếu một prompt thường cập nhật chat trong lúc URL đang chạy, worker nạp
+revision mới nhất và retry optimistic conflict có giới hạn thay vì ghi đè.
+Mỗi revision phải giữ toàn bộ URL place đã resolve từ các revision trước, gộp
+trùng theo identity/provenance và tự tăng duration để xếp hết chúng. Địa điểm
+Finder đề xuất không được làm URL place rơi vào `UnscheduledPlace`; Finder chỉ
+bổ sung khi còn capacity sau khi phân bổ source places.
 
-Planner dùng một hoặc hai lượt LLM tùy độ phức tạp. Chuyến Hà Nội local tối đa
-ba ngày dùng research deterministic từ knowledge graph + Place database rồi gọi
-LLM một lần để tạo MacroPlan. Chuyến dài, road trip hoặc multi-region vẫn dùng
-lượt research LLM để đề xuất journey shape và capability cần kiểm chứng trước
-khi lượt Macro Planner tạo `MacroPlan`/`DayBriefs`. Code ứng
+Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
+capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
+lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
 dụng validate số ngày, region key, journey phase và việc phân bổ mọi
 `selectedPlace`. Nếu model bỏ sót một `selectedPlace`, backend giữ địa điểm đó
 trong danh sách chưa phân bổ kèm reason code và cảnh báo thay vì làm mất dữ liệu
@@ -78,19 +64,28 @@ không được truyền sang Finder. Finder vẫn tạo lịch
 chi tiết bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
-Khi intake có URL YouTube, runtime thử caption công khai bằng
-`youtube-transcript-api` trước. Caption thủ công hoặc tự sinh được dùng trực tiếp
-làm transcript và video không bị tải xuống. Chỉ khi caption không tồn tại, bị
-tắt, bị chặn hoặc không đọc được thì runtime mới tải video bằng `yt-dlp`, tách
-audio và gọi Gemini Audio. Với nguồn video khác, pipeline media hiện tại vẫn
-được dùng. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
+Khi intake có URL YouTube long-form, runtime thử caption công khai bằng
+`youtube-transcript-api` trước, sau khi kiểm tra cache PostgreSQL. Request cùng
+video được dedupe trong process và bị giới hạn nhịp; khi IP backend bị chặn,
+runtime có thể gọi transcript worker do operator tự vận hành trên kết nối dân
+dụng. Caption thủ công hoặc tự sinh được cache dài hạn, dùng trực tiếp làm
+transcript và video không bị tải xuống. `no_captions` trả
+`YOUTUBE_CAPTIONS_NOT_FOUND`; `blocked`/`unavailable` trả lỗi retryable. Runtime
+không tải media và không gọi STT/OCR cho YouTube long-form. YouTube Shorts có
+path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook Reels dùng
+pipeline media hiện tại. URL rút gọn `youtu.be/{videoId}` không chứa tín hiệu
+Shorts nên giữ nhánh caption-only. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
 bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
 `order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
 và confidence. Explorer dùng structured STT observations, metadata và structured
 frame vision observations để tạo từng stop; Python không suy diễn candidate,
 day hay activity từ transcript tự do khi structured STT đã có. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
-nguồn có nói rõ. STT chịu trách nhiệm chính cho day/order/activity và
+nguồn có nói rõ. Heading cấp thành phố/khu vực dạng `Hanoi - 2 days` được
+trích thành `destinationStay(startDay=1,endDay=2,durationDays=2)`, không phải
+place candidate. Planner áp cùng `targetArea` cho toàn bộ khoảng ngày; nếu
+nguồn chưa nêu venue thì các ngày được giữ trống để người dùng thêm sau. STT
+chịu trách nhiệm chính cho day/order/activity và
 `searchRegion`; OCR chịu trách nhiệm chính cho chữ trên bảng hiệu, địa chỉ và
 giá; caption bổ sung bối cảnh. Evidence ngắn được giữ riêng trong
 `sourceEvidence.stt`, `sourceEvidence.ocr` và `sourceEvidence.caption`.
@@ -98,6 +93,18 @@ Planner ưu tiên blueprint này; Finder tạo skeleton
 `source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
 của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
 `UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
+
+Với intake URL, địa lý có evidence từ reel là guardrail của destination. Nếu
+prompt hoặc trip hiện tại ghi một destination khác nhưng `searchRegion` hoặc
+thành phố của các stop URL đã resolve tạo thành một vùng đồng thuận rõ ràng,
+Explorer dừng trước Planner và trả `DESTINATION_CLARIFICATION_REQUIRED`. Câu hỏi
+phải cho user chọn giữ destination hiện tại và chỉ dùng reel làm tham khảo, tạo
+một trip riêng cho destination của reel, hoặc đổi trip hiện tại sang destination
+của reel; hệ thống không tự chọn thay user. Nếu prompt
+và reel cùng vùng nhưng formatter trả sai vùng, code được tự sửa formatter output
+và ghi `explorer.trace.destinationGuardrail`. Resolver dùng vùng nguồn làm hint
+khi extraction đã có đồng thuận. Itinerary nhiều vùng không đạt ngưỡng đồng
+thuận không được tự động đổi trip base chỉ vì một day trip.
 
 Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `high`.
 Frame được lấy thích nghi theo toàn bộ duration, không quá một frame mỗi giây,
@@ -115,6 +122,10 @@ một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa 
 time hint, activity, duration và `searchRegion`. Evidence của cả hai nguồn vẫn
 được giữ tách biệt. Khi STT chuyển một ngày sang day trip vùng khác, vùng đó
 trở thành `searchRegion` cho các stop của ngày mà không thay đổi trip base.
+Biến thể tên chỉ khác hậu tố destination, như `Phố đường tàu` và
+`Phố đường tàu Hà Nội`, được coi là cùng identity ngay cả khi STT/OCR
+gán `sourceOrder` khác nhau. Khi merge revision, selected place cùng URL và tên
+tương đương, hoặc có tọa độ gần nhau, chỉ được xếp một lần.
 Observation thành công được
 giữ lại nếu một batch khác lỗi. OCR ảnh/screenshot người dùng upload dùng cùng
 model cấu hình. Không áp dụng giới hạn số place candidate có evidence sau bước
@@ -137,18 +148,24 @@ runtime fallback về một request toàn audio.
 
 Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ:
 
+- ngoại lệ: duration ghi rõ trên heading `thành phố - N ngày` là coverage
+  explicit của nguồn. Khi user chưa nêu duration, dùng coverage của các
+  `destinationStay` thay vì mặc định 3 ngày; stay-only không bật Finder tự bù;
 - nếu không có URL/OCR, số ngày user nói rõ được giữ nguyên;
-- nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và Finder bổ sung catalog vào
-  ngày trống hoặc ngày có ít stop hơn mức tối thiểu theo pace; stop URL/OCR vẫn
-  được giữ nguyên và địa điểm bổ sung phải mang source `finder_suggestion`;
+- nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và Finder chỉ bổ sung catalog
+  vào ngày hoàn toàn chưa có stop nguồn; ngày đã có stop URL/OCR không bị pad
+  thêm theo quota và địa điểm bổ sung phải mang source `finder_suggestion`;
 - nếu URL/OCR cần hơn 3 ngày, dùng cấu trúc `sourceDay` hoặc suy ra số ngày tối
   thiểu theo pace để xếp hết stop;
-- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, áp dụng cùng quy tắc:
-  bổ sung catalog vào ngày trống hoặc ngày nguồn còn thưa;
-- nếu user yêu cầu ít ngày hơn nhưng intake có địa điểm URL đã resolve, Planner
-  tự tăng duration tối thiểu theo pace sau khi merge địa điểm cũ và intake mới.
-  Địa điểm URL không bị đưa vào `UnscheduledPlace` chỉ vì `no_day_capacity`;
-  hard constraint và lỗi feasibility khác vẫn có thể ngăn một stop được xếp.
+- dedupe candidate dùng danh tính/tên địa điểm đã chuẩn hóa; `sourceOrder` chỉ
+  giữ trình tự từ nguồn và không bao giờ là khóa định danh, vì STT/OCR/caption
+  có thể gán cùng order cho nhiều địa điểm độc lập;
+- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, Finder chỉ bổ sung các
+  ngày trống;
+- nếu user đã yêu cầu số ngày cụ thể, duration đó là ranh giới cứng. URL có
+  nhiều stop hơn sức chứa không tự tăng số ngày; stop vượt sức chứa được giữ ở
+  `UnscheduledPlace`. Chỉ amendment nói rõ muốn thêm/kéo dài ngày mới được phép
+  suy ra duration lớn hơn sau khi merge địa điểm cũ và mới.
 
 ## Luồng mục tiêu của MVP
 
@@ -185,6 +202,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 - không chặn intake để hỏi user;
 - lưu dữ liệu resolve đủ điều kiện chỉ vào `UserMustPlace`, không ghi `Place`;
 - Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
+- Explorer vẫn giữ mọi candidate sau aggregation trong
+  `explorer.candidateReviews`; item chưa xác minh có status `needs_review` và
+  reason/provider riêng thay vì biến mất khỏi UI. Retry từ trip chat chỉ gọi
+  lại alias enrichment + resolver cho nhóm này, không chạy lại media/STT/OCR;
+  Planner tiếp tục chỉ nhận item đã xác minh tọa độ.
 - Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
   đọc `UserMustPlace` theo cả `intakeId + userId`.
 
@@ -223,10 +245,6 @@ của Extractor.
 Planner tạo `MacroPlan` và `DayBriefs`:
 
 - mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
-- mỗi ngày chọn một `tourismZoneRef` từ vùng khách tham quan được backend dựng
-  quanh Place anchor có tọa độ; model không tự sinh tọa độ hay bán kính;
-- `primaryActivityCategory` mô tả mục đích hoạt động chính, tách khỏi meal block;
-  ngày văn hóa/lịch sử dùng `attraction`, không suy thành `food_drink`;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
@@ -236,17 +254,6 @@ Planner tạo `MacroPlan` và `DayBriefs`:
   evidence từ Place active trước khi được mô tả như một khả năng có thật;
 - phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
 - không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
-- trả `dayWindow`, `activityNeeds` và `mealNeeds`: giữ main/lunch là nhu cầu lõi,
-  support theo pace, dinner theo độ dài ngày và bonus tùy chọn; đây là cửa sổ mềm
-  cùng khoảng duration, không phải lịch giờ cố định;
-- `activityNeeds.main` luôn là một Place có thể ghé cụ thể, mang
-  `experienceType`, `mustBeExactPlace=true`; area rộng như thành phố, quận hoặc
-  Phố Cổ không được dùng thay địa điểm chính;
-- research nhanh phải giữ nguyên cụm area trong interest của user khi query
-  graph; nếu graph khớp area, `mainRegionLocked=true` giữ main activity trong
-  tourism zone đó, không để popularity kéo main sang khu vực khác;
-- `diversityPolicy` giữ bữa ăn độc lập với main experience và giới hạn lặp cùng
-  nhóm trải nghiệm trong một ngày;
 - ghi rõ địa điểm nào chưa thể phân bổ.
 - khi có URL itinerary, giữ thứ tự/ngày/timing cue của nguồn; không biến timing
   cue mơ hồ thành giờ chính xác do nguồn xác nhận.
@@ -255,41 +262,31 @@ Planner tạo `MacroPlan` và `DayBriefs`:
 
 Finder điền item cụ thể:
 
-- tạm thời mọi ngày dùng khung cố định `breakfast -> main activity -> lunch ->
-  support activity -> dinner`, tức hai activity và ba bữa ăn;
-- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước theo sức chứa hai
-  activity/ngày; ngày lẻ có thể được Finder bổ sung một activity từ catalog,
-  nhưng không dùng alias/provider ID khác để lặp lại cùng một địa điểm;
-- số place extractor nhận từ URL không bị giới hạn theo quota của Finder; riêng
-  suggestion trên ngày trống bị giới hạn theo pace;
+- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder chỉ bổ
+  sung catalog vào ngày hoàn toàn chưa có stop nguồn;
+- Finder loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
+  kể cả khi provider ID khác nhưng tên chuẩn hóa/biến thể alias cho thấy cùng
+  một địa điểm;
+- số place extractor nhận từ URL không bị giới hạn theo quota của Finder. Riêng
+  `finder_suggestion` trên một ngày trống bị chặn theo pace
+  (`relaxed=2`, `balanced=3`, `packed=4`); giới hạn này không đếm hoặc loại stop
+  URL của user;
 - Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- suggestion ưu tiên bán kính của `tourismZoneRef`; Place nổi tiếng có thể vượt
-  bán kính có kiểm soát, nhưng không được làm vậy cho main activity khi
-  `mainRegionLocked=true`; fallback region cha không được làm mất scope area;
-- chọn toàn bộ activity của ngày trước, rồi mới chọn ba địa điểm ăn uống; bữa
-  sáng nằm gần đường tới main, bữa trưa ưu tiên hành lang main-support và bữa
-  tối gần support;
-- activity đã chọn được reserve trước khi fill meal, nên một Place không thể vừa
-  là bữa ăn vừa lặp lại ở activity phía sau; support mang chủ đề ẩm thực chỉ dùng
-  điểm ăn nhẹ như café, bakery, dessert, snack hoặc food market, không dùng nhà
-  hàng đầy đủ như một activity phụ;
-- sau khi lọc cứng theo Graph/category, region và constraint, activity được
-  rerank theo popularity kết hợp rating và số review; khoảng cách chỉ là tín
-  hiệu sau popularity;
-- sau khi chọn Place, chọn giờ khả thi trong cửa sổ mềm theo giờ hoạt động,
-  route và timing claim có provenance;
+- chọn khung giờ theo giờ hoạt động và timing claim;
+- rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
+  category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
-- thêm route leg, thời gian đệm và bữa ăn lõi; chỉ giữ break khi hai activity
-  thực tế ở hai phía làm khoảng nghỉ đó có ý nghĩa;
+- thêm route leg, thời gian đệm, bữa ăn và nghỉ;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
 - lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
   geometry, `fetchedAt`, `source=valhalla_routing`, `verified=true`, còn lỗi
   provider fallback về ước tính địa lý `verified=false`;
-- tạm thời không gọi OpenTripPlanner và không tạo lựa chọn bus/transit; interface
-  provider vẫn được giữ để có thể bật lại sau;
+- với trip có `startDate`, lấy thêm OpenTripPlanner theo giờ kết thúc stop;
+  chọn transit khi user ưu tiên bus/train, nếu không giữ làm alternative; không
+  gọi timetable hiện tại cho trip chưa có ngày;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
@@ -379,8 +376,8 @@ tuyến đường hoặc danh tính địa điểm.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
-- Trong khung MVP hiện tại, mỗi ngày có đúng hai activity không phụ thuộc pace.
-  Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
+- Mỗi ngày áp sức chứa activity theo pace: `relaxed=2`, `balanced=3`,
+  `packed=5`. Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
   khi merge địa điểm của revision cũ với intake mới; nếu duration được giữ cố
   định, phần vượt sức chứa phải vào `UnscheduledPlace`.
 - `timeWindow` phải nằm trọn trong một ngày địa phương. Sau khi cộng thời gian

@@ -123,96 +123,14 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
         for item in result.days[0].items
         if item.place_id is not None
     ]
-    assert set(scheduled_place_ids) == {"national-park", "restaurant"}
+    assert scheduled_place_ids == ["national-park", "restaurant"]
     assert "hotel" not in scheduled_place_ids
     restaurant_item = next(
         item
         for item in result.days[0].items
         if item.place_id == "restaurant"
     )
-    assert restaurant_item.role == "breakfast_meal"
-    activity_item = next(
-        item
-        for item in result.days[0].items
-        if item.place_id == "national-park"
-    )
-    assert activity_item.role == "main_activity"
-
-
-def test_quality_breaks_ties_after_category_and_description_match() -> None:
-    repository = FakeFinderRepository(
-        [
-            _place(
-                "few-reviews",
-                "Quán địa phương A",
-                "restaurant",
-                "vn,ha-noi,hoan-kiem",
-                description="Món địa phương tại Hoàn Kiếm.",
-                group="food_drink",
-                tags=["food", "local"],
-                rating=4.8,
-                review_count=8,
-            ),
-            _place(
-                "trusted",
-                "Quán địa phương B",
-                "restaurant",
-                "vn,ha-noi,hoan-kiem",
-                description="Món địa phương tại Hoàn Kiếm.",
-                group="food_drink",
-                tags=["food", "local"],
-                rating=4.6,
-                review_count=2_000,
-            ),
-        ]
-    )
-
-    results = RepositoryFinderPlaceTool(repository).search(
-        region_key="vn,ha-noi,hoan-kiem",
-        target_tags=["food", "món địa phương"],
-        excluded_place_ids=set(),
-        limit=2,
-    )
-
-    assert [place.place_id for place in results] == ["trusted", "few-reviews"]
-
-
-def test_popularity_outweighs_a_small_description_overlap_advantage() -> None:
-    repository = FakeFinderRepository(
-        [
-            _place(
-                "literal-match",
-                "Quán mới",
-                "restaurant",
-                "vn,ha-noi,cua-nam",
-                description="Phở truyền thống phố cổ Hà Nội.",
-                group="food_drink",
-                tags=["food", "pho"],
-                rating=4.2,
-                review_count=20,
-            ),
-            _place(
-                "famous",
-                "Quán Phở Nổi Tiếng",
-                "restaurant",
-                "vn,ha-noi,cua-nam",
-                description="Phở gia truyền Hà Nội.",
-                group="food_drink",
-                tags=["food", "pho"],
-                rating=4.7,
-                review_count=8_000,
-            ),
-        ]
-    )
-
-    results = RepositoryFinderPlaceTool(repository).search(
-        region_key="vn,ha-noi,cua-nam",
-        target_tags=["phở", "phố cổ", "food"],
-        excluded_place_ids=set(),
-        limit=2,
-    )
-
-    assert results[0].place_id == "famous"
+    assert restaurant_item.role == "lunch_meal"
 
 
 class FakeFinderRepository:
@@ -252,8 +170,6 @@ def _place(
     description: str,
     group: str,
     tags: list[str],
-    rating: float | None = None,
-    review_count: int = 0,
 ) -> Place:
     return Place(
         id=place_id,
@@ -266,8 +182,6 @@ def _place(
         typical_duration_minutes=60,
         data_confidence="high",
         opening_hours=[],
-        rating=rating,
-        review_count=review_count,
         metadata_json={
             "description": description,
             "placeGroup": group,

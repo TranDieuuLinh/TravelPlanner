@@ -41,9 +41,6 @@ class Settings(BaseSettings):
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
-    gemini_embedding_model: str = "gemini-embedding-2"
-    gemini_embedding_dimensions: int = Field(default=768, ge=128, le=2000)
-    gemini_embedding_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
@@ -181,11 +178,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "YOUTUBE_TRANSCRIPT_WORKER_URL and "
                 "YOUTUBE_TRANSCRIPT_WORKER_TOKEN must be configured together"
-            )
-        if self.gemini_embedding_dimensions != 768:
-            raise ValueError(
-                "GEMINI_EMBEDDING_DIMENSIONS must remain 768 until a database "
-                "migration changes places.embedding."
             )
         if not self.database_url.startswith(
             ("postgresql://", "postgresql+psycopg://")

@@ -327,7 +327,6 @@ class MainPlanWorkflow:
             selectedPlaces=finder_selected_places,
             userStatus=user_status,
             allowFinderSuggestions=allow_finder_suggestions,
-            tourismZones=planner_output.tourism_zones,
         )
         finder_started = time.perf_counter()
         finder_output = self.finder.fill_agent_plan(finder_input)

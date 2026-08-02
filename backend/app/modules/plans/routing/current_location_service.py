@@ -3,8 +3,12 @@ from datetime import datetime, time, timedelta
 from app.modules.plans.domain.entities import (
     PlanItem,
     PlanTransportLeg,
+    PlanTransportOption,
 )
-from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
+from app.modules.plans.routing.optimizer import (
+    GeographicRouteOptimizer,
+    RouteUnavailableError,
+)
 from app.modules.plans.routing.local_time import (
     combine_routing_datetime,
     normalize_routing_datetime,
@@ -91,7 +95,7 @@ class CurrentLocationRouteService:
                     )
                     or rolling_departure_time
                 )
-            if payload.requested_mode in {"walk", "car"}:
+            if payload.requested_mode is not None:
                 leg = self.optimizer.calculate_leg(
                     leg_origin,
                     destination,
@@ -118,12 +122,32 @@ class CurrentLocationRouteService:
         *,
         departure_time: datetime | None,
     ) -> PlanTransportLeg:
-        # The optimizer compares walking and car routes. Public transit is
-        # temporarily disabled, so this makes no OTP/bus request.
-        return self.optimizer.calculate_leg(
+        choices: list[PlanTransportLeg] = []
+        for mode in ("walk", "car", "bus"):
+            try:
+                choice = self.optimizer.calculate_leg(
+                    origin,
+                    destination,
+                    departure_time=departure_time,
+                    requested_mode=mode,
+                )
+            except RouteUnavailableError:
+                continue
+            choices.append(choice)
+        recommended = self.optimizer.calculate_leg(
             origin,
             destination,
             departure_time=departure_time,
+        )
+        preferred = _navigation_mode(recommended.mode)
+
+        alternatives = [
+            _as_option(choice)
+            for choice in choices
+            if _navigation_mode(choice.mode) != preferred
+        ]
+        return recommended.model_copy(
+            update={"alternatives": alternatives}
         )
 
     @staticmethod
@@ -153,7 +177,36 @@ def _scheduled_departure_time(
         departure_clock = time.fromisoformat(parts[1].strip())
     except ValueError:
         return None
-    return combine_routing_datetime(reference.date(), departure_clock)
+    return combine_routing_datetime(
+        reference.date(),
+        departure_clock,
+    )
 
 
-__all__ = ["CurrentLocationRouteService"]
+def _navigation_mode(mode: str | None) -> str | None:
+    normalized = (mode or "").casefold()
+    if "walk" in normalized:
+        return "walk"
+    if normalized in {"car", "private_car"} or any(
+        token in normalized for token in ("ride", "hailing", "taxi")
+    ):
+        return "car"
+    if any(
+        token in normalized
+        for token in ("bus", "public", "transit", "train")
+    ):
+        return "bus"
+    return None
+
+
+def _as_option(leg: PlanTransportLeg) -> PlanTransportOption:
+    return PlanTransportOption(
+        mode=leg.mode,
+        distanceMeters=leg.distance_meters,
+        estimatedDurationMinutes=leg.estimated_duration_minutes,
+        geometryCoordinates=leg.geometry_coordinates,
+        source=leg.source,
+        verified=leg.verified,
+        fetchedAt=leg.fetched_at,
+        details=leg.details,
+    )

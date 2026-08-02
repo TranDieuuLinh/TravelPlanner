@@ -107,21 +107,14 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                 for item in day.items
                 if item.place_id
             ]
-            assert {item.name for item in committed_items} == {
-                "City Museum",
-                "Local Restaurant",
-            }
+            assert len(committed_items) == 3
             assert all(
                 item.source == "finder_suggestion"
                 for item in committed_items
             )
-            assert all(
-                item.name != "Old Quarter Coffee"
-                for item in committed_items
-            )
-            assert plan.status.value == "draft"
+            assert plan.status.value == "locked"
             assert plan.check_report is not None
-            assert plan.check_report.status == "needs_backup"
+            assert plan.check_report.status == "passed"
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()
@@ -168,15 +161,15 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     assert response.status_code == 201
     body = response.json()
     assert body["intent"]["days"] == 1
-    committed_names = {
-        item["name"]
-        for item in body["days"][0]["items"]
-        if item["placeId"] is not None
-    }
-    assert committed_names == {"Context Museum", "Context Food"}
-    assert "Context Cafe" not in committed_names
-    assert body["status"] == "draft"
-    assert body["checkReport"]["status"] == "needs_backup"
+    assert len(
+        [
+            item
+            for item in body["days"][0]["items"]
+            if item["placeId"] is not None
+        ]
+    ) == 3
+    assert body["status"] == "locked"
+    assert body["checkReport"]["status"] == "passed"
 
 
 def test_from_explorer_provider_error_keeps_cors_headers(

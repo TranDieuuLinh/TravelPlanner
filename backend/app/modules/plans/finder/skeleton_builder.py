@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.modules.plans.domain.entities import DayBrief, UserStatus
@@ -27,13 +27,6 @@ class DayBlock:
     preferred_ref: str | None = None
     kind: str = "activity"
     candidate_category: str | None = None
-    earliest_start: str | None = None
-    latest_end: str | None = None
-    min_duration_minutes: int | None = None
-    goal: str | None = None
-    preferred_experiences: tuple[str, ...] = ()
-    must_be_exact_place: bool = False
-    need_role: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,8 +38,8 @@ class DaySkeleton:
 class DaySkeletonBuilder:
     _MIN_ACTIVITY_COUNT = {
         TravelPace.relaxed: 2,
-        TravelPace.balanced: 2,
-        TravelPace.packed: 2,
+        TravelPace.balanced: 3,
+        TravelPace.packed: 4,
     }
     _SUPPLEMENTAL_WINDOWS = (
         ("09:30-11:00", 90),
@@ -87,183 +80,6 @@ class DaySkeletonBuilder:
         "night": 75,
         "nightlife": 90,
     }
-
-    def apply_flexible_needs(
-        self,
-        skeleton: DaySkeleton,
-        brief: DayBrief,
-    ) -> DaySkeleton:
-        """Overlay soft windows/goals while preserving legacy skeleton roles."""
-
-        activity_needs = {need.role: need for need in brief.activity_needs}
-        meal_needs = {need.role: need for need in brief.meal_needs}
-        day_start = brief.day_window.earliest_start
-        day_end = brief.day_window.latest_end
-        lunch = meal_needs.get("lunch")
-        dinner = meal_needs.get("dinner")
-        breakfast = meal_needs.get("breakfast")
-        breakfast_start = breakfast.earliest_start if breakfast else "07:00"
-        breakfast_end = breakfast.latest_end if breakfast else "09:00"
-        lunch_start = lunch.earliest_start if lunch else "11:30"
-        lunch_end = lunch.latest_end if lunch else "13:30"
-        dinner_start = dinner.earliest_start if dinner else "17:30"
-        dinner_end = dinner.latest_end if dinner else "20:00"
-
-        flexible_blocks: list[DayBlock] = []
-        for block in skeleton.blocks:
-            # Source itineraries carry ordering/time evidence of their own.
-            # Keep those explicit slots intact; flexible needs govern only the
-            # Finder-generated day skeleton.
-            if block.role.startswith("url_stop_"):
-                flexible_blocks.append(block)
-                continue
-            if block.kind == "meal":
-                meal_role = (
-                    "breakfast"
-                    if "breakfast" in block.role
-                    else "lunch"
-                    if "lunch" in block.role
-                    else "dinner"
-                )
-                need = meal_needs.get(meal_role)
-                default_start, default_end = {
-                    "breakfast": (breakfast_start, breakfast_end),
-                    "lunch": (lunch_start, lunch_end),
-                    "dinner": (dinner_start, dinner_end),
-                }[meal_role]
-                flexible_blocks.append(
-                    replace(
-                        block,
-                        earliest_start=(need.earliest_start if need else default_start),
-                        latest_end=(need.latest_end if need else default_end),
-                        min_duration_minutes=(need.min_duration_minutes if need else 45),
-                        duration_minutes=(need.max_duration_minutes if need else block.duration_minutes),
-                    )
-                )
-                continue
-            if not block.activity:
-                flexible_blocks.append(block)
-                continue
-
-            if "main" in block.role or block.role == "stop_1":
-                need_role = "main"
-            elif "bonus" in block.role or (
-                block.role.startswith("stop_")
-                and block.role not in {"stop_1", "stop_2"}
-            ):
-                need_role = "bonus"
-            else:
-                need_role = "support"
-            need = activity_needs.get(need_role)
-            if need_role == "main":
-                earliest, latest = day_start, lunch_start
-            elif need_role == "support":
-                earliest, latest = lunch_end, dinner_start
-            else:
-                earliest, latest = dinner_end, day_end
-            flexible_blocks.append(
-                replace(
-                    block,
-                    earliest_start=earliest,
-                    latest_end=latest,
-                    min_duration_minutes=(need.min_duration_minutes if need else 30),
-                    duration_minutes=(
-                        need.max_duration_minutes
-                        if need
-                        else max(block.duration_minutes, 60)
-                        if need_role == "main"
-                        else block.duration_minutes
-                    ),
-                    optional=(not need.required if need else block.optional),
-                    goal=(need.goal if need else None),
-                    preferred_experiences=(
-                        tuple(
-                            dict.fromkeys(
-                                [
-                                    *(
-                                        [need.experience_type]
-                                        if need and need.experience_type
-                                        else []
-                                    ),
-                                    *(need.preferred_experiences if need else []),
-                                ]
-                            )
-                        )
-                    ),
-                    must_be_exact_place=(
-                        need.must_be_exact_place if need else need_role == "main"
-                    ),
-                    need_role=need_role,
-                )
-            )
-        return DaySkeleton(strategy=skeleton.strategy, blocks=tuple(flexible_blocks))
-
-    def build_two_activity_day(
-        self,
-        brief: DayBrief,
-        user_status: UserStatus,
-        *,
-        intent_constraints: list[str] | None = None,
-        area_profile: AreaProfile | None = None,
-    ) -> DaySkeleton:
-        """Temporary fixed frame: three meals around two core activities."""
-
-        pace = self._effective_pace(brief.pace, user_status, area_profile)
-        main_start = self._extract_start_minutes(
-            user_status,
-            default_minutes=self._default_start_minutes(
-                pace,
-                user_status,
-                intent_constraints,
-                area_profile,
-            ),
-            area_profile=area_profile,
-        )
-        breakfast_start = max(7 * 60, main_start - 60)
-        lunch_start = max(11 * 60 + 30, main_start + 3 * 60 + 30)
-        support_start = max(13 * 60 + 30, lunch_start + 90)
-        dinner_start = max(18 * 60, support_start + 3 * 60)
-        return DaySkeleton(
-            strategy="two_activity_day",
-            blocks=(
-                DayBlock(
-                    "breakfast_meal",
-                    self._clock_window(breakfast_start, 60),
-                    60,
-                    False,
-                    kind="meal",
-                    candidate_category="food_drink",
-                ),
-                DayBlock(
-                    "main_activity",
-                    self._clock_window(main_start, 180),
-                    180,
-                    True,
-                ),
-                DayBlock(
-                    "lunch_meal",
-                    self._clock_window(lunch_start, 60),
-                    60,
-                    False,
-                    kind="meal",
-                    candidate_category="food_drink",
-                ),
-                DayBlock(
-                    "support_activity",
-                    self._clock_window(support_start, 150),
-                    150,
-                    True,
-                ),
-                DayBlock(
-                    "dinner_meal",
-                    self._clock_window(dinner_start, 60),
-                    60,
-                    False,
-                    kind="meal",
-                    candidate_category="food_drink",
-                ),
-            ),
-        )
 
     def build(
         self,
@@ -543,8 +359,6 @@ class DaySkeletonBuilder:
             ),
             area_profile=area_profile,
         )
-        if not user_status.available_at:
-            start_min = max(start_min, 9 * 60)
 
         cur = start_min
         b1 = DayBlock("main_activity", self._clock_window(cur, 180), 180, True)
@@ -559,8 +373,8 @@ class DaySkeletonBuilder:
             candidate_category="food_drink",
         )
         cur = lunch_start + 60 + 30
-        b3 = DayBlock("support_activity", self._clock_window(cur, 120), 120, True)
-        cur += 120 + 30
+        b3 = DayBlock("support_activity", self._clock_window(cur, 90), 90, True)
+        cur += 90 + 30
         b4 = DayBlock(
             "break_support_bonus", self._clock_window(cur, 60), 60, False, kind="break"
         )
@@ -599,10 +413,21 @@ class DaySkeletonBuilder:
         intent_constraints: list[str] | None = None,
         area_profile: AreaProfile | None = None,
     ) -> DaySkeleton:
-        """Build a short-stop day whose density follows the effective pace.
+        """Day skeleton for "many short stops" days (cafe / shop / street food).
 
-        Meals are separate from the activity capacity: relaxed, balanced and
-        packed days receive two, three and five short stops respectively.
+        Layout::
+
+            09:00-09:45  stop_1                  45'
+            10:00-10:45  stop_2                  45'
+            11:00-12:00  stop_3                  60'
+            12:15-13:15  lunch_meal              60'
+            14:00-14:45  stop_4                  45'
+            15:00-15:45  stop_5                  45'
+            16:00-17:00  stop_6                  60'
+            18:00-19:00  dinner_meal             60'
+            19:30-20:30  stop_7                  60'
+
+        Strategy name: ``"scattered_day"``.
         """
 
         pace = self._effective_pace(brief.pace, user_status, area_profile)
@@ -617,65 +442,43 @@ class DaySkeletonBuilder:
             area_profile=area_profile,
         )
 
-        # Keep the legacy style-specific builder stable for callers that use
-        # it directly. Runtime Finder uses ``build_two_activity_day`` while
-        # the temporary fixed-day product frame is active.
-        stop_count = {
-            TravelPace.relaxed: 2,
-            TravelPace.balanced: 3,
-            TravelPace.packed: 5,
-        }[pace]
-        morning_stop_count = min(3, (stop_count + 1) // 2)
-        blocks: list[DayBlock] = []
         cur = start_min
-        next_stop_number = 1
-        for _ in range(morning_stop_count):
-            duration = 45 if next_stop_number <= 2 else 60
-            blocks.append(
-                DayBlock(
-                    f"stop_{next_stop_number}",
-                    self._clock_window(cur, duration),
-                    duration,
-                    True,
-                )
-            )
-            next_stop_number += 1
-            cur += duration + 15
-
-        lunch_start = max(12 * 60, min(13 * 60, cur))
-        blocks.append(DayBlock(
+        b1 = DayBlock("stop_1", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b2 = DayBlock("stop_2", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b3 = DayBlock("stop_3", self._clock_window(cur, 60), 60, True)
+        cur += 60 + 15
+        lunch_start = max(12 * 60 + 15, min(13 * 60, cur))
+        b4 = DayBlock(
             "lunch_meal",
             self._clock_window(lunch_start, 60),
             60,
             False,
             kind="meal",
             candidate_category="food_drink",
-        ))
+        )
         cur = lunch_start + 60 + 45
-        while next_stop_number <= stop_count:
-            duration = 45 if next_stop_number < stop_count else 60
-            blocks.append(
-                DayBlock(
-                    f"stop_{next_stop_number}",
-                    self._clock_window(cur, duration),
-                    duration,
-                    True,
-                )
-            )
-            next_stop_number += 1
-            cur += duration + 15
-
+        b5 = DayBlock("stop_4", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b6 = DayBlock("stop_5", self._clock_window(cur, 45), 45, True)
+        cur += 45 + 15
+        b7 = DayBlock("stop_6", self._clock_window(cur, 60), 60, True)
+        cur += 60 + 60
         dinner_start = max(18 * 60, min(20 * 60, cur))
-        blocks.append(DayBlock(
+        b8 = DayBlock(
             "dinner_meal",
             self._clock_window(dinner_start, 60),
             60,
             False,
             kind="meal",
             candidate_category="food_drink",
-        ))
-        cur = dinner_start + 60
-        if cur + 105 < 23 * 60:
+        )
+        cur = dinner_start + 60 + 30
+        b9 = DayBlock("stop_7", self._clock_window(cur, 60), 60, True, optional=True)
+        cur += 60
+        blocks = [b1, b2, b3, b4, b5, b6, b7, b8, b9]
+        if cur + 30 < 23 * 60:
             blocks.append(
                 DayBlock(
                     "group_social_activity",
@@ -725,71 +528,66 @@ class DaySkeletonBuilder:
         ordered = sorted(
             selected_places,
             key=lambda place: (place.source_order or 10_000, place.name.casefold()),
-        )[:2]
-        activity_windows = (
-            ("08:30-11:30", 180, "main"),
-            ("13:30-16:00", 150, "support"),
         )
-        activity_blocks: list[DayBlock] = []
-        for index, (time_window, duration, need_role) in enumerate(activity_windows):
-            place = ordered[index] if index < len(ordered) else None
-            if place is not None:
-                activity_blocks.append(
-                    DayBlock(
-                        role=f"url_stop_{place.source_order or index + 1}",
-                        time_window=time_window,
-                        duration_minutes=min(
-                            duration,
-                            place.source_duration_minutes or duration,
-                        ),
-                        activity=True,
-                        preferred_ref=place.stable_ref,
-                        need_role=need_role,
-                    )
+        cursor = 8 * 60
+        blocks: list[DayBlock] = []
+        for place in ordered:
+            duration = (
+                place.source_duration_minutes
+                or self._source_default_duration(place.source_time_hint)
+            )
+            hinted_start = self._source_start(place.source_time_hint)
+            start = max(cursor, hinted_start) if hinted_start is not None else cursor
+            end = start + duration
+            blocks.append(
+                DayBlock(
+                    role=f"url_stop_{place.source_order or len(blocks) + 1}",
+                    time_window=format_clock_window(start, duration, bound_to_day=True),
+                    duration_minutes=duration,
+                    activity=True,
+                    preferred_ref=place.stable_ref,
                 )
-            elif supplement_sparse_day:
-                activity_blocks.append(
-                    DayBlock(
-                        role="finder_support_1",
-                        time_window=time_window,
-                        duration_minutes=duration,
-                        activity=True,
-                        need_role=need_role,
-                    )
-                )
+            )
+            cursor = end + 10
+        if not supplement_sparse_day:
+            return DaySkeleton(
+                strategy="source_itinerary",
+                blocks=tuple(blocks),
+            )
 
-        combined = [
-            DayBlock(
-                "breakfast_meal",
-                "07:30-08:30",
-                60,
-                False,
-                kind="meal",
-                candidate_category="food_drink",
-            ),
-            *activity_blocks[:1],
-            DayBlock(
-                "lunch_meal",
-                "11:30-12:30",
-                60,
-                False,
-                kind="meal",
-                candidate_category="food_drink",
-            ),
-            *activity_blocks[1:2],
-            DayBlock(
-                "dinner_meal",
-                "18:00-19:00",
-                60,
-                False,
-                kind="meal",
-                candidate_category="food_drink",
-            ),
+        target_count = self.minimum_activity_count(brief.pace)
+        missing_count = max(0, target_count - len(blocks))
+        source_intervals = [
+            self._window_interval(block.time_window)
+            for block in blocks
         ]
+        supplemental_blocks: list[DayBlock] = []
+        for time_window, duration in self._SUPPLEMENTAL_WINDOWS:
+            if len(supplemental_blocks) >= missing_count:
+                break
+            interval = self._window_interval(time_window)
+            if any(
+                self._intervals_overlap(interval, source_interval, buffer=10)
+                for source_interval in source_intervals
+            ):
+                continue
+            supplemental_blocks.append(
+                DayBlock(
+                    role=f"finder_support_{len(supplemental_blocks) + 1}",
+                    time_window=time_window,
+                    duration_minutes=duration,
+                    activity=True,
+                )
+            )
+
+        combined = sorted(
+            [*blocks, *supplemental_blocks],
+            key=lambda block: self._window_interval(block.time_window)[0],
+        )
         return DaySkeleton(
             strategy=(
                 "source_itinerary_supplemented"
-                if len(ordered) < 2 and supplement_sparse_day
+                if supplemental_blocks
                 else "source_itinerary"
             ),
             blocks=tuple(combined),

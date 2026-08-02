@@ -486,51 +486,6 @@ class PlannerNearbyRegionEvidence(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class PlannerKnowledgeSourceEvidence(BaseModel):
-    """A licensed source supporting one or more graph nodes."""
-
-    source_id: Annotated[str, Field(alias="sourceId")]
-    source_name: Annotated[str, Field(alias="sourceName")]
-    title: str
-    source_url: Annotated[str, Field(alias="sourceUrl")]
-    license: str
-    retrieved_at: Annotated[str, Field(alias="retrievedAt")]
-    confidence: float = Field(ge=0, le=1)
-    node_ids: Annotated[list[str], Field(alias="nodeIds")] = Field(
-        default_factory=list
-    )
-
-    model_config = {"populate_by_name": True}
-
-
-class PlannerThemeExperienceEvidence(BaseModel):
-    """Knowledge-graph expansion for one proposed journey theme."""
-
-    theme: str
-    matched_node_ids: Annotated[list[str], Field(alias="matchedNodeIds")] = Field(
-        default_factory=list
-    )
-    experience_node_ids: Annotated[
-        list[str], Field(alias="experienceNodeIds")
-    ] = Field(default_factory=list)
-    query_terms: Annotated[list[str], Field(alias="queryTerms")] = Field(
-        default_factory=list
-    )
-    categories: list[str] = Field(default_factory=list)
-    diversity_groups: Annotated[
-        list[str], Field(alias="diversityGroups")
-    ] = Field(default_factory=list)
-    region_keys: Annotated[list[str], Field(alias="regionKeys")] = Field(
-        default_factory=list
-    )
-    source_evidence: Annotated[
-        list[PlannerKnowledgeSourceEvidence],
-        Field(alias="sourceEvidence"),
-    ] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
-
-
 class PlannerVerifiedResearch(BaseModel):
     capability_evidence: Annotated[
         list[PlannerCapabilityEvidence],
@@ -540,50 +495,7 @@ class PlannerVerifiedResearch(BaseModel):
         list[PlannerNearbyRegionEvidence],
         Field(alias="nearbyRegions"),
     ] = Field(default_factory=list)
-    experience_evidence: Annotated[
-        list[PlannerThemeExperienceEvidence],
-        Field(alias="experienceEvidence"),
-    ] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
-
-
-class TourismZoneAnchor(BaseModel):
-    place_id: Annotated[str, Field(alias="placeId")]
-    name: str
-    category: str
-    latitude: float
-    longitude: float
-    rating: float | None = None
-    review_count: Annotated[int, Field(default=0, alias="reviewCount")]
-    popularity_score: Annotated[float, Field(alias="popularityScore")]
-
-    model_config = {"populate_by_name": True}
-
-
-class TourismZoneEvidence(BaseModel):
-    zone_id: Annotated[str, Field(alias="zoneId")]
-    region_key: Annotated[str, Field(alias="regionKey")]
-    center_latitude: Annotated[float, Field(alias="centerLatitude")]
-    center_longitude: Annotated[float, Field(alias="centerLongitude")]
-    radius_meters: Annotated[int, Field(ge=500, le=20_000, alias="radiusMeters")]
-    capabilities: list[str] = Field(default_factory=list)
-    primary_categories: Annotated[
-        list[str],
-        Field(default_factory=list, alias="primaryCategories"),
-    ]
-    category_coverage: Annotated[
-        dict[str, int],
-        Field(default_factory=dict, alias="categoryCoverage"),
-    ]
-    anchor_places: Annotated[
-        list[TourismZoneAnchor],
-        Field(default_factory=list, alias="anchorPlaces"),
-    ]
-    place_count: Annotated[int, Field(ge=0, alias="placeCount")]
-    compactness_score: Annotated[float, Field(ge=0, le=1, alias="compactnessScore")]
-    popularity_score: Annotated[float, Field(ge=0, le=1, alias="popularityScore")]
 
     model_config = {"populate_by_name": True}
 
@@ -604,10 +516,29 @@ class PlannerAgentInput(BaseModel):
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
     original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
     check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
-    tourism_zones: Annotated[
-        list[TourismZoneEvidence],
-        Field(default_factory=list, alias="tourismZones"),
-    ]
+    # === Research Tools Results ===
+    # Optional tool results that can be pre-populated before calling planner
+    region_overview: Annotated[
+        dict | None,
+        Field(
+            alias="regionOverview",
+            description="Pre-computed region overview statistics from region_overview tool"
+        )
+    ] = Field(default=None)
+    constraint_research: Annotated[
+        dict | None,
+        Field(
+            alias="constraintResearch",
+            description="Pre-computed constraint research results from constraint_research tool"
+        )
+    ] = Field(default=None)
+    festival_discovery: Annotated[
+        dict | None,
+        Field(
+            alias="festivalDiscovery",
+            description="Pre-computed festival discovery results from festival_discovery tool"
+        )
+    ] = Field(default=None)
 
     model_config = {"populate_by_name": True}
 
@@ -622,10 +553,6 @@ class PlannerAgentOutput(BaseModel):
     ] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    tourism_zones: Annotated[
-        list[TourismZoneEvidence],
-        Field(default_factory=list, alias="tourismZones"),
-    ]
     trace: AgentTrace
 
     model_config = {"populate_by_name": True}
@@ -662,10 +589,6 @@ class FinderAgentInput(BaseModel):
     allow_finder_suggestions: Annotated[
         bool,
         Field(default=True, alias="allowFinderSuggestions"),
-    ]
-    tourism_zones: Annotated[
-        list[TourismZoneEvidence],
-        Field(default_factory=list, alias="tourismZones"),
     ]
 
     model_config = {"populate_by_name": True}

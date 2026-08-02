@@ -16,7 +16,6 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from pgvector.sqlalchemy import Vector
 
 from app.db.base import Base
 
@@ -81,18 +80,6 @@ class Place(Base):
     )
     review_count: Mapped[int | None] = mapped_column(
         Integer, nullable=True, server_default="0"
-    )
-    embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(768), nullable=True
-    )
-    embedding_model: Mapped[str | None] = mapped_column(
-        String(96), nullable=True
-    )
-    embedding_content_hash: Mapped[str | None] = mapped_column(
-        String(64), nullable=True
-    )
-    embedded_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     source_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

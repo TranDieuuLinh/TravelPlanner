@@ -74,8 +74,6 @@ DAY_NAME_TO_NUMBER = {
     "sunday": 7,
 }
 
-NULL_TEXT_VALUES = frozenset({"nan", "none", "null", "n/a", "na", "<na>"})
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -116,15 +114,6 @@ def _read_csv(path: Path) -> Iterator[dict[str, str]]:
         reader = csv.DictReader(file)
         for row in reader:
             yield {key: (value or "") for key, value in row.items()}
-
-
-def _parse_optional_text(value: str | None) -> str | None:
-    """Normalize CSV missing-value markers without discarding real text."""
-
-    cleaned = (value or "").strip()
-    if not cleaned or cleaned.casefold() in NULL_TEXT_VALUES:
-        return None
-    return cleaned
 
 
 def _iter_limited(rows: Iterable[dict[str, Any]], limit: int | None) -> Iterator[dict[str, Any]]:
@@ -246,7 +235,7 @@ def _build_place_row(row: dict[str, str]) -> dict[str, Any] | None:
             "state": row.get("state") or None,
             "borough": borough,
             "category": row.get("category") or None,
-            "description": _parse_optional_text(row.get("description")),
+            "description": row.get("description") or None,
         },
     }
 

@@ -26,7 +26,6 @@ from app.modules.places.alias_enricher import LLMPlaceAliasEnricher
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
-from app.modules.plans.discovery.service import DestinationDiscoveryService
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
@@ -42,15 +41,15 @@ from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
-from app.modules.plans.finder.area_survey import StatisticsAreaProfileProvider
 from app.modules.plans.finder.finder_service import FinderService
 from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
-from app.modules.plans.planner.tourism_zone_research import (
-    RepositoryTourismZoneResearchTool,
+from app.modules.plans.planner.research_tools_orchestrator import (
+    ResearchToolsOrchestrator,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.checks.overall_checker import OverallChecker
@@ -90,6 +89,7 @@ def get_plan_service(
     )
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
+    research_tools = ResearchToolsOrchestrator(PlaceRepositoryAdapter(db))
     transcript_worker = (
         HttpYouTubeTranscriptWorker(
             base_url=settings.youtube_transcript_worker_url,
@@ -119,18 +119,11 @@ def get_plan_service(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
-        tourism_zone_tool=RepositoryTourismZoneResearchTool(
-            place_repository,
-        ),
+        research_tools=research_tools,
     )
-    finder_place_catalog = RepositoryFinderPlaceTool(place_repository)
     finder = FinderService(
-        finder_place_catalog,
+        RepositoryFinderPlaceTool(place_repository),
         route_optimizer=_get_route_optimizer(),
-        area_profile_provider=StatisticsAreaProfileProvider(
-            finder_place_catalog,
-            statistics,
-        ),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -162,12 +155,6 @@ def get_plan_service(
         ),
         planning_runs=planning_runs,
     )
-
-
-def get_destination_discovery_service(
-    db: Annotated[Session, Depends(get_db)],
-) -> DestinationDiscoveryService:
-    return DestinationDiscoveryService(SqlAlchemyPlaceRepository(db))
 
 
 def _get_place_resolver(

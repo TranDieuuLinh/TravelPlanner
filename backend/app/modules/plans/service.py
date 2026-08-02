@@ -960,8 +960,10 @@ def _url_result_coverage_days(
         for detail in details
         if detail.source_day is not None
     ]
+    if source_days and len(source_days) == len(details):
+        return max(source_days)
     return max(
-        math.ceil(len(details) / 2),
+        math.ceil(len(details) / 3),
         max(source_days, default=0),
     )
 
@@ -1006,12 +1008,19 @@ def _candidate_coverage_days(
     ]
     if not source_candidates:
         return 0
+    capacity = {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
     source_days = [
         candidate.source_day
         for candidate in source_candidates
         if candidate.source_day is not None
     ]
-    inferred = math.ceil(len(source_candidates) / 2)
+    if source_days and len(source_days) == len(source_candidates):
+        return max(source_days)
+    inferred = math.ceil(len(source_candidates) / capacity)
     return max([inferred, *source_days])
 
 
@@ -1032,7 +1041,11 @@ def _source_days_need_finder(
             for source in candidate.sources
         )
     ]
-    capacity = 2
+    capacity = {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
     explicit_counts = {day: 0 for day in range(1, days + 1)}
     unassigned_count = 0
     for candidate in source_candidates:
@@ -1204,7 +1217,7 @@ def _required_days_for_selected_places(
     *,
     pace: str,
 ) -> int:
-    capacity = 2
+    capacity = _selected_place_capacity(pace)
     occupancy: dict[int, int] = {}
     required_days = 1
     ordered_places = sorted(
@@ -1225,7 +1238,11 @@ def _required_days_for_selected_places(
 
 
 def _selected_place_capacity(pace: str) -> int:
-    return 2
+    return {
+        "relaxed": 2,
+        "balanced": 3,
+        "packed": 5,
+    }.get(pace, 3)
 
 
 def _retryable_url_unscheduled_places(

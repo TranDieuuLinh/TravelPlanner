@@ -9,15 +9,9 @@ from app.modules.auth.dependencies import get_optional_current_user
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.dependencies import (
     get_current_location_route_service,
-    get_destination_discovery_service,
     get_plan_mutation_service,
     get_plan_service,
 )
-from app.modules.plans.discovery.schema import (
-    DestinationDiscoveryRequest,
-    DestinationDiscoveryResponse,
-)
-from app.modules.plans.discovery.service import DestinationDiscoveryService
 from app.modules.plans.domain.entities import PlanTransportLeg
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
@@ -60,20 +54,6 @@ router = APIRouter(prefix="/plans", tags=["plans"])
 @router.get("/feature-map", response_model=list[FeatureMapItem])
 def feature_map(service: Annotated[PlanService, Depends(get_plan_service)]) -> list[FeatureMapItem]:
     return service.feature_map()
-
-
-@router.post(
-    "/destinations/discover",
-    response_model=DestinationDiscoveryResponse,
-)
-def discover_destinations(
-    payload: DestinationDiscoveryRequest,
-    service: Annotated[
-        DestinationDiscoveryService,
-        Depends(get_destination_discovery_service),
-    ],
-) -> DestinationDiscoveryResponse:
-    return service.discover(payload)
 
 
 

@@ -31,15 +31,15 @@
 - UI bản đồ dễ tiếp cận và ràng buộc offline;
 - ảnh hưởng đến quyền riêng tư và vị trí lưu dữ liệu.
 
-Valhalla tự vận hành được chọn cho route từng leg của Finder. Finder gọi
-`pedestrian` và `auto`. Ngưỡng đi bộ 1.500 m
+Valhalla tự vận hành được chọn cho route từng leg của Finder. Finder gọi cả
+`pedestrian` và `auto` cho mỗi mode không bị user loại trừ. Ngưỡng đi bộ 1.500 m
 quyết định mode road được đề xuất, còn route road kia vẫn nằm trong
 `PlanTransportLeg.alternatives` để itinerary hiển thị đủ lựa chọn khả thi.
 Summary distance/duration cùng polyline6 được chuẩn hóa vào
 `PlanTransportLeg`; lỗi provider fallback theo từng leg. Kết quả không được mô
 tả là traffic live nếu deployment chưa nạp dữ liệu traffic.
 
-OpenTripPlanner adapter dùng GTFS GraphQL API tại `/otp/gtfs/v1`, gửi ngày/giờ khởi
+OpenTripPlanner dùng GTFS GraphQL API tại `/otp/gtfs/v1`, gửi ngày/giờ khởi
 hành và yêu cầu WALK + TRANSIT. Trip có `startDate` dùng đúng ngày của plan;
 trip chưa có ngày dùng ngày hiện tại cùng giờ của leg làm preview lịch chạy.
 Ngày/giờ route được chuẩn hóa thống nhất về `Asia/Ho_Chi_Minh`; timestamp UTC từ
@@ -52,16 +52,13 @@ Luồng chỉ đường cũng không tạo public-transit fallback từ khoảng
 không có route transit xác minh thì không hiển thị lựa chọn này và không vẽ
 đường nối thẳng hai điểm. Ngoại lệ chỉ dành cho development: route OTP có
 geometry thật và `scheduleStatus=development_shifted_2018` được hiển thị với
-cảnh báo lịch cũ đã dịch ngày, nhưng vẫn giữ `verified=false`. Tuy nhiên runtime
-hiện tạm tắt transit: Planner/Finder và chỉ đường từ vị trí hiện tại không gọi
-OTP, không trả bus hoặc public-transit alternative. Adapter được giữ để bật lại
-sau khi xử lý latency.
+cảnh báo lịch cũ đã dịch ngày, nhưng vẫn giữ `verified=false`.
 
 UI vẫn dùng Leaflet/OpenStreetMap làm bản đồ nền. Chỉ đường tạm thời từ vị trí
 hiện tại giữ nguyên thứ tự stop của itinerary đã lưu, không gọi
-`sources_to_targets` và không giải open path. Tạm thời chỉ Valhalla Routing được
-gọi cho từng leg cố định để so sánh đi bộ và ô tô; không tạo chuỗi bus đa phương
-thức.
+`sources_to_targets` và không giải open path. Valhalla Routing và
+OpenTripPlanner vẫn được gọi cho từng leg cố định để trả geometry, thời lượng và
+chuyên chở bằng các mode khả thi, đồng thời trả chuỗi segment đa phương thức.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.
