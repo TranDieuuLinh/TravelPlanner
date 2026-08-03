@@ -123,7 +123,30 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
   message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
-  hiện tại.
+  hiện tại qua Conversation Supervisor. Mọi message đều tạo một
+  `TripChatTurn` ở trạng thái `queued` rồi chạy `execute` ngay; trả
+  `202 Accepted` với payload `TripChatTurnRead`. Client poll
+  `GET /api/trip-chats/{chatId}/turns/{turnId}` cho tới khi status thuộc
+  `{completed, awaiting_confirmation, failed, cancelled}`. Khi status là
+  `awaiting_confirmation`, client phải gọi `POST .../turns/{turnId}/confirm`
+  hoặc `POST .../turns/{turnId}/cancel`. `expectedRevision` được kiểm
+  ở cả supervisor và mutation; nếu lệch sẽ trả `409 VERSION_CONFLICT`.
+- `POST /api/trip-chats/{chatId}/turns`: tạo turn `queued` không execute.
+  Dùng khi client muốn render placeholder trước khi gọi `/execute` riêng.
+- `GET /api/trip-chats/{chatId}/turns/{turnId}`: đọc trạng thái hiện tại
+  của một turn (queue, classifying, executing, awaiting_confirmation,
+  completed, failed, cancelled). Endpoint này cũng tự động quét các
+  turn `processing` quá thời gian (mặc định 300s) đánh dấu `failed`
+  với `errorCode=TURN_STALE` để tránh treo supervisor.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/execute`: chạy
+  supervisor cho turn đang `queued`. Idempotent: gọi lại với turn đã
+  terminal sẽ trả về turn hiện tại mà không chạy lại LLM.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/confirm`: áp dụng
+  operation đang chờ xác nhận. Chỉ chấp nhận khi status là
+  `awaiting_confirmation`; nếu `chat.revision != turn.baseRevision` trả
+  `409 VERSION_CONFLICT`.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/cancel`: hủy turn đang
+  xử lý hoặc chờ xác nhận; turn đã `completed` trả `409 TURN_ALREADY_COMPLETED`.
 - `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job
   FIFO và trả `202 Accepted` ngay. Field
   form `forceRefresh=true` tạo job phân tích lại, bỏ qua extraction cache.

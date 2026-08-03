@@ -77,6 +77,38 @@ def get_plan_mutation_service(
     )
 
 
+def get_conversation_turn_service(
+    db: Annotated[Session, Depends(get_db)],
+) -> "ConversationTurnService":
+    """Build a ConversationTurnService scoped to the current request's DB
+    session. The supervisor uses the same LLM client as the rest of the
+    planner so quota, rate limiting, and stub fallbacks stay unified."""
+    # Late imports avoid a circular dependency: conversation_service imports
+    # from app.modules.plans.router, which itself depends on this module.
+    from app.modules.plans.chat_repository import TripChatRepository
+    from app.modules.plans.chat_service import TripChatService
+    from app.modules.plans.conversation_service import ConversationTurnService
+    from app.modules.plans.conversation_supervisor import (
+        ConstrainedConversationSupervisor,
+    )
+
+    repository = TripChatRepository(db)
+    plan_service = get_plan_service(db)
+    trip_chat_service = TripChatService(
+        repository,
+        plan_service,
+        get_plan_mutation_service(db),
+        SqlAlchemyPlaceRepository(db),
+    )
+    supervisor = ConstrainedConversationSupervisor(get_llm_client())
+    return ConversationTurnService(
+        repository=repository,
+        trip_chat_service=trip_chat_service,
+        mutation_service=get_plan_mutation_service(db),
+        supervisor=supervisor,
+    )
+
+
 
 def get_plan_service(
     db: Annotated[Session, Depends(get_db)],

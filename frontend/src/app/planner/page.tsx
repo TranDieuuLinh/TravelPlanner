@@ -3,6 +3,7 @@
 import {
   Fragment,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -16,7 +17,6 @@ import { PenguinMascot } from "@/components/PenguinMascot";
 import { APIError } from "@/lib/api";
 import {
   addTripChatItem,
-  amendTripChat,
   calculateDayDirections,
   createTripChat,
   createPlanFromExplorer,
@@ -31,6 +31,8 @@ import {
   reorderTripChatItem,
   searchPlaces,
   updateTripChatItem,
+  isSupervisorEnabled,
+  setSupervisorEnabled,
   type PlaceSuggestion,
   type ExplorerContext,
   type ExploreResponse,
@@ -40,9 +42,11 @@ import {
   type TripChat,
   type TripChatSummary,
   type UnscheduledPlace,
+  type TripChatTurn,
   type UrlImportJob,
   type TravelPlan
 } from "@/lib/plans";
+import { useConversationTurn } from "@/lib/useConversationTurn";
 import {
   enqueueGuestImageJobs,
   enqueueGuestUrlJobs,
@@ -247,6 +251,88 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
+  const [pendingTurn, setPendingTurn] = useState<TripChatTurn | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [supervisorToggle, setSupervisorToggle] = useState<boolean>(
+    () => isSupervisorEnabled()
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sync = () => setSupervisorToggle(isSupervisorEnabled());
+    window.addEventListener("vsf:supervisor-toggle", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("vsf:supervisor-toggle", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
+  const toggleSupervisor = useCallback(() => {
+    const next = !isSupervisorEnabled();
+    setSupervisorEnabled(next);
+    setSupervisorToggle(next);
+  }, []);
+
+  const handleTurnTerminal = useCallback(
+    async (result: { turn: TripChatTurn; outcome: string }) => {
+      if (result.outcome === "awaiting_confirmation") {
+        setPendingTurn(result.turn);
+        return;
+      }
+      // completed / failed / cancelled: refetch the chat so plan state stays in sync.
+      try {
+        const fresh = await getTripChat(activeChatId ?? result.turn.chatId);
+        applyTripChat(fresh);
+        setTripChats(await listTripChats());
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setError(message);
+      } finally {
+        setWorkflowStage("ready");
+        setSelectedMapPlaceKey(null);
+        setImages([]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [activeChatId]
+  );
+
+  const conversationTurn = useConversationTurn(handleTurnTerminal);
+
+  const confirmPendingTurn = useCallback(async () => {
+    if (!pendingTurn) return;
+    setConfirmBusy(true);
+    try {
+      await conversationTurn.confirm({
+        chatId: pendingTurn.chatId,
+        turnId: pendingTurn.id
+      });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setError(message);
+    } finally {
+      setConfirmBusy(false);
+      setPendingTurn(null);
+    }
+  }, [pendingTurn, conversationTurn]);
+
+  const cancelPendingTurn = useCallback(async () => {
+    if (!pendingTurn) return;
+    setConfirmBusy(true);
+    try {
+      await conversationTurn.cancel({
+        chatId: pendingTurn.chatId,
+        turnId: pendingTurn.id
+      });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setError(message);
+    } finally {
+      setConfirmBusy(false);
+      setPendingTurn(null);
+    }
+  }, [pendingTurn, conversationTurn]);
 
   function openItemEditor(
     day: number,
@@ -1281,19 +1367,31 @@ function Planner() {
           chatId = created.id;
           expectedRevision = created.revision;
           setActiveChatId(chatId);
+          setChatRevision(created.revision);
         }
-        let updated: TripChat | null = null;
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
-            updated = await amendTripChat({
+            const clientTurnId =
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            await conversationTurn.submitTurn({
               chatId,
               content: text,
               expectedRevision,
-              images
+              clientTurnId,
+              attachmentNames: images.map((image) => image.name)
             });
-            break;
+            setSelectedMapPlaceKey(null);
+            setImages([]);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+            return;
           } catch (caught) {
-            if (!(caught instanceof APIError) || caught.code !== "VERSION_CONFLICT" || attempt === 2) {
+            if (
+              !(caught instanceof APIError) ||
+              caught.code !== "VERSION_CONFLICT" ||
+              attempt === 2
+            ) {
               throw caught;
             }
             const latest = await getTripChat(chatId);
@@ -1301,14 +1399,7 @@ function Planner() {
             applyTripChat(latest);
           }
         }
-        if (!updated) throw new Error("Không thể cập nhật chat.");
-        applyTripChat(updated);
-        setWorkflowStage("ready");
-        setSelectedMapPlaceKey(null);
-        setImages([]);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setTripChats(await listTripChats());
-        return;
+        throw new Error("Không thể cập nhật chat.");
       }
       const nextExploreResult = await exploreFullIntake({
         rawRequest: text,
@@ -1732,6 +1823,27 @@ function Planner() {
                 </small>
               ) : null}
             </div>
+            <button
+              type="button"
+              data-testid="supervisor-toggle"
+              data-supervisor-enabled={supervisorToggle ? "true" : "false"}
+              className={`supervisorToggle ${supervisorToggle ? "on" : "off"}`}
+              aria-pressed={supervisorToggle}
+              aria-label={
+                supervisorToggle
+                  ? "Tắt supervisor (roll back về luồng cũ)"
+                  : "Bật supervisor (luồng mới có confirm)"
+              }
+              onClick={toggleSupervisor}
+              title={
+                supervisorToggle
+                  ? "Supervisor đang bật — click để tắt khi cần rollback"
+                  : "Supervisor đang tắt — click để bật lại"
+              }
+            >
+              <span className="supervisorToggleDot" aria-hidden="true" />
+              Supervisor {supervisorToggle ? "ON" : "OFF"}
+            </button>
           </header>
           {displayedPlan && displayedExploreResult ? (
             <div className="exploreResult">
@@ -2732,6 +2844,48 @@ function Planner() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+      {pendingTurn ? (
+        <div
+          className="confirm-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-turn-title"
+          data-testid="confirm-turn-modal"
+        >
+          <div className="confirm-modal">
+            <h2 id="confirm-turn-title">Xác nhận thay đổi lịch trình</h2>
+            <p className="confirm-modal-hint">
+              Supervisor đề xuất thay đổi có phạm vi lớn. Xác nhận để áp dụng hoặc hủy để giữ lịch trình hiện tại.
+            </p>
+            <ul className="confirm-modal-blocks">
+              {pendingTurn.assistantBlocks.map((block, index) => {
+                const summary = typeof block?.summary === "string" ? block.summary : null;
+                const text = typeof block?.text === "string" ? block.text : null;
+                const content = summary ?? text ?? JSON.stringify(block);
+                return <li key={`${pendingTurn.id}-${index}`}>{content}</li>;
+              })}
+            </ul>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                onClick={cancelPendingTurn}
+                disabled={confirmBusy}
+                className="ghost"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmPendingTurn}
+                disabled={confirmBusy}
+                className="submit"
+              >
+                {confirmBusy ? "Đang áp dụng..." : "Xác nhận"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </main>

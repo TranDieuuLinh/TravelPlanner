@@ -419,6 +419,92 @@ export type UrlImportJob = {
 
 export type UrlImportJobBatch = { jobs: UrlImportJob[] };
 
+// --- Conversation supervisor (turns) --------------------------------------
+
+export type TurnStatus =
+  | "queued"
+  | "classifying"
+  | "executing"
+  | "awaiting_confirmation"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type TripChatTurn = {
+  id: string;
+  chatId: string;
+  clientTurnId: string;
+  status: TurnStatus;
+  content: string;
+  attachmentNames: string[];
+  baseRevision: number;
+  intent: string | null;
+  confidence: number | null;
+  requiresConfirmation: boolean;
+  proposedOperations: Array<Record<string, unknown>>;
+  assistantBlocks: Array<Record<string, unknown>>;
+  resultSummary: Record<string, unknown>;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  planRevision: number | null;
+};
+
+export const TERMINAL_TURN_STATUSES: ReadonlySet<TurnStatus> = new Set([
+  "completed",
+  "awaiting_confirmation",
+  "failed",
+  "cancelled",
+]);
+
+const SUPERVISOR_STORAGE_KEY = "vsf.supervisor.enabled";
+const DEFAULT_SUPERVISOR_ENABLED = true;
+
+/**
+ * Build-time default. Override at runtime via
+ * ``NEXT_PUBLIC_CONVERSATION_SUPERVISOR_DISABLED`` (string ``"1"`` / ``"true"``
+ * force-off) or by writing the boolean to ``localStorage`` under
+ * ``vsf.supervisor.enabled``. The override always wins so operators can
+ * kill the feature without rebuilding.
+ */
+function readRuntimeSupervisorFlag(): boolean {
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.localStorage.getItem(SUPERVISOR_STORAGE_KEY);
+      if (stored !== null) return stored === "true" || stored === "1";
+    } catch {
+      // ignore localStorage failures (private mode, SSR)
+    }
+  }
+  const envFlag = process.env.NEXT_PUBLIC_CONVERSATION_SUPERVISOR_DISABLED;
+  if (envFlag && ["1", "true", "yes"].includes(envFlag.toLowerCase())) {
+    return false;
+  }
+  return DEFAULT_SUPERVISOR_ENABLED;
+}
+
+export function isSupervisorEnabled(): boolean {
+  return readRuntimeSupervisorFlag();
+}
+
+/**
+ * Backwards-compatible constant. Reads the runtime flag once at module load;
+ * use :func:`isSupervisorEnabled` in components that need to react to live
+ * toggles.
+ */
+export const SUPERVISOR_ENABLED = readRuntimeSupervisorFlag();
+
+export function setSupervisorEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SUPERVISOR_STORAGE_KEY, enabled ? "true" : "false");
+    window.dispatchEvent(new Event("vsf:supervisor-toggle"));
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export async function createPlan(input: { destination: string; days: number; interests: string[] }): Promise<TravelPlan> {
   return apiFetch<TravelPlan>("/plans/main", {
     method: "POST",
@@ -821,4 +907,63 @@ export async function reorderTripChatItem(input: {
     method: "PUT",
     body: form
   });
+}
+
+// --- Conversation supervisor endpoints -------------------------------------
+
+export async function createTripChatTurn(input: {
+  chatId: string;
+  content: string;
+  expectedRevision: number;
+  clientTurnId?: string;
+  attachmentNames?: string[];
+}): Promise<TripChatTurn> {
+  return apiFetch<TripChatTurn>(`/trip-chats/${input.chatId}/turns`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: input.content,
+      expectedRevision: input.expectedRevision,
+      clientTurnId: input.clientTurnId ?? null,
+      attachmentNames: input.attachmentNames ?? []
+    })
+  });
+}
+
+export async function getTripChatTurn(input: {
+  chatId: string;
+  turnId: string;
+}): Promise<TripChatTurn> {
+  return apiFetch<TripChatTurn>(
+    `/trip-chats/${input.chatId}/turns/${input.turnId}`
+  );
+}
+
+export async function executeTripChatTurn(input: {
+  chatId: string;
+  turnId: string;
+}): Promise<TripChatTurn> {
+  return apiFetch<TripChatTurn>(
+    `/trip-chats/${input.chatId}/turns/${input.turnId}/execute`,
+    { method: "POST" }
+  );
+}
+
+export async function confirmTripChatTurn(input: {
+  chatId: string;
+  turnId: string;
+}): Promise<TripChatTurn> {
+  return apiFetch<TripChatTurn>(
+    `/trip-chats/${input.chatId}/turns/${input.turnId}/confirm`,
+    { method: "POST" }
+  );
+}
+
+export async function cancelTripChatTurn(input: {
+  chatId: string;
+  turnId: string;
+}): Promise<TripChatTurn> {
+  return apiFetch<TripChatTurn>(
+    `/trip-chats/${input.chatId}/turns/${input.turnId}/cancel`,
+    { method: "POST" }
+  );
 }

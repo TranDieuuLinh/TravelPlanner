@@ -6654,3 +6654,66 @@ svg {
     padding: 16px;
   }
 }
+
+.confirm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 35, 35, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+  padding: 24px;
+}
+
+.confirm-modal {
+  background: var(--paper);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+
+.confirm-modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.confirm-modal-hint {
+  color: var(--muted);
+  margin: 0;
+  font-size: 14px;
+}
+
+.confirm-modal-blocks {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.confirm-modal-actions .ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
+.confirm-modal-actions .submit {
+  background: var(--brand);
+  color: var(--paper);
+  border: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+}

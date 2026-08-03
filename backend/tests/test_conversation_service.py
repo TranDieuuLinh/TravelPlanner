@@ -468,3 +468,99 @@ class TestCancel:
         assert repo.cancel_calls[0][1]["assistant_blocks"] == [
             {"type": "text", "text": "Đã hủy thao tác; lịch trình không thay đổi."}
         ]
+
+
+# ---------------------------------------------------------------------------
+# confirm() and stale recovery
+# ---------------------------------------------------------------------------
+
+
+class _ChatRepo:
+    def __init__(self, chat):
+        self.chat = chat
+
+    def get(self, chat_id, user_id):
+        return self.chat
+
+
+class TestConfirm:
+    def _make_chat(self):
+        return SimpleNamespace(
+            id="chat-1",
+            user_id=1,
+            revision=3,
+            current_plan={
+                "id": "plan-1",
+                "kind": "main",
+                "status": "draft",
+                "title": "Trip",
+                "destination": "Đà Lạt",
+                "intent": {
+                    "destination": "Đà Lạt",
+                    "days": 2,
+                    "budget": "medium",
+                    "travelStyle": "local",
+                    "pace": "balanced",
+                },
+                "macroPlan": {"title": "Trip", "destination": "Đà Lạt"},
+                "days": [
+                    {"day": 1, "theme": "Day 1", "items": [], "transportLegs": []},
+                    {"day": 2, "theme": "Day 2", "items": [], "transportLegs": []},
+                ],
+            },
+        )
+
+    def test_confirm_only_allows_awaiting_confirmation(self):
+        repo = _FakeRepo()
+        repo.get_turn = lambda *a, **k: SimpleNamespace(
+            id="t1", status="completed", base_revision=3
+        )
+        service = _make_service(repo)
+        with pytest.raises(AppError) as exc:
+            import asyncio
+            asyncio.run(service.confirm("chat-1", SimpleNamespace(id=1), "t1"))
+        assert exc.value.code == "TURN_NOT_PENDING"
+        assert exc.value.status_code == 409
+
+    def test_confirm_rejects_stale_revision(self):
+        chat = self._make_chat()
+        repo = _ChatRepo(chat)
+        repo.get_turn = lambda *a, **k: SimpleNamespace(
+            id="t1",
+            status="awaiting_confirmation",
+            base_revision=2,
+            intent="add_place",
+            confidence=0.9,
+            proposed_operations=[{"type": "add_place", "day": 1, "name": "Phở"}],
+            content="thêm phở",
+        )
+        service = _make_service(repo)
+        with pytest.raises(AppError) as exc:
+            import asyncio
+            asyncio.run(service.confirm("chat-1", SimpleNamespace(id=1), "t1"))
+        assert exc.value.code == "VERSION_CONFLICT"
+
+
+class TestStaleRecovery:
+    def test_recover_invokes_repo_when_available(self):
+        seen: dict[str, Any] = {}
+
+        class _Repo(_FakeRepo):
+            def expire_stale_turns(self, chat_id, ttl):
+                seen["chat_id"] = chat_id
+                seen["ttl"] = ttl
+                return ["t-old"]
+
+        repo = _Repo()
+        repo.get_turn = lambda *a, **k: SimpleNamespace(id="t1")  # type: ignore[assignment]
+        service = _make_service(repo)
+        service.get_turn("chat-1", SimpleNamespace(id=1), "t1")
+        assert seen["chat_id"] == "chat-1"
+        assert seen["ttl"] == settings.conversation_turn_stale_after_seconds
+
+    def test_recover_swallows_repo_missing(self):
+        repo = _FakeRepo()
+        repo.get_turn = lambda *a, **k: SimpleNamespace(id="t1")  # type: ignore[assignment]
+        # No expire_stale_turns attribute -> no-op, must not raise.
+        service = _make_service(repo)
+        service.get_turn("chat-1", SimpleNamespace(id=1), "t1")  # should not raise

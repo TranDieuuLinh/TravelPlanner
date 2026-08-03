@@ -396,9 +396,14 @@ class ConversationTurnService:
             or _infer_destination_from_urls(urls)
             or "unspecified"
         )
-        result = await self.trip_chat_service.amend(
-            chat.id,
-            type("ConversationUser", (), {"id": chat.user_id, "travel_preferences": {}})(),
+        from app.modules.users.model import User as _User
+
+        result = await self.trip_chat_service.generate_plan_revision(
+            chat_id=chat.id,
+            user=_User(
+                id=chat.user_id,
+                travel_preferences={},
+            ),
             content=turn.content,
             expected_revision=turn.base_revision,
             initial_destination=initial_destination,
