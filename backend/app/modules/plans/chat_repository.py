@@ -70,7 +70,10 @@ class TripChatRepository:
         revision: int,
     ) -> TripChat:
         now = datetime.now(UTC)
-        next_sequence = (revision * 2) - 1
+        next_sequence = max(
+            (msg.sequence for msg in chat.messages),
+            default=0,
+        ) + 1
         result = self.db.execute(
             update(TripChat)
             .where(
@@ -145,7 +148,10 @@ class TripChatRepository:
         planner_timing_payload: dict | None = None,
     ) -> TripChat:
         now = datetime.now(UTC)
-        next_sequence = (revision * 2) - 1
+        next_sequence = max(
+            (msg.sequence for msg in chat.messages),
+            default=0,
+        ) + 1
         updated_values = {
             "current_plan": plan_payload,
             "revision": revision,
@@ -347,17 +353,20 @@ class TripChatRepository:
         *,
         assistant_content: str,
         assistant_blocks: list[dict],
+        include_request: bool = True,
     ) -> None:
         """Append a plain assistant message bound to this turn (no plan
         mutation, no revision bump)."""
         now = datetime.now(UTC)
-        # Sequence stays inside the plan-revision block so chat history is
-        # still strictly ordered even when turns exist.
+        # Keep the request and response together in the persisted history.
+        # The frontend refetches the chat after a turn completes; omitting the
+        # request here makes its optimistic user bubble disappear and also
+        # deprives the next supervisor decision of the conversation context.
         next_sequence = max(
             (msg.sequence for msg in chat.messages),
             default=0,
         ) + 1
-        self.db.add(
+        messages = [
             TripChatMessage(
                 id=str(uuid4()),
                 chat_id=chat.id,
@@ -370,8 +379,27 @@ class TripChatRepository:
                 message_kind="turn_response",
                 content_blocks=list(assistant_blocks),
                 created_at=now,
+            ),
+        ]
+        if include_request:
+            messages.insert(
+                0,
+                TripChatMessage(
+                    id=str(uuid4()),
+                    chat_id=chat.id,
+                    role="user",
+                    content=turn.content,
+                    sequence=next_sequence,
+                    attachment_names=list(turn.attachment_names or []),
+                    plan_revision=chat.revision,
+                    turn_id=turn.id,
+                    message_kind="turn_request",
+                    content_blocks=[],
+                    created_at=now,
+                ),
             )
-        )
+            messages[1].sequence = next_sequence + 1
+        self.db.add_all(messages)
         self.db.commit()
 
     def save_conversation_mutation(
@@ -388,7 +416,10 @@ class TripChatRepository:
         """Persist a plan mutation produced by a turn. Mirrors the structure
         of save_plan_mutation but stamps the authoring turn for audit."""
         now = datetime.now(UTC)
-        next_sequence = (revision * 2) - 1
+        next_sequence = max(
+            (msg.sequence for msg in chat.messages),
+            default=0,
+        ) + 1
         result = self.db.execute(
             update(TripChat)
             .where(

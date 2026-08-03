@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: vsf
     ports:
       - "5432:5432"
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,6 +41,7 @@ services:
       GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
     ports:
       - "8000:8000"
+    restart: unless-stopped
     volumes:
       - ./backend/app:/app/app
       - ./backend/var:/app/var
@@ -76,7 +78,6 @@ services:
     restart: unless-stopped
 
   valhalla:
-    profiles: ["routing"]
     image: ghcr.io/valhalla/valhalla-scripted:latest
     environment:
       tile_urls: https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
@@ -88,17 +89,23 @@ services:
       - "8002:8002"
     volumes:
       - ./routing-data/valhalla:/custom_files
+    restart: unless-stopped
 
   opentripplanner:
-    profiles: ["routing"]
     image: docker.io/opentripplanner/opentripplanner:2.9.0
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -e
         if [ ! -s /var/opentripplanner/graph.obj ]; then
-          echo "OTP graph.obj is missing; building it from the mounted OSM and GTFS inputs..."
-          /docker-entrypoint.sh --build --save
+          if find /var/opentripplanner -maxdepth 1 -type f -name '*.osm.pbf' -print -quit | grep -q . \
+            && find /var/opentripplanner -maxdepth 1 -type f -iname '*gtfs*.zip' -print -quit | grep -q .; then
+            echo "OTP graph.obj is missing; building it from the mounted OSM and GTFS inputs..."
+            /docker-entrypoint.sh --build --save
+          else
+            echo "OTP data is not prepared; keeping the container alive. See routing-data/README.md."
+            exec tail -f /dev/null
+          fi
         fi
         exec /docker-entrypoint.sh --load --serve
     environment:
@@ -107,6 +114,7 @@ services:
       - "8080:8080"
     volumes:
       - ./routing-data/opentripplanner:/var/opentripplanner
+    restart: unless-stopped
 
 volumes:
   postgres_data:

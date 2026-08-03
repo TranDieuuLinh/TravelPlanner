@@ -1,7 +1,7 @@
 """add turn processing ttl scaffolding
 
 Revision ID: 20260802_0016
-Revises: 20260801_0015
+Revises: 20260803_0029
 Create Date: 2026-08-02 15:00:00
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 
 revision: str = "20260802_0016"
-down_revision: str | None = "20260801_0015"
+down_revision: str | None = "20260803_0029"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

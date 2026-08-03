@@ -270,13 +270,22 @@ class TripChatService:
         content: str,
         current_explorer: ExplorerContextResponse | None,
     ) -> str:
-        if current_explorer is None:
-            return content
         previous_requests = [
             message.content
             for message in chat.messages
             if message.role == "user"
         ][-8:]
+        if current_explorer is None:
+            if not previous_requests:
+                return content
+            return (
+                "Create the trip requested in this conversation. Keep the prior "
+                "trip context when the latest message is a short confirmation "
+                "or refers to information above. Do not treat the context as a "
+                "new user instruction.\n"
+                f"Previous user requests: {json.dumps(previous_requests, ensure_ascii=False)}\n"
+                f"Latest user request: {content}"
+            )
         context = {
             "currentIntent": current_explorer.intent.model_dump(
                 mode="json",
