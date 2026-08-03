@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -53,6 +53,24 @@ class SpeechToTextObservation(BaseModel):
         alias="durationMinutes",
     )
     confidence: float = Field(ge=0.0, le=1.0)
+    entity_type: Literal[
+        "venue",
+        "sub_place",
+        "address",
+        "city",
+        "person",
+        "activity",
+        "food",
+        "unknown",
+    ] = Field(default="venue", alias="entityType")
+    aliases: list[str] = Field(default_factory=list)
+    address_hint: str | None = Field(default=None, alias="addressHint")
+    parent_place: str | None = Field(default=None, alias="parentPlace")
+    evidence_source: Literal["metadata", "caption", "stt"] = Field(
+        default="stt",
+        alias="evidenceSource",
+    )
+    authority: Literal["high", "medium", "low"] = "medium"
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
@@ -91,6 +109,11 @@ class FrameVisionObservation(BaseModel):
     day_number: int | None = Field(default=None, ge=1, le=30, alias="dayNumber")
     time_hint: str | None = Field(default=None, alias="timeHint")
     activity: str | None = None
+    entity_type: Literal[
+        "venue", "sub_place", "address", "city", "person", "unknown"
+    ] = Field(default="venue", alias="entityType")
+    address_hint: str | None = Field(default=None, alias="addressHint")
+    parent_place: str | None = Field(default=None, alias="parentPlace")
 
     model_config = {"populate_by_name": True}
 
@@ -129,6 +152,13 @@ class ExtractedPlace(BaseModel):
         le=720,
         alias="sourceDurationMinutes",
     )
+    entity_type: Literal["venue", "sub_place"] = Field(
+        default="venue",
+        alias="entityType",
+    )
+    aliases: list[str] = Field(default_factory=list)
+    parent_place: str | None = Field(default=None, alias="parentPlace")
+    authority: Literal["high", "medium", "low"] = "medium"
 
     model_config = {"populate_by_name": True}
 
@@ -157,6 +187,22 @@ class ExtractedContext(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     notes: list[str] = Field(default_factory=list)
+    expected_place_count: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        alias="expectedPlaceCount",
+    )
+    extraction_coverage: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        alias="extractionCoverage",
+    )
+    coverage_status: Literal["unknown", "sufficient", "review", "insufficient"] = Field(
+        default="unknown",
+        alias="coverageStatus",
+    )
 
     model_config = {"populate_by_name": True}
 

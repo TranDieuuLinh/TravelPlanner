@@ -14,7 +14,9 @@ from app.modules.plans.dto.agent_contracts import (
     TripPlanningSpec,
 )
 from app.modules.plans.explorer.explorer_service import ExplorerService
+from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.place_selector.activity_fallback import RouteAwareActivityFallback
 from app.modules.plans.planner.planner_service import PlannerService
 from app.modules.plans.planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
@@ -61,6 +63,7 @@ class MainPlanWorkflow:
             preference_profile=LongTermPreferenceProfile(),
             allow_finder_suggestions=True,
             source="direct",
+            candidate_reviews=[],
         )
 
     async def run_from_explorer(
@@ -113,6 +116,7 @@ class MainPlanWorkflow:
             allow_finder_suggestions=payload.allow_finder_suggestions,
             timing_trace=trace,
             source="explorer",
+            candidate_reviews=payload.candidate_reviews,
             user_id=(
                 int(payload.user_id)
                 if payload.user_id and payload.user_id.isdigit()
@@ -153,6 +157,7 @@ class MainPlanWorkflow:
             preference_profile=LongTermPreferenceProfile(),
             allow_finder_suggestions=True,
             source="context",
+            candidate_reviews=[],
         )
 
     async def _run_planning(
@@ -167,6 +172,7 @@ class MainPlanWorkflow:
         preference_profile: LongTermPreferenceProfile,
         allow_finder_suggestions: bool,
         source: str,
+        candidate_reviews: list[PlaceCandidateReview],
         user_id: int | None = None,
         intake_id: str | None = None,
         timing_trace: PlanTimingTrace | None = None,
@@ -211,6 +217,7 @@ class MainPlanWorkflow:
                 allow_finder_suggestions=allow_finder_suggestions,
                 run_id=run_id,
                 timing_trace=timing_trace,
+                candidate_reviews=candidate_reviews,
             )
         except Exception as exc:
             if self.planning_runs is not None and run_id is not None:
@@ -259,6 +266,7 @@ class MainPlanWorkflow:
         allow_finder_suggestions: bool,
         run_id: str | None,
         timing_trace: PlanTimingTrace | None,
+        candidate_reviews: list[PlaceCandidateReview],
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
         planner_started = time.perf_counter()
@@ -351,9 +359,16 @@ class MainPlanWorkflow:
                 metadata={"trace": finder_output.trace},
             )
         assemble_started = time.perf_counter()
+        fallback_recommendations = RouteAwareActivityFallback(
+            self.finder.place_tool
+        ).recommend(
+            days=finder_output.final_days,
+            reviews=candidate_reviews,
+            region_key=region_key,
+        )
         unscheduled_places = self._merge_unscheduled_places(
             planner_output,
-            finder_output.unscheduled_places,
+            [*finder_output.unscheduled_places, *fallback_recommendations],
         )
         plan = Plan(
             id=str(uuid4()),

@@ -15,7 +15,13 @@ from app.modules.plans.chat_schema import (
 from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
-from app.modules.plans.plan_mutation_schema import AddItemRequest, ReorderItemsRequest, UpdateItemRequest
+from app.modules.plans.plan_mutation_schema import (
+    AddItemForm,
+    AddItemRequest,
+    ReorderItemsRequest,
+    UpdateItemForm,
+    UpdateItemRequest,
+)
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.router import (
     _extract_urls,
@@ -142,16 +148,18 @@ async def retry_trip_chat_candidate_resolutions(
 @router.post("/{chat_id}/plan/items", response_model=TripChatRead)
 async def add_trip_chat_item(
     chat_id: str,
-    payload: AddItemRequest,
-    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    payload: Annotated[AddItemForm, Form()],
     service: Annotated[TripChatService, Depends(get_trip_chat_service)],
     current_user: Annotated[User, Depends(require_csrf)],
 ) -> TripChatRead:
+    item_payload = AddItemRequest.model_validate(
+        payload.model_dump(exclude={"expected_revision"}, exclude_unset=True)
+    )
     return await service.add_item(
         chat_id,
         current_user,
-        expected_revision=expected_revision,
-        payload=payload,
+        expected_revision=payload.expected_revision,
+        payload=item_payload,
     )
 
 
@@ -160,18 +168,20 @@ async def update_trip_chat_item(
     chat_id: str,
     day: int,
     item_id: str,
-    payload: UpdateItemRequest,
-    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    payload: Annotated[UpdateItemForm, Form()],
     service: Annotated[TripChatService, Depends(get_trip_chat_service)],
     current_user: Annotated[User, Depends(require_csrf)],
 ) -> TripChatRead:
+    item_payload = UpdateItemRequest.model_validate(
+        payload.model_dump(exclude={"expected_revision"}, exclude_unset=True)
+    )
     return await service.update_item(
         chat_id,
         current_user,
-        expected_revision=expected_revision,
+        expected_revision=payload.expected_revision,
         day=day,
         item_id=item_id,
-        payload=payload,
+        payload=item_payload,
     )
 
 

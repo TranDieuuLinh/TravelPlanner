@@ -213,6 +213,9 @@ def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
 
     assert resolver.queries == [alias_query]
     assert result.status == "resolved"
+    assert result.verified_vietnamese_aliases == [
+        "Bảo tàng Dân tộc học Việt Nam"
+    ]
     assert result.provider == "google_maps_scraper"
     assert result.name == "Bảo tàng Dân tộc học Việt Nam"
     assert result.external_id == "ChIJ-test"
@@ -281,6 +284,39 @@ def test_google_maps_caps_legacy_alias_setting_at_two_queries() -> None:
     ]
     assert result.status == "unresolved"
     assert result.provider_attempts[0].alias_query_count == 2
+
+
+def test_google_maps_tries_address_only_after_activity_name_misses() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Egg coffee",
+        category="cafe",
+        addressHint="39 Nguyễn Hữu Huân",
+        searchRegion="Hà Nội",
+    )
+    resolver = FakeGoogleMapsScraperResolver(
+        {
+            "39 Nguyễn Hữu Huân, Hà Nội": [
+                {
+                    "title": "Cafe Giảng",
+                    "category": "Cafe",
+                    "address": "39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+                    "latitude": 21.0321,
+                    "longitude": 105.8549,
+                }
+            ]
+        }
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert resolver.queries == [
+        "Egg coffee, 39 Nguyễn Hữu Huân, Hà Nội",
+        "39 Nguyễn Hữu Huân, Hà Nội",
+    ]
+    assert result.status == "unresolved"
+    assert result.resolution_reason == "name_mismatch"
+    assert str(result.latitude) == "21.0321"
+    assert str(result.longitude) == "105.8549"
 
 
 def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
@@ -889,6 +925,100 @@ def test_database_resolver_uses_source_address_to_choose_branch() -> None:
     assert result.resolution_reason == "matched_source_location"
 
 
+def test_database_resolver_chooses_strong_top_k_match_over_repository_order() -> None:
+    def place(place_id: str, name: str) -> Any:
+        return SimpleNamespace(
+            id=place_id,
+            name=name,
+            place_type="museum",
+            address="Hà Nội",
+            city="Hà Nội",
+            country="Việt Nam",
+            country_code="VN",
+            primary_area=None,
+            latitude=Decimal("21.0300"),
+            longitude=Decimal("105.8500"),
+            data_confidence="high",
+            source_fetched_at=datetime.now(timezone.utc),
+            metadata_json={},
+            region_key="vn,ha-noi",
+            status="active",
+        )
+
+    candidate = UnifiedPlaceCandidate(
+        name="Vietnam Museum of Ethnology",
+        category="culture",
+        searchRegion="Hà Nội",
+    )
+    resolver = DatabasePlaceResolver(
+        FakePlaceRepository(
+            [
+                place("weak-one", "Vietnam Women's Museum"),
+                place("weak-two", "Vietnam National Museum of History"),
+                place("strong", "Vietnam Museum of Ethnology"),
+            ]
+        ),
+        top_k=2,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.external_id == "strong"
+    assert len(result.match_options) == 2
+    assert result.match_options[0].external_id == "strong"
+    assert result.match_options[0].rank == 1
+    assert result.match_options[0].match_source == "places_db"
+    assert result.match_options[0].score > result.match_options[1].score
+
+
+def test_fallback_chain_calls_google_when_all_database_scores_are_low() -> None:
+    database_place = SimpleNamespace(
+        id="unrelated-place",
+        name="Hanoi Botanical Garden",
+        place_type="museum",
+        address="Hà Nội",
+        city="Hà Nội",
+        country="Việt Nam",
+        country_code="VN",
+        primary_area=None,
+        latitude=Decimal("21.0450"),
+        longitude=Decimal("105.8350"),
+        data_confidence="high",
+        source_fetched_at=datetime.now(timezone.utc),
+        metadata_json={},
+        region_key="vn,ha-noi",
+        status="active",
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Cafe Giảng",
+        category="cafe",
+        searchRegion="Hà Nội",
+    )
+    google = RecordingFallbackResolver(
+        PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider="google_maps_scraper",
+            externalId="ChIJ-cafe-giang",
+            name="Cafe Giảng",
+            latitude=Decimal("21.0321"),
+            longitude=Decimal("105.8549"),
+        )
+    )
+    resolver = FallbackPlaceResolver(
+        DatabasePlaceResolver(FakePlaceRepository([database_place])),
+        google,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.provider == "google_maps_scraper"
+    assert result.provider_attempts[0].rejection_reason == "low_database_score"
+    assert google.calls == 1
+
+
 def test_database_resolver_uses_route_context_to_choose_clear_branch() -> None:
     def place(
         place_id: str,
@@ -1018,7 +1148,7 @@ def test_database_resolver_keeps_similarly_close_branches_ambiguous() -> None:
     assert results[1].resolution_reason == "ambiguous_name"
 
 
-def test_fallback_chain_does_not_replace_ambiguous_branch_with_provider_guess() -> None:
+def test_fallback_chain_calls_google_when_database_scores_are_tied() -> None:
     def branch(place_id: str, city: str) -> Any:
         return SimpleNamespace(
             id=place_id,
@@ -1069,9 +1199,9 @@ def test_fallback_chain_does_not_replace_ambiguous_branch_with_provider_guess() 
         resolver.resolve(candidate, destination="Hà Nội")
     )
 
-    assert result.status == "unresolved"
-    assert result.resolution_reason == "ambiguous_name"
-    assert provider.calls == 0
+    assert result.status == "resolved"
+    assert result.provider == "google_maps_scraper"
+    assert provider.calls == 1
 
 
 def test_fallback_chain_skips_google_when_database_matches() -> None:
@@ -1257,6 +1387,39 @@ def test_google_maps_merges_spelling_aliases_with_same_provider_identity() -> No
         "Banh Mi 25",
     }.issubset(set(results[0].candidate.alternate_names))
     assert results[0].candidate.source_order == 1
+
+
+def test_google_maps_prioritizes_metadata_name_and_address_over_generated_alias() -> None:
+    address = "35b P. Nguyễn Hữu Huân, Hà Nội"
+    query = f"Xôi Yến, {address}, Hanoi"
+    resolver = FakeGoogleMapsScraperResolver(
+        {
+            query: [
+                {
+                    "title": "Xôi Yến",
+                    "place_id": "xoi-yen-35b",
+                    "category": "Restaurant",
+                    "address": address,
+                    "latitude": 21.0327,
+                    "longitude": 105.8551,
+                }
+            ]
+        }
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Xôi Yến",
+        originalName="Xôi Yến",
+        vietnameseNames=["Xôi Mây"],
+        addressHint=address,
+        searchRegion="Hanoi",
+        sourceEvidence={"metadata": f"Xôi Yến - {address}"},
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hanoi"))
+
+    assert result.status == "resolved"
+    assert resolver.queries == [query]
+    assert all("Xôi Mây" not in attempted for attempted in resolver.queries)
 
 
 def test_google_maps_does_not_query_literal_unspecified() -> None:

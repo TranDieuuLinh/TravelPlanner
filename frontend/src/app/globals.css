@@ -386,25 +386,6 @@ h1, h2, h3, p { margin-top: 0; }
 .finderNotice > div { display: grid; gap: 3px; }
 .finderNotice strong { color: #644a21; font-size: .69rem; }
 .finderNotice p { color: #826d48; }
-.exploreResult .unscheduledPlacesCard { gap: 10px; border-color: #efd9a8; background: #fffaf0; }
-.unscheduledPlacesHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.unscheduledPlacesHeading > strong { display: grid; min-width: 28px; height: 28px; place-items: center; border-radius: 999px; background: #f5dfb4; color: #80591b; font-size: .68rem; }
-.unscheduledPlacesList { display: grid; gap: 8px; }
-.unscheduledPlacesList article { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; border: 1px solid #eadfca; border-radius: 12px; padding: 11px 12px; background: white; transition: opacity .16s ease, transform .16s ease, border-color .16s ease; }
-.unscheduledPlacesList article[draggable="true"] { cursor: grab; }
-.unscheduledPlacesList article:active { cursor: grabbing; }
-.unscheduledPlacesList article.dragging { border-color: var(--brand); opacity: .55; transform: scale(.985); }
-.unscheduledDragHandle { display: grid; width: 28px; height: 34px; place-items: center; border: 0; border-radius: 7px; padding: 0; background: transparent; color: #a1844d; cursor: grab; touch-action: none; }
-.unscheduledDragHandle span { font-size: .8rem; font-weight: 900; letter-spacing: -3px; }
-.unscheduledDragHandle:disabled { cursor: default; opacity: .42; }
-.unscheduledPlacesList article > div:not(.unscheduledPlaceActions) { display: grid; gap: 3px; min-width: 0; }
-.unscheduledPlacesList article strong { font-size: .7rem; }
-.unscheduledPlacesList article small { color: var(--muted); font-size: .56rem; line-height: 1.4; }
-.unscheduledPlaceActions { display: flex; flex: 0 0 auto; gap: 6px; }
-.unscheduledPlaceActions button { border: 1px solid #d9c28f; border-radius: 8px; padding: 7px 9px; background: #fffaf0; color: #71501b; font-size: .56rem; font-weight: 850; }
-.unscheduledPlaceActions .unscheduledManualButton { border-color: var(--brand); background: var(--brand); color: white; }
-.unscheduledPlaceActions .unscheduledRemoveButton { display: inline-flex; align-items: center; gap: 4px; border-color: #ead5d0; background: #fff7f5; color: #9f3f32; }
-.unscheduledPlaceActions .unscheduledRemoveButton svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .explorerSectionHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .explorerSectionHeading .sectionMicroTitle { margin-bottom: 4px; }
 .exploreResult .tripPlanSection {
@@ -419,65 +400,6 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 0;
   background: transparent;
 }
-.exploreResult .regionNotesCard {
-  display: grid;
-  gap: 12px;
-  border: 1px solid #d8e5df;
-  border-radius: 16px;
-  padding: 15px 16px;
-  background: linear-gradient(145deg, #f7fbf9, #eef7f3);
-  box-shadow: 0 6px 18px rgba(24, 54, 48, .045);
-}
-.regionNotesHeading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.regionNotesHeading > div { min-width: 0; }
-.regionNotesHeading h3 {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: #173a34;
-  font-size: .9rem;
-}
-.regionNotesHeading > span {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 5px 8px;
-  background: #dcefe8;
-  color: #226657;
-  font-size: .52rem;
-  font-weight: 900;
-}
-.regionNotesGrid {
-  display: grid;
-  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
-  gap: 9px;
-}
-.regionNotesGrid > section {
-  min-width: 0;
-  border: 1px solid rgba(117, 153, 141, .22);
-  border-radius: 11px;
-  padding: 10px 11px;
-  background: rgba(255, 255, 255, .72);
-}
-.regionNotesGrid strong {
-  display: block;
-  margin-bottom: 5px;
-  color: #2e5149;
-  font-size: .58rem;
-}
-.regionNotesGrid p,
-.regionNotesGrid li {
-  color: #66766f;
-  font-size: .56rem;
-  line-height: 1.5;
-}
-.regionNotesGrid p { margin: 0; }
-.regionNotesGrid ul { display: grid; gap: 4px; margin: 0; padding-left: 16px; }
-.regionNotesGrid .regionNotesEmpty { color: #82908b; font-style: italic; }
 .dayTabList { display: flex; width: 100%; min-width: 0; max-width: 100%; gap: 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
 .dayTabList button { display: grid; width: auto; min-width: 58px; height: 36px; flex: 1 1 72px; place-items: center; border: 1px solid transparent; border-radius: 8px; padding: 0; background: rgba(255,255,255,.72); color: var(--muted); cursor: pointer; transition: border-color .18s ease, background .18s ease; }
 .dayTabList button > i { display: grid; min-width: 54px; height: 26px; place-items: center; border-radius: 7px; background: transparent; color: #61706b; font-size: .55rem; font-style: normal; font-weight: 900; white-space: nowrap; }
@@ -487,8 +409,6 @@ h1, h2, h3, p { margin-top: 0; }
 .dayTabList button.active > i { color: white; }
 .planDayPanels { display: grid; width: 100%; min-width: 0; max-width: 100%; grid-template-columns: minmax(0, 1fr); gap: 12px; overflow: visible; }
 .explorerDayCard { width: 100%; min-width: 0; max-width: 100%; overflow: visible; border: 1px solid #dbe5e1; border-radius: 16px; background: white; box-shadow: 0 8px 24px rgba(24,54,48,.06); }
-.explorerDayCard.unscheduledDropTarget { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(22,124,104,.15), 0 8px 24px rgba(24,54,48,.08); }
-.explorerDayCard.unscheduledDropTarget .dayCardHeading::after { margin-left: auto; border-radius: 999px; padding: 5px 8px; background: var(--brand-soft); color: var(--brand-dark); content: "Thả vào ngày này"; font-size: .52rem; font-weight: 900; }
 .dayCardHeading { display: flex; min-width: 0; align-items: center; padding: 15px 16px; background: white; }
 .dayCardHeading strong { min-width: 0; overflow-wrap: anywhere; font-size: .76rem; line-height: 1.35; }
 .dayNavigationStart { display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 10px; margin: 0 12px 10px; border: 1px solid #c9dff0; border-radius: 13px; padding: 11px 13px; background: #f1f7fc; }
@@ -572,24 +492,35 @@ h1, h2, h3, p { margin-top: 0; }
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  gap: 10px;
+  align-items: start;
+  gap: 12px;
   border-radius: 13px;
   padding: 14px;
   background: #f1f2f3;
   overflow: hidden;
 }
 .itineraryPlaceImage {
+  display: block;
   width: calc(100% + 28px);
-  min-height: 132px;
-  margin: -14px -14px 2px;
-  background-color: #dfe7e4;
-  background-position: center;
-  background-size: cover;
+  height: 150px;
+  margin: -14px -14px 0;
+  border-radius: 0;
+  background-color: #f1f2f3;
+  overflow: hidden;
+  order: 1;
+}
+.itineraryPlaceImage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #f1f2f3;
+  object-fit: cover;
 }
 .itineraryPlaceContent {
   display: grid;
   min-width: 0;
   gap: 9px;
+  order: 2;
 }
 .itineraryStop--food .itineraryPlaceCard {
   width: calc(100% - 12px);
@@ -603,8 +534,8 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .itineraryStop--food .itineraryPlaceImage {
   width: calc(100% + 24px);
-  min-height: 108px;
-  margin: -11px -12px 1px;
+  height: 130px;
+  margin: -11px -12px 0;
 }
 .itineraryStop--food .itineraryPlaceContent {
   gap: 7px;
@@ -789,7 +720,34 @@ h1, h2, h3, p { margin-top: 0; }
 .activityNotesContent strong { color: #42645b; font-size: .5rem; }
 .activityNotesContent p { margin: 0; }
 .activityNotesContent .activityNotesEmpty { color: #84908d; font-style: italic; }
-.activityNotesEditButton {
+.activityPersonalNoteForm {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #e3e9e7;
+  padding-top: 9px;
+}
+.activityPersonalNoteForm label {
+  color: #42645b;
+  font-size: .5rem;
+  font-weight: 850;
+}
+.activityPersonalNoteForm textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #cbd9d5;
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #fff;
+  color: #33443f;
+  font: inherit;
+  font-size: .55rem;
+  line-height: 1.45;
+}
+.activityPersonalNoteForm textarea:focus {
+  border-color: var(--brand);
+  outline: 2px solid rgba(22, 124, 104, .12);
+}
+.activityPersonalNoteForm button {
   width: fit-content;
   border: 1px solid #b9d9d0;
   border-radius: 8px;
@@ -799,7 +757,8 @@ h1, h2, h3, p { margin-top: 0; }
   font-size: .5rem;
   font-weight: 850;
 }
-.activityNotesEditButton:hover { border-color: var(--brand); background: var(--brand-soft); }
+.activityPersonalNoteForm button:hover { border-color: var(--brand); background: var(--brand-soft); }
+.activityPersonalNoteForm button:disabled { cursor: not-allowed; opacity: .6; }
 .itineraryActions {
   display: flex;
   align-items: center;
@@ -1295,10 +1254,18 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(23,105,170,.2
 .plannerMapCanvas .leaflet-popup-content { margin: 14px 16px; }
 .plannerMapCanvas .leaflet-popup-tip { box-shadow: 3px 3px 8px rgba(20,35,35,.08); }
 .candidateMapPopup strong { font-size: .72rem; }
-.candidateMapPopup small { color: var(--brand-dark); font-size: .56rem; font-weight: 800; }
+.candidateMapPopup small { color: #1769aa; font-size: .56rem; font-weight: 800; }
 .candidateMapPopup span { color: var(--muted); font-size: .62rem; line-height: 1.4; }
 .candidateMapPopup .candidateMapPopupAddress { padding-left: 15px; background: no-repeat left 2px / 11px 11px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2362716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); }
 .candidateMapPopup p { margin: 2px 0 0; color: #596762; font-size: .59rem; line-height: 1.4; }
+.candidateMapPopupPhoto { display: block; width: 100%; height: clamp(230px, 34vh, 280px); margin-top: 7px; border-radius: 10px; background: #f1f2f3; object-fit: cover; }
+
+@media (max-width: 780px) {
+  .itineraryPlaceCard { gap: 10px; }
+  .itineraryPlaceImage { height: 130px; }
+  .itineraryStop--food .itineraryPlaceImage { height: 115px; }
+  .candidateMapPopupPhoto { height: clamp(200px, 32vh, 240px); }
+}
 
 @keyframes statusPulse {
   50% { opacity: .55; transform: scale(.86); }
@@ -1466,9 +1433,6 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
   .itinerary { order: 2; }
   .plannerMap { order: 3; grid-column: auto; height: 500px; min-height: 500px; }
   .exploreResult { padding: 10px; }
-  .unscheduledPlacesList article { grid-template-columns: auto minmax(0,1fr); align-items: start; }
-  .unscheduledPlaceActions { grid-column: 2; flex-wrap: wrap; }
-  .regionNotesGrid { grid-template-columns: minmax(0, 1fr); }
   .tripSummaryIntro h3 { font-size: 1.3rem; }
   .budgetSummary { grid-template-columns: 36px 1fr; }
   .budgetSummary > small { grid-column: 2; }

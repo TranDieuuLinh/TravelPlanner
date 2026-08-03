@@ -1,8 +1,10 @@
-const HUE_COUNT = 360;
+// Keep map accents away from green so they do not blend with parks and other
+// green features already present in the OpenStreetMap tiles.
+const HUES = [210, 225, 240, 258, 276, 24, 342];
 const SATURATIONS = [58, 64, 70];
 const LIGHTNESSES = [36, 41, 46];
-const COLOR_COUNT = HUE_COUNT * SATURATIONS.length * LIGHTNESSES.length;
-const COLOR_PROBE_STEP = 137;
+const COLOR_COUNT = HUES.length * SATURATIONS.length * LIGHTNESSES.length;
+const COLOR_PROBE_STEP = 17;
 
 function hashDateKey(value: string): number {
   let hash = 2166136261;
@@ -14,10 +16,10 @@ function hashDateKey(value: string): number {
 }
 
 function colorFromIndex(index: number): string {
-  const hue = index % HUE_COUNT;
-  const saturationIndex = Math.floor(index / HUE_COUNT) % SATURATIONS.length;
+  const hue = HUES[index % HUES.length];
+  const saturationIndex = Math.floor(index / HUES.length) % SATURATIONS.length;
   const lightnessIndex =
-    Math.floor(index / (HUE_COUNT * SATURATIONS.length)) %
+    Math.floor(index / (HUES.length * SATURATIONS.length)) %
     LIGHTNESSES.length;
 
   return `hsl(${hue}, ${SATURATIONS[saturationIndex]}%, ${LIGHTNESSES[lightnessIndex]}%)`;

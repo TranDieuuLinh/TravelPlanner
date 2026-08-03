@@ -137,6 +137,14 @@ Explorer response hay ghi vào timing log. Bảng dùng chung này là nguồn v
 cho retrieval/RAG và tạo note về sau, còn `url_extraction_cache` tiếp tục chỉ
 giữ context đã chuẩn hóa để tránh chạy lại extractor.
 
+Place resolver xếp hạng tối đa `top K` record catalog theo tên/alias, vùng,
+evidence địa chỉ, category và độ tin cậy dữ liệu. Record đứng đầu chỉ được nhận
+khi vượt cả ngưỡng điểm tuyệt đối và khoảng cách điểm với record thứ hai. DB
+miss, điểm thấp hoặc hai kết quả quá sát nhau đều chuyển sang Google Maps
+Playwright đã cấu hình; kết quả ngoài vẫn phải vượt rule xác minh identity và
+tọa độ riêng. Các ngưỡng là cấu hình runtime để hiệu chỉnh bằng tập test có
+nhãn, không phải confidence do provider công bố.
+
 `UrlReelExtractionService` định tuyến theo loại nguồn trước khi chuẩn hóa chung:
 
 - YouTube long-form (`watch`, `youtu.be`, `live`, `embed`) chỉ dùng caption công

@@ -72,20 +72,25 @@ không được truyền sang Finder. Finder vẫn tạo lịch
 chi tiết bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
-Khi intake có URL YouTube long-form, runtime thử caption công khai bằng
-`youtube-transcript-api` trước, sau khi kiểm tra cache PostgreSQL. Request cùng
+Khi intake có URL YouTube long-form, runtime bỏ qua metadata `yt-dlp` và thử
+caption công khai bằng `youtube-transcript-api`, sau khi kiểm tra cache
+PostgreSQL. Request cùng
 video được dedupe trong process và bị giới hạn nhịp; khi IP backend bị chặn,
 runtime có thể gọi transcript worker do operator tự vận hành trên kết nối dân
 dụng. Caption thủ công hoặc tự sinh được cache dài hạn, dùng trực tiếp làm
 transcript và video không bị tải xuống. `no_captions` trả
 `YOUTUBE_CAPTIONS_NOT_FOUND`; `blocked`/`unavailable` trả lỗi retryable. Runtime
-không tải media và không gọi STT/OCR cho YouTube long-form. YouTube Shorts có
+không tải media và không gọi audio STT/OCR cho YouTube long-form. Pipeline chỉ
+giữ URL chuẩn hóa cùng platform rồi đưa caption qua structured multilingual text
+extraction để tạo observation có entity type, tên gốc, alias, address hint,
+parent place và authority; không dịch toàn bộ caption hay tên riêng sang tiếng
+Anh. Parser marker Anh–Việt chỉ là fallback. YouTube Shorts có
 path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook Reels dùng
 pipeline media hiện tại. URL rút gọn `youtu.be/{videoId}` không chứa tín hiệu
 Shorts nên giữ nhánh caption-only. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
 bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
 `order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
-và confidence. Explorer dùng structured STT observations, metadata và structured
+và confidence. Explorer dùng structured caption/STT observations, metadata và structured
 frame vision observations để tạo từng stop; Python không suy diễn candidate,
 day hay activity từ transcript tự do khi structured STT đã có. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
@@ -97,6 +102,9 @@ chịu trách nhiệm chính cho day/order/activity và
 `searchRegion`; OCR chịu trách nhiệm chính cho chữ trên bảng hiệu, địa chỉ và
 giá; caption bổ sung bối cảnh. Evidence ngắn được giữ riêng trong
 `sourceEvidence.stt`, `sourceEvidence.ocr` và `sourceEvidence.caption`.
+Title/caption dạng `Top N` tạo expected coverage. Coverage dưới 40% trả
+`URL_EXTRACTION_LOW_COVERAGE` trước formatter/resolver; coverage 40–70% giữ
+review state và tắt Finder; từ 70% được coi là đủ để tiếp tục tự động.
 Planner ưu tiên blueprint này; Finder tạo skeleton
 `source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
 của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
@@ -129,6 +137,10 @@ khác nhau trong pool `GEMINI_OCR_API_KEYS`; STT dùng pool riêng
 hình pool chung `GEMINI_API_KEY` có ít nhất hai key, runtime chia pool làm hai
 nửa không giao nhau cho STT và OCR. Mức song song tự giảm khi thiếu key hoặc
 batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
+YouTube long-form không chạy audio STT/frame OCR nên caption structurer dùng
+`GEMINI_CAPTION_API_KEYS` riêng khi có, hoặc mượn hợp của hai pool trên. Nó chọn
+key round-robin, failover tối đa hai credential cho lỗi `401`/`403`/`429` và có
+deadline tổng mặc định 60 giây; không thử tuần tự toàn bộ pool khi mạng timeout.
 STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
 một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa điểm, OCR được
 ưu tiên cho tên hiển thị và thứ tự frame; structured STT được ưu tiên cho day,
@@ -209,6 +221,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 
 - tìm place phù hợp cho từng candidate;
 - gộp candidate trùng nhưng giữ nhiều source ref;
+- fusion chọn metadata cụ thể làm anchor, giữ alias quan sát được tách khỏi alias
+  lookup Anh–Việt sinh có kiểm soát; không chạy một bước alias enrichment thứ
+  hai có cùng trách nhiệm;
+- resolver giữ top-K option và chỉ auto-resolve top-1 khi vượt cả ngưỡng tuyệt
+  đối, margin với top-2 và hard identity policy;
 - chỉ lưu kết quả `resolved` có đủ latitude/longitude và danh tính cụ thể;
 - bỏ qua persistence đối với kết quả `provisional`, `unresolved`, thiếu tọa độ
   hoặc match rộng tới thành phố/quốc gia;
@@ -226,6 +243,8 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 - `extractionConfidence` đo evidence riêng của candidate;
   `resolutionConfidence` đo identity từ provider. `confidence` cũ tạm giữ nghĩa
   extraction để tương thích client cũ.
+- Kết quả resolved trả `verifiedAliases` và `verifiedVietnameseAliases`; frontend
+  dùng alias Việt đã xác minh trước nhãn provider ngôn ngữ khác.
 - Candidate khác tên cùng map tới một Google identity/tọa độ chỉ được gộp khi
   Google trả cùng canonical provider name; resolver giữ các spelling/OCR variant
   làm alias và gộp provenance trước persistence. Nếu provider name khác nhau,

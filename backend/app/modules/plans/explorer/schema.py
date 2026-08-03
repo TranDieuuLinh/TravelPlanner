@@ -114,6 +114,52 @@ class PlaceCandidateSource(BaseModel):
     url: str | None = None
 
 
+class ObservedPlaceAlias(BaseModel):
+    """A name variant that was actually present in source evidence."""
+
+    value: str = Field(min_length=1)
+    source: Literal["metadata", "caption", "transcript", "stt", "ocr", "user"]
+
+
+class GeneratedLookupAlias(BaseModel):
+    """A derived lookup name; this is never source provenance."""
+
+    value: str = Field(min_length=1)
+    language: Literal["vi", "en", "und"] = "und"
+    generator: Literal["normalizer", "llm"] = "llm"
+    version: str = "alias-v1"
+
+
+class PlaceMatchOption(BaseModel):
+    """A ranked Place identity considered by a resolver for one candidate."""
+
+    rank: int = Field(ge=1)
+    match_source: Annotated[
+        Literal["url_snapshot", "verified_alias", "places_db", "external_provider"],
+        Field(alias="matchSource"),
+    ]
+    provider: str
+    place_id: Annotated[str | None, Field(default=None, alias="placeId")]
+    external_id: Annotated[str | None, Field(default=None, alias="externalId")]
+    name: str
+    selected: bool = False
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    score_components: Annotated[
+        dict[str, float],
+        Field(default_factory=dict, alias="scoreComponents"),
+    ]
+    rejection_reasons: Annotated[
+        list[str],
+        Field(default_factory=list, alias="rejectionReasons"),
+    ]
+    fetched_at: Annotated[str | None, Field(default=None, alias="fetchedAt")]
+
+    model_config = {"populate_by_name": True}
+
+
 class UnifiedPlaceCandidate(BaseModel):
     name: str = Field(min_length=1)
     original_name: Annotated[
@@ -135,6 +181,14 @@ class UnifiedPlaceCandidate(BaseModel):
     search_names: Annotated[
         list[str],
         Field(default_factory=list, alias="searchNames"),
+    ]
+    observed_aliases: Annotated[
+        list[ObservedPlaceAlias],
+        Field(default_factory=list, alias="observedAliases"),
+    ]
+    generated_lookup_aliases: Annotated[
+        list[GeneratedLookupAlias],
+        Field(default_factory=list, alias="generatedLookupAliases"),
     ]
     category: ItineraryItemCategory = ItineraryItemCategory.other
     address_hint: Annotated[str | None, Field(default=None, alias="addressHint")]
@@ -163,6 +217,15 @@ class UnifiedPlaceCandidate(BaseModel):
         int | None,
         Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
     ]
+    entity_type: Annotated[
+        Literal["venue", "sub_place"],
+        Field(default="venue", alias="entityType"),
+    ]
+    parent_place: Annotated[
+        str | None,
+        Field(default=None, alias="parentPlace"),
+    ]
+    authority: Literal["high", "medium", "low"] = "medium"
 
     model_config = {"populate_by_name": True}
 
@@ -180,6 +243,26 @@ class PlaceCandidateReview(BaseModel):
     resolved_name: Annotated[
         str | None,
         Field(default=None, alias="resolvedName"),
+    ]
+    verified_aliases: Annotated[
+        list[str],
+        Field(default_factory=list, alias="verifiedAliases"),
+    ]
+    verified_vietnamese_aliases: Annotated[
+        list[str],
+        Field(default_factory=list, alias="verifiedVietnameseAliases"),
+    ]
+    observed_aliases: Annotated[
+        list[ObservedPlaceAlias],
+        Field(default_factory=list, alias="observedAliases"),
+    ]
+    generated_lookup_aliases: Annotated[
+        list[GeneratedLookupAlias],
+        Field(default_factory=list, alias="generatedLookupAliases"),
+    ]
+    top_matches: Annotated[
+        list[PlaceMatchOption],
+        Field(default_factory=list, alias="topMatches"),
     ]
     address: str | None = None
     latitude: float | None = None
@@ -226,6 +309,11 @@ class PlaceCandidateReview(BaseModel):
         Field(default=0.0, ge=0.0, le=1.0, alias="resolutionConfidence"),
     ]
     retryable: bool = True
+    entity_type: Annotated[
+        Literal["venue", "sub_place"],
+        Field(default="venue", alias="entityType"),
+    ]
+    authority: Literal["high", "medium", "low"] = "medium"
 
     model_config = {"populate_by_name": True}
 
@@ -308,6 +396,10 @@ class ExplorerSourceTiming(BaseModel):
     stages: list[ExplorerTimingStage] = Field(default_factory=list)
     sampled_frames: Annotated[int, Field(default=0, alias="sampledFrames")]
     speech_status: Annotated[str, Field(alias="speechStatus")]
+    speech_source: Annotated[
+        str,
+        Field(default="none", alias="speechSource"),
+    ]
     vision_status: Annotated[str, Field(alias="visionStatus")]
     stt_chunk_count: Annotated[
         int,
@@ -328,6 +420,18 @@ class ExplorerSourceTiming(BaseModel):
     extracted_place_count: Annotated[
         int,
         Field(default=0, alias="extractedPlaceCount"),
+    ]
+    expected_place_count: Annotated[
+        int | None,
+        Field(default=None, alias="expectedPlaceCount"),
+    ]
+    extraction_coverage: Annotated[
+        float | None,
+        Field(default=None, alias="extractionCoverage"),
+    ]
+    coverage_status: Annotated[
+        str,
+        Field(default="unknown", alias="coverageStatus"),
     ]
     candidate_count: Annotated[
         int,

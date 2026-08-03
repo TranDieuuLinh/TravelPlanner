@@ -12,6 +12,7 @@ from app.modules.plans.domain.entities import (
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
+from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.timing import PlanTimingReport
 
@@ -100,6 +101,10 @@ class MainPlanFromExplorerCreate(BaseModel):
         list[SelectedPlaceCreate],
         Field(alias="selectedPlaces"),
     ] = Field(default_factory=list)
+    candidate_reviews: Annotated[
+        list[PlaceCandidateReview],
+        Field(default_factory=list, alias="candidateReviews"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus

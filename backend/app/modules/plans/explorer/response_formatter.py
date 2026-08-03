@@ -67,11 +67,11 @@ class ExploreResponseFormatter:
             "Also produce explorer.preferenceSnapshot.signals for short-term preferences evidenced by this intake. Each signal needs dimension, normalized value, score from -1 to 1, confidence, scope, destination, and sourceTypes. Never copy raw prompt, OCR, transcript, or evidence excerpts into preference signals. "
             "Put concrete places from rawRequest, image OCR, and URL evidence in places.placeCandidates. For URL itinerary stops, use a source with type=url and the exact request URL, set priority=1 and preferenceLevel=preferred, and set sourceOrder to the stop's one-based chronological order. "
             "When the destination is in Vietnam, return each candidate's established Vietnamese place name when the evidence or common official name supports it (for example, 'Vietnam Museum of Ethnology' becomes 'Bảo tàng Dân tộc học Việt Nam'). Preserve brand names instead of literally translating them, and keep the same sourceOrder so deterministic URL evidence can be merged into the localized candidate. "
-            "For each URL stop, set sourceDay when the video states a day or clearly describes a single-day itinerary, sourceTimeHint to the evidenced phrase such as breakfast, morning, before lunch, afternoon, dinner, after dinner, or nightlife, and sourceActivity to a concise but specific description of what the video recommends doing or ordering there. "
+            "For each URL stop, set sourceDay when the video states a day or clearly describes a single-day itinerary, sourceTimeHint to the evidenced phrase such as breakfast, morning, before lunch, afternoon, dinner, after dinner, or nightlife, and sourceActivity to one concise, useful action or visit tip directly supported by caption, STT, or OCR. Prefer what to do or order plus an evidenced timing, booking, queue, price, or arrival instruction. A venue description by itself is not sourceActivity. "
             "Keep the trip base destination separate from each stop's searchRegion. When the source says a day is a day trip to another province or city, set searchRegion on every stop in that day to that stated region; for example a Hanoi trip with a Ninh Binh day tour keeps destination=Hanoi but uses searchRegion=Ninh Binh for Hang Mua, Trang An, and Hoa Lu. "
             "Use sourceEvidence only for short, place-specific evidence snippets. Put spoken sequencing/day/activity evidence under stt, visible signage/address evidence under ocr, and caption evidence under caption. Never copy the whole transcript, OCR output, or caption into sourceEvidence. "
             "A URL caption, sentence, list of multiple venues, city name, promotional call to action, or text containing several pin/list markers is not a place name. Return each specifically identified venue as its own candidate; omit any stop whose identity is unclear so Finder can supply a verified alternative. "
-            "Never copy a full caption, transcript sentence, hashtag block, or promotional text into candidate notes or sourceActivity. Keep sourceActivity under 140 characters and leave it null when no concise activity is directly evidenced. "
+            "Never copy a full caption, transcript sentence, hashtag block, promotional text, generic travel advice, or an unsupported operational claim into candidate notes or sourceActivity. Keep sourceActivity under 140 characters and leave it null when no concise useful activity or visit tip is directly evidenced. "
             "Write sourceActivity and user-facing candidate notes in Vietnamese for destinations in Vietnam while preserving named dishes, brands, and factual meaning. "
             "Only set sourceDurationMinutes when the source gives a duration. Do not convert vague timing cues into invented exact clock times. Do not omit a concrete URL stop merely because another adapter already extracted it. "
             "Do not create separate foodPlaces or urlReelSignals arrays. "
@@ -207,7 +207,11 @@ class ExploreResponseFormatter:
 
 
 def _compact_url_summary(result: UrlReelExtractionResult) -> dict:
-    details = result.extracted_context.extracted_place_details
+    details = [
+        detail
+        for detail in result.extracted_context.extracted_place_details
+        if detail.authority != "low"
+    ]
     category_counts: dict[str, int] = {}
     attributes: list[str] = []
     activities: list[str] = []
@@ -235,6 +239,9 @@ def _compact_url_summary(result: UrlReelExtractionResult) -> dict:
             for stay in result.extracted_context.destination_stays
         ],
         "confidence": result.extracted_context.confidence,
+        "expectedPlaceCount": result.extracted_context.expected_place_count,
+        "extractionCoverage": result.extracted_context.extraction_coverage,
+        "coverageStatus": result.extracted_context.coverage_status,
     }
 
 

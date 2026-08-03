@@ -171,6 +171,7 @@ class TripChatService:
                             else []
                         ),
                     ),
+                    candidateReviews=explore.explorer.candidate_reviews,
                     preferenceProfile=(
                         explore.explorer.preference_snapshot.effective_profile
                     ),
@@ -477,6 +478,7 @@ class TripChatService:
                         intakeId=chat.current_intake_id,
                         userId=str(user.id),
                         selectedPlaces=selected_places,
+                        candidateReviews=updated_explorer.candidate_reviews,
                         preferenceProfile=(
                             updated_explorer.preference_snapshot.effective_profile
                         ),

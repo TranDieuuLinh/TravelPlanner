@@ -392,6 +392,16 @@ class UnscheduledPlace(BaseModel):
     day: int | None = None
     reason_code: str = Field(alias="reasonCode")
     reason: str
+    address: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    place_type: str | None = Field(default=None, alias="placeType")
+    tags: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    source_provider: str | None = Field(default=None, alias="sourceProvider")
+    source_activity: str | None = Field(default=None, alias="sourceActivity")
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0, alias="reviewCount")
 
     model_config = {"populate_by_name": True}
 

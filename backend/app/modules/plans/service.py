@@ -39,6 +39,7 @@ from app.modules.plans.explorer.response_formatter import ExploreResponseFormatt
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
     PlaceCandidateReview,
+    PlaceMatchOption,
     PlaceCandidateSource,
     PlaceCandidateSourceType,
     ExploreTripSpecInput,
@@ -335,6 +336,35 @@ class PlanService:
                     cached.model_copy(
                         update={
                             "candidate": candidate,
+                            "match_options": [
+                                PlaceMatchOption(
+                                    rank=1,
+                                    matchSource="url_snapshot",
+                                    provider=(cached.provider or "shared_url_cache"),
+                                    placeId=cached.place_id,
+                                    externalId=cached.external_id,
+                                    name=cached.name,
+                                    selected=True,
+                                    address=cached.address,
+                                    latitude=(
+                                        float(cached.latitude)
+                                        if cached.latitude is not None
+                                        else None
+                                    ),
+                                    longitude=(
+                                        float(cached.longitude)
+                                        if cached.longitude is not None
+                                        else None
+                                    ),
+                                    score=1.0,
+                                    scoreComponents={"snapshotIdentity": 1.0},
+                                    fetchedAt=(
+                                        cached.fetched_at.isoformat()
+                                        if cached.fetched_at is not None
+                                        else None
+                                    ),
+                                )
+                            ],
                             "provider_attempts": [
                                 PlaceResolutionAttempt(
                                     candidate=candidate.name,
@@ -503,6 +533,42 @@ class PlanService:
                     "the backend and the configured fallback worker. Retry later."
                 ),
                 details={"sourceCount": len(unavailable_youtube_urls)},
+            )
+        insufficient_coverage = [
+            result
+            for result in url_reel_results
+            if result.extracted_context.coverage_status == "insufficient"
+        ]
+        if insufficient_coverage:
+            raise AppError(
+                422,
+                "URL_EXTRACTION_LOW_COVERAGE",
+                (
+                    "The source advertises more places than could be extracted "
+                    "reliably. Review the source or retry extraction before "
+                    "creating a plan."
+                ),
+                details={
+                    "sources": [
+                        {
+                            "url": result.url,
+                            "expectedPlaceCount": (
+                                result.extracted_context.expected_place_count
+                            ),
+                            "extractedPlaceCount": len(
+                                [
+                                    detail
+                                    for detail in result.extracted_context.extracted_place_details
+                                    if detail.authority != "low"
+                                ]
+                            ),
+                            "coverage": (
+                                result.extracted_context.extraction_coverage
+                            ),
+                        }
+                        for result in insufficient_coverage
+                    ]
+                },
             )
         if (
             payload.urls
@@ -742,6 +808,21 @@ class PlanService:
             update={
                 "preference_snapshot": preference_snapshot,
                 "candidate_reviews": candidate_reviews,
+                "assumptions": [
+                    *explorer.assumptions,
+                    *(
+                        [
+                            "URL extraction coverage needs review; Finder "
+                            "suggestions were disabled to avoid silently "
+                            "replacing source places."
+                        ]
+                        if any(
+                            result.extracted_context.coverage_status == "review"
+                            for result in url_reel_results
+                        )
+                        else []
+                    ),
+                ],
             }
         )
         trace.record_stage(
@@ -781,7 +862,13 @@ class PlanService:
             explorer=explorer,
             allowFinderSuggestions=(
                 False
-                if destination_stays and not schedulable_candidates
+                if (
+                    destination_stays and not schedulable_candidates
+                )
+                or any(
+                    result.extracted_context.coverage_status == "review"
+                    for result in url_reel_results
+                )
                 else not has_reference_input
                 or _source_days_need_finder(
                     schedulable_candidates,
@@ -1479,6 +1566,25 @@ def _place_candidate_review(
             *source_urls,
         ]
     )
+    verified_aliases = list(
+        dict.fromkeys(
+            value
+            for value in [resolution.name, *resolution.verified_aliases]
+            if schedulable and value
+        )
+    )
+    verified_vietnamese_aliases = list(
+        dict.fromkeys(
+            value
+            for value in resolution.verified_vietnamese_aliases
+            if schedulable and value
+        )
+    )
+    frontend_name = (
+        verified_vietnamese_aliases[0]
+        if verified_vietnamese_aliases
+        else resolution.name
+    )
     return PlaceCandidateReview(
         candidateId=(
             candidate_id
@@ -1496,7 +1602,12 @@ def _place_candidate_review(
             or "identity_or_coordinates_unverified"
         ),
         provider=resolution.provider,
-        resolvedName=resolution.name if schedulable else None,
+        resolvedName=frontend_name if schedulable else None,
+        verifiedAliases=verified_aliases,
+        verifiedVietnameseAliases=verified_vietnamese_aliases,
+        observedAliases=candidate.observed_aliases,
+        generatedLookupAliases=candidate.generated_lookup_aliases,
+        topMatches=resolution.match_options,
         address=(
             resolution.address or candidate.address_hint
             if schedulable or has_representative_location
@@ -1527,6 +1638,8 @@ def _place_candidate_review(
             schedulable=schedulable,
         ),
         retryable=not schedulable,
+        entityType=candidate.entity_type,
+        authority=candidate.authority,
     )
 
 
@@ -1589,6 +1702,8 @@ def _candidate_from_review(
         sourceTimeHint=review.source_time_hint,
         sourceActivity=review.source_activity,
         sourceDurationMinutes=review.source_duration_minutes,
+        entityType=review.entity_type,
+        authority=review.authority,
     )
 
 

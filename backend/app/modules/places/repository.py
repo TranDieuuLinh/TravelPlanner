@@ -222,6 +222,16 @@ class SqlAlchemyPlaceRepository:
             return False
         _validate_region_key(region_key)
 
+        verified_alias_inputs: list[str] = []
+        verified_input_keys = {canonical_name.strip().casefold()}
+        for value in aliases:
+            alias = " ".join(value.split())
+            key = alias.casefold()
+            if not alias or len(alias) > 255 or key in verified_input_keys:
+                continue
+            verified_input_keys.add(key)
+            verified_alias_inputs.append(alias)
+
         learned_aliases: list[str] = []
         seen = {_alias_key(canonical_name)}
         for value in aliases:
@@ -245,7 +255,7 @@ class SqlAlchemyPlaceRepository:
                 .with_for_update()
             )
             created = place is None
-            if not created and not learned_aliases:
+            if not created and not learned_aliases and not verified_alias_inputs:
                 return False
             if place is None:
                 place = Place(
@@ -297,8 +307,12 @@ class SqlAlchemyPlaceRepository:
             }
             verified_to_add = [
                 alias
-                for alias in learned_aliases
+                for alias in verified_alias_inputs
                 if _alias_key(alias) not in verified_keys
+                or alias.casefold()
+                not in {
+                    str(value["name"]).casefold() for value in verified
+                }
             ]
             if not created and not aliases_to_add and not verified_to_add:
                 return False
@@ -310,6 +324,7 @@ class SqlAlchemyPlaceRepository:
                 *(
                     {
                         "name": alias,
+                        "language": _alias_language(alias),
                         "provider": "google_maps_scraper",
                         "externalId": external_id,
                         "verifiedAt": verified_at,
@@ -451,6 +466,15 @@ def _alias_key(value: str) -> str:
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "", without_marks)
+
+
+def _alias_language(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", value)
+    if "đ" in value.casefold() or any(
+        unicodedata.combining(character) for character in decomposed
+    ):
+        return "vi"
+    return "und"
 
 
 def _parse_optional_datetime(value: str) -> datetime | None:

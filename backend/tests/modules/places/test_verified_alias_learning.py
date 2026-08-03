@@ -41,6 +41,7 @@ def test_verified_google_alias_creates_catalog_place_and_resolves_from_db(
     assert place.metadata_json["verifiedAliases"][0]["provider"] == (
         "google_maps_scraper"
     )
+    assert place.metadata_json["verifiedAliases"][0]["language"] == "und"
 
     resolution = asyncio.run(
         DatabasePlaceResolver(repository).resolve(
@@ -96,6 +97,10 @@ def test_verified_google_alias_update_is_idempotent(db_session) -> None:
     assert repository.upsert_verified_google_aliases(**arguments) is True
     assert place.revision == 4
     assert place.metadata_json["aliases"] == ["Bánh Mì 25", "Bunmi 25"]
+    learned = {
+        value["name"]: value["language"]
+        for value in place.metadata_json["verifiedAliases"]
+    }
+    assert learned["Bánh Mì 25"] == "vi"
     assert repository.upsert_verified_google_aliases(**arguments) is False
     assert place.revision == 4
-

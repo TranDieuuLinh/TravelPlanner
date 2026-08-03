@@ -35,12 +35,12 @@
    Candidate chưa resolve vẫn giữ tên nguồn và lý do nhưng không được đưa vào
    Planner. Chỉ candidate `resolved` có danh tính và tọa độ đã xác minh mới được
    xếp vào lịch trình.
-9. Tác vụ URL hoặc ảnh đã kết thúc chỉ hiển thị một thao tác **Chạy lại**. Nếu lượt trước đã
-   thành công, URL dùng extraction cache hợp lệ; ảnh dùng lại file gốc đã lưu,
-   rồi chạy aggregation/dedupe, resolve và Planner. Nếu lượt trước thất bại, hệ
-   thống chạy lại toàn bộ từ media/STT/OCR với `forceRefresh=true` khi áp dụng.
-   UI không yêu cầu
-   user chọn bước kỹ thuật cần retry.
+9. Tác vụ URL hoặc ảnh đã kết thúc chỉ hiển thị một thao tác **Chạy lại**. Dù
+   lượt trước thành công hay thất bại, hệ thống chạy lại toàn bộ từ đầu với
+   `forceRefresh=true`: URL bỏ qua extraction cache để chạy lại media/STT/OCR;
+   ảnh dùng file gốc đã lưu để chạy lại OCR; sau đó đều chạy lại
+   aggregation/dedupe, resolve và Planner. UI không yêu cầu user chọn bước kỹ
+   thuật cần retry.
 
 ### 3. Explorer làm rõ chuyến đi
 

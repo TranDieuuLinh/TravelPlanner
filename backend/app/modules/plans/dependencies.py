@@ -29,6 +29,9 @@ from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
+from app.modules.plans.explorer.tools.url_reels.caption_structurer import (
+    GeminiCaptionStructurer,
+)
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.explorer.tools.url_reels.transcript_cache import (
     SqlAlchemyYouTubeTranscriptCache,
@@ -143,7 +146,8 @@ def get_plan_service(
         backup_workflow=backup_workflow,
         image_ocr=ImageOcrService(get_ocr_llm_client()),
         url_reels=UrlReelExtractionService(
-            youtube_transcript=youtube_transcript
+            youtube_transcript=youtube_transcript,
+            caption_structurer=GeminiCaptionStructurer(),
         ),
         place_resolver=_get_place_resolver(place_repository),
         place_alias_enricher=LLMPlaceAliasEnricher(llm_client),
@@ -181,7 +185,16 @@ def _get_place_resolver(
             )
         if place_repository is not None:
             return FallbackPlaceResolver(
-                DatabasePlaceResolver(place_repository),
+                DatabasePlaceResolver(
+                    place_repository,
+                    top_k=settings.database_place_resolver_top_k,
+                    minimum_score=(
+                        settings.database_place_resolver_minimum_score
+                    ),
+                    minimum_margin=(
+                        settings.database_place_resolver_minimum_margin
+                    ),
+                ),
                 external_resolver,
                 verified_alias_repository=place_repository,
             )

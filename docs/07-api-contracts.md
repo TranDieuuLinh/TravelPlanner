@@ -303,6 +303,14 @@ media STT + frame vision/OCR của TikTok video, Instagram Reels và Facebook
 Reels. URL `youtu.be/{videoId}` không mang tín hiệu loại nội dung nên giữ contract
 caption-only.
 
+Nếu nguồn công bố expected count (ví dụ `Top 10`) nhưng extractor chỉ tạo được
+dưới 40% venue authority cao/trung bình, response trả HTTP 422
+`URL_EXTRACTION_LOW_COVERAGE` trước formatter, place provider và Planner.
+Timing từng source có thêm `speechSource`, `expectedPlaceCount`,
+`extractionCoverage` và `coverageStatus`; client hiển thị `YouTube caption`
+thay vì gắn nhãn STT cho caption. Coverage 40–70% vẫn trả Explorer nhưng
+`allowFinderSuggestions=false`.
+
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
 tả khác. Giá trị mặc định hiện tại là `local`.
@@ -328,9 +336,14 @@ khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
 `category`, `status` (`resolved | needs_review | merged | ignored`),
 `resolutionReason`, provider/nhãn/address/toạ độ đã xác minh khi có,
 `hasRepresentativeLocation`, `searchRegion`, canonical `sourceUrls`, source
-order/day/time/activity/duration,
+order/day/time/activity/duration, `entityType` (`venue | sub_place`) và
+`authority` (`high | medium | low`),
 `extractionConfidence`, `resolutionConfidence`, confidence tương thích cũ và
-`retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có đủ
+`retryable`. Contract còn có `observedAliases`, `generatedLookupAliases`, tối đa
+năm `topMatches`, `verifiedAliases` và `verifiedVietnameseAliases`. Frontend ưu
+tiên alias tiếng Việt đã xác minh cho `resolvedName`; alias do LLM sinh không
+được coi là verified nếu chưa map tới stable identity. Field này không chứa raw
+transcript/OCR. Chỉ item `resolved` có đủ
 danh tính và tọa độ được đưa vào Planner. Item `needs_review`, kể cả khi có
 `hasRepresentativeLocation = true`, chỉ phục vụ review/retry và không được xếp
 vào plan.
@@ -471,12 +484,18 @@ Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
 xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không chứa prompt,
 selected-place payload hay dữ liệu provider thô.
 Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
-`allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
+`candidateReviews`, `allowFinderSuggestions` và cờ nội bộ
+`expandDaysToFitSelectedPlaces`. `candidateReviews` cho phép bước hậu xử lý đọc
+activity URL chưa resolve sau khi Finder đã chốt route; field này không tự biến
+candidate thành selected place. Trip chat
 bật cờ mở rộng khi user chưa từng khóa số ngày/khoảng ngày, hoặc khi amendment
 yêu cầu thêm ngày; số ngày được giới hạn tối đa 30 và được tính lại sau khi merge
 địa điểm cũ với intake mới. Khi cờ là `false`, service giữ duration hiện tại và
 trả phần vượt sức chứa trong `plan.unscheduledPlaces`. UI Planner hiển thị danh
 sách này với thao tác thêm thủ công vào một ngày hoặc điền prompt yêu cầu AI xếp.
+Item có `reasonCode=activity_fallback_recommendation` mang place/location,
+popularity và `sourceProvider=route_aware_activity_fallback`; đây là gợi ý của
+hệ thống gần route, không phải venue được URL xác nhận.
 Sức chứa route-first là hai activity chính và ba meal stop mỗi ngày; restaurant/
 food URL ưu tiên thay meal suggestion, còn cafe/coffee dùng activity slot.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo

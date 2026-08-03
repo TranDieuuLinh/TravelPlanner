@@ -16,6 +16,7 @@ export type PlannerMapPlace = ExplorePlace & {
   dayColorKey: string;
   dayLabel: string;
   timeWindow: string;
+  imageUrl?: string | null;
 };
 
 export type PlannerMapRoute = {
@@ -174,9 +175,14 @@ export function PlannerMap({
     );
     map.attributionControl.removeAttribution(OTP_ROUTING_ATTRIBUTION);
 
+    const placePopupWidth = Math.min(
+      320,
+      Math.max(220, map.getSize().x - 72)
+    );
+
     locatedPlaces.forEach((place) => {
       const isSelected = place.mapKey === selectedKey;
-      const markerColor = dayColors.get(place.dayColorKey) ?? "#167c68";
+      const markerColor = dayColors.get(place.dayColorKey) ?? "#1769aa";
       const icon = leaflet.divIcon({
         className: [
           "candidateMapMarker",
@@ -210,13 +216,24 @@ export function PlannerMap({
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
       popup.append(name, day, time, address);
+      if (place.imageUrl) {
+        const photo = document.createElement("img");
+        photo.className = "candidateMapPopupPhoto";
+        photo.alt = `Ảnh ${place.name}`;
+        photo.loading = "lazy";
+        photo.src = place.imageUrl;
+        popup.append(photo);
+      }
       const displayNotes = formatPlanNote(place.notes);
       if (displayNotes) {
         const description = document.createElement("p");
         description.textContent = displayNotes;
         popup.append(description);
       }
-      marker.bindPopup(popup);
+      marker.bindPopup(popup, {
+        maxWidth: placePopupWidth,
+        minWidth: placePopupWidth
+      });
       marker.on("click", () => onSelect(place.mapKey));
       markersRef.current.set(place.mapKey, marker);
     });
@@ -288,7 +305,7 @@ export function PlannerMap({
         const isCurrentLocationRoute = route.kind === "current_location";
         const routeColor = isCurrentLocationRoute
           ? "#1769aa"
-          : dayColors.get(route.dayColorKey) ?? "#167c68";
+          : dayColors.get(route.dayColorKey) ?? "#1769aa";
         const transitSegments = route.source === "opentripplanner_transit"
           ? (route.segments ?? []).filter(
               (segment) => segment.geometryCoordinates.length >= 2

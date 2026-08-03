@@ -233,7 +233,7 @@ export function retryGuestUrlJob(jobId: string): void {
 
 export function reprocessGuestUrlJob(jobId: string): void {
   replace(jobId, {
-    forceRefresh: false,
+    forceRefresh: true,
     status: "queued",
     phase: "queued",
     startedAt: null,

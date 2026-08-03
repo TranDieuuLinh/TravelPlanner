@@ -38,6 +38,11 @@ tương thích nhưng chưa có luồng Marketplace riêng.
   item bắt nguồn từ itinerary tham khảo. Hai loại note không ghi đè nhau.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
+- `UnscheduledPlace` cũng mang location/catalog metadata tối thiểu khi là gợi ý
+  `activity_fallback_recommendation`. Gợi ý này được tạo sau khi route đã có,
+  liên kết source activity để giải thích nhu cầu nhưng dùng provenance
+  `route_aware_activity_fallback`; nó không biến venue suy luận thành claim của
+  URL và người dùng phải chủ động kéo/thêm vào lịch.
 - `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
   `source`, `verified` và `fetchedAt`. Leg provider có provenance
   `valhalla_routing` hoặc `opentripplanner_transit`; fallback địa lý phải giữ
@@ -124,12 +129,23 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   preference profile; request lỗi không được ghi vào cache.
 - `SourceClaim`: một thông tin được trích xuất như địa điểm, hoạt động, thời điểm,
   giá hoặc mẹo, kèm evidence span, confidence và trạng thái xác nhận.
+- Observation từ URL phân loại `entityType` thành venue, sub-place, address,
+  city, person, activity, food hoặc unknown. Chỉ venue/sub-place có evidence đủ
+  authority mới trở thành `PlaceCandidate`; address được giữ làm `addressHint`,
+  còn sub-place có `parentPlace` được gộp về venue cha.
+- `ExtractedContext` giữ `expectedPlaceCount`, `extractionCoverage` và
+  `coverageStatus`. Coverage thấp dừng trước alias enrichment, provider resolve
+  và Planner; coverage cần review tắt Finder để không âm thầm thay stop nguồn.
 - `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
   chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
   chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
   Candidate giữ `extractionConfidence` riêng cho chất lượng evidence; kết quả
   provider giữ `resolutionConfidence` riêng cho độ chắc chắn identity. Trường
   `confidence` cũ vẫn là extraction confidence trong thời gian tương thích API.
+  Candidate tách `observedAliases` có provenance metadata/caption/STT/OCR khỏi
+  `generatedLookupAliases` do normalizer/LLM tạo. Metadata có authority cao làm
+  anchor khi nhiều observation nói về cùng place; alias sinh ra chỉ phục vụ
+  lookup và không được trình bày như evidence của URL.
 - `UserMustPlace`: snapshot URL/place dùng chung đã được provider resolve tới
   một địa điểm cụ thể có đủ latitude/longitude. Snapshot có shape tương ứng
   `Place`, thêm `sourceUrl` và `notes`, giữ provenance và có `placeId` nullable
@@ -145,7 +161,15 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   upsert record `Place` tối thiểu hoặc bổ sung verified alias vào metadata theo
   ADR-013; raw evidence và source URL của user không được sao chép sang catalog.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
-  xác nhận.
+  xác nhận. Catalog resolver chỉ tự nhận record top-1 khi điểm tổng hợp vượt
+  ngưỡng tuyệt đối và cách top-2 đủ xa; điểm thấp hoặc sát nhau giữ trạng thái
+  unresolved để provider kế tiếp xác minh, không biến ranking nội bộ thành bằng
+  chứng identity. Explorer trả tối đa năm `topMatches` có rank, score component,
+  provider và rejection reason; frontend mặc định chỉ cần ba lựa chọn đầu cho
+  candidate `needs_review`.
+  Alias chỉ trở thành `verifiedAliases` sau khi cùng stable provider identity đã
+  vượt policy. `verifiedVietnameseAliases` là tập con tiếng Việt an toàn để UI
+  ưu tiên làm nhãn hiển thị.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
   ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn

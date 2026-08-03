@@ -218,7 +218,10 @@ class GeminiReelFrameVision:
             "as local, hidden gem, photogenic, quiet, crowded, budget, premium, "
             "family friendly, outdoor, nightlife, beach, culture or nature. "
             "Distinguish sequential stops from alternatives. Do not invent text "
-            "or identify a place without visual evidence."
+            "or identify a place without visual evidence. Classify entityType "
+            "as venue, sub_place, address, city, person, or unknown. Put visible "
+            "street/locality text in addressHint on its venue instead of making "
+            "it a stop, and set parentPlace for a sub-place inside a named venue."
         )
         if destination:
             prompt += f" The destination context is {destination}."
@@ -272,6 +275,16 @@ class GeminiReelFrameVision:
                                             },
                                             "timeHint": {"type": "string"},
                                             "activity": {"type": "string"},
+                                            "entityType": {
+                                                "type": "string",
+                                                "enum": ["venue", "sub_place", "address", "city", "person", "unknown"],
+                                            },
+                                            "addressHint": {
+                                                "anyOf": [{"type": "string"}, {"type": "null"}],
+                                            },
+                                            "parentPlace": {
+                                                "anyOf": [{"type": "string"}, {"type": "null"}],
+                                            },
                                         },
                                         "required": [
                                             "order",
@@ -280,6 +293,9 @@ class GeminiReelFrameVision:
                                             "dayNumber",
                                             "timeHint",
                                             "activity",
+                                            "entityType",
+                                            "addressHint",
+                                            "parentPlace",
                                         ],
                                         "additionalProperties": False,
                                     },
@@ -330,7 +346,20 @@ class GeminiReelFrameVision:
                 )
                 time_hint = str(observation.get("timeHint", "")).strip()
                 activity = str(observation.get("activity", "")).strip()
-                if place_name and place_name not in place_names:
+                entity_type = str(
+                    observation.get("entityType", "venue")
+                ).strip()
+                if entity_type not in {
+                    "venue", "sub_place", "address", "city", "person", "unknown"
+                }:
+                    entity_type = "unknown"
+                address_hint = observation.get("addressHint")
+                parent_place = observation.get("parentPlace")
+                if (
+                    place_name
+                    and entity_type in {"venue", "sub_place"}
+                    and place_name not in place_names
+                ):
                     place_names.append(place_name)
                     structured_observations.append(
                         FrameVisionObservation(
@@ -345,6 +374,17 @@ class GeminiReelFrameVision:
                             dayNumber=day_number,
                             timeHint=time_hint or None,
                             activity=activity or None,
+                            entityType=entity_type,
+                            addressHint=(
+                                str(address_hint).strip()
+                                if address_hint
+                                else None
+                            ),
+                            parentPlace=(
+                                str(parent_place).strip()
+                                if parent_place
+                                else None
+                            ),
                         )
                     )
                 if place_name or evidence:

@@ -33,6 +33,8 @@ def is_credible_url_candidate(candidate: UnifiedPlaceCandidate) -> bool:
     """Reject URL captions/lists that were mistaken for one place name."""
     if not _is_url_only(candidate):
         return True
+    if candidate.authority == "low":
+        return False
 
     name = re.sub(r"\s+", " ", candidate.name).strip()
     words = name.split()
