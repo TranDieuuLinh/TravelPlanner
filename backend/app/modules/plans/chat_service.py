@@ -117,10 +117,10 @@ class TripChatService:
             else ExploreTripSpecInput()
         )
         requested_days = _explicit_day_count(content)
-        expand_days = requested_days is None and _requests_more_days(content)
+        requests_more_days = requested_days is None and _requests_more_days(content)
         if requested_days is not None:
             trip_spec.days = requested_days
-        elif expand_days:
+        elif requests_more_days:
             # Let the new intake infer initial URL coverage. The planning service
             # expands again after old and newly imported Places are merged.
             trip_spec.days = None
@@ -144,6 +144,18 @@ class TripChatService:
                 current_explorer.candidate_reviews,
                 explore.explorer.candidate_reviews,
             )
+        duration_is_fixed = (
+            not requests_more_days
+            and (
+                requested_days is not None
+                or _contains_explicit_trip_dates(content)
+                or _chat_has_fixed_trip_duration(chat, current_explorer)
+                or bool(
+                    explore.explorer.trip_spec.start_date
+                    and explore.explorer.trip_spec.end_date
+                )
+            )
+        )
         next_plan, planner_timing = await (
             self.plan_service.create_main_plan_from_explorer_with_timing(
                 MainPlanFromExplorerCreate(
@@ -163,7 +175,7 @@ class TripChatService:
                         explore.explorer.preference_snapshot.effective_profile
                     ),
                     allowFinderSuggestions=explore.allow_finder_suggestions,
-                    expandDaysToFitSelectedPlaces=expand_days,
+                    expandDaysToFitSelectedPlaces=not duration_is_fixed,
                 )
             )
         )
@@ -262,6 +274,10 @@ class TripChatService:
                 sourceRefs=item.source_refs,
                 sourceProvider=item.source_provider,
                 notes=item.notes,
+                personalNotes=item.personal_notes,
+                imageUrls=item.image_urls,
+                rating=item.rating,
+                reviewCount=item.review_count,
                 sourceOrder=(
                     item.source_order
                     if _is_reference_item(item.source_refs)
@@ -606,6 +622,47 @@ class TripChatService:
         )
         return self._read(saved)
 
+    def remove_unscheduled_place(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        name: str,
+        place_id: str | None = None,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+
+        plan = Plan.model_validate(chat.current_plan)
+        result = self.mutation_service.remove_unscheduled_place(
+            plan,
+            name=name,
+            place_id=place_id,
+        )
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        summary = f"Đã xóa địa điểm '{name}' khỏi danh sách chưa xếp lịch (bản sửa đổi {revision})."
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=summary,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
     def reorder_items(
         self,
         chat_id: str,
@@ -649,6 +706,34 @@ def _explicit_day_count(content: str) -> int | None:
     return int(match.group(1)) if match is not None else None
 
 
+def _contains_explicit_trip_dates(content: str) -> bool:
+    normalized = " ".join(content.casefold().split())
+    date_pattern = (
+        r"(?:\b\d{4}-\d{1,2}-\d{1,2}\b|"
+        r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b)"
+    )
+    return len(re.findall(date_pattern, normalized)) >= 2
+
+
+def _chat_has_fixed_trip_duration(
+    chat: TripChat,
+    current_explorer: ExplorerContextResponse | None,
+) -> bool:
+    if current_explorer is not None and (
+        current_explorer.trip_spec.start_date
+        and current_explorer.trip_spec.end_date
+    ):
+        return True
+    return any(
+        message.role == "user"
+        and (
+            _explicit_day_count(message.content) is not None
+            or _contains_explicit_trip_dates(message.content)
+        )
+        for message in chat.messages
+    )
+
+
 def _merge_candidate_reviews(
     current: list[PlaceCandidateReview],
     incoming: list[PlaceCandidateReview],
@@ -672,12 +757,14 @@ def _merge_candidate_reviews(
         source_urls = list(
             dict.fromkeys([*saved_review.source_urls, *next_review.source_urls])
         )
-        preferred = (
-            next_review
-            if next_review.status == "resolved"
+        incoming_is_better = (
+            next_review.status == "resolved"
             and saved_review.status != "resolved"
-            else saved_review
+        ) or (
+            next_review.has_representative_location
+            and not saved_review.has_representative_location
         )
+        preferred = next_review if incoming_is_better else saved_review
         merged[matching_index] = preferred.model_copy(
             update={
                 "candidate_id": saved_review.candidate_id,
@@ -812,4 +899,7 @@ def _selected_place_from_review(
         sourceProvider=review.provider,
         sourceOrder=review.source_order,
         sourceDay=review.source_day,
+        sourceTimeHint=review.source_time_hint,
+        sourceActivity=review.source_activity,
+        sourceDurationMinutes=review.source_duration_minutes,
     )

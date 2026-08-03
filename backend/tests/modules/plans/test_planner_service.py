@@ -229,6 +229,11 @@ def test_url_itinerary_respects_pace_capacity_and_keeps_source_order() -> None:
             sourceTimeHint=time_hint,
             sourceActivity=activity,
             sourceDurationMinutes=45,
+            notes=(
+                "Đã định vị theo địa chỉ; chưa xác minh POI cụ thể."
+                if index == 1
+                else None
+            ),
         )
         for index, (name, time_hint, activity) in enumerate(
             [
@@ -271,6 +276,10 @@ def test_url_itinerary_respects_pace_capacity_and_keeps_source_order() -> None:
         item.reason_code for item in plan.unscheduled_places
     } == {"no_day_capacity"}
     assert [item.source_order for item in plan.days[0].items] == [1, 2]
+    assert plan.days[0].items[0].place_id is None
+    assert plan.days[0].items[0].notes == (
+        "Đã định vị theo địa chỉ; chưa xác minh POI cụ thể."
+    )
     assert plan.days[0].items[1].notes == "Order an egg coffee."
     assert len(plan.days[0].transport_legs) == 1
 
@@ -403,6 +412,28 @@ def test_trip_theme_planner_projects_requirements_to_neutral_route_buckets() -> 
         brief.focus_tags == ["history", "art"]
         for brief in output.macro_plan.day_briefs
     )
+
+
+def test_planner_normalizes_food_themes_and_over_capacity_requirements() -> None:
+    service = PlannerService(
+        FakeStatisticsProvider(),
+        OverCapacityThemesLLM(),
+    )
+
+    output = asyncio.run(
+        service.create_main_macro_plan(
+            _intent(),
+            trip_spec=TripPlanningSpec(days=1),
+            region_key="vn,ha-noi",
+            selected_places=[],
+        )
+    )
+
+    assert [theme.theme for theme in output.macro_plan.trip_themes] == [
+        "Văn hóa địa phương"
+    ]
+    assert output.macro_plan.trip_themes[0].minimum_activities == 2
+    assert any("khung bữa ăn riêng" in warning for warning in output.warnings)
 
 
 def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> None:
@@ -880,6 +911,7 @@ def test_plan_service_expands_days_to_schedule_all_url_places() -> None:
                 }
                 for index in range(1, 8)
             ],
+            "expandDaysToFitSelectedPlaces": True,
         }
     )
 
@@ -894,6 +926,90 @@ def test_plan_service_expands_days_to_schedule_all_url_places() -> None:
         if item.source == "selected_place"
     } == {f"TikTok Place {index}" for index in range(1, 8)}
     assert plan.unscheduled_places == []
+
+
+def test_plan_service_keeps_url_overflow_unscheduled_for_fixed_duration() -> None:
+    main_workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=_planner(FakeStatisticsProvider()),
+        finder=FinderService(),
+    )
+    service = PlanService(
+        repository=PlanRepository(),
+        explore_formatter=object(),  # type: ignore[arg-type]
+        main_workflow=main_workflow,
+        backup_workflow=object(),  # type: ignore[arg-type]
+    )
+    source_url = "https://www.tiktok.com/@traveler/video/fixed"
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {"destination": "Hà Nội", "pace": "balanced"},
+            "tripSpec": {"days": 1},
+            "selectedPlaces": [
+                {
+                    "name": f"TikTok Place {index}",
+                    "sourceRefs": [source_url],
+                    "sourceOrder": index,
+                    "sourceDay": 1,
+                }
+                for index in range(1, 5)
+            ],
+            "expandDaysToFitSelectedPlaces": False,
+        }
+    )
+
+    plan = asyncio.run(service.create_main_plan_from_explorer(payload))
+
+    assert plan.intent.days == 1
+    assert len(plan.unscheduled_places) == 2
+    assert {item.reason_code for item in plan.unscheduled_places} == {
+        "no_day_capacity"
+    }
+
+
+def test_food_url_places_use_meal_slots_before_expanding_days() -> None:
+    main_workflow = MainPlanWorkflow(
+        explorer=ExplorerService(),
+        planner=_planner(FakeStatisticsProvider()),
+        finder=FinderService(),
+    )
+    service = PlanService(
+        repository=PlanRepository(),
+        explore_formatter=object(),  # type: ignore[arg-type]
+        main_workflow=main_workflow,
+        backup_workflow=object(),  # type: ignore[arg-type]
+    )
+    source_url = "https://www.tiktok.com/@traveler/video/food"
+    payload = MainPlanFromExplorerCreate.model_validate(
+        {
+            "intent": {"destination": "Hà Nội", "pace": "balanced"},
+            "tripSpec": {"days": 1},
+            "selectedPlaces": [
+                {
+                    "name": f"Restaurant {index}",
+                    "tags": ["restaurant"],
+                    "sourceRefs": [source_url],
+                    "sourceOrder": index,
+                    "sourceDay": 1,
+                }
+                for index in range(1, 5)
+            ],
+            "expandDaysToFitSelectedPlaces": True,
+        }
+    )
+
+    plan = asyncio.run(service.create_main_plan_from_explorer(payload))
+
+    assert plan.intent.days == 2
+    assert plan.unscheduled_places == []
+    selected_food = [
+        item
+        for day in plan.days
+        for item in day.items
+        if item.source == "selected_place"
+    ]
+    assert len(selected_food) == 4
+    assert all(item.timeline_category == "food" for item in selected_food)
 
 
 def test_main_workflow_accepts_planning_context() -> None:
@@ -1333,6 +1449,29 @@ class TripThemeOnlyLLM(FakePlannerLLM):
                 "focusTags": ["art"],
                 "minimumActivities": 1,
                 "targetRegionKeys": ["vn,ha-noi"],
+            },
+        ]
+        draft["macroPlan"]["dayBriefs"] = []
+        return json.dumps(draft, ensure_ascii=False)
+
+
+class OverCapacityThemesLLM(FakePlannerLLM):
+    async def generate_json(self, system_prompt: str, user_payload: str) -> str:
+        raw = await super().generate_json(system_prompt, user_payload)
+        envelope = json.loads(user_payload)
+        if envelope["stage"] == "research":
+            return raw
+        draft = json.loads(raw)
+        draft["macroPlan"]["tripThemes"] = [
+            {
+                "theme": "Ẩm thực địa phương",
+                "focusTags": ["food", "restaurant"],
+                "minimumActivities": 4,
+            },
+            {
+                "theme": "Văn hóa địa phương",
+                "focusTags": ["culture"],
+                "minimumActivities": 4,
             },
         ]
         draft["macroPlan"]["dayBriefs"] = []

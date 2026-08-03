@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -60,6 +61,59 @@ class YouTubeTranscriptCacheEntry(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class UrlSourceArtifact(Base):
+    """Normalized URL text retained for retrieval and note generation."""
+
+    __tablename__ = "url_source_artifacts"
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_type IN ('caption', 'stt', 'ocr')",
+            name="ck_url_source_artifacts_type",
+        ),
+        UniqueConstraint(
+            "source_url",
+            "artifact_type",
+            "language",
+            name="uq_url_source_artifacts_url_type_language",
+        ),
+        Index(
+            "ix_url_source_artifacts_url_fetched",
+            "source_url",
+            "fetched_at",
+        ),
+        Index(
+            "ix_url_source_artifacts_type_fetched",
+            "artifact_type",
+            "fetched_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_text: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=""
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

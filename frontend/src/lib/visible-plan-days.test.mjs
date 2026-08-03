@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { dayHasPlace, visiblePlanDays } from "./visible-plan-days.ts";
+import {
+  dayHasPlace,
+  visiblePlanDays,
+  visiblePlanItems
+} from "./visible-plan-days.ts";
 
 test("removes days with no itinerary items", () => {
   const days = [
@@ -21,11 +25,36 @@ test("removes days containing only breaks or free time", () => {
   }), false);
 });
 
+test("removes days containing only unresolved Finder meal placeholders", () => {
+  assert.equal(dayHasPlace({
+    items: [
+      {
+        placeId: null,
+        placeType: "meal",
+        source: "finder_rule",
+        timelineCategory: "food"
+      }
+    ]
+  }), false);
+});
+
+test("removes unresolved meal placeholders from otherwise populated days", () => {
+  const items = [
+    { placeId: "museum", placeType: "attraction", source: "selected_place" },
+    { placeId: null, placeType: "meal", source: "finder_rule" }
+  ];
+
+  assert.deepEqual(visiblePlanItems(items), [items[0]]);
+});
+
 test("keeps food and manually added place items", () => {
   assert.equal(dayHasPlace({
     items: [{ placeType: "restaurant", timelineCategory: "food" }]
   }), true);
   assert.equal(dayHasPlace({
     items: [{ placeType: "attraction" }]
+  }), true);
+  assert.equal(dayHasPlace({
+    items: [{ placeId: null, placeType: "meal", source: "manual" }]
   }), true);
 });

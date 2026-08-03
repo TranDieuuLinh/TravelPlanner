@@ -15,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -111,6 +111,10 @@ class Place(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    images: Mapped[list["PlaceImage"]] = relationship(
+        back_populates="place",
+        order_by="PlaceImage.id",
+    )
 
 
 class PlaceAmenity(Base):
@@ -172,6 +176,7 @@ class PlaceImage(Base):
         String(SHORT_LABEL), nullable=True
     )
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    place: Mapped[Place] = relationship(back_populates="images")
 
 
 class PlaceReview(Base):

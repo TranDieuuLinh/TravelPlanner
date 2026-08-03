@@ -14,6 +14,7 @@ from app.modules.plans.destination_inference import (
 from app.modules.plans.dependencies import get_plan_mutation_service, get_plan_service
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.plans.url_job_repository import UrlImportJobRepository
+from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.users.model import User
 from app.shared.errors import AppError
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class UrlImportJobWorker:
-    """Persistent FIFO runner. One worker instance processes one URL at a time."""
+    """Persistent FIFO runner for URL and OCR-image sources."""
 
     def __init__(
         self,
@@ -50,7 +51,17 @@ class UrlImportJobWorker:
         if recovered:
             logger.info("Requeued %s interrupted URL import jobs", recovered)
         while True:
-            processed = await self.run_once()
+            try:
+                processed = await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A terminal-state write should not be able to kill the FIFO
+                # worker permanently. The next iteration uses a fresh session
+                # and can reconcile stale running rows.
+                logger.exception("URL import worker iteration failed")
+                await asyncio.sleep(self.poll_interval_seconds)
+                continue
             if not processed:
                 await asyncio.sleep(self.poll_interval_seconds)
 
@@ -81,12 +92,13 @@ class UrlImportJobWorker:
             job = repository.claim_next()
             if job is None:
                 return False
+            job_id = job.id
             process_task = asyncio.create_task(
-                self._process(db, job.id),
-                name=f"url-import-job-{job.id}",
+                self._process(db, job_id),
+                name=f"url-import-job-{job_id}",
             )
             completion = asyncio.Event()
-            self._active_job_id = job.id
+            self._active_job_id = job_id
             self._active_process_task = process_task
             self._active_completion = completion
             try:
@@ -101,15 +113,15 @@ class UrlImportJobWorker:
                 )
                 if (
                     worker_is_stopping
-                    or job.id not in self._cancel_requested_job_ids
+                    or job_id not in self._cancel_requested_job_ids
                 ):
                     raise
                 db.rollback()
-                repository.delete_running(job.id)
+                repository.delete_running(job_id)
             except TimeoutError:
                 db.rollback()
                 repository.fail(
-                    job.id,
+                    job_id,
                     code="URL_IMPORT_TIMEOUT",
                     message=(
                         "Tác vụ trích xuất đã quá thời gian cho phép. "
@@ -117,19 +129,21 @@ class UrlImportJobWorker:
                     ),
                 )
             except AppError as exc:
-                repository.fail(job.id, code=exc.code, message=exc.message)
+                db.rollback()
+                repository.fail(job_id, code=exc.code, message=exc.message)
             except Exception:
-                logger.exception("URL import job %s failed", job.id)
+                logger.exception("URL import job %s failed", job_id)
+                db.rollback()
                 repository.fail(
-                    job.id,
+                    job_id,
                     code="URL_IMPORT_FAILED",
                     message="Không thể trích xuất URL này. Bạn có thể thử lại riêng tác vụ.",
                 )
             else:
-                repository.succeed(job.id, revision)
+                repository.succeed(job_id, revision)
             finally:
-                self._cancel_requested_job_ids.discard(job.id)
-                if self._active_job_id == job.id:
+                self._cancel_requested_job_ids.discard(job_id)
+                if self._active_job_id == job_id:
                     self._active_job_id = None
                     self._active_process_task = None
                     self._active_completion = None
@@ -139,7 +153,7 @@ class UrlImportJobWorker:
     async def _process(self, db: Session, job_id: str) -> int:
         job = db.get(UrlImportJob, job_id)
         if job is None:
-            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ URL.")
+            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
         user = db.get(User, job.user_id)
         if user is None:
             raise AppError(404, "USER_NOT_FOUND", "Không tìm thấy người dùng của tác vụ.")
@@ -156,7 +170,29 @@ class UrlImportJobWorker:
                 get_plan_service(db),
                 get_plan_mutation_service(db),
             )
-            content = f"{job.request_content}\n{job.url}".strip()
+            is_image = job.source_type == "image"
+            content = (
+                job.request_content
+                if is_image
+                else f"{job.request_content}\n{job.url}".strip()
+            )
+            images = (
+                [
+                    ImageUploadPayload(
+                        file_name=job.source_name or "uploaded-image",
+                        mime_type=job.image_mime_type,
+                        data=bytes(job.image_data or b""),
+                    )
+                ]
+                if is_image
+                else []
+            )
+            if is_image and not job.image_data:
+                raise AppError(
+                    422,
+                    "IMAGE_DATA_MISSING",
+                    "Không còn dữ liệu ảnh để xử lý. Hãy tải ảnh lên lại.",
+                )
             try:
                 result = await service.amend(
                     job.chat_id,
@@ -165,11 +201,11 @@ class UrlImportJobWorker:
                     expected_revision=chat.revision,
                     initial_destination=(
                         usable_destination(chat.destination)
-                        or infer_destination_from_urls([job.url])
+                        or (infer_destination_from_urls([job.url]) if job.url else None)
                         or "unspecified"
                     ),
-                    urls=[job.url],
-                    images=[],
+                    urls=[] if is_image else [job.url],
+                    images=images,
                     force_url_refresh=job.force_refresh,
                 )
                 return result.revision

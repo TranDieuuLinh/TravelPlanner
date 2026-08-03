@@ -22,8 +22,10 @@ Explorer intake.
    assumptions, missingInfoQuestions. Không trả candidate.
 4. Resolver chạy tự động, không hỏi user. Mọi kết quả được ghi
    `resolved`, `provisional` hoặc `unresolved`.
-5. Chỉ lưu candidate và toàn bộ dữ liệu resolve vào `user_must_place`. Không lưu
-   Explorer context và không tạo/cập nhật record trong `places`.
+5. Chỉ lưu candidate và toàn bộ dữ liệu resolve riêng của intake vào
+   `user_must_place`. ADR-013 tạo ngoại lệ hẹp: stable Google identity đã
+   `resolved` được phép upsert catalog `places` tối thiểu hoặc verified alias;
+   Explorer context và raw evidence không được ghi vào catalog.
 6. Explorer không tự gọi Planner hoặc Finder. Planner downstream nhận nguyên
    envelope, dùng object `explorer` và chuyển tiếp `intakeId + userId`; Finder
    downstream đọc `user_must_place` bằng đúng cặp khóa đó.

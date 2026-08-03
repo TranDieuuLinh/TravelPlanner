@@ -111,16 +111,15 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
     day = result.days[0]
     assert [item.role for item in day.items] == [
         "main_activity",
-        "lunch_meal",
         "support_activity",
         "break_support_bonus",
-        "dinner_meal",
         "group_social_activity",
     ]
     assert day.items[0].source == "selected_place"
-    assert day.items[2].source == "finder_suggestion"
+    assert day.items[1].source == "finder_suggestion"
     assert day.items[0].address == "1 Selected Street, Ha Noi"
-    assert day.items[2].address == "2 Support Street, Ha Noi"
+    assert day.items[1].address == "2 Support Street, Ha Noi"
+    assert not any(item.place_type == "meal" for item in day.items)
     assert result.final_plan_status.used_place_ids == [
         "selected-main",
         "support",
@@ -511,19 +510,19 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
         ),
         "catalog-dinner": _place(
             "catalog-dinner",
-            "Nearby dinner cafe",
+            "Nearby dinner restaurant",
             tags=["food"],
             intensity="light",
-            place_type="cafe",
+            place_type="restaurant",
             latitude=21.032,
             longitude=105.852,
         ),
         "catalog-breakfast": _place(
             "catalog-breakfast",
-            "Nearby breakfast cafe",
-            tags=["food", "cafe", "breakfast"],
+            "Nearby breakfast bakery",
+            tags=["food", "bakery", "breakfast"],
             intensity="light",
-            place_type="cafe",
+            place_type="bakery",
             latitude=21.029,
             longitude=105.849,
         ),
@@ -589,6 +588,225 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
         item.role == "group_social_activity"
         for item in result.days[0].items
     )
+
+
+def test_route_first_omits_unresolved_meal_slots() -> None:
+    source = _place(
+        "source-place",
+        "Place from video",
+        tags=["culture"],
+        intensity="light",
+    )
+    finder = PlaceSelectorService(
+        FakeFinderPlaceTool({source.place_id: source}, search_order=[]),
+        route_optimizer=RouteFirstItineraryOptimizer(
+            GeographicRouteOptimizer()
+        ),
+    )
+    macro_plan = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={
+                        "allocated_selected_place_refs": [source.place_id]
+                    }
+                )
+            ]
+        }
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId=source.place_id,
+                name=source.name,
+                sourceRefs=["https://example.com/reel"],
+                tags=["culture"],
+            )
+        ],
+        allow_finder_suggestions=False,
+    )
+
+    assert [item.role for item in result.days[0].items] == ["main_activity_1"]
+    assert not any(item.place_type == "meal" for item in result.days[0].items)
+    assert sum("omits unresolved meal slot" in warning for warning in result.warnings) == 3
+
+
+def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> None:
+    source_cafe = _place(
+        "source-cafe",
+        "Cafe Đinh",
+        tags=["cafe", "coffee"],
+        intensity="light",
+        place_type="cafe",
+    )
+    source_lunch = _place(
+        "source-lunch",
+        "Bún đậu Tuấn Trọc",
+        tags=["food"],
+        intensity=None,
+        place_type="restaurant",
+    )
+    catalog_places = {
+        "catalog-museum": _place(
+            "catalog-museum",
+            "Bảo tàng Phụ nữ Việt Nam",
+            tags=["culture"],
+            intensity="light",
+        ),
+        "catalog-breakfast": _place(
+            "catalog-breakfast",
+            "Tiệm bánh buổi sáng",
+            tags=["food", "breakfast"],
+            intensity=None,
+            place_type="bakery",
+        ),
+        "catalog-lunch": _place(
+            "catalog-lunch",
+            "Nhà hàng trưa Finder",
+            tags=["food", "lunch"],
+            intensity=None,
+            place_type="restaurant",
+        ),
+        "catalog-dinner": _place(
+            "catalog-dinner",
+            "Nhà hàng tối Finder",
+            tags=["food", "dinner"],
+            intensity=None,
+            place_type="restaurant",
+        ),
+    }
+    tool = FakeFinderPlaceTool(
+        {
+            source_cafe.place_id: source_cafe,
+            source_lunch.place_id: source_lunch,
+            **catalog_places,
+        },
+        search_order=list(catalog_places),
+    )
+    finder = PlaceSelectorService(
+        tool,
+        route_optimizer=RouteFirstItineraryOptimizer(
+            GeographicRouteOptimizer()
+        ),
+    )
+    macro_plan = _macro_plan().model_copy(
+        update={
+            "day_briefs": [
+                _macro_plan().day_briefs[0].model_copy(
+                    update={
+                        "allocated_selected_place_refs": [
+                            source_cafe.place_id,
+                            source_lunch.place_id,
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId=source_cafe.place_id,
+                name=source_cafe.name,
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=1,
+                tags=["cafe", "coffee"],
+            ),
+            SelectedPlaceContext(
+                placeId=source_lunch.place_id,
+                name=source_lunch.name,
+                sourceRefs=["https://example.com/reel"],
+                sourceOrder=2,
+                sourceTimeHint="lunch",
+                tags=["food"],
+            ),
+        ],
+        allow_finder_suggestions=True,
+    )
+
+    day_items = {item.role: item for item in result.days[0].items}
+    assert day_items["main_activity_1"].place_id == "source-cafe"
+    assert day_items["main_activity_1"].timeline_category == "activity"
+    assert day_items["lunch_meal"].place_id == "source-lunch"
+    assert day_items["lunch_meal"].source == "selected_place"
+    assert all(
+        item.place_id != "catalog-lunch" for item in result.days[0].items
+    )
+    assert result.unscheduled_places == []
+
+
+def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> None:
+    selected = [
+        SelectedPlaceContext(
+            name=name,
+            sourceRefs=["https://example.com/hanoi-video"],
+            sourceOrder=order,
+            sourceDay=day,
+            sourceTimeHint=time_hint,
+            tags=tags,
+            latitude=21.02 + order / 1000,
+            longitude=105.84 + order / 1000,
+        )
+        for order, (name, day, time_hint, tags) in enumerate(
+            [
+                ("Ho Chi Minh's Mausoleum", 1, "morning", ["other"]),
+                ("Nhà thờ Lớn Hà Nội", 1, "afternoon", ["food"]),
+                ("Hanoi Train Street (South)", 2, "afternoon", ["cafe"]),
+                ("Bún đậu Tuấn Trọc", 2, "lunch", ["food"]),
+                ("Hồ Hoàn Kiếm", 3, "afternoon", ["food", "outdoor"]),
+                ("Xôi chè bà Thìn", 3, "dinner", ["food"]),
+            ],
+            start=1,
+        )
+    ]
+    allocated_by_day = {
+        1: [selected[0].stable_ref, selected[1].stable_ref],
+        2: [selected[2].stable_ref, selected[3].stable_ref],
+        3: [selected[4].stable_ref, selected[5].stable_ref],
+    }
+    macro_plan = MacroPlan(
+        title="Hanoi from URL",
+        destination="Hanoi",
+        regionKey="vn,ha-noi",
+        dayBriefs=[
+            DayBrief(
+                day=day,
+                theme=f"URL day {day}",
+                targetArea="Hanoi",
+                targetRegionKey="vn,ha-noi",
+                focusTags=["culture", "food"],
+                allocatedSelectedPlaceRefs=allocated_by_day[day],
+            )
+            for day in range(1, 4)
+        ],
+    )
+    finder = PlaceSelectorService(
+        route_optimizer=RouteFirstItineraryOptimizer(
+            GeographicRouteOptimizer()
+        )
+    )
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        selected,
+        allow_finder_suggestions=True,
+    )
+
+    scheduled_url_names = {
+        item.name
+        for day in result.days
+        for item in day.items
+        if item.source == "selected_place"
+    }
+    assert scheduled_url_names == {place.name for place in selected}
+    assert result.unscheduled_places == []
 
 
 def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
@@ -745,11 +963,10 @@ def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
 
     assert result.days[0].strategy == "relaxed"
     assert [item.role for item in result.days[0].items] == [
-        "lunch_meal",
         "break_main_support",
-        "dinner_meal",
         "group_social_activity",
     ]
+    assert not any(item.place_type == "meal" for item in result.days[0].items)
 
 
 def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:

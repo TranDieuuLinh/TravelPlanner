@@ -635,6 +635,21 @@ class CandidateSelector:
                         "source_time_hint": selected.source_time_hint,
                         "source_activity": selected.source_activity,
                         "source_duration_minutes": selected.source_duration_minutes,
+                        "notes": selected.notes,
+                        "image_urls": (
+                            list(selected.image_urls)
+                            or stored_place.image_urls
+                        ),
+                        "rating": (
+                            selected.rating
+                            if selected.rating is not None
+                            else stored_place.rating
+                        ),
+                        "review_count": (
+                            selected.review_count
+                            if selected.review_count is not None
+                            else stored_place.review_count
+                        ),
                     }
                 )
         return FinderPlace(
@@ -656,6 +671,11 @@ class CandidateSelector:
             sourceTimeHint=selected.source_time_hint,
             sourceActivity=selected.source_activity,
             sourceDurationMinutes=selected.source_duration_minutes,
+            notes=selected.notes,
+            personalNotes=selected.personal_notes,
+            imageUrls=selected.image_urls,
+            rating=selected.rating,
+            reviewCount=selected.review_count or 0,
         )
 
     def _intensity_allowed(self, candidate: FinderPlace, user_status: UserStatus) -> bool:

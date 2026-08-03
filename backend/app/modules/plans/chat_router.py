@@ -193,6 +193,24 @@ def remove_trip_chat_item(
     )
 
 
+@router.delete("/{chat_id}/plan/unscheduled-places", response_model=TripChatRead)
+def remove_trip_chat_unscheduled_place(
+    chat_id: str,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    name: Annotated[str, Form(min_length=1, max_length=255)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+    place_id: Annotated[str | None, Form(alias="placeId")] = None,
+) -> TripChatRead:
+    return service.remove_unscheduled_place(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        name=name,
+        place_id=place_id,
+    )
+
+
 @router.put("/{chat_id}/plan/days/{day}/items/reorder", response_model=TripChatRead)
 def reorder_trip_chat_items(
     chat_id: str,

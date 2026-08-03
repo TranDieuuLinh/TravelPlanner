@@ -35,7 +35,7 @@ class MealStopSelector:
         selected: dict[str, FinderPlace | None] = {}
         used = set(excluded_place_ids)
         for role, terms in (
-            ("breakfast_meal", ["breakfast", "cafe", "bakery", "food"]),
+            ("breakfast_meal", ["breakfast", "bakery", "food"]),
             ("lunch_meal", ["lunch", "local food", "restaurant"]),
             ("dinner_meal", ["dinner", "local food", "restaurant"]),
         ):

@@ -616,11 +616,23 @@ def test_dedicated_gemini_pools_reject_overlapping_keys() -> None:
         )
 
 
-def test_gemini_stt_fallback_has_rate_safe_defaults() -> None:
+def test_gemini_stt_fallback_has_parallel_defaults() -> None:
     configured = Settings(_env_file=None)
 
-    assert configured.url_reel_stt_max_concurrency == 1
-    assert configured.url_reel_gemini_stt_min_interval_seconds == 6.0
+    assert configured.url_reel_stt_chunk_seconds == 60.0
+    assert configured.url_reel_stt_max_concurrency == 3
+    assert configured.url_reel_gemini_stt_min_interval_seconds == 2.0
+    assert configured.url_reel_max_frames == 72
+
+
+def test_default_stt_tuning_splits_three_minute_audio_into_three_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    speech = GeminiAudioSpeechToText(api_key="stt-1,stt-2,stt-3")
+    monkeypatch.setattr(settings, "url_reel_stt_chunk_seconds", 60.0)
+    monkeypatch.setattr(settings, "url_reel_stt_max_concurrency", 3)
+
+    assert speech._chunk_count(170.208) == 3
 
 
 def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
@@ -1143,10 +1155,8 @@ def test_context_extractor_keeps_caption_pins_canonical_for_hanoi_video() -> Non
         for detail in context.extracted_place_details
     }
     assert by_name["Cafe Pho Co"].address == "11 Hàng Gai"
-    assert by_name["Ethnology Museum"].category.value == "culture"
-    assert by_name["Train Street Southern Entrance"].category.value == (
-        "attraction"
-    )
+    assert by_name["Ethnology Museum"].category.value == "other"
+    assert by_name["Train Street Southern Entrance"].category.value == "other"
     assert by_name["Train Street Southern Entrance"].address is None
 
 
@@ -1910,7 +1920,7 @@ def test_context_extractor_preserves_numbered_youtube_list_and_splits_stops() ->
         item.name: item
         for item in context.extracted_place_details
     }
-    assert by_name["Tranquac Pagota"].category.value == "culture"
+    assert by_name["Tranquac Pagota"].category.value == "other"
 
 
 class TemporaryDirectoryStub:

@@ -31,7 +31,11 @@ from app.modules.plans.explorer.timing import (
     ExplorerTimingTrace,
 )
 from app.modules.plans.repository import PlanRepository
-from app.modules.plans.service import PlanService, _dedupe_place_resolutions
+from app.modules.plans.service import (
+    PlanService,
+    _dedupe_place_resolutions,
+    _place_candidate_review,
+)
 from app.shared.errors import AppError
 
 
@@ -166,6 +170,53 @@ class MixedResolver(RecordingResolver):
             )
             for index, candidate in enumerate(candidates)
         ]
+
+
+def test_resolver_category_is_authoritative_over_candidate_category() -> None:
+    class MuseumResolver:
+        received_categories: list[str] = []
+
+        async def resolve_many(
+            self,
+            candidates: list[Any],
+            *,
+            destination: str,
+        ) -> list[PlaceResolution]:
+            self.received_categories = [
+                candidate.category.value for candidate in candidates
+            ]
+            return [
+                PlaceResolution(
+                    candidate=candidate,
+                    status="resolved",
+                    provider="database",
+                    name=candidate.name,
+                    placeType="Museum",
+                    city=destination,
+                    latitude="21.0359",
+                    longitude="105.8326",
+                )
+                for candidate in candidates
+            ]
+
+    service = build_service(
+        RecordingFormatter(),
+        RecordingUrlReels(),
+        RecordingImageOcr(),
+    )
+    resolver = MuseumResolver()
+    service.place_resolver = resolver  # type: ignore[assignment]
+    candidate = UnifiedPlaceCandidate(
+        name="Ho Chi Minh Museum",
+        category="food",
+    )
+
+    resolutions = asyncio.run(
+        service._resolve_places([candidate], destination="Hà Nội")
+    )
+
+    assert resolver.received_categories == ["other"]
+    assert resolutions[0].candidate.category.value == "culture"
 
 
 def build_service(
@@ -392,6 +443,85 @@ def test_explorer_preserves_unresolved_candidates_for_review_and_retry() -> None
         "resolved",
     ]
     assert retried[1].candidate_id == pending.candidate_id
+
+
+def test_unresolved_url_address_keeps_safe_representative_coordinates() -> None:
+    candidate = UnifiedPlaceCandidate.model_validate(
+        {
+            "name": "Phở tại 144A Quán Thánh",
+            "category": "food",
+            "addressHint": "144A Quán Thánh, Ba Đình, Hà Nội",
+            "searchRegion": "Hà Nội",
+            "sources": [
+                {
+                    "type": "url",
+                    "url": "https://www.tiktok.com/@creator/video/123",
+                }
+            ],
+            "sourceOrder": 2,
+            "sourceTimeHint": "07:00",
+            "sourceActivity": "Ăn phở",
+            "sourceDurationMinutes": 45,
+            "confidence": 0.9,
+        }
+    )
+    resolution = PlaceResolution(
+        candidate=candidate,
+        status="unresolved",
+        resolutionReason="name_mismatch",
+        provider="google_maps_scraper",
+        name="144A Quán Thánh",
+        address="144A Quán Thánh, Ba Đình, Hà Nội",
+        city="Hà Nội",
+        latitude="21.0421",
+        longitude="105.8422",
+    )
+
+    review = _place_candidate_review(resolution, destination="Hà Nội")
+
+    assert review.status == "needs_review"
+    assert review.has_representative_location is True
+    assert review.latitude == pytest.approx(21.0421)
+    assert review.longitude == pytest.approx(105.8422)
+    assert review.source_activity == "Ăn phở"
+    assert review.source_time_hint == "07:00"
+    assert review.source_duration_minutes == 45
+
+
+def test_unresolved_url_broad_city_match_is_not_a_representative_location() -> None:
+    candidate = UnifiedPlaceCandidate.model_validate(
+        {
+            "name": "Hà Nội",
+            "category": "other",
+            "addressHint": "Hà Nội",
+            "searchRegion": "Hà Nội",
+            "sources": [
+                {
+                    "type": "url",
+                    "url": "https://www.tiktok.com/@creator/video/123",
+                }
+            ],
+            "confidence": 0.8,
+        }
+    )
+    resolution = PlaceResolution(
+        candidate=candidate,
+        status="unresolved",
+        provider="google_maps_scraper",
+        name="Hà Nội",
+        address="Hà Nội, Việt Nam",
+        city="Hà Nội",
+        country="Việt Nam",
+        latitude="21.0278",
+        longitude="105.8342",
+    )
+
+    review = _place_candidate_review(resolution, destination="Hà Nội")
+
+    assert review.status == "needs_review"
+    assert review.has_representative_location is False
+    assert review.latitude is None
+    assert review.longitude is None
 
 
 def test_url_destination_guardrail_asks_about_conflicting_prompt() -> None:

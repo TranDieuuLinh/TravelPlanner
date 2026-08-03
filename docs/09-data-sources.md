@@ -2,6 +2,11 @@
 
 ## Nguyên tắc
 
+- Category/tag vận hành của một địa điểm đã resolve lấy từ Places database hoặc
+  Google Maps Playwright, không lấy từ phân loại của AI. Giữ raw provider type
+  trong `place_type`, chuẩn hóa category riêng cho tìm kiếm/Planner; thiếu dữ
+  liệu provider thì dùng `other` thay vì đoán từ nội dung nguồn.
+
 - Domain model của ứng dụng không được phụ thuộc payload riêng của provider.
 - Ghi nguồn, provider ID, thời điểm lấy, giới hạn license và độ tin cậy.
 - Ưu tiên dữ liệu mới từ provider cho thông tin vận hành và kinh nghiệm creator
@@ -198,9 +203,19 @@ instruction.
    Placeholder `unspecified`/`unknown` được coi như thiếu region và không được
    gửi tới provider. Background URL job bảo toàn destination của chat hoặc suy
    luận bảo thủ từ query URL, title/caption và vùng chiếm ưu thế trong candidate.
-   Candidate OCR-only bị loại khi evidence không chứa chính tên logo. Nhiều
-   candidate khác tên nhưng trùng Google identity/tọa độ cùng bị trả về
-   `duplicate_provider_identity` thay vì được persist.
+   Candidate OCR-only bị loại khi evidence không chứa chính tên logo. Heading
+   itinerary tổng quát như `FULL DAY ITINERARY IN ...` bị loại trước resolver.
+   Nhiều candidate khác tên nhưng trùng Google identity/tọa độ chỉ được gộp
+   thành alias khi canonical provider name cũng giống nhau; nếu provider name
+   khác nhau, cả nhóm bị trả về `duplicate_provider_identity` thay vì persist.
+   Sau catalog miss, Google result `resolved` chỉ được học vào catalog khi có
+   stable `externalId` cùng latitude/longitude hợp lệ. Nếu `places.id` đã tồn
+   tại, resolver thêm source spelling vào `metadata.aliases` và provenance ngắn
+   vào `metadata.verifiedAliases`; nếu chưa tồn tại, repository tạo record
+   `Place` tối thiểu với `source_platform=google_maps_scraper` và confidence
+   `medium`. Không học từ coordinate-only identity, mismatch, provisional hoặc
+   unresolved result. Alias update idempotent và tăng `revision` đúng một lần
+   khi metadata thực sự thay đổi.
 8. Tự động upsert snapshot dùng chung vào `user_must_place` và tạo junction
    `user_must_place_users` chỉ khi provider trả kết quả `resolved` cho địa điểm
    cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
@@ -229,7 +244,7 @@ Android Chrome impersonation qua dependency `curl_cffi` nếu challenge/TLS
 fingerprint làm request trước thất bại. Hệ thống không gọi TikWM. Photo carousel chưa có provider được duyệt nên
 trả trạng thái cần upload screenshot. Media video thành công vẫn chỉ được xử lý
 trong thư mục tạm và xoá sau request. Video OCR dùng
-`gemini-3.5-flash-lite`, mặc định không quá một frame mỗi giây, tối đa 48 frame
+`gemini-3.5-flash-lite`, mặc định không quá một frame mỗi giây, tối đa 72 frame
 rộng 960 px theo batch tối đa 10 ảnh ở media resolution medium. Gemini Audio
 trả transcript cùng observation gồm order/place/evidence/day/time/activity/
 duration/confidence và search region explicit. Candidate từ STT và frame vision
@@ -240,19 +255,19 @@ extraction confidence riêng theo evidence; place resolution tạo resolution
 confidence riêng theo provider và chất lượng match, không sao chép một
 confidence chung của cả video cho mọi stop. Không
 giới hạn số place candidate có evidence được giữ sau bước
-gộp; giới hạn 48 chỉ là số frame video lấy mẫu. Frame được chia đều giữa các
+gộp; giới hạn 72 chỉ là số frame video lấy mẫu. Frame được chia đều giữa các
 batch để giảm latency của batch lớn nhất; tối đa năm batch
 chạy song song bằng các API key khác nhau trong `GEMINI_OCR_API_KEYS`. STT dùng
 pool riêng `GEMINI_STT_API_KEYS` và chuyển sang key kế tiếp khi key hiện tại trả
 `401`, `403` hoặc `429`; hai pool riêng không được chứa key trùng nhau và chuỗi
 nhiều key không được gửi nguyên dạng như một credential. Khi chỉ có
 `GEMINI_API_KEY`, runtime chia đôi pool cho STT/OCR nếu có ít nhất hai key.
-Audio fallback dài hơn ngưỡng 120 giây có thể được chia cân bằng thành tối đa
-bốn chunk có overlap hai giây; audio ngắn vẫn dùng một call. Mặc định STT chỉ
-chạy một request một lúc và bắt đầu các Gemini call cách nhau ít nhất sáu giây
-trong mỗi tiến trình. Chỉ tăng `URL_REEL_STT_MAX_CONCURRENCY` sau khi kiểm tra
-quota project; xoay nhiều key không đảm bảo thêm quota vì Gemini giới hạn theo
-project. Khi gặp `429`, STT tôn trọng `Retry-After` tối đa 60 giây. Kết quả được
+Audio fallback dài hơn ngưỡng 60 giây có thể được chia cân bằng thành tối đa
+ba chunk có overlap hai giây; audio ngắn vẫn dùng một call. Mặc định STT chạy
+tối đa ba request đồng thời và bắt đầu các Gemini call cách nhau ít nhất hai giây
+trong mỗi tiến trình. Cấu hình cần được theo dõi theo quota project; xoay nhiều
+key không đảm bảo thêm quota vì Gemini giới hạn theo project. Khi gặp `429`, STT
+tôn trọng `Retry-After` tối đa 60 giây. Kết quả được
 ghép theo chunk order và dedupe observation tại vùng overlap. Mức song song tự
 giảm khi thiếu key hoặc batch. Kết quả vẫn được hợp nhất theo
 thứ tự frame gốc. Nếu một batch lỗi nhưng batch khác thành công, evidence thành

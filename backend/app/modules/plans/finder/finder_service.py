@@ -455,7 +455,6 @@ class FinderService:
                         f"Day {brief.day} has no valid candidate for {block.role}."
                     )
                     if block.kind == "meal":
-                        day_items.append(self._build_non_activity_item(block))
                         self.status_tracker.apply_break(
                             tentative_user_status,
                             tentative_plan_status,
@@ -463,9 +462,8 @@ class FinderService:
                         )
                         if allow_suggestions_for_block:
                             meal_message = (
-                                f"Day {brief.day} uses an unresolved meal "
-                                f"placeholder for {block.role}; no verified "
-                                "food place matched the slot."
+                                f"Day {brief.day} omits unresolved meal slot "
+                                f"{block.role}; no verified food place matched it."
                             )
                             warnings.append(meal_message)
                             tentative_plan_status.warnings.append(meal_message)
@@ -840,6 +838,7 @@ class FinderService:
         rejected_selected_places: dict[str, CandidateRejection] = {}
         warnings: list[str] = []
         activity_days: list[PlanDay] = []
+        selected_meals_by_day: dict[int, list[SelectedPlaceContext]] = {}
         trip_theme_slots = [
             requirement
             for requirement in macro_plan.trip_themes
@@ -868,9 +867,27 @@ class FinderService:
 
             region_key = brief.target_region_key or brief.target_area
             area_profile = self._get_area_profile(region_key) if region_key else None
+            selected_meals = [
+                place
+                for place in allocated_places
+                if place_category(
+                    self.candidate_selector._selected_to_candidate(place, brief)
+                ) == "food_drink"
+            ]
+            selected_meals_by_day[brief.day] = selected_meals
+            selected_activities = [
+                place for place in allocated_places if place not in selected_meals
+            ]
+            activity_brief = brief.model_copy(
+                update={
+                    "allocated_selected_place_refs": [
+                        place.stable_ref for place in selected_activities
+                    ]
+                }
+            )
             skeleton = self.skeleton_builder.build_route_first_activities(
-                brief,
-                allocated_places,
+                activity_brief,
+                selected_activities,
             )
             plan_status.current_day = brief.day
             plan_status.current_strategy = skeleton.strategy
@@ -885,14 +902,14 @@ class FinderService:
                 )
                 activity_slot_index += 1
                 selection_brief = (
-                    brief.model_copy(
+                    activity_brief.model_copy(
                         update={
                             "theme": requirement.theme,
                             "focus_tags": requirement.focus_tags,
                         }
                     )
                     if requirement is not None
-                    else brief
+                    else activity_brief
                 )
                 candidate = self.candidate_selector.select(
                     CandidateSelectionContext(
@@ -979,12 +996,26 @@ class FinderService:
             activities = [
                 item for item in day.items if item.timeline_category == "activity"
             ][:2]
+            selected_meal_refs = self._selected_meal_role_refs(
+                selected_meals_by_day.get(day.day, [])
+            )
             region_key = brief.target_region_key or brief.target_area
             area_profile = self._get_area_profile(region_key) if region_key else None
             meal_candidates = self.meal_selector.select_for_day(
                 region_key=region_key,
                 activities=activities,
-                excluded_place_ids=used_refs,
+                excluded_place_ids={
+                    *used_refs,
+                    *(
+                        place.stable_ref
+                        for place in selected_meals_by_day.get(day.day, [])
+                    ),
+                    *(
+                        place.place_id
+                        for place in selected_meals_by_day.get(day.day, [])
+                        if place.place_id is not None
+                    ),
+                },
                 bbox_filter=(area_profile.bbox if area_profile is not None else None),
             )
             ordered_items: list[PlanItem] = []
@@ -1014,13 +1045,58 @@ class FinderService:
                     kind="meal",
                     candidate_category="food_drink",
                 )
-                candidate = meal_candidates.get(role)
+                selected_meal_ref = selected_meal_refs.get(role)
+                candidate = None
+                selected_source = False
+                if selected_meal_ref is not None:
+                    candidate = self.candidate_selector.select(
+                        CandidateSelectionContext(
+                            macro_plan=macro_plan,
+                            brief=brief,
+                            block=DayBlock(
+                                role=role,
+                                time_window=marker,
+                                duration_minutes=60,
+                                activity=False,
+                                preferred_ref=selected_meal_ref,
+                                kind="meal",
+                                candidate_category="food_drink",
+                            ),
+                            selected_by_ref=selected_by_ref,
+                            plan_status=plan_status,
+                            user_status=user_status,
+                            avoided_place_names=avoided_place_names,
+                            intent_constraints=intent_constraints,
+                            allow_finder_suggestions=False,
+                            constraint_policy=constraint_policy,
+                            budget_level=budget_level,
+                            rejected_selected_places=rejected_selected_places,
+                            intent_interests=intent_interests,
+                            travel_style=travel_style,
+                            strict_day_theme=False,
+                            enforce_opening_hours=False,
+                            occupied_items=[
+                                *(
+                                    item
+                                    for completed_day in completed_days
+                                    for item in completed_day.items
+                                ),
+                                *ordered_items,
+                            ],
+                            bbox_filter=(
+                                area_profile.bbox
+                                if area_profile is not None
+                                else None
+                            ),
+                        )
+                    )
+                    selected_source = candidate is not None
                 if candidate is None:
-                    placeholder = self._build_non_activity_item(block)
-                    ordered_items.append(placeholder)
+                    candidate = meal_candidates.get(role)
+                if candidate is None:
                     message = (
-                        f"Day {day.day} uses an unresolved meal placeholder "
-                        f"for {role} after route-based fallback search."
+                        f"Day {day.day} omits unresolved meal slot {role} "
+                        "after route-based fallback search."
                     )
                     warnings.append(message)
                     plan_status.warnings.append(message)
@@ -1029,7 +1105,7 @@ class FinderService:
                     candidate,
                     block,
                     mode=mode,
-                    selected_source=False,
+                    selected_source=selected_source,
                 )
                 ordered_items.append(meal_item)
                 used_refs.add(candidate.stable_ref)
@@ -1166,6 +1242,46 @@ class FinderService:
         )
 
     @staticmethod
+    def _selected_meal_role_refs(
+        places: list[SelectedPlaceContext],
+    ) -> dict[str, str]:
+        """Put URL food stops into meal slots before Finder suggestions."""
+
+        remaining_roles = ["breakfast_meal", "lunch_meal", "dinner_meal"]
+        assignments: dict[str, str] = {}
+        deferred: list[SelectedPlaceContext] = []
+        ordered = sorted(
+            places,
+            key=lambda place: (
+                place.source_order is None,
+                place.source_order or 10_000,
+                place.name.casefold(),
+            ),
+        )
+        for place in ordered:
+            hint = (place.source_time_hint or "").strip().casefold()
+            role = (
+                "breakfast_meal"
+                if any(value in hint for value in ("breakfast", "morning"))
+                else "lunch_meal"
+                if any(value in hint for value in ("lunch", "noon"))
+                else "dinner_meal"
+                if any(
+                    value in hint
+                    for value in ("dinner", "evening", "night")
+                )
+                else None
+            )
+            if role is None or role not in remaining_roles:
+                deferred.append(place)
+                continue
+            assignments[role] = place.stable_ref
+            remaining_roles.remove(role)
+        for role, place in zip(remaining_roles, deferred):
+            assignments[role] = place.stable_ref
+        return assignments
+
+    @staticmethod
     def _route_cluster_theme(
         macro_plan: MacroPlan,
         activities: list[PlanItem],
@@ -1287,7 +1403,16 @@ class FinderService:
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,
-            notes=candidate.source_activity or None,
+            notes=(
+                candidate.notes
+                or candidate.source_activity
+                or candidate.description
+                or None
+            ),
+            personalNotes=candidate.personal_notes,
+            imageUrls=candidate.image_urls,
+            rating=candidate.rating,
+            reviewCount=candidate.review_count,
             sourceOrder=candidate.source_order,
             sourceDay=candidate.source_day,
             sourceTimeHint=candidate.source_time_hint,
@@ -1326,33 +1451,10 @@ class FinderService:
         )
 
     def _build_non_activity_item(self, block: DayBlock) -> PlanItem:
-        if block.kind == "meal":
-            return PlanItem(
-                itemId=str(uuid4()),
-                name=(
-                    "Breakfast break"
-                    if "breakfast" in block.role
-                    else "Lunch break"
-                    if "lunch" in block.role
-                    else "Dinner break"
-                    if "dinner" in block.role
-                    else "Meal break"
-                ),
-                timeWindow=block.time_window,
-                placeType="meal",
-                timelineCategory="food",
-                role=block.role,
-                source="finder_rule",
-                durationMinutes=block.duration_minutes,
-                notes=(
-                    "Chưa tìm được địa điểm ăn uống phù hợp đã được xác minh "
-                    "cho khung giờ này."
-                ),
-            )
         if block.kind == "social_activity" or block.role == "group_social_activity":
             return PlanItem(
                 itemId=str(uuid4()),
-                name="Group social activity",
+                name="Hoạt động nhóm",
                 timeWindow=block.time_window,
                 placeType="group_activity",
                 timelineCategory="activity",
@@ -1364,11 +1466,11 @@ class FinderService:
         return PlanItem(
             itemId=str(uuid4()),
             name=(
-                "Break between main and support activities"
+                "Nghỉ giữa hoạt động chính và hoạt động bổ trợ"
                 if block.role == "break_main_support"
-                else "Break between support and bonus activities"
+                else "Nghỉ giữa hoạt động bổ trợ và hoạt động thêm"
                 if block.role == "break_support_bonus"
-                else "Flexible break"
+                else "Thời gian nghỉ linh hoạt"
             ),
             timeWindow=block.time_window,
             placeType="break",
@@ -1376,7 +1478,7 @@ class FinderService:
             role=block.role,
             source="finder_rule",
             durationMinutes=block.duration_minutes,
-            notes="No Place is required for this break block.",
+            notes="Khoảng nghỉ này không cần địa điểm cụ thể.",
         )
 
     def _normalize_selected_places(

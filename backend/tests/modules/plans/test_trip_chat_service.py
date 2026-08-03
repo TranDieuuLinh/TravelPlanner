@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_model import TripChat, TripChatPlanRevision
-from app.modules.plans.chat_service import TripChatService
+from app.modules.plans.chat_service import TripChatService, _merge_candidate_reviews
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
@@ -348,6 +348,48 @@ def test_chat_more_days_amendment_allows_duration_expansion(
     )
 
 
+def test_chat_keeps_explicit_duration_fixed_when_url_is_added(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+    first = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+
+    asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Thêm các địa điểm từ URL này",
+            expected_revision=first.revision,
+            initial_destination="ignored",
+            urls=["https://example.com/new-reel"],
+            images=[],
+        )
+    )
+
+    assert (
+        fake_plans.plan_payloads[1].expand_days_to_fit_selected_places
+        is False
+    )
+
+
 def test_chat_does_not_promote_finder_suggestions_to_selected_places(
     db_session,
     registered_client,
@@ -399,6 +441,88 @@ def test_chat_carries_resolved_url_places_missing_from_previous_plan(
     assert len(selected) == 1
     assert selected[0].name == "URL Place"
     assert selected[0].source_refs == [source_url]
+
+
+def test_chat_does_not_add_representative_unresolved_url_location_to_plan_input(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    source_url = "https://www.tiktok.com/@creator/video/123"
+    fake_plans.candidate_reviews = [
+        PlaceCandidateReview(
+            candidateId="unresolved-quan-thanh",
+            name="Phở tại 144A Quán Thánh",
+            category="food",
+            status="needs_review",
+            resolutionReason="name_mismatch",
+            provider="google_maps_scraper",
+            address="144A Quán Thánh, Ba Đình, Hà Nội",
+            latitude=21.0421,
+            longitude=105.8422,
+            hasRepresentativeLocation=True,
+            sourceUrls=[source_url],
+            sourceOrder=2,
+            sourceTimeHint="07:00",
+            sourceActivity="Ăn phở",
+            sourceDurationMinutes=45,
+            confidence=0.9,
+        )
+    ]
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+
+    asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content=f"Tạo chuyến Hà Nội từ {source_url}",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[source_url],
+            images=[],
+        )
+    )
+
+    selected = fake_plans.plan_payloads[0].selected_places
+    assert selected == []
+
+
+def test_candidate_review_merge_promotes_representative_location() -> None:
+    source_url = "https://www.tiktok.com/@creator/video/123"
+    current = PlaceCandidateReview(
+        candidateId="quan-thanh",
+        name="Phở tại 144A Quán Thánh",
+        category="food",
+        status="needs_review",
+        resolutionReason="not_found",
+        address="144A Quán Thánh, Ba Đình, Hà Nội",
+        searchRegion="Hà Nội",
+        sourceUrls=[source_url],
+        confidence=0.9,
+    )
+    incoming = current.model_copy(
+        update={
+            "resolution_reason": "name_mismatch",
+            "provider": "google_maps_scraper",
+            "latitude": 21.0421,
+            "longitude": 105.8422,
+            "has_representative_location": True,
+        }
+    )
+
+    merged = _merge_candidate_reviews([current], [incoming])
+
+    assert len(merged) == 1
+    assert merged[0].candidate_id == "quan-thanh"
+    assert merged[0].has_representative_location is True
+    assert merged[0].latitude == pytest.approx(21.0421)
+    assert merged[0].longitude == pytest.approx(105.8422)
 
 
 def test_sequential_url_imports_preserve_all_candidate_sources(

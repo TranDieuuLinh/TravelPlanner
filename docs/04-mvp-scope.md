@@ -94,6 +94,9 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - AI revision theo ngày, khung giờ hoặc item chưa khóa; luôn bảo toàn item khóa.
 - Version history cơ bản, optimistic concurrency và khôi phục version.
 - Giao diện lịch trình và bản đồ responsive.
+- Ghi chú khu vực hiển thị riêng dưới tiêu đề điểm đến; mỗi activity có khối ghi
+  chú mở rộng tách gợi ý từ nguồn, thông tin bổ sung và `personalNotes` có thể
+  chỉnh sửa.
 - Truy cập offline ở chế độ đọc cho plan đã chọn.
 - Trạng thái hoàn thành/tiến độ đơn giản.
 

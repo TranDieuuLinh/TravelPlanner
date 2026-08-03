@@ -60,6 +60,52 @@ class UrlImportJobRepository:
             self.db.refresh(job)
         return jobs
 
+    def enqueue_images(
+        self,
+        *,
+        chat_id: str,
+        user_id: int,
+        expected_revision: int,
+        images: list[tuple[str, str, bytes]],
+        request_content: str,
+    ) -> list[UrlImportJob]:
+        chat = self.db.scalar(
+            select(TripChat).where(
+                TripChat.id == chat_id,
+                TripChat.user_id == user_id,
+            )
+        )
+        if chat is None:
+            raise AppError(404, "TRIP_CHAT_NOT_FOUND", "Không tìm thấy cuộc trò chuyện chuyến đi.")
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
+            )
+        jobs = [
+            UrlImportJob(
+                id=str(uuid4()),
+                user_id=user_id,
+                chat_id=chat_id,
+                source_type="image",
+                url="",
+                source_name=file_name,
+                image_mime_type=mime_type,
+                image_data=data,
+                request_content=request_content,
+                force_refresh=False,
+                batch_position=batch_position,
+                status="queued",
+            )
+            for batch_position, (file_name, mime_type, data) in enumerate(images)
+        ]
+        self.db.add_all(jobs)
+        self.db.commit()
+        for job in jobs:
+            self.db.refresh(job)
+        return jobs
+
     def list_for_user(self, user_id: int, *, limit: int = 40) -> list[UrlImportJob]:
         active_first = case(
             (UrlImportJob.status == "running", 0),
@@ -82,7 +128,7 @@ class UrlImportJobRepository:
             )
         )
         if job is None:
-            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ URL.")
+            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
         return job
 
     def recover_interrupted(self) -> int:
@@ -182,8 +228,7 @@ class UrlImportJobRepository:
         job = self.get_for_user(job_id, user_id)
         if job.status != "failed":
             raise AppError(409, "URL_IMPORT_JOB_NOT_FAILED", "Chỉ có thể thử lại tác vụ đã thất bại.")
-        # A failed run may have stopped during media/STT/OCR and must restart
-        # from fresh source data instead of trusting a partial or stale cache.
+        # A failed run restarts from its original URL or persisted image bytes.
         job.force_refresh = True
         job.status = "queued"
         job.started_at = None
@@ -209,11 +254,14 @@ class UrlImportJobRepository:
             id=str(uuid4()),
             user_id=source_job.user_id,
             chat_id=source_job.chat_id,
+            source_type=source_job.source_type,
             url=source_job.url,
+            source_name=source_job.source_name,
+            image_mime_type=source_job.image_mime_type,
+            image_data=source_job.image_data,
             request_content=source_job.request_content,
-            # A completed run already has a valid normalized extraction cache.
-            # Re-run aggregation, resolution and planning from that cache;
-            # media/STT/OCR are intentionally not repeated.
+            # URL jobs can use normalized extraction cache. Image jobs retain
+            # the original bytes and intentionally run OCR again.
             force_refresh=False,
             batch_position=0,
             status="queued",
@@ -239,7 +287,7 @@ class UrlImportJobRepository:
         raise AppError(
             409,
             "URL_IMPORT_JOB_NOT_QUEUED",
-            "Chỉ có thể xóa URL đang chờ.",
+            "Chỉ có thể xóa nguồn đang chờ.",
             details={"status": job.status},
         )
 
@@ -292,6 +340,8 @@ class UrlImportJobRepository:
         return UrlImportJobRead(
             id=job.id,
             chatId=job.chat_id,
+            sourceType=job.source_type,
+            sourceLabel=job.source_name or job.url,
             url=job.url,
             forceRefresh=job.force_refresh,
             status=job.status,

@@ -7,6 +7,7 @@ import type {
   Marker
 } from "leaflet";
 import { createDayColorMap } from "@/lib/day-colors";
+import { formatPlanNote } from "@/lib/plan-note";
 import type { ExplorePlace } from "@/lib/plans";
 
 export type PlannerMapPlace = ExplorePlace & {
@@ -209,9 +210,10 @@ export function PlannerMap({
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
       popup.append(name, day, time, address);
-      if (place.notes) {
+      const displayNotes = formatPlanNote(place.notes);
+      if (displayNotes) {
         const description = document.createElement("p");
-        description.textContent = place.notes;
+        description.textContent = displayNotes;
         popup.append(description);
       }
       marker.bindPopup(popup);

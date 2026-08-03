@@ -17,6 +17,15 @@ _URL_NAME_NOISE = re.compile(
     r")\b",
     flags=re.IGNORECASE,
 )
+_URL_NON_PLACE_HEADING = re.compile(
+    r"\b(?:"
+    r"full\s+day\s+itinerar(?:y|ies)|"
+    r"\d+[-\s]?day\s+itinerar(?:y|ies)|"
+    r"things\s+to\s+do\s+in|"
+    r"places\s+to\s+(?:visit|eat)\s+in"
+    r")\b",
+    flags=re.IGNORECASE,
+)
 _LIST_MARKERS = ("📌", "📍", "🚂", "🧑‍🍳", "•", "→")
 
 
@@ -29,7 +38,7 @@ def is_credible_url_candidate(candidate: UnifiedPlaceCandidate) -> bool:
     words = name.split()
     if not name or len(name) > 80 or len(words) > 10:
         return False
-    if _URL_NAME_NOISE.search(name):
+    if _URL_NAME_NOISE.search(name) or _URL_NON_PLACE_HEADING.search(name):
         return False
     if sum(name.count(marker) for marker in _LIST_MARKERS) > 1:
         return False
@@ -93,6 +102,37 @@ def concise_source_activity(value: str | None, *, limit: int = 140) -> str | Non
     if first_sentence and len(first_sentence) <= limit:
         return first_sentence
     return None
+
+
+def is_meal_place(
+    *,
+    tags: list[str],
+    source_activity: str | None = None,
+) -> bool:
+    """Classify restaurant/food stops without consuming cafe activity slots."""
+    values = " ".join([*tags, source_activity or ""]).casefold()
+    normalized = _slug(values).replace("-", "_")
+    if any(marker in normalized for marker in ("cafe", "coffee", "ca_phe")):
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "food",
+            "restaurant",
+            "meal",
+            "breakfast",
+            "lunch",
+            "dinner",
+            "bakery",
+            "seafood",
+            "street_food",
+            "local_food",
+            "am_thuc",
+            "quan_an",
+            "nha_hang",
+            "hai_san",
+        )
+    )
 
 
 def _is_url_only(candidate: UnifiedPlaceCandidate) -> bool:

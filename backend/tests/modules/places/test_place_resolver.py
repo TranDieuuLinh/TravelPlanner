@@ -91,6 +91,15 @@ class RecordingFallbackResolver(PlaceResolver):
         return self.result.model_copy(update={"candidate": candidate})
 
 
+class RecordingVerifiedAliasRepository:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def upsert_verified_google_aliases(self, **values: Any) -> bool:
+        self.calls.append(values)
+        return True
+
+
 def test_runtime_uses_provisional_resolver_when_scraper_is_disabled(
     monkeypatch: Any,
 ) -> None:
@@ -1128,6 +1137,51 @@ def test_fallback_chain_calls_google_after_database_miss() -> None:
     assert google.calls == 1
 
 
+def test_fallback_chain_learns_alias_only_from_stable_google_identity() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="VP Bank",
+        category="other",
+        searchRegion="Hà Nội",
+    )
+    database = RecordingFallbackResolver(
+        PlaceResolution(
+            candidate=candidate,
+            status="unresolved",
+            resolutionReason="not_found",
+            provider="database",
+            name=candidate.name,
+        )
+    )
+    google = FakeGoogleMapsScraperResolver(
+        {
+            "VP Bank, Hà Nội": [
+                {
+                    "title": "VP Bank",
+                    "place_id": "ChIJ-vp-bank",
+                    "category": "Bank",
+                    "address": "Hà Nội, Vietnam",
+                    "latitude": 21.0285,
+                    "longitude": 105.8542,
+                }
+            ]
+        }
+    )
+    learned = RecordingVerifiedAliasRepository()
+    resolver = FallbackPlaceResolver(
+        database,
+        google,
+        verified_alias_repository=learned,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert len(learned.calls) == 1
+    assert learned.calls[0]["external_id"] == "ChIJ-vp-bank"
+    assert learned.calls[0]["aliases"] == ["VP Bank"]
+    assert learned.calls[0]["region_key"] == "vn,ha-noi"
+
+
 def test_google_maps_rejects_distinct_candidates_with_same_identity() -> None:
     candidates = [
         UnifiedPlaceCandidate(name="SALTPFE", category="cafe", searchRegion="Hanoi"),
@@ -1158,6 +1212,51 @@ def test_google_maps_rejects_distinct_candidates_with_same_identity() -> None:
     assert {
         result.resolution_reason for result in results
     } == {"duplicate_provider_identity"}
+
+
+def test_google_maps_merges_spelling_aliases_with_same_provider_identity() -> None:
+    source_url = "https://example.com/hanoi-food"
+    candidates = [
+        UnifiedPlaceCandidate(
+            name="BAHN MI 25",
+            originalName="Banh Mi 25",
+            category="food",
+            searchRegion="Hanoi",
+            sources=[{"type": "url", "url": source_url}],
+            confidence=0.9,
+            sourceOrder=1,
+        ),
+        UnifiedPlaceCandidate(
+            name="Bunmi 25",
+            originalName="Banh Mi 25",
+            category="food",
+            searchRegion="Hanoi",
+            sources=[{"type": "url", "url": source_url}],
+            confidence=0.8,
+            sourceOrder=2,
+        ),
+    ]
+    provider_result = {
+        "title": "Banh Mi 25",
+        "place_id": "ChIJ-banh-mi-25",
+        "category": "Restaurant",
+        "address": "Hanoi, Vietnam",
+        "latitude": 21.0341,
+        "longitude": 105.8472,
+    }
+    resolver = FakeGoogleMapsScraperResolver(
+        {"Banh Mi 25, Hanoi": [provider_result]}
+    )
+
+    results = asyncio.run(resolver.resolve_many(candidates, destination="Hanoi"))
+
+    assert [result.status for result in results] == ["resolved", "resolved"]
+    assert {result.candidate.name for result in results} == {"BAHN MI 25"}
+    assert {
+        "Bunmi 25",
+        "Banh Mi 25",
+    }.issubset(set(results[0].candidate.alternate_names))
+    assert results[0].candidate.source_order == 1
 
 
 def test_google_maps_does_not_query_literal_unspecified() -> None:

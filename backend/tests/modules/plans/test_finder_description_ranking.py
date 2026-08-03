@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.modules.places.model import Place
+from app.modules.places.model import Place, PlaceImage
 from app.modules.plans.domain.entities import DayBrief, MacroPlan, TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.finder.finder_service import FinderService
@@ -89,6 +89,7 @@ def test_structured_reranking_prefers_reviewed_place_over_alphabetic_noise() -> 
                 tags=["culture", "museum"],
                 rating=4.6,
                 review_count=10_000,
+                image_urls=["https://images.example/history-museum.jpg"],
             ),
         ]
     )
@@ -103,6 +104,11 @@ def test_structured_reranking_prefers_reviewed_place_over_alphabetic_noise() -> 
     assert [place.place_id for place in results] == [
         "reviewed-museum",
         "alphabetic-noise",
+    ]
+    assert results[0].rating == 4.6
+    assert results[0].review_count == 10_000
+    assert results[0].image_urls == [
+        "https://images.example/history-museum.jpg"
     ]
 
 
@@ -174,6 +180,13 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
         if item.place_id == "restaurant"
     )
     assert restaurant_item.role == "lunch_meal"
+    national_park_item = next(
+        item
+        for item in result.days[0].items
+        if item.place_id == "national-park"
+    )
+    assert national_park_item.notes is not None
+    assert "khám phá thiên nhiên" in national_park_item.notes
 
 
 class FakeFinderRepository:
@@ -215,6 +228,7 @@ def _place(
     tags: list[str],
     rating: float | None = None,
     review_count: int = 0,
+    image_urls: list[str] | None = None,
 ) -> Place:
     return Place(
         id=place_id,
@@ -235,6 +249,10 @@ def _place(
             "tags": tags,
             "activityIntensity": "light",
         },
+        images=[
+            PlaceImage(image_url=image_url)
+            for image_url in (image_urls or [])
+        ],
     )
 
 

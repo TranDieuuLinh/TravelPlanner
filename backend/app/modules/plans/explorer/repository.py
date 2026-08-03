@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.places.model import Place
+from app.modules.places.category import canonical_place_category
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.model import (
     ExplorerIntake,
     UrlExtractionCacheEntry,
+    UrlSourceArtifact,
     UserMustPlace,
     UserMustPlaceUser,
 )
@@ -27,6 +31,7 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
 from app.modules.plans.explorer.tools.url_reels.utils import (
     canonicalize_url,
     detect_platform,
+    extract_youtube_video_id,
 )
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
@@ -37,6 +42,41 @@ from app.modules.plans.schema import SelectedPlaceCreate
 
 
 URL_EXTRACTION_CACHE_VERSION = 3
+
+
+def _artifact_source_url(url: str, platform: str | None = None) -> str:
+    detected_platform = platform or detect_platform(url)
+    video_id = extract_youtube_video_id(url)
+    if detected_platform == "youtube" and video_id is not None:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return canonicalize_url(url)
+
+
+def _image_urls_from_metadata(metadata: object) -> list[str]:
+    if not isinstance(metadata, dict):
+        return []
+    values: list[object] = []
+    for key in ("imageUrls", "images"):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+    for key in ("imageUrl", "photoUrl", "thumbnailUrl"):
+        value = metadata.get(key)
+        if value:
+            values.append(value)
+
+    urls: list[str] = []
+    for value in values:
+        candidate = value
+        if isinstance(value, dict):
+            candidate = value.get("url") or value.get("imageUrl")
+        if (
+            isinstance(candidate, str)
+            and candidate.startswith(("https://", "http://"))
+            and candidate not in urls
+        ):
+            urls.append(candidate)
+    return urls[:5]
 
 
 class ExplorerPersistenceRepository:
@@ -60,6 +100,7 @@ class ExplorerPersistenceRepository:
             )
         )
         self._save_url_cache(url_results or [])
+        self._save_url_source_artifacts(url_results or [])
         for resolution in resolutions:
             if not _is_persistable_resolution(
                 resolution,
@@ -67,6 +108,9 @@ class ExplorerPersistenceRepository:
             ):
                 continue
             candidate = resolution.candidate
+            resolved_category = canonical_place_category(
+                resolution.place_type
+            )
             source_url = _candidate_source_url(candidate)
             candidate_key = _shared_candidate_key(candidate, destination)
             must_place = self._find_shared_place(
@@ -75,6 +119,7 @@ class ExplorerPersistenceRepository:
                 candidate_name=candidate.name,
             )
             if must_place is None:
+                catalog_place_id = self._catalog_place_id(resolution.place_id)
                 must_place = UserMustPlace(
                     id=str(uuid4()),
                     intake_id=intake_id,
@@ -82,7 +127,7 @@ class ExplorerPersistenceRepository:
                     destination=destination,
                     candidate_key=candidate_key,
                     candidate_name=candidate.name,
-                    category=candidate.category.value,
+                    category=resolved_category,
                     address_hint=candidate.address_hint,
                     search_region=candidate.search_region,
                     sources_json=[
@@ -115,11 +160,12 @@ class ExplorerPersistenceRepository:
                     source_time_hint=candidate.source_time_hint,
                     source_activity=candidate.source_activity,
                     source_duration_minutes=candidate.source_duration_minutes,
-                    place_id=resolution.place_id,
+                    # Provider identities belong in external_id. place_id is
+                    # an internal FK and must never contain a stale/external
+                    # provider identifier.
+                    place_id=catalog_place_id,
                     name=resolution.name,
-                    place_type=(
-                        resolution.place_type or candidate.category.value
-                    ),
+                    place_type=resolution.place_type or "other",
                     region_key=(
                         resolution.region_key
                         or normalize_region_key(resolution.city or destination)
@@ -150,12 +196,25 @@ class ExplorerPersistenceRepository:
                 )
                 self.session.add(must_place)
                 self.session.flush()
+            else:
+                # Repair cached rows created before provider/database category
+                # became authoritative.
+                must_place.category = resolved_category
+                if resolution.place_type:
+                    must_place.place_type = resolution.place_type
             self._link_user(
                 must_place=must_place,
                 intake_id=intake_id,
                 user_id=user_id,
             )
         self.session.commit()
+
+    def _catalog_place_id(self, place_id: str | None) -> str | None:
+        if place_id is None:
+            return None
+        return self.session.scalar(
+            select(Place.id).where(Place.id == place_id)
+        )
 
     def load_must_places(
         self,
@@ -201,7 +260,10 @@ class ExplorerPersistenceRepository:
                 ),
                 tags=list(
                     dict.fromkeys(
-                        [must_place.category, *(must_place.attributes_json or [])]
+                        [
+                            canonical_place_category(must_place.place_type),
+                            *(must_place.attributes_json or []),
+                        ]
                     )
                 ),
                 latitude=(
@@ -222,6 +284,13 @@ class ExplorerPersistenceRepository:
                 # Extraction evidence is retained on UserMustPlace for
                 # provenance, but raw captions are not user-facing plan notes.
                 notes=must_place.description,
+                imageUrls=_image_urls_from_metadata(must_place.metadata_json),
+                rating=(
+                    float(must_place.rating)
+                    if must_place.rating is not None
+                    else None
+                ),
+                reviewCount=must_place.review_count,
                 sourceOrder=must_place.source_order,
                 sourceDay=must_place.source_day,
                 sourceTimeHint=must_place.source_time_hint,
@@ -273,6 +342,31 @@ class ExplorerPersistenceRepository:
             ),
             extractedContext=context,
             timings={"sharedUrlCache": 0.0},
+        )
+
+    def load_url_source_artifacts(
+        self,
+        url: str,
+        *,
+        artifact_types: set[str] | None = None,
+    ) -> list[UrlSourceArtifact]:
+        """Return normalized source text for future RAG and note consumers."""
+
+        source_url = _artifact_source_url(url)
+        statement = select(UrlSourceArtifact).where(
+            UrlSourceArtifact.source_url == source_url
+        )
+        if artifact_types:
+            statement = statement.where(
+                UrlSourceArtifact.artifact_type.in_(artifact_types)
+            )
+        return list(
+            self.session.scalars(
+                statement.order_by(
+                    UrlSourceArtifact.artifact_type,
+                    UrlSourceArtifact.language,
+                )
+            ).all()
         )
 
     def _rows_for_source_url(self, source_url: str) -> list[UserMustPlace]:
@@ -356,6 +450,97 @@ class ExplorerPersistenceRepository:
             else:
                 row.platform = result.platform
                 row.extracted_context_json = payload
+
+    def _save_url_source_artifacts(
+        self,
+        results: list[UrlReelExtractionResult],
+    ) -> None:
+        for result in results:
+            source_url = _artifact_source_url(
+                result.metadata.canonical_url or result.url,
+                result.platform,
+            )
+            speech = result.speech_to_text
+            if speech.status == "ok" and speech.text.strip():
+                artifact_type = (
+                    "caption"
+                    if speech.source.startswith("youtube_captions")
+                    else "stt"
+                )
+                self._upsert_url_source_artifact(
+                    source_url=source_url,
+                    platform=result.platform,
+                    artifact_type=artifact_type,
+                    content_text=speech.text,
+                    language=speech.language or "",
+                    source=speech.source or artifact_type,
+                    metadata={
+                        "observations": [
+                            observation.model_dump(mode="json", by_alias=True)
+                            for observation in speech.observations
+                        ],
+                        "audioDurationSeconds": speech.audio_duration_seconds,
+                        "chunkCount": speech.chunk_count,
+                    },
+                )
+
+            vision = result.frame_vision
+            if vision.status in {"ok", "partial"} and vision.text.strip():
+                self._upsert_url_source_artifact(
+                    source_url=source_url,
+                    platform=result.platform,
+                    artifact_type="ocr",
+                    content_text=vision.text,
+                    language="",
+                    source="frame_vision",
+                    metadata={
+                        "places": list(vision.places),
+                        "observations": [
+                            observation.model_dump(mode="json", by_alias=True)
+                            for observation in vision.observations
+                        ],
+                    },
+                )
+
+    def _upsert_url_source_artifact(
+        self,
+        *,
+        source_url: str,
+        platform: str,
+        artifact_type: str,
+        content_text: str,
+        language: str,
+        source: str,
+        metadata: dict,
+    ) -> None:
+        row = self.session.scalar(
+            select(UrlSourceArtifact).where(
+                UrlSourceArtifact.source_url == source_url,
+                UrlSourceArtifact.artifact_type == artifact_type,
+                UrlSourceArtifact.language == language,
+            )
+        )
+        fetched_at = datetime.now(timezone.utc)
+        if row is None:
+            self.session.add(
+                UrlSourceArtifact(
+                    id=str(uuid4()),
+                    source_url=source_url,
+                    platform=platform,
+                    artifact_type=artifact_type,
+                    content_text=content_text.strip(),
+                    language=language,
+                    source=source,
+                    metadata_json=metadata,
+                    fetched_at=fetched_at,
+                )
+            )
+            return
+        row.platform = platform
+        row.content_text = content_text.strip()
+        row.source = source
+        row.metadata_json = metadata
+        row.fetched_at = fetched_at
 
     def _find_shared_place(
         self,

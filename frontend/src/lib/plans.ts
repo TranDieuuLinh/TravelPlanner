@@ -12,9 +12,15 @@ export type PlanItem = {
   source: string;
   sourceRefs: string[];
   sourceProvider?: string | null;
+  tags?: string[];
   sourceOrder?: number | null;
   sourceDay?: number | null;
+  sourceActivity?: string | null;
   notes?: string | null;
+  personalNotes?: string | null;
+  imageUrls?: string[];
+  rating?: number | null;
+  reviewCount?: number | null;
   latitude?: number | null;
   longitude?: number | null;
 };
@@ -90,12 +96,22 @@ export type PlanDay = {
   items: PlanItem[];
   transportLegs: TransportLeg[];
 };
+export type UnscheduledPlace = {
+  placeId?: string | null;
+  name: string;
+  day?: number | null;
+  reasonCode: string;
+  reason: string;
+};
 export type TravelPlan = {
   id: string;
   title: string;
   destination: string;
   kind: "main" | "backup";
   days: PlanDay[];
+  planningAssumptions?: string[];
+  warnings?: string[];
+  unscheduledPlaces?: UnscheduledPlace[];
   checkReport?: { status: string; summary: string } | null;
 };
 
@@ -177,10 +193,14 @@ export type PlaceCandidateReview = {
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  hasRepresentativeLocation: boolean;
   searchRegion?: string | null;
   sourceUrls: string[];
   sourceOrder?: number | null;
   sourceDay?: number | null;
+  sourceTimeHint?: string | null;
+  sourceActivity?: string | null;
+  sourceDurationMinutes?: number | null;
   confidence: number;
   extractionConfidence: number;
   resolutionConfidence: number;
@@ -249,6 +269,9 @@ export type ExplorePlace = {
   preferenceLevel?: "mentioned" | "preferred" | "must_visit";
   attributes?: string[];
   notes?: string | null;
+  imageUrls?: string[];
+  rating?: number | null;
+  reviewCount?: number | null;
 };
 
 export type ExploreResponse = {
@@ -377,6 +400,8 @@ export type TripChat = TripChatSummary & {
 export type UrlImportJob = {
   id: string;
   chatId: string;
+  sourceType: "url" | "image";
+  sourceLabel: string;
   url: string;
   forceRefresh: boolean;
   status: "queued" | "running" | "succeeded" | "failed";
@@ -511,7 +536,10 @@ export async function createPlanFromExplorer(input: {
         longitude: place.longitude ?? null,
         tags: [place.category, ...(place.attributes ?? [])],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
-        notes: place.notes ?? null
+        notes: place.notes ?? null,
+        imageUrls: place.imageUrls ?? [],
+        rating: place.rating ?? null,
+        reviewCount: place.reviewCount ?? null
       })),
       preferenceProfile: input.context.preferenceSnapshot.effectiveProfile
     })
@@ -613,6 +641,22 @@ export async function enqueueTripChatUrls(input: {
   });
 }
 
+export async function enqueueTripChatImages(input: {
+  chatId: string;
+  content: string;
+  expectedRevision: number;
+  images: File[];
+}): Promise<UrlImportJobBatch> {
+  const form = new FormData();
+  form.append("content", input.content);
+  form.append("expectedRevision", String(input.expectedRevision));
+  for (const image of input.images) form.append("images", image);
+  return apiFetch<UrlImportJobBatch>(`/trip-chats/${input.chatId}/image-jobs`, {
+    method: "POST",
+    body: form
+  });
+}
+
 export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
   return apiFetch<UrlImportJobBatch>("/url-import-jobs");
 }
@@ -646,6 +690,7 @@ export type AddItemInput = {
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
+  personalNotes?: string | null;
   tags?: string[];
   position?: number | null;
 };
@@ -660,6 +705,7 @@ export type UpdateItemInput = {
   latitude?: number | null;
   longitude?: number | null;
   notes?: string | null;
+  personalNotes?: string | null;
   tags?: string[] | null;
 };
 
@@ -680,6 +726,7 @@ export async function addTripChatItem(input: {
   if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.notes) form.append("notes", input.item.notes);
+  if (input.item.personalNotes) form.append("personalNotes", input.item.personalNotes);
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/items`, {
     method: "POST",
@@ -705,6 +752,7 @@ export async function updateTripChatItem(input: {
   if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.notes !== undefined) form.append("notes", input.item.notes || "");
+  if (input.item.personalNotes !== undefined) form.append("personalNotes", input.item.personalNotes || "");
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
     method: "PATCH",
@@ -722,6 +770,22 @@ export async function removeTripChatItem(input: {
   form.append("expectedRevision", String(input.expectedRevision));
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+    method: "DELETE",
+    body: form
+  });
+}
+
+export async function removeTripChatUnscheduledPlace(input: {
+  chatId: string;
+  expectedRevision: number;
+  place: Pick<UnscheduledPlace, "name" | "placeId">;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  form.append("name", input.place.name);
+  if (input.place.placeId) form.append("placeId", input.place.placeId);
+
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/unscheduled-places`, {
     method: "DELETE",
     body: form
   });

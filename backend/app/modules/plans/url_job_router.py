@@ -1,15 +1,18 @@
 import ipaddress
 import re
+from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core.config import settings
 from app.modules.auth.dependencies import get_current_user, require_csrf
 from app.modules.plans.url_job_repository import UrlImportJobRepository
 from app.modules.plans.url_job_schema import UrlImportJobBatchRead, UrlImportJobRead
+from app.modules.plans.explorer.tools.image_ocr import SUPPORTED_IMAGE_MIME_TYPES
 from app.modules.users.model import User
 from app.shared.errors import AppError
 
@@ -68,6 +71,60 @@ def enqueue_url_jobs(
         urls=normalized_urls,
         request_content=request_content,
         force_refresh=force_refresh,
+    )
+    return UrlImportJobBatchRead(jobs=[repository.read(job) for job in jobs])
+
+
+@router.post(
+    "/trip-chats/{chat_id}/image-jobs",
+    response_model=UrlImportJobBatchRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_image_jobs(
+    chat_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_csrf)],
+    content: Annotated[str, Form(min_length=1, max_length=10_000)],
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    images: Annotated[list[UploadFile], File()],
+) -> UrlImportJobBatchRead:
+    if not images:
+        raise AppError(422, "IMAGE_REQUIRED", "Hãy đính kèm ít nhất một ảnh.")
+    if len(images) > 20:
+        raise AppError(422, "TOO_MANY_IMAGES", "Mỗi lần chỉ có thể thêm tối đa 20 ảnh.")
+
+    payloads: list[tuple[str, str, bytes]] = []
+    try:
+        for image in images:
+            mime_type = (image.content_type or "application/octet-stream").lower()
+            if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
+                raise AppError(
+                    422,
+                    "UNSUPPORTED_IMAGE_TYPE",
+                    "Chỉ hỗ trợ ảnh JPEG, PNG, WebP, HEIC và HEIF.",
+                )
+            data = await image.read(settings.user_post_image_max_bytes + 1)
+            if not data:
+                raise AppError(422, "EMPTY_IMAGE", "Ảnh tải lên không có dữ liệu.")
+            if len(data) > settings.user_post_image_max_bytes:
+                raise AppError(
+                    413,
+                    "IMAGE_TOO_LARGE",
+                    f"Mỗi ảnh phải nhỏ hơn {settings.user_post_image_max_bytes // (1024 * 1024)} MB.",
+                )
+            file_name = PurePath(image.filename or "uploaded-image").name[:255]
+            payloads.append((file_name, mime_type, data))
+    finally:
+        for image in images:
+            await image.close()
+
+    repository = UrlImportJobRepository(db)
+    jobs = repository.enqueue_images(
+        chat_id=chat_id,
+        user_id=current_user.id,
+        expected_revision=expected_revision,
+        images=payloads,
+        request_content=content.strip(),
     )
     return UrlImportJobBatchRead(jobs=[repository.read(job) for job in jobs])
 

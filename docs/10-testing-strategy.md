@@ -14,6 +14,8 @@ Sử dụng pytest cho domain và service:
 - chuyển artifact thành claim/candidate và gộp địa điểm trùng;
 - YouTube caption cache hit không gọi provider, request cùng video được dedupe,
   IP block thử worker, còn mọi trạng thái thiếu caption đều không tải media/STT;
+- caption, STT và frame OCR thành công được upsert idempotent vào cùng retrieval
+  store theo canonical URL và có thể lọc theo loại artifact;
 - URL candidate chỉ được tạo bởi Extractor, không bị Formatter sinh lại;
 - Formatter và Resolver bắt đầu song song với intake URL;
 - timing report giữ cùng `intakeId`, có đủ stage chính và không ghi raw
@@ -22,6 +24,8 @@ Sử dụng pytest cho domain và service:
 - timing Planner/Finder có tổng wall-clock, đủ stage Planner, Finder và
   CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
+- candidate `needs_review` không được bàn giao vào Planner, kể cả khi provider
+  trả tọa độ đại diện;
 - điều phối luồng tạo plan;
 - TripThemePlanner trả requirement toàn chuyến và backend chỉ sinh bucket ngày trung
   tính; URL provenance không có `sourceDay` được phép đổi ngày theo tuyến;
@@ -47,13 +51,14 @@ Chạy test FastAPI với database cô lập:
 - isolation của trip chat theo user và contract camelCase của chat history;
 - xử lý idempotent khi generate/checkout/webhook;
 - vòng đời import job, retry từng bước và giữ kết quả từng phần;
-- batch URL tạo đúng một job cho mỗi URL, chỉ claim job kế tiếp sau khi job đang
+- batch URL/ảnh OCR tạo đúng một job cho mỗi nguồn, chỉ claim job kế tiếp sau khi job đang
   chạy kết thúc, tự kết thúc job quá deadline, giữ thứ tự batch, retry riêng và
   cô lập danh sách theo user; xóa job `queued`, hủy/xóa job `running` rồi chạy
   ngay job kế tiếp, cập nhật lại vị trí hàng chờ và không cho user thao tác job
   của tài khoản khác; xóa job đã hoàn tất/thất bại mà không ảnh hưởng plan
   revision; phân tích lại job đã kết thúc phải tạo job mới có
-  `forceRefresh=true` và không ghi đè lịch sử job cũ;
+  `forceRefresh=true` và không ghi đè lịch sử job cũ; ảnh giữ đúng MIME/file gốc
+  cho retry/reprocess và từ chối định dạng không hỗ trợ;
 - source connector, place resolution và provenance persistence;
 - rollback transaction và xung đột dữ liệu.
 
