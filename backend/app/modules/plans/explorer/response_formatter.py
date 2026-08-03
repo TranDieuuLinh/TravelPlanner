@@ -75,7 +75,7 @@ class ExploreResponseFormatter:
             "Write sourceActivity and user-facing candidate notes in Vietnamese for destinations in Vietnam while preserving named dishes, brands, and factual meaning. "
             "Only set sourceDurationMinutes when the source gives a duration. Do not convert vague timing cues into invented exact clock times. Do not omit a concrete URL stop merely because another adapter already extracted it. "
             "Do not create separate foodPlaces or urlReelSignals arrays. "
-            "For every candidate, set category to exactly one of attraction, food, cafe, hotel, transport, free_time, nature, culture, shopping, nightlife, wellness, adventure, beach, family, cemetery, or other. "
+            "Set every candidate category to other. Category is assigned later from the verified Places database or Google Maps resolver result; never infer it from rawRequest, captions, STT, OCR, place names, or activities. "
             "Add normalized candidate attributes when supported, such as local, hidden_gem, photogenic, quiet, crowded, budget, premium, family_friendly, outdoor, coastal, late_night, romantic, or accessible. Use coastal only when the evidence supports a coastal location; do not infer it merely from the trip-wide constraint. "
             "Every candidate produced here must preserve its evidence source: use user_prompt with URL null for a place from rawRequest, ocr with URL null for image OCR, and url with the exact URL for URL evidence. "
             "Set preferenceLevel=preferred for an automatically extracted place. Use must_visit only when rawRequest explicitly says the place is mandatory; URL priority is represented by sourceOrder and priority rather than falsely claiming user confirmation. "

@@ -18,6 +18,7 @@ from app.modules.places.resolver import (
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
+from app.modules.places.category import canonical_place_category
 from app.modules.places.alias_enricher import PlaceAliasEnricher
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.explorer.place_candidate_aggregator import (
@@ -28,7 +29,9 @@ from app.modules.plans.explorer.destination_guardrail import (
     infer_url_destination_hint,
 )
 from app.modules.plans.explorer.place_policy import (
+    concise_source_activity,
     has_url_source,
+    is_meal_place,
     is_schedulable_place,
 )
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
@@ -66,7 +69,10 @@ from app.modules.plans.schema import (
 )
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
-from app.modules.plans.dto.agent_contracts import UserPlanningState
+from app.modules.plans.dto.agent_contracts import (
+    ItineraryItemCategory,
+    UserPlanningState,
+)
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.users.repository import UserRepository
 from app.shared.errors import AppError
@@ -309,7 +315,13 @@ class PlanService:
         resolutions = [None] * len(candidates)
         missing_candidates = []
         missing_indexes = []
-        for index, candidate in enumerate(candidates):
+        for index, inferred_candidate in enumerate(candidates):
+            # Names, aliases, regions and evidence come from Explorer. Category
+            # does not: only the matched Places row/provider result is allowed
+            # to classify a resolved place.
+            candidate = inferred_candidate.model_copy(
+                update={"category": ItineraryItemCategory.other}
+            )
             cached = (
                 self.explorer_persistence.find_cached_resolution(
                     candidate,
@@ -319,16 +331,19 @@ class PlanService:
                 else None
             )
             if cached is not None:
-                resolutions[index] = cached.model_copy(
-                    update={
-                        "provider_attempts": [
-                            PlaceResolutionAttempt(
-                                candidate=candidate.name,
-                                provider="cache",
-                                outcome="cache_hit",
-                            )
-                        ]
-                    }
+                resolutions[index] = _with_authoritative_place_category(
+                    cached.model_copy(
+                        update={
+                            "candidate": candidate,
+                            "provider_attempts": [
+                                PlaceResolutionAttempt(
+                                    candidate=candidate.name,
+                                    provider="cache",
+                                    outcome="cache_hit",
+                                )
+                            ],
+                        }
+                    )
                 )
             else:
                 missing_indexes.append(index)
@@ -339,7 +354,9 @@ class PlanService:
                 destination=destination,
             )
             for index, resolution in zip(missing_indexes, fresh, strict=True):
-                resolutions[index] = resolution
+                resolutions[index] = _with_authoritative_place_category(
+                    resolution
+                )
         return [resolution for resolution in resolutions if resolution is not None]
 
     async def retry_candidate_reviews(
@@ -355,16 +372,24 @@ class PlanService:
         ]
         if not retry_reviews:
             return reviews
-        candidates = [_candidate_from_review(review) for review in retry_reviews]
+        candidates = [
+            _candidate_from_review(review).model_copy(
+                update={"category": ItineraryItemCategory.other}
+            )
+            for review in retry_reviews
+        ]
         if self.place_alias_enricher is not None:
             candidates = await self.place_alias_enricher.enrich(
                 candidates,
                 destination=destination,
             )
-        resolutions = await self.place_resolver.resolve_many(
-            candidates,
-            destination=destination,
-        )
+        resolutions = [
+            _with_authoritative_place_category(resolution)
+            for resolution in await self.place_resolver.resolve_many(
+                candidates,
+                destination=destination,
+            )
+        ]
         retried = {
             review.candidate_id: _place_candidate_review(
                 resolution,
@@ -848,6 +873,10 @@ class PlanService:
     ) -> None:
         if self.planning_runs is None or run_id is None:
             return
+        # Persistence failures leave the shared SQLAlchemy session unusable
+        # until it is rolled back. Recover it before recording the terminal
+        # planning-run stage so the original error can propagate cleanly.
+        self.planning_runs.rollback()
         self.planning_runs.add_stage(
             run_id,
             stage="explorer",
@@ -888,17 +917,15 @@ class PlanService:
                 ),
             )
         # URL-backed places are source requirements, not optional suggestions.
-        # Grow the plan until every resolved URL place has normal day capacity,
-        # even when the original/requested duration was shorter.
+        # Grow an unlocked trip until every resolved source place has capacity.
+        # An explicit duration/date range is a hard boundary and keeps overflow
+        # visible in UnscheduledPlace instead.
         expand_for_url_places = any(
             _has_url_source_ref(place.source_refs)
             for place in selected_places
         )
         disable_suggestions_for_url_overflow = False
-        if (
-            payload.expand_days_to_fit_selected_places
-            or expand_for_url_places
-        ):
+        if payload.expand_days_to_fit_selected_places:
             required_days = _required_days_for_selected_places(
                 selected_places,
                 pace=payload.intent.pace.value,
@@ -927,7 +954,7 @@ class PlanService:
         # can still push a URL stop past midnight; retry with extra days rather
         # than returning that source place as optional/unscheduled. Hard policy
         # rejections are intentionally not bypassed.
-        for _ in range(3):
+        for _ in range(3 if payload.expand_days_to_fit_selected_places else 0):
             retryable_url_overflow = _retryable_url_unscheduled_places(
                 plan,
                 selected_places,
@@ -1312,6 +1339,11 @@ def _prefer_selected_place(
             ])),
             "tags": list(dict.fromkeys([*current.tags, *incoming.tags])),
             "notes": preferred.notes or current.notes or incoming.notes,
+            "personal_notes": (
+                preferred.personal_notes
+                or current.personal_notes
+                or incoming.personal_notes
+            ),
             "source_order": current.source_order or incoming.source_order,
             "source_day": current.source_day or incoming.source_day,
         }
@@ -1323,8 +1355,9 @@ def _required_days_for_selected_places(
     *,
     pace: str,
 ) -> int:
-    capacity = _selected_place_capacity(pace)
-    occupancy: dict[int, int] = {}
+    activity_capacity = _selected_place_capacity(pace)
+    meal_capacity = 3
+    occupancy: dict[tuple[int, str], int] = {}
     required_days = 1
     ordered_places = sorted(
         selected_places,
@@ -1335,10 +1368,19 @@ def _required_days_for_selected_places(
         ),
     )
     for place in ordered_places:
+        slot_kind = (
+            "meal"
+            if is_meal_place(
+                tags=place.tags,
+                source_activity=place.source_activity,
+            )
+            else "activity"
+        )
+        capacity = meal_capacity if slot_kind == "meal" else activity_capacity
         day = place.source_day or 1
-        while day < 30 and occupancy.get(day, 0) >= capacity:
+        while day < 30 and occupancy.get((day, slot_kind), 0) >= capacity:
             day += 1
-        occupancy[day] = occupancy.get(day, 0) + 1
+        occupancy[(day, slot_kind)] = occupancy.get((day, slot_kind), 0) + 1
         required_days = max(required_days, day)
     return min(30, required_days)
 
@@ -1394,10 +1436,11 @@ def _place_candidate_review(
             if source.url
         )
     )
+    url_candidate = has_url_source(candidate)
     schedulable = (
         resolution.status == "resolved"
         and is_schedulable_place(
-            is_url_source=has_url_source(candidate),
+            is_url_source=url_candidate,
             resolution_status=resolution.status,
             latitude=resolution.latitude,
             longitude=resolution.longitude,
@@ -1406,6 +1449,27 @@ def _place_candidate_review(
             city=resolution.city,
             destination=destination,
             country=resolution.country,
+        )
+    )
+    has_coordinate_pair = (
+        resolution.latitude is not None and resolution.longitude is not None
+    )
+    rejection_reasons = set(
+        filter(None, (resolution.resolution_reason or "").split("+"))
+    )
+    has_representative_location = (
+        url_candidate
+        and not schedulable
+        and has_coordinate_pair
+        and "region_mismatch" not in rejection_reasons
+        and _has_specific_representative_location(
+            candidate,
+            resolution,
+            destination=destination,
+        )
+        and (
+            bool(candidate.address_hint)
+            or "name_mismatch" not in rejection_reasons
         )
     )
     identity = "|".join(
@@ -1421,7 +1485,9 @@ def _place_candidate_review(
             or hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
         ),
         name=candidate.name,
-        category=candidate.category,
+        category=ItineraryItemCategory(
+            canonical_place_category(resolution.place_type)
+        ),
         status="resolved" if schedulable else "needs_review",
         resolutionReason=(
             None
@@ -1431,13 +1497,29 @@ def _place_candidate_review(
         ),
         provider=resolution.provider,
         resolvedName=resolution.name if schedulable else None,
-        address=resolution.address if schedulable else candidate.address_hint,
-        latitude=float(resolution.latitude) if schedulable else None,
-        longitude=float(resolution.longitude) if schedulable else None,
+        address=(
+            resolution.address or candidate.address_hint
+            if schedulable or has_representative_location
+            else candidate.address_hint
+        ),
+        latitude=(
+            float(resolution.latitude)
+            if schedulable or has_representative_location
+            else None
+        ),
+        longitude=(
+            float(resolution.longitude)
+            if schedulable or has_representative_location
+            else None
+        ),
+        hasRepresentativeLocation=has_representative_location,
         searchRegion=candidate.search_region,
         sourceUrls=source_urls,
         sourceOrder=candidate.source_order,
         sourceDay=candidate.source_day,
+        sourceTimeHint=candidate.source_time_hint,
+        sourceActivity=concise_source_activity(candidate.source_activity),
+        sourceDurationMinutes=candidate.source_duration_minutes,
         confidence=candidate.confidence,
         extractionConfidence=candidate.confidence,
         resolutionConfidence=_resolution_confidence(
@@ -1445,6 +1527,24 @@ def _place_candidate_review(
             schedulable=schedulable,
         ),
         retryable=not schedulable,
+    )
+
+
+def _has_specific_representative_location(
+    candidate: UnifiedPlaceCandidate,
+    resolution: PlaceResolution,
+    *,
+    destination: str,
+) -> bool:
+    broad_locations = {
+        tuple(_selected_place_tokens(value))
+        for value in (destination, resolution.city, resolution.country)
+        if value
+    }
+    return any(
+        tokens and tuple(tokens) not in broad_locations
+        for value in (candidate.address_hint, resolution.name)
+        if value and (tokens := _selected_place_tokens(value))
     )
 
 
@@ -1486,4 +1586,22 @@ def _candidate_from_review(
         confidence=(review.extraction_confidence or review.confidence),
         sourceOrder=review.source_order,
         sourceDay=review.source_day,
+        sourceTimeHint=review.source_time_hint,
+        sourceActivity=review.source_activity,
+        sourceDurationMinutes=review.source_duration_minutes,
+    )
+
+
+def _with_authoritative_place_category(
+    resolution: PlaceResolution,
+) -> PlaceResolution:
+    category = ItineraryItemCategory(
+        canonical_place_category(resolution.place_type)
+    )
+    return resolution.model_copy(
+        update={
+            "candidate": resolution.candidate.model_copy(
+                update={"category": category}
+            )
+        }
     )

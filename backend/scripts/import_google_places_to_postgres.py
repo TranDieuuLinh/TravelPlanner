@@ -392,10 +392,11 @@ def _import_child_rows(
     skipped = 0
     distinct_place_ids = 0
     seen_place_ids: set[str] = set()
+    existing_place_ids = set(session.scalars(select(Place.id)))
     rows: list[dict[str, Any]] = []
     for raw in _iter_limited(_read_csv(csv_path), limit):
         place_id = (raw.get("place_id") or "").strip()
-        if not place_id:
+        if not place_id or place_id not in existing_place_ids:
             skipped += 1
             continue
         seen_place_ids.add(place_id)

@@ -131,7 +131,11 @@ Extractor là nguồn duy nhất tạo candidate; Formatter chỉ tạo intent/t
 preference và chạy song song với Resolver. Aggregator gộp trùng nhưng giữ
 provenance. Resolver chạy tự động, không dừng luồng để hỏi user. Chỉ kết quả
 resolved có tọa độ hợp lệ được lưu vào `user_must_place`; Explorer intake không
-ghi vào `places` và không lưu raw transcript/OCR.
+ghi vào `places`. Caption, STT và frame OCR thành công được lưu riêng theo
+canonical URL trong `url_source_artifacts`; nội dung này không được trả trong
+Explorer response hay ghi vào timing log. Bảng dùng chung này là nguồn văn bản
+cho retrieval/RAG và tạo note về sau, còn `url_extraction_cache` tiếp tục chỉ
+giữ context đã chuẩn hóa để tránh chạy lại extractor.
 
 `UrlReelExtractionService` định tuyến theo loại nguồn trước khi chuẩn hóa chung:
 

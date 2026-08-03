@@ -45,14 +45,14 @@ class Settings(BaseSettings):
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
     url_reel_gemini_stt_min_interval_seconds: float = Field(
-        default=6.0,
+        default=2.0,
         ge=0.0,
         le=60.0,
     )
-    url_reel_stt_chunk_seconds: float = Field(default=120.0, ge=45.0, le=300.0)
-    url_reel_stt_max_concurrency: int = Field(default=1, ge=1, le=4)
+    url_reel_stt_chunk_seconds: float = Field(default=60.0, ge=45.0, le=300.0)
+    url_reel_stt_max_concurrency: int = Field(default=3, ge=1, le=4)
     url_reel_stt_overlap_seconds: float = Field(default=2.0, ge=0.0, le=5.0)
-    url_reel_max_frames: int = 48
+    url_reel_max_frames: int = 72
     url_reel_min_frame_interval_seconds: float = 1.0
     url_reel_frame_width: int = 960
     url_reel_vision_batch_size: int = 10

@@ -7,7 +7,7 @@ from app.modules.plans.place_selector.meal_selector import MealStopSelector
 
 def test_meals_are_selected_after_activities_using_route_anchors() -> None:
     places = [
-        _food("breakfast", "Breakfast cafe", 21.03, 105.8005, "cafe"),
+        _food("breakfast", "Breakfast bakery", 21.03, 105.8005, "bakery"),
         _food("lunch", "Lunch restaurant", 21.03, 105.81, "restaurant"),
         _food("dinner", "Dinner restaurant", 21.03, 105.8195, "restaurant"),
     ]

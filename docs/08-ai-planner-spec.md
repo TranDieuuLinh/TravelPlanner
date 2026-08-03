@@ -2,6 +2,12 @@
 
 ## Mục tiêu
 
+- AI/Extractor chỉ trích xuất tên, alias, vùng tìm kiếm, evidence và ngữ cảnh
+  hoạt động của place candidate. Category cuối cùng không được suy diễn từ
+  prompt, caption, STT, OCR hoặc tên địa điểm; phải lấy từ `places.place_type`
+  khi catalog match, hoặc category do Google Maps Playwright trả về, rồi mới
+  chuẩn hóa và lưu làm tag. Provider không trả category thì dùng `other`.
+
 Biến nguồn cảm hứng và yêu cầu của user thành lịch trình có cấu trúc, giải thích
 được, tôn trọng ràng buộc và có thể chỉnh sửa ở cấp từng item. Model hỗ trợ trích
 xuất và đề xuất; code ứng dụng chịu trách nhiệm về source, ID, xác nhận của user,
@@ -45,8 +51,10 @@ Explorer–Planner/Finder rồi ghi revision hoàn chỉnh vào trip chat. Vì v
 có thể tiếp tục chat hoặc rời Planner; AppShell poll trạng thái job độc lập với
 page. Nếu một prompt thường cập nhật chat trong lúc URL đang chạy, worker nạp
 revision mới nhất và retry optimistic conflict có giới hạn thay vì ghi đè.
-Mỗi revision phải giữ toàn bộ URL place đã resolve từ các revision trước, gộp
-trùng theo identity/provenance và tự tăng duration để xếp hết chúng. Địa điểm
+Mỗi revision phải giữ toàn bộ URL place đã resolve từ các revision trước và gộp
+trùng theo identity/provenance. Nếu user chưa khóa duration/date, service tự tăng
+duration để xếp hết; nếu user đã khóa, phần dư được giữ trong
+`UnscheduledPlace` để UI cho thêm thủ công hoặc yêu cầu AI xếp lại. Địa điểm
 Finder đề xuất không được làm URL place rơi vào `UnscheduledPlace`; Finder chỉ
 bổ sung khi còn capacity sau khi phân bổ source places.
 
@@ -111,9 +119,9 @@ Giá trị placeholder như `unspecified` không phải geographic evidence và 
 bảo toàn destination của chat hoặc suy luận bảo thủ từ query URL, title/caption
 và vùng chiếm ưu thế trong candidate trước khi resolve.
 
-Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `high`.
+Video frame vision dùng `gemini-3.5-flash-lite` với media resolution `medium`.
 Frame được lấy thích nghi theo toàn bộ duration, không quá một frame mỗi giây,
-tối đa 48 frame và xử lý theo
+tối đa 72 frame và xử lý theo
 batch tối đa 10 ảnh; frame được chia đều giữa các batch để giảm thời gian chờ
 batch lớn nhất. Tối đa năm batch frame vision được gọi song song bằng năm API key
 khác nhau trong pool `GEMINI_OCR_API_KEYS`; STT dùng pool riêng
@@ -137,13 +145,13 @@ model cấu hình. Không áp dụng giới hạn số place candidate có evide
 gộp; giới hạn 48 chỉ áp dụng cho số frame video được lấy mẫu.
 TikTok photo post vẫn không được tải tự động và yêu cầu upload screenshot.
 
-STT fallback probe duration bằng `ffprobe`. Audio không quá 120 giây hoặc chỉ có
+STT fallback probe duration bằng `ffprobe`. Audio không quá 60 giây hoặc chỉ có
 một STT key vẫn dùng một request. Audio dài hơn có thể được chia cân bằng thành
-tối đa bốn chunk theo thứ tự thời gian, overlap mặc định hai giây ở biên. Mặc
-định `URL_REEL_STT_MAX_CONCURRENCY=1` và mỗi request Gemini STT được bắt đầu cách
-nhau tối thiểu sáu giây trong một tiến trình. Có thể tăng concurrency sau khi
-xác minh quota thực tế của project; nhiều API key không mặc nhiên tạo quota độc
-lập vì Gemini áp rate limit theo project. Mỗi key chỉ thuộc một chunk trong wave
+tối đa ba chunk theo thứ tự thời gian, overlap mặc định hai giây ở biên. Mặc
+định `URL_REEL_STT_MAX_CONCURRENCY=3` và mỗi request Gemini STT được bắt đầu cách
+nhau tối thiểu hai giây trong một tiến trình. Cấu hình này vẫn phải được theo dõi
+theo quota thực tế của project; nhiều API key không mặc nhiên tạo quota độc lập
+vì Gemini áp rate limit theo project. Mỗi key chỉ thuộc một chunk trong wave
 đầu; chunk lỗi chỉ retry sau khi toàn bộ wave kết thúc để không tranh key đang
 chạy. `429` tôn trọng `Retry-After` với trần 60 giây trước lần thử tiếp theo.
 Transcript
@@ -205,18 +213,23 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 - bỏ qua persistence đối với kết quả `provisional`, `unresolved`, thiếu tọa độ
   hoặc match rộng tới thành phố/quốc gia;
 - không chặn intake để hỏi user;
-- lưu dữ liệu resolve đủ điều kiện chỉ vào `UserMustPlace`, không ghi `Place`;
+- lưu snapshot riêng của intake chỉ vào `UserMustPlace`; ngoại lệ ADR-013 cho
+  phép upsert catalog `Place` tối thiểu/verified alias từ Google result có
+  stable external ID và tọa độ hợp lệ, không sao chép raw evidence;
 - Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
 - Explorer vẫn giữ mọi candidate sau aggregation trong
   `explorer.candidateReviews`; item chưa xác minh có status `needs_review` và
   reason/provider riêng thay vì biến mất khỏi UI. Retry từ trip chat chỉ gọi
   lại alias enrichment + resolver cho nhóm này, không chạy lại media/STT/OCR;
-  Planner tiếp tục chỉ nhận item đã xác minh tọa độ.
+  Planner chỉ nhận item `resolved` có danh tính và tọa độ đã xác minh. Candidate
+  `needs_review` không được xếp lịch dù provider có trả tọa độ đại diện.
 - `extractionConfidence` đo evidence riêng của candidate;
   `resolutionConfidence` đo identity từ provider. `confidence` cũ tạm giữ nghĩa
   extraction để tương thích client cũ.
-- Candidate khác tên cùng map tới một Google identity/tọa độ bị trả về
-  `duplicate_provider_identity`, không được persist.
+- Candidate khác tên cùng map tới một Google identity/tọa độ chỉ được gộp khi
+  Google trả cùng canonical provider name; resolver giữ các spelling/OCR variant
+  làm alias và gộp provenance trước persistence. Nếu provider name khác nhau,
+  cả nhóm bị trả về `duplicate_provider_identity`, không được persist.
 - Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
   đọc `UserMustPlace` theo cả `intakeId + userId`.
 
@@ -300,6 +313,12 @@ Finder điền item cụ thể:
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - chốt đúng hai activity chính cho mỗi ngày, tối ưu activity ở cấp toàn chuyến,
   rồi mới chọn đủ breakfast/lunch/dinner theo các anchor địa lý của tuyến;
+- stop ăn uống từ URL chiếm meal slot trước và thay thế meal suggestion
+  của Finder; stop URL không được âm thầm loại khi chuyển giữa activity
+  pool và meal slot;
+- `cafe`/`coffee shop` là stop trải nghiệm thuộc activity pool, không
+  được dùng làm breakfast/lunch/dinner chỉ vì provider gắn nhóm
+  `food_drink`;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
 - lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
@@ -315,12 +334,16 @@ Finder điền item cụ thể:
 Sau khi `PlaceSelectorService` chọn Place mà chưa gọi route leg chi tiết,
 `RouteFirstItineraryOptimizer` chạy ở cấp toàn chuyến.
 Nó dùng travel-time matrix để giảm tổng thời gian di chuyển bằng cách hoán đổi
-activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `MealStopSelector` chèn
-đủ ba bữa theo thứ tự breakfast → activity 1 → lunch → activity 2 → dinner. Stop nguồn có
+activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `MealStopSelector` cố gắng chèn
+ba bữa theo thứ tự breakfast → activity 1 → lunch → activity 2 → dinner. Stop nguồn có
 `sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ cố định. Đây là heuristic
 deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm cuối đã chốt;
 không được mô tả như tối ưu toàn cục. Có thể quay lại behavior cũ bằng
 `ITINERARY_OPTIMIZER_MODE=legacy`.
+
+Nếu không tìm được Place ăn uống đã xác minh cho một meal slot, Finder bỏ slot đó
+khỏi `PlanDay.items` thay vì tạo card breakfast/lunch/dinner giả. Planning warning
+vẫn ghi nhận meal slot bị thiếu để plan không bị mô tả như đã hoàn thiện.
 
 Route-first hiện không tạo lịch theo đồng hồ. Các marker `timeWindow` rất ngắn chỉ tồn tại
 để giữ tương thích schema và thứ tự; UI không cho nhập/sửa giờ và các marker không tham gia
@@ -411,10 +434,12 @@ tuyến đường hoặc danh tính địa điểm.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
-- Mỗi ngày áp sức chứa activity theo pace: `relaxed=2`, `balanced=3`,
-  `packed=5`. Khi user yêu cầu thêm ngày, duration tối thiểu được tính lại sau
-  khi merge địa điểm của revision cũ với intake mới; nếu duration được giữ cố
-  định, phần vượt sức chứa phải vào `UnscheduledPlace`.
+- Mỗi ngày có tối đa hai activity chính và ba meal stop. Restaurant/food URL
+  thay meal suggestion và không chiếm activity slot; cafe/coffee vẫn là
+  activity. Khi duration/date chưa bị user khóa hoặc user yêu cầu thêm ngày,
+  duration tối thiểu được tính lại sau khi merge địa điểm của revision cũ với
+  intake mới; nếu duration được giữ cố định, phần vượt sức chứa phải vào
+  `UnscheduledPlace`.
 - `timeWindow` phải nằm trọn trong một ngày địa phương. Sau khi cộng thời gian
   route, item đạt hoặc vượt `24:00` phải được bỏ khỏi ngày và trả về
   `UnscheduledPlace`, không được format thành giờ 24–28.

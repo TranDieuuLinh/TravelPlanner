@@ -10,6 +10,8 @@ from app.modules.plans.timing import PlanTimingReport
 class UrlImportJobRead(BaseModel):
     id: str
     chat_id: Annotated[str, Field(alias="chatId")]
+    source_type: Annotated[str, Field(alias="sourceType")]
+    source_label: Annotated[str, Field(alias="sourceLabel")]
     url: str
     force_refresh: Annotated[bool, Field(alias="forceRefresh")]
     status: str

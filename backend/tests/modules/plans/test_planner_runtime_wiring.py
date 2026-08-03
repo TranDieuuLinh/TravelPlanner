@@ -72,12 +72,18 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                         "art_gallery",
                         ["culture", "art"],
                     ),
-                    _place(
-                        "place-restaurant",
-                        "Local Restaurant",
-                        "restaurant",
-                        ["food"],
-                    ),
+                        _place(
+                            "place-restaurant",
+                            "Local Restaurant",
+                            "restaurant",
+                            ["food"],
+                        ),
+                        _place(
+                            "place-dinner",
+                            "Local Dinner Restaurant",
+                            "restaurant",
+                            ["food", "dinner"],
+                        ),
                     _place(
                         "place-coffee",
                         "Old Quarter Coffee",
@@ -168,6 +174,12 @@ def test_context_endpoint_builds_plan_from_normalized_input(
             _place("context-museum", "Context Museum", "museum", ["culture"]),
             _place("context-gallery", "Context Gallery", "art_gallery", ["culture"]),
             _place("context-food", "Context Food", "restaurant", ["food"]),
+            _place(
+                "context-dinner",
+                "Context Dinner",
+                "restaurant",
+                ["food", "dinner"],
+            ),
             _place("context-cafe", "Context Cafe", "cafe", ["coffee"]),
             _place("context-bakery", "Context Bakery", "bakery", ["breakfast"]),
         ]

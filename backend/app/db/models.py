@@ -25,6 +25,7 @@ from app.modules.places.model import (
 from app.modules.plans.explorer.model import (
     ExplorerIntake,
     UrlExtractionCacheEntry,
+    UrlSourceArtifact,
     UserMustPlace,
     UserMustPlaceUser,
     YouTubeTranscriptCacheEntry,
@@ -68,6 +69,7 @@ __all__ = [
     "UserMustPlace",
     "UserMustPlaceUser",
     "UrlExtractionCacheEntry",
+    "UrlSourceArtifact",
     "YouTubeTranscriptCacheEntry",
     "UserPost",
     "UserVisitedPlace",

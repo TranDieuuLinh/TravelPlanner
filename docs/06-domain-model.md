@@ -33,7 +33,9 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 - `MacroPlan`: tên plan, điểm đến và mô tả cấp cao cho từng ngày.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
-  địa điểm, ghi chú và `sourceDay` khi item bắt nguồn từ itinerary tham khảo.
+  địa điểm, source context trong `notes`, lời nhắc user trong `personalNotes`,
+  ảnh catalog, rating/số lượt đánh giá khi có dữ liệu thật và `sourceDay` khi
+  item bắt nguồn từ itinerary tham khảo. Hai loại note không ghi đè nhau.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
 - `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
@@ -111,6 +113,11 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   connector, thời điểm lấy và chính sách lưu.
 - `SourceArtifact`: metadata, caption, transcript, frame reference hoặc văn bản
   được phép lưu; không đồng nhất artifact với instruction cho model.
+- `UrlSourceArtifact`: phần `SourceArtifact` đã triển khai cho URL, lưu nội dung
+  text theo canonical URL và loại `caption`/`stt`/`ocr`, cùng language, provider
+  source, freshness và metadata observation đã chuẩn hóa. Ba loại dùng chung
+  một retrieval boundary cho RAG/tạo note sau này; không phải note hiển thị cho
+  user và không chứa prompt hoặc payload provider thô.
 - `YouTubeTranscriptCacheEntry`: cache caption đã lấy thành công theo
   `videoId + language`, gồm transcript, nguồn, cờ auto-generated và
   `fetchedAt/updatedAt`. Cache này phục vụ tái sử dụng connector và tách khỏi
@@ -133,7 +140,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   gia không được lưu vào bảng này. `candidateName` luôn giữ nhãn từ nguồn;
   `resolvedName` là nhãn provider đã xác minh, ưu tiên tiếng Việt khi alias có
   sẵn. Plan/UI dùng `resolvedName`; provenance vẫn dùng `candidateName`. Flow
-  Explorer không tạo hoặc cập nhật `Place`.
+  Explorer không ghi snapshot riêng tư vào `Place`. Ngoại lệ catalog dùng chung:
+  Google result `resolved` có stable external ID và tọa độ hợp lệ được phép
+  upsert record `Place` tối thiểu hoặc bổ sung verified alias vào metadata theo
+  ADR-013; raw evidence và source URL của user không được sao chép sang catalog.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
@@ -234,11 +244,14 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   longitude. Candidate provisional/unresolved hoặc thiếu tọa độ bị loại trước
   persistence và không được chuyển thành `SelectedPlace`.
 - Mọi `SelectedPlace` đã resolve có provenance URL là input bắt buộc của plan.
-  Planner tự tăng số ngày, tối đa giới hạn schema, để tạo đủ capacity thay vì
-  đưa overflow thông thường vào `UnscheduledPlace`. Finder suggestion chỉ được
-  dùng ở capacity còn trống và không được chiếm chỗ của URL place. Revision URL
-  tiếp theo phải phục hồi cả URL place đã resolve từ Explorer history, kể cả
-  khi revision cũ chưa xếp được nó.
+  Khi user chưa khóa số ngày hoặc khoảng ngày đi, Planner tự tăng số ngày, tối
+  đa giới hạn schema, để tạo đủ capacity. Khi duration/date đã được user nêu rõ,
+  Planner giữ nguyên duration và đưa overflow vào `UnscheduledPlace`; UI phải
+  cho thêm thủ công hoặc tạo prompt yêu cầu AI xếp lại. Stop restaurant/food
+  dùng tối đa ba meal slot mỗi ngày và không chiếm hai activity slot chính;
+  cafe/coffee vẫn là activity. Finder suggestion chỉ dùng capacity còn trống và
+  không được chiếm chỗ của URL place. Revision URL tiếp theo phải phục hồi cả
+  URL place đã resolve từ Explorer history, kể cả khi revision cũ chưa xếp được.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
   được lưu hay đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa
   thay thế.

@@ -154,6 +154,7 @@ class PlanMutationService:
             latitude=lat,
             longitude=lng,
             notes=request.notes,
+            personalNotes=request.personal_notes,
         )
 
         items = list(day.items)
@@ -163,7 +164,20 @@ class PlanMutationService:
             items.append(new_item)
 
         updated_day = self._reoptimize_day(day, items)
-        return self._finalize_mutation(plan, [updated_day])
+        added_name_key = _search_key(request.name)
+        remaining_unscheduled = [
+            item
+            for item in plan.unscheduled_places
+            if not (
+                request.place_id is not None
+                and item.place_id == request.place_id
+            )
+            and _search_key(item.name) != added_name_key
+        ]
+        normalized_plan = plan.model_copy(
+            update={"unscheduled_places": remaining_unscheduled}
+        )
+        return self._finalize_mutation(normalized_plan, [updated_day])
 
     async def update_item(
         self,
@@ -222,6 +236,32 @@ class PlanMutationService:
 
         updated_day = self._reoptimize_day(day, items)
         return self._finalize_mutation(plan, [updated_day])
+
+    def remove_unscheduled_place(
+        self,
+        plan: Plan,
+        *,
+        name: str,
+        place_id: str | None = None,
+    ) -> MutationResponse:
+        name_key = _search_key(name)
+        remaining = [
+            item
+            for item in plan.unscheduled_places
+            if not (
+                (place_id is not None and item.place_id == place_id)
+                or _search_key(item.name) == name_key
+            )
+        ]
+        if len(remaining) == len(plan.unscheduled_places):
+            raise AppError(
+                404,
+                "UNSCHEDULED_PLACE_NOT_FOUND",
+                "Không tìm thấy địa điểm trong danh sách chưa xếp lịch.",
+            )
+
+        updated_plan = plan.model_copy(update={"unscheduled_places": remaining})
+        return self._finalize_mutation(updated_plan, [])
 
     def move_item(
         self,

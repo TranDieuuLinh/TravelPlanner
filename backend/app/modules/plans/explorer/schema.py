@@ -184,6 +184,10 @@ class PlaceCandidateReview(BaseModel):
     address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    has_representative_location: Annotated[
+        bool,
+        Field(default=False, alias="hasRepresentativeLocation"),
+    ]
     search_region: Annotated[
         str | None,
         Field(default=None, alias="searchRegion"),
@@ -199,6 +203,18 @@ class PlaceCandidateReview(BaseModel):
     source_day: Annotated[
         int | None,
         Field(default=None, ge=1, le=30, alias="sourceDay"),
+    ]
+    source_time_hint: Annotated[
+        str | None,
+        Field(default=None, alias="sourceTimeHint"),
+    ]
+    source_activity: Annotated[
+        str | None,
+        Field(default=None, alias="sourceActivity"),
+    ]
+    source_duration_minutes: Annotated[
+        int | None,
+        Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
     ]
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     extraction_confidence: Annotated[
@@ -217,6 +233,8 @@ class PlaceCandidateReview(BaseModel):
     def backfill_extraction_confidence(self) -> "PlaceCandidateReview":
         if self.extraction_confidence == 0.0 and self.confidence > 0.0:
             self.extraction_confidence = self.confidence
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("latitude and longitude must be provided together")
         return self
 
 

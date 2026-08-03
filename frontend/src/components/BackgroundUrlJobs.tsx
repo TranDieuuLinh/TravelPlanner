@@ -40,6 +40,14 @@ function sourceLabel(value: string) {
   }
 }
 
+function jobSourceLabel(job: DisplayJob) {
+  if (job.sourceType === "image") {
+    const label = job.sourceLabel || "Ảnh OCR";
+    return label.length > 48 ? `${label.slice(0, 45)}…` : label;
+  }
+  return sourceLabel(job.url);
+}
+
 function elapsedSeconds(job: DisplayJob, now: number) {
   if (!job.startedAt) return 0;
   const startedAt = job.startedAt;
@@ -68,16 +76,34 @@ function detailLabel(value: string | number | boolean | null) {
   return value ?? "—";
 }
 
+function runningActivity(job: DisplayJob, elapsed: number) {
+  const isPlanning = (isGuestJob(job) && job.phase === "planning") || Boolean(job.explorerTiming);
+
+  if (isPlanning) {
+    if (elapsed < 6) return "Đang tạo khung chuyến đi theo từng ngày";
+    if (elapsed < 14) return "Đang xếp địa điểm, bữa ăn và thời gian nghỉ";
+    if (elapsed < 24) return "Đang tính các chặng di chuyển giữa địa điểm";
+    return "Đang kiểm tra xung đột, ngân sách và ràng buộc";
+  }
+
+  if (job.sourceType === "image") {
+    if (elapsed < 6) return "Đang kiểm tra ảnh và chuẩn bị OCR";
+    if (elapsed < 18) return "Đang đọc chữ, biển hiệu và ngữ cảnh trong ảnh";
+    if (elapsed < 30) return "Đang trích xuất địa điểm từ bằng chứng OCR";
+    return "Đang đối chiếu, gộp trùng và xác định địa điểm";
+  }
+
+  if (job.forceRefresh && elapsed < 6) return "Đang làm mới dữ liệu nguồn";
+  if (elapsed < 6) return "Đang kiểm tra URL và chuẩn bị nội dung";
+  if (elapsed < 16) return "Đang đọc metadata, caption hoặc transcript có thể truy cập";
+  if (elapsed < 30) return "Đang trích xuất địa điểm và ngữ cảnh du lịch";
+  return "Đang đối chiếu, gộp trùng và xác định địa điểm";
+}
+
 function statusLabel(job: DisplayJob, now: number) {
   if (job.status === "running") {
-    const action = isGuestJob(job) && job.phase === "planning"
-      ? "Planner + Finder đang tạo lịch trình"
-      : job.forceRefresh
-        ? "Explorer đang phân tích lại video"
-        : isGuestJob(job)
-          ? "Explorer đang trích xuất nội dung và địa điểm"
-          : "Explorer → Planner + Finder đang xử lý";
-    return `${action} · ${elapsedLabel(elapsedSeconds(job, now))}`;
+    const elapsed = elapsedSeconds(job, now);
+    return `${runningActivity(job, elapsed)} · ${elapsedLabel(elapsed)}`;
   }
   if (job.status === "queued") {
     const position = job.queuePosition ? ` · vị trí #${job.queuePosition}` : "";
@@ -407,7 +433,7 @@ export function BackgroundUrlJobs({
 
   const summary = running || queued
     ? `${running ? `${running} đang xử lý` : ""}${running && queued ? " · " : ""}${queued ? `${queued} đang chờ` : ""}`
-    : `${jobs.length} tác vụ URL`;
+    : `${jobs.length} tác vụ nguồn`;
 
   async function runAgain(job: DisplayJob) {
     setRetryingId(job.id);
@@ -428,7 +454,7 @@ export function BackgroundUrlJobs({
     } catch (caught) {
       setActionError({
         jobId: job.id,
-        message: caught instanceof Error ? caught.message : "Không thể chạy lại tác vụ URL."
+        message: caught instanceof Error ? caught.message : "Không thể chạy lại tác vụ nguồn."
       });
     } finally {
       setRetryingId(null);
@@ -491,7 +517,7 @@ export function BackgroundUrlJobs({
         </summary>
         <div className="backgroundJobsList" aria-live="polite">
           <div className="backgroundJobsListHeader">
-            <strong>Tác vụ URL gần đây</strong>
+            <strong>Tác vụ URL / ảnh OCR gần đây</strong>
             {finished.length > 0 ? (
               <button
                 disabled={clearingFinished}
@@ -510,7 +536,7 @@ export function BackgroundUrlJobs({
                     {job.status === "succeeded" ? "✓" : job.status === "failed" ? "!" : job.status === "queued" ? "…" : ""}
                   </span>
                   <span className="backgroundJobCopy">
-                    <strong title={job.url}>{sourceLabel(job.url)}</strong>
+                    <strong title={job.sourceLabel}>{jobSourceLabel(job)}</strong>
                     <small>{statusLabel(job, now)}</small>
                   </span>
                   <span className="backgroundJobRowChevron" aria-hidden="true">⌄</span>
@@ -557,7 +583,9 @@ export function BackgroundUrlJobs({
                         onClick={() => void runAgain(job)}
                         title={job.status === "failed"
                           ? "Tác vụ lỗi sẽ chạy lại toàn bộ từ đầu"
-                          : "Dùng extraction cache hợp lệ rồi chạy lại dedupe, resolve và Planner"
+                          : job.sourceType === "image"
+                            ? "Chạy lại OCR từ ảnh gốc, resolve và Planner"
+                            : "Dùng extraction cache hợp lệ rồi chạy lại dedupe, resolve và Planner"
                         }
                         type="button"
                       >

@@ -16,6 +16,7 @@ model/migration với schema mục tiêu chưa triển khai.
 | `user_must_place` | Implemented | Snapshot URL/place dùng chung, place-shaped + `source_url` + `notes` |
 | `user_must_place_users` | Implemented | Junction nhiều-nhiều giữa snapshot, user và Explorer intake |
 | `url_extraction_cache` | Implemented | `ExtractedContext` chuẩn hóa dùng chung theo canonical URL |
+| `url_source_artifacts` | Implemented | Caption/STT/OCR chuẩn hóa theo canonical URL cho retrieval/RAG và note về sau |
 | `trip_chat_plan_revisions` | Implemented | Snapshot plan/Explorer bất biến và `intake_id` tạo revision, migrations `20260730_0011` và `20260730_0012` |
 | `url_import_jobs.explorer_timing`, `url_import_jobs.planner_timing` | Implemented | Snapshot timing riêng cho từng URL job, migration `20260801_0024` |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
@@ -156,6 +157,20 @@ Junction table gồm `user_must_place_id`, `user_id`, `intake_id` và
 Khóa chính `source_url` là canonical URL. Bảng giữ `platform`, JSON
 `extracted_context`, `fetched_at`, `updated_at`; không giữ media, frame, raw
 payload hoặc toàn bộ transcript.
+
+### `url_source_artifacts`
+
+Lưu text extractor được phép giữ lại ở một retrieval boundary chung. Mỗi record
+unique theo `(source_url, artifact_type, language)`; `artifact_type` là
+`caption`, `stt` hoặc `ocr`. `content_text` là caption/transcript/OCR đã chuẩn
+hóa, còn `metadata` chỉ giữ observation/place/chunk metadata cần thiết, không
+giữ prompt hay payload provider thô. `platform`, `source`, `fetched_at` và
+`updated_at` giữ provenance/freshness. Cache YouTube cũ được backfill thành
+artifact `caption`; các dạng YouTube long-form `watch`/`youtu.be`/`embed`/`live`
+dùng chung source URL `watch?v={videoId}`. Bảng `youtube_transcript_cache` vẫn
+tồn tại để phục vụ connector cache. Chưa có embedding index trong runtime hiện
+tại; consumer RAG
+sau này đọc cả ba loại từ repository boundary này rồi chunk/embed theo version.
 
 ### `place_external_refs`
 

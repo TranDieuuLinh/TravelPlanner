@@ -56,6 +56,18 @@ class SelectedPlaceCreate(BaseModel):
         Field(default=None, alias="sourceProvider"),
     ]
     notes: str | None = None
+    personal_notes: Annotated[
+        str | None,
+        Field(default=None, alias="personalNotes"),
+    ]
+    image_urls: Annotated[list[str], Field(alias="imageUrls")] = Field(
+        default_factory=list
+    )
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: Annotated[
+        int | None,
+        Field(default=None, ge=0, alias="reviewCount"),
+    ]
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
     source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]

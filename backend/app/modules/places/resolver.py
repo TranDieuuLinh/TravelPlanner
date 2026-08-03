@@ -64,6 +64,28 @@ class PlaceLookupRepository(Protocol):
     ) -> list[PlaceLookupRecord]: ...
 
 
+class VerifiedPlaceAliasRepository(Protocol):
+    def upsert_verified_google_aliases(
+        self,
+        *,
+        external_id: str,
+        canonical_name: str,
+        aliases: list[str],
+        place_type: str,
+        address: str | None,
+        city: str | None,
+        country: str | None,
+        country_code: str | None,
+        primary_area: str | None,
+        latitude: Decimal,
+        longitude: Decimal,
+        region_key: str,
+        source_link: str | None,
+        fetched_at: datetime,
+        attribution: str | None,
+    ) -> bool: ...
+
+
 class PlaceResolution(BaseModel):
     candidate: UnifiedPlaceCandidate
     status: Literal["resolved", "provisional", "unresolved"]
@@ -72,6 +94,16 @@ class PlaceResolution(BaseModel):
         alias="resolutionReason",
     )
     provider: str | None = None
+    provider_match_name: str | None = Field(
+        default=None,
+        alias="providerMatchName",
+        exclude=True,
+    )
+    verified_aliases: list[str] = Field(
+        default_factory=list,
+        alias="verifiedAliases",
+        exclude=True,
+    )
     external_id: str | None = Field(default=None, alias="externalId")
     name: str
     address: str | None = None
@@ -187,9 +219,12 @@ class FallbackPlaceResolver(PlaceResolver):
         self,
         primary: PlaceResolver,
         fallback: PlaceResolver,
+        *,
+        verified_alias_repository: VerifiedPlaceAliasRepository | None = None,
     ) -> None:
         self.primary = primary
         self.fallback = fallback
+        self.verified_alias_repository = verified_alias_repository
 
     async def resolve(
         self,
@@ -222,6 +257,7 @@ class FallbackPlaceResolver(PlaceResolver):
             }
         )
         if _is_usable_resolution(fallback_result):
+            self._learn_verified_google_aliases(fallback_result)
             return fallback_result
 
         reasons = [
@@ -278,6 +314,7 @@ class FallbackPlaceResolver(PlaceResolver):
                 }
             )
             if _is_usable_resolution(fallback_result):
+                self._learn_verified_google_aliases(fallback_result)
                 combined_results[index] = fallback_result
                 continue
             reasons = [
@@ -292,6 +329,49 @@ class FallbackPlaceResolver(PlaceResolver):
                 update={"resolution_reason": ";".join(reasons)}
             )
         return combined_results
+
+    def _learn_verified_google_aliases(
+        self,
+        resolution: PlaceResolution,
+    ) -> None:
+        repository = self.verified_alias_repository
+        if (
+            repository is None
+            or resolution.provider != "google_maps_scraper"
+            or not resolution.external_id
+            or not resolution.verified_aliases
+            or resolution.latitude is None
+            or resolution.longitude is None
+            or resolution.fetched_at is None
+        ):
+            return
+        try:
+            repository.upsert_verified_google_aliases(
+                external_id=resolution.external_id,
+                canonical_name=(
+                    resolution.provider_match_name or resolution.name
+                ),
+                aliases=resolution.verified_aliases,
+                place_type=resolution.place_type or "other",
+                address=resolution.address,
+                city=resolution.city,
+                country=resolution.country,
+                country_code=resolution.country_code,
+                primary_area=resolution.primary_area,
+                latitude=resolution.latitude,
+                longitude=resolution.longitude,
+                region_key=(
+                    resolution.region_key
+                    or _region_key_for_catalog(resolution.city or "")
+                ),
+                source_link=resolution.source_link,
+                fetched_at=resolution.fetched_at,
+                attribution=resolution.attribution,
+            )
+        except Exception:
+            # Catalog learning is opportunistic and must never turn a verified
+            # place resolution into a failed Explorer intake.
+            return
 
 
 class DatabasePlaceResolver(PlaceResolver):
@@ -659,6 +739,14 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                     None if status == "resolved" else "+".join(rejection_reasons)
                 ),
                 provider=self.provider_name,
+                providerMatchName=title,
+                verifiedAliases=list(
+                    dict.fromkeys(
+                        name
+                        for name in (candidate.name, candidate.original_name)
+                        if name and _normalized(name)
+                    )
+                ),
                 externalId=(
                     _optional_text(result.get("place_id"))
                     or _optional_text(result.get("cid"))
@@ -688,6 +776,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                     _optional_text(complete_address_dict.get("borough"))
                     or _optional_text(complete_address_dict.get("neighborhood"))
                 ),
+                regionKey=_region_key_for_search(search_region, destination),
                 latitude=latitude,
                 longitude=longitude,
                 description=_google_maps_description(result),
@@ -1015,6 +1104,25 @@ def _reject_duplicate_google_identities(
         }
         if len(candidate_keys) < 2:
             continue
+        duplicate_results = [results[index] for index in indexes]
+        if _duplicate_results_share_provider_name(duplicate_results):
+            merged_candidate = _merge_identity_alias_candidates(
+                [result.candidate for result in duplicate_results]
+            )
+            for index in indexes:
+                rejected[index] = results[index].model_copy(
+                    update={
+                        "candidate": merged_candidate,
+                        "verified_aliases": list(
+                            dict.fromkeys(
+                                alias
+                                for result in duplicate_results
+                                for alias in result.verified_aliases
+                            )
+                        ),
+                    }
+                )
+            continue
         for index in indexes:
             attempts = [
                 attempt.model_copy(
@@ -1034,6 +1142,113 @@ def _reject_duplicate_google_identities(
                 }
             )
     return rejected
+
+
+def _duplicate_results_share_provider_name(
+    results: list[PlaceResolution],
+) -> bool:
+    """Allow spelling aliases only when the provider names one canonical POI.
+
+    Equal coordinates alone are not sufficient: a scraper can accidentally
+    return the same map centre for unrelated candidates. The resolved provider
+    name must therefore agree across the duplicate group before downstream
+    canonical dedupe may merge it.
+    """
+    provider_names = {
+        _normalized(result.provider_match_name or result.name)
+        for result in results
+    }
+    provider_names.discard("")
+    return len(provider_names) == 1
+
+
+def _merge_identity_alias_candidates(
+    candidates: list[UnifiedPlaceCandidate],
+) -> UnifiedPlaceCandidate:
+    preferred = max(
+        enumerate(candidates),
+        key=lambda item: (item[1].confidence, -item[0]),
+    )[1]
+    sources = []
+    seen_sources: set[tuple[str, str | None]] = set()
+    for candidate in candidates:
+        for source in candidate.sources:
+            key = (source.type.value, source.url)
+            if key not in seen_sources:
+                sources.append(source)
+                seen_sources.add(key)
+
+    alias_names = list(
+        dict.fromkeys(
+            name
+            for candidate in candidates
+            for name in (
+                candidate.name,
+                candidate.original_name,
+                *candidate.search_names,
+                *candidate.alternate_names,
+            )
+            if name and name != preferred.name
+        )
+    )
+    return preferred.model_copy(
+        update={
+            "search_names": list(
+                dict.fromkeys([*preferred.search_names, *alias_names])
+            ),
+            "alternate_names": list(
+                dict.fromkeys([*preferred.alternate_names, *alias_names])
+            ),
+            "sources": sources,
+            "source_evidence": {
+                key: value
+                for candidate in candidates
+                for key, value in candidate.source_evidence.items()
+            },
+            "confidence": max(candidate.confidence for candidate in candidates),
+            "priority": min(candidate.priority for candidate in candidates),
+            "source_order": min(
+                (
+                    candidate.source_order
+                    for candidate in candidates
+                    if candidate.source_order is not None
+                ),
+                default=None,
+            ),
+            "source_day": min(
+                (
+                    candidate.source_day
+                    for candidate in candidates
+                    if candidate.source_day is not None
+                ),
+                default=None,
+            ),
+        }
+    )
+
+
+def _region_key_for_catalog(value: str) -> str:
+    from app.modules.plans.planner.region_context import normalize_region_key
+
+    normalized = normalize_region_key(value) if value.strip() else ""
+    return normalized or "vn,unmapped"
+
+
+def _region_key_for_search(search_region: str, destination: str) -> str:
+    from app.modules.plans.planner.region_context import (
+        normalize_region_key,
+        normalize_search_region_key,
+    )
+
+    region = usable_destination(search_region)
+    trip_destination = usable_destination(destination)
+    if region and trip_destination:
+        return normalize_search_region_key(region, trip_destination)
+    if region:
+        return normalize_region_key(region)
+    if trip_destination:
+        return normalize_region_key(trip_destination)
+    return "vn,unmapped"
 
 
 def _optional_text(value: Any) -> str | None:

@@ -26,6 +26,7 @@ export type GuestUrlImportJob = UrlImportJob & {
   phase: GuestUrlJobPhase;
   requestContent: string;
   contextUrls: string[];
+  contextImages: File[];
   result: GuestUrlJobResult | null;
 };
 
@@ -82,6 +83,7 @@ async function processQueue(): Promise<void> {
         const explore = await exploreFullIntake({
           rawRequest: next.requestContent,
           urls: next.contextUrls,
+          images: next.contextImages,
           forceRefresh: next.forceRefresh
         }, controller.signal);
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;
@@ -124,7 +126,7 @@ async function processQueue(): Promise<void> {
             : "GUEST_URL_JOB_FAILED",
           errorMessage: caught instanceof Error
             ? caught.message
-            : "Không thể xử lý URL này.",
+            : "Không thể xử lý nguồn này.",
           finishedAt: new Date().toISOString()
         });
       } finally {
@@ -148,6 +150,8 @@ export function enqueueGuestUrlJobs(input: {
   const created = input.urls.map((url, index): GuestUrlImportJob => ({
     id: crypto.randomUUID(),
     chatId: "guest-memory",
+    sourceType: "url",
+    sourceLabel: url,
     url,
     forceRefresh: false,
     status: "queued",
@@ -163,6 +167,44 @@ export function enqueueGuestUrlJobs(input: {
     phase: "queued",
     requestContent: input.content,
     contextUrls: input.urls.slice(0, index + 1),
+    contextImages: [],
+    explorerTiming: null,
+    plannerTiming: null,
+    result: null
+  }));
+  jobs = [...jobs, ...created];
+  publish();
+  void processQueue();
+  return created;
+}
+
+export function enqueueGuestImageJobs(input: {
+  content: string;
+  images: File[];
+  urls?: string[];
+}): GuestUrlImportJob[] {
+  const createdAt = new Date().toISOString();
+  const created = input.images.map((file, index): GuestUrlImportJob => ({
+    id: crypto.randomUUID(),
+    chatId: "guest-memory",
+    sourceType: "image",
+    sourceLabel: file.name || "Ảnh OCR",
+    url: "",
+    forceRefresh: false,
+    status: "queued",
+    queuePosition: null,
+    attemptCount: 0,
+    resultRevision: null,
+    errorCode: null,
+    errorMessage: null,
+    createdAt,
+    startedAt: null,
+    finishedAt: null,
+    storage: "guest-memory",
+    phase: "queued",
+    requestContent: input.content,
+    contextUrls: input.urls ?? [],
+    contextImages: input.images.slice(0, index + 1),
     explorerTiming: null,
     plannerTiming: null,
     result: null

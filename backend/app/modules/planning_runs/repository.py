@@ -14,6 +14,9 @@ class PlanningRunRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def rollback(self) -> None:
+        self.session.rollback()
+
     def start(
         self,
         *,

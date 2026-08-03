@@ -114,7 +114,11 @@ Planning rules:
     spending expectations.
 15. Consider festivalDiscovery dates when scheduling multi-day trips to avoid
     booking conflicts during major national holidays.
-16. intent.destinationStays are geographic constraints, never visitable Places.
+16. Meals are selected after main activities. Do not use breakfast, lunch,
+    dinner, restaurants, street food, local food, or seafood meal stops as
+    tripThemes.minimumActivities. Food preferences guide MealStopSelector;
+    cafes and coffee experiences may remain main activities when appropriate.
+17. intent.destinationStays are geographic constraints, never visitable Places.
     They may constrain targetRegionKeys but must not create day themes or items.
 """.strip()
 

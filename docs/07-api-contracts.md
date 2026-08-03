@@ -125,8 +125,11 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
   hiện tại.
 - `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job
-  FIFO và trả `202 Accepted` ngay; dùng cho message có URL, không có ảnh. Field
+  FIFO và trả `202 Accepted` ngay. Field
   form `forceRefresh=true` tạo job phân tích lại, bỏ qua extraction cache.
+- `POST /api/trip-chats/{chatId}/image-jobs`: lưu mỗi ảnh JPEG/PNG/WebP/HEIC/HEIF
+  tối đa 15 MB thành một OCR background job và trả `202 Accepted`. Ảnh dùng chung
+  FIFO, timeout, timing, retry/reprocess và stop/delete với URL.
 - `GET /api/url-import-jobs`: lấy tối đa 40 job của user hiện tại để hiển thị
   notification toàn ứng dụng; user không đọc được job của tài khoản khác.
 - `POST /api/url-import-jobs/{jobId}/retry`: đưa riêng một job thất bại về cuối
@@ -134,18 +137,27 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
   vượt deadline trả trạng thái `failed`, `errorCode` là `URL_IMPORT_TIMEOUT` và
   không chặn URL kế tiếp.
 - `POST /api/url-import-jobs/{jobId}/reprocess`: tạo một job mới từ job đã
-  kết thúc thành công, dùng extraction cache rồi chạy lại aggregation/dedupe,
-  resolve và Planner; giữ nguyên job cũ trong lịch sử và trả `202 Accepted`.
+  kết thúc; URL dùng extraction cache, ảnh dùng lại file gốc đã lưu, rồi chạy
+  aggregation/dedupe, resolve và Planner; giữ nguyên job cũ trong lịch sử và trả
+  `202 Accepted`.
 - `DELETE /api/url-import-jobs/{jobId}`: xóa job `queued`, hoặc dừng task và xóa
   job `running`, của user hiện tại; trả `204 No Content`. Khi dừng job đang chạy,
   worker giải phóng FIFO và nhận job kế tiếp ngay. Job `succeeded` hoặc `failed`
   cũng có thể được xóa khỏi lịch sử; revision plan đã tạo không bị ảnh hưởng.
 - `POST /api/trip-chats/{chatId}/plan/items`: thêm item thủ công.
+  Form Planner tra `GET /api/plans/places/search?query=...&destination=...` trên
+  catalog `places` đang active và chỉ cho gửi item sau khi user chọn một kết quả
+  có identity cùng tọa độ; nội dung gõ tự do không được xem là một địa điểm đã
+  chọn.
 - `PATCH /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: sửa item.
   Khi user chọn một kết quả từ place search, form gửi cùng `placeId`, `name`,
   `address`, `latitude` và `longitude`; backend lưu đồng bộ identity và tọa độ
   thay vì chỉ đổi tên hiển thị.
 - `DELETE /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: xóa item.
+- `DELETE /api/trip-chats/{chatId}/plan/unscheduled-places`: xóa một địa điểm
+  khỏi danh sách chưa xếp. Request dùng `multipart/form-data` với
+  `expectedRevision`, `name` và `placeId` tùy chọn; backend lưu một plan revision
+  mới và chỉ cho phép chủ trip chat thao tác.
 - `PUT /api/trip-chats/{chatId}/plan/days/{day}/items/reorder`: lưu thứ tự item
   mới của một ngày. Request dùng `multipart/form-data` với `expectedRevision`
   và các field `itemIds` lặp lại theo đúng thứ tự hiển thị mong muốn.
@@ -208,12 +220,17 @@ Request tạo background URL job dùng `multipart/form-data` với `content`,
 cũng nhận URL nằm trong `content`, loại trùng và giới hạn 20 URL/lần. Mỗi URL
 tạo một resource riêng:
 
+Request tạo background OCR job cũng dùng `multipart/form-data`, gồm `content`,
+`expectedRevision` và tối đa 20 field `images`. Mỗi ảnh tạo một resource riêng.
+
 ```json
 {
   "jobs": [
     {
       "id": "job_uuid",
       "chatId": "chat_uuid",
+      "sourceType": "url",
+      "sourceLabel": "https://www.youtube.com/watch?v=...",
       "url": "https://www.youtube.com/watch?v=...",
       "forceRefresh": false,
       "status": "queued",
@@ -230,8 +247,8 @@ tạo một resource riêng:
 }
 ```
 
-Worker xử lý một URL mỗi lần trên toàn hàng chờ của deployment. User có thể gửi
-prompt thường, thêm batch URL khác hoặc điều hướng sang route khác trong khi job
+Worker xử lý một URL hoặc ảnh mỗi lần trên toàn hàng chờ của deployment. User có thể gửi
+prompt thường, thêm batch nguồn khác hoặc điều hướng sang route khác trong khi job
 chạy. Tiến độ chỉ hiển thị trong panel task toàn ứng dụng, không chèn message
 trạng thái vào transcript và không disable chat composer. Mỗi task có thể mở để
 xem thời điểm bắt đầu, tổng elapsed, attempt và timing stage có sẵn. Job thành
@@ -301,16 +318,22 @@ Không công khai raw OCR, transcript, URL result hoặc debug. Backend tự đ�
 candidate trùng, giữ source URL, resolve place và upsert snapshot dùng chung vào
 `user_must_place`; `user_must_place_users` giữ quan hệ user/intake. Flow không
 ghi đè `places`. `url_extraction_cache` chỉ giữ `ExtractedContext` chuẩn hóa để
-URL đã xử lý không phải chạy lại media/STT/OCR.
+URL đã xử lý không phải chạy lại media/STT/OCR. Nội dung text caption, STT và
+frame OCR thành công được upsert nội bộ vào `url_source_artifacts` theo canonical
+URL để retrieval/RAG và tính năng note dùng về sau. Bảng này không phải contract
+response công khai; Explorer vẫn không trả raw content cho client.
 
 `explorer.candidateReviews[]` giữ candidate có evidence sau aggregation kể cả
 khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
 `category`, `status` (`resolved | needs_review | merged | ignored`),
 `resolutionReason`, provider/nhãn/address/toạ độ đã xác minh khi có,
-`searchRegion`, canonical `sourceUrls`, source order/day,
+`hasRepresentativeLocation`, `searchRegion`, canonical `sourceUrls`, source
+order/day/time/activity/duration,
 `extractionConfidence`, `resolutionConfidence`, confidence tương thích cũ và
-`retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có
-đủ danh tính và tọa độ được đưa vào Planner.
+`retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có đủ
+danh tính và tọa độ được đưa vào Planner. Item `needs_review`, kể cả khi có
+`hasRepresentativeLocation = true`, chỉ phục vụ review/retry và không được xếp
+vào plan.
 
 `POST /api/trip-chats/{chatId}/candidate-resolutions/retry` nhận
 `{"expectedRevision": N}`. Endpoint chỉ chạy alias enrichment + place resolver
@@ -449,12 +472,13 @@ xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không ch
 selected-place payload hay dữ liệu provider thô.
 Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
 `allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
-chỉ bật cờ mở rộng khi amendment yêu cầu thêm ngày; số ngày được giới hạn tối đa
-30 và được tính lại sau khi merge địa điểm cũ với intake mới.
-Ngoài cờ nội bộ này, service luôn tự mở rộng duration khi danh sách đã merge có
-địa điểm mang provenance URL. Vì vậy số ngày user/default không làm địa điểm URL
-đã resolve bị loại chỉ vì `no_day_capacity`; duration cuối được tính đủ cho toàn
-bộ selected place theo sức chứa của pace.
+bật cờ mở rộng khi user chưa từng khóa số ngày/khoảng ngày, hoặc khi amendment
+yêu cầu thêm ngày; số ngày được giới hạn tối đa 30 và được tính lại sau khi merge
+địa điểm cũ với intake mới. Khi cờ là `false`, service giữ duration hiện tại và
+trả phần vượt sức chứa trong `plan.unscheduledPlaces`. UI Planner hiển thị danh
+sách này với thao tác thêm thủ công vào một ngày hoặc điền prompt yêu cầu AI xếp.
+Sức chứa route-first là hai activity chính và ba meal stop mỗi ngày; restaurant/
+food URL ưu tiên thay meal suggestion, còn cafe/coffee dùng activity slot.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
 đúng `intakeId + userId`. Candidate chưa được user xác nhận vẫn giữ
 `preferenceLevel=preferred`, confidence và provenance; không được đổi thành
@@ -483,7 +507,13 @@ không tự động đổi trip base theo một day trip.
 Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
-`longitude`. `PlanItem` trả lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
+`longitude`. Khi dữ liệu đã tồn tại trong Places DB hoặc snapshot
+`UserMustPlace`, `selectedPlaces` và `PlanItem` còn có thể trả `imageUrls`,
+`rating` và `reviewCount`. Field thiếu được để rỗng/null; API không tạo ảnh hoặc
+rating giả. `PlanItem.notes` giữ context bổ sung từ nguồn/provider;
+`PlanItem.personalNotes` là lời nhắc user chỉnh sửa qua mutation endpoint. Hai
+field không ghi đè nhau và đều được giữ qua trip-chat revision. `PlanItem` trả
+lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
 `sourceProvider` giữ adapter đã resolve candidate (`database`,
 `google_maps_scraper`, ...)
 và được chuyển tiếp vào `PlanItem` cùng `sourceRefs`; UI dùng hai field này để

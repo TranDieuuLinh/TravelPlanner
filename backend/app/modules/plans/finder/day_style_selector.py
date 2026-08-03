@@ -59,9 +59,8 @@ SCATTERED_CATEGORIES: frozenset[str] = frozenset(
 # them out of the day-style vote because attaching a restaurant to a day
 # must not by itself force the day into scattered shape.
 MEAL_CATEGORIES: frozenset[str] = frozenset({"food_drink"})
-# Within ``food_drink`` we recognise "quick bite" place_types as short
-# stops rather than meals. These are typical cafe / bakery / ice-cream /
-# drink-shop visits that the user might attach to a scattered day.
+# Quick stops may be activities (notably cafe/coffee) or short food visits.
+# They shape a scattered day without becoming a breakfast/lunch/dinner meal.
 QUICK_BITE_PLACE_TYPES: frozenset[str] = frozenset(
     {
         "bakery",
@@ -102,22 +101,22 @@ def classify_place(place: FinderPlace) -> str | None:
     ``None`` means the place cannot influence the day-style decision
     (accommodation, transport, regular restaurant, or unknown category).
 
-    ``food_drink`` places are normally treated as meals and excluded, except
-    for "quick bite" place types (cafe / bakery / dessert shop) which count
-    as short stops and push the day towards ``scattered_day``.
+    ``food_drink`` places are normally treated as meals and excluded. Quick
+    stops such as cafes remain activities but push the day towards
+    ``scattered_day``.
     """
 
     category = place_category(place)
     if category is None:
         return None
+    place_type = (place.place_type or "").strip().casefold()
+    if place_type in QUICK_BITE_PLACE_TYPES:
+        return "scattered"
     if category in ANCHOR_CATEGORIES:
         return "anchor"
     if category in SCATTERED_CATEGORIES:
         return "scattered"
     if category in MEAL_CATEGORIES:
-        place_type = (place.place_type or "").strip().casefold()
-        if place_type in QUICK_BITE_PLACE_TYPES:
-            return "scattered"
         return None
     return None
 

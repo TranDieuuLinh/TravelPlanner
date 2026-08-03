@@ -415,6 +415,32 @@ def test_explorer_rejects_caption_or_multi_place_list_as_one_url_candidate() -> 
     assert candidates[0].source_activity is None
 
 
+def test_explorer_rejects_itinerary_heading_as_url_place() -> None:
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hanoi",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="FULL DAY ITINERARY IN HANOI",
+                sources=[
+                    {"type": "url", "url": "https://example.com/hanoi-reel"}
+                ],
+                confidence=0.95,
+            ),
+            UnifiedPlaceCandidate(
+                name="Cafe Giang",
+                sources=[
+                    {"type": "url", "url": "https://example.com/hanoi-reel"}
+                ],
+                confidence=0.9,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert [candidate.name for candidate in candidates] == ["Cafe Giang"]
+
+
 def test_explorer_recovers_concise_place_name_from_evidence() -> None:
     source_url = "https://www.tiktok.com/@creator/video/imperial-citadel"
 

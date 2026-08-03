@@ -25,6 +25,7 @@ class AddItemRequest(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     notes: str | None = None
+    personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] = Field(default_factory=list)
     position: int | None = Field(default=None, ge=0)
 
@@ -41,6 +42,7 @@ class UpdateItemRequest(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     notes: str | None = None
+    personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] | None = None
 
     model_config = {"populate_by_name": True}

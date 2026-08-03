@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import unicodedata
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Iterator, Protocol
 from uuid import uuid4
 
 from sqlalchemy import Select, Text, cast, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import (
@@ -95,7 +98,11 @@ class SqlAlchemyPlaceRepository:
             )
 
     def get(self, place_id: str) -> Place | None:
-        return self.session.get(Place, place_id)
+        return self.session.scalar(
+            select(Place)
+            .options(selectinload(Place.images))
+            .where(Place.id == place_id)
+        )
 
     def list_for_finder(
         self,
@@ -106,6 +113,7 @@ class SqlAlchemyPlaceRepository:
         _validate_region_key(region_key)
         query = (
             select(Place)
+            .options(selectinload(Place.images))
             .where(
                 Place.deleted_at.is_(None),
                 Place.status == "active",
@@ -182,6 +190,144 @@ class SqlAlchemyPlaceRepository:
             .limit(limit)
         )
         return list(self.session.scalars(query))
+
+    def upsert_verified_google_aliases(
+        self,
+        *,
+        external_id: str,
+        canonical_name: str,
+        aliases: list[str],
+        place_type: str,
+        address: str | None,
+        city: str | None,
+        country: str | None,
+        country_code: str | None,
+        primary_area: str | None,
+        latitude: Decimal,
+        longitude: Decimal,
+        region_key: str,
+        source_link: str | None,
+        fetched_at: datetime,
+        attribution: str | None,
+    ) -> bool:
+        """Persist source spellings verified against a stable Google identity."""
+        external_id = external_id.strip()
+        canonical_name = " ".join(canonical_name.split())
+        if (
+            not external_id
+            or len(external_id) > 96
+            or not canonical_name
+            or len(canonical_name) > 255
+        ):
+            return False
+        _validate_region_key(region_key)
+
+        learned_aliases: list[str] = []
+        seen = {_alias_key(canonical_name)}
+        for value in aliases:
+            alias = " ".join(value.split())
+            key = _alias_key(alias)
+            if (
+                not alias
+                or len(alias) > 255
+                or not key
+                or key in seen
+            ):
+                continue
+            seen.add(key)
+            learned_aliases.append(alias)
+            if len(learned_aliases) == 64:
+                break
+        try:
+            place = self.session.scalar(
+                select(Place)
+                .where(Place.id == external_id)
+                .with_for_update()
+            )
+            created = place is None
+            if not created and not learned_aliases:
+                return False
+            if place is None:
+                place = Place(
+                    id=external_id,
+                    name=canonical_name,
+                    place_type=(place_type or "other")[:96],
+                    address=address,
+                    city=city,
+                    country=country,
+                    country_code=country_code,
+                    region_key=region_key,
+                    primary_area=primary_area,
+                    latitude=latitude,
+                    longitude=longitude,
+                    status="active",
+                    opening_hours=[],
+                    data_confidence="medium",
+                    source_platform="google_maps_scraper",
+                    source_link=source_link,
+                    source_fetched_at=fetched_at,
+                    revision=1,
+                    metadata_json={},
+                )
+                self.session.add(place)
+
+            metadata = dict(place.metadata_json or {})
+            existing_aliases = [
+                str(value)
+                for value in metadata.get("aliases", [])
+                if isinstance(value, str) and _alias_key(value)
+            ]
+            existing_keys = {
+                _alias_key(place.name),
+                *(_alias_key(value) for value in existing_aliases),
+            }
+            aliases_to_add = [
+                alias
+                for alias in learned_aliases
+                if _alias_key(alias) not in existing_keys
+            ]
+
+            verified = [
+                value
+                for value in metadata.get("verifiedAliases", [])
+                if isinstance(value, dict) and value.get("name")
+            ]
+            verified_keys = {
+                _alias_key(str(value["name"])) for value in verified
+            }
+            verified_to_add = [
+                alias
+                for alias in learned_aliases
+                if _alias_key(alias) not in verified_keys
+            ]
+            if not created and not aliases_to_add and not verified_to_add:
+                return False
+
+            verified_at = fetched_at.astimezone(timezone.utc).isoformat()
+            metadata["aliases"] = [*existing_aliases, *aliases_to_add]
+            metadata["verifiedAliases"] = [
+                *verified,
+                *(
+                    {
+                        "name": alias,
+                        "provider": "google_maps_scraper",
+                        "externalId": external_id,
+                        "verifiedAt": verified_at,
+                    }
+                    for alias in verified_to_add
+                ),
+            ][-64:]
+            metadata["aliasLearningVersion"] = 1
+            if attribution:
+                metadata.setdefault("attribution", attribution)
+            place.metadata_json = metadata
+            if not created:
+                place.revision = int(place.revision or 1) + 1
+            self.session.commit()
+            return True
+        except Exception:
+            self.session.rollback()
+            raise
 
     def add(self, place: Place) -> Place:
         self.session.add(place)
@@ -295,6 +441,16 @@ def _validate_region_key(region_key: str) -> None:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _alias_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", value.strip().casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return re.sub(r"[^a-z0-9]+", "", without_marks)
 
 
 def _parse_optional_datetime(value: str) -> datetime | None:

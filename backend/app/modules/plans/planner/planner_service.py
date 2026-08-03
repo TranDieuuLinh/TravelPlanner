@@ -13,6 +13,7 @@ from app.modules.plans.domain.entities import (
     TripThemeRequirement,
 )
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
+from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.dto.agent_contracts import (
     AgentMacroPlan,
     AgentTrace,
@@ -55,7 +56,6 @@ from app.modules.plans.planner.research_tools_schema import (
 )
 from app.modules.preferences.schema import (
     LongTermPreferenceProfile,
-    PreferenceDimension,
 )
 
 logger = logging.getLogger(__name__)
@@ -510,7 +510,24 @@ class PlannerService:
             }
         )
         macro = self._project_trip_themes_to_route_buckets(planner_input, macro)
+        macro, themes_normalized = self._fit_trip_themes_to_activity_capacity(
+            planner_input,
+            macro,
+        )
         draft = draft.model_copy(update={"macro_plan": macro})
+        if themes_normalized:
+            draft = draft.model_copy(
+                update={
+                    "warnings": [
+                        *draft.warnings,
+                        (
+                            "Yêu cầu chủ đề đã được chuẩn hóa theo sức chứa hai "
+                            "hoạt động chính mỗi ngày; điểm ăn uống được dành cho "
+                            "các khung bữa ăn riêng."
+                        ),
+                    ]
+                }
+            )
 
         expected_days = list(range(1, planner_input.trip_spec.days + 1))
         actual_days = [brief.day for brief in macro.day_briefs]
@@ -826,6 +843,91 @@ class PlannerService:
         )
 
     @staticmethod
+    def _fit_trip_themes_to_activity_capacity(
+        planner_input: PlannerAgentInput,
+        macro: AgentMacroPlan,
+    ) -> tuple[AgentMacroPlan, bool]:
+        """Keep meal interests out of the two-main-activities budget."""
+        capacity = planner_input.trip_spec.days * 2
+        remaining = capacity
+        normalized: list[TripThemeRequirement] = []
+        changed = False
+        for requirement in macro.trip_themes:
+            meal_tags = [
+                tag
+                for tag in requirement.focus_tags
+                if is_meal_place(tags=[tag])
+            ]
+            non_meal_tags = [
+                tag
+                for tag in requirement.focus_tags
+                if not is_meal_place(tags=[tag])
+            ]
+            if (
+                bool(meal_tags)
+                and not non_meal_tags
+            ) or (
+                not requirement.focus_tags
+                and is_meal_place(
+                    tags=[],
+                    source_activity=requirement.theme,
+                )
+            ):
+                changed = True
+                continue
+            if remaining <= 0:
+                changed = True
+                continue
+            minimum = min(requirement.minimum_activities, remaining)
+            focus_tags = non_meal_tags or requirement.focus_tags
+            changed = (
+                changed
+                or minimum != requirement.minimum_activities
+                or focus_tags != requirement.focus_tags
+            )
+            normalized.append(
+                requirement.model_copy(
+                    update={
+                        "minimum_activities": minimum,
+                        "focus_tags": focus_tags,
+                    }
+                )
+            )
+            remaining -= minimum
+
+        if not normalized:
+            normalized = [
+                TripThemeRequirement(
+                    theme="Khám phá địa phương",
+                    focusTags=["local"],
+                    minimumActivities=1,
+                )
+            ]
+            changed = True
+        normalized_tags = list(
+            dict.fromkeys(
+                tag
+                for requirement in normalized
+                for tag in requirement.focus_tags
+            )
+        )
+        day_briefs = [
+            brief.model_copy(update={"focus_tags": normalized_tags})
+            if brief.theme == "Tối ưu theo tuyến"
+            else brief
+            for brief in macro.day_briefs
+        ]
+        return (
+            macro.model_copy(
+                update={
+                    "trip_themes": normalized,
+                    "day_briefs": day_briefs,
+                }
+            ),
+            changed,
+        )
+
+    @staticmethod
     def _project_trip_themes_to_route_buckets(
         planner_input: PlannerAgentInput,
         macro: AgentMacroPlan,
@@ -947,16 +1049,35 @@ class PlannerService:
         *,
         selected_by_ref: dict[str, SelectedPlaceContext],
     ) -> PlannerMacroPlanDraft:
-        capacity = 2
+        activity_capacity = 2
+        meal_capacity = 3
         overflow_refs: list[str] = []
         normalized_briefs = []
         for brief in draft.macro_plan.day_briefs:
-            allocated = brief.allocated_selected_place_refs
-            overflow_refs.extend(allocated[capacity:])
+            kept_refs: list[str] = []
+            activity_count = 0
+            meal_count = 0
+            for ref in brief.allocated_selected_place_refs:
+                place = selected_by_ref.get(ref)
+                meal = bool(
+                    place
+                    and is_meal_place(
+                        tags=place.tags,
+                        source_activity=place.source_activity,
+                    )
+                )
+                if meal and meal_count < meal_capacity:
+                    kept_refs.append(ref)
+                    meal_count += 1
+                elif not meal and activity_count < activity_capacity:
+                    kept_refs.append(ref)
+                    activity_count += 1
+                else:
+                    overflow_refs.append(ref)
             normalized_briefs.append(
                 brief.model_copy(
                     update={
-                        "allocated_selected_place_refs": allocated[:capacity]
+                        "allocated_selected_place_refs": kept_refs
                     }
                 )
             )
@@ -972,7 +1093,8 @@ class PlannerService:
                 place=selected_by_ref[ref],
                 reasonCode="no_day_capacity",
                 reason=(
-                    f"Route-first allows at most {capacity} main activities per day."
+                    "Route-first allows at most two main activities and three "
+                    "meal stops per day."
                 ),
             )
             for ref in overflow_refs
@@ -1046,6 +1168,7 @@ class PlannerService:
 
         trip_days = planner_input.trip_spec.days
         activity_capacity = 2
+        meal_capacity = 3
         assigned_days: dict[str, int] = {}
         out_of_range: list[SelectedPlaceContext] = []
         over_capacity: list[SelectedPlaceContext] = []
@@ -1058,10 +1181,22 @@ class PlannerService:
             ]
             for brief in draft.macro_plan.day_briefs
         }
-        remaining_capacity = {
-            day: max(0, activity_capacity - len(refs))
-            for day, refs in base_refs_by_day.items()
-        }
+        remaining_capacity: dict[int, dict[str, int]] = {}
+        for day, refs in base_refs_by_day.items():
+            used_meals = sum(
+                1
+                for ref in refs
+                if ref in selected_by_ref
+                and is_meal_place(
+                    tags=selected_by_ref[ref].tags,
+                    source_activity=selected_by_ref[ref].source_activity,
+                )
+            )
+            used_activities = len(refs) - used_meals
+            remaining_capacity[day] = {
+                "activity": max(0, activity_capacity - used_activities),
+                "meal": max(0, meal_capacity - used_meals),
+            }
         latest_explicit_source_day = max(
             (
                 place.source_day
@@ -1075,37 +1210,53 @@ class PlannerService:
         )
 
         for place in eligible_places:
+            slot_kind = (
+                "meal"
+                if is_meal_place(
+                    tags=place.tags,
+                    source_activity=place.source_activity,
+                )
+                else "activity"
+            )
             if place.source_day is not None:
                 if place.source_day > trip_days:
                     out_of_range.append(place)
                     continue
                 assigned_day = place.source_day
                 if (
-                    remaining_capacity[assigned_day] <= 0
+                    remaining_capacity[assigned_day][slot_kind] <= 0
                     and can_spill_explicit_source_days
                 ):
                     assigned_day = next(
                         (
                             day
                             for day in range(place.source_day + 1, trip_days + 1)
-                            if remaining_capacity[day] > 0
+                            if remaining_capacity[day][slot_kind] > 0
                         ),
                         assigned_day,
                     )
-                if remaining_capacity[assigned_day] <= 0:
+                if remaining_capacity[assigned_day][slot_kind] <= 0:
                     over_capacity.append(place)
                     continue
                 assigned_days[place.stable_ref] = assigned_day
-                remaining_capacity[assigned_day] -= 1
+                remaining_capacity[assigned_day][slot_kind] -= 1
 
         for place in eligible_places:
             if place.source_day is not None:
                 continue
+            slot_kind = (
+                "meal"
+                if is_meal_place(
+                    tags=place.tags,
+                    source_activity=place.source_activity,
+                )
+                else "activity"
+            )
             assigned_day = next(
                 (
                     day
                     for day in range(1, trip_days + 1)
-                    if remaining_capacity[day] > 0
+                    if remaining_capacity[day][slot_kind] > 0
                 ),
                 None,
             )
@@ -1113,7 +1264,7 @@ class PlannerService:
                 over_capacity.append(place)
                 continue
             assigned_days[place.stable_ref] = assigned_day
-            remaining_capacity[assigned_day] -= 1
+            remaining_capacity[assigned_day][slot_kind] -= 1
 
         refs_by_day: dict[int, list[str]] = {
             day: [] for day in range(1, trip_days + 1)
@@ -1172,13 +1323,12 @@ class PlannerService:
                 place=selected_by_ref[place.stable_ref],
                 reasonCode="no_day_capacity",
                 reason=(
-                    f"Day {place.source_day} exceeds the "
-                    f"{activity_capacity}-activity capacity for the selected "
-                    "pace."
+                    f"Day {place.source_day} exceeds the available "
+                    f"{'meal' if is_meal_place(tags=place.tags, source_activity=place.source_activity) else 'activity'} slots."
                     if place.source_day is not None
                     else (
                         f"The requested {trip_days}-day trip has no remaining "
-                        "activity capacity for this URL stop."
+                        "meal/activity capacity for this URL stop."
                     )
                 ),
             )

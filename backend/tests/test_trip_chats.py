@@ -217,3 +217,66 @@ def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
         "bo-kho-phuong-dung",
         "coffee-9",
     ]
+
+
+def test_user_can_remove_an_unscheduled_place_from_trip_chat(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội cuối tuần"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "unscheduled-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội cuối tuần",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội cuối tuần",
+            "destination": "Hà Nội",
+            "dayBriefs": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [{"day": 1, "theme": "Ẩm thực", "items": []}],
+        "unscheduledPlaces": [
+            {
+                "placeId": "train-street-south",
+                "name": "Hanoi Train Street (South)",
+                "reasonCode": "no_day_capacity",
+                "reason": "The fixed trip duration has no remaining slot.",
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.request(
+        "DELETE",
+        f"/api/trip-chats/{chat_id}/plan/unscheduled-places",
+        data={
+            "expectedRevision": "1",
+            "placeId": "train-street-south",
+            "name": "Hanoi Train Street (South)",
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert body["currentPlan"]["unscheduledPlaces"] == []

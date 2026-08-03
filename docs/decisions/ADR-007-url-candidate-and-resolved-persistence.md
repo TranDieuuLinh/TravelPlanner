@@ -27,7 +27,9 @@ Finder chỉ có thể dùng địa điểm đã xác minh có tọa độ.
    longitude, đồng thời đại diện một địa điểm cụ thể thay vì match rộng tới
    thành phố hoặc quốc gia.
 7. Candidate provisional/unresolved hoặc thiếu tọa độ không được lưu vào
-   `user_must_place` và không được bàn giao vào Planner/Finder.
+   `user_must_place` và không được bàn giao vào Planner/Finder. Tọa độ đại diện
+   do provider trả cho candidate `needs_review` chỉ phục vụ review/retry, không
+   đủ để biến candidate đó thành `SelectedPlace`.
 8. Flow prompt/ảnh không có URL tiếp tục dùng Formatter để tạo candidate cho tới
    khi có adapter deterministic tương ứng.
 

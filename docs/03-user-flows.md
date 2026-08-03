@@ -7,9 +7,12 @@
 ### 1. Nhập nguồn cảm hứng
 
 1. Người dùng tạo một trip mới.
-2. Dán một hoặc nhiều URL video/nội dung tham khảo hoặc nhập địa điểm thủ công.
-3. Hệ thống kiểm tra URL, nhận diện nền tảng và tạo import job.
-4. UI giữ nguyên từng URL cùng trạng thái `đang chờ`, `đang xử lý`, `cần xác
+2. Dán một hoặc nhiều URL video/nội dung tham khảo, tải ảnh để OCR hoặc nhập địa
+   điểm thủ công.
+3. Hệ thống kiểm tra từng URL/ảnh và tạo một import job nền cho mỗi nguồn. Job
+   ảnh dùng cùng hàng đợi FIFO, timeout, retry, reprocess, stop/delete và timing
+   như job URL; dữ liệu ảnh không được ghi vào log.
+4. UI giữ nguyên từng URL hoặc tên ảnh cùng trạng thái `đang chờ`, `đang xử lý`, `cần xác
    nhận`, `hoàn thành` hoặc `thất bại`.
 5. Người dùng có thể tiếp tục bổ sung yêu cầu trong khi job chạy.
 
@@ -29,12 +32,14 @@
 7. Import thất bại không được làm mất URL hoặc các kết quả đã trích xuất từ
    nguồn khác.
 8. UI hiển thị riêng số candidate đã xác minh và candidate `needs_review`.
-   Candidate chưa resolve vẫn giữ tên nguồn và lý do, còn Planner chỉ xếp item
-   có tọa độ đã xác minh.
-9. Tác vụ đã kết thúc chỉ hiển thị một thao tác **Chạy lại**. Nếu lượt trước đã
-   thành công, hệ thống dùng extraction cache hợp lệ rồi chạy lại từ
-   aggregation/dedupe, resolve và Planner. Nếu lượt trước thất bại, hệ thống
-   chạy lại toàn bộ từ media/STT/OCR với `forceRefresh=true`. UI không yêu cầu
+   Candidate chưa resolve vẫn giữ tên nguồn và lý do nhưng không được đưa vào
+   Planner. Chỉ candidate `resolved` có danh tính và tọa độ đã xác minh mới được
+   xếp vào lịch trình.
+9. Tác vụ URL hoặc ảnh đã kết thúc chỉ hiển thị một thao tác **Chạy lại**. Nếu lượt trước đã
+   thành công, URL dùng extraction cache hợp lệ; ảnh dùng lại file gốc đã lưu,
+   rồi chạy aggregation/dedupe, resolve và Planner. Nếu lượt trước thất bại, hệ
+   thống chạy lại toàn bộ từ media/STT/OCR với `forceRefresh=true` khi áp dụng.
+   UI không yêu cầu
    user chọn bước kỹ thuật cần retry.
 
 ### 3. Explorer làm rõ chuyến đi
@@ -71,7 +76,10 @@ CheckOverall -> Main Plan đã kiểm tra
 3. Finder xếp địa điểm vào ngày và khung giờ, thêm bữa ăn, nghỉ, thời gian đệm và
    chặng di chuyển.
 4. Địa điểm người dùng xác nhận được giữ lại trừ khi vi phạm ràng buộc cứng. Nếu
-   không thể xếp, hệ thống phải đưa vào danh sách chưa xếp và giải thích lý do.
+   không thể xếp, hệ thống tự tăng số ngày khi user chưa khóa duration/date.
+   Khi user đã nói rõ số ngày hoặc khoảng ngày đi, hệ thống giữ duration và đưa
+   phần dư vào danh sách chưa xếp; user có thể kéo card vào một ngày, mở biểu
+   mẫu thêm thủ công hoặc tạo prompt yêu cầu AI xếp.
 5. `CheckOverall` kiểm tra schema, thời gian chồng lấn, giờ hoạt động, tuyến
    đường, thời tiết khi phù hợp, mật độ, ngân sách và dữ liệu quá cũ.
 6. Người dùng xem cảnh báo, giả định và bằng chứng trước khi chọn Main Plan.
@@ -102,10 +110,16 @@ thời tiết, địa điểm đóng cửa hay tuyến đường không khả th
 ### 6. Chỉnh sửa và sử dụng
 
 1. Người dùng thêm, xóa, kéo thả, đổi thời gian hoặc khóa từng item.
-2. Có thể yêu cầu AI sửa một ngày, một khung giờ hoặc các item chưa khóa.
-3. Mỗi chỉnh sửa ảnh hưởng route/chi phí phải kích hoạt kiểm tra lại phần liên
+2. UI tách ghi chú thành hai cấp: ghi chú khu vực đặt dưới tiêu đề điểm đến
+   (tổng quan, ràng buộc và giả định áp dụng cho cả hành trình) và khối ghi chú
+   mở rộng dưới từng hoạt động. Trong hoạt động, gợi ý ngắn có provenance từ
+   nguồn và thông tin bổ sung được hiển thị riêng với `personalNotes` do user
+   chỉnh sửa; sửa lời nhắc cá nhân không ghi đè source context và không ghép
+   toàn bộ transcript/OCR vào note.
+3. Có thể yêu cầu AI sửa một ngày, một khung giờ hoặc các item chưa khóa.
+4. Mỗi chỉnh sửa ảnh hưởng route/chi phí phải kích hoạt kiểm tra lại phần liên
    quan.
-4. Người dùng lưu plan, mời thành viên, chọn bản dùng offline và theo dõi tiến độ
+5. Người dùng lưu plan, mời thành viên, chọn bản dùng offline và theo dõi tiến độ
    trong chuyến đi.
 
 ## Luồng bắt đầu không có URL

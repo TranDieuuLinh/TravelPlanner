@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy.orm import sessionmaker
 
@@ -7,6 +8,7 @@ from app.modules.plans.chat_model import TripChat
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.plans.url_job_repository import UrlImportJobRepository
 from app.modules.plans.url_job_worker import UrlImportJobWorker
+from app.modules.plans import url_job_worker as worker_module
 from tests.helpers import csrf_headers
 
 
@@ -64,6 +66,116 @@ def test_force_refresh_job_is_persisted_and_returned(registered_client, db_sessi
     persisted = db_session.get(UrlImportJob, payload["id"])
     assert persisted is not None
     assert persisted.force_refresh is True
+
+
+def test_multiple_images_are_enqueued_as_persistent_ocr_jobs(
+    registered_client,
+    db_session,
+) -> None:
+    chat_id = _create_chat(registered_client)
+
+    response = registered_client.post(
+        f"/api/trip-chats/{chat_id}/image-jobs",
+        data={
+            "content": "Tạo lịch trình từ các ảnh này",
+            "expectedRevision": "0",
+        },
+        files=[
+            ("images", ("menu.png", b"first-image", "image/png")),
+            ("images", ("sign.jpg", b"second-image", "image/jpeg")),
+        ],
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 202
+    jobs = response.json()["jobs"]
+    assert [job["sourceType"] for job in jobs] == ["image", "image"]
+    assert [job["sourceLabel"] for job in jobs] == ["menu.png", "sign.jpg"]
+    assert [job["status"] for job in jobs] == ["queued", "queued"]
+    assert sorted(job["queuePosition"] for job in jobs) == [1, 2]
+    persisted = db_session.get(UrlImportJob, jobs[0]["id"])
+    assert persisted is not None
+    assert persisted.url == ""
+    assert persisted.image_mime_type == "image/png"
+    assert persisted.image_data == b"first-image"
+
+
+def test_image_job_rejects_unsupported_media_type(registered_client) -> None:
+    chat_id = _create_chat(registered_client)
+
+    response = registered_client.post(
+        f"/api/trip-chats/{chat_id}/image-jobs",
+        data={"content": "Đọc ảnh", "expectedRevision": "0"},
+        files={"images": ("notes.txt", b"not-an-image", "text/plain")},
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "UNSUPPORTED_IMAGE_TYPE"
+
+
+def test_finished_image_job_reprocesses_with_original_image(
+    registered_client,
+    db_session,
+) -> None:
+    chat_id = _create_chat(registered_client)
+    created = registered_client.post(
+        f"/api/trip-chats/{chat_id}/image-jobs",
+        data={"content": "Đọc biển hiệu", "expectedRevision": "0"},
+        files={"images": ("place.webp", b"image-to-reuse", "image/webp")},
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"][0]
+    repository = UrlImportJobRepository(db_session)
+    repository.succeed(created["id"], revision=1)
+
+    response = registered_client.post(
+        f"/api/url-import-jobs/{created['id']}/reprocess",
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 202
+    replay = response.json()
+    assert replay["id"] != created["id"]
+    assert replay["sourceType"] == "image"
+    persisted = db_session.get(UrlImportJob, replay["id"])
+    assert persisted is not None
+    assert persisted.image_data == b"image-to-reuse"
+    assert persisted.image_mime_type == "image/webp"
+
+
+def test_worker_sends_persisted_image_through_trip_chat_pipeline(
+    registered_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    chat_id = _create_chat(registered_client)
+    created = registered_client.post(
+        f"/api/trip-chats/{chat_id}/image-jobs",
+        data={"content": "Đọc địa điểm trong ảnh", "expectedRevision": "0"},
+        files={"images": ("street.png", b"ocr-source-bytes", "image/png")},
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"][0]
+    captured: dict[str, object] = {}
+
+    async def fake_amend(_service, _chat_id, _user, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(revision=1)
+
+    monkeypatch.setattr(worker_module, "get_plan_service", lambda _db: object())
+    monkeypatch.setattr(worker_module, "get_plan_mutation_service", lambda _db: object())
+    monkeypatch.setattr(worker_module.TripChatService, "amend", fake_amend)
+    worker = UrlImportJobWorker(lambda: db_session)
+
+    revision = asyncio.run(worker._process(db_session, created["id"]))
+
+    assert revision == 1
+    assert captured["urls"] == []
+    images = captured["images"]
+    assert isinstance(images, list)
+    assert len(images) == 1
+    assert images[0].file_name == "street.png"
+    assert images[0].mime_type == "image/png"
+    assert images[0].data == b"ocr-source-bytes"
 
 
 def test_queue_claims_only_one_job_until_it_finishes(registered_client, db_session) -> None:
@@ -178,6 +290,93 @@ def test_worker_times_out_job_instead_of_blocking_queue(
     db_session.refresh(timed_out)
     assert timed_out.status == "failed"
     assert timed_out.error_code == "URL_IMPORT_TIMEOUT"
+
+
+def test_worker_rolls_back_failed_transaction_and_continues_queue(
+    registered_client,
+    db_session,
+) -> None:
+    chat_id = _create_chat(registered_client)
+    jobs = registered_client.post(
+        f"/api/trip-chats/{chat_id}/url-jobs",
+        data={
+            "content": "https://example.com/broken https://example.com/next",
+            "expectedRevision": "0",
+        },
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"]
+    session_factory = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db_session.get_bind(),
+    )
+    worker = UrlImportJobWorker(session_factory)
+
+    async def fail_first_transaction(db, job_id: str) -> int:
+        if job_id == jobs[0]["id"]:
+            current = db.get(UrlImportJob, job_id)
+            assert current is not None
+            db.add(
+                UrlImportJob(
+                    id=current.id,
+                    user_id=current.user_id,
+                    chat_id=current.chat_id,
+                    url=current.url,
+                    request_content=current.request_content,
+                    force_refresh=False,
+                    batch_position=0,
+                    status="running",
+                )
+            )
+            db.flush()
+        return 2
+
+    worker._process = fail_first_transaction  # type: ignore[method-assign]
+
+    assert asyncio.run(worker.run_once()) is True
+    assert asyncio.run(worker.run_once()) is True
+
+    db_session.expire_all()
+    failed = db_session.get(UrlImportJob, jobs[0]["id"])
+    completed = db_session.get(UrlImportJob, jobs[1]["id"])
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.error_code == "URL_IMPORT_FAILED"
+    assert completed is not None
+    assert completed.status == "succeeded"
+
+
+def test_worker_loop_survives_iteration_failure(db_session) -> None:
+    session_factory = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db_session.get_bind(),
+    )
+    worker = UrlImportJobWorker(session_factory, poll_interval_seconds=0.001)
+
+    async def scenario() -> None:
+        calls = 0
+        continued = asyncio.Event()
+
+        async def run_once() -> bool:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("terminal-state write failed")
+            continued.set()
+            return False
+
+        worker.run_once = run_once  # type: ignore[method-assign]
+        task = asyncio.create_task(worker.run_forever())
+        await asyncio.wait_for(continued.wait(), timeout=1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert calls >= 2
+
+    asyncio.run(scenario())
 
 
 def test_user_only_sees_their_own_url_jobs(registered_client) -> None:

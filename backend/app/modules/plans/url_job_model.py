@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,7 +30,13 @@ class UrlImportJob(Base):
         nullable=False,
         index=True,
     )
+    source_type: Mapped[str] = mapped_column(
+        String(16), default="url", nullable=False, index=True
+    )
     url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_mime_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     request_content: Mapped[str] = mapped_column(Text, nullable=False)
     force_refresh: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     batch_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

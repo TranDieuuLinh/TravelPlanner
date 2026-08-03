@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
+from app.modules.places.model import Place
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.model import (
     ExplorerIntake,
@@ -49,6 +50,7 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
             "provider": "fake_places",
             "externalId": "place-123",
             "name": "Mì Quảng Bà Mua",
+            "placeType": "Restaurant",
             "address": "Đà Nẵng",
             "city": "Đà Nẵng",
             "country": "Việt Nam",
@@ -110,6 +112,220 @@ def test_explorer_persists_resolved_candidate_only_in_user_must_place() -> None:
         )
         assert selected_places[0].source_duration_minutes == 60
         assert repository.load_must_places("intake-1", "another-user") == []
+
+    engine.dispose()
+
+
+def test_verified_place_type_overrides_incorrect_ai_candidate_category() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            Place.__table__,
+            ExplorerIntake.__table__,
+            UserMustPlace.__table__,
+            UserMustPlaceUser.__table__,
+        ],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Ho Chi Minh Museum",
+                "category": "food",
+                "sources": [
+                    {"type": "url", "url": "https://example.com/video"}
+                ],
+                "confidence": 0.9,
+            },
+            "status": "resolved",
+            "provider": "database",
+            "placeId": "museum-1",
+            "name": "Ho Chi Minh Museum",
+            "placeType": "Museum",
+            "city": "Hà Nội",
+            "latitude": "21.0359000",
+            "longitude": "105.8326000",
+        }
+    )
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-museum-category",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        must_place = session.scalar(select(UserMustPlace))
+        assert must_place is not None
+        assert must_place.category == "culture"
+        assert must_place.place_type == "Museum"
+        selected = repository.load_must_places(
+            "intake-museum-category",
+            None,
+        )
+        assert selected[0].tags[0] == "culture"
+
+    engine.dispose()
+
+
+def test_unresolved_candidate_with_coordinates_is_not_persisted() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ExplorerIntake.__table__,
+            UserMustPlace.__table__,
+            UserMustPlaceUser.__table__,
+        ],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Phở tại 144A Quán Thánh",
+                "category": "food",
+                "addressHint": "144A Quán Thánh, Ba Đình, Hà Nội",
+                "searchRegion": "Hà Nội",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://example.com/reel",
+                    }
+                ],
+                "confidence": 0.9,
+            },
+            "status": "unresolved",
+            "resolutionReason": "name_mismatch",
+            "provider": "google_maps_scraper",
+            "name": "144A Quán Thánh",
+            "address": "144A Quán Thánh, Ba Đình, Hà Nội",
+            "city": "Hà Nội",
+            "latitude": "21.0421000",
+            "longitude": "105.8422000",
+        }
+    )
+
+    with Session(engine) as session:
+        ExplorerPersistenceRepository(session).save(
+            intake_id="intake-unresolved",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        assert session.scalar(select(UserMustPlace)) is None
+
+    engine.dispose()
+
+
+def test_external_identity_is_not_persisted_as_missing_catalog_place_id() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            Place.__table__,
+            ExplorerIntake.__table__,
+            UserMustPlace.__table__,
+            UserMustPlaceUser.__table__,
+        ],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Hoan Kiem Lake",
+                "category": "nature",
+                "sources": [
+                    {
+                        "type": "url",
+                        "url": "https://www.youtube.com/watch?v=stale-place-id",
+                    }
+                ],
+                "confidence": 0.9,
+            },
+            "status": "resolved",
+            "provider": "google_maps_scraper",
+            "externalId": "ChIJ-external-google-id",
+            "placeId": "ChIJ-external-google-id",
+            "name": "Hồ Hoàn Kiếm",
+            "city": "Hà Nội",
+            "latitude": "21.0287000",
+            "longitude": "105.8522000",
+        }
+    )
+
+    with Session(engine) as session:
+        ExplorerPersistenceRepository(session).save(
+            intake_id="intake-stale-place-id",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        must_place = session.scalar(select(UserMustPlace))
+        assert must_place is not None
+        assert must_place.external_id == "ChIJ-external-google-id"
+        assert must_place.place_id is None
+
+    engine.dispose()
+
+
+def test_existing_catalog_place_id_is_preserved() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            Place.__table__,
+            ExplorerIntake.__table__,
+            UserMustPlace.__table__,
+            UserMustPlaceUser.__table__,
+        ],
+    )
+    resolution = PlaceResolution.model_validate(
+        {
+            "candidate": {
+                "name": "Văn Miếu - Quốc Tử Giám",
+                "category": "culture",
+                "sources": [
+                    {"type": "url", "url": "https://example.com/catalog-place"}
+                ],
+                "confidence": 0.9,
+            },
+            "status": "resolved",
+            "provider": "database",
+            "externalId": "place-van-mieu",
+            "placeId": "place-van-mieu",
+            "name": "Văn Miếu - Quốc Tử Giám",
+            "city": "Hà Nội",
+            "latitude": "21.0280000",
+            "longitude": "105.8355000",
+        }
+    )
+
+    with Session(engine) as session:
+        session.add(
+            Place(
+                id="place-van-mieu",
+                name="Văn Miếu - Quốc Tử Giám",
+                place_type="culture",
+                region_key="vn,ha-noi",
+                status="active",
+                opening_hours=[],
+                data_confidence="high",
+                metadata_json={},
+            )
+        )
+        session.commit()
+        ExplorerPersistenceRepository(session).save(
+            intake_id="intake-catalog-place",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[resolution],
+        )
+
+        must_place = session.scalar(select(UserMustPlace))
+        assert must_place is not None
+        assert must_place.place_id == "place-van-mieu"
 
     engine.dispose()
 
@@ -181,6 +397,9 @@ def test_same_url_place_is_shared_across_multiple_intakes() -> None:
             "longitude": "105.8522000",
             "rating": "4.7",
             "reviewCount": 12000,
+            "placeMetadata": {
+                "imageUrls": ["https://images.example/hoan-kiem.jpg"]
+            },
             "placeStatus": "active",
             "dataConfidence": "medium",
         }
@@ -211,7 +430,13 @@ def test_same_url_place_is_shared_across_multiple_intakes() -> None:
         assert shared_places[0].name == "Hồ Hoàn Kiếm"
         assert shared_places[0].rating == Decimal("4.70")
         assert "Visit before 8am" in (shared_places[0].notes or "")
-        assert len(repository.load_must_places("intake-shared-1", None)) == 1
+        selected_places = repository.load_must_places("intake-shared-1", None)
+        assert len(selected_places) == 1
+        assert selected_places[0].rating == 4.7
+        assert selected_places[0].review_count == 12000
+        assert selected_places[0].image_urls == [
+            "https://images.example/hoan-kiem.jpg"
+        ]
         assert len(repository.load_must_places("intake-shared-2", None)) == 1
         cached = repository.load_cached_url_result(
             "https://www.youtube.com/watch?v=shared01&utm_campaign=again"

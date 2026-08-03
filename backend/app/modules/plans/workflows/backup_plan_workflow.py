@@ -40,6 +40,8 @@ class BackupPlanWorkflow:
                 sourceRefs=item.source_refs,
                 sourceProvider=item.source_provider,
                 tags=item.tags,
+                notes=item.notes,
+                personalNotes=item.personal_notes,
             )
             for day in main_plan.days
             for item in day.items

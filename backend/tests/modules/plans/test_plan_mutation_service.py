@@ -12,6 +12,7 @@ from app.modules.plans.domain.entities import (
     PlanDay,
     PlanItem,
     TravelIntent,
+    UnscheduledPlace,
 )
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 from app.modules.plans.plan_mutation_schema import (
@@ -118,6 +119,38 @@ def test_add_item_success():
     assert len(day1.transport_legs) == 2
 
 
+def test_add_item_removes_matching_unscheduled_place():
+    service = PlanMutationService()
+    plan = make_sample_plan().model_copy(
+        update={
+            "unscheduled_places": [
+                UnscheduledPlace(
+                    placeId="food-1",
+                    name="Phở Thìn Lò Đúc",
+                    reasonCode="no_day_capacity",
+                    reason="Fixed trip duration has no remaining slot.",
+                )
+            ]
+        }
+    )
+
+    result = asyncio.run(
+        service.add_item(
+            plan,
+            AddItemRequest(
+                day=1,
+                placeId="food-1",
+                name="Phở Thìn Lò Đúc",
+                placeType="food",
+                latitude=21.0185,
+                longitude=105.8545,
+            ),
+        )
+    )
+
+    assert result.plan.unscheduled_places == []
+
+
 def test_add_item_invalid_day():
     service = PlanMutationService()
     plan = make_sample_plan()
@@ -143,6 +176,32 @@ def test_update_item_success():
     updated_item = result.plan.days[0].items[0]
     assert updated_item.name == "Hồ Gươm (Hồ Hoàn Kiếm)"
     assert updated_item.notes == "Đi dạo quanh hồ"
+
+
+def test_personal_notes_are_separate_from_source_context() -> None:
+    service = PlanMutationService()
+    plan = make_sample_plan()
+    original_notes = plan.days[0].items[0].notes
+
+    result = asyncio.run(
+        service.update_item(
+            plan,
+            day_number=1,
+            item_id="item-1-1",
+            request=UpdateItemRequest(
+                personalNotes="Mang theo máy ảnh và pin dự phòng."
+            ),
+        )
+    )
+
+    updated_item = result.plan.days[0].items[0]
+    assert updated_item.notes == original_notes
+    assert updated_item.personal_notes == (
+        "Mang theo máy ảnh và pin dự phòng."
+    )
+    assert updated_item.model_dump(by_alias=True)["personalNotes"] == (
+        "Mang theo máy ảnh và pin dự phòng."
+    )
 
 
 def test_search_place_suggestions_uses_catalog_aliases_without_accents():
@@ -208,6 +267,65 @@ def test_remove_item_success():
     day1_items = result.plan.days[0].items
     assert len(day1_items) == 1
     assert day1_items[0].item_id == "item-1-2"
+
+
+def test_remove_unscheduled_place_by_place_id():
+    service = PlanMutationService()
+    plan = make_sample_plan().model_copy(
+        update={
+            "unscheduled_places": [
+                UnscheduledPlace(
+                    placeId="food-1",
+                    name="Phở Thìn Lò Đúc",
+                    reasonCode="no_day_capacity",
+                    reason="Fixed trip duration has no remaining slot.",
+                ),
+                UnscheduledPlace(
+                    placeId="cafe-1",
+                    name="Cà phê Giảng",
+                    reasonCode="no_day_capacity",
+                    reason="Fixed trip duration has no remaining slot.",
+                ),
+            ]
+        }
+    )
+
+    result = service.remove_unscheduled_place(
+        plan,
+        place_id="food-1",
+        name="Phở Thìn",
+    )
+
+    assert [item.place_id for item in result.plan.unscheduled_places] == ["cafe-1"]
+
+
+def test_remove_unscheduled_place_by_normalized_name():
+    service = PlanMutationService()
+    plan = make_sample_plan().model_copy(
+        update={
+            "unscheduled_places": [
+                UnscheduledPlace(
+                    name="Cà phê Giảng",
+                    reasonCode="no_day_capacity",
+                    reason="Fixed trip duration has no remaining slot.",
+                )
+            ]
+        }
+    )
+
+    result = service.remove_unscheduled_place(plan, name="ca phe giang")
+
+    assert result.plan.unscheduled_places == []
+
+
+def test_remove_unknown_unscheduled_place_returns_not_found():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+
+    with pytest.raises(AppError) as exc_info:
+        service.remove_unscheduled_place(plan, name="Không tồn tại")
+
+    assert exc_info.value.status_code == 404
 
 
 def test_move_item_between_days():

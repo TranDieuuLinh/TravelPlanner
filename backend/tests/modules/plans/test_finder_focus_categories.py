@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from app.modules.places.model import Place
 from app.modules.plans.finder.place_tool import (
+    FinderPlace,
     SEMANTIC_CATEGORY_TERMS,
     _normalized_terms,
+    place_category,
     semantic_categories,
 )
 
@@ -82,6 +84,32 @@ def test_user_query_maps_only_food_drink() -> None:
         "Query phrased around food must not leak into attraction; "
         f"got {categories!r}"
     )
+
+
+def test_cafe_is_an_activity_category_not_a_meal_category() -> None:
+    categories = semantic_categories({"cafe", "coffee"})
+
+    assert categories == {"attraction"}
+    assert place_category(
+        FinderPlace(
+            placeId="cafe-dinh",
+            name="Cafe Đinh",
+            placeType="cafe",
+            regionKey="vn,ha-noi",
+            tags=["cafe", "coffee"],
+        )
+    ) == "attraction"
+
+
+def test_landmark_name_overrides_food_tag_from_url_activity_evidence() -> None:
+    assert place_category(
+        FinderPlace(
+            name="Nhà thờ Lớn Hà Nội",
+            placeType="selected_place",
+            regionKey="vn,ha-noi",
+            tags=["food"],
+        )
+    ) == "attraction"
 
 
 # ---------------------------------------------------------------------------

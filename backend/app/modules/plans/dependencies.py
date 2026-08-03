@@ -183,6 +183,7 @@ def _get_place_resolver(
             return FallbackPlaceResolver(
                 DatabasePlaceResolver(place_repository),
                 external_resolver,
+                verified_alias_repository=place_repository,
             )
         return external_resolver
     return ProvisionalPlaceResolver()

@@ -41,6 +41,9 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
     "attraction": {
         "architecture",
         "attraction",
+        "cafe",
+        "coffee",
+        "coffee shop",
         "culture",
         "di tich",
         "heritage",
@@ -97,8 +100,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
     },
     "food_drink": {
         "am thuc",
-        "cafe",
-        "coffee",
         "culinary",
         "cuisine",
         "food",
@@ -129,13 +130,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "quan nho",
         "quan lon",
         "quan nhau",
-        "quan cafe",
-        "coffee shop",
-        "highland",
-        "highlands",
-        "trung nguyen",
-        "phuc long",
-        "the coffee house",
         "pho",
         "bun",
         "com",
@@ -289,11 +283,11 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "beach": "nature",
     "biergarten": "food_drink",
     "bus_station": "transport",
-    "cafe": "food_drink",
+    "cafe": "attraction",
     "camp_site": "nature",
     "cave_entrance": "nature",
     "cinema": "entertainment",
-    "coffee": "food_drink",
+    "coffee": "attraction",
     "fast_food": "food_drink",
     "ferry_terminal": "transport",
     "food_court": "food_drink",
@@ -330,14 +324,14 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "bowling_alley": "entertainment",
     "book_store": "shopping",
     "bridge": "attraction",
-    "cafe;bakery": "food_drink",
+    "cafe;bakery": "attraction",
     "campground": "nature",
     "casino": "entertainment",
     "cemetery": "attraction",
     "church": "attraction",
     "city_hall": "attraction",
     "clothing_store": "shopping",
-    "coffee_shop": "food_drink",
+    "coffee_shop": "attraction",
     "convenience_store": "shopping",
     "courthouse": "attraction",
     "cultural_center": "attraction",
@@ -391,8 +385,8 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "nha_hang": "food_drink",
     "quan_an": "food_drink",
     "quan_nhau": "food_drink",
-    "quan_cafe": "food_drink",
-    "quan_coffee": "food_drink",
+    "quan_cafe": "attraction",
+    "quan_coffee": "attraction",
     "quan_tra": "food_drink",
     "tiem_banh": "food_drink",
     "tiem_an_vat": "food_drink",
@@ -483,6 +477,8 @@ class FinderPlace(BaseModel):
     place_type: str = Field(alias="placeType")
     region_key: str = Field(alias="regionKey")
     description: str | None = None
+    notes: str | None = None
+    personal_notes: str | None = Field(default=None, alias="personalNotes")
     place_group: str | None = Field(default=None, alias="placeGroup")
     tags: list[str] = Field(default_factory=list)
     latitude: float | None = None
@@ -514,6 +510,7 @@ class FinderPlace(BaseModel):
     price_level: str | None = Field(default=None, alias="priceLevel")
     rating: float | None = None
     review_count: int = Field(default=0, alias="reviewCount")
+    image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     data_confidence: str = Field(default="low", alias="dataConfidence")
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
@@ -751,6 +748,11 @@ class RepositoryFinderPlaceTool:
             priceLevel=read_price_level(place),
             rating=read_rating(place),
             reviewCount=read_review_count(place),
+            imageUrls=[
+                image.image_url
+                for image in place.images
+                if image.image_url
+            ],
             dataConfidence=place.data_confidence,
         )
 
@@ -776,6 +778,21 @@ def place_category(place: FinderPlace) -> str | None:
         normalized_name,
     ):
         return "transport"
+    if any(
+        marker in f" {normalized_name} "
+        for marker in (
+            " cafe ",
+            " coffee ",
+            " coffee shop ",
+            " train street ",
+            " cathedral ",
+            " church ",
+            " nha tho ",
+            " lake ",
+            " ho hoan kiem ",
+        )
+    ):
+        return "attraction"
     place_type = _normalize_text(place.place_type).replace(" ", "_")
     if place_type in PLACE_TYPE_CATEGORY:
         return PLACE_TYPE_CATEGORY[place_type]
