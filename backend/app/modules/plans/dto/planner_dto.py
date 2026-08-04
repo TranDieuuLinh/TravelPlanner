@@ -1,4 +1,8 @@
-from app.modules.plans.domain.entities import MacroPlan
+from app.modules.plans.dto.agent_contracts import (
+    PlannerAgentInput,
+    PlannerAgentOutput,
+)
 
 
-PlannerOutput = MacroPlan
+PlannerInput = PlannerAgentInput
+PlannerOutput = PlannerAgentOutput

@@ -1,0 +1,110 @@
+{
+  "traditional_food_and_coffee": {
+    "title": "Hương Vị Hà Nội: Hành Trình Ẩm Thực và Cà Phê",
+    "warnings": [
+      "Khu vực phố cổ có thể đông đúc vào cuối tuần, nên cân nhắc thời gian di chuyển.",
+      "Các quán ăn nổi tiếng có thể hết chỗ sớm, nên kiểm tra tình trạng trước khi đến.",
+      "Day 1 has no valid candidate for stop_1.",
+      "Day 1 has no valid candidate for stop_2.",
+      "Day 1 has no valid candidate for stop_3."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá linh hồn ẩm thực và di sản văn hóa Hà Nội",
+        "items": [
+          {
+            "name": "Bún chả Hương Liên",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-13:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,cua-nam"
+          },
+          {
+            "name": "Nhà Hàng Hải Sản Phố",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,cua-nam"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "19:30-20:45",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  }
+}
+{
+  "history_and_heritage": {
+    "title": "Hành trình Di sản Văn hóa Hà Nội",
+    "warnings": [
+      "Lịch trình có thể thay đổi tùy thuộc vào tình trạng giao thông và giờ mở cửa thực tế của các bảo tàng.",
+      "Các khu vực trung tâm như Phố Cổ có thể rất đông đúc vào cuối tuần.",
+      "Day 1 uses an unresolved meal placeholder for dinner_meal; no verified food place matched the slot."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá Di sản và Lịch sử Hà Nội",
+        "items": [
+          {
+            "name": "Ho Chi Minh's Mausoleum",
+            "role": "main_activity",
+            "timeWindow": "08:00-10:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,dien-bien-ba-dinh"
+          },
+          {
+            "name": "Cafe Dinh",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-12:45",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,hoan-kiem"
+          },
+          {
+            "name": "Imperial Citadel of Thang Long",
+            "role": "support_activity",
+            "timeWindow": "13:30-15:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,dien-bien-ba-dinh"
+          },
+          {
+            "name": "Break between support and bonus activities",
+            "role": "break_support_bonus",
+            "timeWindow": "15:30-16:30",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Dinner break",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Ba Dinh Square",
+            "role": "bonus_activity",
+            "timeWindow": "19:30-21:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "21:30-23:00",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  }
+}

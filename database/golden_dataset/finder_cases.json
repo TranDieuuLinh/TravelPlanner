@@ -1,0 +1,151 @@
+{
+  "version": "1.0",
+  "description": "Golden Dataset kiểm thử Finder Agent (Tập trung thị trường Hà Nội)",
+  "cases": [
+    {
+      "id": "FND-001",
+      "scenarioName": "Điền lịch chi tiết 1 ngày Hà Nội nhịp độ balanced có bổ sung Catalog",
+      "scenarioPurpose": "Kiểm tra Finder điền đủ 3 stop chính tại Hà Nội (1 điểm do user chọn + 2 điểm gợi ý catalog theo pace balanced) kèm thời gian đệm và bữa ăn trưa/tối.",
+      "category": "standard_flow",
+      "input": {
+        "mode": "main",
+        "intent": { "destination": "Hà Nội", "pace": "balanced" },
+        "tripSpec": { "days": 1 },
+        "macroPlan": {
+          "title": "Hà Nội 1 Ngày Di Sản Phố Cổ",
+          "destination": "Hà Nội",
+          "dayBriefs": [
+            {
+              "day": 1,
+              "theme": "Khám phá Văn hóa Phố Cổ",
+              "targetArea": "Hoàn Kiếm",
+              "allocatedSelectedPlaceRefs": ["p_hn_van_mieu"]
+            }
+          ]
+        },
+        "selectedPlaces": [
+          {
+            "name": "Văn Miếu Quốc Tử Giám",
+            "placeId": "p_hn_van_mieu",
+            "mustVisit": true
+          }
+        ],
+        "allowFinderSuggestions": true
+      },
+      "goldenOutput": {
+        "mode": "main",
+        "finalDays": [
+          {
+            "day": 1,
+            "theme": "Khám phá Văn hóa Phố Cổ",
+            "strategy": "anchor_led",
+            "items": [
+              {
+                "itemId": "item_01",
+                "placeId": "p_hn_van_mieu",
+                "name": "Văn Miếu Quốc Tử Giám",
+                "timeWindow": "08:30-10:30",
+                "placeType": "must_visit",
+                "role": "main_activity",
+                "source": "selected_place",
+                "durationMinutes": 120,
+                "activityIntensity": "moderate"
+              },
+              {
+                "itemId": "item_02",
+                "placeId": null,
+                "name": "Di chuyển sang Phố Cổ",
+                "timeWindow": "10:30-10:50",
+                "placeType": "transport",
+                "role": "transit",
+                "source": "route_engine",
+                "durationMinutes": 20
+              },
+              {
+                "itemId": "item_03",
+                "placeId": "p_hn_bun_cha",
+                "name": "Bún Chả Đắc Kim",
+                "timeWindow": "11:00-12:15",
+                "placeType": "food",
+                "role": "meal",
+                "source": "finder_suggestion",
+                "durationMinutes": 75
+              },
+              {
+                "itemId": "item_04",
+                "placeId": "p_hn_ho_guom",
+                "name": "Hồ Hoàn Kiếm & Đền Ngọc Sơn",
+                "timeWindow": "14:00-16:00",
+                "placeType": "attraction",
+                "role": "main_activity",
+                "source": "finder_suggestion",
+                "durationMinutes": 120,
+                "activityIntensity": "moderate"
+              }
+            ]
+          }
+        ],
+        "unscheduledPlaces": [],
+        "tripCostEstimate": null,
+        "finalUserStatus": {},
+        "finalPlanStatus": {},
+        "warnings": [],
+        "trace": {
+          "agent": "finder",
+          "status": "completed",
+          "summary": "Filled dynamic day skeletons from MacroPlan.",
+          "notes": []
+        }
+      },
+      "assertions": [
+        "Văn Miếu Quốc Tử Giám được xếp đầu tiên trong khung sáng (08:30-10:30)",
+        "Các địa điểm bổ sung mang nguồn 'finder_suggestion'",
+        "Có phần tử trung chuyển 'transport' giữa các hoạt động xa nhau",
+        "Khung giờ (timeWindow) không bị chồng chéo"
+      ]
+    },
+    {
+      "id": "FND-002",
+      "scenarioName": "Bảo toàn thứ tự nguồn (sourceOrder) từ URL Reels ẩm thực Hà Nội",
+      "scenarioPurpose": "Kiểm tra Finder áp dụng chiến lược source_itinerary tại Hà Nội, tuân thủ đúng thứ tự 1-2-3 được trích xuất từ clip review (Bún Thang Cầu Gỗ -> Hoàng Thành Thăng Long -> Chợ Đêm Phố Cổ), không đảo lộn thứ tự.",
+      "category": "url_reels_integration",
+      "input": {
+        "mode": "main",
+        "intent": { "destination": "Hà Nội" },
+        "selectedPlaces": [
+          { "name": "Bún Thang Cầu Gỗ", "placeId": "p_hn_bun_thang", "sourceOrder": 1, "sourceDay": 1 },
+          { "name": "Hoàng Thành Thăng Long", "placeId": "p_hn_hoang_thanh", "sourceOrder": 2, "sourceDay": 1 },
+          { "name": "Chợ Đêm Phố Cổ Hà Nội", "placeId": "p_hn_cho_dem", "sourceOrder": 3, "sourceDay": 1 }
+        ],
+        "allowFinderSuggestions": false
+      },
+      "goldenOutput": {
+        "finalDays": [
+          {
+            "day": 1,
+            "strategy": "source_itinerary",
+            "items": [
+              { "name": "Bún Thang Cầu Gỗ", "source": "selected_place", "timeWindow": "11:30-12:45" },
+              { "name": "Hoàng Thành Thăng Long", "source": "selected_place", "timeWindow": "14:00-16:30" },
+              { "name": "Chợ Đêm Phố Cổ Hà Nội", "source": "selected_place", "timeWindow": "19:00-21:00" }
+            ]
+          }
+        ],
+        "tripCostEstimate": null,
+        "finalUserStatus": {},
+        "finalPlanStatus": {},
+        "warnings": [],
+        "trace": {
+          "agent": "finder",
+          "status": "completed",
+          "summary": "Filled dynamic day skeletons from MacroPlan.",
+          "notes": []
+        }
+      },
+      "assertions": [
+        "Thứ tự các item trong day 1 giữ nguyên 1 -> 2 -> 3 theo sourceOrder",
+        "Không chèn thêm điểm gợi ý khi allowFinderSuggestions=false"
+      ]
+    }
+  ]
+}

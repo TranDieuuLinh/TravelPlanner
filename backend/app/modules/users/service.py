@@ -1,8 +1,9 @@
-from fastapi import HTTPException, status
+from fastapi import status
 
 from app.modules.users.model import User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schema import UserCreate
+from app.shared.errors import AppError
 
 
 class UserService:
@@ -14,8 +15,9 @@ class UserService:
 
     def create_user(self, payload: UserCreate) -> User:
         if self.repository.get_by_email(payload.email):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email already exists",
+            raise AppError(
+                status.HTTP_409_CONFLICT,
+                "EMAIL_ALREADY_EXISTS",
+                "Email đã được sử dụng.",
             )
         return self.repository.create(payload)

@@ -1,0 +1,262 @@
+{
+  "traditional_food_and_coffee": {
+    "title": "Hương Vị Hà Nội: Hành Trình Ẩm Thực Truyền Thống",
+    "warnings": [
+      "Khu vực Phố cổ có thể đông đúc vào giờ cao điểm, cần chú ý an toàn giao thông.",
+      "Các quán ăn nổi tiếng có thể hết chỗ nhanh, nên chủ động thời gian."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá di sản ẩm thực và cà phê trứng",
+        "items": [
+          {
+            "name": "Nộm Bò Khô Long Vi Dung - Địa chỉ nộm bò khô, bánh bột lọc ngon chất lượng tại Hoàn kiếm Hà Nội",
+            "role": "main_activity",
+            "timeWindow": "09:00-10:15",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,hoan-kiem"
+          },
+          {
+            "name": "Pizza 4P’s Bao Khanh",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-13:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,alley-hoan-kiem"
+          },
+          {
+            "name": "Ramen Haruki - らぁ麺 春樹【Hoàn Kiếm】",
+            "role": "support_activity",
+            "timeWindow": "13:30-14:45",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,old-quarter-hoan-kiem"
+          },
+          {
+            "name": "Break between support and bonus activities",
+            "role": "break_support_bonus",
+            "timeWindow": "15:30-16:30",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Veteran Restaurant Hoan Kiem",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ward-hoan-kiem"
+          },
+          {
+            "name": "Hill Top Curry Indian Restaurant hoan kiem Hanoi",
+            "role": "bonus_activity",
+            "timeWindow": "19:30-20:45",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,old-quarter-hoan-kiem"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "21:30-23:00",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  }
+}
+{
+  "history_and_heritage": {
+    "title": "Hà Nội: Hành trình Di sản và Văn hóa",
+    "warnings": [
+      "Lịch trình tập trung vào các điểm tham quan văn hóa, cần kiểm tra giờ mở cửa cụ thể của các bảo tàng trước khi đi."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá Di sản Lịch sử và Văn hóa Hà Nội",
+        "items": [
+          {
+            "name": "Ho Chi Minh Museum",
+            "role": "main_activity",
+            "timeWindow": "08:00-10:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Essence Restaurant",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-13:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Ba Dinh Square",
+            "role": "support_activity",
+            "timeWindow": "13:30-15:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Break between support and bonus activities",
+            "role": "break_support_bonus",
+            "timeWindow": "15:30-16:30",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Hanoi Fusion Pub & Restaurant - 54 Nguyễn Trường Tộ",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "21:30-23:00",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  }
+}
+{
+  "relaxed_local_hanoi": {
+    "statusCode": 500,
+    "error": "Internal Server Error"
+  }
+}
+
+=== ALL PERSONAS ===
+{
+  "traditional_food_and_coffee": {
+    "title": "Hương Vị Hà Nội: Hành Trình Ẩm Thực Truyền Thống",
+    "warnings": [
+      "Khu vực Phố cổ có thể đông đúc vào giờ cao điểm, cần chú ý an toàn giao thông.",
+      "Các quán ăn nổi tiếng có thể hết chỗ nhanh, nên chủ động thời gian."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá di sản ẩm thực và cà phê trứng",
+        "items": [
+          {
+            "name": "Nộm Bò Khô Long Vi Dung - Địa chỉ nộm bò khô, bánh bột lọc ngon chất lượng tại Hoàn kiếm Hà Nội",
+            "role": "main_activity",
+            "timeWindow": "09:00-10:15",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,hoan-kiem"
+          },
+          {
+            "name": "Pizza 4P’s Bao Khanh",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-13:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,alley-hoan-kiem"
+          },
+          {
+            "name": "Ramen Haruki - らぁ麺 春樹【Hoàn Kiếm】",
+            "role": "support_activity",
+            "timeWindow": "13:30-14:45",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,old-quarter-hoan-kiem"
+          },
+          {
+            "name": "Break between support and bonus activities",
+            "role": "break_support_bonus",
+            "timeWindow": "15:30-16:30",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Veteran Restaurant Hoan Kiem",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ward-hoan-kiem"
+          },
+          {
+            "name": "Hill Top Curry Indian Restaurant hoan kiem Hanoi",
+            "role": "bonus_activity",
+            "timeWindow": "19:30-20:45",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,old-quarter-hoan-kiem"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "21:30-23:00",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  },
+  "history_and_heritage": {
+    "title": "Hà Nội: Hành trình Di sản và Văn hóa",
+    "warnings": [
+      "Lịch trình tập trung vào các điểm tham quan văn hóa, cần kiểm tra giờ mở cửa cụ thể của các bảo tàng trước khi đi."
+    ],
+    "checkStatus": "needs_backup",
+    "days": [
+      {
+        "day": 1,
+        "theme": "Khám phá Di sản Lịch sử và Văn hóa Hà Nội",
+        "items": [
+          {
+            "name": "Ho Chi Minh Museum",
+            "role": "main_activity",
+            "timeWindow": "08:00-10:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Essence Restaurant",
+            "role": "lunch_meal",
+            "timeWindow": "12:00-13:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Ba Dinh Square",
+            "role": "support_activity",
+            "timeWindow": "13:30-15:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Break between support and bonus activities",
+            "role": "break_support_bonus",
+            "timeWindow": "15:30-16:30",
+            "source": "finder_rule",
+            "regionKey": null
+          },
+          {
+            "name": "Hanoi Fusion Pub & Restaurant - 54 Nguyễn Trường Tộ",
+            "role": "dinner_meal",
+            "timeWindow": "18:00-19:00",
+            "source": "finder_suggestion",
+            "regionKey": "vn,ha-noi,ba-dinh"
+          },
+          {
+            "name": "Group social activity",
+            "role": "group_social_activity",
+            "timeWindow": "21:30-23:00",
+            "source": "finder_rule",
+            "regionKey": null
+          }
+        ]
+      }
+    ]
+  },
+  "relaxed_local_hanoi": {
+    "statusCode": 500,
+    "error": "Internal Server Error"
+  }
+}

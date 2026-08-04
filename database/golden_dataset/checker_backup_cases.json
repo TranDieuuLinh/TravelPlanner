@@ -1,0 +1,80 @@
+{
+  "version": "1.0",
+  "description": "Golden Dataset kiểm thử OverallChecker & BackupPlanWorkflow (Tập trung thị trường Hà Nội)",
+  "cases": [
+    {
+      "id": "CHK-001",
+      "scenarioName": "Checker phát hiện quãng đường di chuyển xa tại Hà Nội (Route Over-distance)",
+      "scenarioPurpose": "Kiểm tra OverallChecker phát hiện chặng đường di chuyển từ trung tâm Hà Nội ra ngoại thành quá xa trong 1 buổi (Làng cổ Đường Lâm -> Chùa Hương) và gắn cờ cảnh báo (warning/failed).",
+      "category": "rule_checking",
+      "input": {
+        "planId": "plan_hn_test_01",
+        "days": [
+          {
+            "day": 1,
+            "items": [
+              { "name": "Làng cổ Đường Lâm", "latitude": 21.1444, "longitude": 105.4746 },
+              { "name": "Chùa Hương (Mỹ Đức)", "latitude": 20.6179, "longitude": 105.7725 }
+            ]
+          }
+        ]
+      },
+      "goldenOutput": {
+        "checkReport": {
+          "status": "warning",
+          "issues": [
+            {
+              "severity": "medium",
+              "violationCode": "TRANSIT_DISTANCE_HIGH",
+              "message": "Khoảng cách di chuyển giữa Làng cổ Đường Lâm và Chùa Hương quá xa (>60km), không khả thi để xếp chung trong một buổi."
+            }
+          ]
+        }
+      },
+      "assertions": [
+        "checkReport.status là warning",
+        "Có issue với violationCode TRANSIT_DISTANCE_HIGH"
+      ]
+    },
+    {
+      "id": "BKP-001",
+      "scenarioName": "Tạo Backup Plan riêng biệt cho Hà Nội khi trời mưa lớn",
+      "scenarioPurpose": "Kiểm tra BackupPlanWorkflow sinh một Plan mới gắn nhãn kind='backup' tại Hà Nội, liên kết với mainPlanId, bảo toàn các điểm đã khóa (Bảo tàng Lịch sử Quốc gia) nhưng thay thế các hoạt động ngoài trời bằng địa điểm trong nhà (Tràng Tiền Plaza / Cà phê trong nhà).",
+      "category": "backup_recovery",
+      "input": {
+        "mainPlanId": "main_plan_hanoi_001",
+        "triggerReason": "WEATHER_RAIN_RISK",
+        "lockedItemIds": ["item_hn_museum_locked"]
+      },
+      "goldenOutput": {
+        "backupPlan": {
+          "kind": "backup",
+          "mainPlanId": "main_plan_hanoi_001",
+          "status": "locked",
+          "days": [
+            {
+              "day": 1,
+              "items": [
+                {
+                  "itemId": "item_hn_museum_locked",
+                  "name": "Bảo tàng Lịch sử Quốc gia (Đã khóa)",
+                  "isLocked": true
+                },
+                {
+                  "itemId": "item_hn_indoor_cafe",
+                  "name": "Tràng Tiền Plaza & Cà phê Phố Cổ trong nhà (Dự phòng mưa)",
+                  "source": "backup_suggestion"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "assertions": [
+        "Backup Plan giữ nguyên item_hn_museum_locked",
+        "mainPlanId giữ nguyên mối liên kết với Plan gốc Hà Nội",
+        "Thay đổi trên Backup Plan không làm ghi đè Main Plan gốc"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/app/scripts/evaluate_hanoi_personas.py", line 95, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/app/scripts/evaluate_hanoi_personas.py", line 64, in main
+    response.raise_for_status()
+  File "/usr/local/lib/python3.12/site-packages/httpx/_models.py", line 763, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '422 Unprocessable Entity' for url 'http://localhost:8000/api/plans/main/from-context'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422

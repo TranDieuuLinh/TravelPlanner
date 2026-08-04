@@ -1,0 +1,471 @@
+import unicodedata
+from uuid import uuid4
+
+from app.modules.places.resolver import (
+    PlaceLookupRecord,
+    PlaceLookupRepository,
+    PlaceResolver,
+    ProvisionalPlaceResolver,
+)
+from app.modules.plans.checks.overall_checker import OverallChecker
+from app.modules.plans.domain.entities import Plan, PlanDay, PlanItem
+from app.modules.plans.domain.enums import PlanStatus
+from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
+from app.modules.plans.plan_mutation_schema import (
+    AddItemRequest,
+    MoveItemRequest,
+    MutationResponse,
+    PlaceSuggestion,
+    ReorderItemsRequest,
+    UpdateItemRequest,
+)
+from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
+from app.shared.errors import AppError
+
+
+class PlanMutationService:
+    def __init__(
+        self,
+        place_resolver: PlaceResolver | None = None,
+        place_repository: PlaceLookupRepository | None = None,
+        route_optimizer: GeographicRouteOptimizer | None = None,
+        checker: OverallChecker | None = None,
+    ) -> None:
+        self.place_resolver = place_resolver or ProvisionalPlaceResolver()
+        self.place_repository = place_repository
+        self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
+        self.checker = checker or OverallChecker()
+
+    async def search_place_suggestions(
+        self,
+        query: str,
+        destination: str | None = None,
+    ) -> list[PlaceSuggestion]:
+        cleaned = query.strip()
+        if not cleaned:
+            return []
+        dest = (destination or "").strip()
+
+        if self.place_repository is not None:
+            return self._search_catalog(cleaned, dest)
+
+        candidate = UnifiedPlaceCandidate(
+            name=cleaned,
+            search_region=dest,
+        )
+        suggestions: list[PlaceSuggestion] = []
+        try:
+            resolution = await self.place_resolver.resolve(candidate, destination=dest)
+            if resolution.name and resolution.latitude is not None and resolution.longitude is not None:
+                suggestions.append(
+                    PlaceSuggestion(
+                        name=resolution.name,
+                        address=resolution.address,
+                        latitude=float(resolution.latitude),
+                        longitude=float(resolution.longitude),
+                        placeId=resolution.external_id,
+                    )
+                )
+        except Exception:
+            pass
+        return suggestions
+
+    def _search_catalog(
+        self,
+        query: str,
+        destination: str,
+        *,
+        limit: int = 8,
+    ) -> list[PlaceSuggestion]:
+        from app.modules.plans.planner.region_context import normalize_region_key
+
+        region_key = normalize_region_key(destination) if destination else None
+        records = self.place_repository.list_active_for_planner_research(
+            region_key,
+            limit=5000,
+        )
+        query_key = _search_key(query)
+        ranked: list[tuple[int, str, PlaceLookupRecord]] = []
+        for record in records:
+            if record.latitude is None or record.longitude is None:
+                continue
+            scores = [
+                score
+                for name in _record_search_names(record)
+                if (score := _suggestion_score(query_key, _search_key(name))) is not None
+            ]
+            if scores:
+                ranked.append((min(scores), _search_key(record.name), record))
+
+        ranked.sort(key=lambda item: (item[0], item[1]))
+        return [
+            PlaceSuggestion(
+                name=record.name,
+                address=record.address,
+                latitude=float(record.latitude),
+                longitude=float(record.longitude),
+                placeId=record.id,
+            )
+            for _score, _name, record in ranked[:limit]
+        ]
+
+    async def add_item(self, plan: Plan, request: AddItemRequest) -> MutationResponse:
+        day = self._get_day(plan, request.day)
+        time_window = request.time_window or self._calculate_next_time_window(
+            day, request.duration_minutes
+        )
+
+        lat = request.latitude
+        lng = request.longitude
+        address = request.address
+        place_id = None
+
+        # Auto-resolve coordinates if missing
+        if lat is None or lng is None:
+            candidate = UnifiedPlaceCandidate(
+                name=request.name,
+                address_hint=request.address,
+                search_region=plan.destination,
+            )
+            try:
+                resolved = await self.place_resolver.resolve(
+                    candidate, destination=plan.destination
+                )
+                if resolved.latitude is not None and resolved.longitude is not None:
+                    lat = float(resolved.latitude)
+                    lng = float(resolved.longitude)
+                if resolved.address:
+                    address = resolved.address
+                if resolved.external_id:
+                    place_id = resolved.external_id
+            except Exception:
+                pass  # Keep fallback if resolver fails or unavailable
+
+        new_item = PlanItem(
+            itemId=str(uuid4()),
+            placeId=request.place_id or place_id,
+            name=request.name,
+            address=address,
+            timeWindow=time_window,
+            placeType=request.place_type,
+            source="manual",
+            durationMinutes=request.duration_minutes,
+            tags=request.tags,
+            latitude=lat,
+            longitude=lng,
+            notes=request.notes,
+            personalNotes=request.personal_notes,
+        )
+
+        items = list(day.items)
+        if request.position is not None and 0 <= request.position <= len(items):
+            items.insert(request.position, new_item)
+        else:
+            items.append(new_item)
+
+        updated_day = self._reoptimize_day(day, items)
+        added_name_key = _search_key(request.name)
+        remaining_unscheduled = [
+            item
+            for item in plan.unscheduled_places
+            if not (
+                request.place_id is not None
+                and item.place_id == request.place_id
+            )
+            and _search_key(item.name) != added_name_key
+        ]
+        normalized_plan = plan.model_copy(
+            update={"unscheduled_places": remaining_unscheduled}
+        )
+        return self._finalize_mutation(normalized_plan, [updated_day])
+
+    async def update_item(
+        self,
+        plan: Plan,
+        day_number: int,
+        item_id: str,
+        request: UpdateItemRequest,
+    ) -> MutationResponse:
+        day = self._get_day(plan, day_number)
+        item_index = self._find_item_index(day, item_id)
+
+        existing_item = day.items[item_index]
+        updates = request.model_dump(exclude_unset=True, by_alias=False)
+
+        # If name updated and no coordinates provided, try auto-resolving again
+        if (
+            "name" in updates
+            and updates["name"] != existing_item.name
+            and updates.get("latitude") is None
+        ):
+            candidate = UnifiedPlaceCandidate(
+                name=updates["name"],
+                address_hint=updates.get("address") or existing_item.address,
+                search_region=plan.destination,
+            )
+            try:
+                resolved = await self.place_resolver.resolve(
+                    candidate, destination=plan.destination
+                )
+                if resolved.latitude is not None and resolved.longitude is not None:
+                    updates["latitude"] = float(resolved.latitude)
+                    updates["longitude"] = float(resolved.longitude)
+                if resolved.address and not updates.get("address"):
+                    updates["address"] = resolved.address
+            except Exception:
+                pass
+
+        updated_item = existing_item.model_copy(update=updates)
+
+        items = list(day.items)
+        items[item_index] = updated_item
+
+        updated_day = self._reoptimize_day(day, items)
+        return self._finalize_mutation(plan, [updated_day])
+
+    def remove_item(
+        self,
+        plan: Plan,
+        day_number: int,
+        item_id: str,
+    ) -> MutationResponse:
+        day = self._get_day(plan, day_number)
+        item_index = self._find_item_index(day, item_id)
+
+        items = [item for idx, item in enumerate(day.items) if idx != item_index]
+
+        updated_day = self._reoptimize_day(day, items)
+        return self._finalize_mutation(plan, [updated_day])
+
+    def remove_unscheduled_place(
+        self,
+        plan: Plan,
+        *,
+        name: str,
+        place_id: str | None = None,
+    ) -> MutationResponse:
+        name_key = _search_key(name)
+        remaining = [
+            item
+            for item in plan.unscheduled_places
+            if not (
+                (place_id is not None and item.place_id == place_id)
+                or _search_key(item.name) == name_key
+            )
+        ]
+        if len(remaining) == len(plan.unscheduled_places):
+            raise AppError(
+                404,
+                "UNSCHEDULED_PLACE_NOT_FOUND",
+                "Không tìm thấy địa điểm trong danh sách chưa xếp lịch.",
+            )
+
+        updated_plan = plan.model_copy(update={"unscheduled_places": remaining})
+        return self._finalize_mutation(updated_plan, [])
+
+    def move_item(
+        self,
+        plan: Plan,
+        from_day_number: int,
+        item_id: str,
+        request: MoveItemRequest,
+    ) -> MutationResponse:
+        from_day = self._get_day(plan, from_day_number)
+        to_day = self._get_day(plan, request.to_day)
+
+        item_index = self._find_item_index(from_day, item_id)
+        item_to_move = from_day.items[item_index]
+
+        from_items = [
+            item for idx, item in enumerate(from_day.items) if idx != item_index
+        ]
+        updated_from_day = self._reoptimize_day(from_day, from_items)
+
+        to_items = list(to_day.items)
+        if request.position is not None and 0 <= request.position <= len(to_items):
+            to_items.insert(request.position, item_to_move)
+        else:
+            to_items.append(item_to_move)
+        updated_to_day = self._reoptimize_day(to_day, to_items)
+
+        return self._finalize_mutation(plan, [updated_from_day, updated_to_day])
+
+    def reorder_items(
+        self,
+        plan: Plan,
+        day_number: int,
+        request: ReorderItemsRequest,
+    ) -> MutationResponse:
+        day = self._get_day(plan, day_number)
+        items_by_id = {item.item_id: item for item in day.items if item.item_id}
+
+        reordered_items: list[PlanItem] = []
+        for item_id in request.item_ids:
+            if item_id in items_by_id:
+                reordered_items.append(items_by_id.pop(item_id))
+
+        reordered_items.extend(items_by_id.values())
+
+        updated_day = self._reoptimize_day(day, reordered_items)
+        return self._finalize_mutation(plan, [updated_day])
+
+    def _get_day(self, plan: Plan, day_number: int) -> PlanDay:
+        for day in plan.days:
+            if day.day == day_number:
+                return day
+        raise AppError(
+            404,
+            "PLAN_DAY_NOT_FOUND",
+            f"Không tìm thấy Ngày {day_number} trong lịch trình.",
+        )
+
+    def _find_item_index(self, day: PlanDay, item_id: str) -> int:
+        for idx, item in enumerate(day.items):
+            if item.item_id == item_id:
+                return idx
+        raise AppError(
+            404,
+            "PLAN_ITEM_NOT_FOUND",
+            f"Không tìm thấy địa điểm trong Ngày {day.day}.",
+        )
+
+    def _reoptimize_day(self, day: PlanDay, items: list[PlanItem]) -> PlanDay:
+        adjusted_items = self._readjust_time_windows(items)
+        optimized_items, transport_legs = self.route_optimizer.optimize(
+            adjusted_items,
+            preserve_order=True,
+            day=day.day,
+        )
+        return day.model_copy(
+            update={
+                "items": optimized_items,
+                "transport_legs": transport_legs,
+            }
+        )
+
+    def _readjust_time_windows(self, items: list[PlanItem]) -> list[PlanItem]:
+        if not items:
+            return items
+
+        start_min = 9 * 60
+        first_item = items[0]
+        if first_item.time_window and "-" in first_item.time_window:
+            try:
+                sh, sm = map(int, first_item.time_window.split("-")[0].split(":"))
+                start_min = sh * 60 + sm
+            except ValueError:
+                pass
+
+        adjusted: list[PlanItem] = []
+        current_min = start_min
+        for item in items:
+            dur = item.duration_minutes or 60
+            end_min = min(23 * 60 + 59, current_min + dur)
+            sh, sm = divmod(current_min, 60)
+            eh, em = divmod(end_min, 60)
+            window_str = f"{sh:02d}:{sm:02d}-{eh:02d}:{em:02d}"
+            adjusted.append(item.model_copy(update={"time_window": window_str}))
+            current_min = min(23 * 60 + 44, end_min + 15)
+
+        return adjusted
+
+    def _finalize_mutation(
+        self,
+        plan: Plan,
+        updated_days: list[PlanDay],
+    ) -> MutationResponse:
+        updated_days_map = {day.day: day for day in updated_days}
+        new_days = [
+            updated_days_map.get(day.day, day) for day in plan.days
+        ]
+        updated_plan = plan.model_copy(update={"days": new_days})
+
+        check_report = self.checker.check(updated_plan)
+        final_status = (
+            PlanStatus.locked
+            if check_report.status == "passed"
+            else PlanStatus.draft
+        )
+
+        final_plan = updated_plan.model_copy(
+            update={
+                "status": final_status,
+                "check_report": check_report,
+            }
+        )
+
+        return MutationResponse(
+            plan=final_plan,
+            affected_days=sorted(updated_days_map.keys()),
+            check_report=check_report,
+        )
+
+    def _calculate_next_time_window(
+        self,
+        day: PlanDay,
+        duration_minutes: int,
+    ) -> str:
+        if not day.items:
+            start_min = 9 * 60  # 09:00
+        else:
+            last_item = day.items[-1]
+            parts = last_item.time_window.split("-")
+            if len(parts) == 2:
+                try:
+                    h, m = map(int, parts[1].split(":"))
+                    start_min = h * 60 + m + 15
+                except ValueError:
+                    start_min = 9 * 60
+            else:
+                start_min = 9 * 60
+
+        end_min = min(23 * 60 + 59, start_min + duration_minutes)
+        start_h, start_m = divmod(start_min, 60)
+        end_h, end_m = divmod(end_min, 60)
+        return f"{start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d}"
+
+
+def _search_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if not unicodedata.combining(character)
+    )
+    return " ".join(without_marks.replace("đ", "d").split())
+
+
+def _record_search_names(record: PlaceLookupRecord) -> list[str]:
+    metadata = record.metadata_json if isinstance(record.metadata_json, dict) else {}
+    names = [record.name]
+    for key in (
+        "aliases",
+        "englishNames",
+        "vietnameseNames",
+        "alternateNames",
+        "searchNames",
+    ):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            names.append(value)
+        elif isinstance(value, list):
+            names.extend(item for item in value if isinstance(item, str))
+    for key in ("originalName", "officialName", "nameEn", "nameVi"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            names.append(value)
+    return names
+
+
+def _suggestion_score(query: str, candidate: str) -> int | None:
+    if not query or not candidate:
+        return None
+    if candidate == query:
+        return 0
+    if candidate.startswith(query):
+        return 1
+    if any(word.startswith(query) for word in candidate.split()):
+        return 2
+    if query in candidate:
+        return 3
+    return None

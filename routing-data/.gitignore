@@ -1,0 +1,6 @@
+valhalla/*
+!valhalla/.gitkeep
+opentripplanner/*
+!opentripplanner/.gitkeep
+osm-source/*
+!osm-source/.gitkeep
