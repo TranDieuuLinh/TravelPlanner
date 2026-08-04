@@ -10,6 +10,15 @@ class PlaceSuggestion(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     place_id: str | None = Field(default=None, alias="placeId")
+    image_url: str | None = Field(default=None, alias="imageUrl")
+    rating: float | None = None
+    review_count: int | None = Field(default=None, alias="reviewCount")
+    price_level: int | None = Field(default=None, alias="priceLevel")
+    place_type: str | None = Field(default=None, alias="placeType")
+    phone: str | None = None
+    website: str | None = None
+    opening_hours: list[str] | None = Field(default=None, alias="openingHours")
+    is_verified: bool = Field(default=False, alias="isVerified")
 
     model_config = {"populate_by_name": True}
 
@@ -28,6 +37,9 @@ class AddItemRequest(BaseModel):
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] = Field(default_factory=list)
     position: int | None = Field(default=None, ge=0)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: Annotated[int | None, Field(default=None, ge=0, alias="reviewCount")] = None
+    image_urls: Annotated[list[str] | None, Field(default=None, alias="imageUrls")] = None
 
     model_config = {"populate_by_name": True}
 

@@ -205,6 +205,175 @@ class GoogleMapsSearchTimeout(asyncio.TimeoutError):
         self.execution_seconds = execution_seconds
 
 
+class GoogleMapsSearchClient:
+    """Lightweight client for searching Google Maps (autocomplete fallback)."""
+
+    def __init__(
+        self,
+        *,
+        executable: str | None = None,
+        work_dir: Path | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
+        if not executable and work_dir is None:
+            raise ValueError(
+                "google-maps-scraper needs an executable or shared work_dir"
+            )
+        self.executable = executable
+        self.work_dir = work_dir
+        self.timeout_seconds = timeout_seconds
+
+    async def search(
+        self,
+        query: str,
+        *,
+        region: str | None = None,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Search Google Maps for a query and return raw results."""
+        if not query.strip():
+            return []
+
+        search_query = query
+        if region:
+            search_query = f"{query}, {region}"
+
+        if self.work_dir is not None:
+            return await self._search_via_worker(search_query, limit)
+        return await self._search_via_cli(search_query, limit)
+
+    async def _search_via_cli(
+        self,
+        query: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if not self.executable:
+            raise ValueError("Google Maps scraper executable is missing.")
+        with tempfile.TemporaryDirectory(
+            prefix="vsf-gmaps-search-"
+        ) as temp_dir:
+            temp_path = Path(temp_dir)
+            input_path = temp_path / "queries.txt"
+            results_path = temp_path / "results.json"
+            input_path.write_text(query + "\n", encoding="utf-8")
+            started_at = time.perf_counter()
+            process = await asyncio.create_subprocess_exec(
+                self.executable,
+                "-input",
+                str(input_path),
+                "-results",
+                str(results_path),
+                "-json",
+                "-depth",
+                "1",
+                "-c",
+                "1",
+                "-lang",
+                "vi",
+                "-exit-on-inactivity",
+                "10s",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    **os.environ,
+                    "DISABLE_TELEMETRY": "1",
+                },
+                start_new_session=True,
+            )
+            try:
+                _, _ = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=self.timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await process.communicate()
+                return []
+            if process.returncode != 0 or not results_path.exists():
+                return []
+            batch = GoogleMapsSearchBatch(
+                results=_load_google_maps_output(
+                    results_path.read_text(encoding="utf-8")
+                ),
+                execution_seconds=time.perf_counter() - started_at,
+            )
+            return batch.results[:limit]
+
+    async def _search_via_worker(
+        self,
+        query: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if self.work_dir is None:
+            raise ValueError("Google Maps scraper work directory is missing.")
+
+        request_id = uuid.uuid4().hex
+        requests_dir = self.work_dir / "requests"
+        responses_dir = self.work_dir / "responses"
+        errors_dir = self.work_dir / "errors"
+        cancellations_dir = self.work_dir / "cancellations"
+        for directory in (
+            requests_dir,
+            responses_dir,
+            errors_dir,
+            cancellations_dir,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        temporary_request_path = requests_dir / f".{request_id}.tmp"
+        request_path = requests_dir / f"{request_id}.json"
+        response_path = responses_dir / f"{request_id}.json"
+        error_path = errors_dir / f"{request_id}.txt"
+        cancellation_path = cancellations_dir / f"{request_id}.cancel"
+        created_at_ms = int(time.time() * 1000)
+        deadline_at_ms = created_at_ms + int(self.timeout_seconds * 1000)
+        temporary_request_path.write_text(
+            json.dumps(
+                {
+                    "queries": [query],
+                    "createdAtMs": created_at_ms,
+                    "deadlineAtMs": deadline_at_ms,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        os.replace(temporary_request_path, request_path)
+
+        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                if response_path.exists():
+                    try:
+                        batch = _load_google_maps_worker_response(
+                            response_path.read_text(encoding="utf-8")
+                        )
+                        response_path.unlink(missing_ok=True)
+                        return batch.results[:limit]
+                    except Exception:
+                        return []
+                if error_path.exists():
+                    error_path.unlink(missing_ok=True)
+                    return []
+                await asyncio.sleep(0.1)
+            _write_google_maps_cancellation(cancellation_path)
+            return []
+        except Exception:
+            _write_google_maps_cancellation(cancellation_path)
+            return []
+        finally:
+            for path in (request_path,):
+                if path.exists():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+
+
 class PlaceResolver(ABC):
     @abstractmethod
     async def resolve(

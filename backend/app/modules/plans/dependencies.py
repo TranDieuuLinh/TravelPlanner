@@ -18,6 +18,7 @@ from app.modules.places.resolver import (
     DatabasePlaceResolver,
     FallbackPlaceResolver,
     GoogleMapsScraperPlaceResolver,
+    GoogleMapsSearchClient,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -77,7 +78,22 @@ def get_plan_mutation_service(
         place_repository=place_repository,
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
+        gmaps_client=_get_gmaps_search_client(),
     )
+
+
+def _get_gmaps_search_client() -> GoogleMapsSearchClient | None:
+    """Get Google Maps search client for autocomplete fallback."""
+    if (
+        settings.google_maps_scraper_executable
+        or settings.google_maps_scraper_work_dir is not None
+    ):
+        return GoogleMapsSearchClient(
+            executable=settings.google_maps_scraper_executable,
+            work_dir=settings.google_maps_scraper_work_dir,
+            timeout_seconds=settings.google_maps_scraper_timeout_seconds,
+        )
+    return None
 
 
 def get_conversation_turn_service(
