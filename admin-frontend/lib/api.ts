@@ -620,6 +620,30 @@ export type KGEntityDetail = {
   relationshipHasMore: boolean;
 };
 
+export type KGEntityUpdatePayload = {
+  canonicalName?: string;
+  entityType?: string;
+  status?: string;
+};
+
+export type KGAliasUpsertPayload = {
+  alias: string;
+  language: string;
+};
+
+export type KGPropertyUpsertPayload = {
+  key: string;
+  value: string;
+  source?: string | null;
+};
+
+export type KGRelationshipUpsertPayload = {
+  relationship: string;
+  toEntityId: string;
+  source?: string | null;
+  recommendations?: Record<string, unknown> | null;
+};
+
 export type KGRelationshipListPage = {
   items: KGRelationshipSummary[];
   total: number;
@@ -673,6 +697,118 @@ export function getKGEntityDetail(
   );
 }
 
+export function updateKGEntity(
+  entityId: string,
+  payload: KGEntityUpdatePayload
+): Promise<KGEntityDetail> {
+  return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function createKGAlias(
+  entityId: string,
+  payload: KGAliasUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/aliases`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateKGAlias(
+  entityId: string,
+  aliasId: number,
+  payload: KGAliasUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/aliases/${aliasId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export function deleteKGAlias(entityId: string, aliasId: number): Promise<{ deletedAliasId: number }> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/aliases/${aliasId}`,
+    { method: "DELETE" }
+  );
+}
+
+export function createKGProperty(
+  entityId: string,
+  payload: KGPropertyUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/properties`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateKGProperty(
+  entityId: string,
+  propertyId: number,
+  payload: KGPropertyUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/properties/${propertyId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export function deleteKGProperty(
+  entityId: string,
+  propertyId: number
+): Promise<{ deletedPropertyId: number }> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/properties/${propertyId}`,
+    { method: "DELETE" }
+  );
+}
+
+export function createKGRelationship(
+  entityId: string,
+  payload: KGRelationshipUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/relationships`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export function updateKGRelationship(
+  entityId: string,
+  relationshipId: number,
+  payload: KGRelationshipUpsertPayload
+): Promise<KGEntityDetail> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/relationships/${relationshipId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }
+  );
+}
+
+export function deleteKGRelationship(
+  entityId: string,
+  relationshipId: number
+): Promise<{ deletedRelationshipId: number }> {
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/relationships/${relationshipId}`,
+    { method: "DELETE" }
+  );
+}
+
 export function listKGRelationships(filters: {
   limit?: number;
   offset?: number;
@@ -691,3 +827,20 @@ export function listKGRelationships(filters: {
   const query = params.toString();
   return request(`/admin/knowledge-graph/relationships${query ? `?${query}` : ""}`);
 }
+
+export type KGOntology = {
+  nodeTypes: string[];
+  relationshipTypes: string[];
+  nodeTypeProperties: Record<
+    string,
+    {
+      requiredProperties: string[];
+      optionalProperties: string[];
+    }
+  >;
+};
+
+export function getKGOntology(): Promise<KGOntology> {
+  return request("/admin/knowledge-graph/ontology");
+}
+

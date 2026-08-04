@@ -5,39 +5,92 @@ import {
   getKGStats,
   listKGEntities,
   getKGEntityDetail,
+  listKGRelationships,
+  getKGOntology,
+  updateKGEntity,
+  createKGAlias,
+  updateKGAlias,
+  deleteKGAlias,
+  createKGProperty,
+  updateKGProperty,
+  deleteKGProperty,
+  createKGRelationship,
+  updateKGRelationship,
+  deleteKGRelationship,
   type KGStats,
   type KGEntitySummary,
   type KGEntityDetail,
+  type KGRelationshipSummary,
+  type KGOntology,
 } from "../../../lib/api";
 import { KnowledgeGraphAIImports } from "../../components/KnowledgeGraphAIImports";
 
-type WorkspaceTab = "entities" | "aiImports";
+type WorkspaceTab = "entities" | "relationships" | "aiImports";
 
 const TABS: Array<{ id: WorkspaceTab; label: string }> = [
   { id: "entities", label: "Entities" },
+  { id: "relationships", label: "Relationships" },
   { id: "aiImports", label: "AI Imports" },
 ];
 
 const DEFAULT_PAGE_SIZE = 50;
 
+// Common quick entity types for pill selection
+const QUICK_ENTITY_TYPES = [
+  "Destination",
+  "Attraction",
+  "Hotel",
+  "Restaurant",
+  "Activity",
+  "Topic",
+  "Tag",
+];
+
 export default function KnowledgeGraphPage() {
   const [stats, setStats] = useState<KGStats | null>(null);
-  const [entities, setEntities] = useState<KGEntitySummary[]>([]);
+  const [ontology, setOntology] = useState<KGOntology | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<KGEntityDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [loadingEntities, setLoadingEntities] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("entities");
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+
+  // --- Entities Tab State ---
+  const [entities, setEntities] = useState<KGEntitySummary[]>([]);
+  const [loadingEntities, setLoadingEntities] = useState(false);
+  const [totalEntities, setTotalEntities] = useState(0);
+  const [entityOffset, setEntityOffset] = useState(0);
+  const [hasMoreEntities, setHasMoreEntities] = useState(false);
+
+  // Entity filters
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [entityTypeFilter, setEntityTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  // --- Relationships Tab State ---
+  const [relationships, setRelationships] = useState<KGRelationshipSummary[]>([]);
+  const [loadingRelationships, setLoadingRelationships] = useState(false);
+  const [totalRelationships, setTotalRelationships] = useState(0);
+  const [relOffset, setRelOffset] = useState(0);
+  const [hasMoreRelationships, setHasMoreRelationships] = useState(false);
+
+  // Relationship filters
+  const [relSearch, setRelSearch] = useState("");
+  const [relSearchInput, setRelSearchInput] = useState("");
+  const [relTypeFilter, setRelTypeFilter] = useState("");
+  const [fromEntityFilter, setFromEntityFilter] = useState("");
+  const [fromEntityInput, setFromEntityInput] = useState("");
+  const [toEntityFilter, setToEntityFilter] = useState("");
+  const [toEntityInput, setToEntityInput] = useState("");
+
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fromEntityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toEntityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Debounced search
+  // Debounced search for Entities
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -45,7 +98,7 @@ export default function KnowledgeGraphPage() {
     searchTimeoutRef.current = setTimeout(() => {
       if (searchInput !== search) {
         setSearch(searchInput);
-        setOffset(0);
+        setEntityOffset(0);
         setEntities([]);
       }
     }, 300);
@@ -54,7 +107,50 @@ export default function KnowledgeGraphPage() {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchInput]);
+  }, [searchInput, search]);
+
+  // Debounced search & inputs for Relationships
+  useEffect(() => {
+    if (relSearchTimeoutRef.current) clearTimeout(relSearchTimeoutRef.current);
+    relSearchTimeoutRef.current = setTimeout(() => {
+      if (relSearchInput !== relSearch) {
+        setRelSearch(relSearchInput);
+        setRelOffset(0);
+        setRelationships([]);
+      }
+    }, 300);
+    return () => {
+      if (relSearchTimeoutRef.current) clearTimeout(relSearchTimeoutRef.current);
+    };
+  }, [relSearchInput, relSearch]);
+
+  useEffect(() => {
+    if (fromEntityTimeoutRef.current) clearTimeout(fromEntityTimeoutRef.current);
+    fromEntityTimeoutRef.current = setTimeout(() => {
+      if (fromEntityInput !== fromEntityFilter) {
+        setFromEntityFilter(fromEntityInput);
+        setRelOffset(0);
+        setRelationships([]);
+      }
+    }, 300);
+    return () => {
+      if (fromEntityTimeoutRef.current) clearTimeout(fromEntityTimeoutRef.current);
+    };
+  }, [fromEntityInput, fromEntityFilter]);
+
+  useEffect(() => {
+    if (toEntityTimeoutRef.current) clearTimeout(toEntityTimeoutRef.current);
+    toEntityTimeoutRef.current = setTimeout(() => {
+      if (toEntityInput !== toEntityFilter) {
+        setToEntityFilter(toEntityInput);
+        setRelOffset(0);
+        setRelationships([]);
+      }
+    }, 300);
+    return () => {
+      if (toEntityTimeoutRef.current) clearTimeout(toEntityTimeoutRef.current);
+    };
+  }, [toEntityInput, toEntityFilter]);
 
   // Load stats
   const loadStats = useCallback(async () => {
@@ -66,52 +162,120 @@ export default function KnowledgeGraphPage() {
     }
   }, []);
 
-  // Load entities with pagination
-  const loadEntities = useCallback(async (currentOffset: number, currentSearch: string, append = false) => {
-    // Cancel any pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setLoadingEntities(true);
+  // Load ontology
+  const loadOntology = useCallback(async () => {
     try {
-      const data = await listKGEntities({
-        limit: DEFAULT_PAGE_SIZE,
-        offset: currentOffset,
-        search: currentSearch || undefined,
-      });
-
-      if (append) {
-        setEntities((prev) => [...prev, ...data.items]);
-      } else {
-        setEntities(data.items);
-      }
-      setTotal(data.total);
-      setHasMore(data.hasMore);
-      setOffset(currentOffset + data.items.length);
+      const data = await getKGOntology();
+      setOntology(data);
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
-        setError(err.message || "Failed to load entities");
-      }
-    } finally {
-      setLoadingEntities(false);
-      setLoading(false);
+      console.error("Failed to load ontology:", err);
     }
   }, []);
+
+  // Load entities
+  const loadEntities = useCallback(
+    async (
+      currentOffset: number,
+      currentSearch: string,
+      currentType: string,
+      currentStatus: string,
+      append = false
+    ) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
+      setLoadingEntities(true);
+      try {
+        const data = await listKGEntities({
+          limit: DEFAULT_PAGE_SIZE,
+          offset: currentOffset,
+          search: currentSearch || undefined,
+          entityType: currentType || undefined,
+          status: currentStatus || undefined,
+        });
+
+        if (append) {
+          setEntities((prev) => [...prev, ...data.items]);
+        } else {
+          setEntities(data.items);
+        }
+        setTotalEntities(data.total);
+        setHasMoreEntities(data.hasMore);
+        setEntityOffset(currentOffset + data.items.length);
+      } catch (err) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError(err.message || "Failed to load entities");
+        }
+      } finally {
+        setLoadingEntities(false);
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  // Load relationships
+  const loadRelationships = useCallback(
+    async (
+      currentOffset: number,
+      currentSearch: string,
+      currentRelType: string,
+      currentFrom: string,
+      currentTo: string,
+      append = false
+    ) => {
+      setLoadingRelationships(true);
+      try {
+        const data = await listKGRelationships({
+          limit: DEFAULT_PAGE_SIZE,
+          offset: currentOffset,
+          search: currentSearch || undefined,
+          relationship: currentRelType || undefined,
+          fromEntityId: currentFrom || undefined,
+          toEntityId: currentTo || undefined,
+        });
+
+        if (append) {
+          setRelationships((prev) => [...prev, ...data.items]);
+        } else {
+          setRelationships(data.items);
+        }
+        setTotalRelationships(data.total);
+        setHasMoreRelationships(data.hasMore);
+        setRelOffset(currentOffset + data.items.length);
+      } catch (err) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError(err.message || "Failed to load relationships");
+        }
+      } finally {
+        setLoadingRelationships(false);
+      }
+    },
+    []
+  );
 
   // Initial load
   useEffect(() => {
     loadStats();
-    loadEntities(0, "", false);
-  }, [loadStats, loadEntities]);
+    loadOntology();
+    loadEntities(0, "", "", "", false);
+  }, [loadStats, loadOntology, loadEntities]);
 
-  // Reload when search changes
+  // Trigger entity list reload when filters change
   useEffect(() => {
     if (!loading) {
-      loadEntities(0, search, false);
+      loadEntities(0, search, entityTypeFilter, statusFilter, false);
     }
-  }, [search]);
+  }, [search, entityTypeFilter, statusFilter]);
+
+  // Trigger relationship list reload when switching to tab or filters change
+  useEffect(() => {
+    if (activeTab === "relationships") {
+      loadRelationships(0, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, false);
+    }
+  }, [activeTab, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter]);
 
   // Load entity detail
   const loadEntityDetail = useCallback(async (entityId: string) => {
@@ -128,28 +292,78 @@ export default function KnowledgeGraphPage() {
   }, []);
 
   // Handle entity selection
-  const handleSelectEntity = useCallback((entity: KGEntitySummary) => {
-    setSelectedEntity(null);
-    loadEntityDetail(entity.id);
-  }, [loadEntityDetail]);
+  const handleSelectEntity = useCallback(
+    (entity: KGEntitySummary) => {
+      setSelectedEntity(null);
+      loadEntityDetail(entity.id);
+    },
+    [loadEntityDetail]
+  );
+
+  const handleEntityUpdated = useCallback(
+    (updatedEntity: KGEntityDetail) => {
+      setSelectedEntity(updatedEntity);
+      loadStats();
+      loadEntities(0, search, entityTypeFilter, statusFilter, false);
+    },
+    [loadStats, loadEntities, search, entityTypeFilter, statusFilter]
+  );
+
+  // Jump directly to an entity ID from anywhere (e.g. relationship card)
+  const handleJumpToEntity = useCallback(
+    (entityId: string) => {
+      setActiveTab("entities");
+      loadEntityDetail(entityId);
+    },
+    [loadEntityDetail]
+  );
 
   // Load more entities
-  const handleLoadMore = useCallback(() => {
-    if (!loadingEntities && hasMore) {
-      loadEntities(offset, search, true);
+  const handleLoadMoreEntities = useCallback(() => {
+    if (!loadingEntities && hasMoreEntities) {
+      loadEntities(entityOffset, search, entityTypeFilter, statusFilter, true);
     }
-  }, [loadingEntities, hasMore, offset, search, loadEntities]);
+  }, [loadingEntities, hasMoreEntities, entityOffset, search, entityTypeFilter, statusFilter, loadEntities]);
 
-  // Handle search change
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchInput(value);
+  // Load more relationships
+  const handleLoadMoreRelationships = useCallback(() => {
+    if (!loadingRelationships && hasMoreRelationships) {
+      loadRelationships(relOffset, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, true);
+    }
+  }, [loadingRelationships, hasMoreRelationships, relOffset, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, loadRelationships]);
+
+  // Reset entity filters
+  const handleResetEntityFilters = useCallback(() => {
+    setSearchInput("");
+    setSearch("");
+    setEntityTypeFilter("");
+    setStatusFilter("");
+  }, []);
+
+  // Reset relationship filters
+  const handleResetRelFilters = useCallback(() => {
+    setRelSearchInput("");
+    setRelSearch("");
+    setRelTypeFilter("");
+    setFromEntityInput("");
+    setFromEntityFilter("");
+    setToEntityInput("");
+    setToEntityFilter("");
   }, []);
 
   // Refresh after AI import apply
   const handleApplied = useCallback(() => {
     loadStats();
-    loadEntities(0, search, false);
-  }, [loadStats, loadEntities, search]);
+    loadEntities(0, search, entityTypeFilter, statusFilter, false);
+  }, [loadStats, loadEntities, search, entityTypeFilter, statusFilter]);
+
+  // List of available node types from ontology or defaults
+  const availableNodeTypes = ontology?.nodeTypes?.length
+    ? ontology.nodeTypes
+    : ["Destination", "Attraction", "Hotel", "Restaurant", "Activity", "Topic", "Tag", "Region", "Event", "TransportHub"];
+
+  // List of available relationship types from ontology
+  const availableRelTypes = ontology?.relationshipTypes || [];
 
   return (
     <section className="kgPage">
@@ -158,7 +372,7 @@ export default function KnowledgeGraphPage() {
           <p className="eyebrow">Catalog intelligence</p>
           <h1>Knowledge Graph</h1>
           <p className="kgLead">
-            Quản lý entity, alias và ontology từ PostgreSQL backend.
+            Quản lý entity, alias, relationship và ontology từ PostgreSQL backend.
           </p>
         </div>
       </header>
@@ -172,7 +386,7 @@ export default function KnowledgeGraphPage() {
           </span>
         </div>
         <div className="kgSourceMeta">
-          <span>API-driven pagination</span>
+          <span>API-driven Query & Pagination</span>
         </div>
       </section>
 
@@ -180,7 +394,9 @@ export default function KnowledgeGraphPage() {
         <div className="kgNotice" role="alert">
           <span>!</span>
           <p>{error}</p>
-          <button type="button" aria-label="Dismiss error" onClick={() => setError("")}>×</button>
+          <button type="button" aria-label="Dismiss error" onClick={() => setError("")}>
+            ×
+          </button>
         </div>
       )}
 
@@ -220,9 +436,9 @@ export default function KnowledgeGraphPage() {
       {/* AI Imports Tab */}
       {activeTab === "aiImports" && (
         <KnowledgeGraphAIImports
-          nodeTypes={[]}
-          nodeTypeProperties={{}}
-          relationshipTypes={[]}
+          nodeTypes={availableNodeTypes}
+          nodeTypeProperties={ontology?.nodeTypeProperties || {}}
+          relationshipTypes={availableRelTypes}
           onApplied={handleApplied}
         />
       )}
@@ -230,39 +446,133 @@ export default function KnowledgeGraphPage() {
       {/* Entities Tab */}
       {activeTab === "entities" && (
         <>
-          {/* Search Bar */}
-          <section className="controlBar kgControlBar">
-            <label className="searchField">
-              <span>⌕</span>
-              <input
-                type="search"
-                value={searchInput}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search by name or ID..."
-              />
-            </label>
-            <span className="kgResultCount">
-              {loading ? "Loading..." : `${total.toLocaleString()} entities`}
+          {/* Multi-Filter Bar */}
+          <section className="kgControlBarMulti" aria-label="Entity query filters">
+            {/* Search Input */}
+            <div className="kgSearchFieldWrap">
+              <label className="searchField" style={{ width: "100%" }}>
+                <span>⌕</span>
+                <input
+                  type="search"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search by canonical name or ID..."
+                />
+              </label>
+              {searchInput && (
+                <button
+                  type="button"
+                  className="kgClearSearchBtn"
+                  title="Clear search"
+                  onClick={() => {
+                    setSearchInput("");
+                    setSearch("");
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Entity Type Filter Dropdown */}
+            <select
+              className="kgSelectFilter"
+              value={entityTypeFilter}
+              onChange={(e) => {
+                setEntityTypeFilter(e.target.value);
+                setEntityOffset(0);
+                setEntities([]);
+              }}
+            >
+              <option value="">All Entity Types</option>
+              {availableNodeTypes.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+
+            {/* Status Filter Dropdown */}
+            <select
+              className="kgSelectFilter"
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setEntityOffset(0);
+                setEntities([]);
+              }}
+            >
+              <option value="">All Statuses</option>
+              <option value="active">active</option>
+              <option value="draft">draft</option>
+              <option value="missing">missing</option>
+              <option value="archived">archived</option>
+            </select>
+
+            {/* Reset Button */}
+            {(search || entityTypeFilter || statusFilter) && (
+              <button type="button" className="kgResetBtn" onClick={handleResetEntityFilters}>
+                Reset Filters
+              </button>
+            )}
+
+            <span className="kgResultCount" style={{ marginLeft: "auto" }}>
+              {loadingEntities && entities.length === 0
+                ? "Loading..."
+                : `${totalEntities.toLocaleString()} entities match`}
             </span>
           </section>
 
-          {/* Entity List and Detail Layout */}
+          {/* Quick Entity Type Pills */}
+          <section className="kgFilterPills" aria-label="Quick type pills">
+            <button
+              type="button"
+              className={!entityTypeFilter ? "kgFilterPill active" : "kgFilterPill"}
+              onClick={() => {
+                setEntityTypeFilter("");
+                setEntityOffset(0);
+                setEntities([]);
+              }}
+            >
+              All Types
+            </button>
+            {QUICK_ENTITY_TYPES.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={entityTypeFilter === type ? "kgFilterPill active" : "kgFilterPill"}
+                onClick={() => {
+                  setEntityTypeFilter(entityTypeFilter === type ? "" : type);
+                  setEntityOffset(0);
+                  setEntities([]);
+                }}
+              >
+                {type}
+              </button>
+            ))}
+          </section>
+
+          {/* Entity List & Detail Inspector Layout */}
           <section className="dataLayout kgDataLayout">
             {/* Entity List */}
             <div className="runList kgEntityList">
               <header>
-                <span>{total.toLocaleString()} total</span>
-                {search && <small>Filtered: &quot;{search}&quot;</small>}
+                <span>{totalEntities.toLocaleString()} total match</span>
+                {(search || entityTypeFilter || statusFilter) && (
+                  <small>
+                    Filtered: {[search && `"${search}"`, entityTypeFilter, statusFilter].filter(Boolean).join(" • ")}
+                  </small>
+                )}
               </header>
 
-              {loading && entities.length === 0 ? (
+              {loadingEntities && entities.length === 0 ? (
                 <div className="emptyState">
                   <b>Loading entities...</b>
                 </div>
               ) : entities.length === 0 ? (
                 <div className="emptyState">
                   <b>No entities found</b>
-                  <p>Try a different search term or adjust filters.</p>
+                  <p>Try adjusting your search keyword or filters.</p>
                 </div>
               ) : (
                 <>
@@ -287,14 +597,14 @@ export default function KnowledgeGraphPage() {
                   ))}
 
                   {/* Load More */}
-                  {hasMore && (
+                  {hasMoreEntities && (
                     <button
                       type="button"
                       className="kgLoadMoreButton"
-                      onClick={handleLoadMore}
+                      onClick={handleLoadMoreEntities}
                       disabled={loadingEntities}
                     >
-                      {loadingEntities ? "Loading..." : `Load more (${total - offset} remaining)`}
+                      {loadingEntities ? "Loading..." : `Load more (${totalEntities - entityOffset} remaining)`}
                     </button>
                   )}
                 </>
@@ -308,7 +618,13 @@ export default function KnowledgeGraphPage() {
                   <b>Loading entity detail...</b>
                 </div>
               ) : selectedEntity ? (
-                <EntityDetailPanel entity={selectedEntity} />
+                <EditableEntityDetailPanel
+                  entity={selectedEntity}
+                  onJumpToEntity={handleJumpToEntity}
+                  onUpdated={handleEntityUpdated}
+                  onError={setError}
+                  availableNodeTypes={availableNodeTypes}
+                />
               ) : (
                 <div className="detailEmpty">
                   <b>Select an entity to view details</b>
@@ -320,9 +636,172 @@ export default function KnowledgeGraphPage() {
         </>
       )}
 
+      {/* Relationships Tab */}
+      {activeTab === "relationships" && (
+        <>
+          {/* Relationship Filter Bar */}
+          <section className="kgControlBarMulti" aria-label="Relationship query filters">
+            {/* Search Input */}
+            <div className="kgSearchFieldWrap">
+              <label className="searchField" style={{ width: "100%" }}>
+                <span>⌕</span>
+                <input
+                  type="search"
+                  value={relSearchInput}
+                  onChange={(e) => setRelSearchInput(e.target.value)}
+                  placeholder="Search relationship or entity IDs..."
+                />
+              </label>
+              {relSearchInput && (
+                <button
+                  type="button"
+                  className="kgClearSearchBtn"
+                  title="Clear search"
+                  onClick={() => {
+                    setRelSearchInput("");
+                    setRelSearch("");
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Relationship Type Select */}
+            <select
+              className="kgSelectFilter"
+              value={relTypeFilter}
+              onChange={(e) => {
+                setRelTypeFilter(e.target.value);
+                setRelOffset(0);
+                setRelationships([]);
+              }}
+            >
+              <option value="">All Relationships</option>
+              {availableRelTypes.map((rel) => (
+                <option key={rel} value={rel}>
+                  {rel}
+                </option>
+              ))}
+            </select>
+
+            {/* From Entity ID Input */}
+            <input
+              type="text"
+              className="kgSelectFilter"
+              value={fromEntityInput}
+              onChange={(e) => setFromEntityInput(e.target.value)}
+              placeholder="From Entity ID..."
+              style={{ width: "150px" }}
+            />
+
+            {/* To Entity ID Input */}
+            <input
+              type="text"
+              className="kgSelectFilter"
+              value={toEntityInput}
+              onChange={(e) => setToEntityInput(e.target.value)}
+              placeholder="To Entity ID..."
+              style={{ width: "150px" }}
+            />
+
+            {/* Reset Button */}
+            {(relSearch || relTypeFilter || fromEntityFilter || toEntityFilter) && (
+              <button type="button" className="kgResetBtn" onClick={handleResetRelFilters}>
+                Reset Filters
+              </button>
+            )}
+
+            <span className="kgResultCount" style={{ marginLeft: "auto" }}>
+              {loadingRelationships && relationships.length === 0
+                ? "Loading..."
+                : `${totalRelationships.toLocaleString()} edges match`}
+            </span>
+          </section>
+
+          {/* Relationship Edge List */}
+          <section className="dataLayout kgDataLayout" style={{ gridTemplateColumns: "1fr" }}>
+            <div className="runList" style={{ maxHeight: "760px" }}>
+              <header>
+                <span>{totalRelationships.toLocaleString()} total edges</span>
+                {(relSearch || relTypeFilter || fromEntityFilter || toEntityFilter) && (
+                  <small>
+                    Filtered:{" "}
+                    {[
+                      relSearch && `"${relSearch}"`,
+                      relTypeFilter,
+                      fromEntityFilter && `from: ${fromEntityFilter}`,
+                      toEntityFilter && `to: ${toEntityFilter}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </small>
+                )}
+              </header>
+
+              {loadingRelationships && relationships.length === 0 ? (
+                <div className="emptyState">
+                  <b>Loading graph relationships...</b>
+                </div>
+              ) : relationships.length === 0 ? (
+                <div className="emptyState">
+                  <b>No graph relationships found</b>
+                  <p>Try adjusting your relationship search query or filters.</p>
+                </div>
+              ) : (
+                <>
+                  {relationships.map((rel) => (
+                    <article key={rel.id} className="kgRelCard">
+                      <div className="kgRelCardFlow">
+                        <button
+                          type="button"
+                          className="kgEntityBtnLink"
+                          title="Click to view entity"
+                          onClick={() => handleJumpToEntity(rel.fromEntityId)}
+                        >
+                          {rel.fromEntityId}
+                        </button>
+                        <span>→</span>
+                        <span className="kgRelTypeBadge">{rel.relationship}</span>
+                        <span>→</span>
+                        <button
+                          type="button"
+                          className="kgEntityBtnLink"
+                          title="Click to view entity"
+                          onClick={() => handleJumpToEntity(rel.toEntityId)}
+                        >
+                          {rel.toEntityId}
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", gap: "16px", color: "var(--muted)", fontSize: "0.6rem" }}>
+                        <span>Edge ID: #{rel.id}</span>
+                        {rel.source && <span>Source: {rel.source}</span>}
+                        {rel.createdAt && <span>Created: {new Date(rel.createdAt).toLocaleString()}</span>}
+                      </div>
+                    </article>
+                  ))}
+
+                  {/* Load More */}
+                  {hasMoreRelationships && (
+                    <button
+                      type="button"
+                      className="kgLoadMoreButton"
+                      onClick={handleLoadMoreRelationships}
+                      disabled={loadingRelationships}
+                    >
+                      {loadingRelationships ? "Loading..." : `Load more (${totalRelationships - relOffset} remaining)`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
       <footer className="kgFooter">
         <p>
-          Knowledge Graph data is stored in PostgreSQL. Entity and relationship management
+          Knowledge Graph data is stored in PostgreSQL. Entity and relationship query management
           is handled through the admin API with pagination.
         </p>
       </footer>
@@ -330,8 +809,555 @@ export default function KnowledgeGraphPage() {
   );
 }
 
-// Entity Detail Panel Component
-function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
+type EditableAliasRow = {
+  clientKey: string;
+  id: number | null;
+  alias: string;
+  language: string;
+};
+
+type EditablePropertyRow = {
+  clientKey: string;
+  id: number | null;
+  key: string;
+  value: string;
+  source: string;
+};
+
+type EditableRelationshipRow = {
+  clientKey: string;
+  id: number | null;
+  relationship: string;
+  toEntityId: string;
+  source: string;
+};
+
+function EditableEntityDetailPanel({
+  entity,
+  onJumpToEntity,
+  onUpdated,
+  onError,
+  availableNodeTypes,
+}: {
+  entity: KGEntityDetail;
+  onJumpToEntity: (entityId: string) => void;
+  onUpdated: (entity: KGEntityDetail) => void;
+  onError: (message: string) => void;
+  availableNodeTypes: string[];
+}) {
+  const [draftEntity, setDraftEntity] = useState({
+    canonicalName: entity.canonicalName,
+    entityType: entity.entityType,
+    status: entity.status,
+  });
+  const [aliasRows, setAliasRows] = useState<EditableAliasRow[]>([]);
+  const [propertyRows, setPropertyRows] = useState<EditablePropertyRow[]>([]);
+  const [relationshipRows, setRelationshipRows] = useState<EditableRelationshipRow[]>([]);
+  const [localError, setLocalError] = useState("");
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  const createRowKey = useCallback(
+    () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+    []
+  );
+
+  useEffect(() => {
+    setDraftEntity({
+      canonicalName: entity.canonicalName,
+      entityType: entity.entityType,
+      status: entity.status,
+    });
+    setAliasRows(
+      entity.aliases.map((alias) => ({
+        clientKey: `alias-${alias.id}`,
+        id: alias.id,
+        alias: alias.alias,
+        language: alias.language,
+      }))
+    );
+    setPropertyRows(
+      entity.properties.map((prop) => ({
+        clientKey: `property-${prop.id}`,
+        id: prop.id,
+        key: prop.key,
+        value: prop.value,
+        source: prop.source ?? "",
+      }))
+    );
+    setRelationshipRows(
+      entity.relationships.map((rel) => ({
+        clientKey: `relationship-${rel.id}`,
+        id: rel.id,
+        relationship: rel.relationship,
+        toEntityId: rel.toEntityId,
+        source: rel.source ?? "",
+      }))
+    );
+    setLocalError("");
+    setSavingKey(null);
+  }, [entity]);
+
+  const isSaving = savingKey !== null;
+
+  const reportError = useCallback(
+    (message: string) => {
+      setLocalError(message);
+      onError(message);
+    },
+    [onError]
+  );
+
+  const saveSection = useCallback(
+    async (key: string, action: () => Promise<KGEntityDetail>) => {
+      setSavingKey(key);
+      setLocalError("");
+      onError("");
+      try {
+        const updated = await action();
+        onUpdated(updated);
+      } catch (err) {
+        reportError(err instanceof Error ? err.message : "Không thể lưu thay đổi.");
+      } finally {
+        setSavingKey(null);
+      }
+    },
+    [onError, onUpdated, reportError]
+  );
+
+  const updateAliasRow = useCallback(
+    (clientKey: string, updater: (row: EditableAliasRow) => EditableAliasRow) => {
+      setAliasRows((current) => current.map((row) => (row.clientKey === clientKey ? updater(row) : row)));
+    },
+    []
+  );
+
+  const updatePropertyRow = useCallback(
+    (clientKey: string, updater: (row: EditablePropertyRow) => EditablePropertyRow) => {
+      setPropertyRows((current) => current.map((row) => (row.clientKey === clientKey ? updater(row) : row)));
+    },
+    []
+  );
+
+  const updateRelationshipRow = useCallback(
+    (clientKey: string, updater: (row: EditableRelationshipRow) => EditableRelationshipRow) => {
+      setRelationshipRows((current) => current.map((row) => (row.clientKey === clientKey ? updater(row) : row)));
+    },
+    []
+  );
+
+  const addAliasRow = useCallback(() => {
+    setAliasRows((current) => [...current, { clientKey: createRowKey(), id: null, alias: "", language: "en" }]);
+  }, [createRowKey]);
+
+  const addPropertyRow = useCallback(() => {
+    setPropertyRows((current) => [...current, { clientKey: createRowKey(), id: null, key: "", value: "", source: "" }]);
+  }, [createRowKey]);
+
+  const addRelationshipRow = useCallback(() => {
+    setRelationshipRows((current) => [
+      ...current,
+      {
+        clientKey: createRowKey(),
+        id: null,
+        relationship: availableNodeTypes[0] ?? "",
+        toEntityId: "",
+        source: "",
+      },
+    ]);
+  }, [availableNodeTypes, createRowKey]);
+
+  const saveEntity = useCallback(async () => {
+    const canonicalName = draftEntity.canonicalName.trim();
+    const entityType = draftEntity.entityType.trim();
+    const status = draftEntity.status.trim();
+    if (!canonicalName) {
+      reportError("Canonical name không được để trống.");
+      return;
+    }
+    if (!entityType) {
+      reportError("Entity type không được để trống.");
+      return;
+    }
+    if (!status) {
+      reportError("Status không được để trống.");
+      return;
+    }
+    await saveSection("entity", () =>
+      updateKGEntity(entity.id, {
+        canonicalName,
+        entityType,
+        status,
+      })
+    );
+  }, [draftEntity, entity.id, reportError, saveSection]);
+
+  const saveAlias = useCallback(
+    async (row: EditableAliasRow) => {
+      const alias = row.alias.trim();
+      const language = row.language.trim() || "en";
+      if (!alias) {
+        reportError("Alias không được để trống.");
+        return;
+      }
+      await saveSection(`alias-${row.clientKey}`, () =>
+        row.id === null
+          ? createKGAlias(entity.id, { alias, language })
+          : updateKGAlias(entity.id, row.id, { alias, language })
+      );
+    },
+    [entity.id, reportError, saveSection]
+  );
+
+  const removeAlias = useCallback(
+    async (row: EditableAliasRow) => {
+      const aliasId = row.id;
+      if (aliasId === null) {
+        setAliasRows((current) => current.filter((item) => item.clientKey !== row.clientKey));
+        return;
+      }
+      if (!window.confirm(`Xóa alias "${row.alias}"?`)) {
+        return;
+      }
+      await saveSection(`alias-delete-${row.clientKey}`, () =>
+        deleteKGAlias(entity.id, aliasId).then(() => getKGEntityDetail(entity.id))
+      );
+    },
+    [entity.id, saveSection]
+  );
+
+  const saveProperty = useCallback(
+    async (row: EditablePropertyRow) => {
+      const key = row.key.trim();
+      const value = row.value.trim();
+      const source = row.source.trim();
+      if (!key) {
+        reportError("Property key không được để trống.");
+        return;
+      }
+      if (!value) {
+        reportError("Property value không được để trống.");
+        return;
+      }
+      await saveSection(`property-${row.clientKey}`, () =>
+        row.id === null
+          ? createKGProperty(entity.id, { key, value, source: source || undefined })
+          : updateKGProperty(entity.id, row.id, { key, value, source: source || undefined })
+      );
+    },
+    [entity.id, reportError, saveSection]
+  );
+
+  const removeProperty = useCallback(
+    async (row: EditablePropertyRow) => {
+      const propertyId = row.id;
+      if (propertyId === null) {
+        setPropertyRows((current) => current.filter((item) => item.clientKey !== row.clientKey));
+        return;
+      }
+      if (!window.confirm(`Xóa property "${row.key}"?`)) {
+        return;
+      }
+      await saveSection(`property-delete-${row.clientKey}`, () =>
+        deleteKGProperty(entity.id, propertyId).then(() => getKGEntityDetail(entity.id))
+      );
+    },
+    [entity.id, saveSection]
+  );
+
+  const saveRelationship = useCallback(
+    async (row: EditableRelationshipRow) => {
+      const relationship = row.relationship.trim();
+      const toEntityId = row.toEntityId.trim();
+      const source = row.source.trim();
+      if (!relationship) {
+        reportError("Relationship không được để trống.");
+        return;
+      }
+      if (!toEntityId) {
+        reportError("To entity ID không được để trống.");
+        return;
+      }
+      await saveSection(`relationship-${row.clientKey}`, () =>
+        row.id === null
+          ? createKGRelationship(entity.id, {
+              relationship,
+              toEntityId,
+              source: source || undefined,
+            })
+          : updateKGRelationship(entity.id, row.id, {
+              relationship,
+              toEntityId,
+              source: source || undefined,
+            })
+      );
+    },
+    [entity.id, reportError, saveSection]
+  );
+
+  const removeRelationship = useCallback(
+    async (row: EditableRelationshipRow) => {
+      const relationshipId = row.id;
+      if (relationshipId === null) {
+        setRelationshipRows((current) => current.filter((item) => item.clientKey !== row.clientKey));
+        return;
+      }
+      if (!window.confirm(`Xóa relationship "${row.relationship}"?`)) {
+        return;
+      }
+      await saveSection(`relationship-delete-${row.clientKey}`, () =>
+        deleteKGRelationship(entity.id, relationshipId).then(() => getKGEntityDetail(entity.id))
+      );
+    },
+    [entity.id, saveSection]
+  );
+
+  return (
+    <>
+      <header className="detailHeader kgInspectorHeader">
+        <div>
+          <p className="eyebrow">Entity Detail</p>
+          <h2>{entity.canonicalName}</h2>
+          <p>{entity.id}</p>
+        </div>
+        <span className={`status status-${entity.status === "missing" ? "failed" : entity.status}`}>
+          {entity.status}
+        </span>
+      </header>
+
+      <div className="kgInspectorBody kgInspectorAll">
+        <section className="kgInspectorSection">
+          <header className="kgSectionHeaderActions">
+            <h3>Information</h3>
+          </header>
+          <div className="kgSectionForm kgIdentitySectionForm">
+            <label>
+              <span>Entity ID</span>
+              <input value={entity.id} disabled />
+            </label>
+            <label>
+              <span>Canonical Name</span>
+              <input
+                value={draftEntity.canonicalName}
+                onChange={(event) => setDraftEntity((current) => ({ ...current, canonicalName: event.target.value }))}
+              />
+            </label>
+            <label>
+              <span>Type</span>
+              <select
+                value={draftEntity.entityType}
+                onChange={(event) => setDraftEntity((current) => ({ ...current, entityType: event.target.value }))}
+              >
+                {availableNodeTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select
+                value={draftEntity.status}
+                onChange={(event) => setDraftEntity((current) => ({ ...current, status: event.target.value }))}
+              >
+                <option value="active">active</option>
+                <option value="draft">draft</option>
+                <option value="missing">missing</option>
+                <option value="archived">archived</option>
+              </select>
+            </label>
+          </div>
+          <div className="kgSectionActions" style={{ marginTop: "10px" }}>
+            <button type="button" className="save" disabled={isSaving} onClick={() => void saveEntity()}>
+              {savingKey === "entity" ? "Saving..." : "Save entity"}
+            </button>
+          </div>
+        </section>
+
+        <section className="kgInspectorSection">
+          <header className="kgSectionHeaderActions">
+            <h3>Aliases</h3>
+            <span className="kgSectionCount">{entity.aliasTotal}</span>
+            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addAliasRow}>
+              Add alias
+            </button>
+          </header>
+          {aliasRows.length > 0 ? (
+            <div className="kgSectionEditList">
+              {aliasRows.map((row) => (
+                <div key={row.clientKey} className="kgAliasEditRow">
+                  <input
+                    value={row.alias}
+                    onChange={(event) =>
+                      updateAliasRow(row.clientKey, (current) => ({ ...current, alias: event.target.value }))
+                    }
+                    placeholder="Alias"
+                  />
+                  <input
+                    value={row.language}
+                    onChange={(event) =>
+                      updateAliasRow(row.clientKey, (current) => ({ ...current, language: event.target.value }))
+                    }
+                    placeholder="Lang"
+                  />
+                  <div className="kgSectionActions">
+                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveAlias(row)}>
+                      {row.id === null ? "Create" : "Save"}
+                    </button>
+                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeAlias(row)}>
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {entity.aliasHasMore && (
+                <p className="kgMoreIndicator">+{entity.aliasTotal - entity.aliases.length} more aliases</p>
+              )}
+            </div>
+          ) : (
+            <div className="kgInspectorEmpty kgInspectorEmptyCompact">
+              <span>◇</span>
+              <b>No aliases</b>
+            </div>
+          )}
+        </section>
+
+        <section className="kgInspectorSection">
+          <header className="kgSectionHeaderActions">
+            <h3>Properties</h3>
+            <span className="kgSectionCount">{entity.propertyTotal}</span>
+            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addPropertyRow}>
+              Add property
+            </button>
+          </header>
+          {propertyRows.length > 0 ? (
+            <div className="kgSectionEditList">
+              {propertyRows.map((row) => (
+                <div key={row.clientKey} className="kgPropertyEditRow">
+                  <input
+                    value={row.key}
+                    onChange={(event) =>
+                      updatePropertyRow(row.clientKey, (current) => ({ ...current, key: event.target.value }))
+                    }
+                    placeholder="Key"
+                  />
+                  <input
+                    value={row.value}
+                    onChange={(event) =>
+                      updatePropertyRow(row.clientKey, (current) => ({ ...current, value: event.target.value }))
+                    }
+                    placeholder="Value"
+                  />
+                  <input
+                    value={row.source}
+                    onChange={(event) =>
+                      updatePropertyRow(row.clientKey, (current) => ({ ...current, source: event.target.value }))
+                    }
+                    placeholder="Source"
+                  />
+                  <div className="kgSectionActions">
+                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveProperty(row)}>
+                      {row.id === null ? "Create" : "Save"}
+                    </button>
+                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeProperty(row)}>
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {entity.propertyHasMore && (
+                <p className="kgMoreIndicator">
+                  +{entity.propertyTotal - entity.properties.length} more properties
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="kgInspectorEmpty kgInspectorEmptyCompact">
+              <span>◇</span>
+              <b>No properties</b>
+            </div>
+          )}
+        </section>
+
+        <section className="kgInspectorSection">
+          <header className="kgSectionHeaderActions">
+            <h3>Relationships</h3>
+            <span className="kgSectionCount">{entity.relationshipTotal}</span>
+            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addRelationshipRow}>
+              Add relationship
+            </button>
+          </header>
+          {relationshipRows.length > 0 ? (
+            <div className="kgSectionEditList">
+              {relationshipRows.map((row) => (
+                <div key={row.clientKey} className="kgRelationshipEditRow">
+                  <input
+                    value={row.relationship}
+                    onChange={(event) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, relationship: event.target.value }))
+                    }
+                    placeholder="Relationship"
+                  />
+                  <input
+                    value={row.toEntityId}
+                    onChange={(event) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, toEntityId: event.target.value }))
+                    }
+                    placeholder="To entity ID"
+                  />
+                  <input
+                    value={row.source}
+                    onChange={(event) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, source: event.target.value }))
+                    }
+                    placeholder="Source"
+                  />
+                  <div className="kgSectionActions">
+                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveRelationship(row)}>
+                      {row.id === null ? "Create" : "Save"}
+                    </button>
+                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeRelationship(row)}>
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {entity.relationshipHasMore && (
+                <p className="kgMoreIndicator">
+                  +{entity.relationshipTotal - entity.relationships.length} more relationships
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="kgInspectorEmpty kgInspectorEmptyCompact">
+              <span>◇</span>
+              <b>No relationships</b>
+            </div>
+          )}
+        </section>
+
+        {localError && (
+          <div className="kgNotice" role="alert">
+            <span>!</span>
+            <p>{localError}</p>
+            <button type="button" aria-label="Dismiss local error" onClick={() => setLocalError("")}>
+              ×
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Entity Detail Panel Component with Jump Navigation
+function EntityDetailPanel({
+  entity,
+  onJumpToEntity,
+}: {
+  entity: KGEntityDetail;
+  onJumpToEntity: (entityId: string) => void;
+}) {
   return (
     <>
       <header className="detailHeader kgInspectorHeader">
@@ -348,14 +1374,36 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
       <div className="kgInspectorBody kgInspectorAll">
         {/* Basic Info */}
         <section className="kgDefinitionList kgInspectorSection">
-          <header><h3>Information</h3></header>
+          <header>
+            <h3>Information</h3>
+          </header>
           <dl>
-            <div><dt>Entity ID</dt><dd><code>{entity.id}</code></dd></div>
-            <div><dt>Canonical Name</dt><dd>{entity.canonicalName}</dd></div>
-            <div><dt>Type</dt><dd>{entity.entityType}</dd></div>
-            <div><dt>Status</dt><dd>{entity.status}</dd></div>
-            <div><dt>Created</dt><dd>{new Date(entity.createdAt).toLocaleString()}</dd></div>
-            <div><dt>Updated</dt><dd>{new Date(entity.updatedAt).toLocaleString()}</dd></div>
+            <div>
+              <dt>Entity ID</dt>
+              <dd>
+                <code>{entity.id}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Canonical Name</dt>
+              <dd>{entity.canonicalName}</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{entity.entityType}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{entity.status}</dd>
+            </div>
+            <div>
+              <dt>Created</dt>
+              <dd>{new Date(entity.createdAt).toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Updated</dt>
+              <dd>{new Date(entity.updatedAt).toLocaleString()}</dd>
+            </div>
           </dl>
         </section>
 
@@ -384,7 +1432,8 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
             </div>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
-              <span>◇</span><b>No aliases</b>
+              <span>◇</span>
+              <b>No aliases</b>
             </div>
           )}
         </section>
@@ -408,7 +1457,9 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
                 <tbody>
                   {entity.properties.map((prop) => (
                     <tr key={prop.id}>
-                      <td><code>{prop.key}</code></td>
+                      <td>
+                        <code>{prop.key}</code>
+                      </td>
                       <td>{prop.value || <span className="kgMissingText">Empty</span>}</td>
                       <td>{prop.source || <span className="kgMissingText">Unknown</span>}</td>
                     </tr>
@@ -423,7 +1474,8 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
             </div>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
-              <span>◇</span><b>No properties</b>
+              <span>◇</span>
+              <b>No properties</b>
             </div>
           )}
         </section>
@@ -436,21 +1488,29 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
           </header>
           {entity.relationships.length > 0 ? (
             <div className="kgRelationCards">
-              {entity.relationships.map((rel) => (
-                <article key={rel.id}>
-                  <span className="kgRelationDirection">
-                    {rel.fromEntityId === entity.id ? "OUT" : "IN"}
-                  </span>
-                  <div>
-                    <code>{rel.relationship}</code>
-                    <small>
-                      {rel.fromEntityId === entity.id
-                        ? `${entity.id} → ${rel.toEntityId}`
-                        : `${rel.fromEntityId} → ${entity.id}`}
-                    </small>
-                  </div>
-                </article>
-              ))}
+              {entity.relationships.map((rel) => {
+                const isOut = rel.fromEntityId === entity.id;
+                const targetId = isOut ? rel.toEntityId : rel.fromEntityId;
+                return (
+                  <article key={rel.id}>
+                    <span className="kgRelationDirection">{isOut ? "OUT" : "IN"}</span>
+                    <div>
+                      <code>{rel.relationship}</code>
+                      <small style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                        <span>{isOut ? "To:" : "From:"}</span>
+                        <button
+                          type="button"
+                          className="kgEntityBtnLink"
+                          onClick={() => onJumpToEntity(targetId)}
+                          title="Jump to target entity"
+                        >
+                          {targetId}
+                        </button>
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
               {entity.relationshipHasMore && (
                 <p className="kgMoreIndicator">
                   +{entity.relationshipTotal - entity.relationships.length} more relationships
@@ -459,7 +1519,8 @@ function EntityDetailPanel({ entity }: { entity: KGEntityDetail }) {
             </div>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
-              <span>◇</span><b>No relationships</b>
+              <span>◇</span>
+              <b>No relationships</b>
             </div>
           )}
         </section>

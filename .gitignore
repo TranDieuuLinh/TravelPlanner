@@ -44,3 +44,5 @@ routing-data/opentripplanner/*
 !routing-data/opentripplanner/.gitkeep
 routing-data/osm-source/*
 !routing-data/osm-source/.gitkeep
+
+note-of-trung.md
