@@ -107,9 +107,10 @@ client không được tự chọn role.
 - `POST /api/plans/current-location-route`
 - `POST /api/plans/day-directions`
 - `GET /api/plans/places/search?query={text}&destination={destination}`: trả tối
-  đa 8 gợi ý có tọa độ từ catalog `places` đang active. Search không phân biệt
-  dấu và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
-  geocoding bên ngoài.
+  đa 8 gợi ý có tọa độ từ toàn bộ catalog `places` đang active trong vùng đích.
+  Search không phân biệt dấu và đọc cả alias có cấu trúc; endpoint autocomplete
+  này không gọi provider geocoding bên ngoài và không bị giới hạn bởi batch
+  preload của Planner.
 - `POST /api/plans/{planId}/backup`
 
 ### Trip chat và lịch sử chỉnh sửa
@@ -123,7 +124,30 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
   message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
-  hiện tại.
+  hiện tại qua Conversation Supervisor. Mọi message đều tạo một
+  `TripChatTurn` ở trạng thái `queued` rồi chạy `execute` ngay; trả
+  `202 Accepted` với payload `TripChatTurnRead`. Client poll
+  `GET /api/trip-chats/{chatId}/turns/{turnId}` cho tới khi status thuộc
+  `{completed, awaiting_confirmation, failed, cancelled}`. Khi status là
+  `awaiting_confirmation`, client phải gọi `POST .../turns/{turnId}/confirm`
+  hoặc `POST .../turns/{turnId}/cancel`. `expectedRevision` được kiểm
+  ở cả supervisor và mutation; nếu lệch sẽ trả `409 VERSION_CONFLICT`.
+- `POST /api/trip-chats/{chatId}/turns`: tạo turn `queued` không execute.
+  Dùng khi client muốn render placeholder trước khi gọi `/execute` riêng.
+- `GET /api/trip-chats/{chatId}/turns/{turnId}`: đọc trạng thái hiện tại
+  của một turn (queue, classifying, executing, awaiting_confirmation,
+  completed, failed, cancelled). Endpoint này cũng tự động quét các
+  turn `processing` quá thời gian (mặc định 300s) đánh dấu `failed`
+  với `errorCode=TURN_STALE` để tránh treo supervisor.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/execute`: chạy
+  supervisor cho turn đang `queued`. Idempotent: gọi lại với turn đã
+  terminal sẽ trả về turn hiện tại mà không chạy lại LLM.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/confirm`: áp dụng
+  operation đang chờ xác nhận. Chỉ chấp nhận khi status là
+  `awaiting_confirmation`; nếu `chat.revision != turn.baseRevision` trả
+  `409 VERSION_CONFLICT`.
+- `POST /api/trip-chats/{chatId}/turns/{turnId}/cancel`: hủy turn đang
+  xử lý hoặc chờ xác nhận; turn đã `completed` trả `409 TURN_ALREADY_COMPLETED`.
 - `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job
   FIFO và trả `202 Accepted` ngay. Field
   form `forceRefresh=true` tạo job phân tích lại, bỏ qua extraction cache.
@@ -303,6 +327,14 @@ media STT + frame vision/OCR của TikTok video, Instagram Reels và Facebook
 Reels. URL `youtu.be/{videoId}` không mang tín hiệu loại nội dung nên giữ contract
 caption-only.
 
+Nếu nguồn công bố expected count (ví dụ `Top 10`) nhưng extractor chỉ tạo được
+dưới 40% venue authority cao/trung bình, response trả HTTP 422
+`URL_EXTRACTION_LOW_COVERAGE` trước formatter, place provider và Planner.
+Timing từng source có thêm `speechSource`, `expectedPlaceCount`,
+`extractionCoverage` và `coverageStatus`; client hiển thị `YouTube caption`
+thay vì gắn nhãn STT cho caption. Coverage 40–70% vẫn trả Explorer nhưng
+`allowFinderSuggestions=false`.
+
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
 tả khác. Giá trị mặc định hiện tại là `local`.
@@ -328,9 +360,14 @@ khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
 `category`, `status` (`resolved | needs_review | merged | ignored`),
 `resolutionReason`, provider/nhãn/address/toạ độ đã xác minh khi có,
 `hasRepresentativeLocation`, `searchRegion`, canonical `sourceUrls`, source
-order/day/time/activity/duration,
+order/day/time/activity/duration, `entityType` (`venue | sub_place`) và
+`authority` (`high | medium | low`),
 `extractionConfidence`, `resolutionConfidence`, confidence tương thích cũ và
-`retryable`. Field này không chứa raw transcript/OCR. Chỉ item `resolved` có đủ
+`retryable`. Contract còn có `observedAliases`, `generatedLookupAliases`, tối đa
+năm `topMatches`, `verifiedAliases` và `verifiedVietnameseAliases`. Frontend ưu
+tiên alias tiếng Việt đã xác minh cho `resolvedName`; alias do LLM sinh không
+được coi là verified nếu chưa map tới stable identity. Field này không chứa raw
+transcript/OCR. Chỉ item `resolved` có đủ
 danh tính và tọa độ được đưa vào Planner. Item `needs_review`, kể cả khi có
 `hasRepresentativeLocation = true`, chỉ phục vụ review/retry và không được xếp
 vào plan.
@@ -471,12 +508,18 @@ Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
 xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không chứa prompt,
 selected-place payload hay dữ liệu provider thô.
 Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
-`allowFinderSuggestions` và cờ nội bộ `expandDaysToFitSelectedPlaces`. Trip chat
+`candidateReviews`, `allowFinderSuggestions` và cờ nội bộ
+`expandDaysToFitSelectedPlaces`. `candidateReviews` cho phép bước hậu xử lý đọc
+activity URL chưa resolve sau khi Finder đã chốt route; field này không tự biến
+candidate thành selected place. Trip chat
 bật cờ mở rộng khi user chưa từng khóa số ngày/khoảng ngày, hoặc khi amendment
 yêu cầu thêm ngày; số ngày được giới hạn tối đa 30 và được tính lại sau khi merge
 địa điểm cũ với intake mới. Khi cờ là `false`, service giữ duration hiện tại và
 trả phần vượt sức chứa trong `plan.unscheduledPlaces`. UI Planner hiển thị danh
 sách này với thao tác thêm thủ công vào một ngày hoặc điền prompt yêu cầu AI xếp.
+Item có `reasonCode=activity_fallback_recommendation` mang place/location,
+popularity và `sourceProvider=route_aware_activity_fallback`; đây là gợi ý của
+hệ thống gần route, không phải venue được URL xác nhận.
 Sức chứa route-first là hai activity chính và ba meal stop mỗi ngày; restaurant/
 food URL ưu tiên thay meal suggestion, còn cafe/coffee dùng activity slot.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
@@ -576,12 +619,14 @@ transit theo preference; khi provider không khả dụng, response giữ
 ```
 
 `POST /api/plans/day-directions` chỉ dùng khi UI đang chọn một ngày cụ thể.
-Request chứa vị trí hiện tại, toàn bộ stop có tọa độ của ngày theo thứ tự lịch
+Request chứa điểm bắt đầu tạm thời (vị trí thiết bị hoặc địa điểm user tìm), toàn
+bộ stop có tọa độ của ngày theo thứ tự lịch
 trình và `timeWindow` của từng stop. Backend không tối ưu lại thứ tự; nó trả mảng
 `PlanTransportLeg` theo chuỗi cố định
-`current -> stop 1 -> ... -> stop N`. Mỗi leg có tuyến đề xuất làm primary và
+`origin -> stop 1 -> ... -> stop N`. `origin.name` là tùy chọn; khi bỏ trống,
+backend dùng nhãn “Vị trí của bạn” để tương thích với client cũ. Mỗi leg có tuyến đề xuất làm primary và
 các lựa chọn đi bộ, ô tô trong `alternatives`; xe buýt chỉ xuất hiện khi
-provider trả route transit có geometry. Chặng `current -> stop 1` dùng
+provider trả route transit có geometry. Chặng `origin -> stop 1` dùng
 `departureTime` của request; mỗi chặng sau dùng giờ kết thúc `timeWindow` của
 stop đầu chặng trên cùng ngày để khớp saved itinerary. Backend chuẩn hóa cả
 `departureTime` và `timeWindow` về `Asia/Ho_Chi_Minh` (`UTC+07:00`) trước khi
@@ -593,7 +638,11 @@ chim bay.
 
 ```json
 {
-  "origin": {"latitude": 10.7769, "longitude": 106.7009},
+  "origin": {
+    "name": "Khách sạn trung tâm",
+    "latitude": 10.7769,
+    "longitude": 106.7009
+  },
   "destinations": [
     {
       "itemId": "stop-1",

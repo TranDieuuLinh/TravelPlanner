@@ -66,7 +66,10 @@ if (!hasFileSystemEntry(devOutputLink)) {
   symlinkSync(devOutputTarget, devOutputLink, "junction");
 }
 
-const child = spawn(process.execPath, [nextCli, "dev", "--turbopack"], {
+// Next 15's Turbopack dev cache can leave page bundles behind after its shared
+// SSR runtime has disappeared. Use the stable webpack dev server by default;
+// production builds remain unchanged.
+const child = spawn(process.execPath, [nextCli, "dev"], {
   cwd: projectRoot,
   env: {
     ...process.env,

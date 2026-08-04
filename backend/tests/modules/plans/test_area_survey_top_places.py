@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from app.modules.plans.finder.area_survey import AreaSurveyResult, AreaSurveyService
-from app.modules.plans.finder.place_tool import FinderPlace
+from app.modules.plans.place_selector.area_survey import AreaSurveyResult, AreaSurveyService
+from app.modules.plans.place_selector.place_tool import SelectablePlace
 
 
 class FakePlaceTool:
-    """Minimal FinderPlaceTool stub for AreaSurveyService tests."""
+    """Minimal PlaceSelectionTool stub for AreaSurveyService tests."""
 
-    def __init__(self, places: list[FinderPlace]) -> None:
+    def __init__(self, places: list[SelectablePlace]) -> None:
         self._places = places
 
-    def get(self, place_id: str) -> FinderPlace | None:
+    def get(self, place_id: str) -> SelectablePlace | None:
         for place in self._places:
             if place.place_id == place_id:
                 return place
@@ -23,7 +23,7 @@ class FakePlaceTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         return [
             place
             for place in self._places
@@ -37,8 +37,8 @@ def _make_place(
     name: str,
     rating: float | None = None,
     review_count: int = 0,
-) -> FinderPlace:
-    return FinderPlace(
+) -> SelectablePlace:
+    return SelectablePlace(
         placeId=place_id,
         name=name,
         placeType="attraction",
@@ -70,7 +70,7 @@ def test_survey_top_places_filter_out_place_without_id() -> None:
     places = [
         _make_place("p1", "A", rating=4.8, review_count=10),
         _make_place("p2", "B", rating=4.9, review_count=5),
-        FinderPlace(
+        SelectablePlace(
             placeId=None,
             name="NoId",
             placeType="attraction",

@@ -260,9 +260,9 @@ class UrlImportJobRepository:
             image_mime_type=source_job.image_mime_type,
             image_data=source_job.image_data,
             request_content=source_job.request_content,
-            # URL jobs can use normalized extraction cache. Image jobs retain
-            # the original bytes and intentionally run OCR again.
-            force_refresh=False,
+            # "Run again" is a full replay: URL jobs bypass extraction cache
+            # and image jobs retain their original bytes so OCR runs again.
+            force_refresh=True,
             batch_position=0,
             status="queued",
         )

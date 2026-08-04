@@ -21,7 +21,7 @@ Sử dụng pytest cho domain và service:
 - timing report giữ cùng `intakeId`, có đủ stage chính và không ghi raw
   prompt/URL/transcript/OCR vào JSONL; timing từng URL phân biệt cache hit,
   cache miss và bypass;
-- timing Planner/Finder có tổng wall-clock, đủ stage Planner, Finder và
+- timing TripThemePlanner/PlaceSelector có tổng wall-clock, đủ stage Planner, PlaceSelector và
   CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
 - candidate `needs_review` không được bàn giao vào Planner, kể cả khi provider
@@ -111,20 +111,20 @@ Hành vi AI cần bộ evaluation có version bên cạnh test truyền thống.
 Test phải deterministic: cố định thời gian, seed random, không gọi provider thật
 và dùng fixture timezone/tiền tệ rõ ràng.
 
-## Evaluation Planner/Finder cục bộ
+## Evaluation TripThemePlanner/PlaceSelector cục bộ
 
-Chạy bộ scenario deterministic từ planning context qua Planner, Finder, Main
+Chạy bộ scenario deterministic từ planning context qua Planner, PlaceSelector, Main
 Plan và Backup Plan:
 
 ```bash
 cd backend
-.\.venv\Scripts\python.exe scripts\evaluate_planner_finder.py
+.\.venv\Scripts\python.exe scripts\evaluate_theme_selector.py
 ```
 
 Có thể lưu report JSON để review thủ công:
 
 ```bash
-.\.venv\Scripts\python.exe scripts\evaluate_planner_finder.py --output .runlogs/planner-finder-evaluation.json
+.\.venv\Scripts\python.exe scripts\evaluate_theme_selector.py --output .runlogs/theme-selector-evaluation.json
 ```
 
 Evaluator kiểm tra catalog fill, giới hạn thời gian/user status, ranh giới

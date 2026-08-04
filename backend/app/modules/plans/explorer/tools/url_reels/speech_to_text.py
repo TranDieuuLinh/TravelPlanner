@@ -307,10 +307,11 @@ class GeminiAudioSpeechToText:
             "Return only JSON matching the supplied schema.",
             "Prefer real travel place names over similar-sounding generic words.",
             "Preserve sequence words, day references, time-of-day cues, recommended activities, dishes, prices, durations, and alternatives exactly when spoken.",
-            "Create an observation only when the speech identifies a specific place. Keep evidence as a short verbatim span supporting that observation, not the whole transcript.",
+            "Create an observation when the speech identifies a specific place. Also create one when it clearly recommends a venue-independent travel activity or local dish (for example egg coffee) but gives no venue: use the concise activity or dish as placeName and repeat it in activity so the planner can find a clearly labeled nearby recommendation later. Do not do this for vague verbs such as eat, drink, visit, or relax. Keep evidence as a short verbatim span supporting that observation, not the whole transcript.",
             "Use one-based chronological order. Use null for dayNumber or durationMinutes when the audio does not state them, and empty strings for missing timeHint or activity.",
             "Set searchRegion to a city or province only when the speech explicitly assigns that stop or day trip to it; otherwise use an empty string.",
             "Confidence measures confidence in the place extraction from 0 to 1.",
+            "Classify entityType as venue, sub_place, address, city, person, activity, food, or unknown. Only venue/sub_place may become itinerary stops. Put street/locality text in addressHint on its venue instead of creating an address stop. Preserve the original proper name, add spelling variants to aliases, and set parentPlace when a sub-place belongs to a named venue. Set evidenceSource to stt and authority to medium.",
         ]
         if language:
             prompt_parts.append(f"The expected speech languages are: {language}. Preserve the language that is actually spoken.")
@@ -384,6 +385,28 @@ class GeminiAudioSpeechToText:
                                         "minimum": 0,
                                         "maximum": 1,
                                     },
+                                    "entityType": {
+                                        "type": "string",
+                                        "enum": ["venue", "sub_place", "address", "city", "person", "activity", "food", "unknown"],
+                                    },
+                                    "aliases": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "addressHint": {
+                                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                                    },
+                                    "parentPlace": {
+                                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                                    },
+                                    "evidenceSource": {
+                                        "type": "string",
+                                        "enum": ["stt"],
+                                    },
+                                    "authority": {
+                                        "type": "string",
+                                        "enum": ["medium"],
+                                    },
                                 },
                                 "required": [
                                     "order",
@@ -394,6 +417,12 @@ class GeminiAudioSpeechToText:
                                     "activity",
                                     "durationMinutes",
                                     "confidence",
+                                    "entityType",
+                                    "aliases",
+                                    "addressHint",
+                                    "parentPlace",
+                                    "evidenceSource",
+                                    "authority",
                                 ],
                                 "additionalProperties": False,
                             },

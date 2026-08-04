@@ -18,16 +18,15 @@ coverage/
 *.sqlite3
 backend/var/*.jsonl
 backend/var/user-post-media/
+backend/var/knowledge-graph-imports/
+backend/var/knowledge-graph-imports.json
 backend/.runlogs/
-
-auto-crawl/
-trung-temp/
 
 database/backups/
 *.dump
 
-backend/var/knowledge-graph-imports/
-backend/var/knowledge-graph-imports.json
+auto-crawl/
+trung-temp/
 knowledge-graph-real-v2/
 
 # Sub-projects

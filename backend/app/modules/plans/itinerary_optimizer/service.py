@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ItineraryOptimizer(Protocol):
-    """Application boundary used by Finder to optimize one completed day."""
+    """Application boundary used by PlaceSelector to optimize one completed day."""
 
     supports_fixed_anchors: bool
 
@@ -45,7 +45,7 @@ class ItineraryOptimizer(Protocol):
 class RouteFirstItineraryOptimizer:
     """Optimize activity order while keeping fixed timeline anchors in place.
 
-    Finder assigns semantic roles and time slots before this boundary. This
+    PlaceSelector assigns semantic roles and time slots before this boundary. This
     optimizer treats food/break blocks as fixed anchors, assigns activity
     Places to the remaining activity slots, and minimizes provider-backed
     travel time across the resulting day. Source itineraries can still request
@@ -351,7 +351,7 @@ class RouteFirstItineraryOptimizer:
             )
         except Exception:
             logger.warning(
-                "Route-first itinerary optimization failed; preserving Finder order.",
+                "Route-first itinerary optimization failed; preserving PlaceSelector order.",
                 exc_info=True,
             )
             optimized = list(items)
@@ -505,7 +505,7 @@ class RouteFirstItineraryOptimizer:
     ) -> list[tuple[PlanItem, ...]]:
         if len(items) <= self.max_exact_activities:
             return list(permutations(items))
-        # Finder currently creates at most five suggested activities per day.
+        # PlaceSelector currently creates at most five suggested activities per day.
         # This deterministic fallback keeps the boundary safe if that grows.
         return [tuple(items)]
 

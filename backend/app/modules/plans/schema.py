@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.modules.plans.domain.entities import (
     CheckReport,
@@ -12,6 +12,7 @@ from app.modules.plans.domain.entities import (
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
+from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.timing import PlanTimingReport
 
@@ -100,6 +101,10 @@ class MainPlanFromExplorerCreate(BaseModel):
         list[SelectedPlaceCreate],
         Field(alias="selectedPlaces"),
     ] = Field(default_factory=list)
+    candidate_reviews: Annotated[
+        list[PlaceCandidateReview],
+        Field(default_factory=list, alias="candidateReviews"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
@@ -108,9 +113,15 @@ class MainPlanFromExplorerCreate(BaseModel):
         LongTermPreferenceProfile,
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
     ]
-    allow_finder_suggestions: Annotated[
+    allow_place_suggestions: Annotated[
         bool,
-        Field(default=True, alias="allowFinderSuggestions"),
+        Field(
+            default=True,
+            validation_alias=AliasChoices(
+                "allowPlaceSuggestions", "allowFinderSuggestions"
+            ),
+            serialization_alias="allowPlaceSuggestions",
+        ),
     ]
     expand_days_to_fit_selected_places: Annotated[
         bool,
@@ -147,6 +158,10 @@ class RouteCoordinate(BaseModel):
     longitude: Annotated[float, Field(ge=-180, le=180)]
 
 
+class RouteOrigin(RouteCoordinate):
+    name: Annotated[str | None, Field(default=None, min_length=1, max_length=255)]
+
+
 class RouteDestination(RouteCoordinate):
     item_id: Annotated[str | None, Field(default=None, alias="itemId")]
     name: Annotated[str, Field(min_length=1, max_length=255)]
@@ -160,7 +175,7 @@ class RouteDestination(RouteCoordinate):
 
 
 class CurrentLocationRouteCreate(BaseModel):
-    origin: RouteCoordinate
+    origin: RouteOrigin
     destination: RouteDestination
     departure_time: Annotated[
         datetime | None,
@@ -179,7 +194,7 @@ class CurrentLocationRouteCreate(BaseModel):
 
 
 class DayDirectionsCreate(BaseModel):
-    origin: RouteCoordinate
+    origin: RouteOrigin
     destinations: Annotated[
         list[RouteDestination],
         Field(min_length=1, max_length=30),

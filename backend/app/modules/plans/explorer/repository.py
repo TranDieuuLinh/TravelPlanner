@@ -37,11 +37,11 @@ from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
 )
-from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
 
 
-URL_EXTRACTION_CACHE_VERSION = 3
+URL_EXTRACTION_CACHE_VERSION = 4
 
 
 def _artifact_source_url(url: str, platform: str | None = None) -> str:
@@ -310,11 +310,11 @@ class ExplorerPersistenceRepository:
         source_url = canonicalize_url(url)
         cached = self.session.get(UrlExtractionCacheEntry, source_url)
         if cached is None:
-            rows = self._rows_for_source_url(source_url)
-            if not rows:
-                return None
-            context = _context_from_shared_places(rows)
-            platform = detect_platform(source_url)
+            # Resolved snapshots do not contain the current extraction schema,
+            # entity types or coverage. Reusing them as an extraction cache
+            # would bypass schema-version invalidation and preserve old parser
+            # mistakes indefinitely.
+            return None
         else:
             if (
                 cached.extracted_context_json.get("_cacheVersion")
@@ -399,6 +399,7 @@ class ExplorerPersistenceRepository:
         )
         if row is None or row.deleted_at is not None:
             return None
+        verified_aliases, verified_vietnamese_aliases = _cached_verified_aliases(row)
         return PlaceResolution(
             candidate=candidate,
             status="resolved",
@@ -406,6 +407,8 @@ class ExplorerPersistenceRepository:
             externalId=row.external_id,
             placeId=row.place_id,
             name=row.name or row.resolved_name,
+            verifiedAliases=verified_aliases,
+            verifiedVietnameseAliases=verified_vietnamese_aliases,
             placeType=row.place_type or row.category,
             address=row.address,
             city=row.city,
@@ -623,6 +626,36 @@ def _place_notes(candidate: UnifiedPlaceCandidate) -> str | None:
     ]
     unique = list(dict.fromkeys(parts))
     return "\n".join(unique) or None
+
+
+def _cached_verified_aliases(row: UserMustPlace) -> tuple[list[str], list[str]]:
+    metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+    aliases = [row.name or row.resolved_name]
+    vietnamese: list[str] = []
+    for value in metadata.get("verifiedAliases", []):
+        if isinstance(value, dict):
+            name = str(value.get("name") or "").strip()
+            language = str(value.get("language") or "")
+        else:
+            name = str(value or "").strip()
+            language = ""
+        if not name:
+            continue
+        aliases.append(name)
+        if language == "vi" or _looks_vietnamese(name):
+            vietnamese.append(name)
+    aliases = [value for value in aliases if value]
+    for name in aliases:
+        if _looks_vietnamese(name):
+            vietnamese.append(name)
+    return list(dict.fromkeys(aliases)), list(dict.fromkeys(vietnamese))
+
+
+def _looks_vietnamese(value: str) -> bool:
+    decomposed = unicodedata.normalize("NFD", value)
+    return "đ" in value.casefold() or any(
+        unicodedata.combining(character) for character in decomposed
+    )
 
 
 def _context_from_shared_places(

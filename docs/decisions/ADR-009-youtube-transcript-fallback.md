@@ -2,7 +2,7 @@
 
 - Trạng thái: Accepted
 - Ngày: 2026-07-31
-- Cập nhật: 2026-08-01
+- Cập nhật: 2026-08-03
 
 ## Bối cảnh
 
@@ -31,8 +31,12 @@ theo IP hoặc thay đổi mà không báo trước, nên không thể là đư�
    `YOUTUBE_CAPTIONS_NOT_FOUND`. `blocked` và
    `unavailable` trả lỗi retryable `YOUTUBE_CAPTIONS_UNAVAILABLE` sau worker.
    Không trạng thái nào tải YouTube media hoặc gọi audio STT.
-4. Khi caption long-form thành công, không tải video và không gọi Gemini
-   STT/frame vision.
+4. YouTube long-form không gọi `yt-dlp` để lấy metadata, không tải video và
+   không gọi Gemini audio STT/frame vision. Runtime chỉ giữ URL chuẩn hóa cùng
+   platform rồi đưa caption qua Gemini structured text extraction đa ngôn ngữ;
+   tên riêng được giữ nguyên và entity được phân loại trước resolver. Việc thiếu
+   title, description, chapter, thumbnail hoặc uploader không được chặn import.
+   YouTube Shorts vẫn dùng metadata và media pipeline của Reel.
    Kết quả ghi `speechToText.source=youtube_captions`; cache hit ghi
    `source=youtube_captions_cache`.
 5. URL YouTube có path `/shorts/{videoId}` được nhận diện là
@@ -42,13 +46,16 @@ theo IP hoặc thay đổi mà không báo trước, nên không thể là đư�
 6. Không tự động cấu hình proxy hoặc cookie để vượt giới hạn truy cập của
    YouTube. Nội dung private, age-restricted hoặc cần đăng nhập vẫn được coi là
    unavailable và trả lỗi retryable.
+7. Expected count từ title/caption được so với số venue authority cao/trung
+   bình. Coverage dưới 40% dừng trước formatter/resolver/Planner; 40–70% tắt
+   Finder và yêu cầu review; từ 70% tiếp tục tự động.
 
 ## Hệ quả
 
 - YouTube long-form không dùng quota Gemini STT và không download media;
   YouTube Shorts dùng cùng quota và media pipeline với các Reel khác.
-- Caption YouTube không có structured travel observations; Extractor chỉ dùng
-  nó như transcript evidence.
+- Caption YouTube được cấu trúc thành travel observations bằng model text,
+  không dùng metadata `yt-dlp`, audio STT hay media download.
 - Video không có caption hoặc có thông tin chỉ xuất hiện trên hình không được
   import qua URL YouTube trong contract này.
 - Cache caption dùng bảng `youtube_transcript_cache`.

@@ -1,6 +1,1 @@
-valhalla/*
-!valhalla/.gitkeep
-opentripplanner/*
-!opentripplanner/.gitkeep
-osm-source/*
-!osm-source/.gitkeep
+# Ignore rules moved to root .gitignore

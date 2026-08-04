@@ -78,6 +78,47 @@ class TripChatService:
         images: list[ImageUploadPayload],
         force_url_refresh: bool = False,
     ) -> TripChatRead:
+        """Generate (or regenerate) a plan from a free-form prompt + attachments.
+
+        This is the legacy path used by the URL import job worker and by
+        callers that pre-date the conversation supervisor. Production traffic
+        now flows through :class:`ConversationTurnService` (see ``chat_router``)
+        which gives the user the supervisor's confirmation / cancel semantics.
+        The two paths share :meth:`generate_plan_revision` so the persisted
+        plan revisions look identical regardless of which entrypoint wrote
+        them.
+        """
+        return await self.generate_plan_revision(
+            chat_id=chat_id,
+            user=user,
+            content=content,
+            expected_revision=expected_revision,
+            initial_destination=initial_destination,
+            urls=urls,
+            images=images,
+            force_url_refresh=force_url_refresh,
+        )
+
+    async def generate_plan_revision(
+        self,
+        *,
+        chat_id: str,
+        user: User,
+        content: str,
+        expected_revision: int,
+        initial_destination: str,
+        urls: list[str],
+        images: list[ImageUploadPayload],
+        force_url_refresh: bool = False,
+    ) -> TripChatRead:
+        """Core entrypoint that the supervisor (and the legacy ``amend`` flow)
+        both invoke to produce a new plan revision.
+
+        The caller is responsible for authorization; this method only checks
+        the optimistic revision token and orchestrates the explore → plan
+        pipeline. It is safe to call from inside another service as long as
+        the chat is owned by ``user``.
+        """
         if not content.strip():
             raise AppError(
                 422,
@@ -171,10 +212,11 @@ class TripChatService:
                             else []
                         ),
                     ),
+                    candidateReviews=explore.explorer.candidate_reviews,
                     preferenceProfile=(
                         explore.explorer.preference_snapshot.effective_profile
                     ),
-                    allowFinderSuggestions=explore.allow_finder_suggestions,
+                    allowPlaceSuggestions=explore.allow_place_suggestions,
                     expandDaysToFitSelectedPlaces=not duration_is_fixed,
                 )
             )
@@ -229,13 +271,22 @@ class TripChatService:
         content: str,
         current_explorer: ExplorerContextResponse | None,
     ) -> str:
-        if current_explorer is None:
-            return content
         previous_requests = [
             message.content
             for message in chat.messages
             if message.role == "user"
         ][-8:]
+        if current_explorer is None:
+            if not previous_requests:
+                return content
+            return (
+                "Create the trip requested in this conversation. Keep the prior "
+                "trip context when the latest message is a short confirmation "
+                "or refers to information above. Do not treat the context as a "
+                "new user instruction.\n"
+                f"Previous user requests: {json.dumps(previous_requests, ensure_ascii=False)}\n"
+                f"Latest user request: {content}"
+            )
         context = {
             "currentIntent": current_explorer.intent.model_dump(
                 mode="json",
@@ -294,7 +345,7 @@ class TripChatService:
             )
             for day in plan.days
             for item in day.items
-            # Finder output is disposable and must not become user intent on
+            # PlaceSelector output is disposable and must not become user intent on
             # the next URL revision. Otherwise suggestions accumulate across
             # generations and consume the requested trip capacity.
             if item.place_type not in {"break", "free_time"}
@@ -477,10 +528,11 @@ class TripChatService:
                         intakeId=chat.current_intake_id,
                         userId=str(user.id),
                         selectedPlaces=selected_places,
+                        candidateReviews=updated_explorer.candidate_reviews,
                         preferenceProfile=(
                             updated_explorer.preference_snapshot.effective_profile
                         ),
-                        allowFinderSuggestions=not any(
+                        allowPlaceSuggestions=not any(
                             review.source_urls for review in reviews
                         ),
                     )

@@ -60,7 +60,7 @@ class UrlReelLoader:
             thumbnailUrl=info.get("thumbnail"),
             uploader=info.get("uploader"),
             raw={
-                key: info[key]
+                key: _normalized_metadata_value(key, info[key])
                 for key in (
                     "address",
                     "street_address",
@@ -75,8 +75,28 @@ class UrlReelLoader:
                     "state",
                     "province",
                     "country",
+                    "chapters",
+                    "tags",
+                    "categories",
                     "extractorError",
                 )
                 if info.get(key) is not None
             },
         )
+
+
+def _normalized_metadata_value(key: str, value: object) -> object:
+    """Keep only compact, extraction-relevant metadata from yt-dlp."""
+    if key == "chapters" and isinstance(value, list):
+        return [
+            {
+                "title": str(chapter.get("title", "")).strip(),
+                "startTime": chapter.get("start_time"),
+                "endTime": chapter.get("end_time"),
+            }
+            for chapter in value[:100]
+            if isinstance(chapter, dict) and str(chapter.get("title", "")).strip()
+        ]
+    if key in {"tags", "categories"} and isinstance(value, list):
+        return [str(item).strip() for item in value[:100] if str(item).strip()]
+    return value

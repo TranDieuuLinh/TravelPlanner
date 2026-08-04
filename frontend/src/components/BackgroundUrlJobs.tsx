@@ -20,6 +20,7 @@ import {
   retryGuestUrlJob,
   type GuestUrlImportJob
 } from "@/lib/guest-url-jobs";
+import { urlPlaceCountLabel } from "@/lib/url-place-count";
 
 const TERMINAL = new Set(["succeeded", "failed"]);
 const ACTIVE = new Set(["queued", "running"]);
@@ -255,7 +256,7 @@ function JobTimingDetails({
           </header>
           <div className="backgroundJobTimingChips">
             <span>
-              Đã xác định {explorer.resolvedCount} trên {explorer.candidateCount} địa điểm
+              {urlPlaceCountLabel(explorer)}
             </span>
             {explorer.candidateCount > explorer.resolvedCount ? (
               <span>{explorer.candidateCount - explorer.resolvedCount} cần kiểm tra thêm</span>
@@ -281,13 +282,29 @@ function JobTimingDetails({
                 {` · tra trong ${timingLabel(source.cacheLookupSeconds ?? 0)}`}
               </small>
               <small>
-                {source.sampledFrames} frame · STT {source.speechStatus}
-                {` · ${source.sttChunkCount ?? 1} STT chunk`}
+                {source.sampledFrames} frame · {source.speechSource === "shared_url_cache"
+                  ? "Extraction cache"
+                  : source.speechSource?.startsWith("youtube_captions")
+                    ? "YouTube caption"
+                    : "STT"} {source.speechStatus}
+                {!source.speechSource?.startsWith("youtube_captions")
+                  && source.speechSource !== "shared_url_cache"
+                  ? ` · ${source.sttChunkCount ?? 1} STT chunk`
+                  : ""}
                 {` · Vision ${source.visionStatus}`}
                 {source.cacheStatus === "hit"
                   ? ` · ${source.extractedPlaceCount} bản ghi extraction từ cache`
                   : ` · ${source.extractedPlaceCount} kết quả extraction thô`}
               </small>
+              {source.expectedPlaceCount != null ? (
+                <small>
+                  Coverage {source.extractedPlaceCount}/{source.expectedPlaceCount}
+                  {source.extractionCoverage != null
+                    ? ` · ${Math.round(source.extractionCoverage * 100)}%`
+                    : ""}
+                  {source.coverageStatus ? ` · ${source.coverageStatus}` : ""}
+                </small>
+              ) : null}
               {source.cacheStatus === "hit" ? (
                 <small>
                   Provider bên dưới là nguồn gốc của snapshot đã resolve; không
@@ -544,12 +561,10 @@ export function BackgroundUrlJobs({
                 <div className="backgroundJobDetails">
                   <div className="backgroundJobMeta">
                     <span>
-                      <small>Địa điểm đã xác định</small>
+                      <small>Địa điểm duy nhất từ nguồn</small>
                       <strong>
                         {job.explorerTiming
-                          ? job.explorerTiming.candidateCount > 0
-                            ? `${job.explorerTiming.resolvedCount} trên ${job.explorerTiming.candidateCount} địa điểm`
-                            : "Chưa tìm thấy địa điểm"
+                          ? urlPlaceCountLabel(job.explorerTiming)
                           : job.status === "running"
                             ? "Đang tìm kiếm…"
                             : job.status === "queued"
@@ -585,7 +600,7 @@ export function BackgroundUrlJobs({
                           ? "Tác vụ lỗi sẽ chạy lại toàn bộ từ đầu"
                           : job.sourceType === "image"
                             ? "Chạy lại OCR từ ảnh gốc, resolve và Planner"
-                            : "Dùng extraction cache hợp lệ rồi chạy lại dedupe, resolve và Planner"
+                            : "Chạy lại toàn bộ từ media, STT/OCR, resolve đến Planner"
                         }
                         type="button"
                       >

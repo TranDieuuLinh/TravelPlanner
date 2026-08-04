@@ -441,9 +441,9 @@ def test_same_url_place_is_shared_across_multiple_intakes() -> None:
         cached = repository.load_cached_url_result(
             "https://www.youtube.com/watch?v=shared01&utm_campaign=again"
         )
-        assert cached is not None
-        assert cached.speech_to_text.status == "cached"
-        assert cached.extracted_context.extracted_places == ["Hoan Kiem Lake"]
+        # Resolved snapshots lack extraction entity authority and coverage, so
+        # only a versioned UrlExtractionCacheEntry may satisfy this lookup.
+        assert cached is None
 
     engine.dispose()
 

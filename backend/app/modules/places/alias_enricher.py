@@ -6,7 +6,18 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from app.integrations.llm.base import LLMClient
-from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
+from app.modules.plans.explorer.schema import (
+    GeneratedLookupAlias,
+    UnifiedPlaceCandidate,
+)
+
+
+_GENERIC_SOURCE_NAMES = {
+    "dessert",
+    "hole in the wall",
+    "hole-in-the-wall",
+    "popular",
+}
 
 
 class PlaceAliasEnricher(Protocol):
@@ -146,7 +157,11 @@ class LLMPlaceAliasEnricher:
         }
         enriched: list[UnifiedPlaceCandidate] = []
         for index, candidate in enumerate(candidates):
-            alias_set = aliases_by_index.get(index)
+            alias_set = (
+                None
+                if _is_generic_source_name(candidate.name)
+                else aliases_by_index.get(index)
+            )
             english_names = _clean_names(
                 [
                     *candidate.english_names,
@@ -174,6 +189,29 @@ class LLMPlaceAliasEnricher:
                         "vietnamese_names": vietnamese_names,
                         "alternate_names": [],
                         "search_names": search_names,
+                        "generated_lookup_aliases": [
+                            *candidate.generated_lookup_aliases,
+                            *(
+                                GeneratedLookupAlias(
+                                    value=name,
+                                    language="vi",
+                                    generator="llm",
+                                    version="alias-v1",
+                                )
+                                for name in vietnamese_names
+                                if name not in candidate.search_names
+                            ),
+                            *(
+                                GeneratedLookupAlias(
+                                    value=name,
+                                    language="en",
+                                    generator="llm",
+                                    version="alias-v1",
+                                )
+                                for name in english_names
+                                if name not in candidate.search_names
+                            ),
+                        ],
                     }
                 )
             )
@@ -222,3 +260,11 @@ def _official_lookup_names(
 
 def _lookup_key(value: str) -> str:
     return value.casefold().strip()
+
+
+def _is_generic_source_name(value: str) -> bool:
+    key = " ".join(value.casefold().replace("-", " ").split())
+    return key in {
+        " ".join(name.casefold().replace("-", " ").split())
+        for name in _GENERIC_SOURCE_NAMES
+    }

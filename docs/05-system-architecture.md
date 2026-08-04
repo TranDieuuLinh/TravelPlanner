@@ -20,10 +20,12 @@ Router FastAPI
     +-- profiles/marketplace: endpoint placeholder
 ```
 
-`docker-compose.yml` mặc định chạy backend và PostgreSQL. Profile `routing`
-chạy thêm Valhalla và OpenTripPlanner sau khi dữ liệu OTP đã được build theo
-`routing-data/README.md`. Frontend Next.js được chạy riêng trên host khi cần
-phát triển hoặc kiểm thử giao diện.
+`docker-compose.yml` mặc định chạy PostgreSQL, backend, sidecar Google Maps,
+Valhalla và OpenTripPlanner. Frontend Next.js chạy riêng trên host bằng
+`npm run dev`. OpenTripPlanner giữ container ở trạng
+thái chờ nếu dữ liệu graph/OSM/GTFS chưa được chuẩn bị; khi đó backend vẫn dùng
+fallback route. Frontend Next.js cũng có thể chạy riêng trên host khi cần phát
+triển hoặc kiểm thử giao diện.
 PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backend trực
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
@@ -37,7 +39,7 @@ cũ có thể khởi động, không tuyên bố semantic retrieval đã đượ
 Gemini được cấu hình và formatter được bật. Các luồng tạo Main/Backup Plan vẫn
 có thể dùng `StubLLMClient` khi không có provider.
 
-Finder dùng Valhalla tự vận hành qua interface route provider khi
+PlaceSelector dùng Valhalla tự vận hành qua interface route provider khi
 `ROUTE_PROVIDER=valhalla`. Adapter lấy route pedestrian/auto, summary và
 polyline6; lỗi theo từng leg fallback về ước tính địa lý. Khi trip có
 `startDate`, adapter OpenTripPlanner GraphQL dùng OSM + GTFS/GTFS-RT để bổ sung
@@ -46,12 +48,14 @@ route theo lịch chạy và đưa vào lựa chọn chính hoặc
 Plan chưa có `startDate` dùng ngày hiện tại cùng giờ kết thúc item làm preview
 lịch chạy; thứ tự itinerary vẫn được giữ nguyên.
 Hai adapter tự host không dùng API key. Leaflet/OpenStreetMap vẫn là bản đồ nền.
-Planner UI chỉ xin Geolocation khi user bấm “Vị trí của tôi”; thao tác này chỉ
-định vị, xoay marker theo heading khi thiết bị cung cấp và đưa camera về user.
-Khi một ngày cụ thể được chọn, `/api/plans/day-directions` nhận tọa độ tạm thời,
+Planner UI luôn cho user chọn điểm bắt đầu tạm thời giữa “Vị trí của tôi” và
+một địa điểm được tìm trong Places. UI chỉ xin Geolocation khi user bấm “Vị trí
+của tôi”; thao tác này chỉ định vị, xoay marker theo heading khi thiết bị cung
+cấp và đưa camera về user. Khi một ngày cụ thể được chọn,
+`/api/plans/day-directions` nhận tên và tọa độ tạm thời của điểm bắt đầu,
 danh sách stop có tọa độ của ngày theo đúng thứ tự itinerary đã lưu. Backend
 không gọi travel-time matrix và không giải shortest path cho thao tác chỉ đường;
-nó chỉ lấy geometry/duration chi tiết từ vị trí hiện tại tới stop đầu tiên rồi
+nó chỉ lấy geometry/duration chi tiết từ điểm bắt đầu tới stop đầu tiên rồi
 giữa các stop kế tiếp theo thứ tự cố định. Chặng đầu dùng thời điểm hiện tại;
 các chặng itinerary tiếp theo dùng giờ kết thúc `timeWindow` của stop đầu chặng
 để saved view và live-directions query cùng service period. Mọi timestamp được
@@ -70,9 +74,9 @@ ghép trên cùng bản đồ. Backend không lưu tọa độ, lựa
 chọn hoặc chặng điều hướng vào plan, database hay timing log.
 
 Luồng tạo plan mặc định dùng `ITINERARY_OPTIMIZER_MODE=route_first`.
-`TripThemePlannerService` chỉ xác định các trải nghiệm bắt buộc ở cấp toàn chuyến qua
-`tripThemes`; nó không chia theme theo ngày. Backend sinh bucket ngày trung tính để giữ
-API cũ, sau đó PlaceSelector và route optimizer mới phân hoạt động theo cụm địa lý.
+`TripThemePlannerService` chỉ xác định các trải nghiệm bắt buộc ở cấp toàn
+chuyến qua `tripThemes`; nó không chia theme theo ngày. PlaceSelector tạo day
+slot từ `tripSpec.days`, sau đó route optimizer phân hoạt động theo cụm địa lý.
 `PlaceSelectorService` chọn candidate mà không gọi route pedestrian/auto/transit;
 sau đó module `plans/itinerary_optimizer` dùng một travel-time matrix
 để hoán đổi hai activity chính mỗi ngày giữa các ngày và tối ưu thứ tự trong từng ngày.
@@ -137,6 +141,14 @@ Explorer response hay ghi vào timing log. Bảng dùng chung này là nguồn v
 cho retrieval/RAG và tạo note về sau, còn `url_extraction_cache` tiếp tục chỉ
 giữ context đã chuẩn hóa để tránh chạy lại extractor.
 
+Place resolver xếp hạng tối đa `top K` record catalog theo tên/alias, vùng,
+evidence địa chỉ, category và độ tin cậy dữ liệu. Record đứng đầu chỉ được nhận
+khi vượt cả ngưỡng điểm tuyệt đối và khoảng cách điểm với record thứ hai. DB
+miss, điểm thấp hoặc hai kết quả quá sát nhau đều chuyển sang Google Maps
+Playwright đã cấu hình; kết quả ngoài vẫn phải vượt rule xác minh identity và
+tọa độ riêng. Các ngưỡng là cấu hình runtime để hiệu chỉnh bằng tập test có
+nhãn, không phải confidence do provider công bố.
+
 `UrlReelExtractionService` định tuyến theo loại nguồn trước khi chuẩn hóa chung:
 
 - YouTube long-form (`watch`, `youtu.be`, `live`, `embed`) chỉ dùng caption công
@@ -147,15 +159,15 @@ giữ context đã chuẩn hóa để tránh chạy lại extractor.
   thuộc URL công khai và connector `yt-dlp`.
 
 Hai nhánh đều trả cùng `ExtractedContext`, candidate, provenance và đi qua cùng
-Aggregator -> Resolver -> Planner/Finder. URL rút gọn `youtu.be/{videoId}` không
+Aggregator -> Resolver -> TripThemePlanner/PlaceSelector. URL rút gọn `youtu.be/{videoId}` không
 chứa tín hiệu Shorts nên giữ nhánh YouTube caption-only an toàn.
 
 Response trả `intakeId`, `userId`, Explorer context và `timingReport`.
 `timingReport` dùng cho debug latency trên UI và được append dạng JSONL vào
 `backend/var/explorer-timings.jsonl`. Log chỉ giữ duration/status/count, không
 giữ prompt, URL đầy đủ, transcript, OCR text hoặc credential. Explorer không tự
-gọi Planner/Finder. Planner downstream đọc context và chuyển tiếp hai khóa;
-Finder downstream đọc `user_must_place` bằng `intakeId + userId`.
+gọi TripThemePlanner/PlaceSelector. Planner downstream đọc context và chuyển tiếp hai khóa;
+PlaceSelector downstream đọc `user_must_place` bằng `intakeId + userId`.
 Timing của mỗi URL phân biệt số địa điểm thô do OCR/STT trích xuất, số candidate
 sau dedupe, số resolve thành công, số candidate từng provider đã xử lý và số
 resolve thành công theo provider. Candidate có provenance từ nhiều URL được tính
@@ -172,7 +184,7 @@ vì chỉ provider cuối cùng. Timing không ghi query đầy đủ hoặc pro
 URL gửi từ trip chat đã đăng nhập không còn giữ HTTP request mở. Router tách mỗi
 URL thành một `UrlImportJob` bền vững và trả `202 Accepted`; worker trong cùng
 deployment lấy FIFO đúng một job tại một thời điểm rồi chạy Explorer, resolve,
-Planner/Finder và lưu revision mới của chat. Job đang `running` được đưa lại về
+TripThemePlanner/PlaceSelector và lưu revision mới của chat. Job đang `running` được đưa lại về
 `queued` khi worker khởi động lại. Mỗi job có deadline cấu hình; job vượt
 deadline chuyển sang `failed` để không khóa FIFO và có thể được user retry
 riêng. User có thể dừng và xóa job `running`; worker hủy task đang xử lý, giải
@@ -185,7 +197,7 @@ timing Explorer/Planner chi tiết hoặc xóa các job đã kết thúc.
 Composer không bị khóa bởi URL job nên user vẫn gửi prompt chat bình thường.
 
 Guest dùng hàng chờ FIFO trong memory của AppShell và gọi cùng endpoint Explorer
--> Planner/Finder mà không tạo trip chat hay `url_import_jobs`. Vì queue nằm ở
+-> TripThemePlanner/PlaceSelector mà không tạo trip chat hay `url_import_jobs`. Vì queue nằm ở
 client, nó tiếp tục chạy khi điều hướng trong SPA nhưng biến mất khi reload,
 đóng tab hoặc runtime trình duyệt bị dừng. Đây là hành vi có chủ đích: guest
 không có owner để lưu job riêng tư bền vững trong PostgreSQL. User đăng nhập vẫn
@@ -270,7 +282,7 @@ Import API -> Import Job -> Source Connector
                     SelectedPlaces
                            |
                            v
-Explorer -> Planner -> Finder -> Check -> Main/Backup Plan
+Explorer -> TripThemePlanner -> PlaceSelector -> Check -> Main/Backup Plan
 ```
 
 Ranh giới trách nhiệm:
@@ -314,7 +326,7 @@ tư hoặc dữ liệu cá nhân không cần thiết.
 role `admin` ở server.
 
 Backend lưu `PlanningRun` và các `PlanningRunStage` theo chuỗi
-Explorer–Planner–Finder–Checker. Snapshot được tạo ở ranh giới workflow, không
+Explorer–TripThemePlanner–PlaceSelector–Checker. Snapshot được tạo ở ranh giới workflow, không
 thay đổi business rule của từng module. Trước khi ghi JSON, backend loại secret,
 media bytes, query string URL, payload thô và thay `rawRequest` bằng metadata độ
 dài. Golden dataset được đọc ở chế độ chỉ đọc và mỗi case được kiểm tra độ phù

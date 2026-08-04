@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionBlueprint,
     TravelIntent,
     UserStatus,
 )
@@ -10,21 +10,20 @@ from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.dto.agent_contracts import (
-    AgentMacroPlan,
-    FinderAgentInput,
+    PlaceSelectionInput,
     PlanningIntent,
     TripPlanningSpec,
 )
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import FinderPlace
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
 def test_agent_finder_reads_budget_level_from_trip_spec() -> None:
-    finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
-    finder_input = FinderAgentInput(
+    finder = PlaceSelectorService(FakeFinderPlaceTool({}, search_order=[]))
+    selection_input = PlaceSelectionInput(
         intent=PlanningIntent(
             destination="Hà Nội",
             travelStyle="local",
@@ -35,13 +34,12 @@ def test_agent_finder_reads_budget_level_from_trip_spec() -> None:
             days=1,
             budget={"level": "low"},
         ),
-        macroPlan=AgentMacroPlan.model_validate(
-            _macro_plan().model_dump(by_alias=True)
-        ),
-        allowFinderSuggestions=False,
+        regionKey="vn,ha-noi",
+        tripThemes=_macro_plan().trip_themes,
+        allowPlaceSuggestions=False,
     )
 
-    result = finder.fill_agent_plan(finder_input)
+    result = finder.fill_agent_plan(selection_input)
 
     assert result.mode.value == "main"
 
@@ -79,7 +77,7 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
         places,
         search_order=["too-heavy", "support"],
     )
-    finder = FinderService(tool, max_candidates_per_block=5)
+    finder = PlaceSelectorService(tool, max_candidates_per_block=5)
     user_status = UserStatus.model_validate(
         {
             "activeAccommodationPlaceId": "hotel-a",
@@ -137,11 +135,11 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
 
 
 def test_finder_preserves_address_from_selected_place_without_catalog_id() -> None:
-    finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
+    finder = PlaceSelectorService(FakeFinderPlaceTool({}, search_order=[]))
     macro_plan = _macro_plan().model_copy(
         update={
-            "day_briefs": [
-                _macro_plan().day_briefs[0].model_copy(
+            "selection_days": [
+                _macro_plan().selection_days[0].model_copy(
                     update={
                         "allocated_selected_place_refs": [
                             "Hanoi Train Street (South)"
@@ -165,7 +163,7 @@ def test_finder_preserves_address_from_selected_place_without_catalog_id() -> No
                 tags=["culture"],
             )
         ],
-        allow_finder_suggestions=False,
+        allow_place_suggestions=False,
     )
 
     selected_item = next(
@@ -221,7 +219,7 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
             "local-dinner",
         ],
     )
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
 
     result = finder.fill_main_plan(
         _macro_plan(),
@@ -292,7 +290,7 @@ def test_finder_uses_proximity_to_break_relevance_ties() -> None:
             longitude=105.8510,
         ),
     }
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             places,
             search_order=["far-culture", "near-culture"],
@@ -335,7 +333,7 @@ def test_reference_only_mode_never_adds_catalog_places() -> None:
             intensity="light",
         ),
     }
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             places,
             search_order=["catalog-support"],
@@ -353,7 +351,7 @@ def test_reference_only_mode_never_adds_catalog_places() -> None:
                 tags=["culture"],
             )
         ],
-        allow_finder_suggestions=False,
+        allow_place_suggestions=False,
     )
 
     activity_items = [
@@ -366,7 +364,7 @@ def test_reference_only_mode_never_adds_catalog_places() -> None:
 
 
 def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {
                 "catalog-support": _place(
@@ -379,12 +377,12 @@ def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
             search_order=["catalog-support"],
         )
     )
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Reference only",
                 targetArea="Hoàn Kiếm",
@@ -398,7 +396,7 @@ def test_reference_only_mode_leaves_unallocated_days_empty() -> None:
         macro_plan,
         _intent(),
         [],
-        allow_finder_suggestions=False,
+        allow_place_suggestions=False,
     )
 
     assert result.days[0].strategy == "reference_only"
@@ -419,7 +417,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         intensity="light",
         place_type="restaurant",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {
                 "source-place": source,
@@ -428,12 +426,12 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
             search_order=["catalog-place"],
         )
     )
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="From video",
                 targetArea="Hà Nội",
@@ -441,7 +439,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
                 focusTags=["culture"],
                 allocatedSelectedPlaceRefs=["source-place"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Finder fill",
                 targetArea="Hà Nội",
@@ -464,7 +462,7 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
                 tags=["culture"],
             )
         ],
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     assert [
@@ -537,12 +535,12 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
             GeographicRouteOptimizer()
         ),
     )
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hanoi",
         destination="Hanoi",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Culture",
                 targetArea="Hanoi",
@@ -564,7 +562,7 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
                 tags=["culture"],
             )
         ],
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     real_items = [item for item in result.days[0].items if item.place_id]
@@ -605,8 +603,8 @@ def test_route_first_omits_unresolved_meal_slots() -> None:
     )
     macro_plan = _macro_plan().model_copy(
         update={
-            "day_briefs": [
-                _macro_plan().day_briefs[0].model_copy(
+            "selection_days": [
+                _macro_plan().selection_days[0].model_copy(
                     update={
                         "allocated_selected_place_refs": [source.place_id]
                     }
@@ -626,7 +624,7 @@ def test_route_first_omits_unresolved_meal_slots() -> None:
                 tags=["culture"],
             )
         ],
-        allow_finder_suggestions=False,
+        allow_place_suggestions=False,
     )
 
     assert [item.role for item in result.days[0].items] == ["main_activity_1"]
@@ -694,8 +692,8 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
     )
     macro_plan = _macro_plan().model_copy(
         update={
-            "day_briefs": [
-                _macro_plan().day_briefs[0].model_copy(
+            "selection_days": [
+                _macro_plan().selection_days[0].model_copy(
                     update={
                         "allocated_selected_place_refs": [
                             source_cafe.place_id,
@@ -727,7 +725,7 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
                 tags=["food"],
             ),
         ],
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     day_items = {item.role: item for item in result.days[0].items}
@@ -770,12 +768,12 @@ def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> No
         2: [selected[2].stable_ref, selected[3].stable_ref],
         3: [selected[4].stable_ref, selected[5].stable_ref],
     }
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hanoi from URL",
         destination="Hanoi",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=day,
                 theme=f"URL day {day}",
                 targetArea="Hanoi",
@@ -796,7 +794,7 @@ def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> No
         macro_plan,
         _intent(),
         selected,
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     scheduled_url_names = {
@@ -832,7 +830,7 @@ def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
         tags=["culture"],
         intensity="light",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {
                 source.place_id: source,
@@ -842,19 +840,19 @@ def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
             search_order=[duplicate.place_id, unique.place_id],
         )
     )
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Stops from URL",
                 targetArea="Hà Nội",
                 targetRegionKey="vn,ha-noi",
                 allocatedSelectedPlaceRefs=[source.place_id],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Finder fill",
                 targetArea="Hà Nội",
@@ -878,7 +876,7 @@ def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
                 longitude=source.longitude,
             )
         ],
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     names = [item.name for day in result.days for item in day.items]
@@ -906,18 +904,18 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
         )
         for index, name in enumerate(names, start=1)
     }
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             places,
             search_order=list(places),
         )
     )
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Finder-only day",
                 targetArea="Hà Nội",
@@ -932,7 +930,7 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
         macro_plan,
         _intent().model_copy(update={"pace": TravelPace.packed}),
         [],
-        allow_finder_suggestions=True,
+        allow_place_suggestions=True,
     )
 
     suggestions = [
@@ -944,7 +942,7 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
 
 
 def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:
-    finder = FinderService(FakeFinderPlaceTool({}, search_order=[]))
+    finder = PlaceSelectorService(FakeFinderPlaceTool({}, search_order=[]))
     user_status = UserStatus.model_validate(
         {
             "metrics": {
@@ -976,7 +974,7 @@ def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:
         tags=["nature"],
         intensity="high",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool({"selected-heavy": heavy}, search_order=[]),
     )
     user_status = UserStatus.model_validate(
@@ -1002,7 +1000,7 @@ def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:
 
     assert result.final_plan_status.used_place_ids == []
     assert result.unscheduled_places[0].place_id == "selected-heavy"
-    assert result.unscheduled_places[0].reason_code == "no_available_slot"
+    assert result.unscheduled_places[0].reason_code == "no_day_capacity"
 
 
 def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> None:
@@ -1022,20 +1020,20 @@ def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> N
         {"selected-day-2": selected, "support": support},
         search_order=["selected-day-2", "support"],
     )
-    finder = FinderService(tool)
-    macro_plan = MacroPlan(
+    finder = PlaceSelectorService(tool)
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Food",
                 targetArea="Hoàn Kiếm",
                 targetRegionKey="vn,ha-noi,hoan-kiem",
                 focusTags=["food"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Culture",
                 targetArea="Hoàn Kiếm",
@@ -1084,7 +1082,7 @@ def test_finder_rejects_place_outside_opening_hours() -> None:
         intensity="light",
         opening_hours=[{"openTime": "08:00", "closeTime": "18:00"}],
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {"closed-morning": closed_morning, "backup": backup},
             search_order=["closed-morning", "backup"],
@@ -1111,7 +1109,7 @@ def test_bad_weather_uses_indoor_skeleton_and_rejects_outdoor_places() -> None:
         tags=["culture", "indoor"],
         intensity="light",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {"outdoor": outdoor, "indoor": indoor},
             search_order=["outdoor", "indoor"],
@@ -1140,7 +1138,7 @@ def test_constraint_policy_rejects_cemetery_and_keeps_coastal_place() -> None:
         tags=["coastal", "culture"],
         intensity="light",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool(
             {"cemetery": cemetery, "coastal": coastal},
             search_order=["cemetery", "coastal"],
@@ -1168,7 +1166,7 @@ def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> Non
         tags=["culture"],
         intensity="light",
     )
-    finder = FinderService(
+    finder = PlaceSelectorService(
         FakeFinderPlaceTool({"inland": inland}, search_order=[]),
     )
     intent = _intent().model_copy(
@@ -1180,8 +1178,8 @@ def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> Non
     )
     macro = _macro_plan().model_copy(
         update={
-            "day_briefs": [
-                _macro_plan().day_briefs[0].model_copy(
+            "selection_days": [
+                _macro_plan().selection_days[0].model_copy(
                     update={"allocated_selected_place_refs": ["inland"]}
                 )
             ]
@@ -1207,7 +1205,7 @@ def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> Non
 class FakeFinderPlaceTool:
     def __init__(
         self,
-        places: dict[str, FinderPlace],
+        places: dict[str, SelectablePlace],
         *,
         search_order: list[str],
     ) -> None:
@@ -1215,7 +1213,7 @@ class FakeFinderPlaceTool:
         self.search_order = search_order
         self.search_queries: list[list[str]] = []
 
-    def get(self, place_id: str) -> FinderPlace | None:
+    def get(self, place_id: str) -> SelectablePlace | None:
         return self.places.get(place_id)
 
     def search(
@@ -1226,7 +1224,7 @@ class FakeFinderPlaceTool:
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         self.search_queries.append(list(target_tags))
         return [
             self.places[place_id]
@@ -1235,13 +1233,13 @@ class FakeFinderPlaceTool:
         ][:limit]
 
 
-def _macro_plan() -> MacroPlan:
-    return MacroPlan(
+def _macro_plan() -> PlaceSelectionBlueprint:
+    return PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Culture and food",
                 targetArea="Hoàn Kiếm",
@@ -1278,8 +1276,8 @@ def _place(
     latitude: float = 21.03,
     longitude: float = 105.85,
     address: str | None = None,
-) -> FinderPlace:
-    return FinderPlace(
+) -> SelectablePlace:
+    return SelectablePlace(
         placeId=place_id,
         name=name,
         address=address,
@@ -1300,8 +1298,8 @@ def _place(
 def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
     macro = _macro_plan().model_copy(
         update={
-            "day_briefs": [
-                _macro_plan().day_briefs[0].model_copy(
+            "selection_days": [
+                _macro_plan().selection_days[0].model_copy(
                     update={
                         "allocated_selected_place_refs": ["late-1", "late-2"]
                     }
@@ -1309,7 +1307,7 @@ def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
             ]
         }
     )
-    result = FinderService().fill_main_plan(
+    result = PlaceSelectorService().fill_main_plan(
         macro,
         _intent(),
         [
@@ -1329,7 +1327,7 @@ def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
                 sourceDurationMinutes=60,
             ),
         ],
-        allow_finder_suggestions=False,
+        allow_place_suggestions=False,
     )
 
     assert [item.name for item in result.days[0].items] == ["Late place 1"]

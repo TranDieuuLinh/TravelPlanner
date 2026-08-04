@@ -1,7 +1,7 @@
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionBlueprint,
     Plan,
     PlanDay,
     PlanItem,
@@ -27,12 +27,12 @@ def test_overall_checker_fails_plan_that_violates_constraint_policy() -> None:
             "geographicScope": {"type": "coastal"},
         },
     )
-    macro = MacroPlan(
+    macro = PlaceSelectionBlueprint(
         title="Hải Phòng",
         destination="Hải Phòng",
         regionKey="vn,hai-phong",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Ven biển",
                 targetArea="Đồ Sơn",
@@ -130,12 +130,12 @@ def _plan_with_items(items: list[PlanItem]) -> Plan:
         travelStyle="local",
         pace=TravelPace.balanced,
     )
-    macro = MacroPlan(
+    macro = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Khám phá",
                 targetArea="Hoàn Kiếm",

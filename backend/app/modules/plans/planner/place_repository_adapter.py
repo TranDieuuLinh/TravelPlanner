@@ -3,7 +3,7 @@ Adapter for SqlAlchemyPlaceRepository to implement PlaceRepositoryForTools proto
 
 Adds methods required by research tools:
 - list_for_overview
-- list_within_radius  
+- list_within_radius
 - list_all_active
 """
 
@@ -42,7 +42,7 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 class PlaceRepositoryAdapter:
     """
     Adapter that wraps SqlAlchemyPlaceRepository to implement PlaceRepositoryForTools.
-    
+
     This allows the existing repository to work with the new research tools
     without modifying the original class.
     """
@@ -53,10 +53,10 @@ class PlaceRepositoryAdapter:
     def list_for_overview(self, region_key: str) -> list[Place]:
         """
         List all places for a region (including sub-regions).
-        
+
         Args:
             region_key: e.g., "vn,vung-tau"
-            
+
         Returns:
             List of Place objects
         """
@@ -81,14 +81,14 @@ class PlaceRepositoryAdapter:
     ) -> list[Place]:
         """
         List active places within a geographic radius.
-        
+
         Uses bounding box pre-filter + haversine verification for accuracy.
-        
+
         Args:
             center_lat: Center latitude
-            center_lng: Center longitude  
+            center_lng: Center longitude
             radius_km: Search radius in kilometers
-            
+
         Returns:
             List of Place objects within radius
         """
@@ -137,7 +137,7 @@ class PlaceRepositoryAdapter:
     def list_all_active(self) -> list[Place]:
         """
         List all active places in the database.
-        
+
         Returns:
             List of all active Place objects
         """

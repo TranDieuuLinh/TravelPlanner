@@ -261,7 +261,7 @@ SOLAR_FESTIVALS: dict[str, list[str]] = {
 def _parse_month_filter(month_str: str | None) -> list[int] | None:
     """
     Parse month filter string to list of month numbers.
-    
+
     Examples:
         "tháng 4" -> [4]
         "tháng 4/2026" -> [4]
@@ -367,7 +367,7 @@ def calculate_festival_discovery(
     for festival in FESTIVALS_DATA:
         # Extract month from date
         months = set()
-        
+
         # Lunar month
         lunar_match = re.search(r"(\d+)/(\d+)\s*\(?âm\s*lịch\)?", festival.date)
         if lunar_match:

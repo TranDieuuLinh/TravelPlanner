@@ -180,7 +180,11 @@ class ConversationTurnService:
                 }
             ]
             self.repository.save_conversation_response(
-                chat, turn, assistant_content=preview, assistant_blocks=blocks
+                chat,
+                turn,
+                assistant_content=preview,
+                assistant_blocks=blocks,
+                include_request=False,
             )
             return self.repository.update_turn(
                 turn,
@@ -189,12 +193,19 @@ class ConversationTurnService:
                 result_summary={"planRevision": chat.revision},
             )
 
-        return await asyncio.wait_for(
-            self._run_decision(
-                chat, turn, decision, plan, images or []
-            ),
-            timeout=self.turn_timeout_seconds,
-        )
+        try:
+            return await asyncio.wait_for(
+                self._run_decision(
+                    chat, turn, decision, plan, images or []
+                ),
+                timeout=self.turn_timeout_seconds,
+            )
+        except AppError as error:
+            logger.exception(
+                "Conversation turn failed during execution",
+                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error.code},
+            )
+            return self._save_failed_turn(chat, turn, error.code, error.message)
 
     async def confirm(
         self,
@@ -230,15 +241,27 @@ class ConversationTurnService:
                 if turn.proposed_operations
                 else None
             ),
+            # A confirmed turn has already passed the confirmation gate.  The
+            # remaining fields are only used while presenting the proposal.
+            requires_confirmation=False,
+            message=None,
+            options=(),
         )
-        return await self._run_decision(
-            chat,
-            turn,
-            decision,
-            plan,
-            [],
-            confirmed=True,
-        )
+        try:
+            return await self._run_decision(
+                chat,
+                turn,
+                decision,
+                plan,
+                [],
+                confirmed=True,
+            )
+        except AppError as error:
+            logger.exception(
+                "Confirmed conversation turn failed during execution",
+                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error.code},
+            )
+            return self._save_failed_turn(chat, turn, error.code, error.message)
 
     def cancel(
         self,
@@ -396,9 +419,16 @@ class ConversationTurnService:
             or _infer_destination_from_urls(urls)
             or "unspecified"
         )
-        result = await self.trip_chat_service.amend(
-            chat.id,
-            type("ConversationUser", (), {"id": chat.user_id, "travel_preferences": {}})(),
+        if _is_context_only_plan_request(turn.content):
+            initial_destination = "unspecified"
+        from app.modules.users.model import User as _User
+
+        result = await self.trip_chat_service.generate_plan_revision(
+            chat_id=chat.id,
+            user=_User(
+                id=chat.user_id,
+                travel_preferences={},
+            ),
             content=turn.content,
             expected_revision=turn.base_revision,
             initial_destination=initial_destination,
@@ -694,6 +724,9 @@ def _turn_action_summary(turn: TripChatTurn) -> dict:
         "turnId": turn.id,
         "status": status,
         "outcome": outcome,
+        # Keep the bounded user request available even for turns created by
+        # older builds that did not persist a turn_request message.
+        "request": getattr(turn, "content", "")[:1000],
         "intent": turn.intent,
         "operation": safe_operation,
         "planRevision": (getattr(turn, "result_summary", None) or {}).get("planRevision"),
@@ -727,6 +760,22 @@ def _find_item(plan: Plan, item_id: str):
             if item.item_id == item_id:
                 return item
     return None
+
+
+def _is_context_only_plan_request(content: str) -> bool:
+    normalized = " ".join(content.casefold().split())
+    return any(
+        phrase in normalized
+        for phrase in (
+            "theo thông tin bên trên",
+            "theo thông tin ở trên",
+            "lên plan cho tôi",
+            "lên plan đi",
+            "tạo plan cho tôi",
+            "tạo lịch trình cho tôi",
+            "có lên plan",
+        )
+    )
 
 
 def _error_codes(report) -> set[str]:

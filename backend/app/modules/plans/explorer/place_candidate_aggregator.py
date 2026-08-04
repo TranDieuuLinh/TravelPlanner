@@ -8,6 +8,7 @@ from app.modules.plans.dto.agent_contracts import PlaceCandidateHint
 from app.modules.plans.explorer.schema import (
     PlaceCandidateSource,
     PlaceCandidateSourceType,
+    ObservedPlaceAlias,
     UnifiedPlaceCandidate,
 )
 from app.modules.plans.explorer.place_policy import (
@@ -153,6 +154,13 @@ class PlaceCandidateAggregator:
                     candidates.append(
                         UnifiedPlaceCandidate(
                             name=detail.name,
+                            alternateNames=detail.aliases,
+                            searchNames=detail.aliases,
+                            observedAliases=[
+                                ObservedPlaceAlias(value=alias, source="stt")
+                                for alias in detail.aliases
+                                if alias.strip()
+                            ],
                             category=detail.category,
                             addressHint=detail.address,
                             searchRegion=detail.search_region,
@@ -175,6 +183,9 @@ class PlaceCandidateAggregator:
                             sourceTimeHint=detail.source_time_hint,
                             sourceActivity=detail.source_activity,
                             sourceDurationMinutes=detail.source_duration_minutes,
+                            entityType=detail.entity_type,
+                            parentPlace=detail.parent_place,
+                            authority=detail.authority,
                         )
                     )
                 continue
@@ -244,12 +255,9 @@ def _merge(
             sources.append(source)
             seen_sources.add(key)
 
-    preferred = (
-        current
-        if preserve_current_name
-        else incoming
-        if incoming.confidence > current.confidence
-        else current
+    preferred = current if preserve_current_name else max(
+        (current, incoming),
+        key=_candidate_name_authority,
     )
     search_names = list(
         dict.fromkeys(
@@ -278,7 +286,27 @@ def _merge(
         )
     return UnifiedPlaceCandidate(
         name=preferred.name,
+        originalName=preferred.original_name,
+        englishNames=list(dict.fromkeys([*current.english_names, *incoming.english_names])),
+        vietnameseNames=list(dict.fromkeys([*current.vietnamese_names, *incoming.vietnamese_names])),
+        alternateNames=list(dict.fromkeys([*current.alternate_names, *incoming.alternate_names])),
         searchNames=search_names,
+        observedAliases=_merge_observed_aliases(
+            current.observed_aliases,
+            incoming.observed_aliases,
+        ),
+        generatedLookupAliases=[
+            *current.generated_lookup_aliases,
+            *(
+                alias
+                for alias in incoming.generated_lookup_aliases
+                if alias.value.casefold()
+                not in {
+                    existing.value.casefold()
+                    for existing in current.generated_lookup_aliases
+                }
+            ),
+        ],
         category=category,
         addressHint=current.address_hint or incoming.address_hint,
         searchRegion=incoming.search_region or current.search_region,
@@ -317,7 +345,50 @@ def _merge(
         sourceDurationMinutes=(
             current.source_duration_minutes or incoming.source_duration_minutes
         ),
+        entityType=preferred.entity_type,
+        parentPlace=current.parent_place or incoming.parent_place,
+        authority=(
+            "high"
+            if "high" in {current.authority, incoming.authority}
+            else "medium"
+            if "medium" in {current.authority, incoming.authority}
+            else "low"
+        ),
     )
+
+
+def _merge_observed_aliases(
+    *groups: list[ObservedPlaceAlias],
+) -> list[ObservedPlaceAlias]:
+    aliases: list[ObservedPlaceAlias] = []
+    seen: set[tuple[str, str]] = set()
+    for alias in (alias for group in groups for alias in group):
+        key = (alias.value.casefold(), alias.source)
+        if key in seen:
+            continue
+        seen.add(key)
+        aliases.append(alias)
+    return aliases
+
+
+def _candidate_name_authority(
+    candidate: UnifiedPlaceCandidate,
+) -> tuple[int, int, float]:
+    evidence_rank = next(
+        (
+            rank
+            for source, rank in (
+                ("metadata", 4),
+                ("caption", 3),
+                ("ocr", 2),
+                ("stt", 1),
+            )
+            if candidate.source_evidence.get(source)
+        ),
+        0,
+    )
+    authority_rank = {"low": 0, "medium": 1, "high": 2}[candidate.authority]
+    return evidence_rank, authority_rank, candidate.confidence
 
 
 def _dedupe_key(value: str) -> str:

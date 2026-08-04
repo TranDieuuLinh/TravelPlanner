@@ -547,7 +547,11 @@ def main() -> int:
     return 0
 
 
-def _refresh_places_opening_hours(session: Session) -> None:
+def _refresh_places_opening_hours(
+    session: Session,
+    *,
+    batch_size: int = 500,
+) -> None:
     """Aggregate child opening hours into places.opening_hours JSON.
 
     The CSV row shape stores one record per ``(place_id, day_of_week)``,
@@ -582,12 +586,20 @@ def _refresh_places_opening_hours(session: Session) -> None:
     if not grouped:
         return
 
+    processed = 0
     for place_id, payload in grouped.items():
         place = session.get(Place, place_id)
         if place is None:
             continue
         place.opening_hours = payload
         place.revision = (place.revision or 1) + 1
+        processed += 1
+        if processed % batch_size == 0:
+            # A single flush for tens of thousands of ORM updates can exhaust
+            # the local PostgreSQL/container connection. Commit bounded batches
+            # and release the identity map before continuing.
+            session.commit()
+            session.expunge_all()
     session.commit()
 
 

@@ -10,12 +10,12 @@ Usage:
     from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
 
     orchestrator = ResearchToolsOrchestrator(place_repository)
-    
+
     # Tool 1: Region Overview
     result = orchestrator.region_overview(
         RegionOverviewInput(region_key="vn,vung-tau")
     )
-    
+
     # Tool 2: Constraint Research
     result = orchestrator.constraint_research(
         ConstraintResearchInput(
@@ -28,7 +28,7 @@ Usage:
             interests=["beach", "food"],
         )
     )
-    
+
     # Tool 3: Festival Discovery
     result = orchestrator.festival_discovery(
         FestivalDiscoveryInput(month="tháng 4")

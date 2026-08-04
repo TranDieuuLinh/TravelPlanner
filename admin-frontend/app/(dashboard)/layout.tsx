@@ -67,6 +67,12 @@ export default function DashboardLayout({
           <Link href="/golden" className={pathname === "/golden" ? "active" : ""}>
             <span>◇</span> Golden dataset
           </Link>
+          <Link
+            href="/knowledge-graph"
+            className={pathname === "/knowledge-graph" ? "active" : ""}
+          >
+            <span>⌘</span> Knowledge Graph
+          </Link>
           <Link href="/tools" className={pathname === "/tools" ? "active" : ""}>
             <span>⌂</span> Tools Tester
           </Link>

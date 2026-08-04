@@ -9,7 +9,7 @@
 
 Một phản hồi model tự do duy nhất rất khó kiểm tra, chỉnh sửa, so sánh, bổ sung
 route hoặc bảo toàn qua nhiều lần chỉnh sửa. Code hiện tại đã tách trách nhiệm
-Explorer, Planner, Finder, Check và Backup. Tầm nhìn MVP còn yêu cầu biến URL
+Explorer, Planner, PlaceSelector, Check và Backup. Tầm nhìn MVP còn yêu cầu biến URL
 video thành `SelectedPlaces`; nếu trộn nội dung nguồn không đáng tin trực tiếp
 vào Planner thì khó kiểm tra provenance, độ tin cậy và xác nhận của user.
 
@@ -23,10 +23,9 @@ bởi schema. Thêm pipeline trước Planner nhưng giữ ranh giới xác nh�
 3. Resolve đối chiếu candidate với place chuẩn hóa.
 4. User Confirm tạo `SelectedPlace`; candidate chưa xác nhận không phải intent.
 5. Explorer chuẩn hóa sở thích và xác định nhu cầu hỏi thêm.
-6. Planner chạy một lượt research để đề xuất journey shape/capability query,
-   backend kiểm chứng bằng Place database, rồi lượt thứ hai tạo MacroPlan và
-   DayBrief từ evidence.
-7. Finder điền item chi tiết bằng địa điểm đã chuẩn hóa.
+6. TripThemePlanner chạy một lượt research, backend kiểm chứng bằng Place
+   database, rồi lượt thứ hai chỉ tạo `TripThemeDraft` ở cấp toàn chuyến.
+7. PlaceSelector điền item chi tiết bằng địa điểm đã chuẩn hóa.
 8. Check áp dụng validation theo quy tắc và dữ liệu provider.
 9. Backup tạo một phương án riêng được liên kết khi user yêu cầu hoặc khi có rủi
    ro.

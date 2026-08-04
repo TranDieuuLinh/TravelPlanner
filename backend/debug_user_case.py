@@ -3,7 +3,7 @@
 Đây là case user chỉ gửi raw text, không attach place nào.
 Hệ thống phải:
   1. Parse intent → destination="Hà Nội", duration="weekend" (2 ngày), pace=balanced
-  2. Tìm MacroPlan
+  2. Tìm PlaceSelectionBlueprint
   3. Finder tự fill từ catalog (allow_finder_suggestions=True)
 """
 
@@ -16,15 +16,15 @@ backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionBlueprint,
     TravelIntent,
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.places.model import Place
 
 
@@ -51,7 +51,7 @@ class InMemoryFinderRepo:
         return list(self._by_region.get(region_key, []))[:limit]
 
 
-class LoggingTool(RepositoryFinderPlaceTool):
+class LoggingTool(RepositoryPlaceSelectionTool):
     def __init__(self, repo):
         super().__init__(repo)
         self.calls: list[dict] = []
@@ -190,7 +190,7 @@ def run(raw_request: str) -> None:
     places = build_catalog()
     repo = InMemoryFinderRepo(places)
     tool = LoggingTool(repo)
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
     user_status = UserStatus()
 
     # Intent do Explorer sẽ sinh: destination="Hà Nội", days=2, pace=balanced,
@@ -204,19 +204,19 @@ def run(raw_request: str) -> None:
         interests=["food", "culture"],
     )
 
-    # MacroPlan đơn giản (Planner sẽ sinh tự, nhưng để test Finder tôi hard-code)
-    macro_plan = MacroPlan(
+    # PlaceSelectionBlueprint đơn giản (Planner sẽ sinh tự, nhưng để test Finder tôi hard-code)
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội cuối tuần",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1, theme="Khám phá ẩm thực phố cổ",
                 targetArea="Hoàn Kiếm",
                 targetRegionKey="vn,ha-noi,hoan-kiem",
                 focusTags=["food"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2, theme="Văn hóa lịch sử Ba Đình",
                 targetArea="Ba Đình",
                 targetRegionKey="vn,ha-noi,ba-dinh",

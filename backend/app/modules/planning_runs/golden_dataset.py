@@ -8,8 +8,10 @@ _DATASET_DIR = Path(__file__).resolve().parents[4] / "database" / "golden_datase
 _MODULE_FILES = {
     "extractor": "extractor_cases.json",
     "explorer": "explorer_cases.json",
-    "planner": "planner_cases.json",
-    "finder": "finder_cases.json",
+    # These two files retain their historical filenames so existing local
+    # datasets keep working. Cases are exposed under the current module names.
+    "trip_theme_planner": "planner_cases.json",
+    "place_selector": "finder_cases.json",
     "checker_backup": "checker_backup_cases.json",
     "full_pipeline": "full_pipeline_cases.json",
 }
@@ -32,6 +34,7 @@ def load_golden_cases(
             (_DATASET_DIR / filename).read_text(encoding="utf-8")
         )
         for case in payload.get("cases", []):
+            case = _adapt_legacy_planning_case(module_name, case)
             item = {
                 "module": module_name,
                 "datasetVersion": payload.get("version"),
@@ -71,14 +74,75 @@ def update_golden_case_input(case_id: str, new_input: dict) -> dict | None:
                 case["input"] = new_input
                 filepath.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 
+                adapted_case = _adapt_legacy_planning_case(
+                    module_name, case
+                )
                 item = {
                     "module": module_name,
                     "datasetVersion": payload.get("version"),
-                    **case,
+                    **adapted_case,
                 }
-                item["validation"] = _validate_case(module_name, case)
+                item["validation"] = _validate_case(
+                    module_name, adapted_case
+                )
                 return item
     return None
+
+
+def _adapt_legacy_planning_case(module: str, case: dict) -> dict:
+    """Project stored pre-migration fixtures onto the current contracts.
+
+    The JSON files are retained as migration fixtures; evaluation and the API
+    expose only TripThemePlanner and PlaceSelector shapes.
+    """
+
+    adapted = json.loads(json.dumps(case))
+    input_data = adapted.get("input", {})
+    output = adapted.get("goldenOutput", {})
+    if module == "trip_theme_planner":
+        legacy_macro = output.pop("macroPlan", None) or {}
+        themes = legacy_macro.get("tripThemes") or _themes_from_legacy_days(
+            legacy_macro.get("dayBriefs", [])
+        )
+        output.pop("unallocatedSelectedPlaces", None)
+        output["tripThemesReady"] = bool(themes)
+        output["tripThemes"] = themes
+        output.setdefault("tripSpec", input_data.get("tripSpec", {"days": 1}))
+    elif module == "place_selector":
+        legacy_macro = input_data.pop("macroPlan", None) or {}
+        input_data["regionKey"] = legacy_macro.get(
+            "regionKey", "vn,ha-noi"
+        )
+        input_data["tripThemes"] = legacy_macro.get(
+            "tripThemes"
+        ) or _themes_from_legacy_days(legacy_macro.get("dayBriefs", []))
+        if "allowFinderSuggestions" in input_data:
+            input_data["allowPlaceSuggestions"] = input_data.pop(
+                "allowFinderSuggestions"
+            )
+    return adapted
+
+
+def _themes_from_legacy_days(days: list[dict]) -> list[dict]:
+    themes: list[dict] = []
+    for day in days:
+        theme = str(day.get("theme") or "Khám phá địa phương")
+        if any(item["theme"] == theme for item in themes):
+            continue
+        themes.append(
+            {
+                "theme": theme,
+                "focusTags": day.get("focusTags", []),
+                "minimumActivities": 1,
+            }
+        )
+    return themes or [
+        {
+            "theme": "Khám phá địa phương",
+            "focusTags": ["local"],
+            "minimumActivities": 1,
+        }
+    ]
 
 
 def _validate_case(module: str, case: dict) -> dict:
@@ -143,44 +207,42 @@ def _validate_case(module: str, case: dict) -> dict:
                     "SpeechToTextObservation forbids addressHint; address belongs "
                     "to ExtractedPlace after evidence merging.",
                 )
-    elif module == "planner":
+    elif module == "trip_theme_planner":
         for key in ("intent", "tripSpec", "regionContext"):
             if key not in input_data:
                 issue(
                     f"input.{key}",
-                    "Current PlannerAgentInput requires this field.",
+                    "Current TripThemePlanningInput requires this field.",
                 )
-        for key in ("mode", "macroPlan", "tripSpec", "trace"):
+        for key in (
+            "mode",
+            "tripThemesReady",
+            "tripThemes",
+            "tripSpec",
+            "trace",
+        ):
             if key not in output:
                 issue(
                     f"goldenOutput.{key}",
-                    "Current PlannerAgentOutput requires this field.",
+                    "Current TripThemePlanningOutput requires this field.",
                 )
-        if output.get("macroPlan", object()) is None:
+        if "macroPlan" in output or "dayBriefs" in output:
             issue(
-                "goldenOutput.macroPlan",
-                "PlannerAgentOutput does not allow null macroPlan, including "
-                "the blocked response.",
+                "goldenOutput",
+                "TripThemePlanner must not return calendar allocation.",
             )
-        for item in output.get("unallocatedSelectedPlaces", []):
-            if item.get("reasonCode") == "CONSTRAINT_EXCLUDED":
-                issue(
-                    "goldenOutput.unallocatedSelectedPlaces.reasonCode",
-                    "Current reason codes are lower snake_case, normally "
-                    "excluded_place_type or avoided_by_user.",
-                )
-    elif module == "finder":
-        for key in ("intent", "tripSpec", "macroPlan"):
+    elif module == "place_selector":
+        for key in ("intent", "tripSpec", "regionKey", "tripThemes"):
             if key not in input_data:
                 issue(
                     f"input.{key}",
-                    "Current FinderAgentInput requires this field.",
+                    "Current PlaceSelectionInput requires this field.",
                 )
         for key in ("mode", "finalDays", "trace"):
             if key not in output:
                 issue(
                     f"goldenOutput.{key}",
-                    "Current FinderAgentOutput requires this field.",
+                    "Current PlaceSelectionOutput requires this field.",
                 )
         for day_index, day in enumerate(output.get("finalDays", [])):
             for item_index, item in enumerate(day.get("items", [])):
@@ -190,7 +252,7 @@ def _validate_case(module: str, case: dict) -> dict:
                             f"goldenOutput.finalDays[{day_index}].items"
                             f"[{item_index}]"
                         ),
-                        "Current Finder stores travel in transportLegs, not as "
+                        "Current PlaceSelector stores travel in transportLegs, not as "
                         "a transport PlanItem.",
                     )
     elif module == "checker_backup":
@@ -222,14 +284,14 @@ def _validate_case(module: str, case: dict) -> dict:
                 issue(
                     "goldenOutput.backupPlan.days.items.isLocked",
                     "PlanItem has no isLocked field; locked IDs live in "
-                    "FinderPlanStatus.lockedItemIds.",
+                    "PlaceSelectionStatus.lockedItemIds.",
                 )
             required_plan_fields = {
                 "id",
                 "title",
                 "destination",
                 "intent",
-                "macroPlan",
+                "tripThemes",
                 "days",
             }
             if not required_plan_fields.issubset(backup_plan):
