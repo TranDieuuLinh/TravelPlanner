@@ -2,9 +2,9 @@ from enum import StrEnum
 
 
 class BudgetLevel(StrEnum):
-    low = "low"
-    medium = "medium"
-    high = "high"
+    budget = "budget"
+    balanced = "balanced"
+    comfortable = "comfortable"
 
 
 class TravelPace(StrEnum):
