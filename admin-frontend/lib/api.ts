@@ -552,3 +552,142 @@ export function deleteGraphImport(importId: string): Promise<{ deletedImportId: 
     { method: "DELETE" }
   );
 }
+
+// --- Knowledge Graph Entities API ---
+
+export type KGStats = {
+  entityCount: number;
+  aliasCount: number;
+  relationshipCount: number;
+};
+
+export type KGEntitySummary = {
+  id: string;
+  canonicalName: string;
+  entityType: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type KGEntityListPage = {
+  items: KGEntitySummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export type KGAliasDetail = {
+  id: number;
+  alias: string;
+  language: string;
+  createdAt: string;
+};
+
+export type KGPropertyDetail = {
+  id: number;
+  key: string;
+  value: string;
+  source: string | null;
+  updatedAt: string;
+};
+
+export type KGRelationshipSummary = {
+  id: number;
+  fromEntityId: string;
+  relationship: string;
+  toEntityId: string;
+  source: string | null;
+  createdAt: string;
+};
+
+export type KGEntityDetail = {
+  id: string;
+  canonicalName: string;
+  entityType: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  aliases: KGAliasDetail[];
+  aliasTotal: number;
+  aliasHasMore: boolean;
+  properties: KGPropertyDetail[];
+  propertyTotal: number;
+  propertyHasMore: boolean;
+  relationships: KGRelationshipSummary[];
+  relationshipTotal: number;
+  relationshipHasMore: boolean;
+};
+
+export type KGRelationshipListPage = {
+  items: KGRelationshipSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export function getKGStats(): Promise<KGStats> {
+  return request("/admin/knowledge-graph/stats");
+}
+
+export function listKGEntities(filters: {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  entityType?: string;
+  status?: string;
+}): Promise<KGEntityListPage> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined && filters.offset > 0) params.set("offset", String(filters.offset));
+  if (filters.search) params.set("search", filters.search);
+  if (filters.entityType) params.set("entity_type", filters.entityType);
+  if (filters.status) params.set("status", filters.status);
+  const query = params.toString();
+  return request(`/admin/knowledge-graph/entities${query ? `?${query}` : ""}`);
+}
+
+export function getKGEntityDetail(
+  entityId: string,
+  options?: {
+    aliasOffset?: number;
+    aliasLimit?: number;
+    propertyOffset?: number;
+    propertyLimit?: number;
+    relationshipOffset?: number;
+    relationshipLimit?: number;
+  }
+): Promise<KGEntityDetail> {
+  const params = new URLSearchParams();
+  if (options?.aliasOffset !== undefined) params.set("alias_offset", String(options.aliasOffset));
+  if (options?.aliasLimit !== undefined) params.set("alias_limit", String(options.aliasLimit));
+  if (options?.propertyOffset !== undefined) params.set("property_offset", String(options.propertyOffset));
+  if (options?.propertyLimit !== undefined) params.set("property_limit", String(options.propertyLimit));
+  if (options?.relationshipOffset !== undefined) params.set("relationship_offset", String(options.relationshipOffset));
+  if (options?.relationshipLimit !== undefined) params.set("relationship_limit", String(options.relationshipLimit));
+  const query = params.toString();
+  return request(
+    `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}${query ? `?${query}` : ""}`
+  );
+}
+
+export function listKGRelationships(filters: {
+  limit?: number;
+  offset?: number;
+  relationship?: string;
+  fromEntityId?: string;
+  toEntityId?: string;
+  search?: string;
+}): Promise<KGRelationshipListPage> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined && filters.offset > 0) params.set("offset", String(filters.offset));
+  if (filters.relationship) params.set("relationship", filters.relationship);
+  if (filters.fromEntityId) params.set("from_entity_id", filters.fromEntityId);
+  if (filters.toEntityId) params.set("to_entity_id", filters.toEntityId);
+  if (filters.search) params.set("search", filters.search);
+  const query = params.toString();
+  return request(`/admin/knowledge-graph/relationships${query ? `?${query}` : ""}`);
+}
