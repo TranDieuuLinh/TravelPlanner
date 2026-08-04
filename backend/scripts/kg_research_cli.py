@@ -4,6 +4,7 @@
 Usage:
     python scripts/kg_research_cli.py stats
     python scripts/kg_research_cli.py resolve-scope --destination "Hà Nội" --pretty
+    python scripts/kg_research_cli.py evaluate-fit --entity-id "..." --destination "Hà Nội" --days 3 --pretty
 """
 
 from __future__ import annotations
@@ -18,9 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.modules.knowledge_graph.research import (
+    BudgetLevel,
+    ExperienceFitInput,
+    ExperienceFitOutput,
     ScopeResolveInput,
     ScopeResolveOutput,
     ScopeResolutionRepository,
+    TransportMode,
+    kg_evaluate_experience_fit,
     kg_resolve_scope,
 )
 
@@ -110,6 +116,104 @@ def cmd_resolve_scope(
         session.close()
 
 
+def cmd_evaluate_fit(
+    entity_id: str | None,
+    claim_id: str | None,
+    destination: str,
+    days: int,
+    party_size: int,
+    start_date: str | None,
+    end_date: str | None,
+    budget_level: str | None,
+    budget_target: float | None,
+    excluded_types: list[str],
+    preferred_transport: list[str],
+    avoided_transport: list[str],
+    accessibility: list[str],
+    constraints: list[str],
+    pretty: bool,
+) -> int:
+    """Evaluate experience fit for an entity."""
+    target = entity_id or claim_id or "(not specified)"
+    print(f"# Evaluate Fit: {target}", file=sys.stderr)
+    print(f"# Destination: {destination} | Days: {days} | Party: {party_size}", file=sys.stderr)
+    print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
+    print(file=sys.stderr)
+
+    session = SessionLocal()
+    try:
+        repo = ScopeResolutionRepository(session)
+
+        if repo.is_empty():
+            output = ExperienceFitOutput(
+                entity=None,
+                overallStatus="unknown",
+                checks=[],
+                warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
+            )
+            print(output.model_dump_json(by_alias=True, indent=2 if pretty else None), file=sys.stdout)
+            print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
+            return 1
+
+        parsed_budget: BudgetLevel | None = None
+        if budget_level is not None:
+            try:
+                parsed_budget = BudgetLevel(budget_level.lower())
+            except ValueError:
+                print(json.dumps({"error": f"Invalid budget level: {budget_level}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        parsed_preferred: list[TransportMode] = []
+        for t in preferred_transport:
+            try:
+                parsed_preferred.append(TransportMode(t.lower()))
+            except ValueError:
+                print(json.dumps({"error": f"Invalid transport mode: {t}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        parsed_avoided: list[TransportMode] = []
+        for t in avoided_transport:
+            try:
+                parsed_avoided.append(TransportMode(t.lower()))
+            except ValueError:
+                print(json.dumps({"error": f"Invalid transport mode: {t}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        input_data = ExperienceFitInput(
+            entityId=entity_id,
+            claimId=claim_id,
+            destination=destination,
+            days=days,
+            partySize=party_size,
+            startDate=start_date,
+            endDate=end_date,
+            budgetLevel=parsed_budget,
+            budgetTargetAmount=budget_target,
+            excludedPlaceTypes=excluded_types,
+            preferredTransportModes=parsed_preferred,
+            avoidedTransportModes=parsed_avoided,
+            accessibilityRequirements=accessibility,
+            userConstraints=constraints,
+        )
+
+        result = kg_evaluate_experience_fit(repo, input_data)
+
+        indent = 2 if pretty else None
+        print(result.model_dump_json(by_alias=True, indent=indent), file=sys.stdout)
+
+        for warning in result.warnings:
+            if "KNOWLEDGE_GRAPH_EMPTY" in warning:
+                print(warning.split(":")[0], file=sys.stderr)
+                return 1
+
+        return 0
+    except Exception as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="kg_research_cli",
@@ -155,6 +259,93 @@ def main() -> int:
         help="Pretty-print JSON output",
     )
 
+    fit_parser = subparsers.add_parser(
+        "evaluate-fit",
+        help="Evaluate whether an entity fits a user's trip context",
+    )
+    fit_parser.add_argument(
+        "--entity-id",
+        help="Entity ID to evaluate (mutually exclusive with --claim-id)",
+    )
+    fit_parser.add_argument(
+        "--claim-id",
+        help="Claim/Experience ID to evaluate (mutually exclusive with --entity-id)",
+    )
+    fit_parser.add_argument(
+        "--destination",
+        required=True,
+        help="Destination name for scope check",
+    )
+    fit_parser.add_argument(
+        "--days",
+        type=int,
+        required=True,
+        help="Number of trip days (1-30)",
+    )
+    fit_parser.add_argument(
+        "--party-size",
+        type=int,
+        default=1,
+        help="Number of travelers (default: 1)",
+    )
+    fit_parser.add_argument(
+        "--start-date",
+        help="Trip start date (ISO 8601)",
+    )
+    fit_parser.add_argument(
+        "--end-date",
+        help="Trip end date (ISO 8601)",
+    )
+    fit_parser.add_argument(
+        "--budget-level",
+        choices=["low", "medium", "high", "luxury"],
+        help="Budget level preference",
+    )
+    fit_parser.add_argument(
+        "--budget-target",
+        type=float,
+        help="Target total budget in VND",
+    )
+    fit_parser.add_argument(
+        "--exclude-type",
+        nargs="+",
+        default=[],
+        dest="excluded_types",
+        help="Place types to exclude (e.g. Restaurant Accommodation)",
+    )
+    fit_parser.add_argument(
+        "--preferred-transport",
+        nargs="+",
+        default=[],
+        dest="preferred_transport",
+        help="Preferred transport modes (walking cycling public_transit taxi car boat motorbike)",
+    )
+    fit_parser.add_argument(
+        "--avoided-transport",
+        nargs="+",
+        default=[],
+        dest="avoided_transport",
+        help="Transport modes to avoid",
+    )
+    fit_parser.add_argument(
+        "--accessibility",
+        nargs="+",
+        default=[],
+        help="Accessibility requirements (e.g. wheelchair hearing_aid)",
+    )
+    fit_parser.add_argument(
+        "--constraint",
+        nargs="+",
+        default=[],
+        dest="constraints",
+        help="Additional user-defined constraints",
+    )
+    fit_parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON output",
+    )
+
     args = parser.parse_args()
 
     if args.command == "stats":
@@ -165,6 +356,24 @@ def main() -> int:
             place_ids=args.place_ids,
             max_depth=args.max_depth,
             result_limit=args.result_limit,
+            pretty=args.pretty,
+        )
+    elif args.command == "evaluate-fit":
+        return cmd_evaluate_fit(
+            entity_id=args.entity_id,
+            claim_id=args.claim_id,
+            destination=args.destination,
+            days=args.days,
+            party_size=args.party_size,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            budget_level=args.budget_level,
+            budget_target=args.budget_target,
+            excluded_types=args.excluded_types,
+            preferred_transport=args.preferred_transport,
+            avoided_transport=args.avoided_transport,
+            accessibility=args.accessibility,
+            constraints=args.constraints,
             pretty=args.pretty,
         )
     else:

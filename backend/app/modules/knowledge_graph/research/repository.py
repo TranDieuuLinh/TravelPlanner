@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.modules.knowledge_graph.model import (
     KnowledgeAlias,
     KnowledgeEntity,
+    KnowledgeProperty,
     KnowledgeRelationship,
 )
 from app.modules.knowledge_graph.research.schema import (
@@ -269,3 +270,116 @@ class ScopeResolutionRepository:
 
         area_refs.sort(key=lambda x: x.name)
         return area_refs
+
+    # --- Experience Fit Evaluation ---
+
+    def get_entity_by_id(self, entity_id: str) -> KnowledgeEntity | None:
+        """Get an entity by its ID."""
+        return self.db.get(KnowledgeEntity, entity_id)
+
+    def get_entity_properties(self, entity_id: str) -> dict[str, str]:
+        """Get all properties for an entity as a flat dict.
+
+        Returns:
+            Dict mapping property key to (value, source) tuples.
+        """
+        rows = self.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id == entity_id,
+            )
+        ).all()
+        return {row.key: row.value for row in rows}
+
+    def get_entity_property_with_source(self, entity_id: str, key: str) -> tuple[str | None, str | None]:
+        """Get a single property value and its source for an entity.
+
+        Returns:
+            Tuple of (value, source) or (None, None) if not found.
+        """
+        prop = self.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id == entity_id,
+                KnowledgeProperty.key == key,
+            )
+        ).first()
+        if prop is None:
+            return None, None
+        return prop.value, prop.source
+
+    def get_located_in_area(self, entity_id: str) -> str | None:
+        """Get the Area ID that an entity is located in via LOCATED_IN relationship.
+
+        Returns:
+            Area entity ID or None if not found.
+        """
+        rel = self.db.scalars(
+            select(KnowledgeRelationship).where(
+                KnowledgeRelationship.from_entity_id == entity_id,
+                KnowledgeRelationship.relationship_type == "LOCATED_IN",
+            )
+        ).first()
+        if rel is None:
+            return None
+        return rel.to_entity_id
+
+    def is_entity_in_scope(self, entity_id: str, scope_area_ids: set[str]) -> bool:
+        """Check if an entity is within the geographic scope.
+
+        Traverses LOCATED_IN chain to find the root area, then checks
+        if it is within the allowed scope area IDs.
+
+        Returns:
+            True if entity's root area is in scope, False otherwise.
+        """
+        visited: set[str] = set()
+        current_id: str | None = entity_id
+
+        while current_id is not None and current_id not in visited:
+            if current_id in scope_area_ids:
+                return True
+            visited.add(current_id)
+            next_area = self.get_located_in_area(current_id)
+            if next_area is None or next_area == current_id:
+                break
+            current_id = next_area
+
+        return False
+
+    def get_scope_area_ids(self, destination: str, max_depth: int = 4) -> set[str]:
+        """Get all area IDs within the geographic scope of a destination.
+
+        Args:
+            destination: Destination name to resolve
+            max_depth: Maximum PART_OF traversal depth
+
+        Returns:
+            Set of area entity IDs in the scope.
+        """
+        root = self.resolve_area_by_name(destination)
+        if root is None:
+            return set()
+
+        area_ids: set[str] = {root.id}
+
+        descendants = self.traverse_part_of_descendants(root.id, max_depth=max_depth)
+        for area_ref in descendants:
+            area_ids.add(area_ref.id)
+
+        ancestors = self.traverse_part_of_ancestors(root.id, max_depth=max_depth)
+        for area_ref in ancestors:
+            area_ids.add(area_ref.id)
+
+        return area_ids
+
+    def get_all_properties_with_sources(self, entity_id: str) -> list[tuple[str, str, str | None]]:
+        """Get all properties for an entity with their sources.
+
+        Returns:
+            List of (key, value, source) tuples.
+        """
+        rows = self.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id == entity_id,
+            )
+        ).all()
+        return [(row.key, row.value, row.source) for row in rows]
