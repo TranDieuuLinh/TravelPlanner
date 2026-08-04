@@ -1,12 +1,16 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # Existing development volumes may still contain the experimental
+    # `places.embedding` vector column. Keep a pgvector-capable PostgreSQL
+    # image so those volumes remain readable after the feature-code revert.
+    image: pgvector/pgvector:0.8.2-pg16
     environment:
       POSTGRES_DB: vsf_travel
       POSTGRES_USER: vsf
       POSTGRES_PASSWORD: vsf
     ports:
       - "5432:5432"
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,17 +23,102 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
-      BACKEND_CORS_ORIGINS: http://localhost:3000
+      BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       APP_ENV: local
+      GEMINI_MIN_INTERVAL_SECONDS: "0.0"
+      URL_IMPORT_JOB_TIMEOUT_SECONDS: "300"
+      PLACE_RESOLVER_PROVIDER: google_maps_scraper
+      ROUTE_PROVIDER: valhalla
+      VALHALLA_BASE_URL: http://valhalla:8002
+      OPENTRIPPLANNER_BASE_URL: http://opentripplanner:8080/otp/gtfs/v1
+      OPENTRIPPLANNER_SCHEDULE_STATUS: development_shifted_2018
+      GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
+      GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
+      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
+      DATABASE_PLACE_RESOLVER_TOP_K: "5"
+      DATABASE_PLACE_RESOLVER_MINIMUM_SCORE: "0.82"
+      DATABASE_PLACE_RESOLVER_MINIMUM_MARGIN: "0.08"
     ports:
       - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/var:/app/var
+      - ./database/golden_dataset:/database/golden_dataset:ro
     depends_on:
       postgres:
         condition: service_healthy
+      google-maps-scraper:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  google-maps-scraper:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.playwright
+    environment:
+      DISABLE_TELEMETRY: "1"
+      GOOGLE_MAPS_SCRAPER_WORK_DIR: /work
+      GOOGLE_MAPS_SCRAPER_CONCURRENCY: "2"
+      GOOGLE_MAPS_SCRAPER_STALE_ARTIFACT_SECONDS: "600"
     volumes:
-      - ./backend:/app
+      - ./backend/var/google-maps-scraper:/work
+    restart: unless-stopped
+
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    environment:
+      tile_urls: https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
+      force_rebuild: "false"
+      server_threads: "2"
+      build_admins: "true"
+      build_time_zones: "true"
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./routing-data/valhalla:/custom_files
+    restart: unless-stopped
+
+  opentripplanner:
+    image: docker.io/opentripplanner/opentripplanner:2.9.0
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -s /var/opentripplanner/graph.obj ]; then
+          if find /var/opentripplanner -maxdepth 1 -type f -name '*.osm.pbf' -print -quit | grep -q . \
+            && find /var/opentripplanner -maxdepth 1 -type f -iname '*gtfs*.zip' -print -quit | grep -q .; then
+            echo "OTP graph.obj is missing; building it from the mounted OSM and GTFS inputs..."
+            /docker-entrypoint.sh --build --save
+          else
+            echo "OTP data is not prepared; keeping the container alive. See routing-data/README.md."
+            exec tail -f /dev/null
+          fi
+        fi
+        exec /docker-entrypoint.sh --load --serve
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx2500m
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./routing-data/opentripplanner:/var/opentripplanner
+    restart: unless-stopped
 
 volumes:
   postgres_data:
