@@ -3,6 +3,11 @@
 Read-only tools for analyzing and querying the knowledge graph.
 """
 
+from app.modules.knowledge_graph.research.experience_fit_tool import (
+    EntityNotFoundError,
+    ExperienceFitInput,
+    ExperienceFitOutput,
+    kg_evaluate_experience_fit,
 from app.modules.knowledge_graph.research.experience_tool import (
     kg_discover_experiences,
 )
@@ -15,6 +20,10 @@ from app.modules.knowledge_graph.research.schema import (
     ActivityTypes,
     AreaRef,
     AreaType,
+    BudgetLevel,
+    CheckStatus,
+    DimensionCheck,
+    EntitySummary,
     EdgeEvidence,
     EntitySummary,
     ExperienceDiscoveryInput,
@@ -27,6 +36,7 @@ from app.modules.knowledge_graph.research.schema import (
     RecommendationPriority,
     ScopeResolveInput,
     ScopeResolveOutput,
+    TransportMode,
     TrustLevel,
     UnknownClaim,
 )
@@ -38,6 +48,7 @@ from app.modules.knowledge_graph.research.scope_tool import (
 __all__ = [
     # Repository
     "ScopeResolutionRepository",
+    # Scopes
     "KnowledgeGraphResearchRepository",
     # Tools
     "kg_resolve_scope",
@@ -50,6 +61,16 @@ __all__ = [
     "AREA_TYPES",
     "GraphStats",
     "LegacyAreaWarning",
+    # Experience Fit
+    "kg_evaluate_experience_fit",
+    "ExperienceFitInput",
+    "ExperienceFitOutput",
+    "CheckStatus",
+    "DimensionCheck",
+    "EntitySummary",
+    "BudgetLevel",
+    "TransportMode",
+    "EntityNotFoundError",
     # Experience discovery schemas
     "ExperienceDiscoveryInput",
     "GraphEvidenceBundle",
