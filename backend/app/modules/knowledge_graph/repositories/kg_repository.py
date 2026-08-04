@@ -134,6 +134,29 @@ class KnowledgeGraphRepository:
         self.db.flush()
         return entity
 
+    def update_entity(
+        self,
+        entity_id: str,
+        *,
+        canonical_name: str | None = None,
+        entity_type: str | None = None,
+        status: str | None = None,
+    ) -> KnowledgeEntity | None:
+        """Update an existing entity without creating a new row."""
+        entity = self.db.get(KnowledgeEntity, entity_id)
+        if entity is None:
+            return None
+        if canonical_name is not None:
+            entity.canonical_name = canonical_name
+            entity.normalized_name = _normalized(canonical_name)
+        if entity_type is not None:
+            entity.entity_type = entity_type
+        if status is not None:
+            entity.status = status
+        entity.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return entity
+
     def delete_entity(self, entity_id: str) -> bool:
         """Delete an entity and cascade to aliases/properties/relationships."""
         entity = self.db.get(KnowledgeEntity, entity_id)
@@ -184,6 +207,25 @@ class KnowledgeGraphRepository:
         self.db.flush()
         return alias_record
 
+    def update_alias(
+        self,
+        alias_id: int,
+        *,
+        alias: str | None = None,
+        language: str | None = None,
+    ) -> KnowledgeAlias | None:
+        """Update an existing alias without creating a new row."""
+        existing = self.db.get(KnowledgeAlias, alias_id)
+        if existing is None:
+            return None
+        if alias is not None:
+            existing.alias = alias
+            existing.normalized_alias = _normalized(alias)
+        if language is not None:
+            existing.language = language
+        self.db.flush()
+        return existing
+
     def delete_alias(self, alias_id: int) -> bool:
         """Delete an alias by ID."""
         alias = self.db.get(KnowledgeAlias, alias_id)
@@ -233,6 +275,28 @@ class KnowledgeGraphRepository:
         self.db.add(prop)
         self.db.flush()
         return prop
+
+    def update_property(
+        self,
+        property_id: int,
+        *,
+        key: str | None = None,
+        value: str | None = None,
+        source: str | None = None,
+    ) -> KnowledgeProperty | None:
+        """Update an existing property without creating a new row."""
+        existing = self.db.get(KnowledgeProperty, property_id)
+        if existing is None:
+            return None
+        if key is not None:
+            existing.key = key
+        if value is not None:
+            existing.value = value
+        if source is not None:
+            existing.source = source
+        existing.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return existing
 
     def delete_property(self, property_id: int) -> bool:
         """Delete a property by ID."""
@@ -336,6 +400,31 @@ class KnowledgeGraphRepository:
         self.db.add(rel)
         self.db.flush()
         return rel
+
+    def update_relationship(
+        self,
+        relationship_id: int,
+        *,
+        relationship: str | None = None,
+        to_entity_id: str | None = None,
+        source: str | None = None,
+        recommendations: dict | None = None,
+    ) -> KnowledgeRelationship | None:
+        """Update an existing relationship without creating a new row."""
+        existing = self.db.get(KnowledgeRelationship, relationship_id)
+        if existing is None:
+            return None
+        if relationship is not None:
+            existing.relationship_type = relationship
+        if to_entity_id is not None:
+            existing.to_entity_id = to_entity_id
+        if source is not None:
+            existing.source = source
+        if recommendations is not None:
+            existing.recommendations = recommendations
+        existing.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return existing
 
     def delete_relationship(self, relationship_id: int) -> bool:
         """Delete a relationship by ID."""

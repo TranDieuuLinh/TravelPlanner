@@ -1,7 +1,8 @@
 """Ontology definitions for Knowledge Graph.
 
 This module provides static definitions for node types, relationship types,
-and their property requirements. These are derived from the travel domain schema.
+and their property requirements. These are derived from the CSV/YAML knowledge
+graph package used by the travel domain.
 """
 
 from typing import TypedDict
@@ -14,8 +15,6 @@ class NodeTypeProperties(TypedDict):
 
 ONTOLOGY_NODE_TYPES = [
     "Area",
-    "City",
-    "District",
     "TravelPlace",
     "Restaurant",
     "DrinkDessert",
@@ -24,49 +23,118 @@ ONTOLOGY_NODE_TYPES = [
 ]
 
 ONTOLOGY_RELATIONSHIP_TYPES = [
-    "is_in_area",
-    "is_in_city",
-    "is_in_district",
-    "has_place",
-    "has_restaurant",
-    "has_activity",
-    "has_accommodation",
-    "serves_food",
-    "located_in",
+    "LOCATED_IN",
+    "NEAR",
+    "PART_OF",
+    "CONNECTS_TO",
+    "RECOMMENDS",
+    "OFFERS_ACTIVITY",
+    "SPECIAL_EXPERIENCE",
 ]
 
 ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
     "Area": {
-        "requiredProperties": ["name", "country"],
-        "optionalProperties": ["description", "best_time_to_visit"],
-    },
-    "City": {
-        "requiredProperties": ["name", "country"],
-        "optionalProperties": ["population", "description", "best_time_to_visit"],
-    },
-    "District": {
-        "requiredProperties": ["name"],
-        "optionalProperties": ["description"],
+        "requiredProperties": ["description", "latitude", "longitude"],
+        "optionalProperties": ["country", "administrative_level", "timezone", "region", "special_experience"],
     },
     "TravelPlace": {
-        "requiredProperties": ["name", "type"],
-        "optionalProperties": ["address", "description", "opening_hours", "price_level", "rating"],
+        "requiredProperties": ["description", "latitude", "longitude", "address"],
+        "optionalProperties": [
+            "opening_hours",
+            "phone",
+            "official_website",
+            "rating",
+            "review_count",
+            "facilities",
+            "accessibility_features",
+            "images",
+            "source_category",
+            "source_platform",
+            "source_url",
+            "plus_code",
+            "place_category",
+            "admission_fee_vnd",
+            "ticket_options",
+            "booking_required",
+            "booking_url",
+            "best_visit_months",
+            "weather_constraints",
+            "special_experience",
+        ],
     },
     "Restaurant": {
-        "requiredProperties": ["name", "cuisine_type"],
-        "optionalProperties": ["address", "price_range", "opening_hours", "rating"],
+        "requiredProperties": ["description", "latitude", "longitude", "address"],
+        "optionalProperties": [
+            "opening_hours",
+            "phone",
+            "official_website",
+            "rating",
+            "review_count",
+            "facilities",
+            "accessibility_features",
+            "images",
+            "source_category",
+            "source_platform",
+            "source_url",
+            "plus_code",
+            "cuisine",
+            "signature_dishes",
+            "price_level",
+            "special_experience",
+        ],
     },
     "DrinkDessert": {
-        "requiredProperties": ["name"],
-        "optionalProperties": ["type", "description", "price_range"],
+        "requiredProperties": ["description", "latitude", "longitude", "address"],
+        "optionalProperties": [
+            "opening_hours",
+            "phone",
+            "official_website",
+            "rating",
+            "review_count",
+            "facilities",
+            "accessibility_features",
+            "images",
+            "source_category",
+            "source_platform",
+            "source_url",
+            "plus_code",
+            "specialties",
+            "price_level",
+            "special_experience",
+        ],
     },
     "Accommodation": {
-        "requiredProperties": ["name", "type"],
-        "optionalProperties": ["address", "price_range", "rating", "amenities"],
+        "requiredProperties": ["description", "latitude", "longitude", "address"],
+        "optionalProperties": [
+            "opening_hours",
+            "phone",
+            "official_website",
+            "rating",
+            "review_count",
+            "facilities",
+            "accessibility_features",
+            "images",
+            "source_category",
+            "source_platform",
+            "source_url",
+            "plus_code",
+            "accommodation_type",
+            "check_in_time",
+            "check_out_time",
+            "price_range_vnd",
+            "special_experience",
+        ],
     },
     "Activity": {
-        "requiredProperties": ["name"],
-        "optionalProperties": ["description", "duration", "price_range", "best_time"],
+        "requiredProperties": ["description", "activity_category"],
+        "optionalProperties": [
+            "typical_duration_minutes",
+            "best_time_slots",
+            "suitable_for",
+            "requirements",
+            "booking_required",
+            "special_experience",
+        ],
     },
 }
 
