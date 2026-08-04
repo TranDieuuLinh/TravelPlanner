@@ -34,7 +34,7 @@ Compose tự chạy `--build --save` khi thiếu `graph.obj`, sau đó chuyển 
 của Docker Desktop. Chạy stack:
 
 ```bash
-docker compose up --build
+docker compose --profile routing up --build
 ```
 
 Endpoint mặc định:

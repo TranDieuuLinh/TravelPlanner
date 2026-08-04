@@ -265,3 +265,290 @@ export function testFestivalDiscovery(input: unknown): Promise<unknown> {
     body: JSON.stringify(input)
   });
 }
+
+export type KnowledgeGraphFileName =
+  | "aliases.csv"
+  | "entities.csv"
+  | "ontology.yaml"
+  | "properties.csv"
+  | "relationships.csv"
+  | "schema.yaml";
+
+export type KnowledgeGraphFiles = Record<KnowledgeGraphFileName, string>;
+
+export async function loadKnowledgeGraphFiles(): Promise<KnowledgeGraphFiles> {
+  const response = await fetch("/api/knowledge-graph", {
+    cache: "no-store",
+    credentials: "include"
+  });
+  if (!response.ok) throw await parseError(response);
+  const payload = (await response.json()) as { files: KnowledgeGraphFiles };
+  return payload.files;
+}
+
+export async function saveKnowledgeGraphFile(
+  fileName: KnowledgeGraphFileName,
+  content: string
+): Promise<void> {
+  const csrf = cookie("vsf_csrf");
+  const response = await fetch("/api/knowledge-graph", {
+    method: "PUT",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {})
+    },
+    body: JSON.stringify({ fileName, content })
+  });
+  if (!response.ok) throw await parseError(response);
+}
+
+export async function saveKnowledgeGraphFiles(
+  files: Partial<KnowledgeGraphFiles>
+): Promise<void> {
+  const csrf = cookie("vsf_csrf");
+  const response = await fetch("/api/knowledge-graph", {
+    method: "PUT",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {})
+    },
+    body: JSON.stringify({ files })
+  });
+  if (!response.ok) throw await parseError(response);
+}
+
+export type GraphMatchCandidate = {
+  entityId: string;
+  canonicalName: string;
+  type: string;
+  score: number;
+  matchedRules: string[];
+};
+
+export type ProposedGraphNode = {
+  tempId: string;
+  entityId: string;
+  type: string;
+  canonicalName: string;
+  aliases: string[];
+  properties: Record<string, string>;
+  evidence: string[];
+  confidence: number;
+  matchStatus: "existing" | "possible_duplicate" | "new";
+  matchCandidates: GraphMatchCandidate[];
+  selectedEntityId: string | null;
+  decision: "pending" | "approve_create" | "approve_existing" | "reject";
+  validationIssues: string[];
+  requiredProperties: string[];
+  optionalProperties: string[];
+};
+
+export type ProposedGraphEdge = {
+  tempId: string;
+  fromRef: string;
+  relationship: string;
+  toRef: string;
+  recommendations: Array<Record<string, unknown>>;
+  source: string;
+  evidence: string[];
+  confidence: number;
+  matchStatus: "existing" | "new" | "needs_review" | "invalid";
+  decision: "pending" | "approve_create" | "approve_existing" | "reject";
+  validationIssues: string[];
+};
+
+export type GraphImportSummary = {
+  id: string;
+  sourceLabel: string;
+  sourceUrl: string | null;
+  status: "extracting" | "needs_review" | "applied" | "failed";
+  nodeCount: number;
+  edgeCount: number;
+  issueCount: number;
+  createdAt: string;
+  appliedAt: string | null;
+  errorMessage: string | null;
+};
+
+export type GraphImportDetail = GraphImportSummary & {
+  sourceContent: string;
+  schemaVersion: string;
+  ontologyVersion: string;
+  datasetHash: string;
+  warnings: string[];
+  nodes: ProposedGraphNode[];
+  edges: ProposedGraphEdge[];
+};
+
+export type GraphImportMeta = GraphImportSummary & {
+  sourceContent: string;
+  schemaVersion: string;
+  ontologyVersion: string;
+  datasetHash: string;
+  warnings: string[];
+};
+
+export type ProposedNodePage = {
+  items: ProposedGraphNode[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export type ProposedEdgePage = {
+  items: ProposedGraphEdge[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export type ProposedNodeMutation = {
+  summary: GraphImportSummary;
+  meta: GraphImportMeta;
+  node: ProposedGraphNode;
+};
+
+export type ProposedEdgeMutation = {
+  summary: GraphImportSummary;
+  meta: GraphImportMeta;
+  edge: ProposedGraphEdge;
+};
+
+export type GraphImportListPage = {
+  items: GraphImportSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+export type GraphImportListFilters = {
+  limit?: number;
+  offset?: number;
+  status?: GraphImportSummary["status"];
+  search?: string;
+};
+
+export function listGraphImports(
+  filters: GraphImportListFilters = {}
+): Promise<GraphImportListPage> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined && filters.offset > 0) params.set("offset", String(filters.offset));
+  if (filters.status) params.set("status", filters.status);
+  if (filters.search) params.set("search", filters.search);
+  const query = params.toString();
+  return request(`/admin/knowledge-graph/imports${query ? `?${query}` : ""}`);
+}
+
+export function getGraphImportMeta(importId: string): Promise<GraphImportMeta> {
+  return request(`/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/meta`);
+}
+
+export function getGraphImport(importId: string): Promise<GraphImportDetail> {
+  return request(`/admin/knowledge-graph/imports/${encodeURIComponent(importId)}`);
+}
+
+export function listGraphImportNodes(
+  importId: string,
+  filters: { limit?: number; offset?: number } = {}
+): Promise<ProposedNodePage> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined && filters.offset > 0) params.set("offset", String(filters.offset));
+  const query = params.toString();
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/nodes${query ? `?${query}` : ""}`
+  );
+}
+
+export function listGraphImportEdges(
+  importId: string,
+  filters: { limit?: number; offset?: number } = {}
+): Promise<ProposedEdgePage> {
+  const params = new URLSearchParams();
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
+  if (filters.offset !== undefined && filters.offset > 0) params.set("offset", String(filters.offset));
+  const query = params.toString();
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/edges${query ? `?${query}` : ""}`
+  );
+}
+
+export function createGraphImport(payload: {
+  sourceLabel: string;
+  sourceUrl?: string;
+  content: string;
+}): Promise<GraphImportMeta> {
+  return request("/admin/knowledge-graph/imports", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateProposedGraphNode(
+  importId: string,
+  tempId: string,
+  payload: Pick<ProposedGraphNode, "entityId" | "type" | "canonicalName" | "aliases" | "properties" | "selectedEntityId" | "decision">
+): Promise<ProposedNodeMutation> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/nodes/${encodeURIComponent(tempId)}`,
+    { method: "PUT", body: JSON.stringify(payload) }
+  );
+}
+
+export function updateProposedGraphEdge(
+  importId: string,
+  tempId: string,
+  payload: Pick<ProposedGraphEdge, "fromRef" | "relationship" | "toRef" | "recommendations" | "source" | "decision">
+): Promise<ProposedEdgeMutation> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/edges/${encodeURIComponent(tempId)}`,
+    { method: "PUT", body: JSON.stringify(payload) }
+  );
+}
+
+export function applyGraphImport(importId: string): Promise<GraphImportMeta> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/apply`,
+    { method: "POST" }
+  );
+}
+
+export function revalidateGraphImport(importId: string): Promise<GraphImportMeta> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/revalidate`,
+    { method: "POST" }
+  );
+}
+
+export function deleteProposedGraphNode(
+  importId: string,
+  tempId: string
+): Promise<{ deletedTempId: string }> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/nodes/${encodeURIComponent(tempId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function deleteProposedGraphEdge(
+  importId: string,
+  tempId: string
+): Promise<{ deletedTempId: string }> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}/edges/${encodeURIComponent(tempId)}`,
+    { method: "DELETE" }
+  );
+}
+
+export function deleteGraphImport(importId: string): Promise<{ deletedImportId: string }> {
+  return request(
+    `/admin/knowledge-graph/imports/${encodeURIComponent(importId)}`,
+    { method: "DELETE" }
+  );
+}
