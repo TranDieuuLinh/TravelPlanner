@@ -20,12 +20,21 @@ from app.modules.knowledge_graph.model import (
 )
 from app.modules.knowledge_graph.research.schema import (
     AREA_TYPES,
+    ActivityTypes,
     AreaRef,
+    EntitySummary,
     GraphStats,
+    PLACE_TYPES,
+    Recommendation,
+    RecommendationPriority,
+    TrustLevel,
 )
 
 if TYPE_CHECKING:
     pass
+
+# Trust inference source prefix
+INFERENCE_PREFIX = "inference:"
 
 
 def _normalized(value: str) -> str:
@@ -269,3 +278,300 @@ class ScopeResolutionRepository:
 
         area_refs.sort(key=lambda x: x.name)
         return area_refs
+
+    # --- Experience Discovery Queries ---
+
+    def get_entity_summary(self, entity: KnowledgeEntity) -> EntitySummary:
+        """Convert a KnowledgeEntity to EntitySummary."""
+        return EntitySummary(
+            id=entity.id,
+            name=entity.canonical_name,
+            type=entity.entity_type,
+            status=entity.status,
+        )
+
+    def _determine_trust(
+        self,
+        entity: KnowledgeEntity,
+        edge_source: str | None,
+    ) -> tuple[TrustLevel, str | None]:
+        """Determine trust level and inference source for an entity/edge.
+
+        Returns:
+            Tuple of (trust_level, inference_source)
+        """
+        inference_source = None
+
+        if entity.status == "verified":
+            trust = TrustLevel.VERIFIED
+        elif edge_source and not edge_source.startswith(INFERENCE_PREFIX):
+            trust = TrustLevel.SOURCE_BACKED
+        else:
+            trust = TrustLevel.INFERRED
+            if edge_source:
+                inference_source = edge_source
+            elif entity.status == "draft":
+                inference_source = "inference:draft_status"
+
+        return trust, inference_source
+
+    def _parse_recommendations(
+        self,
+        recommendations_data: dict | None,
+        property_provenance: str | None,
+    ) -> tuple[list[Recommendation], TrustLevel, list[str]]:
+        """Parse recommendations from edge or property data.
+
+        Returns:
+            Tuple of (recommendations, trust, warnings)
+        """
+        recommendations: list[Recommendation] = []
+        warnings: list[str] = []
+        base_trust = TrustLevel.VERIFIED
+
+        if recommendations_data:
+            if isinstance(recommendations_data, list):
+                recs_data = recommendations_data
+            else:
+                recs_data = [recommendations_data]
+
+            for rec_data in recs_data:
+                if isinstance(rec_data, dict):
+                    priority_str = rec_data.get("priority", "recommended")
+                    try:
+                        priority = RecommendationPriority(priority_str)
+                    except ValueError:
+                        priority = RecommendationPriority.RECOMMENDED
+
+                    # Normalize timeSlots: convert objects to strings like "08:00-11:30"
+                    raw_time_slots = rec_data.get("timeSlots", [])
+                    normalized_time_slots: list[str | dict] = []
+                    for slot in raw_time_slots:
+                        if isinstance(slot, dict):
+                            if "start" in slot and "end" in slot:
+                                normalized_time_slots.append(f"{slot['start']}-{slot['end']}")
+                            else:
+                                normalized_time_slots.append(slot)
+                        elif isinstance(slot, str):
+                            normalized_time_slots.append(slot)
+
+                    rec = Recommendation(
+                        priority=priority,
+                        intent=rec_data.get("intent"),
+                        timeSlots=normalized_time_slots,
+                        recommendedVisitMinutes=rec_data.get("recommendedVisitMinutes"),
+                        reason=rec_data.get("reason"),
+                        warnings=[],
+                    )
+
+                    # Trust policy: downgrade 'must' to 'recommended' if only inference
+                    if (
+                        priority == RecommendationPriority.MUST
+                        and property_provenance
+                        and property_provenance.startswith(INFERENCE_PREFIX)
+                    ):
+                        rec = Recommendation(
+                            priority=RecommendationPriority.RECOMMENDED,
+                            intent=rec.intent,
+                            timeSlots=rec.timeSlots,
+                            recommendedVisitMinutes=rec.recommendedVisitMinutes,
+                            reason=rec.reason,
+                            warnings=[
+                                f"Priority downgraded from 'must' to 'recommended': "
+                                f"source is {property_provenance}"
+                            ],
+                        )
+                        warnings.append(
+                            f"Downgraded 'must' priority for claim due to inferred source"
+                        )
+
+                    recommendations.append(rec)
+                elif isinstance(rec_data, str):
+                    recommendations.append(
+                        Recommendation(
+                            priority=RecommendationPriority.RECOMMENDED,
+                            intent=rec_data,
+                        )
+                    )
+
+        if property_provenance and property_provenance.startswith(INFERENCE_PREFIX):
+            base_trust = TrustLevel.INFERRED
+
+        return recommendations, base_trust, warnings
+
+    def query_special_experiences_in_scope(
+        self,
+        area_ids: list[str],
+        interests: list[str] | None = None,
+        limit: int = 100,
+    ) -> list[KnowledgeRelationship]:
+        """Query SPECIAL_EXPERIENCE edges from Areas in scope.
+
+        Path: Area → SPECIAL_EXPERIENCE → Place
+        """
+        query = (
+            select(KnowledgeRelationship)
+            .where(
+                KnowledgeRelationship.from_entity_id.in_(area_ids),
+                KnowledgeRelationship.relationship_type == "SPECIAL_EXPERIENCE",
+            )
+            .limit(limit)
+        )
+        return list(self.db.scalars(query).all())
+
+    def query_activities_in_scope(
+        self,
+        area_ids: list[str],
+        interests: list[str] | None = None,
+        limit: int = 100,
+    ) -> list[KnowledgeRelationship]:
+        """Query SPECIAL_EXPERIENCE edges from Areas pointing to Activities.
+
+        Path: Area → SPECIAL_EXPERIENCE → Activity
+        """
+        activity_rels = (
+            select(KnowledgeRelationship)
+            .join(
+                KnowledgeEntity,
+                KnowledgeRelationship.to_entity_id == KnowledgeEntity.id,
+            )
+            .where(
+                KnowledgeRelationship.from_entity_id.in_(area_ids),
+                KnowledgeRelationship.relationship_type == "SPECIAL_EXPERIENCE",
+                KnowledgeEntity.entity_type.in_(ActivityTypes),
+            )
+            .limit(limit)
+        )
+        return list(self.db.scalars(activity_rels).all())
+
+    def query_place_offers_activity(
+        self,
+        place_ids: list[str],
+        limit: int = 100,
+    ) -> list[KnowledgeRelationship]:
+        """Query OFFERS_ACTIVITY edges from Places.
+
+        Path: Place → OFFERS_ACTIVITY → Activity
+        """
+        query = (
+            select(KnowledgeRelationship)
+            .where(
+                KnowledgeRelationship.from_entity_id.in_(place_ids),
+                KnowledgeRelationship.relationship_type == "OFFERS_ACTIVITY",
+            )
+            .limit(limit)
+        )
+        return list(self.db.scalars(query).all())
+
+    def query_special_experience_to_place_offers_activity(
+        self,
+        area_ids: list[str],
+        limit: int = 100,
+    ) -> list[tuple[KnowledgeRelationship, KnowledgeRelationship]]:
+        """Query chained SPECIAL_EXPERIENCE + OFFERS_ACTIVITY paths.
+
+        Path: Area → SPECIAL_EXPERIENCE → Place → OFFERS_ACTIVITY → Activity
+        Returns tuples of (special_exp_rel, offers_rel).
+        """
+        special_exp_rels = self.query_special_experiences_in_scope(area_ids, limit=limit)
+        place_ids = list({rel.to_entity_id for rel in special_exp_rels})
+
+        if not place_ids:
+            return []
+
+        offers_rels = self.query_place_offers_activity(place_ids, limit=limit)
+        offers_by_place = {rel.from_entity_id: rel for rel in offers_rels}
+
+        chained: list[tuple[KnowledgeRelationship, KnowledgeRelationship]] = []
+        for se_rel in special_exp_rels:
+            if se_rel.to_entity_id in offers_by_place:
+                chained.append((se_rel, offers_by_place[se_rel.to_entity_id]))
+
+        return chained
+
+    def query_located_in_place_offers_activity(
+        self,
+        area_ids: list[str],
+        limit: int = 100,
+    ) -> list[tuple[KnowledgeRelationship, KnowledgeRelationship]]:
+        """Query chained LOCATED_IN + OFFERS_ACTIVITY paths.
+
+        Path: Area ← LOCATED_IN ← Place → OFFERS_ACTIVITY → Activity
+        Returns tuples of (located_in_rel, offers_rel).
+        """
+        located_in_rels = (
+            select(KnowledgeRelationship)
+            .where(
+                KnowledgeRelationship.to_entity_id.in_(area_ids),
+                KnowledgeRelationship.relationship_type == "LOCATED_IN",
+            )
+            .limit(limit)
+        )
+        located_in_list = list(self.db.scalars(located_in_rels).all())
+        place_ids = list({rel.from_entity_id for rel in located_in_list})
+
+        if not place_ids:
+            return []
+
+        offers_rels = self.query_place_offers_activity(place_ids, limit=limit)
+        offers_by_place = {rel.from_entity_id: rel for rel in offers_rels}
+
+        chained: list[tuple[KnowledgeRelationship, KnowledgeRelationship]] = []
+        for li_rel in located_in_list:
+            if li_rel.from_entity_id in offers_by_place:
+                chained.append((li_rel, offers_by_place[li_rel.from_entity_id]))
+
+        return chained
+
+    def get_entities_by_ids(
+        self,
+        entity_ids: list[str],
+    ) -> dict[str, KnowledgeEntity]:
+        """Batch fetch entities by IDs."""
+        entities = self.db.scalars(
+            select(KnowledgeEntity).where(KnowledgeEntity.id.in_(entity_ids))
+        ).all()
+        return {e.id: e for e in entities}
+
+    def get_property_value(
+        self,
+        entity_id: str,
+        key: str,
+    ) -> KnowledgeProperty | None:
+        """Get a single property for an entity."""
+        return self.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id == entity_id,
+                KnowledgeProperty.key == key,
+            )
+        ).first()
+
+    def get_scope_area_ids(
+        self,
+        root_area_id: str,
+        max_depth: int = 4,
+    ) -> list[str]:
+        """Get all Area IDs in scope (root + descendants)."""
+        area_ids = [root_area_id]
+        queue: list[str] = [root_area_id]
+
+        while queue:
+            current_id = queue.pop(0)
+            children = self.db.scalars(
+                select(KnowledgeRelationship.to_entity_id).where(
+                    KnowledgeRelationship.from_entity_id == current_id,
+                    KnowledgeRelationship.relationship_type == "PART_OF",
+                )
+            ).all()
+
+            for child_id in children:
+                child_entity = self.db.get(KnowledgeEntity, child_id)
+                if child_entity and child_entity.entity_type in AREA_TYPES:
+                    area_ids.append(child_id)
+                    queue.append(child_id)
+
+        return area_ids
+
+
+# Alias for compatibility with experience discovery tool
+KnowledgeGraphResearchRepository = ScopeResolutionRepository
