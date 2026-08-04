@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -66,16 +66,17 @@ class KnowledgeGraphRepository:
         count_query = select(func.count(KnowledgeEntity.id))
 
         if search:
-            norm = _normalized(search)
-            like_pattern = f"%{norm}%"
-            query = query.where(
-                (KnowledgeEntity.normalized_name.ilike(like_pattern))
-                | (KnowledgeEntity.id.ilike(like_pattern))
+            normalized_pattern = f"%{_normalized(search)}%"
+            id_pattern = f"%{search.strip()}%"
+            search_filter = or_(
+                KnowledgeEntity.normalized_name.ilike(normalized_pattern),
+                KnowledgeEntity.id.ilike(id_pattern),
+                KnowledgeEntity.aliases.any(
+                    KnowledgeAlias.normalized_alias.ilike(normalized_pattern)
+                ),
             )
-            count_query = count_query.where(
-                (KnowledgeEntity.normalized_name.ilike(like_pattern))
-                | (KnowledgeEntity.id.ilike(like_pattern))
-            )
+            query = query.where(search_filter)
+            count_query = count_query.where(search_filter)
 
         if entity_type:
             query = query.where(KnowledgeEntity.entity_type == entity_type)
@@ -85,7 +86,10 @@ class KnowledgeGraphRepository:
             query = query.where(KnowledgeEntity.status == status)
             count_query = count_query.where(KnowledgeEntity.status == status)
 
-        query = query.order_by(KnowledgeEntity.canonical_name).offset(offset).limit(limit)
+        query = query.order_by(
+            KnowledgeEntity.canonical_name,
+            KnowledgeEntity.id,
+        ).offset(offset).limit(limit)
         total = self.db.scalar(count_query) or 0
         entities = list(self.db.scalars(query))
         return entities, total
@@ -256,9 +260,9 @@ class KnowledgeGraphRepository:
         count_query = select(func.count(KnowledgeRelationship.id))
 
         if relationship:
-            query = query.where(KnowledgeRelationship.relationship == relationship)
+            query = query.where(KnowledgeRelationship.relationship_type == relationship)
             count_query = count_query.where(
-                KnowledgeRelationship.relationship == relationship
+                KnowledgeRelationship.relationship_type == relationship
             )
         if from_entity_id:
             query = query.where(KnowledgeRelationship.from_entity_id == from_entity_id)
@@ -275,12 +279,12 @@ class KnowledgeGraphRepository:
             query = query.where(
                 (KnowledgeRelationship.from_entity_id.ilike(like_pattern))
                 | (KnowledgeRelationship.to_entity_id.ilike(like_pattern))
-                | (KnowledgeRelationship.relationship.ilike(like_pattern))
+                | (KnowledgeRelationship.relationship_type.ilike(like_pattern))
             )
             count_query = count_query.where(
                 (KnowledgeRelationship.from_entity_id.ilike(like_pattern))
                 | (KnowledgeRelationship.to_entity_id.ilike(like_pattern))
-                | (KnowledgeRelationship.relationship.ilike(like_pattern))
+                | (KnowledgeRelationship.relationship_type.ilike(like_pattern))
             )
 
         query = query.order_by(KnowledgeRelationship.id).offset(offset).limit(limit)
@@ -298,7 +302,7 @@ class KnowledgeGraphRepository:
         return self.db.scalars(
             select(KnowledgeRelationship).where(
                 KnowledgeRelationship.from_entity_id == from_entity_id,
-                KnowledgeRelationship.relationship == relationship,
+                KnowledgeRelationship.relationship_type == relationship,
                 KnowledgeRelationship.to_entity_id == to_entity_id,
             )
         ).first()
@@ -384,14 +388,16 @@ class KnowledgeGraphRepository:
             )
         ) or 0
 
+        aliases = list(self.db.scalars(alias_query))
+        properties = list(self.db.scalars(property_query))
         return {
             "entity": entity,
-            "aliases": list(self.db.scalars(alias_query)),
+            "aliases": aliases,
             "alias_total": alias_total,
-            "alias_has_more": alias_offset + len(list(self.db.scalars(alias_query))) < alias_total,
-            "properties": list(self.db.scalars(property_query)),
+            "alias_has_more": alias_offset + len(aliases) < alias_total,
+            "properties": properties,
             "property_total": property_total,
-            "property_has_more": property_offset + len(list(self.db.scalars(property_query))) < property_total,
+            "property_has_more": property_offset + len(properties) < property_total,
         }
 
     # --- Matching helpers (limited queries) ---

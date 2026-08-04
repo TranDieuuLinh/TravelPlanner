@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.modules.auth.dependencies import require_role
 from app.modules.knowledge_graph.dependencies import get_db, get_knowledge_graph_repository
@@ -13,13 +13,22 @@ from app.modules.users.model import User
 router = APIRouter(prefix="/admin/knowledge-graph", tags=["admin-knowledge-graph"])
 
 
-class KnowledgeGraphStats(BaseModel):
+def _to_camel(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part.capitalize() for part in tail)
+
+
+class KnowledgeGraphResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+
+class KnowledgeGraphStats(KnowledgeGraphResponse):
     entity_count: int
     alias_count: int
     relationship_count: int
 
 
-class EntitySummary(BaseModel):
+class EntitySummary(KnowledgeGraphResponse):
     id: str
     canonical_name: str
     entity_type: str
@@ -28,7 +37,7 @@ class EntitySummary(BaseModel):
     updated_at: str
 
 
-class EntityListResponse(BaseModel):
+class EntityListResponse(KnowledgeGraphResponse):
     items: list[EntitySummary]
     total: int
     limit: int
@@ -36,14 +45,14 @@ class EntityListResponse(BaseModel):
     has_more: bool
 
 
-class AliasDetail(BaseModel):
+class AliasDetail(KnowledgeGraphResponse):
     id: int
     alias: str
     language: str
     created_at: str
 
 
-class PropertyDetail(BaseModel):
+class PropertyDetail(KnowledgeGraphResponse):
     id: int
     key: str
     value: str
@@ -51,7 +60,7 @@ class PropertyDetail(BaseModel):
     updated_at: str
 
 
-class RelationshipSummary(BaseModel):
+class RelationshipSummary(KnowledgeGraphResponse):
     id: int
     from_entity_id: str
     relationship: str
@@ -60,7 +69,7 @@ class RelationshipSummary(BaseModel):
     created_at: str
 
 
-class EntityDetailResponse(BaseModel):
+class EntityDetailResponse(KnowledgeGraphResponse):
     id: str
     canonical_name: str
     entity_type: str
@@ -78,7 +87,7 @@ class EntityDetailResponse(BaseModel):
     relationship_has_more: bool
 
 
-class RelationshipListResponse(BaseModel):
+class RelationshipListResponse(KnowledgeGraphResponse):
     items: list[RelationshipSummary]
     total: int
     limit: int
@@ -160,8 +169,8 @@ def get_entity_detail(
         raise AppError(404, "ENTITY_NOT_FOUND", "Entity not found.")
 
     entity = detail["entity"]
-    aliases_page = repo.get_aliases_for_entity(entity_id)
-    properties_page = repo.get_properties_for_entity(entity_id)
+    aliases_page = detail["aliases"]
+    properties_page = detail["properties"]
 
     rels, rel_total = repo.list_relationships(
         limit=relationship_limit,
@@ -203,7 +212,7 @@ def get_entity_detail(
             RelationshipSummary(
                 id=r.id,
                 from_entity_id=r.from_entity_id,
-                relationship=r.relationship,
+                relationship=r.relationship_type,
                 to_entity_id=r.to_entity_id,
                 source=r.source,
                 created_at=r.created_at.isoformat() if r.created_at else "",
@@ -240,7 +249,7 @@ def list_relationships(
             RelationshipSummary(
                 id=r.id,
                 from_entity_id=r.from_entity_id,
-                relationship=r.relationship,
+                relationship=r.relationship_type,
                 to_entity_id=r.to_entity_id,
                 source=r.source,
                 created_at=r.created_at.isoformat() if r.created_at else "",
@@ -251,4 +260,28 @@ def list_relationships(
         limit=limit,
         offset=offset,
         has_more=has_more,
+    )
+
+
+class OntologyResponse(KnowledgeGraphResponse):
+    node_types: list[str]
+    relationship_types: list[str]
+    node_type_properties: dict[str, dict[str, list[str]]]
+
+
+@router.get("/ontology", response_model=OntologyResponse)
+def get_ontology(
+    _: Annotated[User, Depends(require_role("admin"))],
+) -> OntologyResponse:
+    """Return allowed node types, relationship types, and their property definitions."""
+    from app.modules.knowledge_graph.ontology import (
+        get_all_node_type_properties,
+        get_node_types,
+        get_relationship_types,
+    )
+
+    return OntologyResponse(
+        node_types=get_node_types(),
+        relationship_types=get_relationship_types(),
+        node_type_properties=get_all_node_type_properties(),
     )

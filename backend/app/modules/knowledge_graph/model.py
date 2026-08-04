@@ -94,7 +94,7 @@ class KnowledgeProperty(Base):
     )
     key: Mapped[str] = mapped_column(String(128), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     entity: Mapped[KnowledgeEntity] = relationship("KnowledgeEntity", back_populates="properties")
@@ -113,27 +113,31 @@ class KnowledgeRelationship(Base):
     from_entity_id: Mapped[str] = mapped_column(
         String(96), ForeignKey("knowledge_entities.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    relationship: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    relationship_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     to_entity_id: Mapped[str] = mapped_column(
         String(96), ForeignKey("knowledge_entities.id", ondelete="CASCADE"), nullable=False, index=True
     )
     recommendations: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     from_entity: Mapped[KnowledgeEntity] = relationship(
-        "KnowledgeEntity", foreign_keys=[from_entity_id], back_populates="outgoing_relationships"
+        "KnowledgeEntity",
+        back_populates="outgoing_relationships",
+        foreign_keys=[from_entity_id],
     )
     to_entity: Mapped[KnowledgeEntity] = relationship(
-        "KnowledgeEntity", foreign_keys=[to_entity_id], back_populates="incoming_relationships"
+        "KnowledgeEntity",
+        back_populates="incoming_relationships",
+        foreign_keys=[to_entity_id],
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "from_entity_id", "relationship", "to_entity_id",
+            "from_entity_id", "relationship_type", "to_entity_id",
             name="uq_knowledge_relationships_edge"
         ),
         Index("ix_knowledge_relationships_from_to", "from_entity_id", "to_entity_id"),
@@ -221,7 +225,7 @@ class KnowledgeGraphImportEdge(Base):
     )
     temp_id: Mapped[str] = mapped_column(String(80), nullable=False)
     from_ref: Mapped[str] = mapped_column(String(80), nullable=False)
-    relationship: Mapped[str] = mapped_column(String(80), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(80), nullable=False)
     to_ref: Mapped[str] = mapped_column(String(80), nullable=False)
     recommendations: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)
     source: Mapped[str] = mapped_column(String(2048), nullable=False)

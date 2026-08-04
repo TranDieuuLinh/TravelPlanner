@@ -378,7 +378,7 @@ class GraphImportRepository:
         return {
             "temp_id": edge.temp_id,
             "from_ref": edge.from_ref,
-            "relationship": edge.relationship,
+            "relationship_type": edge.relationship_type,
             "to_ref": edge.to_ref,
             "recommendations": edge.recommendations or [],
             "source": edge.source,

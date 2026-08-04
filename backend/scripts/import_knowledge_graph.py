@@ -31,7 +31,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from sqlalchemy import create_engine
@@ -394,7 +394,7 @@ def import_relationships(
     existing = db.scalars(
         select(
             KnowledgeRelationship.from_entity_id,
-            KnowledgeRelationship.relationship,
+            KnowledgeRelationship.relationship_type,
             KnowledgeRelationship.to_entity_id,
         ).select_from(KnowledgeRelationship)
     ).all()
@@ -427,7 +427,7 @@ def import_relationships(
 
                 rel = KnowledgeRelationship(
                     from_entity_id=from_id,
-                    relationship=relationship,
+                    relationship_type=relationship,
                     to_entity_id=to_id,
                     source=source or None,
                     recommendations=recommendations,
