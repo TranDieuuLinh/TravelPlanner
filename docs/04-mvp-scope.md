@@ -65,19 +65,27 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Nhập điểm đến, ngày/số ngày, điểm xuất phát, nhóm đi, ngân sách, tiền tệ, nhịp
   độ, sở thích, phương tiện, nhu cầu tiếp cận và ràng buộc cứng.
 - Câu hỏi làm rõ có giá trị cao, cập nhật cùng draft.
-- Tạo `MacroPlan` và `DayBrief` trước khi điền lịch chi tiết.
+- TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến, không tạo ngày.
+- PlaceSelector tạo đủ số ngày từ `tripSpec.days`, chọn địa điểm và tối ưu tuyến.
 - Tạo `Main Plan` theo ngày với item ổn định, khung giờ, thời lượng, place, chi
   phí, nguồn và ghi chú.
-- Finder ưu tiên `SelectedPlaces`, gom khu vực hợp lý và đưa địa điểm chưa xếp
+- PlaceSelector ưu tiên `SelectedPlaces`, gom khu vực hợp lý và đưa địa điểm chưa xếp
   được vào danh sách có lý do.
 - Sau khi tuyến chính đã được xếp, mention từ URL chỉ mô tả hoạt động nhưng
   không xác minh được venue (ví dụ “cà phê trứng”) có thể tạo một gợi ý riêng
   gần tuyến. Hệ thống thử địa chỉ độc lập khi nguồn có địa chỉ, sau đó xếp hạng
   địa điểm catalog theo độ thuận tuyến và popularity. Gợi ý phải được ghi rõ là
-  suy luận của Finder, không được trình bày như địa điểm được video xác nhận.
-- Hiển thị marker, route, khoảng cách, thời gian và phương tiện giữa các item;
-  khi public transit khả thi, hiển thị cạnh phương tiện chính như một phương án
-  dự phòng thay vì trộn vào Backup Plan của toàn hành trình.
+  suy luận của PlaceSelector, không được trình bày như địa điểm được video xác nhận.
+- Hiển thị marker, route, khoảng cách, thời gian và phương tiện cụ thể giữa các
+  item. UI luôn giữ ô tô trong các lựa chọn route road khả thi; đi bộ chỉ xuất
+  hiện cho chặng dưới 3 km. Phương tiện công cộng được thêm khi có tuyến
+  OpenTripPlanner hợp lệ. Không hiển thị `mixed`/`unknown` như một lựa chọn cho
+  người dùng.
+- Điều khiển bản đồ tách rõ hai tác vụ: xem toàn bộ tuyến ngày sẽ thêm điểm xuất
+  phát đã chọn trước chuỗi stop cố định, còn tìm đường nhanh dùng hai ô điểm đi
+  và điểm đến để tới một stop trong plan, địa điểm tìm thêm hoặc tọa độ người
+  dùng chọn trực tiếp trên bản đồ. Tìm đường nhanh không sửa thứ tự hay nội dung
+  plan đã lưu.
 - Thêm khoảng đệm, bữa ăn/nghỉ và timezone địa phương.
 - Structured output, schema validation và không dùng văn bản tự do làm dữ liệu
   vận hành duy nhất.

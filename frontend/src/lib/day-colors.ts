@@ -1,8 +1,8 @@
-// Keep map accents away from green so they do not blend with parks and other
-// green features already present in the OpenStreetMap tiles.
-const HUES = [210, 225, 240, 258, 276, 24, 342];
-const SATURATIONS = [58, 64, 70];
-const LIGHTNESSES = [36, 41, 46];
+// Keep route colors distinct, but muted enough that they do not overpower the
+// itinerary or the desaturated OpenStreetMap base layer.
+const HUES = [168, 198, 225, 262, 306, 18, 42];
+const SATURATIONS = [32, 38, 44];
+const LIGHTNESSES = [34, 39, 44];
 const COLOR_COUNT = HUES.length * SATURATIONS.length * LIGHTNESSES.length;
 const COLOR_PROBE_STEP = 17;
 

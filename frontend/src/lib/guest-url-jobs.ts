@@ -95,7 +95,7 @@ async function processQueue(): Promise<void> {
           context: explore.explorer,
           intakeId: explore.intakeId,
           userId: explore.userId,
-          allowFinderSuggestions: explore.allowFinderSuggestions,
+          allowPlaceSuggestions: explore.allowPlaceSuggestions,
           signal: controller.signal
         });
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;

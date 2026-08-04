@@ -1,267 +1,60 @@
 # Planning agent contracts
 
-Tài liệu này định nghĩa cách các agent trong module `plans` giao tiếp với nhau.
-Schema code nằm ở `backend/app/modules/plans/dto/agent_contracts.py`.
+Tài liệu này mô tả contract runtime hiện tại của module `plans`. Schema nguồn
+nằm tại `backend/app/modules/plans/dto/agent_contracts.py`.
 
 ## Flow chính
 
 ```text
-ExplorerAgentInput
-        |
-        v
 Explorer
-        |
-        v
-ExplorerAgentOutput
-        |
-        v
-PlannerAgentInput
-        |
-        v
-Planner
-        |
-        v
-PlannerAgentOutput
-        |
-        v
-FinderAgentInput
-        |
-        v
-Finder
-        |
-        v
-FinderAgentOutput
+   |
+   v
+TripThemePlanner
+   |
+   v
+PlaceSelector
+   |
+   v
+Checker -> Main Plan / Backup Plan
 ```
+
+`MacroPlan`, `DayBrief`, `PlannerService` và `FinderService` không còn là
+contract runtime. TripThemePlanner không tạo lịch theo ngày. PlaceSelector sở
+hữu việc tạo đủ số ngày, chọn Place, phân bổ capacity và tối ưu tuyến.
 
 ## Nguyên tắc giao tiếp
 
-- Agent chỉ nhận input qua schema input của mình.
-- Agent chỉ trả output qua schema output của mình.
-- Không truyền payload raw từ tool/provider sang agent tiếp theo.
-- Mọi output nên có `trace` để biết agent đã làm gì và vì sao.
-- `Explorer` tạo `TravelIntent`; `Planner` tạo `MacroPlan`; `Finder` tạo
-  `PlanDay[]`.
-- `url_reels` chỉ được đưa vào Explorer dưới dạng `UrlReelSignal`, không đi thẳng
-  vào Planner hoặc Finder.
-- `destination` luôn là khu vực chung, ví dụ `Da Nang`, `Da Lat`, `Tokyo`.
-- Explorer context là output công khai. Place extraction là stream nội bộ; mọi
-  loại địa điểm, gồm food/cafe, nằm trong một `placeCandidates` và category dùng
-  để phân loại.
-- `PlaceCandidateAggregator` gộp candidate từ prompt/OCR/URL và giữ danh sách
-  source. Resolver tự động lưu chúng vào `user_must_place`; không hỏi user lại.
-- Explorer chỉ bàn giao `intakeId + userId + explorer`; không tự gọi Planner
-  hoặc Finder. Planner downstream dùng context và giữ hai correlation key.
-- Finder là consumer của `user_must_place` trong planning flow và phải đọc theo
-  cả `intakeId + userId`.
-- Nhu cầu final như khách sạn, phương tiện, giá tiền và lịch theo ngày nằm trong
-  schema output của Finder: `finalDays` và `tripCostEstimate`.
+- Agent chỉ nhận/trả dữ liệu qua schema của chính nó.
+- Payload thô của nguồn hoặc provider không đi thẳng vào planning domain.
+- `Explorer` trả intent, trip spec và Place đã chuẩn hóa có provenance.
+- `TripThemePlanner` chỉ trả yêu cầu trải nghiệm ở cấp toàn chuyến.
+- `PlaceSelector` tạo `PlanDay[]` và `UnscheduledPlace[]`.
+- `Checker` kiểm tra plan đã hoàn chỉnh; warning giữ plan ở trạng thái `draft`.
+- Backup Plan dùng lại `tripThemes` của Main Plan và chạy lại PlaceSelector với
+  constraint dự phòng. Nó không chạy lại LLM và không sửa Main Plan.
 
 ## Explorer
 
-Explorer nhận request ban đầu, destination, `tripSpec`, địa điểm chi tiết nếu có
-và tín hiệu từ URL reels.
+Explorer chuẩn hóa request, URL signals, destination, duration, pace, interests,
+constraints và selected Places. `Confirm` vẫn là ranh giới: claim do AI trích
+xuất không tự động trở thành yêu cầu của user.
 
-Input chính:
+Explorer bàn giao `intakeId + userId + explorer`; các Place được resolve và lưu
+theo provenance trước khi planning workflow sử dụng.
 
-```json
-{
-  "rawRequest": "Tạo lịch trình Đà Nẵng 3 ngày từ vài reels đồ ăn",
-  "destination": "Da Nang",
-  "placeCandidates": [
-    {
-      "name": "Son Tra",
-      "category": "attraction",
-      "placeId": null,
-      "address": null,
-      "source": "user",
-      "sourceUrl": null,
-      "confidence": 1,
-      "priority": 1,
-      "notes": "User wants this in the trip"
-    }
-  ],
-  "urlReelSignals": [
-    {
-      "url": "https://www.instagram.com/reel/...",
-      "platform": "instagram",
-      "extractedPlaces": ["Quan mi quang A"],
-      "extractedPlaceDetails": [
-        {
-          "name": "Quan mi quang A",
-          "category": "food",
-          "placeId": null,
-          "address": "12 Nguyen Hue, Da Nang",
-          "source": "url_reel",
-          "sourceUrl": "https://www.instagram.com/reel/...",
-          "confidence": 0.82,
-          "priority": 1,
-          "notes": "Caption mentioned this address"
-        }
-      ],
-      "interests": ["food"],
-      "constraints": [],
-      "confidence": 0.82,
-      "notes": ["extracted from caption/transcript"]
-    }
-  ],
-  "userState": {
-    "userId": "user_123",
-    "locale": "vi-VN",
-    "timezone": "Asia/Ho_Chi_Minh",
-    "travelStyle": "local",
-    "travelPreferences": ["food", "coffee"]
-  },
-  "tripSpec": {
-    "days": 3,
-    "partySize": 2,
-    "startDate": null,
-    "endDate": null,
-    "accommodation": {
-      "required": true,
-      "hotelArea": "near city center",
-      "checkInDate": null,
-      "checkOutDate": null,
-      "roomCount": 1,
-      "guestCount": 2,
-      "preferences": ["clean", "easy transport"]
-    },
-    "transport": {
-      "required": true,
-      "preferredModes": ["taxi", "walk"],
-      "avoidModes": [],
-      "includeBetweenPlaces": true,
-      "includeArrivalDeparture": true
-    },
-    "budget": {
-      "targetAmount": 5000000,
-      "currency": "VND",
-      "level": "medium"
-    }
-  }
-}
-```
+## TripThemePlanner
 
-Mỗi phần tử `selectedPlaces` có thể mang hướng dẫn itinerary từ URL:
-
-```json
-{
-  "name": "Xôi Yến",
-  "sourceRefs": ["https://www.tiktok.com/..."],
-  "sourceOrder": 1,
-  "sourceDay": 1,
-  "sourceTimeHint": "breakfast",
-  "sourceActivity": "Order traditional topping turmeric sticky rice",
-  "sourceDurationMinutes": null
-}
-```
-
-`sourceTimeHint` là cue có provenance, không phải giờ mở cửa hoặc giờ chính xác
-đã xác minh. `sourceDurationMinutes` chỉ có giá trị khi nguồn nói rõ duration.
-Khi có `sourceOrder`, Planner ưu tiên các stop URL, cho phép blueprint có nhiều
-stop hơn capacity mặc định của pace, và Finder dùng strategy
-`source_itinerary`. Route optimizer giữ thứ tự nguồn; hard constraint vẫn có thể
-loại stop nhưng phải trả reason/warning.
-
-Output chính:
-
-Ngân sách chỉ nằm tại `tripSpec.budget`, gồm `targetAmount` gần đúng, `currency`
-và `level` nhận `low`, `medium` hoặc `high`. `intent` không lặp lại budget.
-
-```json
-{
-  "intent": {
-    "destination": "Da Nang",
-    "travelStyle": "local",
-    "pace": "balanced",
-    "interests": ["food", "coffee"],
-    "mustVisitPlaces": ["Son Tra"],
-    "avoidPlaces": [],
-    "constraints": [],
-    "constraintPolicy": {
-      "excludedPlaceTypes": [],
-      "geographicScope": {
-        "type": "unrestricted"
-      }
-    },
-    "clarifyingQuestions": []
-  },
-  "tripSpec": {
-    "days": 3,
-    "partySize": 2,
-    "startDate": null,
-    "endDate": null,
-    "accommodation": {
-      "required": true,
-      "hotelArea": "near city center",
-      "checkInDate": null,
-      "checkOutDate": null,
-      "roomCount": 1,
-      "guestCount": 2,
-      "preferences": ["clean", "easy transport"]
-    },
-    "transport": {
-      "required": true,
-      "preferredModes": ["taxi", "walk"],
-      "avoidModes": [],
-      "includeBetweenPlaces": true,
-      "includeArrivalDeparture": true
-    },
-    "budget": {
-      "targetAmount": 5000000,
-      "currency": "VND",
-      "level": "medium"
-    }
-  },
-  "assumptions": ["Use medium budget because user did not specify exact amount."],
-  "missingInfoQuestions": [],
-  "trace": {
-    "agent": "explorer",
-    "status": "completed",
-    "summary": "Normalized user request into TravelIntent.",
-    "notes": []
-  }
-}
-```
-
-Output place riêng:
-
-```json
-{
-  "placeCandidates": [
-    {
-      "name": "Quan mi quang A",
-      "category": "food",
-      "addressHint": "12 Nguyen Hue, Da Nang",
-      "sources": [
-        {
-          "type": "url",
-          "url": "https://www.instagram.com/reel/..."
-        }
-      ],
-      "confidence": 0.82,
-      "priority": 1,
-      "notes": "Caption mentioned this address"
-    }
-  ]
-}
-```
-
-## Planner
-
-Planner nhận `TravelIntent` đã chuẩn hóa, `selectedPlaces` và snapshot thống kê
-theo `regionKey`, sau đó tạo macro plan/day briefs. Ngay trước khi lập kế hoạch,
-workflow gọi `auto_statistics.get_for_planner(regionKey)`; Place thay đổi thì
-snapshot mới được tạo, không thay đổi thì dùng snapshot hiện tại. Planner chỉ
-phân bổ Place đã xác nhận vào ngày ở mức constraint, không chọn giờ, route hoặc
-commit `TripItem` chi tiết.
-
-Input chính:
+Input chính là `TripThemePlanningInput`:
 
 ```json
 {
   "mode": "main",
-  "intent": {},
-  "tripSpec": {},
+  "intent": {
+    "destination": "Hà Nội",
+    "pace": "balanced",
+    "interests": ["culture", "food"]
+  },
+  "tripSpec": {"days": 3},
   "regionContext": {
     "regionKey": "vn,ha-noi",
     "snapshotRef": {
@@ -271,297 +64,91 @@ Input chính:
       "algorithmVersion": "auto_statistics_v3_0",
       "generatedAt": "2026-07-28T10:00:00+00:00"
     },
-    "placeCount": 100,
-    "activePlaceCount": 90,
-    "tagCounts": {},
-    "timeOfDayCoverage": {},
-    "plannerEligible": {},
-    "areaProfiles": [
-      {
-        "regionKey": "vn,ha-noi,hoan-kiem",
-        "activePlaceCount": 25,
-        "topTags": ["culture", "food"]
-      }
-    ],
-    "plannerSignals": {
-      "statisticsLevel": "smallest_available_region",
-      "candidateAreas": []
-    }
+    "activePlaceCount": 90
   },
-  "selectedPlaces": [],
-  "placeCandidates": [],
-  "planState": {
-    "tripId": "trip_123",
-    "lockedItemIds": [],
-    "excludedPlaceNames": [],
-    "warnings": []
-  },
-  "originalMacroPlan": null,
-  "checkReport": null
+  "selectedPlaces": []
 }
 ```
 
-Output chính:
+Output là `TripThemePlanningOutput`:
 
 ```json
 {
   "mode": "main",
-  "tripSpec": {},
-  "macroPlan": {
-    "title": "Main plan for Hà Nội",
-    "destination": "Hà Nội",
-    "regionKey": "vn,ha-noi",
-    "dayBriefs": [
-      {
-        "day": 1,
-        "theme": "Culture and local food",
-        "targetArea": "Hoan Kiem",
-        "targetRegionKey": "vn,ha-noi,hoan-kiem",
-        "focusTags": ["culture", "food"],
-        "pace": "balanced",
-        "dayPartGoals": {
-          "morning": "Prioritize culture activities supported in the morning.",
-          "lunch": "Use a balanced food block in the lunch.",
-          "afternoon": "Use a balanced culture block in the afternoon.",
-          "evening": "Keep evening flexible; regional data coverage is weak."
-        },
-        "allocatedSelectedPlaceRefs": ["place_123"],
-        "notes": ["Exact schedule is delegated to Finder."]
-      }
-    ]
-  },
-  "dayBriefsReady": true,
-  "unallocatedSelectedPlaces": [],
+  "tripSpec": {"days": 3},
+  "tripThemesReady": true,
+  "tripThemes": [
+    {
+      "theme": "Văn hóa Hà Nội",
+      "focusTags": ["culture", "history"],
+      "minimumActivities": 2,
+      "targetRegionKeys": ["vn,ha-noi"]
+    }
+  ],
   "assumptions": [],
   "warnings": [],
   "trace": {
-    "agent": "planner",
+    "agent": "trip_theme_planner",
     "status": "completed",
-    "summary": "Created MacroPlan and DayBriefs.",
+    "summary": "Created trip-wide experience requirements.",
     "notes": ["snapshotId=snapshot_123"]
   }
 }
 ```
 
-Snapshot thống kê Planner đã query chỉ được ghi trong internal trace/log, không
-đưa vào `MacroPlan` hoặc Finder context. Mọi `selectedPlace` phải xuất hiện trong
-`allocatedSelectedPlaceRefs` hoặc `unallocatedSelectedPlaces` kèm `reasonCode`.
-Planner không nhận toàn bộ danh mục Place hay payload thô của provider; research
-tool chỉ trả capability counts, region keys và tối đa một số sample Place làm
-evidence.
+Output không được có ngày, route bucket, journey phase hoặc selected-place
+allocation. LLM chạy một lượt research đã kiểm chứng bằng Place database, rồi
+một lượt tạo `TripThemeDraft`. Backend sửa contract lỗi tối đa ba lần. Tổng
+`minimumActivities` được chuẩn hóa theo capacity hai activity mỗi ngày; theme
+chỉ nói về bữa ăn bị loại vì meal là trách nhiệm riêng của PlaceSelector.
 
-Planner MVP dùng hai structured LLM call:
+Khi catalog trống nhưng có selected Place, TripThemePlanner vẫn có thể tạo
+theme. Khi cả hai nguồn trống, `tripThemesReady=false`.
 
-1. `journey_research_v2` tạo `PlannerResearchDraft`: journey style, chiến lược
-   đa dạng, capability queries và yêu cầu mở rộng vùng.
-2. Backend chạy `RepositoryPlannerResearchTool` trên Place active. Capability
-   local được match theo taxonomy; region lân cận được xếp từ centroid và khoảng
-   cách địa lý, chưa phải route đã xác minh.
-3. `macro_planner_v3` nhận cả proposal và `PlannerVerifiedResearch`, sau đó sinh
-   `PlannerMacroPlanDraft`.
+## PlaceSelector
 
-`MacroPlan` có thêm `journeyStyle` và `journeyPhases` để biểu diễn local base,
-hub-and-spoke, multi-base hoặc road trip. Model nhận intent, trip spec, profile
-dài hạn, selected places và statistics khu vực nhỏ. Code không tự sinh template
-khi LLM lỗi; thay vào đó validate đủ ngày liên tiếp, target region thuộc snapshot
-hoặc verified nearby regions, journey phases hợp lệ, và mọi `selectedPlace` được
-phân bổ đúng một lần hoặc nằm trong `unallocatedSelectedPlaces`.
-
-Statistics dùng riêng `plannerEligible` và `plannerSignals` từ Place active;
-metric catalog tổng vẫn được giữ để quan sát chất lượng dữ liệu. Khi catalog
-active trống nhưng có Place đã xác nhận, Planner vẫn có thể tạo DayBrief và cảnh
-báo Finder chỉ dùng các Place đó. Khi cả hai nguồn đều trống,
-`dayBriefsReady=false`.
-
-`selectedPlaces` thông thường vẫn tuân theo hai activity hoặc ba meal slot mỗi
-ngày. URL stop có `sourceOrder` nhưng không có `sourceDay` được phân bổ theo thứ
-tự; plan chỉ tăng ngày khi duration/date chưa bị user khóa. `sourceDay` rõ ràng
-được giữ. `avoidPlaces` và `constraintPolicy` vẫn thắng blueprint URL; stop xung
-đột hoặc có ngày nguồn vượt duration được giữ trong
-`unallocatedSelectedPlaces` với `reasonCode`, không bị bỏ hoặc đổi ngày ngầm.
-
-## Finder
-
-Finder nhận `MacroPlan`, `selectedPlaces`, `UserStatus` và `FinderPlanStatus`,
-sau đó tạo DaySkeleton động và fill lịch cụ thể. Số block phụ thuộc pace và
-UserStatus: `relaxed` ít block, `anchor_led` trung bình, `multi_stop` nhiều block.
-
-Input chính:
+Input là `PlaceSelectionInput`:
 
 ```json
 {
   "mode": "main",
-  "intent": {},
-  "tripSpec": {},
-  "macroPlan": {},
+  "intent": {"destination": "Hà Nội", "pace": "balanced"},
+  "tripSpec": {"days": 3},
+  "regionKey": "vn,ha-noi",
+  "tripThemes": [],
   "selectedPlaces": [],
-  "placeCandidates": [],
-  "planState": {
-    "tripId": "trip_123",
-    "lockedItemIds": [],
-    "excludedPlaceNames": [],
-    "warnings": []
-  },
-  "userState": {
-    "userId": "user_123",
-    "locale": "vi-VN",
-    "timezone": "Asia/Ho_Chi_Minh",
-    "travelPreferences": []
-  },
-  "userStatus": {},
-  "finderPlanStatus": {},
-  "allowFinderSuggestions": true
+  "placeSelectionStatus": {},
+  "allowPlaceSuggestions": true
 }
 ```
 
-`allowFinderSuggestions=false` được dùng khi intake URL/ảnh/OCR tự quyết định
-duration theo coverage của nguồn, hoặc khi nguồn đã phủ hết duration user yêu
-cầu. Nếu user nói rõ số ngày dài hơn coverage nguồn, giá trị là `true`, nhưng
-Finder chỉ gọi catalog cho ngày chưa có stop nguồn; không lấp thêm activity block
-trong ngày URL/OCR. Prompt thuần dùng giá trị `true` cho mọi ngày.
+PlaceSelector tạo đúng số day slot từ `tripSpec.days`; không cần DayBrief từ
+LLM. `sourceDay` hợp lệ được giữ, các Place còn lại được xếp theo
+`sourceOrder/priority` với capacity cố định hai activity mỗi ngày. Place không
+xếp được nằm trong `unscheduledPlaces` với reason code như
+`no_day_capacity`, `avoided_by_user` hoặc `no_available_slot`.
 
-Output chính:
+Output là `PlaceSelectionOutput` với `finalDays`, `unscheduledPlaces`, trạng thái
+cuối, warning và trace có agent `place_selector`.
 
-```json
-{
-  "mode": "main",
-  "finalDays": [
-    {
-      "day": 1,
-      "theme": "Food and local neighborhoods",
-      "strategy": "anchor_led",
-      "items": [
-        {
-          "itemId": "item_123",
-          "placeId": "place_123",
-          "name": "Selected museum",
-          "timeWindow": "09:00-11:00",
-          "placeType": "must_visit",
-          "role": "main_activity",
-          "source": "selected_place",
-          "durationMinutes": 120,
-          "activityIntensity": "moderate"
-        },
-        {
-          "itemId": "item_124",
-          "placeId": null,
-          "name": "Break between main and support activities",
-          "timeWindow": "11:00-12:00",
-          "placeType": "break",
-          "role": "break_main_support",
-          "source": "finder_rule",
-          "durationMinutes": 60
-        }
-      ]
-    }
-  ],
-  "tripCostEstimate": null,
-  "unscheduledPlaces": [],
-  "finalUserStatus": {},
-  "finalPlanStatus": {},
-  "warnings": [],
-  "trace": {
-    "agent": "finder",
-    "status": "completed",
-    "summary": "Filled dynamic day skeletons from MacroPlan.",
-    "notes": []
-  }
-}
-```
+Route-first chọn hai activity, tối ưu hoạt động ở cấp toàn chuyến, rồi chèn các
+meal stop đã xác minh gần anchor tuyến. Stop từ URL giữ provenance và thứ tự
+nguồn. Route provider lỗi thì dùng ước tính địa lý và đánh dấu `verified=false`.
 
-Finder MVP hiện dùng rule deterministic, tối đa năm candidate cho mỗi activity
-block. Break block không bắt buộc có Place. Budget/route chưa được tự ước lượng:
-khi chưa có tool phù hợp, output giữ `tripCostEstimate: null` thay vì để LLM tự
-sinh số.
+## Plan persistence và tương thích
 
-Ở runtime `route_first`, theme ngày chỉ là tín hiệu mềm cho candidate retrieval.
-Planner runtime được đặt tên `TripThemePlannerService` và trả `macroPlan.tripThemes`
-ở cấp toàn chuyến. Mỗi requirement gồm `theme`, `focusTags`, `minimumActivities` và
-`targetRegionKeys`; Planner không sở hữu việc gán requirement hoặc selected Place vào
-ngày. `dayBriefs` được backend sinh như bucket tương thích, với theme trung tính.
-Vai trò Finder được đặt tên runtime là `PlaceSelectorService`; đây là module
-deterministic, không phải AI agent. Sau khi PlaceSelector đã chọn Place mà chưa tính
-walking/car/transit leg, `RouteFirstItineraryOptimizer` có thể hoán đổi activity
-thông thường giữa các ngày để giảm tổng travel-time matrix, rồi tối ưu thứ tự trong
-từng ngày. Mỗi ngày có đúng hai activity chính. Sau khi activity đã chốt,
-`MealStopSelector` cố gắng chọn breakfast, lunch và dinner theo tuyến rồi route leg chi tiết
-mới được enrich cho nghiệm cuối. Meal slot không tìm được Place đã xác minh bị bỏ khỏi
-`PlanDay.items` và được ghi warning, không tạo placeholder card. Stop URL/OCR có provenance, `sourceDay`
-hoặc `sourceOrder` không được chuyển ngày. `ITINERARY_OPTIMIZER_MODE=legacy` giữ
-behavior cũ để rollback.
+`Plan` lưu trực tiếp `tripThemes` cùng `days`; dữ liệu mới không ghi
+`macroPlan`. Model có adapter chỉ-đọc để nạp plan cũ có `macroPlan.tripThemes`,
+sau đó serialize lại theo contract mới.
 
-Thứ tự route-first là breakfast → activity 1 → lunch → activity 2 → dinner. Runtime
-tạm thời không xếp giờ hoặc lọc opening hours. `timeWindow` vẫn bắt buộc trong schema cũ
-nhưng chỉ là marker thứ tự nội bộ; UI không hiển thị và không cho người dùng nhập/sửa giờ.
+Request cũ dùng `allowFinderSuggestions` vẫn được chấp nhận qua validation
+alias, nhưng response mới chỉ xuất `allowPlaceSuggestions`.
 
-Catalog retrieval của Finder dùng hai tầng. Tầng đầu rank mô tả Place theo query
-được tạo từ `DayBrief.theme`, `focusTags`, `dayPartGoals`, target area và
-`JourneyPhase` chứa ngày hiện tại, sau đó lấy shortlist. Tầng hai rerank bằng
-`placeType`, `placeGroup`, tags, region, data confidence và tọa độ. Khi target
-region nhỏ thiếu dữ liệu, tool có thể đọc dần region cha nhưng Place fallback
-phải có locality tương ứng trong tên hoặc mô tả. Finder không dùng accommodation
-cho activity thường và không dùng food/transport/shopping để lấp một theme
-không tương thích. Selected Place do user xác nhận vẫn được ưu tiên và không bị
-category guard tự động loại.
-
-`metadata.description`, `metadata.placeGroup` và minimum duration trong
-`metadata.recommendedDurationRange` được adapter đưa vào context nội bộ của
-Finder. Minimum duration cho phép một chuyến ghé ngắn hợp lệ khi typical duration
-lớn hơn slot; nếu minimum vẫn vượt slot thì candidate bị loại như trước.
-
-Runtime phải inject `RepositoryFinderPlaceTool`; `EmptyFinderPlaceTool` chỉ dùng
-cho test hoặc fallback cô lập. Service nhận/trả qua `FinderAgentInput` và
-`FinderAgentOutput`; các helper `fill_main_plan`/`fill_backup_plan` chỉ được giữ
-để tương thích code cũ.
-
-Trước khi commit candidate, Finder kiểm tra:
-
-- tên Place không nằm trong `avoidPlaces`;
-- `placeType`/tag/tên không khớp `constraintPolicy.excludedPlaceTypes`;
-- `placeType`, tag hoặc `regionKey` có bằng chứng phù hợp
-  `constraintPolicy.geographicScope`; phạm vi `coastal` không được suy luận chỉ
-  từ tên hiển thị;
-- duration không vượt quá activity block;
-- intensity và `maxConsecutiveActiveMinutes`;
-- `availableAt`;
-- accessibility feature đáp ứng toàn bộ `accessibilityNeeds`;
-- constraint `avoid_outdoor` dựa trên type/tag, không suy luận chỉ từ tên.
-
-Trong route-first, meal không còn là block đầu vào. Selector chọn activity trước, rồi
-tìm tối đa ba Place `food_drink` riêng biệt: breakfast gần activity đầu, lunch giảm detour giữa
-hai activity và dinner gần activity cuối. Nếu catalog không đủ ba Place hợp lệ, Finder
-bỏ meal slot chưa resolve khỏi item hiển thị và trả planning warning để không mô tả plan
-như đã hoàn thiện.
-
-Trong shortlist đã được rank theo relevance, Finder dùng khoảng cách tới
-`UserStatus.location` làm tín hiệu phụ để tránh chọn các Place đúng chủ đề nhưng
-rời rạc. Candidate thiếu tọa độ vẫn được giữ nhưng chịu penalty có giới hạn.
-
-`Group social activity` vẫn có trong skeleton dưới dạng `Coming soon`. Item này
-không phải Place đã commit, không được tính vào usage hoặc provenance count và
-không làm thay đổi timeline/UserStatus.
-
-Khi chưa có route data, `maxWalkingMinutesPerDay` được trả thành warning thay vì
-giả vờ đã kiểm tra. `requiredRestMinutes` cũng tạo warning nếu skeleton không đủ
-thời gian nghỉ. Selected Place nhập tay không có ID giữ `placeId: null`; Finder
-dùng stable ref nội bộ và không biến display name thành ID giả. `sourceRefs` và
-`tags` của selected Place được giữ tới `PlanItem` và Backup Plan.
+Các source code lịch sử như `finder_suggestion` vẫn được đọc để không làm hỏng
+revision đã lưu. Code mới không phụ thuộc module Finder.
 
 ## Message envelope
 
-Khi cần queue/background job hoặc multi-agent runtime, bọc payload bằng
-`AgentMessage`.
-
-```json
-{
-  "requestId": "req_123",
-  "fromAgent": "explorer",
-  "toAgent": "planner",
-  "messageType": "planner.input",
-  "payload": {},
-  "trace": []
-}
-```
-
-`payload` trong envelope phải validate được bằng schema tương ứng với
-`messageType`.
+Tên agent hợp lệ là `explorer`, `trip_theme_planner`, `place_selector` và
+`checker`. Mọi message phải có `requestId`, `fromAgent`, `toAgent`,
+`messageType`, `payload`, `createdAt`; `tripId` và `traceId` dùng khi có.

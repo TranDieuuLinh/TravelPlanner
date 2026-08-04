@@ -1,6 +1,6 @@
-"""Day style classification for the Finder day skeleton.
+"""Day style classification for the PlaceSelector day skeleton.
 
-The Finder can build two distinct day-shape strategies. The choice between
+The PlaceSelector can build two distinct day-shape strategies. The choice between
 them is driven by the average expected duration of the activities the user
 explicitly attached to the day (via ``selected_places``).
 
@@ -19,7 +19,7 @@ Two styles are produced:
 The decision uses a simple majority rule: when >= 60 % of the
 non-meal selected places fall into one bucket, that bucket wins. Ties and
 empty inputs default to ``anchor_day`` because it provides a richer skeleton
-that the Finder can downgrade block-by-block.
+that the PlaceSelector can downgrade block-by-block.
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from app.modules.plans.finder.place_tool import (
-    FinderPlace,
+from app.modules.plans.place_selector.place_tool import (
+    SelectablePlace,
     place_category,
 )
 
@@ -95,7 +95,7 @@ class DayStyleDecision:
     total_considered: int
 
 
-def classify_place(place: FinderPlace) -> str | None:
+def classify_place(place: SelectablePlace) -> str | None:
     """Return ``"anchor"``, ``"scattered"``, or ``None``.
 
     ``None`` means the place cannot influence the day-style decision
@@ -122,7 +122,7 @@ def classify_place(place: FinderPlace) -> str | None:
 
 
 def select_day_style(
-    selected_places: list[FinderPlace] | None,
+    selected_places: list[SelectablePlace] | None,
     *,
     area_profile_distribution: dict[str, int] | None = None,
 ) -> DayStyleDecision:

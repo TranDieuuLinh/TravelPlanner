@@ -24,7 +24,11 @@ hành.
   ưu tiên sau catalog nội bộ để thu thập snapshot Google Maps đầy đủ hơn.
 - Places DB xếp hạng tối đa `top K` record theo tên/alias, vùng, evidence vị
   trí, category và độ tin cậy catalog. Chỉ nhận top-1 khi vượt ngưỡng điểm tuyệt
-  đối và margin với top-2. Mặc định là `K=5`, score `0.82`, margin `0.08`; DB
+  đối và margin với top-2. Mặc định là `K=5`, score phải lớn hơn `0.82`, margin
+  `0.08`; score bằng `0.82` không đủ điều kiện. Route context chỉ phân xử các
+  record đã vượt ngưỡng và không được bỏ qua địa chỉ có provenance từ nguồn.
+  Candidate chỉ là tên món/venue chung phải khớp địa chỉ nguồn; nếu không thì
+  giữ unresolved. DB
   miss, điểm thấp và kết quả sát nhau đều đi tiếp tới Playwright. Score này là
   heuristic nội bộ cần hiệu chỉnh bằng dữ liệu có nhãn.
 - Gọi trực tiếp executable `google-maps-scraper`; không dùng API key.
@@ -37,8 +41,10 @@ hành.
   mục tạm.
 - Chạy subprocess không qua shell, giới hạn concurrency/depth và kill process
   khi vượt timeout. Telemetry của CLI được tắt.
-- Chỉ trả `resolved` khi kết quả khớp tên, không lệch vùng/category rõ ràng và
-  có tọa độ trong miền hợp lệ.
+- Xếp hạng kết quả Google theo top-K score tổng hợp; chỉ trả `resolved` khi
+  top-1 có score lớn hơn `0.82`, không lệch vùng/category rõ ràng và có tọa độ
+  trong miền hợp lệ. Prefix mô tả của provider như `Di tích` ảnh hưởng score
+  tên nhưng không còn là hard `name_mismatch` độc lập.
 - Chuẩn hóa output vào `PlaceResolution`; không đưa payload thô của scraper vào
   domain hoặc log.
 - Worker Playwright thu thập các field tóm tắt đang hiển thị mà không mở review

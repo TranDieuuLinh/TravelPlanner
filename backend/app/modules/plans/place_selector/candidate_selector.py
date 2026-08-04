@@ -8,24 +8,24 @@ from app.modules.plans.domain.constraint_policy import (
     constraint_policy_rejection,
 )
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    FinderPlanStatus,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionStatus,
+    PlaceSelectionBlueprint,
     PlanItem,
     UserStatus,
 )
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.place_tool import (
-    FinderPlace,
-    FinderPlaceTool,
+from app.modules.plans.place_selector.place_tool import (
+    SelectablePlace,
+    PlaceSelectionTool,
     _normalize_text,
     place_category,
     place_matches_categories,
     semantic_categories,
 )
-from app.modules.plans.finder.skeleton_builder import DayBlock
-from app.modules.plans.finder.time_windows import parse_clock_minutes
-from app.modules.plans.planner.opening_hours_parser import (
+from app.modules.plans.place_selector.skeleton_builder import DayBlock
+from app.modules.plans.place_selector.time_windows import parse_clock_minutes
+from app.modules.plans.trip_theme_planner.opening_hours_parser import (
     extract_time_intervals,
     is_24_hours,
 )
@@ -52,15 +52,15 @@ class CandidateRejection:
 
 @dataclass
 class CandidateSelectionContext:
-    macro_plan: MacroPlan
-    brief: DayBrief
+    selection_blueprint: PlaceSelectionBlueprint
+    brief: PlaceSelectionDay
     block: DayBlock
     selected_by_ref: dict[str, SelectedPlaceContext]
-    plan_status: FinderPlanStatus
+    plan_status: PlaceSelectionStatus
     user_status: UserStatus
     avoided_place_names: set[str]
     intent_constraints: list[str]
-    allow_finder_suggestions: bool
+    allow_place_suggestions: bool
     constraint_policy: ConstraintPolicy
     budget_level: str
     rejected_selected_places: dict[str, CandidateRejection]
@@ -72,7 +72,7 @@ class CandidateSelectionContext:
     bbox_filter: tuple[float, float, float, float] | None = None
 
 
-def candidate_duration(candidate: FinderPlace, block: DayBlock) -> int:
+def candidate_duration(candidate: SelectablePlace, block: DayBlock) -> int:
     typical = candidate.typical_duration_minutes
     if typical is None:
         return block.duration_minutes
@@ -87,7 +87,7 @@ def candidate_duration(candidate: FinderPlace, block: DayBlock) -> int:
 class CandidateSelector:
     def __init__(
         self,
-        place_tool: FinderPlaceTool,
+        place_tool: PlaceSelectionTool,
         *,
         max_candidates_per_block: int = 5,
     ) -> None:
@@ -96,11 +96,11 @@ class CandidateSelector:
 
     def _filter_repeated_food_drink(
         self,
-        candidates: list[FinderPlace],
+        candidates: list[SelectablePlace],
         selected_by_ref: dict,
-        plan_status: FinderPlanStatus,
-    ) -> list[FinderPlace]:
-        """Drop finder-suggested food_drink places that look like duplicates of
+        plan_status: PlaceSelectionStatus,
+    ) -> list[SelectablePlace]:
+        """Drop PlaceSelector-suggested food_drink places that look like duplicates of
         an already-accepted place in the same day. Two places count as
         duplicates only when they share the same ``place_type`` AND their
         ``description`` overlap (by token count) meets the configured
@@ -111,7 +111,7 @@ class CandidateSelector:
         used_types = set(plan_status.used_food_drink_place_types or [])
         if not used_types:
             return candidates
-        filtered: list[FinderPlace] = []
+        filtered: list[SelectablePlace] = []
         for candidate in candidates:
             if candidate.stable_ref in selected_by_ref:
                 filtered.append(candidate)
@@ -136,8 +136,8 @@ class CandidateSelector:
 
     def _is_food_drink_duplicate(
         self,
-        candidate: FinderPlace,
-        already_accepted: list[FinderPlace],
+        candidate: SelectablePlace,
+        already_accepted: list[SelectablePlace],
     ) -> bool:
         """Return True if ``candidate`` looks like a duplicate of any
         already-accepted place that shares the same ``place_type``.
@@ -171,10 +171,10 @@ class CandidateSelector:
 
     _FOOD_DRINK_DUPLICATE_TOKEN_THRESHOLD = 3
 
-    def select(self, context: CandidateSelectionContext) -> FinderPlace | None:
-        candidates: list[FinderPlace] = []
+    def select(self, context: CandidateSelectionContext) -> SelectablePlace | None:
+        candidates: list[SelectablePlace] = []
         search_terms = self._search_terms(
-            context.macro_plan,
+            context.selection_blueprint,
             context.brief,
             context.block,
             intent_interests=context.intent_interests,
@@ -182,7 +182,7 @@ class CandidateSelector:
             strict_day_theme=context.strict_day_theme,
         )
         query_categories = self._query_categories(
-            context.macro_plan,
+            context.selection_blueprint,
             context.brief,
             context.block,
             fallback_terms=search_terms,
@@ -229,7 +229,7 @@ class CandidateSelector:
             candidates.append(self._selected_to_candidate(selected, context.brief))
 
         region_key = context.brief.target_region_key or context.brief.target_area
-        if context.allow_finder_suggestions and region_key.startswith("vn,"):
+        if context.allow_place_suggestions and region_key.startswith("vn,"):
             catalog_search_terms = search_terms
             if not context.strict_day_theme and context.block.kind != "meal":
                 catalog_search_terms = list(
@@ -279,7 +279,7 @@ class CandidateSelector:
                 )
             )
 
-        unique_candidates: list[FinderPlace] = []
+        unique_candidates: list[SelectablePlace] = []
         seen: set[str] = set()
         for candidate in candidates:
             if candidate.stable_ref in seen:
@@ -326,7 +326,7 @@ class CandidateSelector:
 
     def _duplicates_existing_identity(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         *,
         selected_places,
         occupied_items: list[PlanItem],
@@ -399,9 +399,9 @@ class CandidateSelector:
 
     def _rerank_for_proximity(
         self,
-        candidates: list[FinderPlace],
+        candidates: list[SelectablePlace],
         user_status: UserStatus,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         location = user_status.location
         if (
             location is None
@@ -410,7 +410,7 @@ class CandidateSelector:
         ):
             return candidates
         origin = (location.latitude, location.longitude)
-        ranked: list[tuple[float, float, FinderPlace]] = []
+        ranked: list[tuple[float, float, SelectablePlace]] = []
         for relevance_rank, candidate in enumerate(candidates):
             if candidate.latitude is None or candidate.longitude is None:
                 distance = float("inf")
@@ -456,8 +456,8 @@ class CandidateSelector:
 
     def _search_terms(
         self,
-        macro_plan: MacroPlan,
-        brief: DayBrief,
+        selection_blueprint: PlaceSelectionBlueprint,
+        brief: PlaceSelectionDay,
         block: DayBlock,
         *,
         intent_interests: list[str],
@@ -496,21 +496,11 @@ class CandidateSelector:
             if block.role == "bonus_activity"
             else brief.day_part_goals.afternoon
         )
-        phase = next(
-            (
-                candidate
-                for candidate in macro_plan.journey_phases
-                if candidate.start_day <= brief.day <= candidate.end_day
-            ),
-            None,
-        )
         primary_values = [
             value
             for value in (
                 brief.theme,
                 day_goal,
-                phase.theme if phase is not None else None,
-                phase.movement_goal if phase is not None else None,
             )
             if value
         ]
@@ -551,8 +541,8 @@ class CandidateSelector:
 
     def _query_categories(
         self,
-        macro_plan: MacroPlan,
-        brief: DayBrief,
+        selection_blueprint: PlaceSelectionBlueprint,
+        brief: PlaceSelectionDay,
         block: DayBlock,
         *,
         fallback_terms: list[str],
@@ -580,22 +570,12 @@ class CandidateSelector:
             if block.role == "bonus_activity"
             else brief.day_part_goals.afternoon
         )
-        phase = next(
-            (
-                candidate
-                for candidate in macro_plan.journey_phases
-                if candidate.start_day <= brief.day <= candidate.end_day
-            ),
-            None,
-        )
         primary_categories = semantic_categories(
             {
                 value
                 for value in (
                     brief.theme,
                     day_goal,
-                    phase.theme if phase is not None else None,
-                    phase.movement_goal if phase is not None else None,
                 )
                 if value
             }
@@ -618,8 +598,8 @@ class CandidateSelector:
     def _selected_to_candidate(
         self,
         selected: SelectedPlaceContext,
-        brief: DayBrief,
-    ) -> FinderPlace:
+        brief: PlaceSelectionDay,
+    ) -> SelectablePlace:
         if selected.place_id:
             stored_place = self.place_tool.get(selected.place_id)
             if stored_place is not None:
@@ -652,7 +632,7 @@ class CandidateSelector:
                         ),
                     }
                 )
-        return FinderPlace(
+        return SelectablePlace(
             placeId=selected.place_id,
             name=selected.name,
             address=selected.address,
@@ -678,7 +658,7 @@ class CandidateSelector:
             reviewCount=selected.review_count or 0,
         )
 
-    def _intensity_allowed(self, candidate: FinderPlace, user_status: UserStatus) -> bool:
+    def _intensity_allowed(self, candidate: SelectablePlace, user_status: UserStatus) -> bool:
         allowed = user_status.constraints.allowed_activity_intensities
         if not allowed or candidate.activity_intensity is None:
             return True
@@ -686,7 +666,7 @@ class CandidateSelector:
 
     def _candidate_rejection(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         block: DayBlock,
         user_status: UserStatus,
         *,
@@ -853,7 +833,7 @@ class CandidateSelector:
         return None
 
     @staticmethod
-    def _has_strong_food_name(candidate: FinderPlace) -> bool:
+    def _has_strong_food_name(candidate: SelectablePlace) -> bool:
         normalized = f" {_normalize_text(candidate.name)} "
         markers = (
             " restaurant ",
@@ -878,7 +858,7 @@ class CandidateSelector:
         return any(marker in normalized for marker in markers)
 
     @staticmethod
-    def _has_non_visit_name(candidate: FinderPlace) -> bool:
+    def _has_non_visit_name(candidate: SelectablePlace) -> bool:
         normalized = f" {_normalize_text(candidate.name)} "
         return any(
             marker in normalized
@@ -893,7 +873,7 @@ class CandidateSelector:
 
     def _semantic_category_rejection(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         *,
         is_selected: bool,
         query_categories: set[str],
@@ -922,7 +902,7 @@ class CandidateSelector:
             )
         return None
 
-    def _is_outdoor(self, candidate: FinderPlace) -> bool:
+    def _is_outdoor(self, candidate: SelectablePlace) -> bool:
         outdoor_markers = {"outdoor", "nature", "park", "beach", "hiking"}
         values = {
             candidate.place_type.casefold(),
@@ -932,7 +912,7 @@ class CandidateSelector:
 
     def _opening_hours_cover_block(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         time_window: str,
         duration_minutes: int,
     ) -> bool:

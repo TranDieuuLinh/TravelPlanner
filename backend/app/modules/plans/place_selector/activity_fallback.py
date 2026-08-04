@@ -4,8 +4,8 @@ from math import asin, cos, log1p, radians, sin, sqrt
 
 from app.modules.plans.domain.entities import PlanDay, UnscheduledPlace
 from app.modules.plans.explorer.schema import PlaceCandidateReview
-from app.modules.plans.finder.place_tool import FinderPlace, FinderPlaceTool
-from app.modules.plans.planner.region_context import normalize_search_region_key
+from app.modules.plans.place_selector.place_tool import SelectablePlace, PlaceSelectionTool
+from app.modules.plans.trip_theme_planner.region_context import normalize_search_region_key
 
 
 class RouteAwareActivityFallback:
@@ -18,7 +18,7 @@ class RouteAwareActivityFallback:
 
     candidate_limit = 250
 
-    def __init__(self, place_tool: FinderPlaceTool) -> None:
+    def __init__(self, place_tool: PlaceSelectionTool) -> None:
         self.place_tool = place_tool
 
     def recommend(
@@ -148,7 +148,7 @@ class RouteAwareActivityFallback:
 
     def _score(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         *,
         route_points: list[tuple[int, float, float]],
         address_anchor: tuple[float, float] | None,
@@ -181,7 +181,7 @@ class RouteAwareActivityFallback:
 
     def _closest_route_point(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         route_points: list[tuple[int, float, float]],
     ) -> tuple[int | None, float | None]:
         if not route_points:

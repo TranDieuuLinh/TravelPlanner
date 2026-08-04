@@ -122,9 +122,9 @@ class PlanService:
     def feature_map(self) -> list[FeatureMapItem]:
         return [
             FeatureMapItem(stage="explore", feature="Explorer", description="Clarify destination, budget, pace, interests, and constraints."),
-            FeatureMapItem(stage="create", feature="Planner", description="Generate MacroPlan and DayBriefs for the main itinerary."),
-            FeatureMapItem(stage="fill", feature="Finder", description="Choose day windows, fill places, and commit each day."),
-            FeatureMapItem(stage="backup", feature="Backup Planner", description="Create a separate backup plan without mutating the locked main plan."),
+            FeatureMapItem(stage="theme", feature="TripThemePlanner", description="Create trip-wide experience requirements without assigning calendar days."),
+            FeatureMapItem(stage="select", feature="PlaceSelector", description="Create day slots, select Places, optimize routes, and commit each day."),
+            FeatureMapItem(stage="backup", feature="Backup Plan", description="Create a separate backup plan without mutating the locked main plan."),
         ]
 
     async def explore_full(
@@ -776,7 +776,7 @@ class PlanService:
                 *explorer.assumptions,
                 (
                     f"The default {DEFAULT_TRIP_DAYS}-day duration was kept. "
-                    "Finder may add catalog Places only to empty days in the "
+                    "PlaceSelector may add catalog Places only to empty days in the "
                     "URL/OCR itinerary."
                 ),
             ]
@@ -812,7 +812,7 @@ class PlanService:
                     *explorer.assumptions,
                     *(
                         [
-                            "URL extraction coverage needs review; Finder "
+                            "URL extraction coverage needs review; PlaceSelector "
                             "suggestions were disabled to avoid silently "
                             "replacing source places."
                         ]
@@ -860,7 +860,7 @@ class PlanService:
             intakeId=intake_id,
             userId=payload.user_state.user_id,
             explorer=explorer,
-            allowFinderSuggestions=(
+            allowPlaceSuggestions=(
                 False
                 if (
                     destination_stays and not schedulable_candidates
@@ -870,7 +870,7 @@ class PlanService:
                     for result in url_reel_results
                 )
                 else not has_reference_input
-                or _source_days_need_finder(
+                or _source_days_need_place_selector(
                     schedulable_candidates,
                     days=effective_days,
                     pace=explorer.intent.pace.value,
@@ -938,7 +938,7 @@ class PlanService:
                 "intakeId": result.intake_id,
                 "destination": result.explorer.intent.destination,
                 "days": result.explorer.trip_spec.days,
-                "allowFinderSuggestions": result.allow_finder_suggestions,
+                "allowPlaceSuggestions": result.allow_place_suggestions,
                 "candidateCount": (
                     result.timing_report.candidate_count
                     if result.timing_report is not None
@@ -1024,10 +1024,10 @@ class PlanService:
                         "trip_spec": payload.trip_spec.model_copy(
                             update={"days": required_days}
                         ),
-                        "allow_finder_suggestions": (
+                        "allow_place_suggestions": (
                             False
                             if disable_suggestions_for_url_overflow
-                            else payload.allow_finder_suggestions
+                            else payload.allow_place_suggestions
                         ),
                     }
                 )
@@ -1064,7 +1064,7 @@ class PlanService:
                     "trip_spec": workflow_payload.trip_spec.model_copy(
                         update={"days": next_days}
                     ),
-                    "allow_finder_suggestions": False,
+                    "allow_place_suggestions": False,
                 }
             )
             plan, timing_report = await (
@@ -1176,7 +1176,7 @@ def _candidate_coverage_days(
     return max([inferred, *source_days])
 
 
-def _source_days_need_finder(
+def _source_days_need_place_selector(
     candidates,
     *,
     days: int,
@@ -1205,7 +1205,7 @@ def _source_days_need_finder(
             continue
         explicit_counts[candidate.source_day] += 1
 
-    # Pack candidates without a source day the same way Planner does. Finder
+    # Pack candidates without a source day the same way Planner does. PlaceSelector
     # is needed only for requested days with no URL coverage; it must not pad
     # every sparse reference day up to a generic activity quota.
     for day in explicit_counts:

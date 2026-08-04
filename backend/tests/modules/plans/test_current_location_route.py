@@ -100,7 +100,11 @@ def test_day_directions_forces_car_through_every_stop(
     response = client.post(
         "/api/plans/day-directions",
         json={
-            "origin": {"latitude": 10.7769, "longitude": 106.7009},
+            "origin": {
+                "latitude": 10.7769,
+                "longitude": 106.7009,
+                "name": "Khách sạn trung tâm",
+            },
             "destinations": [
                 {
                     "itemId": "stop-1",
@@ -123,7 +127,7 @@ def test_day_directions_forces_car_through_every_stop(
     assert response.status_code == 200
     legs = response.json()
     assert [leg["fromPlace"] for leg in legs] == [
-        "Vị trí của bạn",
+        "Khách sạn trung tâm",
         "Điểm 1",
     ]
     assert [leg["toPlace"] for leg in legs] == ["Điểm 1", "Điểm 2"]

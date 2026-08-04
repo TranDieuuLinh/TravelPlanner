@@ -62,6 +62,7 @@ export type CurrentLocationRouteInput = {
   origin: {
     latitude: number;
     longitude: number;
+    name?: string;
   };
   destination: {
     itemId?: string | null;
@@ -81,6 +82,7 @@ export type DayDirectionsInput = {
   origin: {
     latitude: number;
     longitude: number;
+    name?: string;
   };
   destinations: Array<{
     itemId?: string | null;
@@ -319,7 +321,7 @@ export type ExploreResponse = {
   intakeId: string;
   userId?: string | null;
   explorer: ExplorerContext;
-  allowFinderSuggestions: boolean;
+  allowPlaceSuggestions: boolean;
   timingReport?: ExplorerTimingReport | null;
 };
 
@@ -512,7 +514,7 @@ export async function runPlannerIntake(
     context: explore.explorer,
     intakeId: explore.intakeId,
     userId: explore.userId,
-    allowFinderSuggestions: explore.allowFinderSuggestions
+    allowPlaceSuggestions: explore.allowPlaceSuggestions
   });
 
   return { explore, plan: generation.plan };
@@ -554,7 +556,7 @@ export async function createPlanFromExplorer(input: {
   intakeId?: string | null;
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
-  allowFinderSuggestions?: boolean;
+  allowPlaceSuggestions?: boolean;
   signal?: AbortSignal;
 }): Promise<PlanGenerationResult> {
   const selectedPlaces = input.selectedPlaces ?? [];
@@ -569,7 +571,7 @@ export async function createPlanFromExplorer(input: {
       tripSpec: input.context.tripSpec,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
-      allowFinderSuggestions: input.allowFinderSuggestions ?? true,
+      allowPlaceSuggestions: input.allowPlaceSuggestions ?? true,
       candidateReviews: input.context.candidateReviews ?? [],
       selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,

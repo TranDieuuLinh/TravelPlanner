@@ -107,9 +107,10 @@ client không được tự chọn role.
 - `POST /api/plans/current-location-route`
 - `POST /api/plans/day-directions`
 - `GET /api/plans/places/search?query={text}&destination={destination}`: trả tối
-  đa 8 gợi ý có tọa độ từ catalog `places` đang active. Search không phân biệt
-  dấu và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
-  geocoding bên ngoài.
+  đa 8 gợi ý có tọa độ từ toàn bộ catalog `places` đang active trong vùng đích.
+  Search không phân biệt dấu và đọc cả alias có cấu trúc; endpoint autocomplete
+  này không gọi provider geocoding bên ngoài và không bị giới hạn bởi batch
+  preload của Planner.
 - `POST /api/plans/{planId}/backup`
 
 ### Trip chat và lịch sử chỉnh sửa
@@ -595,12 +596,14 @@ transit theo preference; khi provider không khả dụng, response giữ
 ```
 
 `POST /api/plans/day-directions` chỉ dùng khi UI đang chọn một ngày cụ thể.
-Request chứa vị trí hiện tại, toàn bộ stop có tọa độ của ngày theo thứ tự lịch
+Request chứa điểm bắt đầu tạm thời (vị trí thiết bị hoặc địa điểm user tìm), toàn
+bộ stop có tọa độ của ngày theo thứ tự lịch
 trình và `timeWindow` của từng stop. Backend không tối ưu lại thứ tự; nó trả mảng
 `PlanTransportLeg` theo chuỗi cố định
-`current -> stop 1 -> ... -> stop N`. Mỗi leg có tuyến đề xuất làm primary và
+`origin -> stop 1 -> ... -> stop N`. `origin.name` là tùy chọn; khi bỏ trống,
+backend dùng nhãn “Vị trí của bạn” để tương thích với client cũ. Mỗi leg có tuyến đề xuất làm primary và
 các lựa chọn đi bộ, ô tô trong `alternatives`; xe buýt chỉ xuất hiện khi
-provider trả route transit có geometry. Chặng `current -> stop 1` dùng
+provider trả route transit có geometry. Chặng `origin -> stop 1` dùng
 `departureTime` của request; mỗi chặng sau dùng giờ kết thúc `timeWindow` của
 stop đầu chặng trên cùng ngày để khớp saved itinerary. Backend chuẩn hóa cả
 `departureTime` và `timeWindow` về `Asia/Ho_Chi_Minh` (`UTC+07:00`) trước khi
@@ -612,7 +615,11 @@ chim bay.
 
 ```json
 {
-  "origin": {"latitude": 10.7769, "longitude": 106.7009},
+  "origin": {
+    "name": "Khách sạn trung tâm",
+    "latitude": 10.7769,
+    "longitude": 106.7009
+  },
   "destinations": [
     {
       "itemId": "stop-1",

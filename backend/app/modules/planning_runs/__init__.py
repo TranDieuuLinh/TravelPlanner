@@ -1,1 +1,1 @@
-"""Admin observability for Explorer, Planner, Finder, and Checker runs."""
+"""Admin observability for Explorer, TripThemePlanner, PlaceSelector, and Checker runs."""

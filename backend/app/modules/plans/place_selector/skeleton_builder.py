@@ -3,18 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.modules.plans.domain.entities import DayBrief, UserStatus
+from app.modules.plans.domain.entities import PlaceSelectionDay, UserStatus
 from app.modules.plans.domain.enums import TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.time_windows import (
+from app.modules.plans.place_selector.time_windows import (
     format_clock,
     format_clock_window,
     parse_clock_minutes,
 )
 
 if TYPE_CHECKING:
-    from app.modules.plans.finder.area_survey import AreaProfile
-    from app.modules.plans.finder.day_style_selector import DayStyle
+    from app.modules.plans.place_selector.area_survey import AreaProfile
+    from app.modules.plans.place_selector.day_style_selector import DayStyle
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class DaySkeletonBuilder:
 
     def build_route_first_activities(
         self,
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         selected_places: list[SelectedPlaceContext],
     ) -> DaySkeleton:
         """Build exactly two activity slots; meals are selected afterwards.
@@ -125,7 +125,7 @@ class DaySkeletonBuilder:
 
     def build(
         self,
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         user_status: UserStatus,
         intent_constraints: list[str] | None = None,
         area_profile: AreaProfile | None = None,
@@ -368,7 +368,7 @@ class DaySkeletonBuilder:
 
     def build_anchor_day(
         self,
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         user_status: UserStatus,
         *,
         intent_constraints: list[str] | None = None,
@@ -449,7 +449,7 @@ class DaySkeletonBuilder:
 
     def build_scattered_day(
         self,
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         user_status: UserStatus,
         *,
         intent_constraints: list[str] | None = None,
@@ -536,7 +536,7 @@ class DaySkeletonBuilder:
     def build_by_style(
         self,
         style: "DayStyle",
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         user_status: UserStatus,
         *,
         intent_constraints: list[str] | None = None,
@@ -544,7 +544,7 @@ class DaySkeletonBuilder:
     ) -> DaySkeleton:
         """Dispatch to :meth:`build_anchor_day` or :meth:`build_scattered_day`."""
 
-        from app.modules.plans.finder.day_style_selector import DayStyle
+        from app.modules.plans.place_selector.day_style_selector import DayStyle
 
         if style == DayStyle.scattered_day:
             return self.build_scattered_day(
@@ -562,7 +562,7 @@ class DaySkeletonBuilder:
 
     def build_source_itinerary(
         self,
-        brief: DayBrief,
+        brief: PlaceSelectionDay,
         selected_places: list[SelectedPlaceContext],
         *,
         supplement_sparse_day: bool = False,

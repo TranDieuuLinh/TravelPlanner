@@ -37,7 +37,7 @@ from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
 )
-from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
 
 

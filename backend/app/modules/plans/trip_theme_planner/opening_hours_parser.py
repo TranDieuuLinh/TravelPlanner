@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from app.modules.plans.finder.time_windows import parse_unbounded_clock_minutes
+from app.modules.plans.place_selector.time_windows import parse_unbounded_clock_minutes
 
 
 _SLOT_SEPARATOR = re.compile(r"\s*(?:,|;|\||/|\n|\t| và )\s*")

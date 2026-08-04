@@ -22,10 +22,10 @@ from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
-from app.modules.plans.planner.planner_service import PlannerService
-from app.modules.plans.planner.research_tool import (
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
+from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
+from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
 from app.modules.plans.repository import PlanRepository
@@ -38,7 +38,7 @@ from app.modules.plans.schema import BackupPlanCreate, PlanningContextCreate
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run deterministic Planner/Finder output evaluations."
+        description="Run deterministic TripThemePlanner/PlaceSelector evaluations."
     )
     parser.add_argument(
         "--output",
@@ -213,20 +213,21 @@ def _plan_service(session: Session) -> PlanService:
         place_repository,
         BACKEND_DIR.parent / "database" / "generated" / "place_region_statistics.json",
     )
-    planner = PlannerService(
+    trip_theme_planner = TripThemePlannerService(
         statistics,
         llm,
         RepositoryPlannerResearchTool(place_repository),
     )
-    finder = FinderService(RepositoryFinderPlaceTool(place_repository))
+    place_selector = PlaceSelectorService(
+        RepositoryPlaceSelectionTool(place_repository)
+    )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
-        planner=planner,
-        finder=finder,
+        trip_theme_planner=trip_theme_planner,
+        place_selector=place_selector,
     )
     backup_workflow = BackupPlanWorkflow(
-        planner=planner,
-        finder=finder,
+        place_selector=place_selector,
         validator=BackupValidator(),
     )
     return PlanService(
@@ -288,68 +289,6 @@ class DeterministicPlannerLLM:
                 },
                 ensure_ascii=False,
             )
-        selected = sorted(
-            planner_input["selectedPlaces"],
-            key=lambda place: (
-                not place["mustVisit"],
-                place["priority"],
-                place["name"],
-            ),
-        )
-        capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[intent["pace"]]
-        allocation_order = [
-            day
-            for _ in range(capacity)
-            for day in range(1, trip_spec["days"] + 1)
-        ]
-        allocated_by_day = {
-            day: [] for day in range(1, trip_spec["days"] + 1)
-        }
-        unallocated = []
-        avoided = {name.casefold() for name in intent["avoidPlaces"]}
-        excluded = {
-            name.casefold()
-            for name in planner_input["planState"]["excludedPlaceNames"]
-        }
-        allocation_index = 0
-        for place in selected:
-            stable_ref = place.get("placeId") or place["name"]
-            normalized_name = place["name"].casefold()
-            if normalized_name in avoided:
-                unallocated.append(
-                    {
-                        "place": place,
-                        "reasonCode": "avoided_by_user",
-                        "reason": "Place is explicitly avoided.",
-                    }
-                )
-                continue
-            if normalized_name in excluded:
-                unallocated.append(
-                    {
-                        "place": place,
-                        "reasonCode": "excluded_by_plan_state",
-                        "reason": "Place is excluded from this planning scope.",
-                    }
-                )
-                continue
-            if allocation_index >= len(allocation_order):
-                unallocated.append(
-                    {
-                        "place": place,
-                        "reasonCode": "no_day_capacity",
-                        "reason": "No remaining macro-plan capacity.",
-                    }
-                )
-                continue
-            day = allocation_order[allocation_index]
-            allocated_by_day[day].append(stable_ref)
-            allocation_index += 1
-
         candidate_areas = context["plannerSignals"].get("candidateAreas", [])
         target_region = (
             candidate_areas[0]["regionKey"]
@@ -361,42 +300,18 @@ class DeterministicPlannerLLM:
             or context["plannerSignals"].get("dominantTags", [])
             or ["local"]
         )
-        day_briefs = [
+        trip_themes = [
             {
-                "day": day,
-                "theme": f"Ngày {day}: {focus[(day - 1) % len(focus)]}",
-                "targetArea": target_region.split(",")[-1],
-                "targetRegionKey": target_region,
-                "focusTags": list(
-                    dict.fromkeys(
-                        [
-                            focus[(day - 1) % len(focus)],
-                            *focus,
-                            *context["plannerSignals"].get("dominantTags", [])[:2],
-                        ]
-                    )
-                ),
-                "pace": intent["pace"],
-                "dayPartGoals": {
-                    "morning": "Khám phá theo chủ đề.",
-                    "lunch": "Ăn trưa linh hoạt.",
-                    "afternoon": "Tiếp tục trong cùng khu vực.",
-                    "evening": "Giữ lịch linh hoạt.",
-                },
-                "allocatedSelectedPlaceRefs": allocated_by_day[day],
-                "notes": ["Finder sẽ chọn địa điểm và giờ cụ thể."],
+                "theme": f"Trải nghiệm {theme}",
+                "focusTags": [theme],
+                "minimumActivities": 1,
+                "targetRegionKeys": [target_region],
             }
-            for day in range(1, trip_spec["days"] + 1)
+            for theme in focus[: max(1, min(len(focus), trip_spec["days"] * 2))]
         ]
         return json.dumps(
             {
-                "macroPlan": {
-                    "title": f"Kế hoạch {intent['destination']}",
-                    "destination": intent["destination"],
-                    "regionKey": context["regionKey"],
-                    "dayBriefs": day_briefs,
-                },
-                "unallocatedSelectedPlaces": unallocated,
+                "tripThemes": trip_themes,
                 "assumptions": ["Generated by deterministic evaluator LLM."],
                 "warnings": [],
             },

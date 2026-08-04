@@ -6,8 +6,8 @@ from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import Plan, TravelIntent, UnscheduledPlace, UserStatus
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
-    FinderAgentInput,
-    PlannerAgentOutput,
+    PlaceSelectionInput,
+    TripThemePlanningOutput,
     PlanningIntent,
     PlanningMode,
     SelectedPlaceContext,
@@ -15,10 +15,10 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.schema import PlaceCandidateReview
-from app.modules.plans.finder.finder_service import FinderService
+from app.modules.plans.place_selector.service import PlaceSelectorService
 from app.modules.plans.place_selector.activity_fallback import RouteAwareActivityFallback
-from app.modules.plans.planner.planner_service import PlannerService
-from app.modules.plans.planner.region_context import normalize_region_key
+from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
+from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
     MainPlanCreate,
     MainPlanFromExplorerCreate,
@@ -34,14 +34,14 @@ class MainPlanWorkflow:
     def __init__(
         self,
         explorer: ExplorerService,
-        planner: PlannerService,
-        finder: FinderService,
+        trip_theme_planner: TripThemePlannerService,
+        place_selector: PlaceSelectorService,
         checker: OverallChecker | None = None,
         planning_runs: PlanningRunRepository | None = None,
     ) -> None:
         self.explorer = explorer
-        self.planner = planner
-        self.finder = finder
+        self.trip_theme_planner = trip_theme_planner
+        self.place_selector = place_selector
         self.checker = checker or OverallChecker()
         self.planning_runs = planning_runs
 
@@ -61,7 +61,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
-            allow_finder_suggestions=True,
+            allow_place_suggestions=True,
             source="direct",
             candidate_reviews=[],
         )
@@ -113,7 +113,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=payload.preference_profile,
-            allow_finder_suggestions=payload.allow_finder_suggestions,
+            allow_place_suggestions=payload.allow_place_suggestions,
             timing_trace=trace,
             source="explorer",
             candidate_reviews=payload.candidate_reviews,
@@ -155,7 +155,7 @@ class MainPlanWorkflow:
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
-            allow_finder_suggestions=True,
+            allow_place_suggestions=True,
             source="context",
             candidate_reviews=[],
         )
@@ -170,7 +170,7 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
-        allow_finder_suggestions: bool,
+        allow_place_suggestions: bool,
         source: str,
         candidate_reviews: list[PlaceCandidateReview],
         user_id: int | None = None,
@@ -187,7 +187,7 @@ class MainPlanWorkflow:
                 summary={
                     "days": trip_spec.days,
                     "selectedPlaceCount": len(selected_places),
-                    "allowFinderSuggestions": allow_finder_suggestions,
+                    "allowPlaceSuggestions": allow_place_suggestions,
                 },
             )
             self.planning_runs.add_stage(
@@ -214,7 +214,7 @@ class MainPlanWorkflow:
                 selected_places=selected_places,
                 user_status=user_status,
                 preference_profile=preference_profile,
-                allow_finder_suggestions=allow_finder_suggestions,
+                allow_place_suggestions=allow_place_suggestions,
                 run_id=run_id,
                 timing_trace=timing_trace,
                 candidate_reviews=candidate_reviews,
@@ -263,14 +263,14 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
-        allow_finder_suggestions: bool,
+        allow_place_suggestions: bool,
         run_id: str | None,
         timing_trace: PlanTimingTrace | None,
         candidate_reviews: list[PlaceCandidateReview],
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
-        planner_started = time.perf_counter()
-        planner_output = await self.planner.create_main_macro_plan(
+        theme_started = time.perf_counter()
+        theme_output = await self.trip_theme_planner.create_trip_themes(
             intent,
             trip_spec=trip_spec,
             region_key=region_key,
@@ -279,24 +279,24 @@ class MainPlanWorkflow:
         )
         if timing_trace is not None:
             timing_trace.add_stage(
-                "planner",
-                "Planner tạo macro plan",
-                planner_started,
+                "tripThemePlanner",
+                "TripThemePlanner xác định chủ đề toàn chuyến",
+                theme_started,
                 details={
-                    "dayBriefCount": len(planner_output.macro_plan.day_briefs),
+                    "tripThemeCount": len(theme_output.trip_themes),
                     "selectedPlaceCount": len(selected_places),
                 },
             )
         if self.planning_runs is not None and run_id is not None:
             self.planning_runs.add_stage(
                 run_id,
-                stage="planner",
+                stage="trip_theme_planner",
                 status=(
                     "completed"
-                    if planner_output.day_briefs_ready
+                    if theme_output.trip_themes_ready
                     else "blocked"
                 ),
-                duration_ms=int((time.perf_counter() - planner_started) * 1_000),
+                duration_ms=int((time.perf_counter() - theme_started) * 1_000),
                 input_data={
                     "intent": planning_intent,
                     "tripSpec": trip_spec,
@@ -304,16 +304,16 @@ class MainPlanWorkflow:
                     "selectedPlaces": selected_places,
                     "preferenceProfile": preference_profile,
                 },
-                output_data=planner_output,
-                metadata={"trace": planner_output.trace},
+                output_data=theme_output,
+                metadata={"trace": theme_output.trace},
             )
-        if not planner_output.day_briefs_ready:
+        if not theme_output.trip_themes_ready:
             raise AppError(
                 422,
-                "PLANNER_INPUT_INSUFFICIENT",
+                "TRIP_THEME_INPUT_INSUFFICIENT",
                 (
-                    "Planner cannot create day briefs because the region has no "
-                    "catalog Places and no confirmed selected Places."
+                    "TripThemePlanner cannot create trip themes because the "
+                    "region has no catalog Places and no confirmed selected Places."
                 ),
                 {
                     "selectedPlaces": (
@@ -322,71 +322,71 @@ class MainPlanWorkflow:
                 },
             )
 
-        macro_plan = planner_output.macro_plan
-        finder_selected_places = self._filter_finder_selected_places(
+        selection_candidates = self._filter_place_selection_candidates(
             selected_places,
-            planner_output,
+            theme_output,
         )
-        finder_input = FinderAgentInput(
+        selection_input = PlaceSelectionInput(
             mode=PlanningMode.main,
             intent=planning_intent,
-            tripSpec=planner_output.trip_spec,
-            macroPlan=macro_plan,
-            selectedPlaces=finder_selected_places,
+            tripSpec=theme_output.trip_spec,
+            regionKey=region_key,
+            tripThemes=theme_output.trip_themes,
+            selectedPlaces=selection_candidates,
             userStatus=user_status,
-            allowFinderSuggestions=allow_finder_suggestions,
+            allowPlaceSuggestions=allow_place_suggestions,
         )
-        finder_started = time.perf_counter()
-        finder_output = self.finder.fill_agent_plan(finder_input)
+        selection_started = time.perf_counter()
+        selection_output = self.place_selector.fill_agent_plan(selection_input)
         if timing_trace is not None:
             timing_trace.add_stage(
-                "finder",
-                "Finder xếp lịch trình và tuyến",
-                finder_started,
+                "placeSelector",
+                "PlaceSelector chọn địa điểm và xếp tuyến",
+                selection_started,
                 details={
-                    "scheduledDayCount": len(finder_output.final_days),
-                    "finderSelectedPlaceCount": len(finder_selected_places),
+                    "scheduledDayCount": len(selection_output.final_days),
+                    "selectedPlaceCount": len(selection_candidates),
                 },
             )
         if self.planning_runs is not None and run_id is not None:
             self.planning_runs.add_stage(
                 run_id,
-                stage="finder",
-                status=finder_output.trace.status.value,
-                duration_ms=int((time.perf_counter() - finder_started) * 1_000),
-                input_data=finder_input,
-                output_data=finder_output,
-                metadata={"trace": finder_output.trace},
+                stage="place_selector",
+                status=selection_output.trace.status.value,
+                duration_ms=int((time.perf_counter() - selection_started) * 1_000),
+                input_data=selection_input,
+                output_data=selection_output,
+                metadata={"trace": selection_output.trace},
             )
         assemble_started = time.perf_counter()
         fallback_recommendations = RouteAwareActivityFallback(
-            self.finder.place_tool
+            self.place_selector.place_tool
         ).recommend(
-            days=finder_output.final_days,
+            days=selection_output.final_days,
             reviews=candidate_reviews,
             region_key=region_key,
         )
         unscheduled_places = self._merge_unscheduled_places(
-            planner_output,
-            [*finder_output.unscheduled_places, *fallback_recommendations],
+            theme_output,
+            [*selection_output.unscheduled_places, *fallback_recommendations],
         )
         plan = Plan(
             id=str(uuid4()),
             kind=PlanKind.main,
             status=PlanStatus.checking,
-            title=macro_plan.title,
+            title=f"Kế hoạch cho {intent.destination}",
             destination=intent.destination,
             intent=intent,
-            macroPlan=macro_plan,
-            days=finder_output.final_days,
+            tripThemes=theme_output.trip_themes,
+            days=selection_output.final_days,
             initialUserStatus=user_status,
-            finalUserStatus=finder_output.final_user_status,
-            finalPlanStatus=finder_output.final_plan_status,
+            finalUserStatus=selection_output.final_user_status,
+            finalPlanStatus=selection_output.final_plan_status,
             unscheduledPlaces=unscheduled_places,
-            planningAssumptions=planner_output.assumptions,
+            planningAssumptions=theme_output.assumptions,
             warnings=[
-                *planner_output.warnings,
-                *finder_output.warnings,
+                *theme_output.warnings,
+                *selection_output.warnings,
             ],
         )
         if timing_trace is not None:
@@ -460,40 +460,21 @@ class MainPlanWorkflow:
             return SelectedPlaceContext(name=place, mustVisit=True)
         return SelectedPlaceContext.model_validate(place.model_dump())
 
-    def _filter_finder_selected_places(
+    def _filter_place_selection_candidates(
         self,
         selected_places: list[SelectedPlaceContext],
-        planner_output: PlannerAgentOutput,
+        planner_output: TripThemePlanningOutput,
     ) -> list[SelectedPlaceContext]:
-        unallocated_refs = {
-            item.place.stable_ref
-            for item in planner_output.unallocated_selected_places
-        }
-        if not unallocated_refs:
-            return selected_places
-        return [
-            place
-            for place in selected_places
-            if place.stable_ref not in unallocated_refs
-        ]
+        del planner_output
+        return selected_places
 
     def _merge_unscheduled_places(
         self,
-        planner_output: PlannerAgentOutput,
-        finder_unscheduled: list[UnscheduledPlace],
+        planner_output: TripThemePlanningOutput,
+        selection_unscheduled: list[UnscheduledPlace],
     ) -> list[UnscheduledPlace]:
-        merged = [
-            *[
-                UnscheduledPlace(
-                    placeId=item.place.place_id,
-                    name=item.place.name,
-                    reasonCode=item.reason_code,
-                    reason=item.reason,
-                )
-                for item in planner_output.unallocated_selected_places
-            ],
-            *finder_unscheduled,
-        ]
+        del planner_output
+        merged = list(selection_unscheduled)
         unique: dict[str, UnscheduledPlace] = {}
         for item in merged:
             key = item.place_id or item.name.casefold()

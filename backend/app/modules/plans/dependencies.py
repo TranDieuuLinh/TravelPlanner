@@ -43,15 +43,15 @@ from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
-from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
+from app.modules.plans.trip_theme_planner.place_repository_adapter import PlaceRepositoryAdapter
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
-from app.modules.plans.planner.research_tool import (
+from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
-from app.modules.plans.planner.research_tools_orchestrator import (
+from app.modules.plans.trip_theme_planner.research_tools_orchestrator import (
     ResearchToolsOrchestrator,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
@@ -118,25 +118,24 @@ def get_plan_service(
         ),
         worker=transcript_worker,
     )
-    planner = TripThemePlannerService(
+    trip_theme_planner = TripThemePlannerService(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
         research_tools=research_tools,
     )
-    finder = PlaceSelectorService(
-        RepositoryFinderPlaceTool(place_repository),
+    place_selector = PlaceSelectorService(
+        RepositoryPlaceSelectionTool(place_repository),
         route_optimizer=_get_itinerary_optimizer(),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
-        planner=planner,
-        finder=finder,
+        trip_theme_planner=trip_theme_planner,
+        place_selector=place_selector,
         planning_runs=planning_runs,
     )
     backup_workflow = BackupPlanWorkflow(
-        planner=planner,
-        finder=finder,
+        place_selector=place_selector,
         validator=BackupValidator(),
     )
     return PlanService(

@@ -89,6 +89,8 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
   không dùng Geolocation watch. Tọa độ chỉ được chuyển tiếp cho route provider
   khi user bấm “Chỉ đường” hoặc “Tính lại” ở một ngày cụ thể. Vị trí và route
   điều hướng chỉ giữ trong memory của trang, không lưu vào plan/database/log.
+- Điểm bắt đầu user tìm trong Places tuân theo cùng phạm vi tạm thời: tên và tọa
+  độ chỉ dùng để tính/hiển thị tuyến trong phiên trang, không được thêm vào plan.
 - Loại bỏ dữ liệu cá nhân khỏi log và analytics.
 - Planning Control chỉ dành cho role `admin`. Snapshot planning run không lưu
   raw media, toàn bộ prompt/transcript, secret hay query string URL; raw request

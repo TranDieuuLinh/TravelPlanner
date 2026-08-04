@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Iterator, Protocol
 from uuid import uuid4
 
-from sqlalchemy import Select, Text, cast, func, or_, select
+from sqlalchemy import Select, Text, case, cast, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
@@ -104,7 +104,7 @@ class SqlAlchemyPlaceRepository:
             .where(Place.id == place_id)
         )
 
-    def list_for_finder(
+    def list_for_place_selection(
         self,
         region_key: str,
         *,
@@ -190,6 +190,58 @@ class SqlAlchemyPlaceRepository:
             .limit(limit)
         )
         return list(self.session.scalars(query))
+
+    def search_active_for_autocomplete(
+        self,
+        query: str,
+        region_key: str | None = None,
+        *,
+        limit: int = 200,
+    ) -> list[Place]:
+        """Search the complete active catalog without a preload row cap.
+
+        PostgreSQL does not enable ``unaccent`` in every deployed database, so
+        use ``translate`` for Vietnamese characters. This keeps autocomplete
+        accent-insensitive without requiring a database extension or migration.
+        The wider SQL result set is ranked precisely by the service.
+        """
+        query_key = _search_text_key(query)
+        if not query_key or limit < 1:
+            return []
+
+        normalized_name = _accent_insensitive_sql(Place.name)
+        normalized_metadata = _accent_insensitive_sql(
+            cast(Place.metadata_json, Text)
+        )
+        pattern = f"%{_escape_like(query_key)}%"
+        prefix_pattern = f"{_escape_like(query_key)}%"
+        scoped_query = select(Place).where(
+            Place.deleted_at.is_(None),
+            Place.status == "active",
+            Place.latitude.is_not(None),
+            Place.longitude.is_not(None),
+            or_(
+                normalized_name.like(pattern, escape="\\"),
+                normalized_metadata.like(pattern, escape="\\"),
+            ),
+        )
+        scoped_query = self._scope_query(scoped_query, region_key)
+        rank = case(
+            (normalized_name == query_key, 0),
+            (normalized_name.like(prefix_pattern, escape="\\"), 1),
+            (normalized_name.like(pattern, escape="\\"), 2),
+            else_=3,
+        )
+        return list(
+            self.session.scalars(
+                scoped_query.order_by(
+                    rank,
+                    func.length(Place.name),
+                    Place.name,
+                    Place.id,
+                ).limit(limit)
+            )
+        )
 
     def upsert_verified_google_aliases(
         self,
@@ -456,6 +508,42 @@ def _validate_region_key(region_key: str) -> None:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+_VIETNAMESE_SEARCH_GROUPS = (
+    ("àáạảãâầấậẩẫăằắặẳẵ", "a"),
+    ("èéẹẻẽêềếệểễ", "e"),
+    ("ìíịỉĩ", "i"),
+    ("òóọỏõôồốộổỗơờớợởỡ", "o"),
+    ("ùúụủũưừứựửữ", "u"),
+    ("ỳýỵỷỹ", "y"),
+    ("đ", "d"),
+)
+_VIETNAMESE_SEARCH_SOURCE = "".join(
+    characters for characters, _replacement in _VIETNAMESE_SEARCH_GROUPS
+)
+_VIETNAMESE_SEARCH_TARGET = "".join(
+    replacement * len(characters)
+    for characters, replacement in _VIETNAMESE_SEARCH_GROUPS
+)
+
+
+def _accent_insensitive_sql(column: object):
+    return func.translate(
+        func.lower(column),
+        _VIETNAMESE_SEARCH_SOURCE,
+        _VIETNAMESE_SEARCH_TARGET,
+    )
+
+
+def _search_text_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", value.strip().casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return " ".join(without_marks.split())
 
 
 def _alias_key(value: str) -> str:

@@ -59,7 +59,7 @@ class RegionSnapshotReference(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class DayBrief(BaseModel):
+class PlaceSelectionDay(BaseModel):
     day: int
     theme: str
     target_area: str = Field(alias="targetArea")
@@ -75,17 +75,6 @@ class DayBrief(BaseModel):
         alias="allocatedSelectedPlaceRefs",
     )
     notes: list[str] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
-
-
-class JourneyPhase(BaseModel):
-    start_day: int = Field(ge=1, alias="startDay")
-    end_day: int = Field(ge=1, alias="endDay")
-    base_region_key: str = Field(alias="baseRegionKey")
-    theme: str
-    movement_goal: str | None = Field(default=None, alias="movementGoal")
-    stay_nights: int = Field(default=0, ge=0, alias="stayNights")
 
     model_config = {"populate_by_name": True}
 
@@ -110,22 +99,19 @@ class TripThemeRequirement(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class MacroPlan(BaseModel):
+class PlaceSelectionBlueprint(BaseModel):
     title: str
     destination: str
     region_key: str | None = Field(default=None, alias="regionKey")
-    journey_style: str = Field(default="local_base", alias="journeyStyle")
-    journey_phases: list[JourneyPhase] = Field(
-        default_factory=list,
-        alias="journeyPhases",
-    )
     trip_themes: list[TripThemeRequirement] = Field(
         default_factory=list,
         alias="tripThemes",
     )
-    # Compatibility projection for Finder/API consumers. Route-first Planner
-    # returns tripThemes and the backend creates neutral day buckets itself.
-    day_briefs: list[DayBrief] = Field(default_factory=list, alias="dayBriefs")
+    # Private, deterministic working slots owned by PlaceSelector.
+    selection_days: list[PlaceSelectionDay] = Field(
+        default_factory=list,
+        alias="selectionDays",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -340,7 +326,7 @@ class UserStatus(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class FinderUsage(BaseModel):
+class PlaceSelectionUsage(BaseModel):
     activity_minutes: int = Field(default=0, ge=0, alias="activityMinutes")
     travel_minutes: int = Field(default=0, ge=0, alias="travelMinutes")
     walking_minutes: int = Field(default=0, ge=0, alias="walkingMinutes")
@@ -350,7 +336,7 @@ class FinderUsage(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class FinderPlanStatus(BaseModel):
+class PlaceSelectionStatus(BaseModel):
     current_day: int = Field(default=1, ge=1, alias="currentDay")
     current_slot: str | None = Field(default=None, alias="currentSlot")
     current_strategy: str = Field(default="anchor_led", alias="currentStrategy")
@@ -375,8 +361,8 @@ class FinderPlanStatus(BaseModel):
         default_factory=list,
         alias="usedFoodDrinkPlaceTypes",
     )
-    trip_usage: FinderUsage = Field(default_factory=FinderUsage, alias="tripUsage")
-    day_usage: FinderUsage = Field(default_factory=FinderUsage, alias="dayUsage")
+    trip_usage: PlaceSelectionUsage = Field(default_factory=PlaceSelectionUsage, alias="tripUsage")
+    day_usage: PlaceSelectionUsage = Field(default_factory=PlaceSelectionUsage, alias="dayUsage")
     rejected_candidate_ids: list[str] = Field(
         default_factory=list,
         alias="rejectedCandidateIds",
@@ -406,10 +392,10 @@ class UnscheduledPlace(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class FinderResult(BaseModel):
+class PlaceSelectionResult(BaseModel):
     days: list[PlanDay]
     final_user_status: UserStatus = Field(alias="finalUserStatus")
-    final_plan_status: FinderPlanStatus = Field(alias="finalPlanStatus")
+    final_plan_status: PlaceSelectionStatus = Field(alias="finalPlanStatus")
     unscheduled_places: list[UnscheduledPlace] = Field(
         default_factory=list,
         alias="unscheduledPlaces",
@@ -451,7 +437,10 @@ class Plan(BaseModel):
     destination: str
     parent_plan_id: str | None = Field(default=None, alias="parentPlanId")
     intent: TravelIntent
-    macro_plan: MacroPlan = Field(alias="macroPlan")
+    trip_themes: list[TripThemeRequirement] = Field(
+        default_factory=list,
+        alias="tripThemes",
+    )
     days: list[PlanDay]
     initial_user_status: UserStatus = Field(
         default_factory=UserStatus,
@@ -461,8 +450,8 @@ class Plan(BaseModel):
         default_factory=UserStatus,
         alias="finalUserStatus",
     )
-    final_plan_status: FinderPlanStatus = Field(
-        default_factory=FinderPlanStatus,
+    final_plan_status: PlaceSelectionStatus = Field(
+        default_factory=PlaceSelectionStatus,
         alias="finalPlanStatus",
     )
     unscheduled_places: list[UnscheduledPlace] = Field(
@@ -475,5 +464,23 @@ class Plan(BaseModel):
     )
     warnings: list[str] = Field(default_factory=list)
     check_report: CheckReport | None = Field(default=None, alias="checkReport")
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_macro_plan(cls, value):
+        """Read persisted pre-route-first plans without writing PlaceSelectionBlueprint again."""
+
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if "tripThemes" not in payload and "trip_themes" not in payload:
+            macro = payload.get("macroPlan") or payload.get("macro_plan")
+            if isinstance(macro, dict):
+                payload["tripThemes"] = (
+                    macro.get("tripThemes") or macro.get("trip_themes") or []
+                )
+        payload.pop("macroPlan", None)
+        payload.pop("macro_plan", None)
+        return payload
 
     model_config = {"populate_by_name": True}

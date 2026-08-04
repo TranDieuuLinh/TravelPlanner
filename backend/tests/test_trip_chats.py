@@ -172,7 +172,7 @@ def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
         "macroPlan": {
             "title": "Hà Nội cuối tuần",
             "destination": "Hà Nội",
-            "dayBriefs": [
+            "selectionDays": [
                 {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
             ],
         },
@@ -249,7 +249,7 @@ def test_user_can_save_personal_note_from_flat_form_data(
         "macroPlan": {
             "title": "Ghi chú Hà Nội",
             "destination": "Hà Nội",
-            "dayBriefs": [
+            "selectionDays": [
                 {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
             ],
         },
@@ -319,7 +319,7 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
         "macroPlan": {
             "title": "Hà Nội cuối tuần",
             "destination": "Hà Nội",
-            "dayBriefs": [
+            "selectionDays": [
                 {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
             ],
         },

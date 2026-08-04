@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.modules.plans.domain.entities import FinderPlanStatus, PlanItem
-from app.modules.plans.finder.time_windows import (
+from app.modules.plans.domain.entities import PlaceSelectionStatus, PlanItem
+from app.modules.plans.place_selector.time_windows import (
     format_clock_window,
     parse_unbounded_clock_minutes,
     window_duration,
@@ -25,7 +25,7 @@ class TimelineFitter:
         *,
         day: int,
         warnings: list[str],
-        plan_status: FinderPlanStatus,
+        plan_status: PlaceSelectionStatus,
     ) -> TimelineFitResult:
         if not items:
             return TimelineFitResult(items=items, overflow_items=[])

@@ -1,27 +1,27 @@
 from __future__ import annotations
 
 from app.modules.plans.domain.entities import (
-    FinderPlanStatus,
+    PlaceSelectionStatus,
     PlanItem,
     PlanTransportLeg,
     UserStatus,
 )
-from app.modules.plans.finder.day_style_selector import (
+from app.modules.plans.place_selector.day_style_selector import (
     DayStyle,
     classify_place,
     select_day_style,
 )
-from app.modules.plans.finder.place_tool import EmptyFinderPlaceTool, FinderPlace
-from app.modules.plans.finder.skeleton_builder import DayBlock, DaySkeletonBuilder
-from app.modules.plans.finder.status_tracker import FinderStatusTracker
-from app.modules.plans.finder.time_windows import (
+from app.modules.plans.place_selector.place_tool import EmptyPlaceSelectionTool, SelectablePlace
+from app.modules.plans.place_selector.skeleton_builder import DayBlock, DaySkeletonBuilder
+from app.modules.plans.place_selector.status_tracker import PlaceSelectionStatusTracker
+from app.modules.plans.place_selector.time_windows import (
     format_clock,
     format_clock_window,
     parse_clock_minutes,
     parse_unbounded_clock_minutes,
     window_duration,
 )
-from app.modules.plans.finder.timeline_fitter import TimelineFitter
+from app.modules.plans.place_selector.timeline_fitter import TimelineFitter
 
 
 def test_time_windows_preserve_bounded_and_unbounded_clock_semantics() -> None:
@@ -42,7 +42,7 @@ def test_timeline_fitter_shifts_items_and_rejects_midnight_overflow() -> None:
     # overflow (>= 24:00 boundary) in the fitter.
     late = _item("late", "23:00-24:00", 60)
     warnings: list[str] = []
-    status = FinderPlanStatus()
+    status = PlaceSelectionStatus()
 
     result = TimelineFitter().fit(
         [late],
@@ -61,7 +61,7 @@ def test_timeline_fitter_shifts_items_and_rejects_midnight_overflow() -> None:
 def test_timeline_fitter_warns_when_day_extends_past_evening() -> None:
     long_block = _item("long", "18:00-22:00", 240)
     warnings: list[str] = []
-    status = FinderPlanStatus()
+    status = PlaceSelectionStatus()
 
     result = TimelineFitter().fit(
         [long_block],
@@ -76,7 +76,7 @@ def test_timeline_fitter_warns_when_day_extends_past_evening() -> None:
 
 
 def test_status_tracker_applies_and_rolls_back_activity_effects() -> None:
-    candidate = FinderPlace(
+    candidate = SelectablePlace(
         placeId="museum",
         name="Museum",
         placeType="attraction",
@@ -89,8 +89,8 @@ def test_status_tracker_applies_and_rolls_back_activity_effects() -> None:
     user_status = UserStatus.model_validate(
         {"metrics": {"physical": 80, "energy": 80}}
     )
-    plan_status = FinderPlanStatus()
-    tracker = FinderStatusTracker(EmptyFinderPlaceTool())
+    plan_status = PlaceSelectionStatus()
+    tracker = PlaceSelectionStatusTracker(EmptyPlaceSelectionTool())
 
     tracker.apply_activity(candidate, block, user_status, plan_status)
 
@@ -124,8 +124,8 @@ def test_status_tracker_break_increments_rest_and_updates_mood() -> None:
     user_status = UserStatus.model_validate(
         {"metrics": {"energy": 60, "mental": 60}}
     )
-    plan_status = FinderPlanStatus()
-    tracker = FinderStatusTracker(EmptyFinderPlaceTool())
+    plan_status = PlaceSelectionStatus()
+    tracker = PlaceSelectionStatusTracker(EmptyPlaceSelectionTool())
 
     tracker.apply_break(user_status, plan_status, block)
 
@@ -169,8 +169,8 @@ def _finder_place(
     *,
     place_group: str | None = None,
     tags: list[str] | None = None,
-) -> FinderPlace:
-    return FinderPlace(
+) -> SelectablePlace:
+    return SelectablePlace(
         name=name,
         placeType=place_type,
         regionKey="vn,ha-noi",
@@ -250,10 +250,10 @@ def test_classify_place_unknown_category_returns_none() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _balanced_brief(day: int = 1) -> DayBrief:
-    from app.modules.plans.domain.entities import DayBrief
+def _balanced_brief(day: int = 1) -> PlaceSelectionDay:
+    from app.modules.plans.domain.entities import PlaceSelectionDay
 
-    return DayBrief.model_validate(
+    return PlaceSelectionDay.model_validate(
         {
             "day": day,
             "theme": "explore",

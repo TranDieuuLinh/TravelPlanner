@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from app.modules.plans.dto.agent_contracts import (
     ItineraryItemCategory,
@@ -511,9 +511,15 @@ class ExploreIntakeResponse(BaseModel):
     intake_id: Annotated[str, Field(alias="intakeId")]
     user_id: Annotated[str | None, Field(default=None, alias="userId")]
     explorer: ExplorerContextResponse
-    allow_finder_suggestions: Annotated[
+    allow_place_suggestions: Annotated[
         bool,
-        Field(default=True, alias="allowFinderSuggestions"),
+        Field(
+            default=True,
+            validation_alias=AliasChoices(
+                "allowPlaceSuggestions", "allowFinderSuggestions"
+            ),
+            serialization_alias="allowPlaceSuggestions",
+        ),
     ]
     timing_report: Annotated[
         ExplorerTimingReport | None,

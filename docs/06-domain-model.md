@@ -30,7 +30,8 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 - `BudgetEnvelope`: ngân sách đơn giản chỉ gồm số tiền gần đúng `targetAmount`,
   `currency` và mức `low`, `medium` hoặc `high`. Budget chỉ xuất hiện tại
   `tripSpec.budget`, không lặp lại trong `TravelIntent`.
-- `MacroPlan`: tên plan, điểm đến và mô tả cấp cao cho từng ngày.
+- `TripThemeRequirement`: theme, focus tags, số activity tối thiểu và region mục
+  tiêu ở cấp toàn chuyến; không chứa lịch theo ngày.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
   địa điểm, source context trong `notes`, lời nhắc user trong `personalNotes`,
@@ -54,7 +55,7 @@ tương thích nhưng chưa có luồng Marketplace riêng.
   object này nhưng là dữ liệu tạm thời, không được thêm vào snapshot plan hoặc
   revision.
 - `CheckReport`: trạng thái, danh sách vấn đề và tóm tắt.
-- `Plan`: loại main/backup, trạng thái vòng đời, intent, macro plan, các ngày,
+- `Plan`: loại main/backup, trạng thái vòng đời, intent, `tripThemes`, các ngày,
   liên kết plan cha và báo cáo kiểm tra.
 
 Plan từ các endpoint độc lập hiện vẫn là object Pydantic được giữ trong bộ nhớ.
@@ -135,7 +136,7 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   còn sub-place có `parentPlace` được gộp về venue cha.
 - `ExtractedContext` giữ `expectedPlaceCount`, `extractionCoverage` và
   `coverageStatus`. Coverage thấp dừng trước alias enrichment, provider resolve
-  và Planner; coverage cần review tắt Finder để không âm thầm thay stop nguồn.
+  và Planner; coverage cần review tắt PlaceSelector để không âm thầm thay stop nguồn.
 - `PlaceCandidate`: tên thô từ nguồn, `searchRegion` của stop và các kết quả
   chuẩn hóa có thể tương ứng. `searchRegion` không đồng nhất với điểm lưu trú
   chính; ví dụ trip base Hà Nội nhưng stop Day 2 có thể tìm trong Ninh Bình.
@@ -173,15 +174,15 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
   ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
-  nói rõ để Planner/Finder có thể bám blueprint mà không coi đó là dữ liệu vận
+  nói rõ để TripThemePlanner/PlaceSelector có thể bám blueprint mà không coi đó là dữ liệu vận
   hành đã xác minh. `sourceProvider` giữ provider đã resolve candidate để UI có
   thể phân biệt provenance URL với Google Maps Playwright mà không suy đoán từ tên. Stop URL
   hiển thị nhãn Việt đã resolve; tên candidate gốc vẫn được giữ trên
   `UserMustPlace` cùng evidence.
 - `DestinationStay`: phân bổ một khoảng ngày cho thành phố/khu vực từ heading
   của nguồn (ví dụ `Hanoi - 2 days`). Đây là context cấp hành trình, không phải
-  `Place` hay `SelectedPlace`; stay hai ngày tạo hai `DayBrief` cùng
-  `targetArea` và có thể để trống item để người dùng bổ sung sau.
+  `Place` hay `SelectedPlace`; PlaceSelector dùng stay hai ngày làm target area
+  cho hai day slot tương ứng và có thể để trống item để người dùng bổ sung sau.
 - `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
   chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
   `sourceTypes`), không giữ raw prompt/OCR/transcript.
@@ -273,17 +274,17 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   Planner giữ nguyên duration và đưa overflow vào `UnscheduledPlace`; UI phải
   cho thêm thủ công hoặc tạo prompt yêu cầu AI xếp lại. Stop restaurant/food
   dùng tối đa ba meal slot mỗi ngày và không chiếm hai activity slot chính;
-  cafe/coffee vẫn là activity. Finder suggestion chỉ dùng capacity còn trống và
+  cafe/coffee vẫn là activity. PlaceSelector suggestion chỉ dùng capacity còn trống và
   không được chiếm chỗ của URL place. Revision URL tiếp theo phải phục hồi cả
   URL place đã resolve từ Explorer history, kể cả khi revision cũ chưa xếp được.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
-  được lưu hay đưa vào timeline; Finder được phép bổ sung địa điểm đã chuẩn hóa
+  được lưu hay đưa vào timeline; PlaceSelector được phép bổ sung địa điểm đã chuẩn hóa
   thay thế.
 - Heading dạng `thành phố - N ngày` được giữ thành `DestinationStay`, không
-  resolve thành stop. Khi URL chỉ có stay và chưa có venue cụ thể, Finder không
+  resolve thành stop. Khi URL chỉ có stay và chưa có venue cụ thể, PlaceSelector không
   tự thêm place; plan giữ các ngày trống trong đúng thành phố.
 - Planner downstream nhận trực tiếp Explorer context và không đọc
-  `UserMustPlace`. Finder downstream dùng `intakeId + userId` qua junction
+  `UserMustPlace`. PlaceSelector downstream dùng `intakeId + userId` qua junction
   `UserMustPlaceUser` để đọc đúng snapshot dùng chung; Explorer không điều phối
   hai module này.
 - Địa điểm đã xác nhận phải được xếp hoặc xuất hiện trong `UnscheduledPlace` kèm

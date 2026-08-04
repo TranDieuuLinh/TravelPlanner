@@ -38,8 +38,11 @@
 
 Valhalla tự vận hành được chọn cho route từng leg của Finder. Finder gọi cả
 `pedestrian` và `auto` cho mỗi mode không bị user loại trừ. Ngưỡng đi bộ 1.500 m
-quyết định mode road được đề xuất, còn route road kia vẫn nằm trong
-`PlanTransportLeg.alternatives` để itinerary hiển thị đủ lựa chọn khả thi.
+quyết định mode road được đề xuất ở backend, còn route road kia vẫn nằm trong
+`PlanTransportLeg.alternatives`. UI Planner luôn giữ ô tô trong các route road
+khả thi; đi bộ chỉ được thêm khi leg dưới 3.000 m. Tuyến public transit đã được
+OpenTripPlanner xác minh được hiển thị thêm để người dùng chọn; lựa chọn
+`mixed`/`unknown` không được đưa lên UI hoặc gắn nhãn trên bản đồ.
 Summary distance/duration cùng polyline6 được chuẩn hóa vào
 `PlanTransportLeg`; lỗi provider fallback theo từng leg. Kết quả không được mô
 tả là traffic live nếu deployment chưa nạp dữ liệu traffic.
@@ -59,11 +62,21 @@ không có route transit xác minh thì không hiển thị lựa chọn này v�
 geometry thật và `scheduleStatus=development_shifted_2018` được hiển thị với
 cảnh báo lịch cũ đã dịch ngày, nhưng vẫn giữ `verified=false`.
 
-UI vẫn dùng Leaflet/OpenStreetMap làm bản đồ nền. Chỉ đường tạm thời từ vị trí
+UI Planner dùng MapLibre GL JS với vector style dựa trên dữ liệu OpenStreetMap;
+style URL được cấu hình bằng `NEXT_PUBLIC_PLANNER_MAP_STYLE_URL` và mặc định dùng
+OpenFreeMap Bright cho môi trường prototype. UI ẩn các lớp POI không phục vụ
+lịch trình, dùng bảng màu tương phản cao để phân biệt rõ đất, nước, công viên,
+công trình, đường và nhãn, đồng thời giữ attribution OpenStreetMap luôn hiển
+thị. Bản đồ dấu chân quốc gia trong Profile vẫn dùng Leaflet vì render GeoJSON
+tĩnh và không cần vector basemap. Chỉ đường tạm thời từ vị trí
 hiện tại giữ nguyên thứ tự stop của itinerary đã lưu, không gọi
 `sources_to_targets` và không giải open path. Valhalla Routing và
 OpenTripPlanner vẫn được gọi cho từng leg cố định để trả geometry, thời lượng và
 chuyên chở bằng các mode khả thi, đồng thời trả chuỗi segment đa phương thức.
+UI xem toàn tuyến ngày thêm điểm xuất phát trước chuỗi stop này. Chế độ tìm
+đường nhanh là truy vấn point-to-point riêng: điểm đi có thể là vị trí thiết bị
+hoặc place đã tìm, còn điểm đến có thể là stop trong plan, place đã tìm hoặc tọa
+độ chọn trực tiếp trên bản đồ; kết quả không mutate itinerary.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.
@@ -79,16 +92,21 @@ place identity. Resolver lấy tối đa `top K` record `active` có tọa độ
 `places`, gồm metadata alias và tên có hậu tố chi nhánh, rồi xếp hạng theo độ
 giống tên, `region_key`, evidence địa chỉ/landmark, category tương thích và
 `data_confidence`. Top-1 chỉ được nhận khi đạt điểm tối thiểu và cách top-2 đủ
-xa; mặc định `K=5`, điểm tối thiểu `0.82` và margin `0.08`. Đây là score nội bộ
+xa; mặc định `K=5`, điểm phải **lớn hơn** `0.82` và margin `0.08`. Điểm bằng
+`0.82` vẫn bị loại. Route context chỉ phân xử giữa các match đã vượt ngưỡng;
+không được nâng một match yếu thành `resolved`. Candidate tên món/venue chung
+phải có địa chỉ nguồn khớp record mới được resolve tự động. Đây là score nội bộ
 có thể hiệu chỉnh, không phải confidence do Google hay source cung cấp. Nhờ vậy
 source tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại,
 đồng thời không đoán giữa các thương hiệu/địa điểm trùng tên. Catalog miss, toàn
 bộ điểm thấp hoặc top-1/top-2 quá sát nhau đều fallback sang Playwright worker
 của Google Maps.
-Scraper nhận tên gốc và
-alias có cấu trúc qua file input tạm, nhưng chỉ nhận
-kết quả khi tên, vùng, category và latitude/longitude hợp lệ; provider lỗi,
-timeout hoặc mismatch không làm hỏng intake. Alias catalog được lưu trong
+Scraper nhận tên gốc và alias có cấu trúc qua file input tạm. Kết quả Google
+được xếp hạng theo top-K score tổng hợp từ độ giống tên, vùng, category và tọa
+độ; top-1 chỉ được nhận khi điểm **lớn hơn** `0.82`, không bị loại riêng chỉ vì
+tên provider có thêm prefix mô tả như `Di tích`. Vùng/category mâu thuẫn rõ
+hoặc tọa độ không hợp lệ vẫn là hard rejection; provider lỗi hoặc timeout không
+làm hỏng intake. Alias catalog được lưu trong
 `places.metadata.aliases`, hoặc tách theo `englishNames`, `vietnameseNames`,
 `alternateNames`; `searchNames` tiếp tục được đọc để tương thích dữ liệu cũ.
 Mỗi candidate chỉ giữ tối đa hai tên tra cứu: tên chính thức tiếng Việt và tên
@@ -217,10 +235,11 @@ instruction.
    phép học `verifiedAliases`; alias Việt được trả riêng cho frontend.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Khi candidate
    có `addressHint`, Google fallback thử thêm một query chỉ gồm địa chỉ và vùng
-   sau các query tên + địa chỉ. Kết quả lệch tên vẫn giữ trạng thái unresolved;
+   sau các query tên + địa chỉ. Kết quả có tổng score không vượt ngưỡng vẫn giữ
+   trạng thái unresolved;
    tọa độ đại diện chỉ được dùng làm anchor cho gợi ý gần route, không được lưu
    như provider-verified source place. Kết quả chỉ
-   được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
+   được resolve khi top-1 vượt ngưỡng score, vùng địa lý phù hợp và loại provider
    không mâu thuẫn rõ với category nguồn. `candidateName` và `resolvedName`
    được lưu riêng; Plan/UI dùng `resolvedName` ưu tiên tiếng Việt, còn
    `candidateName` giữ provenance. Mismatch giữ `resolutionReason` để truy vết.

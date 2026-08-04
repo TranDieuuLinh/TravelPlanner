@@ -24,6 +24,20 @@ from app.modules.plans.destination_inference import usable_destination
 from app.modules.plans.explorer.schema import PlaceMatchOption, UnifiedPlaceCandidate
 
 
+DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE = 0.82
+
+GENERIC_VENUE_NAMES = {
+    "banh cuon",
+    "banh cuon nong",
+    "banh mi",
+    "bun cha",
+    "cafe",
+    "coffee",
+    "pho",
+    "restaurant",
+}
+
+
 class PlaceLookupRecord(Protocol):
     id: str
     name: str
@@ -63,6 +77,14 @@ class PlaceLookupRepository(Protocol):
         names: list[str],
         *,
         limit: int = 100,
+    ) -> list[PlaceLookupRecord]: ...
+
+    def search_active_for_autocomplete(
+        self,
+        query: str,
+        region_key: str | None = None,
+        *,
+        limit: int = 200,
     ) -> list[PlaceLookupRecord]: ...
 
 
@@ -419,7 +441,7 @@ class DatabasePlaceResolver(PlaceResolver):
         repository: PlaceLookupRepository,
         *,
         top_k: int = 5,
-        minimum_score: float = 0.82,
+        minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
         minimum_margin: float = 0.08,
     ) -> None:
         if top_k < 1:
@@ -473,12 +495,26 @@ class DatabasePlaceResolver(PlaceResolver):
                 provider=self.provider_name,
                 started_at=started_at,
             )
-        if best_score < self.minimum_score:
+        if best_score <= self.minimum_score:
             return _with_provider_attempt(
                 _unresolved(
                     candidate,
                     search_region,
                     reason="low_database_score",
+                    provider=self.provider_name,
+                ).model_copy(update={"match_options": match_options}),
+                provider=self.provider_name,
+                started_at=started_at,
+            )
+        if (
+            _database_candidate_is_generic(candidate)
+            and _database_source_location_score(candidate, record) <= 0
+        ):
+            return _with_provider_attempt(
+                _unresolved(
+                    candidate,
+                    search_region,
+                    reason="generic_name_without_source_location",
                     provider=self.provider_name,
                 ).model_copy(update={"match_options": match_options}),
                 provider=self.provider_name,
@@ -525,6 +561,18 @@ class DatabasePlaceResolver(PlaceResolver):
                 continue
             candidate = candidates[index]
             matches = self._matching_records(candidate, destination=destination)
+            if _database_candidate_is_generic(candidate):
+                matches = [
+                    record
+                    for record in matches
+                    if _database_source_location_score(candidate, record) > 0
+                ]
+            elif _candidate_has_authoritative_address(candidate):
+                matches = [
+                    record
+                    for record in matches
+                    if _database_source_location_score(candidate, record) > 0
+                ]
             record = _select_record_from_route_context(
                 index,
                 candidates=candidates,
@@ -564,11 +612,12 @@ class DatabasePlaceResolver(PlaceResolver):
     ) -> list[PlaceLookupRecord]:
         return [
             record
-            for _score, record in self._ranked_records(
+            for score, record in self._ranked_records(
                 candidate,
                 destination=destination,
             )
-            if _database_name_similarity(candidate, record) >= 0.70
+            if score > self.minimum_score
+            and _database_name_similarity(candidate, record) >= 0.70
         ]
 
     def _ranked_records(
@@ -577,7 +626,7 @@ class DatabasePlaceResolver(PlaceResolver):
         *,
         destination: str,
     ) -> list[tuple[float, PlaceLookupRecord]]:
-        from app.modules.plans.planner.region_context import (
+        from app.modules.plans.trip_theme_planner.region_context import (
             normalize_search_region_key,
         )
 
@@ -792,6 +841,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         timeout_seconds: float = 45.0,
         max_alias_queries: int = 2,
         max_concurrency: int = 2,
+        minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
     ) -> None:
         if not executable and work_dir is None:
             raise ValueError(
@@ -802,6 +852,9 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         self.timeout_seconds = timeout_seconds
         self.max_alias_queries = max_alias_queries
         self.max_concurrency = max(1, max_concurrency)
+        if not 0.0 <= minimum_score <= 1.0:
+            raise ValueError("minimum_score must be between 0 and 1")
+        self.minimum_score = minimum_score
 
     async def resolve_many(
         self,
@@ -858,6 +911,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 candidate_names=candidate_names,
                 search_region=search_region,
                 candidate_category=candidate.category.value,
+                minimum_score=self.minimum_score,
             ):
                 fallback_queries = queries[1:]
                 attempted_query_count += len(fallback_queries)
@@ -930,6 +984,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             candidate_names=candidate_names,
             search_region=search_region,
             candidate_category=candidate.category.value,
+            minimum_score=self.minimum_score,
         )
         title = _optional_text(result.get("title")) or candidate.name
         address = _google_maps_address(result) or candidate.address_hint
@@ -944,6 +999,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             search_region=search_region,
             candidate_category=candidate.category.value,
             coordinates_valid=coordinates_valid,
+            minimum_score=self.minimum_score,
         )
         status = "resolved" if not rejection_reasons else "unresolved"
         external_identity = (
@@ -1312,7 +1368,7 @@ def _effective_search_region(
     if not destination_region:
         return candidate_region
 
-    from app.modules.plans.planner.region_context import (
+    from app.modules.plans.trip_theme_planner.region_context import (
         normalize_region_key,
         normalize_search_region_key,
     )
@@ -1524,14 +1580,14 @@ def _candidate_identity_authority(
 
 
 def _region_key_for_catalog(value: str) -> str:
-    from app.modules.plans.planner.region_context import normalize_region_key
+    from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 
     normalized = normalize_region_key(value) if value.strip() else ""
     return normalized or "vn,unmapped"
 
 
 def _region_key_for_search(search_region: str, destination: str) -> str:
-    from app.modules.plans.planner.region_context import (
+    from app.modules.plans.trip_theme_planner.region_context import (
         normalize_region_key,
         normalize_search_region_key,
     )
@@ -1820,6 +1876,21 @@ def _database_source_location_score(
         )
     )
     return 0.12 if any(_normalized(hint) in location_key for hint in hints) else 0.0
+
+
+def _candidate_has_authoritative_address(
+    candidate: UnifiedPlaceCandidate,
+) -> bool:
+    return bool(
+        candidate.address_hint
+        and candidate.source_evidence.get("metadata")
+    )
+
+
+def _database_candidate_is_generic(
+    candidate: UnifiedPlaceCandidate,
+) -> bool:
+    return " ".join(_name_tokens(candidate.name)) in GENERIC_VENUE_NAMES
 
 
 def _database_category_score(
@@ -2156,27 +2227,25 @@ def _best_google_maps_result(
     search_region: str,
     candidate_category: str,
 ) -> dict[str, Any]:
-    def score(result: dict[str, Any]) -> tuple[int, int, int, float]:
-        title = _optional_text(result.get("title")) or ""
-        matches_name = any(
-            _token_names_match(_name_tokens(name), _name_tokens(title))
-            for name in candidate_names
+    def score(result: dict[str, Any]) -> tuple[float, float, str, str]:
+        latitude = _as_decimal(result.get("latitude"))
+        longitude = _as_decimal(
+            result.get("longitude", result.get("longtitude"))
         )
-        matches_region = _google_maps_result_matches_region(
+        resolution_score, _components = _google_maps_resolution_score(
             result,
+            candidate_names=candidate_names,
             search_region=search_region,
-        )
-        category_compatible = _category_compatible(
-            candidate_category,
-            result,
+            candidate_category=candidate_category,
+            coordinates_valid=_coordinates_valid(latitude, longitude),
         )
         return (
-            int(matches_name),
-            int(matches_region is not False),
-            int(category_compatible is not False),
+            resolution_score,
             _as_float(
                 result.get("review_rating", result.get("rating"))
             ),
+            _optional_text(result.get("place_id")) or "",
+            _optional_text(result.get("title")) or "",
         )
 
     return max(payload, key=score)
@@ -2188,23 +2257,11 @@ def _google_maps_match_options(
     candidate_names: list[str],
     search_region: str,
     candidate_category: str,
+    minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
     limit: int = 5,
 ) -> list[PlaceMatchOption]:
     scored: list[tuple[float, dict[str, Any], dict[str, float], list[str]]] = []
     for result in payload:
-        title = _optional_text(result.get("title")) or ""
-        name_score = max(
-            (
-                _name_match_score(name, title) / 100.0
-                for name in candidate_names
-            ),
-            default=0.0,
-        )
-        region_match = _google_maps_result_matches_region(
-            result,
-            search_region=search_region,
-        )
-        category_match = _category_compatible(candidate_category, result)
         latitude = _as_decimal(result.get("latitude"))
         longitude = _as_decimal(
             result.get("longitude", result.get("longtitude"))
@@ -2216,18 +2273,14 @@ def _google_maps_match_options(
             search_region=search_region,
             candidate_category=candidate_category,
             coordinates_valid=coordinates_valid,
+            minimum_score=minimum_score,
         )
-        components = {
-            "nameSimilarity": round(name_score, 4),
-            "regionMatch": 1.0 if region_match is True else 0.5 if region_match is None else 0.0,
-            "categoryCompatibility": 1.0 if category_match is True else 0.5 if category_match is None else 0.0,
-            "coordinatesValid": 1.0 if coordinates_valid else 0.0,
-        }
-        score = (
-            components["nameSimilarity"] * 0.65
-            + components["regionMatch"] * 0.15
-            + components["categoryCompatibility"] * 0.10
-            + components["coordinatesValid"] * 0.10
+        score, components = _google_maps_resolution_score(
+            result,
+            candidate_names=candidate_names,
+            search_region=search_region,
+            candidate_category=candidate_category,
+            coordinates_valid=coordinates_valid,
         )
         scored.append((score, result, components, reasons))
     scored.sort(
@@ -2279,6 +2332,7 @@ def _google_maps_payload_is_usable(
     candidate_names: list[str],
     search_region: str,
     candidate_category: str,
+    minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
 ) -> bool:
     if not payload:
         return False
@@ -2297,6 +2351,7 @@ def _google_maps_payload_is_usable(
             _as_decimal(result.get("latitude")),
             _as_decimal(result.get("longitude", result.get("longtitude"))),
         ),
+        minimum_score=minimum_score,
     )
 
 
@@ -2307,11 +2362,14 @@ def _google_maps_rejection_reasons(
     search_region: str,
     candidate_category: str,
     coordinates_valid: bool,
+    minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
 ) -> list[str]:
-    title = _optional_text(result.get("title")) or ""
-    name_matches = any(
-        _token_names_match(_name_tokens(name), _name_tokens(title))
-        for name in candidate_names
+    resolution_score, _components = _google_maps_resolution_score(
+        result,
+        candidate_names=candidate_names,
+        search_region=search_region,
+        candidate_category=candidate_category,
+        coordinates_valid=coordinates_valid,
     )
     region_matches = _google_maps_result_matches_region(
         result,
@@ -2321,16 +2379,62 @@ def _google_maps_rejection_reasons(
         candidate_category,
         result,
     )
-    return [
+    reasons = [
         reason
         for condition, reason in (
-            (not name_matches, "name_mismatch"),
             (region_matches is False, "region_mismatch"),
             (category_compatible is False, "category_mismatch"),
             (not coordinates_valid, "coordinates_missing"),
         )
         if condition
     ]
+    if not reasons and resolution_score <= minimum_score:
+        reasons.append("low_resolution_score")
+    return reasons
+
+
+def _google_maps_resolution_score(
+    result: dict[str, Any],
+    *,
+    candidate_names: list[str],
+    search_region: str,
+    candidate_category: str,
+    coordinates_valid: bool,
+) -> tuple[float, dict[str, float]]:
+    title = _optional_text(result.get("title")) or ""
+    name_score = max(
+        (
+            _name_match_score(name, title) / 100.0
+            for name in candidate_names
+        ),
+        default=0.0,
+    )
+    region_match = _google_maps_result_matches_region(
+        result,
+        search_region=search_region,
+    )
+    category_match = _category_compatible(candidate_category, result)
+    components = {
+        "nameSimilarity": round(name_score, 4),
+        "regionMatch": (
+            1.0 if region_match is True else 0.5 if region_match is None else 0.0
+        ),
+        "categoryCompatibility": (
+            1.0
+            if category_match is True
+            else 0.5
+            if category_match is None
+            else 0.0
+        ),
+        "coordinatesValid": 1.0 if coordinates_valid else 0.0,
+    }
+    score = (
+        components["nameSimilarity"] * 0.65
+        + components["regionMatch"] * 0.15
+        + components["categoryCompatibility"] * 0.10
+        + components["coordinatesValid"] * 0.10
+    )
+    return score, components
 
 
 def _google_maps_address(result: dict[str, Any]) -> str | None:

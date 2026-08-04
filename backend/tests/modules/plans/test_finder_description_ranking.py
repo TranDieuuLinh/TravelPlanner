@@ -3,10 +3,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.modules.places.model import Place, PlaceImage
-from app.modules.plans.domain.entities import DayBrief, MacroPlan, TravelIntent
+from app.modules.plans.domain.entities import PlaceSelectionDay, PlaceSelectionBlueprint, TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 
 
 def test_description_retrieval_then_structured_reranking_prefers_nature() -> None:
@@ -46,7 +46,7 @@ def test_description_retrieval_then_structured_reranking_prefers_nature() -> Non
             ),
         ]
     )
-    tool = RepositoryFinderPlaceTool(repository)
+    tool = RepositoryPlaceSelectionTool(repository)
 
     results = tool.search(
         region_key="vn,hai-phong,cat-hai,cat-ba",
@@ -94,7 +94,7 @@ def test_structured_reranking_prefers_reviewed_place_over_alphabetic_noise() -> 
         ]
     )
 
-    results = RepositoryFinderPlaceTool(repository).search(
+    results = RepositoryPlaceSelectionTool(repository).search(
         region_key="vn,ha-noi",
         target_tags=["culture", "museum"],
         excluded_place_ids=set(),
@@ -147,14 +147,14 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
             ),
         ]
     )
-    finder = FinderService(RepositoryFinderPlaceTool(repository))
-    macro_plan = MacroPlan(
+    finder = PlaceSelectorService(RepositoryPlaceSelectionTool(repository))
+    macro_plan = PlaceSelectionBlueprint(
         title="Khám phá Hải Phòng",
         destination="Hải Phòng",
         regionKey="vn,hai-phong",
         journeyStyle="multi_base",
-        dayBriefs=[
-            DayBrief(
+        selectionDays=[
+            PlaceSelectionDay(
                 day=1,
                 theme="Thiên nhiên Cát Bà",
                 targetArea="Cát Bà",
@@ -200,7 +200,7 @@ class FakeFinderRepository:
             None,
         )
 
-    def list_for_finder(
+    def list_for_place_selection(
         self,
         region_key: str,
         *,

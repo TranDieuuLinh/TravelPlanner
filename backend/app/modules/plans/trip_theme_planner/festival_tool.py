@@ -17,7 +17,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from app.modules.plans.planner.research_tools_schema import (
+from app.modules.plans.trip_theme_planner.research_tools_schema import (
     Festival,
     FestivalDiscoveryInput,
     FestivalDiscoveryOutput,

@@ -56,10 +56,12 @@ class FakeGoogleMapsScraperResolver(GoogleMapsScraperPlaceResolver):
         results_by_query: dict[str, list[dict[str, Any]]],
         *,
         max_alias_queries: int = 2,
+        minimum_score: float = 0.82,
     ) -> None:
         super().__init__(
             executable="google-maps-scraper-test",
             max_alias_queries=max_alias_queries,
+            minimum_score=minimum_score,
         )
         self.results_by_query = results_by_query
         self.queries: list[str] = []
@@ -314,9 +316,50 @@ def test_google_maps_tries_address_only_after_activity_name_misses() -> None:
         "39 Nguyễn Hữu Huân, Hà Nội",
     ]
     assert result.status == "unresolved"
-    assert result.resolution_reason == "name_mismatch"
+    assert result.resolution_reason == "low_resolution_score"
     assert str(result.latitude) == "21.0321"
     assert str(result.longitude) == "105.8549"
+
+
+def test_google_maps_selects_top_scored_descriptive_name_above_threshold() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Hoa Lo Prison",
+        vietnameseNames=["Nhà tù Hỏa Lò"],
+        category="culture",
+        searchRegion="Hanoi",
+    )
+    correct_result = {
+        "title": "Di tích Nhà tù Hỏa Lò",
+        "category": "Historical landmark",
+        "address": "1 P. Hoả Lò, Hoàn Kiếm, Hà Nội, Việt Nam",
+        "latitude": 21.0253297,
+        "longitude": 105.8464781,
+        "place_id": "hoa-lo-prison",
+    }
+    resolver = FakeGoogleMapsScraperResolver(
+        {
+            "Nhà tù Hỏa Lò, Hanoi": [
+                {
+                    "title": "Nhà tù Hỏa Lò",
+                    "category": "Historical landmark",
+                    "address": "Ho Chi Minh City, Vietnam",
+                    "latitude": 10.7769,
+                    "longitude": 106.7009,
+                    "place_id": "wrong-region",
+                },
+                correct_result,
+            ]
+        }
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hanoi"))
+
+    assert result.status == "resolved"
+    assert result.provider_match_name == "Di tích Nhà tù Hỏa Lò"
+    assert result.match_options[0].name == "Di tích Nhà tù Hỏa Lò"
+    assert result.match_options[0].score == 0.872
+    assert result.match_options[0].score > 0.82
+    assert result.match_options[0].rejection_reasons == []
 
 
 def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
@@ -1103,6 +1146,94 @@ def test_database_resolver_uses_route_context_to_choose_clear_branch() -> None:
     assert results[1].resolution_reason == "matched_route_context"
 
 
+def test_database_route_context_cannot_promote_match_below_threshold() -> None:
+    def place(place_id: str, name: str, longitude: str) -> Any:
+        return SimpleNamespace(
+            id=place_id,
+            name=name,
+            place_type="restaurant" if "Xôi" in name else "attraction",
+            address="Hoàn Kiếm, Hà Nội",
+            city="Hà Nội",
+            country="Việt Nam",
+            country_code="VN",
+            primary_area="Hoàn Kiếm",
+            latitude=Decimal("21.0300"),
+            longitude=Decimal(longitude),
+            data_confidence="high",
+            source_fetched_at=datetime.now(timezone.utc),
+            metadata_json={},
+            region_key="vn,ha-noi",
+            status="active",
+        )
+
+    repository = FakePlaceRepository(
+        [
+            place("route-start", "Route Start", "105.8500"),
+            place("xoi-may", "Xôi Mây", "105.8520"),
+            place("route-end", "Route End", "105.8550"),
+        ]
+    )
+    candidates = [
+        UnifiedPlaceCandidate(name="Route Start", sourceDay=1, sourceOrder=1),
+        UnifiedPlaceCandidate(
+            name="Xôi Yến",
+            addressHint="35b P. Nguyễn Hữu Huân, Hà Nội",
+            sourceEvidence={
+                "metadata": "Xôi Yến - 35b P. Nguyễn Hữu Huân, Hà Nội"
+            },
+            searchRegion="Hà Nội",
+            sourceDay=1,
+            sourceOrder=2,
+        ),
+        UnifiedPlaceCandidate(name="Route End", sourceDay=1, sourceOrder=3),
+    ]
+
+    results = asyncio.run(
+        DatabasePlaceResolver(repository).resolve_many(
+            candidates,
+            destination="Hà Nội",
+        )
+    )
+
+    assert results[1].status == "unresolved"
+    assert results[1].resolution_reason == "low_database_score"
+
+
+def test_database_resolver_does_not_resolve_generic_food_without_address() -> None:
+    record = SimpleNamespace(
+        id="generic-bun-cha",
+        name="Bún chả",
+        place_type="restaurant",
+        address="14 Nguyễn Trung Trực, Hà Nội",
+        city="Hà Nội",
+        country="Việt Nam",
+        country_code="VN",
+        primary_area="Ba Đình",
+        latitude=Decimal("21.0410"),
+        longitude=Decimal("105.8484"),
+        data_confidence="high",
+        source_fetched_at=datetime.now(timezone.utc),
+        metadata_json={},
+        region_key="vn,ha-noi",
+        status="active",
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Bún Chả",
+        category="food",
+        searchRegion="Hà Nội",
+    )
+
+    result = asyncio.run(
+        DatabasePlaceResolver(FakePlaceRepository([record])).resolve(
+            candidate,
+            destination="Hà Nội",
+        )
+    )
+
+    assert result.status == "unresolved"
+    assert result.resolution_reason == "generic_name_without_source_location"
+
+
 def test_database_resolver_keeps_similarly_close_branches_ambiguous() -> None:
     def place(place_id: str, name: str, longitude: str) -> Any:
         return SimpleNamespace(
@@ -1420,6 +1551,57 @@ def test_google_maps_prioritizes_metadata_name_and_address_over_generated_alias(
     assert result.status == "resolved"
     assert resolver.queries == [query]
     assert all("Xôi Mây" not in attempted for attempted in resolver.queries)
+
+
+def test_google_maps_accepts_only_aggregate_score_strictly_above_threshold() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Phở xào Hàng Buồm",
+        alternateNames=["Phở xào Bà Thanh béo"],
+        category="other",
+        searchRegion="Hanoi",
+    )
+    provider_result = {
+        "title": "Phở xào Hàng Buồm",
+        "category": "Restaurant",
+        "address": "11 P. Hàng Buồm, Hoàn Kiếm, Hà Nội",
+        "latitude": 21.03612,
+        "longitude": 105.8525476,
+        "place_id": "pho-xao-hang-buom",
+    }
+    resolver = FakeGoogleMapsScraperResolver(
+        {
+            "Phở xào Hàng Buồm, Hanoi": [provider_result]
+        }
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hanoi"))
+
+    assert result.match_options[0].score > 0.82
+    assert result.status == "resolved"
+
+
+def test_google_maps_rejects_aggregate_score_equal_to_threshold() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Almost Matching Place",
+        category="other",
+        searchRegion="Hanoi",
+    )
+    provider_result = {
+        "title": "Almost Matching Place",
+        "address": "Hanoi",
+        "latitude": 21.0,
+        "longitude": 105.8,
+    }
+    resolver = FakeGoogleMapsScraperResolver(
+        {"Almost Matching Place, Hanoi": [provider_result]},
+        minimum_score=0.9500000000000001,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hanoi"))
+
+    assert result.match_options[0].score == 0.95
+    assert result.status == "unresolved"
+    assert result.resolution_reason == "low_resolution_score"
 
 
 def test_google_maps_does_not_query_literal_unspecified() -> None:

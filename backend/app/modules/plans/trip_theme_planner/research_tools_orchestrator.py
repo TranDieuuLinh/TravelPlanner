@@ -7,7 +7,7 @@ Provides a unified interface for:
 3. festival_discovery - Festival/holiday discovery
 
 Usage:
-    from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
+    from app.modules.plans.trip_theme_planner.research_tools_orchestrator import ResearchToolsOrchestrator
 
     orchestrator = ResearchToolsOrchestrator(place_repository)
     
@@ -39,10 +39,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from app.modules.plans.planner.constraint_tool import ConstraintResearchTool
-from app.modules.plans.planner.festival_tool import FestivalDiscoveryTool
-from app.modules.plans.planner.region_overview_tool import RegionOverviewTool
-from app.modules.plans.planner.research_tools_schema import (
+from app.modules.plans.trip_theme_planner.constraint_tool import ConstraintResearchTool
+from app.modules.plans.trip_theme_planner.festival_tool import FestivalDiscoveryTool
+from app.modules.plans.trip_theme_planner.region_overview_tool import RegionOverviewTool
+from app.modules.plans.trip_theme_planner.research_tools_schema import (
     ConstraintResearchInput,
     ConstraintResearchOutput,
     FestivalDiscoveryInput,

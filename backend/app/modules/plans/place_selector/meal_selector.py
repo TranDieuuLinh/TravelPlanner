@@ -3,9 +3,9 @@ from __future__ import annotations
 from math import asin, cos, radians, sin, sqrt
 
 from app.modules.plans.domain.entities import PlanItem
-from app.modules.plans.finder.place_tool import (
-    FinderPlace,
-    FinderPlaceTool,
+from app.modules.plans.place_selector.place_tool import (
+    SelectablePlace,
+    PlaceSelectionTool,
     place_category,
 )
 
@@ -16,7 +16,7 @@ class MealStopSelector:
     candidate_limit = 250
     radius_steps_meters = (1_500, 3_000, 5_000, float("inf"))
 
-    def __init__(self, place_tool: FinderPlaceTool) -> None:
+    def __init__(self, place_tool: PlaceSelectionTool) -> None:
         self.place_tool = place_tool
 
     def select_for_day(
@@ -26,13 +26,13 @@ class MealStopSelector:
         activities: list[PlanItem],
         excluded_place_ids: set[str],
         bbox_filter: tuple[float, float, float, float] | None = None,
-    ) -> dict[str, FinderPlace | None]:
+    ) -> dict[str, SelectablePlace | None]:
         if not activities:
             return {"breakfast_meal": None, "lunch_meal": None, "dinner_meal": None}
 
         first = activities[0]
         second = activities[-1]
-        selected: dict[str, FinderPlace | None] = {}
+        selected: dict[str, SelectablePlace | None] = {}
         used = set(excluded_place_ids)
         for role, terms in (
             ("breakfast_meal", ["breakfast", "bakery", "food"]),
@@ -65,7 +65,7 @@ class MealStopSelector:
         target_tags: list[str],
         excluded_place_ids: set[str],
         bbox_filter: tuple[float, float, float, float] | None,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         candidates = self.place_tool.search(
             region_key=region_key,
             target_tags=target_tags,
@@ -88,12 +88,12 @@ class MealStopSelector:
 
     def _choose(
         self,
-        candidates: list[FinderPlace],
+        candidates: list[SelectablePlace],
         *,
         role: str,
         first: PlanItem,
         second: PlanItem,
-    ) -> FinderPlace | None:
+    ) -> SelectablePlace | None:
         located = [
             (rank, candidate)
             for rank, candidate in enumerate(candidates)
@@ -125,7 +125,7 @@ class MealStopSelector:
 
     def _route_cost(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         *,
         role: str,
         first: PlanItem,

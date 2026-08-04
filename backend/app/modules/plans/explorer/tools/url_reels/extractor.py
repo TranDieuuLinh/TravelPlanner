@@ -795,7 +795,7 @@ class UrlReelContextExtractor:
                 cleaned = self._normalize_candidate(part)
                 if cleaned and cleaned.casefold() not in GENERIC_PLACE_TERMS:
                     phrases.append(cleaned)
-        for name, _address, _evidence in self._metadata_pinned_place_entries(
+        for name, _address, _evidence, _aliases in self._metadata_pinned_place_entries(
             metadata_text
         ):
             phrases.extend(self._split_pinned_place_phrase(name))
@@ -804,9 +804,9 @@ class UrlReelContextExtractor:
     def _metadata_pinned_place_entries(
         self,
         metadata_text: str,
-    ) -> list[tuple[str, str | None, str]]:
+    ) -> list[tuple[str, str | None, str, list[str]]]:
         """Parse reel caption pins into a venue identity and address anchor."""
-        entries: list[tuple[str, str | None, str]] = []
+        entries: list[tuple[str, str | None, str, list[str]]] = []
         for match in re.finditer(
             r"(?:📍|📌|🚂|🧑‍🍳)\s*([^📍📌🚂🧑#\n]+)",
             metadata_text,
@@ -822,8 +822,63 @@ class UrlReelContextExtractor:
                 continue
             name, address = self._split_caption_place_and_address(cleaned)
             if name:
-                entries.append((name, address, cleaned))
+                canonical_name, aliases = self._split_repeated_venue_aliases(name)
+                entries.append((canonical_name, address, cleaned, aliases))
         return entries
+
+    def _split_repeated_venue_aliases(
+        self,
+        value: str,
+    ) -> tuple[str, list[str]]:
+        """Split captions that concatenate two names for one addressed venue."""
+        words = value.split()
+        if len(words) < 5:
+            return value, []
+        keys = [self._dedupe_key(word) for word in words]
+        split_index: int | None = next(
+            (
+                index
+                for index in range(2, len(words) - 1)
+                if keys[index : index + 2] == keys[:2]
+            ),
+            None,
+        )
+        if split_index is None and keys[0] in {
+            "banh",
+            "bun",
+            "cafe",
+            "che",
+            "pho",
+            "sinh",
+            "xoi",
+        }:
+            split_index = next(
+                (
+                    index
+                    for index in range(2, len(words) - 1)
+                    if keys[index] == keys[0]
+                ),
+                None,
+            )
+        if split_index is None:
+            return value, []
+
+        variants = [
+            self._normalize_candidate(" ".join(words[:split_index])),
+            self._normalize_candidate(" ".join(words[split_index:])),
+        ]
+        if any(len(variant.split()) < 2 for variant in variants):
+            return value, []
+        canonical = min(
+            variants,
+            key=lambda variant: (len(variant.split()), len(variant)),
+        )
+        aliases = [
+            variant
+            for variant in variants
+            if self._dedupe_key(variant) != self._dedupe_key(canonical)
+        ]
+        return canonical, aliases
 
     def _split_caption_place_and_address(
         self,
@@ -1178,6 +1233,8 @@ class UrlReelContextExtractor:
             metadata_text,
             destination,
         )
+        pinned_entries = self._metadata_pinned_place_entries(metadata_text)
+        has_authoritative_caption_list = len(pinned_entries) >= 2
         numbered_transcript_places = self._numbered_itinerary_places(transcript)
         for order, place in enumerate(places, start=1):
             is_metadata_place = bool(
@@ -1269,6 +1326,13 @@ class UrlReelContextExtractor:
                 elif evidence_key == "caption":
                     source_evidence.pop("stt", None)
                     source_evidence["caption"] = speech_observation.evidence
+            if (
+                has_authoritative_caption_list
+                and set(source_evidence) == {"stt"}
+                and speech_observation is not None
+                and speech_observation.authority != "high"
+            ):
+                continue
             if self._is_unsupported_ocr_logo(place, source_evidence):
                 continue
             local_evidence = " ".join(source_evidence.values()) or place
@@ -1356,6 +1420,12 @@ class UrlReelContextExtractor:
             concise_fallback_name = (
                 len(place) <= 80 and len(place.split()) <= 10
             )
+            metadata_aliases = [
+                alias
+                for pinned_name, _address, _evidence, aliases in pinned_entries
+                if self._same_place_name(place, pinned_name)
+                for alias in aliases
+            ]
             details.append(
                 ExtractedPlace(
                     name=place,
@@ -1390,9 +1460,18 @@ class UrlReelContextExtractor:
                         else "venue"
                     ),
                     aliases=(
-                        speech_observation.aliases
-                        if speech_observation is not None
-                        else []
+                        list(
+                            dict.fromkeys(
+                                [
+                                    *(
+                                        speech_observation.aliases
+                                        if speech_observation is not None
+                                        else []
+                                    ),
+                                    *metadata_aliases,
+                                ]
+                            )
+                        )
                     ),
                     parentPlace=(
                         speech_observation.parent_place
@@ -1678,7 +1757,7 @@ class UrlReelContextExtractor:
             for place in metadata_places:
                 hints[self._dedupe_key(place)] = direct_address
 
-        for name, address, _evidence in self._metadata_pinned_place_entries(
+        for name, address, _evidence, _aliases in self._metadata_pinned_place_entries(
             metadata_text
         ):
             if address:
@@ -1704,7 +1783,7 @@ class UrlReelContextExtractor:
         place: str,
         metadata_text: str,
     ) -> str:
-        for name, _address, evidence in self._metadata_pinned_place_entries(
+        for name, _address, evidence, _aliases in self._metadata_pinned_place_entries(
             metadata_text
         ):
             if self._same_place_name(place, name):

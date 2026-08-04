@@ -32,7 +32,7 @@ class CurrentLocationRouteService:
     ) -> PlanTransportLeg:
         origin = PlanItem(
             itemId="current-location",
-            name="Vị trí của bạn",
+            name=payload.origin.name or "Vị trí của bạn",
             timeWindow="00:00-00:01",
             placeType="current_location",
             latitude=payload.origin.latitude,
@@ -65,7 +65,7 @@ class CurrentLocationRouteService:
     ) -> list[PlanTransportLeg]:
         origin = PlanItem(
             itemId="current-location",
-            name="Vị trí của bạn",
+            name=payload.origin.name or "Vị trí của bạn",
             timeWindow="00:00-00:01",
             placeType="current_location",
             latitude=payload.origin.latitude,

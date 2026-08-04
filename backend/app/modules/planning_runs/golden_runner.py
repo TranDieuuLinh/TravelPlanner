@@ -9,8 +9,6 @@ from pydantic import ValidationError
 from app.modules.planning_runs.redaction import safe_snapshot
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
     Plan,
     PlanDay,
     PlanItem,
@@ -18,8 +16,8 @@ from app.modules.plans.domain.entities import (
 )
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
-    FinderAgentInput,
-    PlannerAgentInput,
+    PlaceSelectionInput,
+    TripThemePlanningInput,
 )
 from app.modules.plans.explorer.schema import FullExploreRequest
 from app.modules.plans.explorer.tools.url_reels.schema import UrlReelInput
@@ -167,15 +165,15 @@ class GoldenCaseRunner:
             return await self._run_extractor(source_input)
         if module == "explorer":
             return await self._run_explorer(source_input)
-        if module == "planner":
-            planner_input = PlannerAgentInput.model_validate(source_input)
-            output = await self.plan_service.main_workflow.planner.create_from_agent_input(
+        if module == "trip_theme_planner":
+            planner_input = TripThemePlanningInput.model_validate(source_input)
+            output = await self.plan_service.main_workflow.trip_theme_planner.create_from_agent_input(
                 planner_input
             )
             return output, planner_input, []
-        if module == "finder":
-            finder_input = FinderAgentInput.model_validate(source_input)
-            output = self.plan_service.main_workflow.finder.fill_agent_plan(
+        if module == "place_selector":
+            finder_input = PlaceSelectionInput.model_validate(source_input)
+            output = self.plan_service.main_workflow.place_selector.fill_agent_plan(
                 finder_input
             )
             return output, finder_input, []
@@ -284,7 +282,7 @@ class GoldenCaseRunner:
                 tripSpec=intake.explorer.trip_spec,
                 intakeId=intake.intake_id,
                 userId=None,
-                allowFinderSuggestions=intake.allow_finder_suggestions,
+                allowPlaceSuggestions=intake.allow_place_suggestions,
             )
         )
         return {
@@ -302,7 +300,6 @@ def _checker_plan(source_input: dict) -> Plan:
     day_count = max(len(raw_days), 1)
     destination = _destination(source_input)
     days: list[PlanDay] = []
-    day_briefs: list[DayBrief] = []
     for day_index, raw_day in enumerate(raw_days or [{"day": 1, "items": []}], 1):
         day_number = int(raw_day.get("day") or day_index)
         items: list[PlanItem] = []
@@ -330,13 +327,6 @@ def _checker_plan(source_input: dict) -> Plan:
                 items=items,
             )
         )
-        day_briefs.append(
-            DayBrief(
-                day=day_number,
-                theme=raw_day.get("theme") or f"Golden day {day_number}",
-                targetArea=destination,
-            )
-        )
     intent = TravelIntent(
         destination=destination,
         days=day_count,
@@ -351,11 +341,7 @@ def _checker_plan(source_input: dict) -> Plan:
         title=f"Golden checker plan for {destination}",
         destination=destination,
         intent=intent,
-        macroPlan=MacroPlan(
-            title=f"Golden checker plan for {destination}",
-            destination=destination,
-            dayBriefs=day_briefs,
-        ),
+        tripThemes=[],
         days=days,
     )
 

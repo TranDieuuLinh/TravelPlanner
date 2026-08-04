@@ -349,7 +349,7 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     assert result.explorer.intent.destination == "Hội An"
     assert result.intake_id
     assert result.user_id == "user-1"
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert not hasattr(result, "places")
     assert not hasattr(result, "persistence_status")
     assert url_reels.inputs == []
@@ -440,7 +440,7 @@ def test_url_is_extracted_before_formatter_runs() -> None:
     result = asyncio.run(service.explore_full(payload))
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert [item.url for item in url_reels.inputs] == [
         "https://example.com/reel"
     ]
@@ -877,7 +877,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
 
     assert len(image_ocr.calls) == 1
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert formatter.payload is not None
     assert formatter.payload.image_contexts[0].ocr_text == (
         "Bánh mì Phượng, Hội An"
@@ -902,7 +902,7 @@ def test_url_without_requested_duration_does_not_fill_sparse_covered_day() -> No
     )
 
     assert result.explorer.trip_spec.days == 5
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
     assert any(
         "inferred as 5 days" in assumption
         for assumption in result.explorer.assumptions
@@ -928,7 +928,7 @@ def test_url_with_two_day_coverage_keeps_default_and_allows_empty_day_fill() -> 
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert any(
         "default 3-day duration was kept" in assumption
         for assumption in result.explorer.assumptions
@@ -952,7 +952,7 @@ def test_url_with_more_requested_days_allows_finder_for_empty_days() -> None:
     )
 
     assert result.explorer.trip_spec.days == 10
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
@@ -976,7 +976,7 @@ def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
     )
 
     assert result.explorer.trip_spec.days == 7
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None:
@@ -1018,7 +1018,7 @@ def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
@@ -1065,7 +1065,7 @@ def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
     assert result.explorer.intent.destination == "Hanoi"
     assert result.explorer.trip_spec.days == 2
     assert result.explorer.intent.destination_stays[0].name == "Hanoi"
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
 
 
 def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
@@ -1085,7 +1085,7 @@ def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
     )
 
     assert result.explorer.trip_spec.days == 6
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
 
 
 def test_url_formatter_and_resolver_run_concurrently() -> None:

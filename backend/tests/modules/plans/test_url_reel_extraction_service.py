@@ -1547,6 +1547,55 @@ def test_context_extractor_splits_tiktok_caption_venues_and_addresses() -> None:
     assert context.coverage_status == "sufficient"
 
 
+def test_context_extractor_splits_joined_aliases_and_drops_stt_only_false_stop() -> None:
+    caption = (
+        "Save this itinerary for your next Hanoi trip ep 2\n"
+        "📍 Xôi Yến - 35b P. Nguyễn Hữu Huân, Hà Nội\n"
+        "📍 Phở Cuốn Hưng Bền - 118 P. Trấn Vũ, Hà Nội\n"
+        "📍 Phở xào Bà Thanh béo Phở xào Hàng Buồm - 11 P. Hàng Buồm, Hà Nội\n"
+        "📍 Bánh cuốn nóng - 27 Hàng Điếu, Hà Nội\n"
+        "📍 Sinh tố Hoa Béo - 17 P. Tố Tịch, Hà Nội\n"
+        "📍 Chè 4 Mùa Hàng Cân Chè Bốn Mùa - 4 P. Hàng Cân, Hà Nội"
+    )
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            canonicalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            platform="tiktok",
+            description=caption,
+        ),
+        transcript="make sure you save room for this Bún Chả spot",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=7,
+                placeName="Bún Chả spot",
+                evidence="make sure you save room for this Bún Chả spot",
+                activity="eat Bún Chả",
+                searchRegion="Hanoi",
+                confidence=0.85,
+                authority="medium",
+            )
+        ],
+        destination="Hanoi",
+        expected_place_count=6,
+    )
+
+    assert context.extracted_places == [
+        "Xôi Yến",
+        "Phở Cuốn Hưng Bền",
+        "Phở xào Hàng Buồm",
+        "Bánh cuốn nóng",
+        "Sinh tố Hoa Béo",
+        "Chè Bốn Mùa",
+    ]
+    assert "Bún Chả" not in context.extracted_places
+    details = {detail.name: detail for detail in context.extracted_place_details}
+    assert details["Phở xào Hàng Buồm"].aliases == ["Phở xào Bà Thanh béo"]
+    assert details["Chè Bốn Mùa"].aliases == ["Chè 4 Mùa Hàng Cân"]
+    assert context.extraction_coverage == 1.0
+    assert context.coverage_status == "sufficient"
+
+
 def test_context_extractor_keeps_caption_pins_canonical_for_hanoi_video() -> None:
     caption = (
         "Don't skip these 4 spots in 📍Hanoi 🇻🇳 "

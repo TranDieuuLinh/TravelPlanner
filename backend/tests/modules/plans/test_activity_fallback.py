@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.modules.plans.domain.entities import PlanDay, PlanItem
 from app.modules.plans.explorer.schema import PlaceCandidateReview
-from app.modules.plans.finder.place_tool import FinderPlace
+from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.place_selector.activity_fallback import (
     RouteAwareActivityFallback,
 )
@@ -117,8 +117,8 @@ def _cafe(
     *,
     rating: float | None = None,
     reviews: int = 0,
-) -> FinderPlace:
-    return FinderPlace(
+) -> SelectablePlace:
+    return SelectablePlace(
         placeId=place_id,
         name=name,
         address=f"{name}, Hà Nội",
@@ -133,10 +133,10 @@ def _cafe(
 
 
 class _PlaceTool:
-    def __init__(self, places: list[FinderPlace]) -> None:
+    def __init__(self, places: list[SelectablePlace]) -> None:
         self.places = places
 
-    def get(self, place_id: str) -> FinderPlace | None:
+    def get(self, place_id: str) -> SelectablePlace | None:
         return next(
             (place for place in self.places if place.place_id == place_id),
             None,
@@ -150,7 +150,7 @@ class _PlaceTool:
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter=None,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         del region_key, target_tags, bbox_filter
         return [
             place

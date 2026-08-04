@@ -77,15 +77,16 @@ class PlanMutationService:
         *,
         limit: int = 8,
     ) -> list[PlaceSuggestion]:
-        from app.modules.plans.planner.region_context import normalize_region_key
+        from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 
         region_key = normalize_region_key(destination) if destination else None
-        records = self.place_repository.list_active_for_planner_research(
+        records = self.place_repository.search_active_for_autocomplete(
+            query,
             region_key,
-            limit=5000,
+            limit=200,
         )
         query_key = _search_key(query)
-        ranked: list[tuple[int, str, PlaceLookupRecord]] = []
+        ranked: list[tuple[int, int, float, str, PlaceLookupRecord]] = []
         for record in records:
             if record.latitude is None or record.longitude is None:
                 continue
@@ -95,9 +96,17 @@ class PlanMutationService:
                 if (score := _suggestion_score(query_key, _search_key(name))) is not None
             ]
             if scores:
-                ranked.append((min(scores), _search_key(record.name), record))
+                ranked.append(
+                    (
+                        min(scores),
+                        -int(getattr(record, "review_count", 0) or 0),
+                        -float(getattr(record, "rating", 0) or 0),
+                        _search_key(record.name),
+                        record,
+                    )
+                )
 
-        ranked.sort(key=lambda item: (item[0], item[1]))
+        ranked.sort(key=lambda item: item[:-1])
         return [
             PlaceSuggestion(
                 name=record.name,
@@ -106,7 +115,7 @@ class PlanMutationService:
                 longitude=float(record.longitude),
                 placeId=record.id,
             )
-            for _score, _name, record in ranked[:limit]
+            for _score, _reviews, _rating, _name, record in ranked[:limit]
         ]
 
     async def add_item(self, plan: Plan, request: AddItemRequest) -> MutationResponse:
@@ -330,7 +339,11 @@ class PlanMutationService:
         )
 
     def _reoptimize_day(self, day: PlanDay, items: list[PlanItem]) -> PlanDay:
-        adjusted_items = self._readjust_time_windows(items)
+        first_time_window = day.items[0].time_window if day.items else None
+        adjusted_items = self._readjust_time_windows(
+            items,
+            first_time_window=first_time_window,
+        )
         optimized_items, transport_legs = self.route_optimizer.optimize(
             adjusted_items,
             preserve_order=True,
@@ -343,15 +356,20 @@ class PlanMutationService:
             }
         )
 
-    def _readjust_time_windows(self, items: list[PlanItem]) -> list[PlanItem]:
+    def _readjust_time_windows(
+        self,
+        items: list[PlanItem],
+        *,
+        first_time_window: str | None = None,
+    ) -> list[PlanItem]:
         if not items:
             return items
 
         start_min = 9 * 60
-        first_item = items[0]
-        if first_item.time_window and "-" in first_item.time_window:
+        starting_window = first_time_window or items[0].time_window
+        if starting_window and "-" in starting_window:
             try:
-                sh, sm = map(int, first_item.time_window.split("-")[0].split(":"))
+                sh, sm = map(int, starting_window.split("-")[0].split(":"))
                 start_min = sh * 60 + sm
             except ValueError:
                 pass

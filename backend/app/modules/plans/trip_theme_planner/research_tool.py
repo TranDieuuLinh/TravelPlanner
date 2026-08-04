@@ -13,7 +13,7 @@ from app.modules.plans.dto.agent_contracts import (
     PlannerResearchDraft,
     PlannerVerifiedResearch,
 )
-from app.modules.plans.planner.place_metadata import read_place_group, read_tags
+from app.modules.plans.trip_theme_planner.place_metadata import read_place_group, read_tags
 
 
 CAPABILITY_ALIASES: dict[str, set[str]] = {
