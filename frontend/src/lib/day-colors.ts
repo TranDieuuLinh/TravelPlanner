@@ -1,8 +1,10 @@
-const HUE_COUNT = 360;
-const SATURATIONS = [58, 64, 70];
-const LIGHTNESSES = [36, 41, 46];
-const COLOR_COUNT = HUE_COUNT * SATURATIONS.length * LIGHTNESSES.length;
-const COLOR_PROBE_STEP = 137;
+// Keep route colors distinct, but muted enough that they do not overpower the
+// itinerary or the desaturated OpenStreetMap base layer.
+const HUES = [168, 198, 225, 262, 306, 18, 42];
+const SATURATIONS = [32, 38, 44];
+const LIGHTNESSES = [34, 39, 44];
+const COLOR_COUNT = HUES.length * SATURATIONS.length * LIGHTNESSES.length;
+const COLOR_PROBE_STEP = 17;
 
 function hashDateKey(value: string): number {
   let hash = 2166136261;
@@ -14,10 +16,10 @@ function hashDateKey(value: string): number {
 }
 
 function colorFromIndex(index: number): string {
-  const hue = index % HUE_COUNT;
-  const saturationIndex = Math.floor(index / HUE_COUNT) % SATURATIONS.length;
+  const hue = HUES[index % HUES.length];
+  const saturationIndex = Math.floor(index / HUES.length) % SATURATIONS.length;
   const lightnessIndex =
-    Math.floor(index / (HUE_COUNT * SATURATIONS.length)) %
+    Math.floor(index / (HUES.length * SATURATIONS.length)) %
     LIGHTNESSES.length;
 
   return `hsl(${hue}, ${SATURATIONS[saturationIndex]}%, ${LIGHTNESSES[lightnessIndex]}%)`;

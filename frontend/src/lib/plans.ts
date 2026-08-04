@@ -15,6 +15,7 @@ export type PlanItem = {
   tags?: string[];
   sourceOrder?: number | null;
   sourceDay?: number | null;
+  sourceTimeHint?: string | null;
   sourceActivity?: string | null;
   notes?: string | null;
   personalNotes?: string | null;
@@ -61,10 +62,12 @@ export type CurrentLocationRouteInput = {
   origin: {
     latitude: number;
     longitude: number;
+    name?: string;
   };
   destination: {
     itemId?: string | null;
     name: string;
+    selected: boolean;
     address?: string | null;
     timeWindow?: string | null;
     latitude: number;
@@ -79,6 +82,7 @@ export type DayDirectionsInput = {
   origin: {
     latitude: number;
     longitude: number;
+    name?: string;
   };
   destinations: Array<{
     itemId?: string | null;
@@ -102,6 +106,16 @@ export type UnscheduledPlace = {
   day?: number | null;
   reasonCode: string;
   reason: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  placeType?: string | null;
+  tags?: string[];
+  sourceRefs?: string[];
+  sourceProvider?: string | null;
+  sourceActivity?: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
 };
 export type TravelPlan = {
   id: string;
@@ -190,6 +204,33 @@ export type PlaceCandidateReview = {
   resolutionReason?: string | null;
   provider?: string | null;
   resolvedName?: string | null;
+  verifiedAliases: string[];
+  verifiedVietnameseAliases: string[];
+  observedAliases: Array<{
+    value: string;
+    source: "metadata" | "caption" | "transcript" | "stt" | "ocr" | "user";
+  }>;
+  generatedLookupAliases: Array<{
+    value: string;
+    language: "vi" | "en" | "und";
+    generator: "normalizer" | "llm";
+    version: string;
+  }>;
+  topMatches: Array<{
+    rank: number;
+    matchSource: "url_snapshot" | "verified_alias" | "places_db" | "external_provider";
+    provider: string;
+    placeId?: string | null;
+    externalId?: string | null;
+    name: string;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    score: number;
+    scoreComponents: Record<string, number>;
+    rejectionReasons: string[];
+    fetchedAt?: string | null;
+  }>;
   address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -205,6 +246,8 @@ export type PlaceCandidateReview = {
   extractionConfidence: number;
   resolutionConfidence: number;
   retryable: boolean;
+  entityType?: "venue" | "sub_place";
+  authority?: "high" | "medium" | "low";
 };
 
 export type ExplorerContext = {
@@ -278,7 +321,7 @@ export type ExploreResponse = {
   intakeId: string;
   userId?: string | null;
   explorer: ExplorerContext;
-  allowFinderSuggestions: boolean;
+  allowPlaceSuggestions: boolean;
   timingReport?: ExplorerTimingReport | null;
 };
 
@@ -298,12 +341,16 @@ export type ExplorerSourceTiming = {
   stages: ExplorerTimingStage[];
   sampledFrames: number;
   speechStatus: string;
+  speechSource?: string;
   visionStatus: string;
   sttChunkCount?: number;
   sttAudioDurationSeconds?: number | null;
   sttChunkDurationSeconds?: number[];
   sttChunkRetryCount?: number;
   extractedPlaceCount: number;
+  expectedPlaceCount?: number | null;
+  extractionCoverage?: number | null;
+  coverageStatus?: "unknown" | "sufficient" | "review" | "insufficient";
   candidateCount?: number;
   resolvedCount?: number;
   providerCounts?: Record<string, number>;
@@ -553,7 +600,7 @@ export async function runPlannerIntake(
     context: explore.explorer,
     intakeId: explore.intakeId,
     userId: explore.userId,
-    allowFinderSuggestions: explore.allowFinderSuggestions
+    allowPlaceSuggestions: explore.allowPlaceSuggestions
   });
 
   return { explore, plan: generation.plan };
@@ -595,7 +642,7 @@ export async function createPlanFromExplorer(input: {
   intakeId?: string | null;
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
-  allowFinderSuggestions?: boolean;
+  allowPlaceSuggestions?: boolean;
   signal?: AbortSignal;
 }): Promise<PlanGenerationResult> {
   const selectedPlaces = input.selectedPlaces ?? [];
@@ -610,7 +657,8 @@ export async function createPlanFromExplorer(input: {
       tripSpec: input.context.tripSpec,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
-      allowFinderSuggestions: input.allowFinderSuggestions ?? true,
+      allowPlaceSuggestions: input.allowPlaceSuggestions ?? true,
+      candidateReviews: input.context.candidateReviews ?? [],
       selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,
         placeId: place.placeId ?? null,

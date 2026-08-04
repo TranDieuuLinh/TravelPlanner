@@ -13,11 +13,11 @@ from app.db.base import Base
 from app.main import app
 from app.modules.places.model import Place
 from app.modules.plans.dependencies import get_plan_service
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
-from app.modules.plans.planner.research_tool import (
+from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
 from app.modules.plans.schema import MainPlanCreate
@@ -102,23 +102,23 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
 
             service = get_plan_service(session)
             assert isinstance(
-                service.main_workflow.finder.place_tool,
-                RepositoryFinderPlaceTool,
+                service.main_workflow.place_selector.place_tool,
+                RepositoryPlaceSelectionTool,
             )
             assert isinstance(
-                service.main_workflow.planner.research_tool,
+                service.main_workflow.trip_theme_planner.research_tool,
                 RepositoryPlannerResearchTool,
             )
             assert isinstance(
-                service.main_workflow.finder.route_optimizer,
+                service.main_workflow.place_selector.route_optimizer,
                 RouteFirstItineraryOptimizer,
             )
             assert isinstance(
-                service.main_workflow.finder,
+                service.main_workflow.place_selector,
                 PlaceSelectorService,
             )
             assert isinstance(
-                service.main_workflow.planner,
+                service.main_workflow.trip_theme_planner,
                 TripThemePlannerService,
             )
 
@@ -152,9 +152,9 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                 item.source == "finder_suggestion"
                 for item in committed_items
             )
-            assert plan.status.value == "locked"
+            assert plan.status.value == "draft"
             assert plan.check_report is not None
-            assert plan.check_report.status == "passed"
+            assert plan.check_report.status == "needs_backup"
     finally:
         Base.metadata.drop_all(engine)
         engine.dispose()
@@ -223,8 +223,8 @@ def test_context_endpoint_builds_plan_from_normalized_input(
         "main_activity_2",
         "dinner_meal",
     ]
-    assert body["status"] == "locked"
-    assert body["checkReport"]["status"] == "passed"
+    assert body["status"] == "draft"
+    assert body["checkReport"]["status"] == "needs_backup"
 
 
 def test_from_explorer_provider_error_keeps_cors_headers(

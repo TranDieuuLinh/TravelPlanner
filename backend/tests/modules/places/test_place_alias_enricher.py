@@ -134,3 +134,35 @@ def test_alias_enricher_fails_open_when_llm_is_unavailable() -> None:
     )
 
     assert enriched == [candidate]
+
+
+def test_alias_enricher_rejects_specific_venue_alias_for_generic_activity() -> None:
+    llm = FakeAliasLLM(
+        json.dumps(
+            {
+                "aliasSets": [
+                    {
+                        "index": 0,
+                        "originalName": "dessert",
+                        "englishNames": ["Four Seasons Sweet Soup"],
+                        "vietnameseNames": ["Chè 4 Mùa"],
+                        "alternateNames": [],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    enriched = asyncio.run(
+        LLMPlaceAliasEnricher(llm).enrich(
+            [UnifiedPlaceCandidate(name="dessert")],
+            destination="Hanoi",
+        )
+    )
+
+    assert enriched[0].name == "dessert"
+    assert enriched[0].vietnamese_names == []
+    assert enriched[0].english_names == []
+    assert enriched[0].search_names == ["dessert"]
+    assert enriched[0].generated_lookup_aliases == []

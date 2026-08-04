@@ -10,37 +10,34 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.db.session import SessionLocal
 from app.modules.places.repository import SqlAlchemyPlaceRepository
-from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
-    TravelIntent,
-    TripThemeRequirement,
+from app.modules.plans.domain.entities import TripThemeRequirement
+from app.modules.plans.dto.agent_contracts import (
+    PlaceSelectionInput,
+    PlanningIntent,
+    SelectedPlaceContext,
+    TripPlanningSpec,
 )
-from app.modules.plans.domain.enums import BudgetLevel, TravelPace
-from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
-from app.modules.plans.finder.candidate_selector import CandidateSelector
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
+from app.modules.plans.place_selector.candidate_selector import CandidateSelector
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 
 
-def _intent(days: int, interests: list[str]) -> TravelIntent:
-    return TravelIntent(
+def _selection_input(
+    themes: list[tuple[str, list[str]]],
+    selected: list[SelectedPlaceContext],
+    interests: list[str],
+) -> PlaceSelectionInput:
+    return PlaceSelectionInput(
+        mode="main",
+        intent=PlanningIntent(
         destination="Hanoi",
-        days=days,
-        budget=BudgetLevel.medium,
         travelStyle="local",
-        pace=TravelPace.balanced,
+        pace="balanced",
         interests=interests,
-    )
-
-
-def _macro(themes: list[tuple[str, list[str]]], allocated: list[list[str]]) -> MacroPlan:
-    all_tags = list(dict.fromkeys(tag for _, tags in themes for tag in tags))
-    return MacroPlan(
-        title="Hanoi route-first evaluation",
-        destination="Hanoi",
+        ),
+        tripSpec=TripPlanningSpec(days=len(themes)),
         regionKey="vn,ha-noi",
         tripThemes=[
             TripThemeRequirement(
@@ -50,17 +47,8 @@ def _macro(themes: list[tuple[str, list[str]]], allocated: list[list[str]]) -> M
             )
             for theme, tags in themes
         ],
-        dayBriefs=[
-            DayBrief(
-                day=index,
-                theme="Tối ưu theo tuyến",
-                targetArea="Hanoi",
-                targetRegionKey="vn,ha-noi",
-                focusTags=all_tags,
-                allocatedSelectedPlaceRefs=allocated[index - 1],
-            )
-            for index in range(1, len(themes) + 1)
-        ],
+        selectedPlaces=selected,
+        allowPlaceSuggestions=True,
     )
 
 
@@ -115,8 +103,8 @@ def main() -> None:
 
     session = SessionLocal()
     try:
-        place_tool = RepositoryFinderPlaceTool(SqlAlchemyPlaceRepository(session))
-        finder = PlaceSelectorService(
+        place_tool = RepositoryPlaceSelectionTool(SqlAlchemyPlaceRepository(session))
+        place_selector = PlaceSelectorService(
             place_tool,
             route_optimizer=RouteFirstItineraryOptimizer(
                 GeographicRouteOptimizer()
@@ -126,19 +114,17 @@ def main() -> None:
         for case in cases:
             selected = case["selected"]
             selected_refs = {place.stable_ref for place in selected}
-            allocated = [[], *([] for _ in range(len(case["themes"]) - 1))]
-            if selected:
-                allocated[0] = [place.stable_ref for place in selected]
-            result = finder.fill_main_plan(
-                _macro(case["themes"], allocated),
-                _intent(len(case["themes"]), ["culture", "food", "nature"]),
-                selected,
-                allow_finder_suggestions=True,
+            result = place_selector.fill_agent_plan(
+                _selection_input(
+                    case["themes"],
+                    selected,
+                    ["culture", "food", "nature"],
+                )
             )
             day_reports = []
             scheduled_selected_refs = set()
             all_place_ids = []
-            for day in result.days:
+            for day in result.final_days:
                 real_items = [
                     item
                     for item in day.items

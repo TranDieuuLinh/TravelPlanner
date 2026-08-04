@@ -7,10 +7,10 @@ omitting it falls back to the existing string-based region-key match.
 
 from __future__ import annotations
 
-from app.modules.plans.finder.place_tool import (
-    EmptyFinderPlaceTool,
-    FinderPlace,
-    RepositoryFinderPlaceTool,
+from app.modules.plans.place_selector.place_tool import (
+    EmptyPlaceSelectionTool,
+    SelectablePlace,
+    RepositoryPlaceSelectionTool,
     _inside_bbox,
 )
 from app.modules.places.model import Place
@@ -21,8 +21,8 @@ from app.modules.places.model import Place
 # ---------------------------------------------------------------------------
 
 
-def _place(lat: float | None, lon: float | None) -> FinderPlace:
-    return FinderPlace(
+def _place(lat: float | None, lon: float | None) -> SelectablePlace:
+    return SelectablePlace(
         name="probe",
         placeType="attraction",
         regionKey="vn,ha-noi",
@@ -47,12 +47,12 @@ def test_inside_bbox_keeps_places_without_coordinates() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Integration: RepositoryFinderPlaceTool.search applies bbox
+# Integration: RepositoryPlaceSelectionTool.search applies bbox
 # ---------------------------------------------------------------------------
 
 
 class _ListRepo:
-    """In-memory FinderPlaceRepository stub for the tool."""
+    """In-memory PlaceSelectionRepository stub for the tool."""
 
     def __init__(self, places: list[Place]) -> None:
         self._by_id = {p.id: p for p in places if p.id}
@@ -60,7 +60,7 @@ class _ListRepo:
     def get(self, place_id: str) -> Place | None:
         return self._by_id.get(place_id)
 
-    def list_for_finder(
+    def list_for_place_selection(
         self,
         region_key: str,
         *,
@@ -114,7 +114,7 @@ def test_search_drops_places_outside_bbox() -> None:
         lat=None, lon=None, name="Missing coordinates",
     )
 
-    tool = RepositoryFinderPlaceTool(_ListRepo([in_hoan_kiem, in_long_bien, no_coords]))
+    tool = RepositoryPlaceSelectionTool(_ListRepo([in_hoan_kiem, in_long_bien, no_coords]))
 
     result = tool.search(
         region_key="vn,ha-noi,hoan-kiem",
@@ -140,7 +140,7 @@ def test_search_without_bbox_falls_back_to_region_match() -> None:
         lat=21.04, lon=105.88, name="LB",
     )
 
-    tool = RepositoryFinderPlaceTool(_ListRepo([in_hoan_kiem, in_long_bien]))
+    tool = RepositoryPlaceSelectionTool(_ListRepo([in_hoan_kiem, in_long_bien]))
 
     result = tool.search(
         region_key="vn,ha-noi",
@@ -159,7 +159,7 @@ def test_search_bbox_with_no_matches_returns_empty() -> None:
         "far", "vn,ha-noi,hoan-kiem",
         lat=21.5, lon=105.5, name="Far",
     )
-    tool = RepositoryFinderPlaceTool(_ListRepo([far_away]))
+    tool = RepositoryPlaceSelectionTool(_ListRepo([far_away]))
 
     result = tool.search(
         region_key="vn,ha-noi,hoan-kiem",
@@ -173,7 +173,7 @@ def test_search_bbox_with_no_matches_returns_empty() -> None:
 
 
 def test_empty_tool_accepts_bbox_filter_kwarg() -> None:
-    result = EmptyFinderPlaceTool().search(
+    result = EmptyPlaceSelectionTool().search(
         region_key="vn,ha-noi",
         target_tags=[],
         excluded_place_ids=set(),

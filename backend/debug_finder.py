@@ -14,15 +14,15 @@ backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionBlueprint,
     TravelIntent,
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import FinderPlace
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import SelectablePlace
 
 
 # ---------------------------------------------------------------------------
@@ -31,11 +31,11 @@ from app.modules.plans.finder.place_tool import FinderPlace
 
 
 class FakeFinderPlaceTool:
-    def __init__(self, places: dict[str, FinderPlace]):
+    def __init__(self, places: dict[str, SelectablePlace]):
         self.places = places
         self.search_queries: list[list[str]] = []
 
-    def get(self, place_id: str) -> FinderPlace | None:
+    def get(self, place_id: str) -> SelectablePlace | None:
         return self.places.get(place_id)
 
     def search(
@@ -45,7 +45,7 @@ class FakeFinderPlaceTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         self.search_queries.append({
             "region": region_key,
             "tags": list(target_tags),
@@ -61,8 +61,8 @@ class FakeFinderPlaceTool:
         return candidates[:limit]
 
 
-def _place(place_id: str, name: str, place_type: str, region_key: str = "vn,ha-noi,hoan-kiem", tags: list[str] | None = None) -> FinderPlace:
-    return FinderPlace(
+def _place(place_id: str, name: str, place_type: str, region_key: str = "vn,ha-noi,hoan-kiem", tags: list[str] | None = None) -> SelectablePlace:
+    return SelectablePlace(
         placeId=place_id,
         name=name,
         placeType=place_type,
@@ -91,7 +91,7 @@ def case_source_itinerary_sparse():
         "van-art": _place("van-art", "Vân Art Gallery", "art_gallery"),
     }
     tool = FakeFinderPlaceTool(places)
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
 
     intent = TravelIntent(
         destination="Hà Nội",
@@ -103,12 +103,12 @@ def case_source_itinerary_sparse():
     )
     user_status = UserStatus()
 
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1,
                 theme="Di sản văn hóa và ẩm thực phố cổ",
                 targetArea="Hoàn Kiếm",
@@ -116,7 +116,7 @@ def case_source_itinerary_sparse():
                 focusTags=["culture", "food"],
                 allocatedSelectedPlaceRefs=["nom-bo-kho", "phuong-anh"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Nhịp sống hiện đại và thư giãn bên hồ",
                 targetArea="Hoàn Kiếm",
@@ -207,7 +207,7 @@ def case_no_source_itinerary():
         "van-art": _place("van-art", "Vân Art Gallery", "art_gallery"),
     }
     tool = FakeFinderPlaceTool(places)
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
 
     intent = TravelIntent(
         destination="Hà Nội",
@@ -219,12 +219,12 @@ def case_no_source_itinerary():
     )
     user_status = UserStatus()
 
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1,
                 theme="Di sản văn hóa và ẩm thực phố cổ",
                 targetArea="Hoàn Kiếm",
@@ -232,7 +232,7 @@ def case_no_source_itinerary():
                 focusTags=["culture", "food"],
                 allocatedSelectedPlaceRefs=["nom-bo-kho", "phuong-anh"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Nhịp sống hiện đại và thư giãn bên hồ",
                 targetArea="Hoàn Kiếm",
@@ -288,7 +288,7 @@ def case_scattered_day():
         "cho": _place("cho", "Chợ đêm", "cho"),
     }
     tool = FakeFinderPlaceTool(places)
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
 
     intent = TravelIntent(
         destination="Hà Nội",
@@ -300,12 +300,12 @@ def case_scattered_day():
     )
     user_status = UserStatus()
 
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1,
                 theme="Street food & cafe",
                 targetArea="Hoàn Kiếm",

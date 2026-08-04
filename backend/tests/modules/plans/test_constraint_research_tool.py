@@ -1,8 +1,8 @@
 from decimal import Decimal
 
 from app.modules.places.model import Place
-from app.modules.plans.planner.constraint_tool import calculate_constraint_research
-from app.modules.plans.planner.research_tools_schema import ConstraintResearchInput
+from app.modules.plans.trip_theme_planner.constraint_tool import calculate_constraint_research
+from app.modules.plans.trip_theme_planner.research_tools_schema import ConstraintResearchInput
 
 
 def test_constraint_research_accepts_internal_snake_case_and_exports_camel_case() -> None:

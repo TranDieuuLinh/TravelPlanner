@@ -11,6 +11,7 @@ from app.modules.plans.explorer.schema import (
     ExploreBundleDraft,
     ExploreImageContext,
     FullExploreRequest,
+    PlaceMatchOption,
     UnifiedPlaceCandidate,
 )
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -244,6 +245,8 @@ def _url_result(
     needs_image_upload: bool = False,
     platform: str = "tiktok",
     speech_status: str = "skipped",
+    expected_place_count: int | None = None,
+    coverage_status: str = "unknown",
 ) -> UrlReelExtractionResult:
     days = source_days or [None] * count
     details = [
@@ -274,6 +277,13 @@ def _url_result(
             extractedPlaces=[detail.name for detail in details],
             extractedPlaceDetails=details,
             confidence=0.9 if details else 0.3,
+            expectedPlaceCount=expected_place_count,
+            extractionCoverage=(
+                min(1.0, count / expected_place_count)
+                if expected_place_count
+                else None
+            ),
+            coverageStatus=coverage_status,
         ),
         timings={
             "totalExtraction": 1.2,
@@ -339,7 +349,7 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     assert result.explorer.intent.destination == "Hội An"
     assert result.intake_id
     assert result.user_id == "user-1"
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert not hasattr(result, "places")
     assert not hasattr(result, "persistence_status")
     assert url_reels.inputs == []
@@ -380,6 +390,42 @@ def test_youtube_without_public_captions_returns_clear_error() -> None:
     assert caught.value.code == "YOUTUBE_CAPTIONS_NOT_FOUND"
 
 
+def test_low_url_extraction_coverage_stops_before_formatter_and_resolver() -> None:
+    formatter = RecordingFormatter()
+
+    class LowCoverageUrl:
+        def extract(self, payload: Any) -> UrlReelExtractionResult:
+            return _url_result(
+                payload.url,
+                count=2,
+                expected_place_count=10,
+                coverage_status="insufficient",
+            )
+
+    resolver = RecordingResolver()
+    service = build_service(
+        formatter,
+        LowCoverageUrl(),  # type: ignore[arg-type]
+        RecordingImageOcr(),
+    )
+    service.place_resolver = resolver  # type: ignore[assignment]
+
+    with pytest.raises(AppError) as caught:
+        asyncio.run(
+            service.explore_full(
+                FullExploreRequest(
+                    rawRequest="Tạo chuyến đi từ URL",
+                    destination="Hà Nội",
+                    urls=["https://example.com/top-10"],
+                )
+            )
+        )
+
+    assert caught.value.code == "URL_EXTRACTION_LOW_COVERAGE"
+    assert formatter.context_called is False
+    assert resolver.requested_destinations == []
+
+
 def test_url_is_extracted_before_formatter_runs() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=1)
@@ -394,7 +440,7 @@ def test_url_is_extracted_before_formatter_runs() -> None:
     result = asyncio.run(service.explore_full(payload))
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert [item.url for item in url_reels.inputs] == [
         "https://example.com/reel"
     ]
@@ -522,6 +568,47 @@ def test_unresolved_url_broad_city_match_is_not_a_representative_location() -> N
     assert review.has_representative_location is False
     assert review.latitude is None
     assert review.longitude is None
+
+
+def test_candidate_review_exposes_vietnamese_verified_alias_and_top_matches() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Temple of Literature",
+        vietnameseNames=["Văn Miếu - Quốc Tử Giám"],
+        searchRegion="Hà Nội",
+        confidence=0.94,
+    )
+    resolution = PlaceResolution(
+        candidate=candidate,
+        status="resolved",
+        provider="database",
+        placeId="place-van-mieu",
+        externalId="place-van-mieu",
+        name="Temple of Literature",
+        verifiedAliases=["Temple of Literature", "Văn Miếu - Quốc Tử Giám"],
+        verifiedVietnameseAliases=["Văn Miếu - Quốc Tử Giám"],
+        address="58 Quốc Tử Giám, Hà Nội",
+        city="Hà Nội",
+        latitude="21.0280",
+        longitude="105.8358",
+        matchOptions=[
+            PlaceMatchOption(
+                rank=1,
+                matchSource="places_db",
+                provider="database",
+                placeId="place-van-mieu",
+                externalId="place-van-mieu",
+                name="Temple of Literature",
+                score=0.98,
+            )
+        ],
+    )
+
+    review = _place_candidate_review(resolution, destination="Hà Nội")
+
+    assert review.status == "resolved"
+    assert review.resolved_name == "Văn Miếu - Quốc Tử Giám"
+    assert review.verified_vietnamese_aliases == ["Văn Miếu - Quốc Tử Giám"]
+    assert review.top_matches[0].place_id == "place-van-mieu"
 
 
 def test_url_destination_guardrail_asks_about_conflicting_prompt() -> None:
@@ -790,7 +877,7 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
 
     assert len(image_ocr.calls) == 1
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert formatter.payload is not None
     assert formatter.payload.image_contexts[0].ocr_text == (
         "Bánh mì Phượng, Hội An"
@@ -815,7 +902,7 @@ def test_url_without_requested_duration_does_not_fill_sparse_covered_day() -> No
     )
 
     assert result.explorer.trip_spec.days == 5
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
     assert any(
         "inferred as 5 days" in assumption
         for assumption in result.explorer.assumptions
@@ -841,7 +928,7 @@ def test_url_with_two_day_coverage_keeps_default_and_allows_empty_day_fill() -> 
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
     assert any(
         "default 3-day duration was kept" in assumption
         for assumption in result.explorer.assumptions
@@ -865,7 +952,7 @@ def test_url_with_more_requested_days_allows_finder_for_empty_days() -> None:
     )
 
     assert result.explorer.trip_spec.days == 10
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
@@ -889,7 +976,7 @@ def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
     )
 
     assert result.explorer.trip_spec.days == 7
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None:
@@ -931,7 +1018,7 @@ def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_finder_suggestions is True
+    assert result.allow_place_suggestions is True
 
 
 def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
@@ -978,7 +1065,7 @@ def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
     assert result.explorer.intent.destination == "Hanoi"
     assert result.explorer.trip_spec.days == 2
     assert result.explorer.intent.destination_stays[0].name == "Hanoi"
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
 
 
 def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
@@ -998,7 +1085,7 @@ def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
     )
 
     assert result.explorer.trip_spec.days == 6
-    assert result.allow_finder_suggestions is False
+    assert result.allow_place_suggestions is False
 
 
 def test_url_formatter_and_resolver_run_concurrently() -> None:

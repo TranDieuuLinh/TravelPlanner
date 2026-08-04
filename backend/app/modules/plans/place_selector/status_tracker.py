@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from app.modules.plans.domain.entities import (
-    FinderPlanStatus,
-    FinderUsage,
+    PlaceSelectionStatus,
+    PlaceSelectionUsage,
     UserStatus,
     UserStatusLocation,
 )
-from app.modules.plans.finder.candidate_selector import candidate_duration
-from app.modules.plans.finder.place_tool import FinderPlace, FinderPlaceTool, place_category
-from app.modules.plans.finder.skeleton_builder import DayBlock
+from app.modules.plans.place_selector.candidate_selector import candidate_duration
+from app.modules.plans.place_selector.place_tool import SelectablePlace, PlaceSelectionTool, place_category
+from app.modules.plans.place_selector.skeleton_builder import DayBlock
 
 
 INTENSITY_EFFECTS: dict[str, dict[str, int]] = {
@@ -21,16 +21,16 @@ BREAK_EFFECTS = {"energy": 5, "mental": 3}
 MEAL_EFFECTS = {"energy": 5, "mental": 2, "satiety": 20}
 
 
-class FinderStatusTracker:
-    def __init__(self, place_tool: FinderPlaceTool) -> None:
+class PlaceSelectionStatusTracker:
+    def __init__(self, place_tool: PlaceSelectionTool) -> None:
         self.place_tool = place_tool
 
     def apply_activity(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         block: DayBlock,
         user_status: UserStatus,
-        plan_status: FinderPlanStatus,
+        plan_status: PlaceSelectionStatus,
     ) -> None:
         candidate_ref = candidate.stable_ref
         plan_status.used_place_ids.append(candidate_ref)
@@ -77,10 +77,10 @@ class FinderStatusTracker:
 
     def rollback_activity(
         self,
-        candidate: FinderPlace,
+        candidate: SelectablePlace,
         block: DayBlock,
         user_status: UserStatus,
-        plan_status: FinderPlanStatus,
+        plan_status: PlaceSelectionStatus,
         *,
         restore_selected: bool,
     ) -> None:
@@ -120,7 +120,7 @@ class FinderStatusTracker:
     def apply_break(
         self,
         user_status: UserStatus,
-        plan_status: FinderPlanStatus,
+        plan_status: PlaceSelectionStatus,
         block: DayBlock,
     ) -> None:
         self.increment_usage(
@@ -142,7 +142,7 @@ class FinderStatusTracker:
 
     def increment_usage(
         self,
-        usage: FinderUsage,
+        usage: PlaceSelectionUsage,
         *,
         activity_minutes: int = 0,
         rest_minutes: int = 0,

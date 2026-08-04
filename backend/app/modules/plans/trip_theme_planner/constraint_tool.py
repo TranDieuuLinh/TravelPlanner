@@ -17,13 +17,13 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import TYPE_CHECKING, Protocol
 
-from app.modules.plans.planner.place_metadata import (
+from app.modules.plans.trip_theme_planner.place_metadata import (
     read_daily_cost,
     read_price_level,
     read_rating,
     read_tags,
 )
-from app.modules.plans.planner.research_tools_schema import (
+from app.modules.plans.trip_theme_planner.research_tools_schema import (
     BudgetCompatibility,
     CategoryBudgetStat,
     CategoryStatsOutput,
@@ -93,7 +93,7 @@ def _estimate_daily_cost(metadata: dict) -> int | None:
 
     tier = _normalize_price_tier(_read_price_tier(metadata))
     if tier:
-        from app.modules.plans.planner.place_metadata import _price_level_to_cost
+        from app.modules.plans.trip_theme_planner.place_metadata import _price_level_to_cost
 
         cost = _price_level_to_cost(tier)
         if cost is not None:
@@ -133,7 +133,7 @@ CANONICAL_CATEGORIES = {
 }
 
 
-from app.modules.plans.planner.region_overview_tool import (  # noqa: E402
+from app.modules.plans.trip_theme_planner.region_overview_tool import (  # noqa: E402
     TAG_CATEGORY_HINTS as _TAG_CATEGORY_HINTS,
 )
 
@@ -145,7 +145,7 @@ def _normalize_category(place_type: str, tags: list[str]) -> str:
     but is duplicated here to keep the two tools self-contained.
     """
 
-    from app.modules.plans.planner.region_overview_tool import (
+    from app.modules.plans.trip_theme_planner.region_overview_tool import (
         GOOGLE_PLACE_TYPE_CATEGORY,
         LEGACY_PLACE_TYPE_CATEGORY,
     )

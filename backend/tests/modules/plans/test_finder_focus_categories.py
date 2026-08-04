@@ -14,8 +14,8 @@ food-focused day. The tests below guard against the regression.
 from __future__ import annotations
 
 from app.modules.places.model import Place
-from app.modules.plans.finder.place_tool import (
-    FinderPlace,
+from app.modules.plans.place_selector.place_tool import (
+    SelectablePlace,
     SEMANTIC_CATEGORY_TERMS,
     _normalized_terms,
     place_category,
@@ -91,7 +91,7 @@ def test_cafe_is_an_activity_category_not_a_meal_category() -> None:
 
     assert categories == {"attraction"}
     assert place_category(
-        FinderPlace(
+        SelectablePlace(
             placeId="cafe-dinh",
             name="Cafe Đinh",
             placeType="cafe",
@@ -103,7 +103,7 @@ def test_cafe_is_an_activity_category_not_a_meal_category() -> None:
 
 def test_landmark_name_overrides_food_tag_from_url_activity_evidence() -> None:
     assert place_category(
-        FinderPlace(
+        SelectablePlace(
             name="Nhà thờ Lớn Hà Nội",
             placeType="selected_place",
             regionKey="vn,ha-noi",
@@ -142,7 +142,7 @@ class _ListRepo:
             None,
         )
 
-    def list_for_finder(
+    def list_for_place_selection(
         self,
         region_key: str,
         *,
@@ -177,7 +177,7 @@ def test_search_food_query_does_not_return_museums() -> None:
     surface in the result list - the user asked for food.
     """
 
-    from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+    from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 
     places = [
         _make_place(
@@ -201,7 +201,7 @@ def test_search_food_query_does_not_return_museums() -> None:
             place_group="attraction", tags=("culture", "spiritual"),
         ),
     ]
-    tool = RepositoryFinderPlaceTool(_ListRepo(places))
+    tool = RepositoryPlaceSelectionTool(_ListRepo(places))
 
     result = tool.search(
         region_key="vn,ha-noi,hoan-kiem",

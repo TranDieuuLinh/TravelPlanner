@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -6,8 +7,8 @@ import pytest
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import (
-    MacroPlan,
-    DayBrief,
+    PlaceSelectionBlueprint,
+    PlaceSelectionDay,
     Plan,
     PlanDay,
     PlanItem,
@@ -22,6 +23,8 @@ from app.modules.plans.plan_mutation_schema import (
     UpdateItemRequest,
 )
 from app.modules.plans.plan_mutation_service import PlanMutationService
+from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
+from app.modules.plans.routing.provider import RouteCalculation
 from app.shared.errors import AppError
 
 
@@ -39,12 +42,12 @@ def make_sample_plan() -> Plan:
             travelStyle="local",
             pace=TravelPace.balanced,
         ),
-        macroPlan=MacroPlan(
+        macroPlan=PlaceSelectionBlueprint(
             title="Chuyến đi Hà Nội 2 ngày",
             destination="Hà Nội",
-            dayBriefs=[
-                DayBrief(day=1, theme="Khám phá Phố Cổ", targetArea="Hoàn Kiếm"),
-                DayBrief(day=2, theme="Văn hóa Tây Hồ", targetArea="Tây Hồ"),
+            selectionDays=[
+                PlaceSelectionDay(day=1, theme="Khám phá Phố Cổ", targetArea="Hoàn Kiếm"),
+                PlaceSelectionDay(day=2, theme="Văn hóa Tây Hồ", targetArea="Tây Hồ"),
             ],
         ),
         days=[
@@ -222,8 +225,16 @@ def test_search_place_suggestions_uses_catalog_aliases_without_accents():
     )
 
     class FakePlaceRepository:
-        def list_active_for_planner_research(self, region_key=None, *, limit=5000):
+        def search_active_for_autocomplete(
+            self,
+            query,
+            region_key=None,
+            *,
+            limit=200,
+        ):
+            assert query == "ca phe"
             assert region_key == "vn,ha-noi"
+            assert limit == 200
             return [place]
 
     service = PlanMutationService(place_repository=FakePlaceRepository())
@@ -235,6 +246,50 @@ def test_search_place_suggestions_uses_catalog_aliases_without_accents():
     assert [suggestion.place_id for suggestion in suggestions] == ["place-coffee-9"]
     assert suggestions[0].name == "Coffee 9"
     assert suggestions[0].latitude == 21.0285
+
+
+def test_search_place_suggestions_ranks_popular_exact_matches_first():
+    quiet_branch = SimpleNamespace(
+        id="quiet-branch",
+        name="Phở Thìn",
+        address="Tây Mỗ, Hà Nội",
+        latitude=Decimal("21.005899"),
+        longitude=Decimal("105.733861"),
+        review_count=92,
+        rating=Decimal("3.9"),
+        metadata_json={},
+    )
+    popular_branch = SimpleNamespace(
+        id="popular-branch",
+        name="Phở Thìn",
+        address="13 Lò Đúc, Hà Nội",
+        latitude=Decimal("21.018111"),
+        longitude=Decimal("105.855301"),
+        review_count=1506,
+        rating=Decimal("4.2"),
+        metadata_json={},
+    )
+
+    class FakePlaceRepository:
+        def search_active_for_autocomplete(
+            self,
+            query,
+            region_key=None,
+            *,
+            limit=200,
+        ):
+            return [quiet_branch, popular_branch]
+
+    service = PlanMutationService(place_repository=FakePlaceRepository())
+
+    suggestions = asyncio.run(
+        service.search_place_suggestions("Pho Thin", destination="Ha Noi")
+    )
+
+    assert [suggestion.place_id for suggestion in suggestions] == [
+        "popular-branch",
+        "quiet-branch",
+    ]
 
 
 def test_update_item_keeps_selected_catalog_identity_and_coordinates():
@@ -351,3 +406,55 @@ def test_reorder_items_success():
     items = result.plan.days[0].items
     assert items[0].item_id == "item-1-2"
     assert items[1].item_id == "item-1-1"
+
+
+def test_reorder_items_saves_new_order_and_recalculates_valhalla_legs():
+    route_provider = RecordingValhallaRouteProvider()
+    service = PlanMutationService(
+        route_optimizer=GeographicRouteOptimizer(route_provider)
+    )
+    plan = make_sample_plan()
+
+    result = service.reorder_items(
+        plan,
+        day_number=1,
+        request=ReorderItemsRequest(itemIds=["item-1-2", "item-1-1"]),
+    )
+
+    day = result.plan.days[0]
+    assert [item.item_id for item in day.items] == ["item-1-2", "item-1-1"]
+    assert day.items[0].time_window.startswith("09:00-")
+    assert len(day.transport_legs) == 1
+    assert day.transport_legs[0].from_item_id == "item-1-2"
+    assert day.transport_legs[0].to_item_id == "item-1-1"
+    assert day.transport_legs[0].source == "valhalla_routing"
+    assert day.transport_legs[0].verified is True
+    assert route_provider.requested_pairs == [
+        ((21.0375, 105.85), (21.0285, 105.8542), "pedestrian"),
+        ((21.0375, 105.85), (21.0285, 105.8542), "car"),
+    ]
+
+
+class RecordingValhallaRouteProvider:
+    def __init__(self) -> None:
+        self.requested_pairs: list[
+            tuple[tuple[float, float], tuple[float, float], str]
+        ] = []
+
+    def calculate(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        *,
+        transport_mode: str,
+        departure_time: datetime | None = None,
+    ) -> RouteCalculation:
+        del departure_time
+        self.requested_pairs.append((origin, destination, transport_mode))
+        return RouteCalculation(
+            distance_meters=900 if transport_mode == "pedestrian" else 1400,
+            duration_seconds=600 if transport_mode == "pedestrian" else 240,
+            geometry_coordinates=[origin, destination],
+            provider="valhalla_routing",
+            fetched_at=datetime.now(timezone.utc),
+        )

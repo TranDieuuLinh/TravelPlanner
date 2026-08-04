@@ -53,8 +53,15 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None
+    gemini_caption_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
     gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
+    gemini_caption_timeout_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=120.0,
+    )
+    gemini_caption_max_attempts: int = Field(default=2, ge=1, le=3)
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
     url_reel_gemini_stt_min_interval_seconds: float = Field(
@@ -82,7 +89,7 @@ class Settings(BaseSettings):
         le=600.0,
     )
     url_import_job_timeout_seconds: float = Field(
-        default=900.0,
+        default=300.0,
         ge=30.0,
         le=3600.0,
     )
@@ -132,6 +139,17 @@ class Settings(BaseSettings):
         ge=1,
         le=4,
     )
+    database_place_resolver_top_k: int = Field(default=5, ge=1, le=50)
+    database_place_resolver_minimum_score: float = Field(
+        default=0.82,
+        ge=0.0,
+        le=1.0,
+    )
+    database_place_resolver_minimum_margin: float = Field(
+        default=0.08,
+        ge=0.0,
+        le=1.0,
+    )
 
     model_config = SettingsConfigDict(env_file=BACKEND_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -164,6 +182,22 @@ class Settings(BaseSettings):
             return available
         split_index = max(1, len(shared) // 2)
         return shared[split_index:] or shared[:1]
+
+    @property
+    def gemini_caption_key_pool(self) -> tuple[str, ...]:
+        """Use dedicated caption keys or borrow every idle STT/OCR key.
+
+        Long-form YouTube caption structuring does not run audio STT or frame
+        OCR, so the text-only step may safely load-balance over both pools.
+        """
+        dedicated = _gemini_keys(self.gemini_caption_api_keys)
+        if dedicated:
+            return tuple(dict.fromkeys(dedicated))
+        return tuple(
+            dict.fromkeys(
+                (*self.gemini_stt_key_pool, *self.gemini_ocr_key_pool)
+            )
+        )
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":

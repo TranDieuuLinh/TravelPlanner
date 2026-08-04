@@ -16,7 +16,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
 
 from app.modules.places.model import Place
-from app.modules.plans.planner.research_tools_orchestrator import PlaceRepositoryForTools
+from app.modules.plans.trip_theme_planner.research_tools_orchestrator import PlaceRepositoryForTools
 
 if TYPE_CHECKING:
     pass

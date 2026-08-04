@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 import shutil
 import time
@@ -13,6 +14,10 @@ from yt_dlp.utils import DownloadError
 from app.core.config import Settings, settings
 from app.modules.plans.explorer.tools.url_reels.extractor import (
     UrlReelContextExtractor,
+)
+from app.modules.plans.explorer.tools.url_reels.caption_structurer import (
+    CaptionStructureResult,
+    GeminiCaptionStructurer,
 )
 from app.modules.plans.explorer.tools.url_reels.frame_vision import (
     GeminiReelFrameVision,
@@ -258,6 +263,10 @@ def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
 
 
 def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
+    class MetadataMustNotRun:
+        def load_metadata(self, url: str) -> UrlMetadata:
+            raise AssertionError("Long-form YouTube metadata should be skipped")
+
     class CaptionExtractor:
         def fetch(
             self,
@@ -283,7 +292,7 @@ def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
             raise AssertionError("Gemini STT should not be called")
 
     service = UrlReelExtractionService(
-        loader=FakeLoader(),
+        loader=MetadataMustNotRun(),  # type: ignore[arg-type]
         media=MediaMustNotRun(),  # type: ignore[arg-type]
         speech_to_text=SpeechMustNotRun(),  # type: ignore[arg-type]
         youtube_transcript=CaptionExtractor(),  # type: ignore[arg-type]
@@ -298,6 +307,9 @@ def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
     )
 
     assert result.speech_to_text.source == "youtube_captions"
+    assert result.metadata.title is None
+    assert result.timings["youtubeMetadataSkipped"] == 1.0
+    assert result.timings["loadMetadata"] == 0.0
     assert result.timings["mediaDownloadSkipped"] == 1.0
     assert result.needs_image_upload is False
 
@@ -604,6 +616,23 @@ def test_dedicated_gemini_pools_override_shared_pool(
     assert GeminiReelFrameVision().api_keys == ("ocr-1", "ocr-2")
 
 
+def test_caption_structurer_borrows_all_stt_and_ocr_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "gemini_api_key",
+        ",".join(f"key-{index}" for index in range(1, 11)),
+    )
+    monkeypatch.setattr(settings, "gemini_stt_api_keys", None)
+    monkeypatch.setattr(settings, "gemini_ocr_api_keys", None)
+    monkeypatch.setattr(settings, "gemini_caption_api_keys", None)
+
+    assert GeminiCaptionStructurer().api_keys == tuple(
+        f"key-{index}" for index in range(1, 11)
+    )
+
+
 def test_dedicated_gemini_pools_reject_overlapping_keys() -> None:
     with pytest.raises(
         ValidationError,
@@ -886,7 +915,394 @@ def test_audio_stt_requests_and_validates_structured_observations(
             "searchRegion": "",
             "durationMinutes": None,
         "confidence": 0.92,
+        "entityType": "venue",
+        "aliases": [],
+        "addressHint": None,
+        "parentPlace": None,
+        "evidenceSource": "stt",
+        "authority": "medium",
     }
+
+
+def test_youtube_caption_uses_multilingual_structurer_when_metadata_is_thin(
+    tmp_path: Path,
+) -> None:
+    class CaptionExtractor:
+        def fetch(self, *args: object, **kwargs: object) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="Top 3 địa điểm. Số ba A. Số hai B. Số một C.",
+                source="youtube_captions",
+                language="vi",
+                status="ok",
+                durationSeconds=0.01,
+            )
+
+    class Structurer:
+        def structure(self, **kwargs: object) -> CaptionStructureResult:
+            return CaptionStructureResult(
+                observations=[
+                    SpeechToTextObservation(
+                        order=index,
+                        placeName=name,
+                        evidence=name,
+                        dayNumber=None,
+                        timeHint="",
+                        activity="",
+                        searchRegion="Hà Nội",
+                        durationMinutes=None,
+                        confidence=0.95,
+                        entityType="venue",
+                        evidenceSource="caption",
+                        authority="medium",
+                    )
+                    for index, name in enumerate(
+                        ["Lăng Bác Hồ", "Văn Miếu Quốc Tử Giám", "Nhà tù Hỏa Lò"],
+                        start=1,
+                    )
+                ],
+                expectedPlaceCount=3,
+                status="ok",
+                durationSeconds=0.02,
+            )
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        youtube_transcript=CaptionExtractor(),  # type: ignore[arg-type]
+        caption_structurer=Structurer(),  # type: ignore[arg-type]
+    )
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.youtube.com/watch?v=abc123DEF45",
+            destination="Hà Nội",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.extracted_context.extracted_places == [
+        "Lăng Bác Hồ",
+        "Văn Miếu Quốc Tử Giám",
+        "Nhà tù Hỏa Lò",
+    ]
+    assert result.extracted_context.extraction_coverage == 1.0
+    assert result.extracted_context.coverage_status == "sufficient"
+    assert result.timings["captionStructuringUsed"] == 1.0
+
+
+def test_caption_structurer_normalizes_rank_numbers_to_source_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeHttpClient:
+        def __init__(self, *, timeout: httpx.Timeout) -> None:
+            assert isinstance(timeout, httpx.Timeout)
+
+        async def __aenter__(self) -> "FakeHttpClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", url),
+                json={
+                    "candidates": [{
+                        "content": {"parts": [{"text": (
+                            '{"observations":['
+                            '{"order":10,"placeName":"Lăng Bác","evidence":"số 10 Lăng Bác","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"},'
+                            '{"order":9,"placeName":"Bát Tràng","evidence":"số chín Bát Tràng","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"}'
+                            '],"expectedPlaceCount":2}'
+                        )}]}
+                    }]
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.caption_structurer.httpx.AsyncClient",
+        FakeHttpClient,
+    )
+    result = GeminiCaptionStructurer(
+        api_keys=("test-key",),
+        model_name="test-model",
+    ).structure(
+        caption="số 10 Lăng Bác, số chín Bát Tràng",
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/watch?v=example",
+            canonicalUrl="https://youtube.com/watch?v=example",
+            platform="youtube",
+        ),
+        destination="Hà Nội",
+    )
+
+    assert result.status == "ok"
+    assert [item.order for item in result.observations] == [1, 2]
+
+
+def test_caption_structurer_limits_key_failover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted_keys: list[str] = []
+
+    class FakeHttpClient:
+        def __init__(self, *, timeout: httpx.Timeout) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeHttpClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            headers = kwargs.get("headers")
+            assert isinstance(headers, dict)
+            attempted_keys.append(str(headers["x-goog-api-key"]))
+            return httpx.Response(
+                429,
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(GeminiCaptionStructurer, "_next_key_index", 0)
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.caption_structurer.httpx.AsyncClient",
+        FakeHttpClient,
+    )
+    result = GeminiCaptionStructurer(
+        api_keys=("key-1", "key-2", "key-3"),
+        model_name="test-model",
+        max_attempts=2,
+    ).structure(
+        caption="Lăng Bác",
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/watch?v=example",
+            canonicalUrl="https://youtube.com/watch?v=example",
+            platform="youtube",
+        ),
+        destination="Hà Nội",
+    )
+
+    assert result.status == "failed"
+    assert result.error == "gemini_status_429"
+    assert attempted_keys == ["key-1", "key-2"]
+
+
+def test_caption_structurer_enforces_total_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class HangingHttpClient:
+        def __init__(self, *, timeout: httpx.Timeout) -> None:
+            pass
+
+        async def __aenter__(self) -> "HangingHttpClient":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: object) -> httpx.Response:
+            await asyncio.sleep(1)
+            raise AssertionError("caption deadline did not cancel the request")
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.caption_structurer.httpx.AsyncClient",
+        HangingHttpClient,
+    )
+    started_at = time.perf_counter()
+    result = GeminiCaptionStructurer(
+        api_keys=("key-1", "key-2"),
+        model_name="test-model",
+        timeout_seconds=0.02,
+        max_attempts=2,
+    ).structure(
+        caption="Lăng Bác",
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/watch?v=example",
+            canonicalUrl="https://youtube.com/watch?v=example",
+            platform="youtube",
+        ),
+        destination="Hà Nội",
+    )
+
+    assert result.status == "failed"
+    assert result.error == "caption_structuring_timeout"
+    assert time.perf_counter() - started_at < 0.5
+
+
+def test_youtube_known_size_list_fails_closed_when_structuring_fails(
+    tmp_path: Path,
+) -> None:
+    class CaptionExtractor:
+        def fetch(self, *args: object, **kwargs: object) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="Top 10 địa điểm, số tám A, số bảy B",
+                source="youtube_captions",
+                status="ok",
+                durationSeconds=0.01,
+            )
+
+    class FailedStructurer:
+        def structure(self, **kwargs: object) -> CaptionStructureResult:
+            return CaptionStructureResult(status="failed", durationSeconds=0.1)
+
+    result = UrlReelExtractionService(
+        loader=FakeLoader(),
+        youtube_transcript=CaptionExtractor(),  # type: ignore[arg-type]
+        caption_structurer=FailedStructurer(),  # type: ignore[arg-type]
+    ).extract(
+        UrlReelInput(
+            url="https://www.youtube.com/watch?v=abc123DEF45",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.extracted_context.coverage_status == "insufficient"
+    assert result.extracted_context.extraction_coverage <= 0.39
+
+
+def test_youtube_ignores_metadata_blueprint_and_structures_caption(
+    tmp_path: Path,
+) -> None:
+    class MetadataMustNotRun:
+        def load_metadata(self, url: str) -> UrlMetadata:
+            raise AssertionError("Long-form YouTube metadata should be skipped")
+
+    class CaptionExtractor:
+        def fetch(self, *args: object, **kwargs: object) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="Top 2 places: Hoan Kiem Lake and Temple of Literature",
+                source="youtube_captions",
+                status="ok",
+                durationSeconds=0.01,
+            )
+
+    class Structurer:
+        def structure(self, **kwargs: object) -> CaptionStructureResult:
+            metadata = kwargs["metadata"]
+            assert isinstance(metadata, UrlMetadata)
+            assert metadata.title is None
+            assert metadata.description is None
+            return CaptionStructureResult(
+                observations=[
+                    SpeechToTextObservation(
+                        order=index,
+                        placeName=name,
+                        evidence=name,
+                        confidence=0.95,
+                        entityType="venue",
+                        evidenceSource="caption",
+                        authority="medium",
+                    )
+                    for index, name in enumerate(
+                        ["Hoan Kiem Lake", "Temple of Literature"],
+                        start=1,
+                    )
+                ],
+                expectedPlaceCount=2,
+                status="ok",
+                durationSeconds=0.01,
+            )
+
+    result = UrlReelExtractionService(
+        loader=MetadataMustNotRun(),  # type: ignore[arg-type]
+        youtube_transcript=CaptionExtractor(),  # type: ignore[arg-type]
+        caption_structurer=Structurer(),  # type: ignore[arg-type]
+    ).extract(
+        UrlReelInput(
+            url="https://www.youtube.com/watch?v=abc123DEF45",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.timings["youtubeMetadataSkipped"] == 1.0
+    assert result.timings["captionStructuringUsed"] == 1.0
+    assert result.extracted_context.extracted_places == [
+        "Hoan Kiem Lake",
+        "Temple of Literature",
+    ]
+
+
+def test_structured_caption_does_not_promote_person_or_address_to_stop() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/watch?v=example",
+            canonicalUrl="https://youtube.com/watch?v=example",
+            platform="youtube",
+            title="Hanoi",
+        ),
+        transcript="Visit the mausoleum near Ba Dinh.",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Lăng Chủ tịch Hồ Chí Minh",
+                evidence="Lăng Bác Hồ",
+                dayNumber=None,
+                timeHint="",
+                activity="",
+                searchRegion="Hà Nội",
+                durationMinutes=None,
+                confidence=0.96,
+                entityType="venue",
+                addressHint="19 Ngọc Hà, Ba Đình",
+                evidenceSource="caption",
+            ),
+            SpeechToTextObservation(
+                order=2,
+                placeName="Hồ Chí Minh",
+                evidence="Chủ tịch Hồ Chí Minh",
+                dayNumber=None,
+                timeHint="",
+                activity="",
+                searchRegion="Hà Nội",
+                durationMinutes=None,
+                confidence=0.99,
+                entityType="person",
+                evidenceSource="caption",
+            ),
+            SpeechToTextObservation(
+                order=3,
+                placeName="đường Minh Khai",
+                evidence="458 đường Minh Khai",
+                dayNumber=None,
+                timeHint="",
+                activity="",
+                searchRegion="Hà Nội",
+                durationMinutes=None,
+                confidence=0.99,
+                entityType="address",
+                evidenceSource="caption",
+            ),
+        ],
+        destination="Hà Nội",
+    )
+
+    assert context.extracted_places == ["Lăng Chủ tịch Hồ Chí Minh"]
+    assert context.extracted_place_details[0].address == "19 Ngọc Hà, Ba Đình"
+
+
+def test_context_extractor_understands_vietnamese_numbered_list() -> None:
+    transcript = (
+        "Số ba Làng cổ Đường Lâm đứng thứ ba. "
+        "Số hai Nhà tù Hỏa Lò đứng thứ hai. "
+        "Số một Jump Arena là địa điểm đầu tiên."
+    )
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/watch?v=example",
+            canonicalUrl="https://youtube.com/watch?v=example",
+            platform="youtube",
+            title="Top 3 địa điểm Hà Nội",
+        ),
+        transcript=transcript,
+        destination="Hà Nội",
+        expected_place_count=3,
+    )
+
+    assert context.extracted_places == [
+        "Làng cổ Đường Lâm",
+        "Nhà tù Hỏa Lò",
+        "Jump Arena",
+    ]
+    assert context.coverage_status == "sufficient"
 
 
 def test_context_extractor_merges_structured_stt_and_ocr_provenance() -> None:
@@ -932,6 +1348,37 @@ def test_context_extractor_merges_structured_stt_and_ocr_provenance() -> None:
         "stt": "visit Cafe Dinh for egg coffee",
         "ocr": "Cafe Dinh (Egg Coffee)",
     }
+
+
+def test_context_extractor_keeps_specific_activity_without_venue() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://youtube.com/shorts/example",
+            canonicalUrl="https://youtube.com/shorts/example",
+            platform="youtube",
+            title="Hanoi food ideas",
+        ),
+        transcript="Try egg coffee while you are in Hanoi.",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Egg coffee",
+                evidence="Try egg coffee",
+                dayNumber=None,
+                timeHint="",
+                activity="Egg coffee",
+                searchRegion="Hanoi",
+                durationMinutes=None,
+                confidence=0.9,
+            )
+        ],
+        destination="Hanoi",
+    )
+
+    assert context.extracted_places == ["Egg coffee"]
+    detail = context.extracted_place_details[0]
+    assert detail.source_activity == "Egg coffee"
+    assert detail.source_evidence == {"stt": "Try egg coffee"}
 
 
 def test_context_extractor_treats_city_duration_as_stay_not_place() -> None:
@@ -1041,6 +1488,112 @@ def test_context_extractor_prioritizes_tagged_metadata_location() -> None:
     assert tagged.address == "13 Đinh Tiên Hoàng, Hoàn Kiếm"
     assert tagged.search_region == "Hà Nội"
     assert tagged.source_evidence["metadata"] == "Café Đinh"
+
+
+def test_context_extractor_splits_tiktok_caption_venues_and_addresses() -> None:
+    caption = (
+        "Save this Hanoi food itinerary\n"
+        "📍 Xôi Yến - 35b P. Nguyễn Hữu Huân, Hà Nội\n"
+        "📍 Phở Cuốn Hưng Bền - 118 P. Trấn Vũ, Hà Nội\n"
+        "📍 Phở xào Bà Thanh béo - 11 P. Hàng Buồm, Hà Nội\n"
+        "📍 Bánh cuốn nóng - 27 Hàng Điếu, Hà Nội\n"
+        "📍 Sinh tố Hoa Béo - 17 P. Tố Tịch, Hà Nội\n"
+        "📍 Chè 4 Mùa - 4 P. Hàng Cân, Hà Nội"
+    )
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            canonicalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            platform="tiktok",
+            description=caption,
+        ),
+        transcript=(
+            "This popular hole-in-the-wall dessert is worth visiting."
+        ),
+        destination="Hanoi",
+        expected_place_count=6,
+    )
+
+    assert context.extracted_places == [
+        "Xôi Yến",
+        "Phở Cuốn Hưng Bền",
+        "Phở xào Bà Thanh béo",
+        "Bánh cuốn nóng",
+        "Sinh tố Hoa Béo",
+        "Chè 4 Mùa",
+    ]
+    assert [detail.address for detail in context.extracted_place_details] == [
+        "35b P. Nguyễn Hữu Huân, Hà Nội",
+        "118 P. Trấn Vũ, Hà Nội",
+        "11 P. Hàng Buồm, Hà Nội",
+        "27 Hàng Điếu, Hà Nội",
+        "17 P. Tố Tịch, Hà Nội",
+        "4 P. Hàng Cân, Hà Nội",
+    ]
+    assert [detail.source_order for detail in context.extracted_place_details] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    ]
+    assert all(
+        detail.authority == "high"
+        and detail.source_evidence["metadata"].startswith(detail.name)
+        for detail in context.extracted_place_details
+    )
+    assert context.extraction_coverage == 1.0
+    assert context.coverage_status == "sufficient"
+
+
+def test_context_extractor_splits_joined_aliases_and_drops_stt_only_false_stop() -> None:
+    caption = (
+        "Save this itinerary for your next Hanoi trip ep 2\n"
+        "📍 Xôi Yến - 35b P. Nguyễn Hữu Huân, Hà Nội\n"
+        "📍 Phở Cuốn Hưng Bền - 118 P. Trấn Vũ, Hà Nội\n"
+        "📍 Phở xào Bà Thanh béo Phở xào Hàng Buồm - 11 P. Hàng Buồm, Hà Nội\n"
+        "📍 Bánh cuốn nóng - 27 Hàng Điếu, Hà Nội\n"
+        "📍 Sinh tố Hoa Béo - 17 P. Tố Tịch, Hà Nội\n"
+        "📍 Chè 4 Mùa Hàng Cân Chè Bốn Mùa - 4 P. Hàng Cân, Hà Nội"
+    )
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            canonicalUrl="https://www.tiktok.com/@xiensscran/video/7616394747623607574",
+            platform="tiktok",
+            description=caption,
+        ),
+        transcript="make sure you save room for this Bún Chả spot",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=7,
+                placeName="Bún Chả spot",
+                evidence="make sure you save room for this Bún Chả spot",
+                activity="eat Bún Chả",
+                searchRegion="Hanoi",
+                confidence=0.85,
+                authority="medium",
+            )
+        ],
+        destination="Hanoi",
+        expected_place_count=6,
+    )
+
+    assert context.extracted_places == [
+        "Xôi Yến",
+        "Phở Cuốn Hưng Bền",
+        "Phở xào Hàng Buồm",
+        "Bánh cuốn nóng",
+        "Sinh tố Hoa Béo",
+        "Chè Bốn Mùa",
+    ]
+    assert "Bún Chả" not in context.extracted_places
+    details = {detail.name: detail for detail in context.extracted_place_details}
+    assert details["Phở xào Hàng Buồm"].aliases == ["Phở xào Bà Thanh béo"]
+    assert details["Chè Bốn Mùa"].aliases == ["Chè 4 Mùa Hàng Cân"]
+    assert context.extraction_coverage == 1.0
+    assert context.coverage_status == "sufficient"
 
 
 def test_context_extractor_keeps_caption_pins_canonical_for_hanoi_video() -> None:

@@ -19,7 +19,7 @@ Planner gồm hai pipeline nối tiếp:
 URL -> Import -> Extract -> Resolve -> Confirm
                                       |
                                       v
-Explorer -> Planner -> Finder -> Check -> Main Plan
+Explorer -> TripThemePlanner -> PlaceSelector -> Check -> Main Plan
                                     |
                                     v
                               Backup Plan
@@ -31,15 +31,15 @@ yêu cầu của user.
 ## Luồng xử lý hiện tại
 
 1. `ExplorerService` chuẩn hóa ý định và tạo câu hỏi làm rõ.
-2. `PlannerService` gọi LLM bằng structured output để tạo mô tả cấp cao cho
-   từng ngày từ Explorer context và snapshot thống kê khu vực nhỏ.
-3. `FinderService` điền khung giờ và địa điểm đã chọn.
+2. `TripThemePlannerService` gọi LLM bằng structured output để tạo các yêu cầu
+   trải nghiệm ở cấp toàn chuyến từ Explorer context và snapshot khu vực.
+3. `PlaceSelectorService` tự tạo đủ số ngày, chọn địa điểm và tối ưu tuyến.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
 UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ một Explorer context
 và plan hiện tại. Message đầu tạo plan; follow-up gửi context hiện tại cùng tối
-đa tám user request gần nhất vào Explorer, sau đó Planner/Finder tạo revision
+đa tám user request gần nhất vào Explorer, sau đó TripThemePlanner/PlaceSelector tạo revision
 hoàn chỉnh. Backend giữ nguyên plan ID, tăng revision và lưu snapshot cũ thay vì
 trả một plan identity mới. Các địa điểm của plan hiện tại được chuyển thành
 `SelectedPlace` cho lần sửa, còn địa điểm user yêu cầu tránh được loại qua
@@ -47,7 +47,7 @@ trả một plan identity mới. Các địa điểm của plan hiện tại đ�
 
 Message có URL của user đã đăng nhập được tách thành một job bền vững cho từng
 URL và trả về ngay. Worker FIFO chỉ chạy một job mỗi lần, gọi lại chính workflow
-Explorer–Planner/Finder rồi ghi revision hoàn chỉnh vào trip chat. Vì vậy user
+Explorer–TripThemePlanner/PlaceSelector rồi ghi revision hoàn chỉnh vào trip chat. Vì vậy user
 có thể tiếp tục chat hoặc rời Planner; AppShell poll trạng thái job độc lập với
 page. Nếu một prompt thường cập nhật chat trong lúc URL đang chạy, worker nạp
 revision mới nhất và retry optimistic conflict có giới hạn thay vì ghi đè.
@@ -55,37 +55,36 @@ Mỗi revision phải giữ toàn bộ URL place đã resolve từ các revision
 trùng theo identity/provenance. Nếu user chưa khóa duration/date, service tự tăng
 duration để xếp hết; nếu user đã khóa, phần dư được giữ trong
 `UnscheduledPlace` để UI cho thêm thủ công hoặc yêu cầu AI xếp lại. Địa điểm
-Finder đề xuất không được làm URL place rơi vào `UnscheduledPlace`; Finder chỉ
+PlaceSelector đề xuất không được làm URL place rơi vào `UnscheduledPlace`; PlaceSelector chỉ
 bổ sung khi còn capacity sau khi phân bổ source places.
 
-Planner hiện dùng hai lượt LLM. Lượt research đề xuất journey shape và các
-capability cần kiểm chứng; backend query Place active và vùng lân cận, sau đó
-lượt Macro Planner tạo `MacroPlan`/`DayBriefs` từ evidence đã xác minh. Code ứng
-dụng validate số ngày, region key, journey phase và việc phân bổ mọi
-`selectedPlace`. Nếu model bỏ sót một `selectedPlace`, backend giữ địa điểm đó
-trong danh sách chưa phân bổ kèm reason code và cảnh báo thay vì làm mất dữ liệu
-hoặc làm hỏng toàn bộ request. Với các lỗi contract khác, backend yêu cầu model
-sửa lại output tối đa ba lần với feedback validation mới ở từng lượt trước khi
-trả lỗi provider. Nếu model tạo `allocatedSelectedPlaceRef` không tồn tại trong
-input `selectedPlaces`, backend loại ref đó và thêm cảnh báo; ref do model bịa
-không được truyền sang Finder. Finder vẫn tạo lịch
-chi tiết bằng domain rule deterministic.
+TripThemePlanner dùng hai lượt LLM. Lượt research đề xuất capability cần kiểm
+chứng; backend query Place active và vùng lân cận, sau đó lượt theme tạo
+`TripThemeDraft` từ evidence đã xác minh. Contract này chỉ có `tripThemes`,
+assumption và warning; không có ngày hoặc phân bổ `selectedPlace`. Backend yêu
+cầu model sửa output lỗi tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
+phân bổ Place, capacity và `UnscheduledPlace` bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
-Khi intake có URL YouTube long-form, runtime thử caption công khai bằng
-`youtube-transcript-api` trước, sau khi kiểm tra cache PostgreSQL. Request cùng
+Khi intake có URL YouTube long-form, runtime bỏ qua metadata `yt-dlp` và thử
+caption công khai bằng `youtube-transcript-api`, sau khi kiểm tra cache
+PostgreSQL. Request cùng
 video được dedupe trong process và bị giới hạn nhịp; khi IP backend bị chặn,
 runtime có thể gọi transcript worker do operator tự vận hành trên kết nối dân
 dụng. Caption thủ công hoặc tự sinh được cache dài hạn, dùng trực tiếp làm
 transcript và video không bị tải xuống. `no_captions` trả
 `YOUTUBE_CAPTIONS_NOT_FOUND`; `blocked`/`unavailable` trả lỗi retryable. Runtime
-không tải media và không gọi STT/OCR cho YouTube long-form. YouTube Shorts có
+không tải media và không gọi audio STT/OCR cho YouTube long-form. Pipeline chỉ
+giữ URL chuẩn hóa cùng platform rồi đưa caption qua structured multilingual text
+extraction để tạo observation có entity type, tên gốc, alias, address hint,
+parent place và authority; không dịch toàn bộ caption hay tên riêng sang tiếng
+Anh. Parser marker Anh–Việt chỉ là fallback. YouTube Shorts có
 path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook Reels dùng
 pipeline media hiện tại. URL rút gọn `youtu.be/{videoId}` không chứa tín hiệu
 Shorts nên giữ nhánh caption-only. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
 bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
 `order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
-và confidence. Explorer dùng structured STT observations, metadata và structured
+và confidence. Explorer dùng structured caption/STT observations, metadata và structured
 frame vision observations để tạo từng stop; Python không suy diễn candidate,
 day hay activity từ transcript tự do khi structured STT đã có. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
@@ -97,7 +96,10 @@ chịu trách nhiệm chính cho day/order/activity và
 `searchRegion`; OCR chịu trách nhiệm chính cho chữ trên bảng hiệu, địa chỉ và
 giá; caption bổ sung bối cảnh. Evidence ngắn được giữ riêng trong
 `sourceEvidence.stt`, `sourceEvidence.ocr` và `sourceEvidence.caption`.
-Planner ưu tiên blueprint này; Finder tạo skeleton
+Title/caption dạng `Top N` tạo expected coverage. Coverage dưới 40% trả
+`URL_EXTRACTION_LOW_COVERAGE` trước formatter/resolver; coverage 40–70% giữ
+review state và tắt PlaceSelector; từ 70% được coi là đủ để tiếp tục tự động.
+Planner ưu tiên blueprint này; PlaceSelector tạo skeleton
 `source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
 của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
 `UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
@@ -129,6 +131,10 @@ khác nhau trong pool `GEMINI_OCR_API_KEYS`; STT dùng pool riêng
 hình pool chung `GEMINI_API_KEY` có ít nhất hai key, runtime chia pool làm hai
 nửa không giao nhau cho STT và OCR. Mức song song tự giảm khi thiếu key hoặc
 batch. Kết quả được hợp nhất lại theo thứ tự frame gốc.
+YouTube long-form không chạy audio STT/frame OCR nên caption structurer dùng
+`GEMINI_CAPTION_API_KEYS` riêng khi có, hoặc mượn hợp của hai pool trên. Nó chọn
+key round-robin, failover tối đa hai credential cho lỗi `401`/`403`/`429` và có
+deadline tổng mặc định 60 giây; không thử tuần tự toàn bộ pool khi mạng timeout.
 STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
 một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa điểm, OCR được
 ưu tiên cho tên hiển thị và thứ tự frame; structured STT được ưu tiên cho day,
@@ -163,9 +169,9 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
 
 - ngoại lệ: duration ghi rõ trên heading `thành phố - N ngày` là coverage
   explicit của nguồn. Khi user chưa nêu duration, dùng coverage của các
-  `destinationStay` thay vì mặc định 3 ngày; stay-only không bật Finder tự bù;
+  `destinationStay` thay vì mặc định 3 ngày; stay-only không bật PlaceSelector tự bù;
 - nếu không có URL/OCR, số ngày user nói rõ được giữ nguyên;
-- nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và Finder chỉ bổ sung catalog
+- nếu URL/OCR phủ ít hơn 3 ngày, giữ plan 3 ngày và PlaceSelector chỉ bổ sung catalog
   vào ngày hoàn toàn chưa có stop nguồn; ngày đã có stop URL/OCR không bị pad
   thêm theo quota và địa điểm bổ sung phải mang source `finder_suggestion`;
 - nếu URL/OCR cần hơn 3 ngày, dùng cấu trúc `sourceDay` hoặc suy ra số ngày tối
@@ -173,7 +179,7 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
 - dedupe candidate dùng danh tính/tên địa điểm đã chuẩn hóa; `sourceOrder` chỉ
   giữ trình tự từ nguồn và không bao giờ là khóa định danh, vì STT/OCR/caption
   có thể gán cùng order cho nhiều địa điểm độc lập;
-- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, Finder chỉ bổ sung các
+- nếu user yêu cầu nhiều ngày hơn số ngày nguồn phủ được, PlaceSelector chỉ bổ sung các
   ngày trống;
 - nếu user đã yêu cầu số ngày cụ thể, duration đó là ranh giới cứng. URL có
   nhiều stop hơn sức chứa không tự tăng số ngày; stop vượt sức chứa được giữ ở
@@ -209,6 +215,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 
 - tìm place phù hợp cho từng candidate;
 - gộp candidate trùng nhưng giữ nhiều source ref;
+- fusion chọn metadata cụ thể làm anchor, giữ alias quan sát được tách khỏi alias
+  lookup Anh–Việt sinh có kiểm soát; không chạy một bước alias enrichment thứ
+  hai có cùng trách nhiệm;
+- resolver giữ top-K option và chỉ auto-resolve top-1 khi vượt cả ngưỡng tuyệt
+  đối, margin với top-2 và hard identity policy;
 - chỉ lưu kết quả `resolved` có đủ latitude/longitude và danh tính cụ thể;
 - bỏ qua persistence đối với kết quả `provisional`, `unresolved`, thiếu tọa độ
   hoặc match rộng tới thành phố/quốc gia;
@@ -226,11 +237,13 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 - `extractionConfidence` đo evidence riêng của candidate;
   `resolutionConfidence` đo identity từ provider. `confidence` cũ tạm giữ nghĩa
   extraction để tương thích client cũ.
+- Kết quả resolved trả `verifiedAliases` và `verifiedVietnameseAliases`; frontend
+  dùng alias Việt đã xác minh trước nhãn provider ngôn ngữ khác.
 - Candidate khác tên cùng map tới một Google identity/tọa độ chỉ được gộp khi
   Google trả cùng canonical provider name; resolver giữ các spelling/OCR variant
   làm alias và gộp provenance trước persistence. Nếu provider name khác nhau,
   cả nhóm bị trả về `duplicate_provider_identity`, không được persist.
-- Planner downstream dùng context và chuyển tiếp hai khóa; Finder downstream
+- Planner downstream dùng context và chuyển tiếp hai khóa; PlaceSelector downstream
   đọc `UserMustPlace` theo cả `intakeId + userId`.
 
 ### Giai đoạn 4: Explorer
@@ -263,47 +276,41 @@ schema của provider thay vì nhét toàn bộ JSON Schema vào nội dung prom
 Formatter và Resolver chạy song song vì cả hai chỉ phụ thuộc output đã chuẩn hóa
 của Extractor.
 
-### Giai đoạn 5: Planner
+### Giai đoạn 5: TripThemePlanner
 
-Planner tạo `MacroPlan` và `DayBriefs`:
+TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
 
-- mỗi ngày có chủ đề, khu vực chính, nhịp độ và mục tiêu;
+- mỗi theme có focus tags, số activity tối thiểu và region mục tiêu khi có;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
-- chuyến dài có thể tạo `journeyPhases` và mở rộng sang region lân cận đã được
-  tool kiểm chứng;
+- theme chỉ dùng capability/region đã được tool kiểm chứng;
 - theme sáng tạo như biển, hải sản, hiking hoặc camping phải có capability
   evidence từ Place active trước khi được mô tả như một khả năng có thật;
-- phân bổ địa điểm bắt buộc trước, sau đó tối ưu sở thích;
-- không gán giờ chính xác khi chưa có đủ dữ liệu route/place;
-- ghi rõ địa điểm nào chưa thể phân bổ.
-- khi có URL itinerary, giữ thứ tự/ngày/timing cue của nguồn; không biến timing
-  cue mơ hồ thành giờ chính xác do nguồn xác nhận.
+- không tạo ngày, khung giờ, journey phase, route bucket hoặc place allocation.
 
-### Giai đoạn 6: Finder
+### Giai đoạn 6: PlaceSelector
 
-Ở chế độ route-first, Planner runtime mang tên `TripThemePlannerService`. Nó tạo
+TripThemePlanner runtime mang tên `TripThemePlannerService`. Nó tạo
 `tripThemes` ở cấp toàn chuyến (theme, focus tags và số activity tối thiểu phải phủ),
-không tạo nội dung theo Ngày 1/Ngày 2. `dayBriefs` trung tính chỉ là projection tương
-thích cho API cũ; PlaceSelector chọn pool toàn chuyến và route optimizer mới quyết định
-activity thuộc ngày nào. Tên/chủ đề hiển thị của ngày được suy ra sau cùng từ cụm Place.
+không tạo nội dung theo Ngày 1/Ngày 2. PlaceSelector tạo đúng số day slot từ
+`tripSpec.days`; route optimizer quyết định activity thuộc ngày nào.
 
-Finder điền item cụ thể:
+PlaceSelector điền item cụ thể:
 
 - theme và day-part goal được dùng để tạo shortlist rộng, không còn là ràng buộc
   cứng ngăn activity phù hợp được chuyển sang ngày gần hơn về địa lý;
 
-- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; Finder chỉ bổ
+- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; PlaceSelector chỉ bổ
   sung catalog vào ngày hoàn toàn chưa có stop nguồn;
-- Finder loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
+- PlaceSelector loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
   kể cả khi provider ID khác nhưng tên chuẩn hóa/biến thể alias cho thấy cùng
   một địa điểm;
-- số place extractor nhận từ URL không bị giới hạn theo quota của Finder. Riêng
+- số place extractor nhận từ URL không bị giới hạn theo quota của PlaceSelector. Riêng
   `finder_suggestion` trên một ngày trống bị chặn theo pace
   (`relaxed=2`, `balanced=3`, `packed=4`); giới hạn này không đếm hoặc loại stop
   URL của user;
-- Finder dùng theme, day-part goal, region và constraint do Planner tạo để chọn
+- PlaceSelector dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
 - ở chế độ `route_first`, không chọn khung giờ và không loại candidate theo giờ mở cửa;
   timing claim chỉ được giữ làm provenance, chưa dùng để tạo giờ hẹn;
@@ -314,7 +321,7 @@ Finder điền item cụ thể:
 - chốt đúng hai activity chính cho mỗi ngày, tối ưu activity ở cấp toàn chuyến,
   rồi mới chọn đủ breakfast/lunch/dinner theo các anchor địa lý của tuyến;
 - stop ăn uống từ URL chiếm meal slot trước và thay thế meal suggestion
-  của Finder; stop URL không được âm thầm loại khi chuyển giữa activity
+  của PlaceSelector; stop URL không được âm thầm loại khi chuyển giữa activity
   pool và meal slot;
 - `cafe`/`coffee shop` là stop trải nghiệm thuộc activity pool, không
   được dùng làm breakfast/lunch/dinner chỉ vì provider gắn nhóm
@@ -341,7 +348,7 @@ deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm 
 không được mô tả như tối ưu toàn cục. Có thể quay lại behavior cũ bằng
 `ITINERARY_OPTIMIZER_MODE=legacy`.
 
-Nếu không tìm được Place ăn uống đã xác minh cho một meal slot, Finder bỏ slot đó
+Nếu không tìm được Place ăn uống đã xác minh cho một meal slot, PlaceSelector bỏ slot đó
 khỏi `PlanDay.items` thay vì tạo card breakfast/lunch/dinner giả. Planning warning
 vẫn ghi nhận meal slot bị thiếu để plan không bị mô tả như đã hoàn thiện.
 
@@ -349,9 +356,9 @@ Route-first hiện không tạo lịch theo đồng hồ. Các marker `timeWindo
 để giữ tương thích schema và thứ tự; UI không cho nhập/sửa giờ và các marker không tham gia
 candidate selection, opening-hours check hoặc timeline fitting.
 
-Adapter Finder dùng `RepositoryFinderPlaceTool` trong runtime để tìm Place đang
+Adapter PlaceSelector dùng `RepositoryPlaceSelectionTool` trong runtime để tìm Place đang
 active theo `regionKey` và `focusTags`. Nếu catalog vùng trống nhưng có
-`SelectedPlace`, Finder vẫn có thể lập plan giới hạn trong danh sách đã xác
+`SelectedPlace`, PlaceSelector vẫn có thể lập plan giới hạn trong danh sách đã xác
 nhận; cảnh báo giới hạn phải xuất hiện trong output.
 
 ### Giai đoạn 7: CheckOverall
@@ -376,9 +383,9 @@ khóa plan.
 
 ### Giai đoạn 8: Main Plan và Backup Plan
 
-Main Plan được chốt từ một version đã kiểm tra. Backup Planner nhận Original
-MacroPlan, Main Plan và CheckOverall Report để giải quyết rủi ro cụ thể. Backup
-phải có `parentPlanId`, được validate độc lập và không mutate Main Plan.
+Main Plan được chốt từ một version đã kiểm tra. Backup Plan dùng lại
+`mainPlan.tripThemes`, chạy lại PlaceSelector với constraint dự phòng, có
+`parentPlanId`, được validate độc lập và không mutate Main Plan.
 
 ## Đầu vào bắt buộc
 
@@ -426,10 +433,10 @@ tuyến đường hoặc danh tính địa điểm.
 - Giữ địa điểm người dùng đã chọn trừ khi xung đột với ràng buộc cứng; khi đó
   phải giải thích.
 - Candidate được tự động resolve theo lựa chọn sản phẩm no-interruption, nhưng
-  chỉ kết quả resolved có danh tính cụ thể và đủ tọa độ được lưu để Finder dùng.
+  chỉ kết quả resolved có danh tính cụ thể và đủ tọa độ được lưu để PlaceSelector dùng.
 - Không chuyển caption/câu quảng bá/danh sách nhiều venue thành một PlanItem.
   URL place chưa resolve được danh tính cụ thể và tọa độ không được lưu vào
-  `UserMustPlace` hay xuất hiện trong plan; phần thiếu được Finder điền bằng
+  `UserMustPlace` hay xuất hiện trong plan; phần thiếu được PlaceSelector điền bằng
   Place đã chuẩn hóa khi policy cho phép.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.

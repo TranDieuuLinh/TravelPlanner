@@ -1,7 +1,7 @@
 """Compatibility helpers that read place metadata across schema versions.
 
 The latest migration replaced most of ``places.metadata_json`` with
-first-class columns and child tables. Several Planner and Finder tools
+first-class columns and child tables. Several Planner and PlaceSelector tools
 were originally written against the legacy JSON shape. These helpers
 prefer the new schema and gracefully fall back to the legacy JSON
 payload so tests and old data continue to work.
@@ -87,7 +87,7 @@ def read_place_group(place: Any) -> str | None:
     semantic categories keep working. When the Google Maps import stored
     the full ``types`` list inside ``metadata.google.types``, we iterate
     through it and pick the first bucket we recognise. This is critical
-    for the Finder tool because the Google ``place_type`` value is often
+    for the PlaceSelector tool because the Google ``place_type`` value is often
     a free-form category string (e.g. ``"Bún chả"``) that does not match
     the legacy whitelist.
     """
@@ -130,7 +130,7 @@ def read_place_group(place: Any) -> str | None:
 
 
 # Mirror of the Google Maps ``types`` -> ``PLACE_GROUP_CATEGORY`` mapping
-# kept in ``app.modules.plans.finder.place_tool``. Defined here so that
+# kept in ``app.modules.plans.place_selector.place_tool``. Defined here so that
 # ``read_place_group`` can resolve a bucket without importing the finder
 # tool (which itself imports this module, causing a circular import).
 GOOGLE_TYPES_CATEGORY: dict[str, str] = {

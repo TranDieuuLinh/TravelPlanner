@@ -9,7 +9,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field
 
 from app.modules.places.model import Place
-from app.modules.plans.planner.place_metadata import (
+from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
     read_price_level,
@@ -470,7 +470,7 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
 }
 
 
-class FinderPlace(BaseModel):
+class SelectablePlace(BaseModel):
     place_id: str | None = Field(default=None, alias="placeId")
     name: str
     address: str | None = None
@@ -530,8 +530,8 @@ class FinderPlace(BaseModel):
         return self.place_id or self.name
 
 
-class FinderPlaceTool(Protocol):
-    def get(self, place_id: str) -> FinderPlace | None: ...
+class PlaceSelectionTool(Protocol):
+    def get(self, place_id: str) -> SelectablePlace | None: ...
 
     def search(
         self,
@@ -541,13 +541,13 @@ class FinderPlaceTool(Protocol):
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
-    ) -> list[FinderPlace]: ...
+    ) -> list[SelectablePlace]: ...
 
 
-class FinderPlaceRepository(Protocol):
+class PlaceSelectionRepository(Protocol):
     def get(self, place_id: str) -> Place | None: ...
 
-    def list_for_finder(
+    def list_for_place_selection(
         self,
         region_key: str,
         *,
@@ -555,8 +555,8 @@ class FinderPlaceRepository(Protocol):
     ) -> list[Place]: ...
 
 
-class EmptyFinderPlaceTool:
-    def get(self, place_id: str) -> FinderPlace | None:
+class EmptyPlaceSelectionTool:
+    def get(self, place_id: str) -> SelectablePlace | None:
         return None
 
     def search(
@@ -567,12 +567,12 @@ class EmptyFinderPlaceTool:
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         return []
 
 
 def _inside_bbox(
-    place: FinderPlace,
+    place: SelectablePlace,
     bbox: tuple[float, float, float, float],
 ) -> bool:
     """Return True iff place coordinates fall inside the bbox.
@@ -587,16 +587,16 @@ def _inside_bbox(
     return min_lat <= place.latitude <= max_lat and min_lon <= place.longitude <= max_lon
 
 
-class RepositoryFinderPlaceTool:
-    def __init__(self, repository: FinderPlaceRepository) -> None:
+class RepositoryPlaceSelectionTool:
+    def __init__(self, repository: PlaceSelectionRepository) -> None:
         self.repository = repository
-        self._scope_cache: dict[str, list[FinderPlace]] = {}
+        self._scope_cache: dict[str, list[SelectablePlace]] = {}
 
-    def get(self, place_id: str) -> FinderPlace | None:
+    def get(self, place_id: str) -> SelectablePlace | None:
         place = self.repository.get(place_id)
         if place is None or place.deleted_at is not None:
             return None
-        return self._to_finder_place(place)
+        return self._to_selectable_place(place)
 
     def search(
         self,
@@ -606,7 +606,7 @@ class RepositoryFinderPlaceTool:
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
-    ) -> list[FinderPlace]:
+    ) -> list[SelectablePlace]:
         places = self._load_scoped_candidates(region_key, excluded_place_ids)
         places = [
             place
@@ -673,18 +673,18 @@ class RepositoryFinderPlaceTool:
         self,
         region_key: str,
         excluded_place_ids: set[str],
-    ) -> list[FinderPlace]:
-        candidates: list[FinderPlace] = []
+    ) -> list[SelectablePlace]:
+        candidates: list[SelectablePlace] = []
         seen: set[str] = set()
         scopes = _region_scopes(region_key)
         for scope in scopes:
             if scope not in self._scope_cache:
-                raw = self.repository.list_for_finder(
+                raw = self.repository.list_for_place_selection(
                     scope,
                     limit=MAX_REPOSITORY_CANDIDATES,
                 )
                 self._scope_cache[scope] = [
-                    self._to_finder_place(place) for place in raw
+                    self._to_selectable_place(place) for place in raw
                 ]
             for place in self._scope_cache[scope]:
                 if (
@@ -696,20 +696,20 @@ class RepositoryFinderPlaceTool:
                 candidates.append(place)
         if not candidates:
             logger.warning(
-                "Finder: empty candidate set for region '%s' across scopes %s.",
+                "PlaceSelector: empty candidate set for region '%s' across scopes %s.",
                 region_key,
                 scopes,
             )
         return candidates
 
-    def _to_finder_place(self, place: Place) -> FinderPlace:
+    def _to_selectable_place(self, place: Place) -> SelectablePlace:
         metadata = place.metadata_json or {}
         tags = read_tags(place)
         minimum_duration = _minimum_duration_minutes(metadata)
         if minimum_duration is None and place.typical_duration_minutes:
             minimum_duration = max(15, place.typical_duration_minutes // 2)
 
-        return FinderPlace(
+        return SelectablePlace(
             placeId=place.id,
             name=place.name,
             address=place.address,
@@ -771,7 +771,7 @@ def semantic_categories(terms: set[str]) -> set[str]:
     }
 
 
-def place_category(place: FinderPlace) -> str | None:
+def place_category(place: SelectablePlace) -> str | None:
     normalized_name = _normalize_text(place.name)
     if re.search(
         r"(^| )(ga|station|terminal|ben pha)( |$)",
@@ -822,7 +822,7 @@ def _description_relevance(
 
 
 def _structured_rerank_score(
-    place: FinderPlace,
+    place: SelectablePlace,
     *,
     region_key: str,
     query_terms: set[str],
@@ -889,7 +889,7 @@ def _structured_rerank_score(
 
 
 def place_matches_categories(
-    place: FinderPlace,
+    place: SelectablePlace,
     query_categories: set[str],
 ) -> bool:
     category = place_category(place)
@@ -921,7 +921,7 @@ def place_matches_categories(
 
 
 def _matches_target_locality(
-    place: FinderPlace,
+    place: SelectablePlace,
     target_region_key: str,
 ) -> bool:
     if (

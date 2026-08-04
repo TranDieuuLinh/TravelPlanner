@@ -49,6 +49,14 @@ class UpdateItemRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AddItemForm(AddItemRequest):
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+
+
+class UpdateItemForm(UpdateItemRequest):
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+
+
 class MoveItemRequest(BaseModel):
     to_day: Annotated[int, Field(ge=1, le=30, alias="toDay")]
     position: int | None = Field(default=None, ge=0)

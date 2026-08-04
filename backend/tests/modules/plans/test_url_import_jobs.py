@@ -423,7 +423,7 @@ def test_failed_job_can_be_retried_individually(registered_client, db_session) -
     assert response.json()["forceRefresh"] is True
 
 
-def test_finished_job_reprocesses_from_valid_url_extraction_cache(
+def test_finished_job_reprocesses_from_the_beginning_without_extraction_cache(
     registered_client,
     db_session,
 ) -> None:
@@ -445,7 +445,7 @@ def test_finished_job_reprocesses_from_valid_url_extraction_cache(
     replay = response.json()
     assert replay["id"] != created["id"]
     assert replay["status"] == "queued"
-    assert replay["forceRefresh"] is False
+    assert replay["forceRefresh"] is True
     original = db_session.get(UrlImportJob, created["id"])
     assert original is not None
     assert original.status == "succeeded"

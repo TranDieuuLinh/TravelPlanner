@@ -172,7 +172,7 @@ def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
         "macroPlan": {
             "title": "Hà Nội cuối tuần",
             "destination": "Hà Nội",
-            "dayBriefs": [
+            "selectionDays": [
                 {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
             ],
         },
@@ -219,6 +219,76 @@ def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
     ]
 
 
+def test_user_can_save_personal_note_from_flat_form_data(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Ghi chú Hà Nội"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "personal-note-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Ghi chú Hà Nội",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Ghi chú Hà Nội",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "pho-thin-bo-ho",
+                        "name": "Phở Thìn Bờ Hồ",
+                        "timeWindow": "08:00-09:00",
+                        "placeType": "food",
+                        "source": "url",
+                        "notes": "Địa điểm lấy từ nội dung tham khảo.",
+                    }
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.patch(
+        f"/api/trip-chats/{chat_id}/plan/days/1/items/pho-thin-bo-ho",
+        data={
+            "expectedRevision": "1",
+            "personalNotes": "Ngồi ngoài trời và gọi món đặc trưng.",
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    item = body["currentPlan"]["days"][0]["items"][0]
+    assert item["personalNotes"] == "Ngồi ngoài trời và gọi món đặc trưng."
+    assert item["notes"] == "Địa điểm lấy từ nội dung tham khảo."
+
+
 def test_user_can_remove_an_unscheduled_place_from_trip_chat(
     registered_client,
     db_session,
@@ -249,7 +319,7 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
         "macroPlan": {
             "title": "Hà Nội cuối tuần",
             "destination": "Hà Nội",
-            "dayBriefs": [
+            "selectionDays": [
                 {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
             ],
         },

@@ -6,10 +6,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.modules.plans.domain.entities import (
     CheckReport,
     DestinationStay,
-    FinderPlanStatus,
-    MacroPlan,
+    PlaceSelectionStatus,
+    PlaceSelectionBlueprint,
     PlanDay,
     RegionSnapshotReference,
+    TripThemeRequirement,
     UnscheduledPlace,
     UserStatus,
 )
@@ -20,8 +21,8 @@ from app.modules.preferences.schema import LongTermPreferenceProfile
 
 class PlanningAgentName(StrEnum):
     explorer = "explorer"
-    planner = "planner"
-    finder = "finder"
+    trip_theme_planner = "trip_theme_planner"
+    place_selector = "place_selector"
     checker = "checker"
 
 
@@ -401,10 +402,6 @@ class FinalTripCostEstimate(BaseModel):
     total: MoneyEstimate | None = None
 
 
-class AgentMacroPlan(MacroPlan):
-    pass
-
-
 class ExplorerAgentInput(BaseModel):
     raw_request: Annotated[str | None, Field(alias="rawRequest")] = None
     destination: str
@@ -512,7 +509,7 @@ class PlannerVerifiedResearch(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class PlannerAgentInput(BaseModel):
+class TripThemePlanningInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
@@ -526,8 +523,6 @@ class PlannerAgentInput(BaseModel):
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
     ]
     plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
-    original_macro_plan: Annotated[AgentMacroPlan | None, Field(alias="originalMacroPlan")] = None
-    check_report: Annotated[CheckReport | None, Field(alias="checkReport")] = None
     # === Research Tools Results ===
     # Optional tool results that can be pre-populated before calling planner
     region_overview: Annotated[
@@ -555,14 +550,12 @@ class PlannerAgentInput(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class PlannerAgentOutput(BaseModel):
+class TripThemePlanningOutput(BaseModel):
     mode: PlanningMode
-    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    day_briefs_ready: Annotated[bool, Field(alias="dayBriefsReady")] = True
     trip_themes_ready: Annotated[bool, Field(alias="tripThemesReady")] = True
-    unallocated_selected_places: Annotated[
-        list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
+    trip_themes: Annotated[
+        list[TripThemeRequirement], Field(alias="tripThemes")
     ] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -571,10 +564,11 @@ class PlannerAgentOutput(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class PlannerMacroPlanDraft(BaseModel):
-    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
-    unallocated_selected_places: Annotated[
-        list[UnallocatedSelectedPlace], Field(alias="unallocatedSelectedPlaces")
+class TripThemeDraft(BaseModel):
+    """LLM contract for trip-wide requirements, with no calendar allocation."""
+
+    trip_themes: Annotated[
+        list[TripThemeRequirement], Field(alias="tripThemes")
     ] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -582,11 +576,14 @@ class PlannerMacroPlanDraft(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class FinderAgentInput(BaseModel):
+class PlaceSelectionInput(BaseModel):
     mode: PlanningMode = PlanningMode.main
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    macro_plan: Annotated[AgentMacroPlan, Field(alias="macroPlan")]
+    region_key: Annotated[str, Field(alias="regionKey")]
+    trip_themes: Annotated[
+        list[TripThemeRequirement], Field(alias="tripThemes")
+    ] = Field(default_factory=list)
     selected_places: Annotated[
         list[SelectedPlaceContext], Field(alias="selectedPlaces")
     ] = Field(default_factory=list)
@@ -596,18 +593,18 @@ class FinderAgentInput(BaseModel):
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
     )
-    finder_plan_status: Annotated[
-        FinderPlanStatus, Field(alias="finderPlanStatus")
-    ] = Field(default_factory=FinderPlanStatus)
-    allow_finder_suggestions: Annotated[
+    place_selection_status: Annotated[
+        PlaceSelectionStatus, Field(alias="placeSelectionStatus")
+    ] = Field(default_factory=PlaceSelectionStatus)
+    allow_place_suggestions: Annotated[
         bool,
-        Field(default=True, alias="allowFinderSuggestions"),
+        Field(default=True, alias="allowPlaceSuggestions"),
     ]
 
     model_config = {"populate_by_name": True}
 
 
-class FinderAgentOutput(BaseModel):
+class PlaceSelectionOutput(BaseModel):
     mode: PlanningMode
     final_days: Annotated[list[PlanDay], Field(alias="finalDays")] = Field(
         default_factory=list
@@ -620,8 +617,8 @@ class FinderAgentOutput(BaseModel):
         default_factory=UserStatus
     )
     final_plan_status: Annotated[
-        FinderPlanStatus, Field(alias="finalPlanStatus")
-    ] = Field(default_factory=FinderPlanStatus)
+        PlaceSelectionStatus, Field(alias="finalPlanStatus")
+    ] = Field(default_factory=PlaceSelectionStatus)
     warnings: list[str] = Field(default_factory=list)
     trace: AgentTrace
 
@@ -636,10 +633,10 @@ class AgentMessage(BaseModel):
         Literal[
             "explorer.input",
             "explorer.output",
-            "planner.input",
-            "planner.output",
-            "finder.input",
-            "finder.output",
+            "trip_theme_planner.input",
+            "trip_theme_planner.output",
+            "place_selector.input",
+            "place_selector.output",
         ],
         Field(alias="messageType"),
     ]

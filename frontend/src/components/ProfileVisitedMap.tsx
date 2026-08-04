@@ -103,7 +103,7 @@ function getCountryStyle(summary: CountryFootprint, selected: boolean) {
       summary.visitCount >= 3 ? "#0f5d50" : summary.visitCount === 2 ? "#21836e" : "#38a58c";
     return {
       className: `footprintCountry is-visited${selected ? " is-selected" : ""}`,
-      color: selected ? "#fff7df" : "#ffffff",
+      color: selected ? "#ffffff" : "#ffffff",
       dashArray: undefined,
       fillColor,
       fillOpacity: 0.94,

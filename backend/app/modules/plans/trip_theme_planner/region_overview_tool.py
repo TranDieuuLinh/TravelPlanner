@@ -12,14 +12,14 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import TYPE_CHECKING, Protocol
 
-from app.modules.plans.planner.place_metadata import (
+from app.modules.plans.trip_theme_planner.place_metadata import (
     read_daily_cost,
     read_price_level,
     read_rating,
     read_review_count,
     read_tags,
 )
-from app.modules.plans.planner.research_tools_schema import (
+from app.modules.plans.trip_theme_planner.research_tools_schema import (
     CategoryStat,
     RegionOverviewInput,
     RegionOverviewOutput,
@@ -112,7 +112,7 @@ def _estimate_daily_cost(metadata: dict) -> int | None:
 
     tier = _extract_price_tier(metadata)
     if tier:
-        from app.modules.plans.planner.place_metadata import _price_level_to_cost
+        from app.modules.plans.trip_theme_planner.place_metadata import _price_level_to_cost
 
         cost = _price_level_to_cost(tier)
         if cost is not None:

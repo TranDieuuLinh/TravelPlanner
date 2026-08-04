@@ -38,8 +38,11 @@
 
 Valhalla tự vận hành được chọn cho route từng leg của Finder. Finder gọi cả
 `pedestrian` và `auto` cho mỗi mode không bị user loại trừ. Ngưỡng đi bộ 1.500 m
-quyết định mode road được đề xuất, còn route road kia vẫn nằm trong
-`PlanTransportLeg.alternatives` để itinerary hiển thị đủ lựa chọn khả thi.
+quyết định mode road được đề xuất ở backend, còn route road kia vẫn nằm trong
+`PlanTransportLeg.alternatives`. UI Planner luôn giữ ô tô trong các route road
+khả thi; đi bộ chỉ được thêm khi leg dưới 3.000 m. Tuyến public transit đã được
+OpenTripPlanner xác minh được hiển thị thêm để người dùng chọn; lựa chọn
+`mixed`/`unknown` không được đưa lên UI hoặc gắn nhãn trên bản đồ.
 Summary distance/duration cùng polyline6 được chuẩn hóa vào
 `PlanTransportLeg`; lỗi provider fallback theo từng leg. Kết quả không được mô
 tả là traffic live nếu deployment chưa nạp dữ liệu traffic.
@@ -59,11 +62,21 @@ không có route transit xác minh thì không hiển thị lựa chọn này v�
 geometry thật và `scheduleStatus=development_shifted_2018` được hiển thị với
 cảnh báo lịch cũ đã dịch ngày, nhưng vẫn giữ `verified=false`.
 
-UI vẫn dùng Leaflet/OpenStreetMap làm bản đồ nền. Chỉ đường tạm thời từ vị trí
+UI Planner dùng MapLibre GL JS với vector style dựa trên dữ liệu OpenStreetMap;
+style URL được cấu hình bằng `NEXT_PUBLIC_PLANNER_MAP_STYLE_URL` và mặc định dùng
+OpenFreeMap Bright cho môi trường prototype. UI ẩn các lớp POI không phục vụ
+lịch trình, dùng bảng màu tương phản cao để phân biệt rõ đất, nước, công viên,
+công trình, đường và nhãn, đồng thời giữ attribution OpenStreetMap luôn hiển
+thị. Bản đồ dấu chân quốc gia trong Profile vẫn dùng Leaflet vì render GeoJSON
+tĩnh và không cần vector basemap. Chỉ đường tạm thời từ vị trí
 hiện tại giữ nguyên thứ tự stop của itinerary đã lưu, không gọi
 `sources_to_targets` và không giải open path. Valhalla Routing và
 OpenTripPlanner vẫn được gọi cho từng leg cố định để trả geometry, thời lượng và
 chuyên chở bằng các mode khả thi, đồng thời trả chuỗi segment đa phương thức.
+UI xem toàn tuyến ngày thêm điểm xuất phát trước chuỗi stop này. Chế độ tìm
+đường nhanh là truy vấn point-to-point riêng: điểm đi có thể là vị trí thiết bị
+hoặc place đã tìm, còn điểm đến có thể là stop trong plan, place đã tìm hoặc tọa
+độ chọn trực tiếp trên bản đồ; kết quả không mutate itinerary.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.
@@ -75,18 +88,25 @@ thức tiếng Việt và tên canonical tiếng Anh/tên gốc. Các field
 `alternateNames` và alias catalog cũ vẫn được đọc để tương thích nhưng không
 tạo thêm lookup provider. Input có thể ở bất kỳ ngôn ngữ nào; tên nguồn và
 provenance luôn được giữ nguyên. LLM không được sinh tọa độ hoặc tự quyết định
-place identity. Resolver tìm record `active` có tọa độ trong bảng `places`
-theo hai tên lookup và đúng `region_key` trước. Nếu lượt này không có kết quả,
-resolver tìm hai tên trên toàn catalog, gồm metadata alias và tên có hậu tố chi nhánh, rồi dùng
-`region_key` để ưu tiên thay vì loại bỏ; một kết quả duy nhất được nhận, còn nhiều record trùng tên
-ngoài vùng được giữ unresolved để provider tiếp theo xác minh. Nhờ vậy source
-tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại, đồng
-thời không đoán giữa các thương hiệu/địa điểm trùng tên. Chỉ candidate không
-match catalog nội bộ mới fallback sang Playwright worker của Google Maps.
-Scraper nhận tên gốc và
-alias có cấu trúc qua file input tạm, nhưng chỉ nhận
-kết quả khi tên, vùng, category và latitude/longitude hợp lệ; provider lỗi,
-timeout hoặc mismatch không làm hỏng intake. Alias catalog được lưu trong
+place identity. Resolver lấy tối đa `top K` record `active` có tọa độ trong bảng
+`places`, gồm metadata alias và tên có hậu tố chi nhánh, rồi xếp hạng theo độ
+giống tên, `region_key`, evidence địa chỉ/landmark, category tương thích và
+`data_confidence`. Top-1 chỉ được nhận khi đạt điểm tối thiểu và cách top-2 đủ
+xa; mặc định `K=5`, điểm phải **lớn hơn** `0.82` và margin `0.08`. Điểm bằng
+`0.82` vẫn bị loại. Route context chỉ phân xử giữa các match đã vượt ngưỡng;
+không được nâng một match yếu thành `resolved`. Candidate tên món/venue chung
+phải có địa chỉ nguồn khớp record mới được resolve tự động. Đây là score nội bộ
+có thể hiệu chỉnh, không phải confidence do Google hay source cung cấp. Nhờ vậy
+source tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại,
+đồng thời không đoán giữa các thương hiệu/địa điểm trùng tên. Catalog miss, toàn
+bộ điểm thấp hoặc top-1/top-2 quá sát nhau đều fallback sang Playwright worker
+của Google Maps.
+Scraper nhận tên gốc và alias có cấu trúc qua file input tạm. Kết quả Google
+được xếp hạng theo top-K score tổng hợp từ độ giống tên, vùng, category và tọa
+độ; top-1 chỉ được nhận khi điểm **lớn hơn** `0.82`, không bị loại riêng chỉ vì
+tên provider có thêm prefix mô tả như `Di tích`. Vùng/category mâu thuẫn rõ
+hoặc tọa độ không hợp lệ vẫn là hard rejection; provider lỗi hoặc timeout không
+làm hỏng intake. Alias catalog được lưu trong
 `places.metadata.aliases`, hoặc tách theo `englishNames`, `vietnameseNames`,
 `alternateNames`; `searchNames` tiếp tục được đọc để tương thích dữ liệu cũ.
 Mỗi candidate chỉ giữ tối đa hai tên tra cứu: tên chính thức tiếng Việt và tên
@@ -108,9 +128,11 @@ có evidence từ source. Nếu source không nêu rõ chi nhánh, resolver dùn
 resolve ngay trước/sau trong cùng ngày và cùng URL để tính quãng đường vòng địa
 lý. Chỉ tự chọn khi kết quả tốt nhất cách biệt đủ rõ (tối thiểu 0,75 km và 30%
 so với kết quả thứ hai, đồng thời không lệch anchor quá 15 km); nếu không,
-candidate tiếp tục unresolved và provider sau không được chọn đại kết quả đầu
-tiên; UI phải yêu cầu user chọn. Candidate có địa chỉ/landmark từ source vẫn có
-thể đi qua provider sau để xác minh evidence đó. Đây là heuristic chọn identity,
+candidate tiếp tục unresolved trong bước DB và được chuyển sang provider sau.
+Provider sau vẫn phải xác minh tên/vùng/category/toạ độ, không được chọn đại kết
+quả đầu tiên; nếu provider cũng không xác minh được thì UI phải yêu cầu user
+chọn. Candidate có địa chỉ/landmark từ source vẫn có thể đi qua provider sau để
+xác minh evidence đó. Đây là heuristic chọn identity,
 không phải route provider hay tối ưu lại thứ tự itinerary.
 Valhalla và OpenTripPlanner không phải geocoder/POI search nên không thay vai
 trò này. Candidate chỉ được nhận khi khớp tên/vùng, loại provider không mâu
@@ -158,7 +180,17 @@ instruction.
    kết nối dân dụng; chỉ video ID và language list được gửi, không gửi cookie
    người dùng. `no_captions` trả lỗi `YOUTUBE_CAPTIONS_NOT_FOUND`;
    `blocked`/`unavailable` trả lỗi retryable sau khi worker thất bại. YouTube
-   long-form không tải video, không tách audio và không gọi STT/OCR. YouTube
+   long-form không tải video, không tách audio, không gọi audio STT/OCR và không
+   gọi `yt-dlp` để lấy metadata. Title, description, chapter, thumbnail và
+   uploader không nằm trong critical path của YouTube long-form; pipeline dùng
+   URL chuẩn hóa cùng caption để tránh metadata làm tác vụ bị treo. Caption được
+   cấu trúc đa ngôn ngữ bằng model text hiện có, giữ nguyên proper name và phân
+   loại venue/sub-place/address/city/person/activity/food. Caption text
+   dùng `GEMINI_CAPTION_API_KEYS` khi được cấu hình; nếu không, nó mượn toàn bộ
+   key trong pool STT + OCR vì YouTube long-form không chạy hai workload media
+   đó. Key được chọn round-robin, mỗi call chỉ failover tối đa hai key cho lỗi
+   credential/quota và chịu một deadline tổng mặc định 60 giây; timeout mạng
+   không được nhân lên qua toàn bộ pool. YouTube
    Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook
    Reels tải media công khai tạm thời rồi
    Gemini Audio trả `transcript` cùng structured STT observations bằng
@@ -170,6 +202,11 @@ instruction.
    `metadata`; địa chỉ/city trong metadata được dùng làm hint cho resolver.
    Chuỗi resolver cache dùng chung -> catalog nội bộ -> Google Maps Playwright
    vẫn phải xác minh danh tính và tọa độ trước khi lưu.
+   STT cũng giữ món/hoạt động địa phương cụ thể được nói rõ nhưng không kèm
+   venue (ví dụ “cà phê trứng”) dưới dạng activity-only candidate. Candidate
+   này phải đi qua resolver như bình thường và thường giữ trạng thái unresolved
+   để bước gợi ý gần route xử lý; các động từ mơ hồ như “ăn”, “uống”, “đi chơi”
+   không được tạo candidate.
    Danh sách địa điểm có pin trong caption là blueprint canonical tiếp theo:
    giữ tên và thứ tự caption, tách các street được nêu chung, rồi chỉ dùng
    STT/OCR để bổ sung evidence, activity và address. Tên thành phố trùng
@@ -178,16 +215,31 @@ instruction.
    Heading thành phố có duration như `Hanoi - 2 days` được chuẩn hóa thành
    `destinationStay` phủ hai ngày và bị loại khỏi danh sách stop; duration không
    được hiểu thành một phần tên địa điểm.
-6. Validate JSON, gộp/dedupe STT + OCR + caption, giữ evidence theo từng nguồn
-   rồi chuyển thành place candidate. Nếu tên candidate dính thêm câu review,
+6. Metadata và nhánh media chạy song song; khi trip chưa có destination, nhánh
+   media chỉ chờ metadata đủ để tạo location hint rồi mới gọi STT/Vision. Validate
+   JSON, gộp/dedupe metadata + STT + OCR + caption, giữ evidence theo từng nguồn
+   rồi chuyển thành place candidate. Metadata location cụ thể làm anchor; tên
+   STT/OCR khác spelling được giữ trong `observedAliases`. Nếu tên candidate dính thêm câu review,
    bước gộp chỉ phục hồi nhãn ngắn hơn khi nhãn đó xuất hiện nguyên vẹn trong
    evidence STT/OCR và tự vượt qua policy chống caption rác. Khi structured STT đã có, Python không
    suy diễn place/day/activity từ transcript tự do.
-7. Tạo alias Anh–Việt có cấu trúc, sau đó chuẩn hóa địa điểm theo chuỗi
+   Address/person/city không được chuyển thành stop. Address được gắn vào venue;
+   sub-place có parent rõ ràng được gộp về venue cha. Parser fallback nhận marker
+   `number/no.` và `số/thứ` bằng chữ hoặc số.
+7. Canonicalization tạo alias Anh–Việt có cấu trúc ngay trong candidate fusion,
+   lưu riêng trong `generatedLookupAliases`, sau đó chuẩn hóa địa điểm theo chuỗi
    shared cache -> `places` catalog -> Google Maps Playwright
    và gộp trùng.
-   Query dùng `searchRegion` của stop thay vì luôn nối trip base. Kết quả chỉ
-   được resolve khi tên khớp theo token, vùng địa lý phù hợp và loại provider
+   Places DB và external provider giữ tối đa năm match option kèm score component;
+   top-1 chỉ được nhận khi đủ score/margin. Stable identity đã xác minh mới cho
+   phép học `verifiedAliases`; alias Việt được trả riêng cho frontend.
+   Query dùng `searchRegion` của stop thay vì luôn nối trip base. Khi candidate
+   có `addressHint`, Google fallback thử thêm một query chỉ gồm địa chỉ và vùng
+   sau các query tên + địa chỉ. Kết quả có tổng score không vượt ngưỡng vẫn giữ
+   trạng thái unresolved;
+   tọa độ đại diện chỉ được dùng làm anchor cho gợi ý gần route, không được lưu
+   như provider-verified source place. Kết quả chỉ
+   được resolve khi top-1 vượt ngưỡng score, vùng địa lý phù hợp và loại provider
    không mâu thuẫn rõ với category nguồn. `candidateName` và `resolvedName`
    được lưu riêng; Plan/UI dùng `resolvedName` ưu tiên tiếng Việt, còn
    `candidateName` giữ provenance. Mismatch giữ `resolutionReason` để truy vết.
@@ -232,6 +284,9 @@ instruction.
    qua junction theo `intakeId + userId`. Job có `forceRefresh=true` bỏ qua cache
    để chạy lại toàn bộ extraction; cache cũ chỉ được ghi đè sau khi intake mới
    thành công, không bị xóa ngay khi enqueue.
+   Schema cache version 4 loại snapshot trước entity authority và extraction
+   coverage. Snapshot resolved cũ không thay thế extraction cache vì thiếu
+   contract mới.
 10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
 
 Với URL, Extractor là nguồn duy nhất tạo `UnifiedPlaceCandidate`. Formatter nhận
@@ -262,6 +317,8 @@ pool riêng `GEMINI_STT_API_KEYS` và chuyển sang key kế tiếp khi key hi�
 `401`, `403` hoặc `429`; hai pool riêng không được chứa key trùng nhau và chuỗi
 nhiều key không được gửi nguyên dạng như một credential. Khi chỉ có
 `GEMINI_API_KEY`, runtime chia đôi pool cho STT/OCR nếu có ít nhất hai key.
+Caption text có thể mượn hợp của hai pool nhưng vẫn chỉ gửi một key cho mỗi
+request và giới hạn số failover; không fan-out cùng nội dung qua mọi key.
 Audio fallback dài hơn ngưỡng 60 giây có thể được chia cân bằng thành tối đa
 ba chunk có overlap hai giây; audio ngắn vẫn dùng một call. Mặc định STT chạy
 tối đa ba request đồng thời và bắt đầu các Gemini call cách nhau ít nhất hai giây

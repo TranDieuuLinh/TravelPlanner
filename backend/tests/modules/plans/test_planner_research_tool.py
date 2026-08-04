@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from app.modules.places.model import Place
 from app.modules.plans.dto.agent_contracts import PlannerResearchDraft
-from app.modules.plans.planner.research_tool import (
+from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
 

@@ -31,6 +31,7 @@ services:
       BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       APP_ENV: local
       GEMINI_MIN_INTERVAL_SECONDS: "0.0"
+      URL_IMPORT_JOB_TIMEOUT_SECONDS: "300"
       PLACE_RESOLVER_PROVIDER: google_maps_scraper
       ROUTE_PROVIDER: valhalla
       VALHALLA_BASE_URL: http://valhalla:8002
@@ -39,6 +40,9 @@ services:
       GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
       GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
       GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
+      DATABASE_PLACE_RESOLVER_TOP_K: "5"
+      DATABASE_PLACE_RESOLVER_MINIMUM_SCORE: "0.82"
+      DATABASE_PLACE_RESOLVER_MINIMUM_MARGIN: "0.08"
     ports:
       - "8000:8000"
     restart: unless-stopped

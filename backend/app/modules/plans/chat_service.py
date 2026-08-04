@@ -212,10 +212,11 @@ class TripChatService:
                             else []
                         ),
                     ),
+                    candidateReviews=explore.explorer.candidate_reviews,
                     preferenceProfile=(
                         explore.explorer.preference_snapshot.effective_profile
                     ),
-                    allowFinderSuggestions=explore.allow_finder_suggestions,
+                    allowPlaceSuggestions=explore.allow_place_suggestions,
                     expandDaysToFitSelectedPlaces=not duration_is_fixed,
                 )
             )
@@ -344,7 +345,7 @@ class TripChatService:
             )
             for day in plan.days
             for item in day.items
-            # Finder output is disposable and must not become user intent on
+            # PlaceSelector output is disposable and must not become user intent on
             # the next URL revision. Otherwise suggestions accumulate across
             # generations and consume the requested trip capacity.
             if item.place_type not in {"break", "free_time"}
@@ -527,10 +528,11 @@ class TripChatService:
                         intakeId=chat.current_intake_id,
                         userId=str(user.id),
                         selectedPlaces=selected_places,
+                        candidateReviews=updated_explorer.candidate_reviews,
                         preferenceProfile=(
                             updated_explorer.preference_snapshot.effective_profile
                         ),
-                        allowFinderSuggestions=not any(
+                        allowPlaceSuggestions=not any(
                             review.source_urls for review in reviews
                         ),
                     )

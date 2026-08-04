@@ -40,7 +40,7 @@ def _explore(destination: str, *, days: int = 2) -> ExploreIntakeResponse:
                 "missingInfoQuestions": [],
                 "preferenceSnapshot": {},
             },
-            "allowFinderSuggestions": True,
+            "allowPlaceSuggestions": True,
             "timingReport": {
                 "intakeId": f"intake-{destination}",
                 "status": "completed",
@@ -77,7 +77,7 @@ def _plan(destination: str, *, plan_id: str) -> Plan:
             "macroPlan": {
                 "title": f"{destination} plan",
                 "destination": destination,
-                "dayBriefs": [
+                "selectionDays": [
                     {
                         "day": 1,
                         "theme": "Food",

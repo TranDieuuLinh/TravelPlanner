@@ -23,8 +23,8 @@ from app.modules.planning_runs.schema import (
 from app.modules.users.model import User
 from app.shared.errors import AppError
 from app.modules.planning_runs.dependencies import get_research_tools_orchestrator
-from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
-from app.modules.plans.planner.research_tools_schema import (
+from app.modules.plans.trip_theme_planner.research_tools_orchestrator import ResearchToolsOrchestrator
+from app.modules.plans.trip_theme_planner.research_tools_schema import (
     ConstraintResearchInput,
     ConstraintResearchOutput,
     FestivalDiscoveryInput,

@@ -79,6 +79,10 @@ GENERIC_PLACE_TERMS = {
     "shopping",
     "market",
     "city",
+    "dessert",
+    "hole in the wall",
+    "hole-in-the-wall",
+    "popular",
     "university",
 }
 
@@ -153,6 +157,30 @@ DAY_NUMBER_BY_WORD = {
     "ten": 10,
 }
 
+LIST_NUMBER_BY_WORD = {
+    **DAY_NUMBER_BY_WORD,
+    "một": 1,
+    "mot": 1,
+    "hai": 2,
+    "ba": 3,
+    "bốn": 4,
+    "bon": 4,
+    "tư": 4,
+    "tu": 4,
+    "năm": 5,
+    "nam": 5,
+    "sáu": 6,
+    "sau": 6,
+    "bảy": 7,
+    "bay": 7,
+    "tám": 8,
+    "tam": 8,
+    "chín": 9,
+    "chin": 9,
+    "mười": 10,
+    "muoi": 10,
+}
+
 # A plain "went to X" often names a venue, not a new routing region. Keep that
 # weaker cue limited to well-known Vietnamese trip regions. Explicit
 # "day trip/tour to X" wording remains usable for destinations outside this set.
@@ -213,6 +241,7 @@ class UrlReelContextExtractor:
         visual_text: str = "",
         visual_places: list[str] | None = None,
         visual_observations: list[FrameVisionObservation] | None = None,
+        expected_place_count: int | None = None,
     ) -> ExtractedContext:
         metadata_text = "\n".join(part for part in [metadata.title, metadata.description] if part)
         effective_destination = (
@@ -294,6 +323,23 @@ class UrlReelContextExtractor:
                 )
                 / len(speech_observations),
             )
+        extracted_place_count = sum(
+            detail.authority != "low" for detail in place_details
+        )
+        extraction_coverage = (
+            min(1.0, extracted_place_count / expected_place_count)
+            if expected_place_count
+            else None
+        )
+        coverage_status = (
+            "sufficient"
+            if extraction_coverage is not None and extraction_coverage >= 0.7
+            else "review"
+            if extraction_coverage is not None and extraction_coverage >= 0.4
+            else "insufficient"
+            if extraction_coverage is not None
+            else "unknown"
+        )
         return ExtractedContext(
             extractedPlaces=places,
             extractedPlaceDetails=place_details,
@@ -305,6 +351,9 @@ class UrlReelContextExtractor:
                 "extracted from metadata, audio transcript, and sampled frame "
                 "vision signals"
             ],
+            expectedPlaceCount=expected_place_count,
+            extractionCoverage=extraction_coverage,
+            coverageStatus=coverage_status,
         )
 
     def _destination_stays(
@@ -460,35 +509,46 @@ class UrlReelContextExtractor:
         visual_observations: list[FrameVisionObservation] | None = None,
     ) -> list[str]:
         candidates: list[tuple[str, int]] = []
-        numbered_places = self._numbered_itinerary_places(transcript)
-        for phrase in numbered_places:
-            candidates.append((phrase, 190))
-
         metadata_place = self._metadata_place_name(metadata)
         authoritative_places = self._authoritative_metadata_places(
             metadata,
             metadata_text,
             destination,
         )
+        numbered_places = (
+            self._numbered_itinerary_places(transcript)
+            if speech_observations is None and not authoritative_places
+            else []
+        )
+        for phrase in numbered_places:
+            candidates.append((phrase, 160))
         if (
             not numbered_places
             and metadata_place
             and authoritative_places[:1] == [metadata_place]
         ):
-            candidates.append((metadata_place, 200))
+            candidates.append((metadata_place, 240))
         metadata_phrases = [
             phrase
             for phrase in authoritative_places
             if phrase != metadata_place
         ]
         for phrase in metadata_phrases:
-            candidates.append((phrase, 180))
+            candidates.append((phrase, 220))
 
         for observation in sorted(
             speech_observations or [],
             key=lambda item: item.order,
         ):
-            cleaned = self._normalize_candidate(observation.place_name)
+            if observation.entity_type not in {"venue", "sub_place"}:
+                continue
+            candidate_name = (
+                observation.parent_place
+                if observation.entity_type == "sub_place"
+                and observation.parent_place
+                else observation.place_name
+            )
+            cleaned = self._normalize_candidate(candidate_name)
             if (
                 cleaned
                 and cleaned.lower() not in GENERIC_PLACE_TERMS
@@ -505,7 +565,15 @@ class UrlReelContextExtractor:
         )
         observed_visual_names: set[str] = set()
         for observation in ordered_visual_observations:
-            cleaned = self._normalize_candidate(observation.place_name)
+            if observation.entity_type not in {"venue", "sub_place"}:
+                continue
+            candidate_name = (
+                observation.parent_place
+                if observation.entity_type == "sub_place"
+                and observation.parent_place
+                else observation.place_name
+            )
+            cleaned = self._normalize_candidate(candidate_name)
             if (
                 cleaned
                 and cleaned.lower() not in GENERIC_PLACE_TERMS
@@ -572,10 +640,15 @@ class UrlReelContextExtractor:
             return []
         text = re.sub(r"\[(?:music|singing)\]|>>", " ", transcript, flags=re.IGNORECASE)
         text = re.sub(r"\s+", " ", text).strip()
-        number_word = r"(?:one|two|three|four|five|six|seven|eight|nine|ten|[1-9]|10)"
+        number_word = (
+            r"(?:one|two|three|four|five|six|seven|eight|nine|ten|"
+            r"một|mot|hai|ba|bốn|bon|tư|tu|năm|nam|sáu|sau|bảy|bay|"
+            r"tám|tam|chín|chin|mười|muoi|10|[1-9])"
+        )
         matches = list(
             re.finditer(
-                rf"\b(?:starting\s+at\s+)?number\s+(?P<number>{number_word})\b",
+                rf"\b(?P<prefix>(?:starting\s+at\s+)?number|no\.?|số|so)\s+"
+                rf"(?P<number>{number_word})\b",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -586,12 +659,26 @@ class UrlReelContextExtractor:
         places: list[str] = []
         seen_numbers: set[str] = set()
         for index, match in enumerate(matches):
-            number_key = match.group("number").casefold()
+            raw_number = match.group("number").casefold()
+            number_key = str(
+                int(raw_number)
+                if raw_number.isdigit()
+                else LIST_NUMBER_BY_WORD.get(raw_number, raw_number)
+            )
             if number_key in seen_numbers:
                 continue
             seen_numbers.add(number_key)
             end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
             heading = text[match.end() : min(end, match.end() + 360)].strip(" ,:-")
+            if match.group("prefix").casefold() in {"số", "so"}:
+                heading = re.split(
+                    r"\s+(?:xếp|xế|đứng|tọa lạc|toạ lạc|tiếp theo|"
+                    r"đó chính|chính là|là một|là địa điểm)\b",
+                    heading,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip(" ,:-")
+                heading = self._collapse_repeated_heading(heading)
             visit_match = re.search(
                 r"\bwhich\s+is\s+to\s+visit\s+(?P<place>[^.]+)",
                 heading,
@@ -623,6 +710,16 @@ class UrlReelContextExtractor:
                 if cleaned and cleaned.casefold() not in GENERIC_PLACE_TERMS:
                     places.append(cleaned)
         return places
+
+    def _collapse_repeated_heading(self, value: str) -> str:
+        words = value.split()
+        if len(words) >= 4 and len(words) % 2 == 0:
+            middle = len(words) // 2
+            if self._dedupe_key(" ".join(words[:middle])) == self._dedupe_key(
+                " ".join(words[middle:])
+            ):
+                return " ".join(words[:middle])
+        return value
 
     def _split_numbered_place_heading(self, heading: str) -> list[str]:
         slash_parts = [
@@ -698,6 +795,18 @@ class UrlReelContextExtractor:
                 cleaned = self._normalize_candidate(part)
                 if cleaned and cleaned.casefold() not in GENERIC_PLACE_TERMS:
                     phrases.append(cleaned)
+        for name, _address, _evidence, _aliases in self._metadata_pinned_place_entries(
+            metadata_text
+        ):
+            phrases.extend(self._split_pinned_place_phrase(name))
+        return phrases
+
+    def _metadata_pinned_place_entries(
+        self,
+        metadata_text: str,
+    ) -> list[tuple[str, str | None, str, list[str]]]:
+        """Parse reel caption pins into a venue identity and address anchor."""
+        entries: list[tuple[str, str | None, str, list[str]]] = []
         for match in re.finditer(
             r"(?:📍|📌|🚂|🧑‍🍳)\s*([^📍📌🚂🧑#\n]+)",
             metadata_text,
@@ -709,9 +818,91 @@ class UrlReelContextExtractor:
                 flags=re.IGNORECASE,
             )[0]
             cleaned = self._normalize_candidate(phrase)
-            if cleaned:
-                phrases.extend(self._split_pinned_place_phrase(cleaned))
-        return phrases
+            if not cleaned:
+                continue
+            name, address = self._split_caption_place_and_address(cleaned)
+            if name:
+                canonical_name, aliases = self._split_repeated_venue_aliases(name)
+                entries.append((canonical_name, address, cleaned, aliases))
+        return entries
+
+    def _split_repeated_venue_aliases(
+        self,
+        value: str,
+    ) -> tuple[str, list[str]]:
+        """Split captions that concatenate two names for one addressed venue."""
+        words = value.split()
+        if len(words) < 5:
+            return value, []
+        keys = [self._dedupe_key(word) for word in words]
+        split_index: int | None = next(
+            (
+                index
+                for index in range(2, len(words) - 1)
+                if keys[index : index + 2] == keys[:2]
+            ),
+            None,
+        )
+        if split_index is None and keys[0] in {
+            "banh",
+            "bun",
+            "cafe",
+            "che",
+            "pho",
+            "sinh",
+            "xoi",
+        }:
+            split_index = next(
+                (
+                    index
+                    for index in range(2, len(words) - 1)
+                    if keys[index] == keys[0]
+                ),
+                None,
+            )
+        if split_index is None:
+            return value, []
+
+        variants = [
+            self._normalize_candidate(" ".join(words[:split_index])),
+            self._normalize_candidate(" ".join(words[split_index:])),
+        ]
+        if any(len(variant.split()) < 2 for variant in variants):
+            return value, []
+        canonical = min(
+            variants,
+            key=lambda variant: (len(variant.split()), len(variant)),
+        )
+        aliases = [
+            variant
+            for variant in variants
+            if self._dedupe_key(variant) != self._dedupe_key(canonical)
+        ]
+        return canonical, aliases
+
+    def _split_caption_place_and_address(
+        self,
+        phrase: str,
+    ) -> tuple[str, str | None]:
+        """Split common ``venue - street address`` reel caption entries."""
+        parts = re.split(r"\s+[\-–—]\s+", phrase, maxsplit=1)
+        if len(parts) != 2:
+            return phrase, None
+        raw_name, raw_address = (part.strip(" .,;:-") for part in parts)
+        address = self._normalize_address(raw_address)
+        if (
+            not raw_name
+            or not address
+            or not self._looks_like_street_address(address)
+        ):
+            return phrase, None
+        return self._normalize_candidate(raw_name), address
+
+    def _looks_like_street_address(self, value: str) -> bool:
+        return bool(
+            re.match(r"^\d{1,5}[a-z]?\b", value, flags=re.IGNORECASE)
+            and re.search(r"[A-Za-zÀ-ỹĐđ]", value)
+        )
 
     def _metadata_numbered_items(self, metadata_text: str) -> list[str]:
         """Return the most complete ``1. place 2. place`` caption list."""
@@ -982,8 +1173,14 @@ class UrlReelContextExtractor:
             for observation in visual_observations or []
         }
         speech_observations_by_place = {
-            self._dedupe_key(observation.place_name): observation
+            self._dedupe_key(
+                observation.parent_place
+                if observation.entity_type == "sub_place"
+                and observation.parent_place
+                else observation.place_name
+            ): observation
             for observation in speech_observations or []
+            if observation.entity_type in {"venue", "sub_place"}
         }
         transcript_days = (
             [None for _place in places]
@@ -1036,6 +1233,9 @@ class UrlReelContextExtractor:
             metadata_text,
             destination,
         )
+        pinned_entries = self._metadata_pinned_place_entries(metadata_text)
+        has_authoritative_caption_list = len(pinned_entries) >= 2
+        numbered_transcript_places = self._numbered_itinerary_places(transcript)
         for order, place in enumerate(places, start=1):
             is_metadata_place = bool(
                 metadata_place
@@ -1050,6 +1250,10 @@ class UrlReelContextExtractor:
                 speech_observations_by_place,
             )
             address = address_hints.get(self._dedupe_key(place))
+            if speech_observation is not None and speech_observation.address_hint:
+                address = speech_observation.address_hint
+            elif observation is not None and observation.address_hint:
+                address = observation.address_hint
             if not address:
                 for source_observation in (
                     observation,
@@ -1089,7 +1293,15 @@ class UrlReelContextExtractor:
                 metadata_text=metadata_text,
                 transcript="",
             )
-            metadata_evidence = metadata_place if is_metadata_place else ""
+            is_authoritative_place = any(
+                self._same_place_name(place, authoritative)
+                for authoritative in authoritative_places
+            )
+            metadata_evidence = (
+                self._metadata_evidence_for_place(place, metadata_text)
+                if is_authoritative_place
+                else ""
+            )
             evidence = (
                 metadata_evidence
                 or visual_evidence
@@ -1106,6 +1318,21 @@ class UrlReelContextExtractor:
                 )
                 if value
             }
+            if speech_observation is not None:
+                evidence_key = speech_observation.evidence_source
+                if evidence_key == "metadata":
+                    source_evidence.pop("stt", None)
+                    source_evidence["metadata"] = speech_observation.evidence
+                elif evidence_key == "caption":
+                    source_evidence.pop("stt", None)
+                    source_evidence["caption"] = speech_observation.evidence
+            if (
+                has_authoritative_caption_list
+                and set(source_evidence) == {"stt"}
+                and speech_observation is not None
+                and speech_observation.authority != "high"
+            ):
+                continue
             if self._is_unsupported_ocr_logo(place, source_evidence):
                 continue
             local_evidence = " ".join(source_evidence.values()) or place
@@ -1190,6 +1417,15 @@ class UrlReelContextExtractor:
                 if speech_observation is not None
                 else None
             )
+            concise_fallback_name = (
+                len(place) <= 80 and len(place.split()) <= 10
+            )
+            metadata_aliases = [
+                alias
+                for pinned_name, _address, _evidence, aliases in pinned_entries
+                if self._same_place_name(place, pinned_name)
+                for alias in aliases
+            ]
             details.append(
                 ExtractedPlace(
                     name=place,
@@ -1217,6 +1453,47 @@ class UrlReelContextExtractor:
                     sourceTimeHint=source_time_hint,
                     sourceActivity=source_activity,
                     sourceDurationMinutes=source_duration_minutes,
+                    entityType=(
+                        speech_observation.entity_type
+                        if speech_observation is not None
+                        and speech_observation.entity_type in {"venue", "sub_place"}
+                        else "venue"
+                    ),
+                    aliases=(
+                        list(
+                            dict.fromkeys(
+                                [
+                                    *(
+                                        speech_observation.aliases
+                                        if speech_observation is not None
+                                        else []
+                                    ),
+                                    *metadata_aliases,
+                                ]
+                            )
+                        )
+                    ),
+                    parentPlace=(
+                        speech_observation.parent_place
+                        if speech_observation is not None
+                        else None
+                    ),
+                    authority=(
+                        speech_observation.authority
+                        if speech_observation is not None
+                        else "high"
+                        if authoritative_order is not None
+                        else "medium"
+                        if concise_fallback_name
+                        and (
+                            observation is not None
+                            or any(
+                                self._same_place_name(place, numbered)
+                                for numbered in numbered_transcript_places
+                            )
+                        )
+                        else "low"
+                    ),
                 )
             )
         return sorted(
@@ -1480,6 +1757,12 @@ class UrlReelContextExtractor:
             for place in metadata_places:
                 hints[self._dedupe_key(place)] = direct_address
 
+        for name, address, _evidence, _aliases in self._metadata_pinned_place_entries(
+            metadata_text
+        ):
+            if address:
+                hints[self._dedupe_key(name)] = address
+
         for sentence in self._sentences(metadata_text, transcript):
             address = self._address_from_sentence(sentence)
             if not address:
@@ -1494,6 +1777,18 @@ class UrlReelContextExtractor:
                 if key and key not in hints:
                     hints[key] = address
         return hints
+
+    def _metadata_evidence_for_place(
+        self,
+        place: str,
+        metadata_text: str,
+    ) -> str:
+        for name, _address, evidence, _aliases in self._metadata_pinned_place_entries(
+            metadata_text
+        ):
+            if self._same_place_name(place, name):
+                return evidence
+        return place
 
     def _metadata_address(self, metadata: UrlMetadata) -> str | None:
         for key in (
@@ -1623,8 +1918,33 @@ class UrlReelContextExtractor:
         destination: str | None,
     ) -> list[str]:
         ordered: list[str] = []
+        chapter_places: list[str] = []
+        chapters = metadata.raw.get("chapters") if metadata is not None else None
+        if isinstance(chapters, list):
+            for chapter in chapters:
+                if not isinstance(chapter, dict):
+                    continue
+                title = chapter.get("title")
+                if not isinstance(title, str):
+                    continue
+                cleaned = re.sub(
+                    r"^\s*(?:#?\d{1,2}[.)-]?|(?:number|no\.?|số|thứ)\s+"
+                    r"(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|"
+                    r"một|hai|ba|bốn|tư|năm|sáu|bảy|tám|chín|mười))\s*[:.)-]?\s*",
+                    "",
+                    title,
+                    flags=re.IGNORECASE,
+                ).strip()
+                if cleaned and not re.search(
+                    r"\b(?:intro(?:duction)?|outro|conclusion|subscribe|"
+                    r"travel tips?|summary)\b",
+                    cleaned,
+                    flags=re.IGNORECASE,
+                ):
+                    chapter_places.append(cleaned)
         for place in (
             self._metadata_place_name(metadata),
+            *chapter_places,
             *self._metadata_itinerary_phrases(
                 metadata_text,
                 destination=destination,

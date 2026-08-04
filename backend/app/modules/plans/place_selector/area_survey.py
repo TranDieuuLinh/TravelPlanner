@@ -7,13 +7,13 @@ from math import asin, cos, radians, sin, sqrt
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.modules.plans.finder.place_tool import (
-        FinderPlace,
-        FinderPlaceTool,
+    from app.modules.plans.place_selector.place_tool import (
+        SelectablePlace,
+        PlaceSelectionTool,
     )
 
 
-from app.modules.plans.planner.opening_hours_parser import (  # noqa: E402
+from app.modules.plans.trip_theme_planner.opening_hours_parser import (  # noqa: E402
     extract_time_intervals,
     is_24_hours,
 )
@@ -66,8 +66,8 @@ class AreaProfile:
 class AreaSurveyResult:
     region_key: str
     profile: AreaProfile
-    top_places_by_rating: tuple[FinderPlace, ...]
-    top_places_by_reviews: tuple[FinderPlace, ...]
+    top_places_by_rating: tuple[SelectablePlace, ...]
+    top_places_by_reviews: tuple[SelectablePlace, ...]
     survey_method: str = "catalog"
 
 
@@ -89,7 +89,7 @@ class AreaSurveyService:
 
     def __init__(
         self,
-        place_tool: FinderPlaceTool,
+        place_tool: PlaceSelectionTool,
         *,
         max_survey_places: int = 500,
     ) -> None:
@@ -115,7 +115,7 @@ class AreaSurveyService:
         rankable = tuple(p for p in places if p.place_id is not None)
 
         # Place thiếu rating rơi về cuối list (top đầu chỉ chứa place có rating thật).
-        def rating_sort_key(p: FinderPlace) -> tuple:
+        def rating_sort_key(p: SelectablePlace) -> tuple:
             rating = self._get_rating(p)
             rating_rank = -rating if rating is not None else float("inf")
             review_rank = -self._get_review_count(p)
@@ -123,7 +123,7 @@ class AreaSurveyService:
 
         # Sort theo review_count, rating làm tie-breaker.
         # Place thiếu rating được xếp SAU place có rating (ưu tiên thông tin thật).
-        def review_sort_key(p: FinderPlace) -> tuple:
+        def review_sort_key(p: SelectablePlace) -> tuple:
             review_rank = -self._get_review_count(p)
             rating = self._get_rating(p)
             rating_rank = -rating if rating is not None else float("inf")
@@ -147,9 +147,9 @@ class AreaSurveyService:
     def _compute_profile(
         self,
         region_key: str,
-        places: list[FinderPlace],
+        places: list[SelectablePlace],
     ) -> AreaProfile:
-        """Compute AreaProfile từ list of FinderPlace."""
+        """Compute AreaProfile từ list of SelectablePlace."""
         place_count = len(places)
 
         # 1. Distribution - phân bố theo category
@@ -239,9 +239,9 @@ class AreaSurveyService:
             insights=insights,
         )
 
-    def _compute_distribution(self, places: list[FinderPlace]) -> dict[str, int]:
+    def _compute_distribution(self, places: list[SelectablePlace]) -> dict[str, int]:
         """Phân bố places theo semantic category."""
-        from app.modules.plans.finder.place_tool import place_category
+        from app.modules.plans.place_selector.place_tool import place_category
 
         distribution: dict[str, int] = {}
         for place in places:
@@ -318,7 +318,7 @@ class AreaSurveyService:
         else:
             return "low"
 
-    def _compute_open_late_ratio(self, places: list[FinderPlace]) -> float:
+    def _compute_open_late_ratio(self, places: list[SelectablePlace]) -> float:
         """Tính tỷ lệ places mở sau 21:00."""
         late_opening_count = 0
         has_hours_count = 0
@@ -350,7 +350,7 @@ class AreaSurveyService:
 
     def _compute_typical_hours(
         self,
-        places: list[FinderPlace],
+        places: list[SelectablePlace],
         open_late_ratio: float,
     ) -> str:
         """Xác định khu vực tập trung vào khung giờ nào."""
@@ -388,19 +388,19 @@ class AreaSurveyService:
 
         return 0 <= start_minutes <= 8 * 60
 
-    def _get_rating(self, place: FinderPlace) -> float | None:
+    def _get_rating(self, place: SelectablePlace) -> float | None:
         """Return the place rating from the dedicated field if available."""
 
         if place.rating is not None:
             return float(place.rating)
         return None
 
-    def _get_review_count(self, place: FinderPlace) -> int:
+    def _get_review_count(self, place: SelectablePlace) -> int:
         """Return the place review count from the dedicated field."""
 
         return int(place.review_count or 0)
 
-    def _compute_price_distribution(self, places: list[FinderPlace]) -> dict[str, int]:
+    def _compute_price_distribution(self, places: list[SelectablePlace]) -> dict[str, int]:
         """Phân bố theo mức giá."""
         distribution: dict[str, int] = {"free": 0, "budget": 0, "mid_range": 0, "premium": 0}
 

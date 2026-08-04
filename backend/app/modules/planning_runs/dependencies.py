@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.planning_runs.repository import PlanningRunRepository
-from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
-from app.modules.plans.planner.research_tools_orchestrator import ResearchToolsOrchestrator
+from app.modules.plans.trip_theme_planner.place_repository_adapter import PlaceRepositoryAdapter
+from app.modules.plans.trip_theme_planner.research_tools_orchestrator import ResearchToolsOrchestrator
 
 
 def get_planning_run_repository(

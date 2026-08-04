@@ -29,6 +29,9 @@ from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.image_ocr import ImageOcrService
+from app.modules.plans.explorer.tools.url_reels.caption_structurer import (
+    GeminiCaptionStructurer,
+)
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
 from app.modules.plans.explorer.tools.url_reels.transcript_cache import (
     SqlAlchemyYouTubeTranscriptCache,
@@ -40,15 +43,15 @@ from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
-from app.modules.plans.planner.place_repository_adapter import PlaceRepositoryAdapter
+from app.modules.plans.trip_theme_planner.place_repository_adapter import PlaceRepositoryAdapter
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
-from app.modules.plans.planner.research_tool import (
+from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
-from app.modules.plans.planner.research_tools_orchestrator import (
+from app.modules.plans.trip_theme_planner.research_tools_orchestrator import (
     ResearchToolsOrchestrator,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
@@ -147,25 +150,24 @@ def get_plan_service(
         ),
         worker=transcript_worker,
     )
-    planner = TripThemePlannerService(
+    trip_theme_planner = TripThemePlannerService(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
         research_tools=research_tools,
     )
-    finder = PlaceSelectorService(
-        RepositoryFinderPlaceTool(place_repository),
+    place_selector = PlaceSelectorService(
+        RepositoryPlaceSelectionTool(place_repository),
         route_optimizer=_get_itinerary_optimizer(),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
-        planner=planner,
-        finder=finder,
+        trip_theme_planner=trip_theme_planner,
+        place_selector=place_selector,
         planning_runs=planning_runs,
     )
     backup_workflow = BackupPlanWorkflow(
-        planner=planner,
-        finder=finder,
+        place_selector=place_selector,
         validator=BackupValidator(),
     )
     return PlanService(
@@ -175,7 +177,8 @@ def get_plan_service(
         backup_workflow=backup_workflow,
         image_ocr=ImageOcrService(get_ocr_llm_client()),
         url_reels=UrlReelExtractionService(
-            youtube_transcript=youtube_transcript
+            youtube_transcript=youtube_transcript,
+            caption_structurer=GeminiCaptionStructurer(),
         ),
         place_resolver=_get_place_resolver(place_repository),
         place_alias_enricher=LLMPlaceAliasEnricher(llm_client),
@@ -213,7 +216,16 @@ def _get_place_resolver(
             )
         if place_repository is not None:
             return FallbackPlaceResolver(
-                DatabasePlaceResolver(place_repository),
+                DatabasePlaceResolver(
+                    place_repository,
+                    top_k=settings.database_place_resolver_top_k,
+                    minimum_score=(
+                        settings.database_place_resolver_minimum_score
+                    ),
+                    minimum_margin=(
+                        settings.database_place_resolver_minimum_margin
+                    ),
+                ),
                 external_resolver,
                 verified_alias_repository=place_repository,
             )

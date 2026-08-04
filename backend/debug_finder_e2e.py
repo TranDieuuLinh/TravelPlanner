@@ -17,15 +17,15 @@ backend_path = Path(__file__).parent
 sys.path.insert(0, str(backend_path))
 
 from app.modules.plans.domain.entities import (
-    DayBrief,
-    MacroPlan,
+    PlaceSelectionDay,
+    PlaceSelectionBlueprint,
     TravelIntent,
     UserStatus,
 )
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
-from app.modules.plans.finder.finder_service import FinderService
-from app.modules.plans.finder.place_tool import RepositoryFinderPlaceTool
+from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.places.model import Place
 
 
@@ -57,7 +57,7 @@ class InMemoryFinderRepo:
         return list(self._by_region.get(region_key, []))[:limit]
 
 
-class LoggingTool(RepositoryFinderPlaceTool):
+class LoggingTool(RepositoryPlaceSelectionTool):
     """Wrap tool to record search calls + their bbox filtering outcome."""
 
     def __init__(self, repo):
@@ -135,7 +135,7 @@ def _print_day(day) -> None:
 
 def _run_case(
     case_name: str,
-    macro_plan: MacroPlan,
+    macro_plan: PlaceSelectionBlueprint,
     selected_places: list[SelectedPlaceContext],
     places: list[Place],
     intent: TravelIntent,
@@ -148,7 +148,7 @@ def _run_case(
 
     repo = InMemoryFinderRepo(places)
     tool = LoggingTool(repo)
-    finder = FinderService(tool)
+    finder = PlaceSelectorService(tool)
     user_status = UserStatus()
 
     result = finder.fill_main_plan(
@@ -201,12 +201,12 @@ def case_fnd_002():
             duration=120, tags=["market", "food"],
         ),
     ]
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1,
                 theme="Source itinerary",
                 targetArea="Hoàn Kiếm",
@@ -291,12 +291,12 @@ def case_user_problem():
             tags=["culture", "art"],
         ),
     ]
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1,
                 theme="Di sản văn hóa và ẩm thực phố cổ",
                 targetArea="Hoàn Kiếm",
@@ -304,7 +304,7 @@ def case_user_problem():
                 focusTags=["culture", "food"],
                 allocatedSelectedPlaceRefs=["p_nom_bo_kho", "p_phuong_anh"],
             ),
-            DayBrief(
+            PlaceSelectionDay(
                 day=2,
                 theme="Nhịp sống hiện đại và thư giãn bên hồ",
                 targetArea="Hoàn Kiếm",
@@ -381,12 +381,12 @@ def case_bbox_filter():
             tags=["culture"],
         ),
     ]
-    macro_plan = MacroPlan(
+    macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
         destination="Hà Nội",
         regionKey="vn,ha-noi",
         dayBriefs=[
-            DayBrief(
+            PlaceSelectionDay(
                 day=1, theme="BBox test",
                 targetArea="Hoàn Kiếm",
                 targetRegionKey="vn,ha-noi,hoan-kiem",

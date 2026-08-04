@@ -32,6 +32,7 @@ _DURATION_LABELS = {
     "frameVision": "Frame vision / OCR",
     "extractSignalsWall": "STT + vision song song (wall)",
     "contextExtraction": "Chuẩn hóa candidate",
+    "captionStructuring": "Cấu trúc caption đa ngôn ngữ",
 }
 _STAGE_ORDER = {
     "imageExtractionWall": 0,
@@ -117,6 +118,7 @@ class ExplorerTimingTrace:
                     result.timings.get("sampledFrames", 0.0)
                 ),
                 speechStatus=result.speech_to_text.status,
+                speechSource=result.speech_to_text.source,
                 visionStatus=result.frame_vision.status,
                 sttChunkCount=result.speech_to_text.chunk_count,
                 sttAudioDurationSeconds=(
@@ -129,8 +131,19 @@ class ExplorerTimingTrace:
                     result.speech_to_text.chunk_retry_count
                 ),
                 extractedPlaceCount=len(
-                    result.extracted_context.extracted_place_details
+                    [
+                        detail
+                        for detail in result.extracted_context.extracted_place_details
+                        if detail.authority != "low"
+                    ]
                 ),
+                expectedPlaceCount=(
+                    result.extracted_context.expected_place_count
+                ),
+                extractionCoverage=(
+                    result.extracted_context.extraction_coverage
+                ),
+                coverageStatus=result.extracted_context.coverage_status,
             )
             for index, result in enumerate(results, start=1)
         ]
