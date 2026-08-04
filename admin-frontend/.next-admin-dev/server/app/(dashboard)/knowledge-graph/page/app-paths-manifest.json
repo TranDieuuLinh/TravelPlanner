@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/knowledge-graph/page": "app/(dashboard)/knowledge-graph/page.js"
+}

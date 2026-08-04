@@ -1,0 +1,7 @@
+{
+  "/(dashboard)/knowledge-graph/page": "app/(dashboard)/knowledge-graph/page.js",
+  "/(dashboard)/runs/page": "app/(dashboard)/runs/page.js",
+  "/api/knowledge-graph/route": "app/api/knowledge-graph/route.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/page": "app/page.js"
+}

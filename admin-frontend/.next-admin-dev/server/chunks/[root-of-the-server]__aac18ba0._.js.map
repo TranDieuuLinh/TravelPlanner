@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 3, "column": 0}, "map": {"version":3,"sources":[],"names":[],"mappings":"","debugId":null}},
+    {"offset": {"line": 55, "column": 0}, "map": {"version":3,"sources":["file:///K:/VSF/VSF_TravelPlanner/admin-frontend/app/icon--route-entry.js"],"sourcesContent":["import { NextResponse } from 'next/server'\n\nconst contentType = \"image/svg+xml\"\nconst cacheControl = \"no-cache, no-store\"\nconst buffer = Buffer.from(\"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+DQogIDxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcng9IjE0IiBmaWxsPSIjMDcxMDBmIi8+DQogIDxwYXRoIGQ9Ik0xNyAxOGgzMHY3SDI1djVoMTh2N0gyNXY5aC04VjE4WiIgZmlsbD0iI2I4ZjE1YiIvPg0KICA8Y2lyY2xlIGN4PSI0NyIgY3k9IjQ2IiByPSI1IiBmaWxsPSIjNjdlOGJkIi8+DQo8L3N2Zz4NCg==\", 'base64')\n\nexport function GET() {\n    return new NextResponse(buffer, {\n        headers: {\n            'Content-Type': contentType,\n            'Cache-Control': cacheControl,\n        },\n    })\n}\n\nexport const dynamic = 'force-static'\n"],"names":[],"mappings":";;;;;;AAAA;;AAEA,MAAM,cAAc;AACpB,MAAM,eAAe;AACrB,MAAM,SAAS,OAAO,IAAI,CAAC,wUAAwU;AAE5V,SAAS;IACZ,OAAO,IAAI,gJAAY,CAAC,QAAQ;QAC5B,SAAS;YACL,gBAAgB;YAChB,iBAAiB;QACrB;IACJ;AACJ;AAEO,MAAM,UAAU","debugId":null}}]
+}

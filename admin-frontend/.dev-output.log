@@ -1,0 +1,11 @@
+
+> vsf-planning-admin@0.1.0 dev
+> next dev --port 3001
+
+   ▲ Next.js 15.5.22
+   - Local:        http://localhost:3001
+   - Network:      http://172.25.0.1:3001
+
+ ✓ Starting...
+ ✓ Ready in 3s
+[?25h
