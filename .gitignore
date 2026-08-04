@@ -22,3 +22,26 @@ backend/.runlogs/
 
 auto-crawl/
 trung-temp/
+
+database/backups/
+*.dump
+
+backend/var/knowledge-graph-imports/
+backend/var/knowledge-graph-imports.json
+knowledge-graph-real-v2/
+
+# Sub-projects
+crawl_knowledge_travel/data/raw/
+crawl_knowledge_travel/data/normalized/
+
+read_data_parquet/*.parquet
+read_data_parquet/*.json
+read_data_parquet/*.csv
+read_data_parquet/csv_relational/
+
+routing-data/valhalla/*
+!routing-data/valhalla/.gitkeep
+routing-data/opentripplanner/*
+!routing-data/opentripplanner/.gitkeep
+routing-data/osm-source/*
+!routing-data/osm-source/.gitkeep
