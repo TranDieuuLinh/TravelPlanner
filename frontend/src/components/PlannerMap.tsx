@@ -272,6 +272,29 @@ function hasCoordinates(
   );
 }
 
+function browserSupportsWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2", {
+      alpha: true,
+      antialias: true,
+      failIfMajorPerformanceCaveat: false,
+      powerPreference: "default"
+    } as WebGLContextAttributes);
+    if (gl2) return true;
+
+    const gl = canvas.getContext("webgl", {
+      alpha: true,
+      antialias: true,
+      failIfMajorPerformanceCaveat: false,
+      powerPreference: "default"
+    } as WebGLContextAttributes);
+    return Boolean(gl);
+  } catch {
+    return false;
+  }
+}
+
 function applyCleanPlannerStyle(map: MapLibreMap) {
   const hiddenPoiPattern =
     /poi|amenity|shop|restaurant|cafe|bar|hotel|lodging|tourism|attraction|hospital|school|college|airport|aeroway|transit|railway|bus|ferry/i;
@@ -479,22 +502,53 @@ export function PlannerMap({
   useEffect(() => {
     let disposed = false;
     let styleLoaded = false;
+    let initAttempted = false;
 
     async function initializeMap() {
-      if (!containerRef.current || mapRef.current) return;
+      if (!containerRef.current || mapRef.current || initAttempted) return;
+      initAttempted = true;
 
-      const maplibre = await import("maplibre-gl");
+      let maplibre: typeof import("maplibre-gl") | null = null;
+
+      try {
+        maplibre = await import("maplibre-gl");
+      } catch {
+        if (!disposed) {
+          setMapError(
+            "Không thể tải thư viện bản đồ. Vui lòng tải lại trang."
+          );
+        }
+        return;
+      }
+
       if (disposed || !containerRef.current) return;
 
+      let map: MapLibreMap;
+      try {
+        map = new maplibre.Map({
+          attributionControl: false,
+          center: VIETNAM_CENTER,
+          container: containerRef.current,
+          maxZoom: 19,
+          style: MAP_STYLE_URL,
+          zoom: 4.7
+        });
+      } catch {
+        if (!disposed) {
+          setMapError(
+            "Không thể khởi tạo bản đồ trên trình duyệt này.\n\n" +
+              "Trên Linux, hãy thử:\n" +
+              "1. Mở chrome://settings/system và bật \"Use hardware acceleration\"\n" +
+              "2. Thử flag: chrome://flags/#enable-gpu-rasterization\n" +
+              "3. Hoặc dùng Chrome thay vì Chromium nếu đang dùng distro package\n\n" +
+              "Bạn vẫn có thể xem lịch trình và địa điểm trong danh sách."
+          );
+        }
+        maplibreRef.current = null;
+        return;
+      }
+
       maplibreRef.current = maplibre;
-      const map = new maplibre.Map({
-        attributionControl: false,
-        center: VIETNAM_CENTER,
-        container: containerRef.current,
-        maxZoom: 19,
-        style: MAP_STYLE_URL,
-        zoom: 4.7
-      });
 
       map.addControl(
         new maplibre.NavigationControl({ showCompass: false }),

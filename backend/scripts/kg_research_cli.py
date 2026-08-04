@@ -5,6 +5,7 @@ Usage:
     python scripts/kg_research_cli.py stats
     python scripts/kg_research_cli.py resolve-scope --destination "Hà Nội" --pretty
     python scripts/kg_research_cli.py evaluate-fit --entity-id "..." --destination "Hà Nội" --days 3 --pretty
+    python scripts/kg_research_cli.py discover-experiences --destination "Hà Nội" --pretty
 """
 
 from __future__ import annotations
@@ -27,6 +28,13 @@ from app.modules.knowledge_graph.research import (
     ScopeResolutionRepository,
     TransportMode,
     kg_evaluate_experience_fit,
+    ExperienceDiscoveryInput,
+    GraphEvidenceBundle,
+    GraphSnapshot,
+    ScopeResolveInput,
+    ScopeResolveOutput,
+    ScopeResolutionRepository,
+    kg_discover_experiences,
     kg_resolve_scope,
 )
 
@@ -138,6 +146,21 @@ def cmd_evaluate_fit(
     print(f"# Evaluate Fit: {target}", file=sys.stderr)
     print(f"# Destination: {destination} | Days: {days} | Party: {party_size}", file=sys.stderr)
     print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
+def cmd_discover_experiences(
+    destination: str | None,
+    root_area_id: str | None,
+    interests: list[str] | None,
+    selected_place_ids: list[str] | None,
+    limit: int,
+    include_inferred: bool,
+    pretty: bool,
+) -> int:
+    """Discover special experiences for a destination."""
+    dest_arg = destination or root_area_id or "unknown"
+    print(f"# Discover Experiences: {dest_arg}", file=sys.stderr)
+    print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
+    if interests:
+        print(f"# Interests: {', '.join(interests)}", file=sys.stderr)
     print(file=sys.stderr)
 
     session = SessionLocal()
@@ -150,6 +173,11 @@ def cmd_evaluate_fit(
                 overallStatus="unknown",
                 checks=[],
                 warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
+            output = GraphEvidenceBundle(
+                claims=[],
+                unknowns=[],
+                warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
+                graphSnapshot=GraphSnapshot(timestamp=""),
             )
             print(output.model_dump_json(by_alias=True, indent=2 if pretty else None), file=sys.stdout)
             print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
@@ -197,6 +225,16 @@ def cmd_evaluate_fit(
         )
 
         result = kg_evaluate_experience_fit(repo, input_data)
+        input_data = ExperienceDiscoveryInput(
+            destination=destination,
+            rootAreaId=root_area_id,
+            interests=interests or [],
+            selectedPlaceIds=selected_place_ids,
+            limit=limit,
+            includeInferred=include_inferred,
+        )
+
+        result = kg_discover_experiences(repo, input_data)
 
         indent = 2 if pretty else None
         print(result.model_dump_json(by_alias=True, indent=indent), file=sys.stdout)
@@ -204,6 +242,10 @@ def cmd_evaluate_fit(
         for warning in result.warnings:
             if "KNOWLEDGE_GRAPH_EMPTY" in warning:
                 print(warning.split(":")[0], file=sys.stderr)
+                print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
+                return 1
+            if "DESTINATION_NOT_FOUND" in warning:
+                print("DESTINATION_NOT_FOUND", file=sys.stderr)
                 return 1
 
         return 0
@@ -341,6 +383,43 @@ def main() -> int:
         help="Additional user-defined constraints",
     )
     fit_parser.add_argument(
+    discover_parser = subparsers.add_parser(
+        "discover-experiences",
+        help="Discover special experiences in a destination",
+    )
+    discover_parser.add_argument(
+        "--destination",
+        help="Destination name to resolve",
+    )
+    discover_parser.add_argument(
+        "--root-area-id",
+        help="Root Area entity ID (alternative to destination)",
+    )
+    discover_parser.add_argument(
+        "--interest",
+        action="append",
+        dest="interests",
+        help="Interest tag to filter by (can be specified multiple times)",
+    )
+    discover_parser.add_argument(
+        "--place-ids",
+        nargs="+",
+        dest="place_ids",
+        help="Optional Place entity IDs to filter by",
+    )
+    discover_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of claims to return (default: 20, max: 50)",
+    )
+    discover_parser.add_argument(
+        "--no-inferred",
+        action="store_false",
+        dest="include_inferred",
+        help="Exclude inferred claims (default: include inferred)",
+    )
+    discover_parser.add_argument(
         "--pretty",
         action="store_true",
         help="Pretty-print JSON output",
@@ -374,6 +453,14 @@ def main() -> int:
             avoided_transport=args.avoided_transport,
             accessibility=args.accessibility,
             constraints=args.constraints,
+    elif args.command == "discover-experiences":
+        return cmd_discover_experiences(
+            destination=args.destination,
+            root_area_id=args.root_area_id,
+            interests=args.interests,
+            selected_place_ids=args.place_ids,
+            limit=args.limit,
+            include_inferred=args.include_inferred,
             pretty=args.pretty,
         )
     else:

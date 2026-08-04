@@ -8,22 +8,37 @@ from app.modules.knowledge_graph.research.experience_fit_tool import (
     ExperienceFitInput,
     ExperienceFitOutput,
     kg_evaluate_experience_fit,
+from app.modules.knowledge_graph.research.experience_tool import (
+    kg_discover_experiences,
 )
 from app.modules.knowledge_graph.research.repository import (
+    KnowledgeGraphResearchRepository,
     ScopeResolutionRepository,
 )
 from app.modules.knowledge_graph.research.schema import (
     AREA_TYPES,
+    ActivityTypes,
     AreaRef,
     AreaType,
     BudgetLevel,
     CheckStatus,
     DimensionCheck,
     EntitySummary,
+    EdgeEvidence,
+    EntitySummary,
+    ExperienceDiscoveryInput,
+    GraphEvidenceBundle,
+    GraphEvidenceClaim,
+    GraphSnapshot,
     GraphStats,
+    PLACE_TYPES,
+    Recommendation,
+    RecommendationPriority,
     ScopeResolveInput,
     ScopeResolveOutput,
     TransportMode,
+    TrustLevel,
+    UnknownClaim,
 )
 from app.modules.knowledge_graph.research.scope_tool import (
     LegacyAreaWarning,
@@ -34,7 +49,11 @@ __all__ = [
     # Repository
     "ScopeResolutionRepository",
     # Scopes
+    "KnowledgeGraphResearchRepository",
+    # Tools
     "kg_resolve_scope",
+    "kg_discover_experiences",
+    # Scope resolution schemas
     "ScopeResolveInput",
     "ScopeResolveOutput",
     "AreaRef",
@@ -52,4 +71,17 @@ __all__ = [
     "BudgetLevel",
     "TransportMode",
     "EntityNotFoundError",
+    # Experience discovery schemas
+    "ExperienceDiscoveryInput",
+    "GraphEvidenceBundle",
+    "GraphEvidenceClaim",
+    "EdgeEvidence",
+    "EntitySummary",
+    "Recommendation",
+    "RecommendationPriority",
+    "TrustLevel",
+    "UnknownClaim",
+    "GraphSnapshot",
+    "PLACE_TYPES",
+    "ActivityTypes",
 ]

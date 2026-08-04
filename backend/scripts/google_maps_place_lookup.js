@@ -196,6 +196,66 @@ async function openBestPlaceResult(page, query) {
   await page.waitForTimeout(1000);
 }
 
+async function scrapeListViewItems(page) {
+  // Scrape data from the search results list
+  const items = await page.evaluate(() => {
+    const results = [];
+    const elements = document.querySelectorAll('div.Nv2PK');
+    
+    for (const el of elements) {
+      const text = el.textContent || '';
+      
+      // Normalize whitespace
+      const normalizedText = text.replace(/\s+/g, ' ').trim();
+      
+      // Extract name - take everything before space+number
+      const nameMatch = normalizedText.match(/^(.+?)\s+\d,\d/);
+      const name = nameMatch ? nameMatch[1].trim() : null;
+      if (!name || name.length < 2) continue;
+      
+      // Extract rating - look for "X,X" pattern (Vietnam uses comma as decimal)
+      const ratingMatch = normalizedText.match(/(\d),(\d)(?=\S)/);
+      const rating = ratingMatch ? parseFloat(ratingMatch[0].replace(',', '.')) : null;
+      
+      // Extract review count - Google Maps list view often doesn't show this
+      // Try common patterns: (123), 123 đánh giá, etc.
+      const reviewMatch = normalizedText.match(/\(([\d,]+)\)/);
+      const reviewCount = reviewMatch ? parseInt(reviewMatch[1].replace(/\D/g, ''), 10) : null;
+      
+      // Extract category/type
+      const categoryMatch = normalizedText.match(/(Khách sạn|Nhà hàng|Quán|Bảo tàng|Địa điểm du lịch|Công viên|Chùa|Nhà thờ|ATM|Ngân hàng|Bệnh viện|Cửa hàng|Phòng khám|Nhà nghỉ|Khu du lịch|Nhà hàng cơm|Nhà hàng)/);
+      const category = categoryMatch ? categoryMatch[1] : null;
+      
+      // Extract address (contains P., Ng., Đ., district names, Vietnam)
+      const addressMatch = normalizedText.match(/((?:P\.|Ng\.|Đ\.)?\s*[^•]{5,100}?(?:Hà Nội|Vietnam|Đà Nẵng|HCM))/);
+      const address = addressMatch ? addressMatch[1].trim() : null;
+      
+      // Get the link
+      const linkEl = el.querySelector('a[href*="/maps/place/"]');
+      const href = linkEl ? linkEl.href : null;
+      
+      // Extract price level ($ symbols)
+      const priceLevel = (normalizedText.match(/\$\$\$\$/g) || []).length || 
+                        (normalizedText.match(/\$\$\$/g) || []).length || 
+                        (normalizedText.match(/\$\$/g) || []).length || null;
+      
+      if (href && name) {
+        results.push({
+          name,
+          rating,
+          reviewCount,
+          category,
+          address,
+          href,
+          priceLevel,
+        });
+      }
+    }
+    return results;
+  });
+  return items;
+}
+
 async function lookup(page, query) {
   const searchUrl =
     `https://www.google.com/maps/search/${encodeURIComponent(query)}` +
@@ -212,12 +272,18 @@ async function lookup(page, query) {
     await consentButton.click({ timeout: 2000 }).catch(() => {});
   }
   await page.waitForTimeout(2500);
-  await page
-    .waitForURL((url) => url.pathname.includes("/maps/place/"), {
-      timeout: 5000,
-    })
-    .catch(() => {});
-  await openBestPlaceResult(page, query);
+  
+  // FIRST: scrape data from list view (has rating, reviews) - MUST be before any navigation
+  const listItems = await scrapeListViewItems(page);
+
+  // Then check if we're already on a place page
+  const currentUrl = page.url();
+  const isPlacePage = currentUrl.includes("/maps/place/");
+  
+  // If not on place page, navigate to first result for detailed info
+  if (!isPlacePage) {
+    await openBestPlaceResult(page, query);
+  }
 
   let link = page.url();
   let coordinates = coordinatesFromUrl(link);
@@ -350,7 +416,35 @@ async function lookup(page, query) {
   ]);
   const identity = googleIdentityFromUrl(link);
 
-  return {
+  // If we have list items, enrich them with detail data
+  if (listItems.length > 0) {
+    const enrichedResults = listItems.map((item, index) => {
+      const coords = coordinatesFromUrl(item.href);
+      const itemIdentity = googleIdentityFromUrl(item.href);
+      return {
+        title: item.name,
+        category: item.category || category,
+        address: item.address || address,
+        latitude: coords ? coords.latitude : (index === 0 ? coordinates.latitude : null),
+        longitude: coords ? coords.longitude : (index === 0 ? coordinates.longitude : null),
+        link: item.href,
+        place_id: itemIdentity.placeId,
+        data_id: itemIdentity.dataId,
+        review_rating: item.rating || (index === 0 ? parseLocalizedNumber(ratingText) : null),
+        review_count: item.reviewCount || (index === 0 ? parseReviewCount(reviewLabel || reviewText) : null),
+        opening_hours: index === 0 ? parseOpeningHours(openingHoursText) : null,
+        plus_code: null,
+        phone: index === 0 ? (phoneItemId?.replace(/^phone:tel:/, "") || phoneText) : null,
+        website: index === 0 ? website : null,
+        descriptions: index === 0 && description ? [description] : [],
+        price_level: item.priceLevel,
+      };
+    });
+    return enrichedResults;
+  }
+
+  // Fallback: return single result with detail data
+  return [{
     title,
     category,
     address,
@@ -367,7 +461,7 @@ async function lookup(page, query) {
     phone: phoneItemId?.replace(/^phone:tel:/, "") || phoneText,
     website,
     descriptions: description ? [description] : [],
-  };
+  }];
 }
 
 async function lookupQueries(page, queries, options = {}) {
@@ -381,7 +475,12 @@ async function lookupQueries(page, queries, options = {}) {
       return null;
     });
     if (result) {
-      results.push(result);
+      // result is now an array (list of places from search)
+      if (Array.isArray(result)) {
+        results.push(...result);
+      } else {
+        results.push(result);
+      }
     }
   }
   return results;
