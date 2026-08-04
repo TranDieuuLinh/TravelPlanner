@@ -1,0 +1,352 @@
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from tests.helpers import csrf_headers
+
+
+def test_trip_chat_requires_authentication(client) -> None:
+    response = client.get("/api/trip-chats")
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTHENTICATION_REQUIRED"
+
+
+def test_user_can_create_and_list_own_trip_chats(registered_client) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Paris spring trip"},
+        headers=csrf_headers(registered_client),
+    )
+
+    assert created.status_code == 201
+    body = created.json()
+    assert body["title"] == "Paris spring trip"
+    assert body["revision"] == 0
+    assert body["currentPlan"] is None
+
+    listed = registered_client.get("/api/trip-chats")
+    assert listed.status_code == 200
+    assert [(chat["id"], chat["title"]) for chat in listed.json()] == [
+        (body["id"], "Paris spring trip")
+    ]
+
+
+def test_user_cannot_read_another_users_trip_chat(registered_client) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    registered_client.post(
+        "/api/auth/logout",
+        headers=csrf_headers(registered_client),
+    )
+    second_user = registered_client.post(
+        "/api/auth/register",
+        json={
+            "email": "second@example.com",
+            "password": "MatKhauManh123",
+            "fullName": "Second User",
+        },
+    )
+    assert second_user.status_code == 201
+
+    response = registered_client.get(f"/api/trip-chats/{chat_id}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "TRIP_CHAT_NOT_FOUND"
+
+
+def test_user_can_delete_own_trip_chat_and_its_history(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Lịch sử cần xóa"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    db_session.add_all(
+        [
+            TripChatMessage(
+                id="message-to-delete",
+                chat_id=chat_id,
+                role="user",
+                content="Tạo chuyến đi Hà Nội",
+                sequence=1,
+                attachment_names=[],
+                plan_revision=1,
+            ),
+            TripChatPlanRevision(
+                id="revision-to-delete",
+                chat_id=chat_id,
+                revision=1,
+                intake_id=None,
+                plan_payload={},
+                explorer_payload={},
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = registered_client.delete(
+        f"/api/trip-chats/{chat_id}",
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 204
+    assert registered_client.get(f"/api/trip-chats/{chat_id}").status_code == 404
+    assert db_session.get(TripChatMessage, "message-to-delete") is None
+    assert db_session.get(TripChatPlanRevision, "revision-to-delete") is None
+
+
+def test_delete_trip_chat_requires_csrf(registered_client) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={},
+        headers=csrf_headers(registered_client),
+    )
+
+    response = registered_client.delete(f"/api/trip-chats/{created.json()['id']}")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "CSRF_VALIDATION_FAILED"
+
+
+def test_user_cannot_delete_another_users_trip_chat(registered_client) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    registered_client.post(
+        "/api/auth/logout",
+        headers=csrf_headers(registered_client),
+    )
+    registered_client.post(
+        "/api/auth/register",
+        json={
+            "email": "delete-second@example.com",
+            "password": "MatKhauManh123",
+            "fullName": "Second User",
+        },
+    )
+
+    response = registered_client.delete(
+        f"/api/trip-chats/{chat_id}",
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "TRIP_CHAT_NOT_FOUND"
+
+
+def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội cuối tuần"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "reorder-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội cuối tuần",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội cuối tuần",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "coffee-9",
+                        "name": "Coffee 9",
+                        "timeWindow": "09:00-10:00",
+                        "placeType": "cafe",
+                        "source": "url",
+                    },
+                    {
+                        "itemId": "bo-kho-phuong-dung",
+                        "name": "Bò khô Phương Dung",
+                        "timeWindow": "10:15-11:15",
+                        "placeType": "food",
+                        "source": "selected_place",
+                    },
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.put(
+        f"/api/trip-chats/{chat_id}/plan/days/1/items/reorder",
+        data={
+            "expectedRevision": "1",
+            "itemIds": ["bo-kho-phuong-dung", "coffee-9"],
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert [item["itemId"] for item in body["currentPlan"]["days"][0]["items"]] == [
+        "bo-kho-phuong-dung",
+        "coffee-9",
+    ]
+
+
+def test_user_can_save_personal_note_from_flat_form_data(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Ghi chú Hà Nội"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "personal-note-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Ghi chú Hà Nội",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Ghi chú Hà Nội",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "pho-thin-bo-ho",
+                        "name": "Phở Thìn Bờ Hồ",
+                        "timeWindow": "08:00-09:00",
+                        "placeType": "food",
+                        "source": "url",
+                        "notes": "Địa điểm lấy từ nội dung tham khảo.",
+                    }
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.patch(
+        f"/api/trip-chats/{chat_id}/plan/days/1/items/pho-thin-bo-ho",
+        data={
+            "expectedRevision": "1",
+            "personalNotes": "Ngồi ngoài trời và gọi món đặc trưng.",
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    item = body["currentPlan"]["days"][0]["items"][0]
+    assert item["personalNotes"] == "Ngồi ngoài trời và gọi món đặc trưng."
+    assert item["notes"] == "Địa điểm lấy từ nội dung tham khảo."
+
+
+def test_user_can_remove_an_unscheduled_place_from_trip_chat(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội cuối tuần"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "unscheduled-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội cuối tuần",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội cuối tuần",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [{"day": 1, "theme": "Ẩm thực", "items": []}],
+        "unscheduledPlaces": [
+            {
+                "placeId": "train-street-south",
+                "name": "Hanoi Train Street (South)",
+                "reasonCode": "no_day_capacity",
+                "reason": "The fixed trip duration has no remaining slot.",
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.request(
+        "DELETE",
+        f"/api/trip-chats/{chat_id}/plan/unscheduled-places",
+        data={
+            "expectedRevision": "1",
+            "placeId": "train-street-south",
+            "name": "Hanoi Train Street (South)",
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert body["currentPlan"]["unscheduledPlaces"] == []

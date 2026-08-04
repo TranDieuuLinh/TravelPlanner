@@ -1,0 +1,15 @@
+.pytest_cache/
+.venv/
+node_modules/
+__pycache__/
+*.py[cod]
+
+.env
+.env.*
+!.env.example
+
+*.db
+*.db.*
+
+.git/
+.gitignore

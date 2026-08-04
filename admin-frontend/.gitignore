@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.next-dev/
+.next-admin-dev/
+.next-build/
+.env.local
+npm-debug.log*
+*.log
+*.tsbuildinfo
