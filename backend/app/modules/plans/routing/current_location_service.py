@@ -134,11 +134,16 @@ class CurrentLocationRouteService:
             except RouteUnavailableError:
                 continue
             choices.append(choice)
-        recommended = self.optimizer.calculate_leg(
-            origin,
-            destination,
-            departure_time=departure_time,
+        recommended = _recommended_navigation_choice(
+            choices,
+            walking_threshold=self.optimizer.max_walking_distance_meters,
         )
+        if recommended is None:
+            return self.optimizer.calculate_leg(
+                origin,
+                destination,
+                departure_time=departure_time,
+            )
         preferred = _navigation_mode(recommended.mode)
 
         alternatives = [
@@ -197,6 +202,26 @@ def _navigation_mode(mode: str | None) -> str | None:
     ):
         return "bus"
     return None
+
+
+def _recommended_navigation_choice(
+    choices: list[PlanTransportLeg],
+    *,
+    walking_threshold: int,
+) -> PlanTransportLeg | None:
+    by_mode = {
+        _navigation_mode(choice.mode): choice
+        for choice in choices
+    }
+    walking = by_mode.get("walk")
+    car = by_mode.get("car")
+    bus = by_mode.get("bus")
+    if (
+        walking is not None
+        and walking.distance_meters <= walking_threshold
+    ):
+        return walking
+    return car or walking or bus
 
 
 def _as_option(leg: PlanTransportLeg) -> PlanTransportOption:

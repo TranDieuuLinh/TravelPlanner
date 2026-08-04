@@ -141,7 +141,7 @@ class TripChatRepository:
         self,
         chat: TripChat,
         *,
-        action_summary: str,
+        action_summary: str | None,
         plan_payload: dict,
         revision: int,
         explorer_payload: dict | None = None,
@@ -178,8 +178,24 @@ class TripChatRepository:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
             )
-        self.db.add_all(
-            [
+        records: list[TripChatMessage | TripChatPlanRevision] = [
+            TripChatPlanRevision(
+                id=str(uuid4()),
+                chat_id=chat.id,
+                revision=revision,
+                intake_id=chat.current_intake_id,
+                plan_payload=plan_payload,
+                explorer_payload=(
+                    explorer_payload
+                    if explorer_payload is not None
+                    else chat.current_explorer or {}
+                ),
+                created_at=now,
+            ),
+        ]
+        if action_summary is not None:
+            records.insert(
+                0,
                 TripChatMessage(
                     id=str(uuid4()),
                     chat_id=chat.id,
@@ -190,21 +206,8 @@ class TripChatRepository:
                     plan_revision=revision,
                     created_at=now,
                 ),
-                TripChatPlanRevision(
-                    id=str(uuid4()),
-                    chat_id=chat.id,
-                    revision=revision,
-                    intake_id=chat.current_intake_id,
-                    plan_payload=plan_payload,
-                    explorer_payload=(
-                        explorer_payload
-                        if explorer_payload is not None
-                        else chat.current_explorer or {}
-                    ),
-                    created_at=now,
-                ),
-            ]
-        )
+            )
+        self.db.add_all(records)
         self.db.commit()
         return self.get(chat.id, chat.user_id)
 

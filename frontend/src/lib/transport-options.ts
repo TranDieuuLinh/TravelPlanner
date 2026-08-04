@@ -1,11 +1,19 @@
 type TransportOptionAvailability = {
   mode: string;
   distanceMeters: number;
+  estimatedDurationMinutes?: number;
   source: string;
   verified: boolean;
   geometryCoordinates: [number, number][];
   details?: {
+    lines?: string[];
     scheduleStatus?: string;
+    segments?: Array<{
+      mode: string;
+      line?: string | null;
+      estimatedDurationMinutes: number;
+      distanceMeters: number;
+    }>;
   };
 };
 
@@ -39,16 +47,26 @@ export function isAvailableTransportOption(
 
 export const WALKING_DISPLAY_THRESHOLD_METERS = 3_000;
 
-function isWalkingMode(mode: string): boolean {
+export function isWalkingMode(mode: string): boolean {
   const normalized = mode.toLowerCase();
-  return normalized.includes("walk") || normalized.includes("pedestrian");
+  return (
+    normalized.includes("walk")
+    || normalized.includes("walking")
+    || normalized.includes("pedestrian")
+  );
 }
 
-function isCarMode(mode: string): boolean {
+export function isCarMode(mode: string): boolean {
   const normalized = mode.toLowerCase();
-  return ["car", "auto", "ride", "hailing", "taxi"].some((token) =>
-    normalized.includes(token)
-  );
+  return [
+    "car",
+    "auto",
+    "drive",
+    "driving",
+    "ride",
+    "hailing",
+    "taxi"
+  ].some((token) => normalized.includes(token));
 }
 
 export function visibleTransportOptions<T extends TransportOptionAvailability>(
@@ -69,5 +87,44 @@ export function visibleTransportOptions<T extends TransportOptionAvailability>(
     (option, index, result): option is T =>
       option != null
       && result.findIndex((candidate) => candidate?.mode === option.mode) === index
+  );
+}
+
+export function transportOptionSelectionKey(
+  option: TransportOptionAvailability
+): string {
+  return [
+    option.mode.toLocaleLowerCase("vi"),
+    option.source,
+    option.estimatedDurationMinutes ?? "",
+    Math.round(option.distanceMeters),
+    (option.details?.lines ?? []).join(","),
+    (option.details?.segments ?? [])
+      .map((segment) => (
+        `${segment.mode}:${segment.line ?? ""}:${segment.estimatedDurationMinutes}:${Math.round(segment.distanceMeters)}`
+      ))
+      .join("|")
+  ].join("::");
+}
+
+export function resolveSelectedTransportOption<
+  T extends TransportOptionAvailability
+>(
+  options: T[],
+  currentOption: T,
+  selectedOptionKey?: string
+): T {
+  return (
+    options.find(
+      (option) => transportOptionSelectionKey(option) === selectedOptionKey
+    )
+    ?? options.find((option) => option.mode === selectedOptionKey)
+    ?? options.find(
+      (option) =>
+        transportOptionSelectionKey(option) ===
+        transportOptionSelectionKey(currentOption)
+    )
+    ?? options[0]
+    ?? currentOption
   );
 }

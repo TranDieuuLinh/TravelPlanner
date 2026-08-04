@@ -217,6 +217,7 @@ def test_user_can_reorder_trip_chat_items_with_repeated_form_fields(
         "bo-kho-phuong-dung",
         "coffee-9",
     ]
+    assert body["messages"] == []
 
 
 def test_user_can_save_personal_note_from_flat_form_data(
@@ -287,6 +288,246 @@ def test_user_can_save_personal_note_from_flat_form_data(
     item = body["currentPlan"]["days"][0]["items"][0]
     assert item["personalNotes"] == "Ngồi ngoài trời và gọi món đặc trưng."
     assert item["notes"] == "Địa điểm lấy từ nội dung tham khảo."
+    assert body["messages"] == []
+
+
+def test_user_can_save_transport_option_selection_from_trip_chat(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội route"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "route-selection-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội route",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội route",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "lake",
+                        "name": "Hồ Hoàn Kiếm",
+                        "timeWindow": "09:00-10:00",
+                        "placeType": "attraction",
+                        "source": "finder",
+                    },
+                    {
+                        "itemId": "market",
+                        "name": "Chợ Đồng Xuân",
+                        "timeWindow": "10:15-11:15",
+                        "placeType": "attraction",
+                        "source": "finder",
+                    },
+                ],
+                "transportLegs": [
+                    {
+                        "fromItemId": "lake",
+                        "toItemId": "market",
+                        "fromPlace": "Hồ Hoàn Kiếm",
+                        "toPlace": "Chợ Đồng Xuân",
+                        "mode": "car",
+                        "distanceMeters": 2200,
+                        "estimatedDurationMinutes": 12,
+                        "geometryCoordinates": [
+                            [21.0285, 105.8542],
+                            [21.0375, 105.85],
+                        ],
+                        "source": "valhalla_routing",
+                        "verified": True,
+                        "alternatives": [
+                            {
+                                "mode": "walk",
+                                "distanceMeters": 1600,
+                                "estimatedDurationMinutes": 24,
+                                "geometryCoordinates": [
+                                    [21.0285, 105.8542],
+                                    [21.0375, 105.85],
+                                ],
+                                "source": "valhalla_routing",
+                                "verified": True,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.put(
+        f"/api/trip-chats/{chat_id}/plan/days/1/transport-legs/0/selection",
+        data={"expectedRevision": "1", "mode": "walk"},
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 2
+    assert body["messages"] == []
+    leg = body["currentPlan"]["days"][0]["transportLegs"][0]
+    assert leg["mode"] == "walk"
+    assert leg["estimatedDurationMinutes"] == 24
+    assert [option["mode"] for option in leg["alternatives"]] == ["car"]
+
+
+def test_user_can_save_transport_option_selection_when_modes_repeat(
+    registered_client,
+    db_session,
+) -> None:
+    created = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Hà Nội route variants"},
+        headers=csrf_headers(registered_client),
+    )
+    chat_id = created.json()["id"]
+    chat = db_session.get(TripChat, chat_id)
+    assert chat is not None
+    chat.destination = "Hà Nội"
+    chat.revision = 1
+    chat.current_plan = {
+        "id": "route-variant-plan",
+        "kind": "main",
+        "status": "draft",
+        "title": "Hà Nội route variants",
+        "destination": "Hà Nội",
+        "intent": {
+            "destination": "Hà Nội",
+            "days": 1,
+            "budget": "medium",
+            "travelStyle": "local",
+            "pace": "balanced",
+        },
+        "macroPlan": {
+            "title": "Hà Nội route variants",
+            "destination": "Hà Nội",
+            "selectionDays": [
+                {"day": 1, "theme": "Ẩm thực", "targetArea": "Hoàn Kiếm"}
+            ],
+        },
+        "days": [
+            {
+                "day": 1,
+                "theme": "Ẩm thực",
+                "items": [
+                    {
+                        "itemId": "lake",
+                        "name": "Hồ Hoàn Kiếm",
+                        "timeWindow": "09:00-10:00",
+                        "placeType": "attraction",
+                        "source": "finder",
+                    },
+                    {
+                        "itemId": "market",
+                        "name": "Chợ Đồng Xuân",
+                        "timeWindow": "10:15-11:15",
+                        "placeType": "attraction",
+                        "source": "finder",
+                    },
+                ],
+                "transportLegs": [
+                    {
+                        "fromItemId": "lake",
+                        "toItemId": "market",
+                        "fromPlace": "Hồ Hoàn Kiếm",
+                        "toPlace": "Chợ Đồng Xuân",
+                        "mode": "public_transit",
+                        "distanceMeters": 2900,
+                        "estimatedDurationMinutes": 32,
+                        "geometryCoordinates": [
+                            [21.0285, 105.8542],
+                            [21.0375, 105.85],
+                        ],
+                        "source": "opentripplanner_transit",
+                        "verified": True,
+                        "details": {
+                            "lines": ["14"],
+                            "segments": [
+                                {
+                                    "mode": "BUS",
+                                    "line": "14",
+                                    "estimatedDurationMinutes": 20,
+                                    "distanceMeters": 2200,
+                                }
+                            ],
+                        },
+                        "alternatives": [
+                            {
+                                "mode": "public_transit",
+                                "distanceMeters": 2900,
+                                "estimatedDurationMinutes": 32,
+                                "geometryCoordinates": [
+                                    [21.0285, 105.8542],
+                                    [21.0320, 105.852],
+                                    [21.0375, 105.85],
+                                ],
+                                "source": "opentripplanner_transit",
+                                "verified": True,
+                                "details": {
+                                    "lines": ["31"],
+                                    "segments": [
+                                        {
+                                            "mode": "BUS",
+                                            "line": "31",
+                                            "estimatedDurationMinutes": 18,
+                                            "distanceMeters": 2100,
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    db_session.commit()
+
+    response = registered_client.put(
+        f"/api/trip-chats/{chat_id}/plan/days/1/transport-legs/0/selection",
+        data={
+            "expectedRevision": "1",
+            "mode": "public_transit",
+            "optionKey": "public_transit::opentripplanner_transit::32::2900::31::BUS:31:18:2100",
+            "source": "opentripplanner_transit",
+            "distanceMeters": "2900",
+            "estimatedDurationMinutes": "32",
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 200
+    leg = response.json()["currentPlan"]["days"][0]["transportLegs"][0]
+    assert leg["estimatedDurationMinutes"] == 32
+    assert leg["distanceMeters"] == 2900
+    assert leg["details"]["lines"] == ["31"]
+    assert len(leg["geometryCoordinates"]) == 3
+    assert [option["details"]["lines"] for option in leg["alternatives"]] == [["14"]]
 
 
 def test_user_can_remove_an_unscheduled_place_from_trip_chat(
@@ -350,3 +591,4 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
     body = response.json()
     assert body["revision"] == 2
     assert body["currentPlan"]["unscheduledPlaces"] == []
+    assert body["messages"] == []

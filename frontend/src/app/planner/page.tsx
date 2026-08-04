@@ -9,7 +9,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent
 } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
@@ -31,9 +32,8 @@ import {
   removeTripChatItem,
   reorderTripChatItem,
   searchPlaces,
+  selectTripChatTransportOption,
   updateTripChatItem,
-  isSupervisorEnabled,
-  setSupervisorEnabled,
   type PlaceSuggestion,
   type ExplorerContext,
   type ExploreResponse,
@@ -65,11 +65,18 @@ import {
 import { createDayColorMap } from "@/lib/day-colors";
 import {
   isAvailableTransportOption,
+  isCarMode,
   isPublicTransitMode,
+  isWalkingMode,
+  resolveSelectedTransportOption,
+  transportOptionSelectionKey,
   visibleTransportOptions
 } from "@/lib/transport-options";
 import { visiblePlanDays, visiblePlanItems } from "@/lib/visible-plan-days";
 import { formatPlanNote } from "@/lib/plan-note";
+import { planItemMapKey } from "@/lib/plan-map-key";
+import { rebaseItineraryItemOrder } from "@/lib/itinerary-order";
+import { dragAutoScrollVelocity } from "@/lib/drag-auto-scroll";
 
 type ChatMessage = {
   id: number | string;
@@ -77,11 +84,16 @@ type ChatMessage = {
   text: string;
 };
 
+type PlannerToast = {
+  id: number;
+  text: string;
+};
+
 type WorkflowStage = "idle" | "exploring" | "planning" | "ready" | "failed";
 type IntakeKind = "prompt" | "image" | "url";
 type LocationStatus = "idle" | "locating" | "ready" | "error";
+type PlaceLocationTarget = "add" | "edit";
 type DirectionsStatus = "idle" | "routing" | "ready" | "error";
-type StartPointMode = "current" | "search";
 
 type TripPlaceSummary = TravelPlan["days"][number]["items"][number] & {
   day: number;
@@ -113,6 +125,9 @@ const SUPPORTED_IMAGE_TYPES = new Set([
   "image/heic",
   "image/heif"
 ]);
+const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
+const RECENT_TRIP_LOAD_TIMEOUT_MS = 10_000;
+const LEGACY_EDITOR_NOTIFICATION_PATTERN = /^(?:Đã (?:thêm địa điểm|cập nhật thông tin địa điểm|xóa địa điểm|sắp xếp lại thứ tự địa điểm|chọn phương tiện)|Đã xóa địa điểm .* khỏi danh sách chưa xếp lịch)/i;
 
 function formatBudget(result: ExplorerContext): string {
   const budget = result.tripSpec.budget;
@@ -138,6 +153,25 @@ function extractMessageUrls(value: string): string[] {
   );
 }
 
+function visibleConversationMessages(chat: TripChat): ChatMessage[] {
+  return chat.messages
+    .filter((message) => !(
+      message.role === "assistant"
+      && message.planRevision != null
+      && LEGACY_EDITOR_NOTIFICATION_PATTERN.test(message.content.trim())
+    ))
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      text: [
+        message.content,
+        message.attachmentNames.length
+          ? `📎 ${message.attachmentNames.length} ảnh`
+          : ""
+      ].filter(Boolean).join("\n")
+    }));
+}
+
 export default function PlannerPage() {
   return <Suspense fallback={<div className="routeLoading">Đang mở AI Planner…</div>}><Planner /></Suspense>;
 }
@@ -152,6 +186,7 @@ function Planner() {
   const [images, setImages] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
@@ -159,33 +194,42 @@ function Planner() {
       text: "Nhập yêu cầu chuyến đi bằng một tin nhắn. Ví dụ: Đà Nẵng 3 ngày, ăn ngon, cà phê, đi chậm."
     }
   ]);
+  const [plannerToast, setPlannerToast] = useState<PlannerToast | null>(null);
+
+  const showPlannerToast = useCallback((text: string) => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    setPlannerToast({ id: Date.now(), text });
+    toastTimerRef.current = window.setTimeout(() => {
+      setPlannerToast(null);
+      toastTimerRef.current = null;
+    }, 2400);
+  }, []);
   const [exploreResult, setExploreResult] = useState<ExploreResponse | null>(null);
   const [selectedMapPlaceKey, setSelectedMapPlaceKey] = useState<string | null>(null);
   const [selectedMapRouteKey, setSelectedMapRouteKey] = useState<string | null>(null);
   const [activePlanDay, setActivePlanDay] = useState<number | null>(null);
   const [currentLocation, setCurrentLocation] =
     useState<PlannerMapCurrentLocation | null>(null);
-  const [startPointMode, setStartPointMode] =
-    useState<StartPointMode>("current");
-  const [startPointSearchOpen, setStartPointSearchOpen] = useState(false);
-  const [startPointQuery, setStartPointQuery] = useState("");
-  const [startPointSuggestions, setStartPointSuggestions] =
-    useState<PlaceSuggestion[]>([]);
-  const [selectedStartPoint, setSelectedStartPoint] =
-    useState<PlaceSuggestion | null>(null);
-  const [searchingStartPoint, setSearchingStartPoint] = useState(false);
-  const [startPointSearchCompleted, setStartPointSearchCompleted] = useState(false);
-  const [startPointSearchFailed, setStartPointSearchFailed] = useState(false);
   const [dayDirectionLegs, setDayDirectionLegs] =
     useState<TransportLeg[]>([]);
   const [navigationDestinationKey, setNavigationDestinationKey] =
     useState<string | null>(null);
-  const [selectedDirectionModes, setSelectedDirectionModes] =
+  const [selectedDirectionOptionKeys, setSelectedDirectionOptionKeys] =
     useState<Record<number, string>>({});
-  const [selectedPlanLegModes, setSelectedPlanLegModes] =
+  const [selectedPlanLegOptionKeys, setSelectedPlanLegOptionKeys] =
     useState<Record<string, string>>({});
+  const [savingTransportOptionKey, setSavingTransportOptionKey] =
+    useState<string | null>(null);
+  const [expandedTransportOptionKeys, setExpandedTransportOptionKeys] =
+    useState<Record<string, boolean>>({});
   const [directionsActive, setDirectionsActive] = useState(false);
   const [directionsSearchOpen, setDirectionsSearchOpen] = useState(false);
+  const [directionOriginQuery, setDirectionOriginQuery] = useState("");
+  const [directionOriginSuggestions, setDirectionOriginSuggestions] =
+    useState<PlaceSuggestion[]>([]);
+  const [selectedDirectionOrigin, setSelectedDirectionOrigin] =
+    useState<PlannerMapCurrentLocation | null>(null);
+  const [searchingDirectionOrigin, setSearchingDirectionOrigin] = useState(false);
   const [destinationQuery, setDestinationQuery] = useState("");
   const [destinationSuggestions, setDestinationSuggestions] =
     useState<PlaceSuggestion[]>([]);
@@ -201,9 +245,17 @@ function Planner() {
   const [locationStatus, setLocationStatus] =
     useState<LocationStatus>("idle");
   const [locationError, setLocationError] = useState("");
+  const [placeLocationTarget, setPlaceLocationTarget] =
+    useState<PlaceLocationTarget | null>(null);
+  const placeLocationTargetRef = useRef<PlaceLocationTarget | null>(null);
   const directionsPendingLocationRef = useRef(false);
   const directionsDestinationRef = useRef<DirectionStop | null>(null);
   const directionsRequestIdRef = useRef(0);
+  const locationWatchIdRef = useRef<number | null>(null);
+  const latestLocationRef = useRef<PlannerMapCurrentLocation | null>(null);
+  const orientationListenerRef =
+    useRef<((event: DeviceOrientationEvent) => void) | null>(null);
+  const orientationTrackingRef = useRef(false);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
@@ -231,6 +283,30 @@ function Planner() {
     const timer = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(timer);
   }, [loading, processingStartedAt]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+      if (locationWatchIdRef.current != null && "geolocation" in navigator) {
+        navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      }
+      locationWatchIdRef.current = null;
+      if (orientationListenerRef.current) {
+        window.removeEventListener(
+          "deviceorientation",
+          orientationListenerRef.current,
+          true
+        );
+        window.removeEventListener(
+          "deviceorientationabsolute",
+          orientationListenerRef.current,
+          true
+        );
+      }
+      orientationListenerRef.current = null;
+      orientationTrackingRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     async function handleUrlJobUpdate(event: Event) {
@@ -283,6 +359,7 @@ function Planner() {
   const [addingDay, setAddingDay] = useState<number | null>(null);
   const [addName, setAddName] = useState("");
   const [addPlaceType, setAddPlaceType] = useState("attraction");
+  const [addPosition, setAddPosition] = useState(0);
   const [addNotes, setAddNotes] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState<PlaceSuggestion | null>(null);
@@ -305,6 +382,15 @@ function Planner() {
   } | null>(null);
 
   useEffect(() => {
+    const modalIsClosed =
+      (placeLocationTarget === "add" && addingDay == null)
+      || (placeLocationTarget === "edit" && editingItem == null);
+    if (!modalIsClosed) return;
+    placeLocationTargetRef.current = null;
+    setPlaceLocationTarget(null);
+  }, [addingDay, editingItem, placeLocationTarget]);
+
+  useEffect(() => {
     if (!noteEditor) return;
 
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
@@ -318,26 +404,6 @@ function Planner() {
   }, [mutatingItem, noteEditor]);
   const [pendingTurn, setPendingTurn] = useState<TripChatTurn | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
-  const [supervisorToggle, setSupervisorToggle] = useState<boolean>(
-    () => isSupervisorEnabled()
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sync = () => setSupervisorToggle(isSupervisorEnabled());
-    window.addEventListener("vsf:supervisor-toggle", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("vsf:supervisor-toggle", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
-
-  const toggleSupervisor = useCallback(() => {
-    const next = !isSupervisorEnabled();
-    setSupervisorEnabled(next);
-    setSupervisorToggle(next);
-  }, []);
 
   const handleTurnTerminal = useCallback(
     async (result: { turn: TripChatTurn; outcome: string }) => {
@@ -464,28 +530,25 @@ function Planner() {
   }, [addName, plan?.destination, selectedSuggestion]);
 
   useEffect(() => {
-    const query = startPointQuery.trim();
+    const query = directionOriginQuery.trim();
     if (
-      !startPointSearchOpen ||
+      !directionsSearchOpen ||
       query.length < 2 ||
-      selectedStartPoint?.name === query
+      selectedDirectionOrigin?.label === query ||
+      query === "Vị trí hiện tại"
     ) {
-      setStartPointSuggestions([]);
-      setSearchingStartPoint(false);
-      setStartPointSearchCompleted(false);
-      setStartPointSearchFailed(false);
+      setDirectionOriginSuggestions([]);
+      setSearchingDirectionOrigin(false);
       return;
     }
 
     let cancelled = false;
-    setStartPointSearchCompleted(false);
-    setStartPointSearchFailed(false);
     const timer = window.setTimeout(async () => {
-      setSearchingStartPoint(true);
+      setSearchingDirectionOrigin(true);
       try {
         const results = await searchPlaces(query, plan?.destination);
         if (!cancelled) {
-          setStartPointSuggestions(
+          setDirectionOriginSuggestions(
             results.filter(
               (suggestion) =>
                 typeof suggestion.latitude === "number" &&
@@ -494,15 +557,9 @@ function Planner() {
           );
         }
       } catch {
-        if (!cancelled) {
-          setStartPointSuggestions([]);
-          setStartPointSearchFailed(true);
-        }
+        if (!cancelled) setDirectionOriginSuggestions([]);
       } finally {
-        if (!cancelled) {
-          setSearchingStartPoint(false);
-          setStartPointSearchCompleted(true);
-        }
+        if (!cancelled) setSearchingDirectionOrigin(false);
       }
     }, 300);
 
@@ -510,7 +567,12 @@ function Planner() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [plan?.destination, selectedStartPoint, startPointQuery, startPointSearchOpen]);
+  }, [
+    directionOriginQuery,
+    directionsSearchOpen,
+    plan?.destination,
+    selectedDirectionOrigin
+  ]);
 
   useEffect(() => {
     const query = destinationQuery.trim();
@@ -597,6 +659,9 @@ function Planner() {
     if (!activeChatId || !plan) return;
     if (!confirm("Bạn có chắc chắn muốn xóa địa điểm này khỏi lịch trình?")) return;
     const previousPlan = plan;
+    const deletedItem = plan.days
+      .find((planDay) => planDay.day === day)
+      ?.items.find((item) => item.itemId === itemId);
     setPlan({
       ...plan,
       days: plan.days.map((planDay) => planDay.day !== day
@@ -605,7 +670,16 @@ function Planner() {
             ...planDay,
             items: planDay.items.filter((item) => item.itemId !== itemId),
             transportLegs: planDay.transportLegs.filter(
-              (leg) => leg.fromItemId !== itemId && leg.toItemId !== itemId
+              (leg) =>
+                leg.fromItemId !== itemId &&
+                leg.toItemId !== itemId &&
+                (
+                  !deletedItem ||
+                  (
+                    !planPlaceNamesMatch(leg.fromPlace, deletedItem.name) &&
+                    !planPlaceNamesMatch(leg.toPlace, deletedItem.name)
+                  )
+                )
             )
           })
     });
@@ -620,13 +694,7 @@ function Planner() {
       });
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      setMessages(
-        updatedChat.messages.map((m, idx) => ({
-          id: m.id || idx,
-          role: m.role as "assistant" | "user",
-          text: m.content
-        }))
-      );
+      showPlannerToast("Đã xóa địa điểm");
     } catch (err: any) {
       setPlan(previousPlan);
       setError(err?.message || "Không thể xóa địa điểm.");
@@ -661,13 +729,7 @@ function Planner() {
       });
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      setMessages(
-        updatedChat.messages.map((m, idx) => ({
-          id: m.id || idx,
-          role: m.role as "assistant" | "user",
-          text: m.content
-        }))
-      );
+      showPlannerToast("Đã lưu thay đổi");
       setEditingItem(null);
       setSelectedEditSuggestion(null);
       setEditPlaceSuggestions([]);
@@ -699,13 +761,7 @@ function Planner() {
       });
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      setMessages(
-        updatedChat.messages.map((message, index) => ({
-          id: message.id || index,
-          role: message.role as "assistant" | "user",
-          text: message.content
-        }))
-      );
+      showPlannerToast("Đã lưu ghi chú");
       setNoteEditor(null);
     } catch (caught: any) {
       setError(caught?.message || "Không thể lưu ghi chú.");
@@ -728,6 +784,7 @@ function Planner() {
           placeId: selectedSuggestion?.placeId || undefined,
           name: addName.trim(),
           placeType: addPlaceType,
+          position: addPosition,
           personalNotes: addNotes.trim() || undefined,
           address: selectedSuggestion?.address || undefined,
           latitude: selectedSuggestion?.latitude ?? undefined,
@@ -736,13 +793,7 @@ function Planner() {
       });
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      setMessages(
-        updatedChat.messages.map((m, idx) => ({
-          id: m.id || idx,
-          role: m.role as "assistant" | "user",
-          text: m.content
-        }))
-      );
+      showPlannerToast("Đã thêm địa điểm");
       setAddingDay(null);
       setAddName("");
       setAddNotes("");
@@ -758,41 +809,148 @@ function Planner() {
   const [draggedItemKey, setDraggedItemKey] = useState<{ day: number; itemId: string } | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
   const [reorderingDay, setReorderingDay] = useState<number | null>(null);
+  const itineraryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (reorderingDay == null) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [reorderingDay]);
+
+  useEffect(() => {
+    if (!draggedItemKey) return;
+
+    let pointerY: number | null = null;
+    let animationFrame: number | null = null;
+
+    function scrollTowardPointer() {
+      animationFrame = null;
+      if (pointerY == null) return;
+
+      const scrollArea = itineraryScrollRef.current;
+      const scrollAreaCanScroll = Boolean(
+        scrollArea && scrollArea.scrollHeight > scrollArea.clientHeight + 1
+      );
+
+      if (scrollArea && scrollAreaCanScroll) {
+        const bounds = scrollArea.getBoundingClientRect();
+        const velocity = dragAutoScrollVelocity(pointerY, {
+          start: bounds.top,
+          end: bounds.bottom
+        });
+        if (velocity !== 0) scrollArea.scrollTop += velocity;
+      } else {
+        const velocity = dragAutoScrollVelocity(pointerY, {
+          start: 0,
+          end: window.innerHeight
+        });
+        if (velocity !== 0) window.scrollBy(0, velocity);
+      }
+
+      animationFrame = window.requestAnimationFrame(scrollTowardPointer);
+    }
+
+    function handleDragOver(event: DragEvent) {
+      // Keep this internal drag a valid drop operation while it crosses the
+      // sticky day tabs or the gaps between itinerary cards.
+      event.preventDefault();
+      pointerY = event.clientY;
+      if (animationFrame == null) {
+        animationFrame = window.requestAnimationFrame(scrollTowardPointer);
+      }
+    }
+
+    function stopAutoScroll() {
+      pointerY = null;
+      if (animationFrame != null) window.cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+
+    document.addEventListener("dragover", handleDragOver);
+    document.addEventListener("dragend", stopAutoScroll);
+    document.addEventListener("drop", stopAutoScroll);
+
+    return () => {
+      stopAutoScroll();
+      document.removeEventListener("dragover", handleDragOver);
+      document.removeEventListener("dragend", stopAutoScroll);
+      document.removeEventListener("drop", stopAutoScroll);
+    };
+  }, [draggedItemKey]);
 
   async function handleReorderItems(day: number, newOrderedItemIds: string[]) {
-    if (!activeChatId || !plan) return;
+    if (!activeChatId || !plan || mutatingItem) return;
     setMutatingItem(true);
     setReorderingDay(day);
     setError("");
-    const previousPlan = plan;
+    let rollbackPlan = plan;
+    let expectedRevision = chatRevision;
+    let requestedItemIds = newOrderedItemIds;
 
-    const updatedDays = plan.days.map((d) => {
-      if (d.day !== day) return d;
-      const itemsMap = new Map(d.items.map((it) => [it.itemId, it]));
-      const rawNewItems = newOrderedItemIds
-        .map((id) => itemsMap.get(id))
-        .filter((it): it is typeof d.items[number] => Boolean(it));
-      d.items.forEach((it) => {
-        if (it.itemId && !newOrderedItemIds.includes(it.itemId)) {
-          rawNewItems.push(it);
-        }
-      });
-
-      return { ...d, items: rawNewItems, transportLegs: [] };
+    const reorderPlan = (sourcePlan: TravelPlan, itemIds: string[]): TravelPlan => ({
+      ...sourcePlan,
+      days: sourcePlan.days.map((planDay) => {
+        if (planDay.day !== day) return planDay;
+        const itemsMap = new Map(planDay.items.map((item) => [item.itemId, item]));
+        const reorderedItems = itemIds
+          .map((itemId) => itemsMap.get(itemId))
+          .filter((item): item is typeof planDay.items[number] => Boolean(item));
+        planDay.items.forEach((item) => {
+          if (item.itemId && !itemIds.includes(item.itemId)) reorderedItems.push(item);
+        });
+        return { ...planDay, items: reorderedItems, transportLegs: [] };
+      })
     });
-    setPlan({ ...plan, days: updatedDays });
+
+    setPlan(reorderPlan(plan, requestedItemIds));
 
     try {
-      const updatedChat = await reorderTripChatItem({
-        chatId: activeChatId,
-        expectedRevision: chatRevision,
-        day,
-        itemIds: newOrderedItemIds
-      });
-      setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const updatedChat = await reorderTripChatItem({
+            chatId: activeChatId,
+            expectedRevision,
+            day,
+            itemIds: requestedItemIds
+          });
+          applyTripChat(updatedChat);
+          showPlannerToast(`Đã cập nhật thứ tự Ngày ${day}`);
+          return;
+        } catch (caught) {
+          if (
+            !(caught instanceof APIError)
+            || caught.code !== "VERSION_CONFLICT"
+            || attempt === 2
+          ) {
+            throw caught;
+          }
+
+          const latestChat = await getTripChat(activeChatId);
+          applyTripChat(latestChat);
+          if (!latestChat.currentPlan) return;
+
+          rollbackPlan = latestChat.currentPlan;
+          expectedRevision = latestChat.revision;
+          const latestDay = latestChat.currentPlan.days.find(
+            (planDay) => planDay.day === day
+          );
+          if (!latestDay) return;
+
+          const latestItemIds = latestDay.items
+            .map((item) => item.itemId)
+            .filter((itemId): itemId is string => Boolean(itemId));
+          requestedItemIds = rebaseItineraryItemOrder(
+            latestItemIds,
+            requestedItemIds
+          );
+          setPlan(reorderPlan(latestChat.currentPlan, requestedItemIds));
+        }
+      }
     } catch (err: any) {
-      setPlan(previousPlan);
+      setPlan(rollbackPlan);
       setError(err?.message || "Không thể sắp xếp lại vị trí địa điểm.");
     } finally {
       setMutatingItem(false);
@@ -841,11 +999,15 @@ function Planner() {
         setPlan(null);
         setCurrentLocation(null);
         setDayDirectionLegs([]);
-        setSelectedDirectionModes({});
-        setSelectedPlanLegModes({});
+        setSelectedDirectionOptionKeys({});
+        setSelectedPlanLegOptionKeys({});
         setDirectionsActive(false);
         setDirectionsStatus("idle");
         setDirectionsError("");
+        setDirectionOriginQuery("");
+        setDirectionOriginSuggestions([]);
+        setSelectedDirectionOrigin(null);
+        setSearchingDirectionOrigin(false);
         setLocationFocusRequest(0);
         directionsPendingLocationRef.current = false;
         directionsRequestIdRef.current += 1;
@@ -863,6 +1025,10 @@ function Planner() {
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, RECENT_TRIP_LOAD_TIMEOUT_MS);
     setPlannerEntryResolved(false);
     setShowTripKickoff(false);
     setTripChats([]);
@@ -875,12 +1041,14 @@ function Planner() {
       role: "assistant",
       text: "Nhập yêu cầu chuyến đi bằng một tin nhắn. Ví dụ: Đà Nẵng 3 ngày, ăn ngon, cà phê, đi chậm."
     }]);
-    void listTripChats()
+    void listTripChats({ signal: controller.signal })
       .then(async (chats) => {
         if (cancelled) return;
         setTripChats(chats);
         if (chats.length > 0) {
-          const chat = await getTripChat(chats[0].id);
+          const chat = await getTripChat(chats[0].id, {
+            signal: controller.signal
+          });
           if (!cancelled) applyTripChat(chat);
         } else {
           setShowTripKickoff(true);
@@ -891,11 +1059,22 @@ function Planner() {
         if (!cancelled) {
           setShowTripKickoff(false);
           setPlannerEntryResolved(true);
-          setError(caught instanceof Error ? caught.message : "Không thể tải lịch sử chuyến đi.");
+          setError(
+            controller.signal.aborted
+              ? "Không thể mở chuyến đi gần nhất lúc này. Bạn vẫn có thể bắt đầu hoặc nhập lại yêu cầu mới."
+              : caught instanceof Error
+                ? caught.message
+                : "Không thể tải lịch sử chuyến đi."
+          );
         }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [authLoading, user?.id]);
 
@@ -946,6 +1125,14 @@ function Planner() {
     },
     [activePlanDay, displayedPlan]
   );
+  const addingPlanDay = useMemo(
+    () => plan?.days.find((day) => day.day === addingDay) ?? null,
+    [addingDay, plan]
+  );
+  const addingDayVisibleItems = useMemo(
+    () => visiblePlanItems(addingPlanDay?.items ?? []),
+    [addingPlanDay]
+  );
 
   useEffect(() => {
     setActivePlanDay((current) => {
@@ -964,12 +1151,16 @@ function Planner() {
     directionsRequestIdRef.current += 1;
     setDirectionsActive(false);
     setDirectionsSearchOpen(false);
+    setDirectionOriginQuery("");
+    setDirectionOriginSuggestions([]);
+    setSelectedDirectionOrigin(null);
+    setSearchingDirectionOrigin(false);
     setDestinationQuery("");
     setDestinationSuggestions([]);
     setSelectedNavigationDestination(null);
     setMapDestinationPickActive(false);
     setDayDirectionLegs([]);
-    setSelectedDirectionModes({});
+    setSelectedDirectionOptionKeys({});
     setDirectionsStatus("idle");
     setDirectionsError("");
     setNavigationDestinationKey(null);
@@ -980,9 +1171,14 @@ function Planner() {
     directionsPendingLocationRef.current = false;
     directionsRequestIdRef.current += 1;
     setDirectionsActive(false);
+    setDirectionsSearchOpen(false);
+    setDirectionOriginQuery("");
+    setDirectionOriginSuggestions([]);
+    setSelectedDirectionOrigin(null);
+    setSearchingDirectionOrigin(false);
     setDayDirectionLegs([]);
-    setSelectedDirectionModes({});
-    setSelectedPlanLegModes({});
+    setSelectedDirectionOptionKeys({});
+    setSelectedPlanLegOptionKeys({});
     setSelectedMapRouteKey(null);
     setDirectionsStatus("idle");
     setDirectionsError("");
@@ -1001,7 +1197,12 @@ function Planner() {
           day: day.day,
           order: dayOrder,
           mapKey: hasPlanItemCoordinates(item)
-            ? planItemMapKey(day.day, itemIndex, item.name)
+            ? planItemMapKey({
+                day: day.day,
+                itemId: item.itemId,
+                itemIndex,
+                name: item.name
+              })
             : null
         }];
       });
@@ -1021,11 +1222,12 @@ function Planner() {
               longitude: item.longitude ?? null,
               notes: item.notes,
               imageUrl: item.imageUrls?.find(isDisplayableImageUrl) ?? null,
+              openingHours: item.openingHours,
+              rating: item.rating,
+              reviewCount: item.reviewCount,
+              sourceLink: item.sourceLink,
               mapKey: item.mapKey,
-              mapOrder: directionsActive
-                ? directionItineraryOrder(dayDirectionLegs, item)
-                  ?? item.order
-                : item.order,
+              mapOrder: item.order,
               dayColorKey: dateKeyForTripDay(startDate, item.day),
               dayLabel: dateLabelForTripDay(startDate, item.day),
               timeWindow: item.timeWindow
@@ -1034,11 +1236,13 @@ function Planner() {
       );
   }, [
     activePlanDay,
-    dayDirectionLegs,
-    directionsActive,
     displayedExploreResult?.explorer.tripSpec.startDate,
     tripPlaces
   ]);
+  const mapOrderByPlaceKey = useMemo(
+    () => new Map(mapPlaces.map((place) => [place.mapKey, place.mapOrder])),
+    [mapPlaces]
+  );
   const activeDayDirectionStops = useMemo<DirectionStop[]>(
     () =>
       activePlanDay == null
@@ -1081,9 +1285,9 @@ function Planner() {
       })),
     [activeDayDirectionStops]
   );
-  const directionOriginSuggestions = useMemo<PlannerMapSearchPlace[]>(
+  const directionOriginSearchSuggestions = useMemo<PlannerMapSearchPlace[]>(
     () =>
-      startPointSuggestions.flatMap((suggestion, index) =>
+      directionOriginSuggestions.flatMap((suggestion, index) =>
         typeof suggestion.latitude === "number" &&
         typeof suggestion.longitude === "number"
           ? [{
@@ -1096,7 +1300,7 @@ function Planner() {
             }]
           : []
       ),
-    [startPointSuggestions]
+    [directionOriginSuggestions]
   );
   const directionDestinationSuggestions = useMemo<PlannerMapSearchPlace[]>(
     () => {
@@ -1134,7 +1338,7 @@ function Planner() {
       (total, leg, index) => {
         const selected = selectedTransportOption(
           leg,
-          selectedPlanLegModes[planLegSelectionKey(day.day, index)]
+          selectedPlanLegOptionKeys[planLegSelectionKey(day.day, index)]
         );
         return {
           distanceMeters: total.distanceMeters + selected.distanceMeters,
@@ -1144,42 +1348,30 @@ function Planner() {
       },
       { distanceMeters: 0, durationMinutes: 0 }
     );
-  }, [activePlanDay, displayedPlan, selectedPlanLegModes]);
-  const navigationOrigin = useMemo<PlannerMapCurrentLocation | null>(() => {
-    if (
-      startPointMode === "search" &&
-      selectedStartPoint &&
-      typeof selectedStartPoint.latitude === "number" &&
-      typeof selectedStartPoint.longitude === "number"
-    ) {
-      return {
-        latitude: selectedStartPoint.latitude,
-        longitude: selectedStartPoint.longitude,
-        accuracy: 0,
-        heading: null,
-        label: selectedStartPoint.name,
-        detail: selectedStartPoint.address ?? "Điểm bắt đầu đã chọn",
-        kind: "searched"
-      };
-    }
-    if (startPointMode === "search") return null;
-    return currentLocation
-      ? {
-          ...currentLocation,
-          label: "Vị trí của tôi",
-          kind: "device"
-        }
-      : null;
-  }, [currentLocation, selectedStartPoint, startPointMode]);
+  }, [activePlanDay, displayedPlan, selectedPlanLegOptionKeys]);
+  const mapDirectionOrigin = useMemo(
+    () =>
+      directionsSearchOpen
+        ? selectedDirectionOrigin
+        : directionsActive
+          ? selectedDirectionOrigin ?? currentLocation
+          : currentLocation,
+    [
+      currentLocation,
+      directionsActive,
+      directionsSearchOpen,
+      selectedDirectionOrigin
+    ]
+  );
   const selectedDayDirectionLegs = useMemo(
     () =>
       dayDirectionLegs.map((leg, index) =>
         selectedTransportOption(
           leg,
-          selectedDirectionModes[index]
+          selectedDirectionOptionKeys[index]
         )
       ),
-    [dayDirectionLegs, selectedDirectionModes]
+    [dayDirectionLegs, selectedDirectionOptionKeys]
   );
   const activeDayRouteSummary = useMemo(() => {
     const firstStop = activeDayDirectionStops[0];
@@ -1213,46 +1405,51 @@ function Planner() {
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
     if (!displayedPlan) return [];
     const startDate = displayedExploreResult?.explorer.tripSpec.startDate;
-    const shouldUseDirectionRoutes =
-      directionsActive && selectedDayDirectionLegs.length > 0;
-    const itineraryRoutes: PlannerMapRoute[] = shouldUseDirectionRoutes
-      ? []
-      : displayedPlan.days
-          .filter(
-            (day) => activePlanDay == null || day.day === activePlanDay
-          )
-          .flatMap((day) =>
-            day.transportLegs
-              .flatMap((leg, index) => {
-                const selected = selectedTransportOption(
-                  leg,
-                  selectedPlanLegModes[
-                    planLegSelectionKey(day.day, index)
-                  ]
-                );
-                if (!isDrawableTransportRoute(selected)) return [];
-                return [{
-                  key: `day-${day.day}-leg-${index}-${selected.mode}`,
-                  mode: selected.mode,
-                  fromPlace: leg.fromPlace,
-                  toPlace: leg.toPlace,
-                  distanceMeters: selected.distanceMeters,
-                  estimatedDurationMinutes: selected.estimatedDurationMinutes,
-                  coordinates: selected.geometryCoordinates,
-                  verified: selected.verified,
-                  source: selected.source,
-                  dayColorKey: dateKeyForTripDay(startDate, day.day),
-                  kind: "itinerary" as const,
-                  segments: selected.details?.segments
-                }];
-              })
+    const itineraryRoutes: PlannerMapRoute[] = displayedPlan.days
+      .filter((day) => activePlanDay == null || day.day === activePlanDay)
+      .flatMap((day) =>
+        day.transportLegs.flatMap((leg, index) => {
+          const selected = selectedTransportOption(
+            leg,
+            selectedPlanLegOptionKeys[planLegSelectionKey(day.day, index)]
           );
-    if (shouldUseDirectionRoutes && activePlanDay != null) {
+          if (!isDrawableTransportRoute(selected)) return [];
+          return [{
+            key: planTransportRouteMapKey(day.day, index, selected),
+            mode: selected.mode,
+            fromPlace: leg.fromPlace,
+            toPlace: leg.toPlace,
+            distanceMeters: selected.distanceMeters,
+            estimatedDurationMinutes: selected.estimatedDurationMinutes,
+            coordinates: selected.geometryCoordinates,
+            verified: selected.verified,
+            source: selected.source,
+            dayColorKey: dateKeyForTripDay(startDate, day.day),
+            kind: "itinerary" as const,
+            segments: selected.details?.segments
+          }];
+        })
+      );
+
+    if (
+      directionsActive &&
+      selectedDayDirectionLegs.length > 0 &&
+      activePlanDay != null
+    ) {
+      const activeDay = displayedPlan.days.find(
+        (day) => day.day === activePlanDay
+      );
       selectedDayDirectionLegs
-        .filter(isDrawableTransportRoute)
-        .forEach((leg, index) => {
+        .map((leg, index) => ({ leg, index }))
+        .filter(({ leg, index }) => (
+          isDrawableTransportRoute(leg)
+          && !activeDay?.transportLegs.some((planLeg) =>
+            transportLegsMatch(planLeg, dayDirectionLegs[index])
+          )
+        ))
+        .forEach(({ leg, index }) => {
           itineraryRoutes.push({
-            key: `day-directions-${activePlanDay}-${index}-${leg.mode}`,
+            key: directionTransportRouteMapKey(activePlanDay, index, leg),
             mode: leg.mode,
             fromPlace: dayDirectionLegs[index]?.fromPlace ?? "Vị trí của tôi",
             toPlace: dayDirectionLegs[index]?.toPlace ?? "Điểm đến",
@@ -1262,7 +1459,7 @@ function Planner() {
             verified: leg.verified,
             source: leg.source,
             dayColorKey: dateKeyForTripDay(startDate, activePlanDay),
-            kind: "current_location",
+            kind: index === 0 ? "current_location" : "itinerary",
             segments: leg.details?.segments
           });
         });
@@ -1273,7 +1470,7 @@ function Planner() {
     directionsActive,
     displayedExploreResult?.explorer.tripSpec.startDate,
     displayedPlan,
-    selectedPlanLegModes,
+    selectedPlanLegOptionKeys,
     dayDirectionLegs,
     selectedDayDirectionLegs
   ]);
@@ -1324,14 +1521,14 @@ function Planner() {
             (planLeg) => transportLegsMatch(planLeg, leg)
           );
           if (planLegIndex < 0) return;
-          const selectedMode = selectedPlanLegModes[
+          const selectedMode = selectedPlanLegOptionKeys[
             planLegSelectionKey(planDay.day, planLegIndex)
           ];
           if (selectedMode) {
             synchronizedModes[navigationLegIndex] = selectedMode;
           }
         });
-        setSelectedDirectionModes(synchronizedModes);
+        setSelectedDirectionOptionKeys(synchronizedModes);
       }
       setDirectionsStatus("ready");
       // Enter the navigation camera as soon as route geometry is available,
@@ -1354,40 +1551,54 @@ function Planner() {
 
   function locateCurrentPosition() {
     if (!("geolocation" in navigator)) {
+      placeLocationTargetRef.current = null;
       setLocationStatus("error");
       setLocationError("Trình duyệt này không hỗ trợ định vị.");
-      setStartPointMode("search");
-      setStartPointSearchOpen(true);
       return;
     }
     if (!window.isSecureContext) {
+      placeLocationTargetRef.current = null;
       setLocationStatus("error");
       setLocationError(
         "Định vị cần HTTPS hoặc localhost. Hãy mở ứng dụng qua kết nối an toàn."
       );
-      setStartPointMode("search");
-      setStartPointSearchOpen(true);
       return;
     }
 
     setLocationStatus("locating");
     setLocationError("");
-    navigator.geolocation.getCurrentPosition(
+    void requestDeviceHeadingPermission();
+    if (locationWatchIdRef.current != null) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      locationWatchIdRef.current = null;
+    }
+
+    locationWatchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        const isFirstLocationFix = latestLocationRef.current == null;
+        const directionsWereWaiting = directionsPendingLocationRef.current;
+        const previousHeading = latestLocationRef.current?.heading ?? null;
         const nextLocation = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
-          heading:
-            typeof position.coords.heading === "number"
-              ? position.coords.heading
-              : null
+          heading: normalizeDeviceHeading(position.coords.heading) ?? previousHeading
         };
+        latestLocationRef.current = nextLocation;
         setCurrentLocation(nextLocation);
-        setStartPointMode("current");
-        setStartPointSearchOpen(false);
-        setLocationFocusRequest((current) => current + 1);
-        if (directionsPendingLocationRef.current) {
+        const pendingPlaceTarget = placeLocationTargetRef.current;
+        if (pendingPlaceTarget) {
+          placeLocationTargetRef.current = null;
+          setPlaceLocationTarget(null);
+          applyCurrentLocationToPlaceSearch(pendingPlaceTarget, nextLocation);
+        }
+        if (
+          !directionsWereWaiting &&
+          (isFirstLocationFix || locationStatus === "locating")
+        ) {
+          setLocationFocusRequest((current) => current + 1);
+        }
+        if (directionsWereWaiting) {
           directionsPendingLocationRef.current = false;
           void requestDayDirections({
             ...nextLocation,
@@ -1398,13 +1609,11 @@ function Planner() {
         setLocationStatus("ready");
       },
       (geolocationError) => {
-        const directionsWereWaiting =
-          directionsPendingLocationRef.current;
+        const directionsWereWaiting = directionsPendingLocationRef.current;
         directionsPendingLocationRef.current = false;
         setLocationStatus("error");
         setLocationError(geolocationErrorMessage(geolocationError));
-        setStartPointMode("search");
-        setStartPointSearchOpen(true);
+        placeLocationTargetRef.current = null;
         if (directionsWereWaiting) {
           setDirectionsStatus("error");
           setDirectionsError(
@@ -1414,19 +1623,106 @@ function Planner() {
       },
       {
         enableHighAccuracy: true,
-        timeout: 10_000,
+        timeout: 12_000,
         maximumAge: 5_000
       }
     );
   }
 
   function recenterCurrentPosition() {
-    // getCurrentPosition is intentionally one-shot. A click refreshes the
-    // device position and triggers exactly one camera move on success.
+    directionsPendingLocationRef.current = directionsActive && !currentLocation;
+    if (currentLocation) {
+      setLocationFocusRequest((current) => current + 1);
+    }
     locateCurrentPosition();
   }
 
-  function startDayDirections(destination = activeNavigationDestination) {
+  function applyCurrentLocationToPlaceSearch(
+    target: PlaceLocationTarget,
+    location: Pick<PlannerMapCurrentLocation, "latitude" | "longitude">
+  ) {
+    const suggestion: PlaceSuggestion = {
+      name: "Vị trí hiện tại",
+      address: `Tọa độ ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`,
+      latitude: location.latitude,
+      longitude: location.longitude
+    };
+
+    if (target === "add") {
+      setAddName(suggestion.name);
+      setSelectedSuggestion(suggestion);
+      setPlaceSuggestions([]);
+      setAddSearchCompleted(false);
+      setAddSearchFailed(false);
+      return;
+    }
+
+    setEditingItem((current) => current ? { ...current, name: suggestion.name } : current);
+    setSelectedEditSuggestion(suggestion);
+    setEditPlaceSuggestions([]);
+    setEditSearchCompleted(false);
+    setEditSearchFailed(false);
+  }
+
+  function useCurrentLocationForPlace(target: PlaceLocationTarget) {
+    setPlaceLocationTarget(target);
+    setLocationError("");
+    if (currentLocation) {
+      placeLocationTargetRef.current = null;
+      applyCurrentLocationToPlaceSearch(target, currentLocation);
+      setPlaceLocationTarget(null);
+      return;
+    }
+    placeLocationTargetRef.current = target;
+    locateCurrentPosition();
+  }
+
+  async function requestDeviceHeadingPermission() {
+    if (!("DeviceOrientationEvent" in window)) return;
+    const orientationEvent =
+      window.DeviceOrientationEvent as DeviceOrientationPermissionEvent;
+    try {
+      if (typeof orientationEvent.requestPermission === "function") {
+        const permission = await orientationEvent.requestPermission();
+        if (permission !== "granted") return;
+      }
+      enableDeviceHeadingTracking();
+    } catch {
+      // GPS heading is still enough while the user is moving.
+    }
+  }
+
+  function enableDeviceHeadingTracking() {
+    if (orientationTrackingRef.current) return;
+    orientationTrackingRef.current = true;
+    const listener = (event: DeviceOrientationEvent) => {
+      updateDeviceHeading(event);
+    };
+    orientationListenerRef.current = listener;
+    window.addEventListener("deviceorientation", listener, true);
+    window.addEventListener(
+      "deviceorientationabsolute",
+      listener,
+      true
+    );
+  }
+
+  function updateDeviceHeading(event: DeviceOrientationEvent) {
+    const heading = headingFromOrientationEvent(event);
+    if (heading == null) return;
+    latestLocationRef.current = latestLocationRef.current
+      ? { ...latestLocationRef.current, heading }
+      : null;
+    setCurrentLocation((current) => {
+      if (!current) return current;
+      return { ...current, heading };
+    });
+  }
+
+  function startDayDirections(
+    destination = activeNavigationDestination,
+    originOverride?: PlannerMapCurrentLocation | null
+  ) {
     if (activePlanDay == null || !destination) {
       setDirectionsStatus("error");
       setDirectionsError(
@@ -1434,37 +1730,16 @@ function Planner() {
       );
       return;
     }
+    const origin = originOverride ?? selectedDirectionOrigin ?? currentLocation;
     setNavigationDestinationKey(destination.mapKey);
     setSelectedNavigationDestination(destination);
     setDestinationQuery(destination.name);
     directionsDestinationRef.current = destination;
-    setSelectedDirectionModes({});
+    setSelectedDirectionOrigin(origin);
+    setSelectedDirectionOptionKeys({});
     setDirectionsActive(true);
-    if (navigationOrigin) {
-      void requestDayDirections(navigationOrigin, destination);
-      return;
-    }
-    directionsPendingLocationRef.current = true;
-    setDirectionsStatus("routing");
-    locateCurrentPosition();
-  }
-
-  function viewDayRoute() {
-    setDirectionsActive(true);
-    setNavigationDestinationKey(null);
-    setSelectedNavigationDestination(null);
-    directionsDestinationRef.current = null;
-    setSelectedMapPlaceKey(null);
-    setStartPointMode("current");
-    setStartPointSearchOpen(false);
-    setStartPointQuery("");
-    setSelectedStartPoint(null);
-    if (currentLocation) {
-      void requestDayDirections({
-        ...currentLocation,
-        label: "Vị trí của tôi",
-        kind: "device"
-      }, null);
+    if (origin) {
+      void requestDayDirections(origin, destination);
       return;
     }
     directionsPendingLocationRef.current = true;
@@ -1476,6 +1751,25 @@ function Planner() {
     const initialDestination = activeNavigationDestination;
     setDirectionsSearchOpen(true);
     setMapDestinationPickActive(false);
+    setDirectionOriginSuggestions([]);
+    if (selectedDirectionOrigin) {
+      setDirectionOriginQuery(
+        selectedDirectionOrigin.kind === "device"
+          ? "Vị trí hiện tại"
+          : selectedDirectionOrigin.label ?? ""
+      );
+    } else {
+      if (currentLocation) {
+        setSelectedDirectionOrigin({
+          ...currentLocation,
+          label: "Vị trí của tôi",
+          kind: "device"
+        });
+        setDirectionOriginQuery("Vị trí hiện tại");
+      } else {
+        setDirectionOriginQuery("");
+      }
+    }
     if (initialDestination && !selectedNavigationDestination) {
       setSelectedNavigationDestination(initialDestination);
       setDestinationQuery(initialDestination.name);
@@ -1485,17 +1779,42 @@ function Planner() {
   function closeDirectionsSearch() {
     setDirectionsSearchOpen(false);
     setMapDestinationPickActive(false);
-    setStartPointSearchOpen(false);
+    setDirectionOriginSuggestions([]);
   }
 
   function chooseDirectionOrigin(place: PlannerMapSearchPlace) {
-    chooseSearchedStartPoint({
-      name: place.name,
-      address: place.detail,
+    setSelectedDirectionOrigin({
       latitude: place.latitude,
       longitude: place.longitude,
-      placeId: place.key
+      accuracy: 0,
+      heading: null,
+      label: place.name,
+      detail: place.detail ?? "Điểm đi đã chọn",
+      kind: "searched"
     });
+    setDirectionOriginQuery(place.name);
+    setDirectionOriginSuggestions([]);
+    setMapDestinationPickActive(false);
+  }
+
+  function updateDirectionOriginQuery(value: string) {
+    setDirectionOriginQuery(value);
+    setSelectedDirectionOrigin(null);
+    setMapDestinationPickActive(false);
+  }
+
+  function chooseCurrentDirectionOrigin() {
+    if (currentLocation) {
+      setSelectedDirectionOrigin({
+        ...currentLocation,
+        label: "Vị trí của tôi",
+        kind: "device"
+      });
+      setDirectionOriginQuery("Vị trí hiện tại");
+      setDirectionOriginSuggestions([]);
+      return;
+    }
+    locateCurrentPosition();
   }
 
   function updateDirectionDestinationQuery(value: string) {
@@ -1527,52 +1846,10 @@ function Planner() {
   }
 
   function submitDirectionSearch() {
-    if (!selectedNavigationDestination) return;
+    if (!selectedNavigationDestination || !selectedDirectionOrigin) return;
     setDirectionsSearchOpen(false);
     setMapDestinationPickActive(false);
-    startDayDirections(selectedNavigationDestination);
-  }
-
-  function chooseCurrentStartPoint() {
-    setStartPointMode("current");
-    setStartPointSearchOpen(false);
-    setStartPointQuery("");
-    setSelectedStartPoint(null);
-    // Keep the permission request inside the click handler. Browsers may
-    // suppress geolocation prompts that are triggered automatically on load.
-    directionsPendingLocationRef.current = directionsActive;
-    locateCurrentPosition();
-  }
-
-  function chooseSearchedStartPoint(suggestion: PlaceSuggestion) {
-    if (
-      typeof suggestion.latitude !== "number" ||
-      typeof suggestion.longitude !== "number"
-    ) return;
-    const origin: PlannerMapCurrentLocation = {
-      latitude: suggestion.latitude,
-      longitude: suggestion.longitude,
-      accuracy: 0,
-      heading: null,
-      label: suggestion.name,
-      detail: suggestion.address ?? "Điểm bắt đầu đã chọn",
-      kind: "searched"
-    };
-    setSelectedStartPoint(suggestion);
-    setStartPointMode("search");
-    setStartPointQuery(suggestion.name);
-    setStartPointSuggestions([]);
-    setStartPointSearchOpen(false);
-    setLocationFocusRequest((current) => current + 1);
-    if (directionsActive) void requestDayDirections(origin);
-  }
-
-  function updateStartPointQuery(value: string) {
-    setStartPointMode("search");
-    setStartPointQuery(value);
-    setSelectedStartPoint(null);
-    setStartPointSearchOpen(true);
-    setLocationError("");
+    startDayDirections(selectedNavigationDestination, selectedDirectionOrigin);
   }
 
   function clearDayDirections() {
@@ -1582,29 +1859,48 @@ function Planner() {
     setDirectionsSearchOpen(false);
     setMapDestinationPickActive(false);
     setDayDirectionLegs([]);
-    setSelectedDirectionModes({});
+    setSelectedDirectionOptionKeys({});
     setDirectionsStatus("idle");
     setDirectionsError("");
+    setSelectedMapPlaceKey(null);
+    setSelectedMapRouteKey(null);
   }
 
-  function chooseDirectionOption(legIndex: number, mode: string) {
-    setSelectedDirectionModes((current) => ({
+  async function chooseDirectionOption(legIndex: number, option: TransportOption) {
+    const mode = option.mode;
+    const optionKey = transportOptionSelectionKey(option);
+    const previousDirectionRouteKey =
+      activePlanDay != null
+        ? directionTransportRouteMapKey(
+            activePlanDay,
+            legIndex,
+            selectedTransportOption(
+              dayDirectionLegs[legIndex],
+              selectedDirectionOptionKeys[legIndex]
+            )
+          )
+        : null;
+    setSelectedDirectionOptionKeys((current) => ({
       ...current,
-      [legIndex]: mode
+      [legIndex]: optionKey
     }));
-    const navigationLeg = dayDirectionLegs[legIndex];
-    const selectedOption = navigationLeg
-      ? selectedTransportOption(navigationLeg, mode)
-      : null;
     if (
-      selectedOption &&
+      previousDirectionRouteKey &&
       activePlanDay != null &&
-      isDrawableTransportRoute(selectedOption)
+      selectedMapRouteKey === previousDirectionRouteKey
     ) {
-      focusRouteOnMap(
-        `day-directions-${activePlanDay}-${legIndex}-${selectedOption.mode}`
+      setSelectedMapRouteKey(
+        directionTransportRouteMapKey(activePlanDay, legIndex, option)
       );
     }
+    if (activePlanDay != null && isDrawableTransportRoute(option)) {
+      setSelectedMapPlaceKey(null);
+      setSelectedMapRouteKey(
+        directionTransportRouteMapKey(activePlanDay, legIndex, option)
+      );
+      setRouteFocusRequest((current) => current + 1);
+    }
+    const navigationLeg = dayDirectionLegs[legIndex];
     const planDay = displayedPlan?.days.find(
       (day) => day.day === activePlanDay
     );
@@ -1613,43 +1909,97 @@ function Planner() {
       (leg) => transportLegsMatch(leg, navigationLeg)
     );
     if (planLegIndex >= 0) {
-      setSelectedPlanLegModes((current) => ({
+      setSelectedPlanLegOptionKeys((current) => ({
         ...current,
-        [planLegSelectionKey(planDay.day, planLegIndex)]: mode
+        [planLegSelectionKey(planDay.day, planLegIndex)]: optionKey
       }));
+      await choosePlanTransportOption(planDay.day, planLegIndex, option);
     }
   }
 
-  function choosePlanTransportOption(
+  async function choosePlanTransportOption(
     day: number,
     legIndex: number,
-    mode: string
+    option: TransportOption
   ) {
-    setSelectedPlanLegModes((current) => ({
+    const mode = option.mode;
+    const optionKey = transportOptionSelectionKey(option);
+    const selectionKey = planLegSelectionKey(day, legIndex);
+    const previousOptionKeys = selectedPlanLegOptionKeys;
+    const previousPlan = plan;
+    const currentPlanLeg = displayedPlan?.days
+      .find((planDay) => planDay.day === day)
+      ?.transportLegs[legIndex];
+    const previousPlanRouteKey = currentPlanLeg
+      ? planTransportRouteMapKey(
+          day,
+          legIndex,
+          selectedTransportOption(
+            currentPlanLeg,
+            selectedPlanLegOptionKeys[selectionKey]
+          )
+        )
+      : null;
+    setSelectedPlanLegOptionKeys((current) => ({
       ...current,
-      [planLegSelectionKey(day, legIndex)]: mode
+      [selectionKey]: optionKey
     }));
+    if (previousPlanRouteKey && selectedMapRouteKey === previousPlanRouteKey) {
+      setSelectedMapRouteKey(planTransportRouteMapKey(day, legIndex, option));
+    }
+    if (plan) {
+      setPlan(promoteTransportOptionInPlan(plan, day, legIndex, option));
+    }
+    setDirectionsActive(false);
+    if (isDrawableTransportRoute(option)) {
+      setSelectedMapPlaceKey(null);
+      setSelectedMapRouteKey(planTransportRouteMapKey(day, legIndex, option));
+      setRouteFocusRequest((current) => current + 1);
+    }
     const planLeg = displayedPlan?.days
       .find((planDay) => planDay.day === day)
       ?.transportLegs[legIndex];
     if (!planLeg) return;
-    const selectedOption = selectedTransportOption(planLeg, mode);
-    if (isDrawableTransportRoute(selectedOption)) {
-      focusRouteOnMap(
-        `day-${day}-leg-${legIndex}-${selectedOption.mode}`
-      );
-    } else {
-      setSelectedMapRouteKey(null);
-    }
     const navigationLegIndex = dayDirectionLegs.findIndex(
       (leg) => transportLegsMatch(leg, planLeg)
     );
     if (navigationLegIndex >= 0) {
-      setSelectedDirectionModes((current) => ({
+      setSelectedDirectionOptionKeys((current) => ({
         ...current,
-        [navigationLegIndex]: mode
+        [navigationLegIndex]: optionKey
       }));
     }
+    if (!activeChatId || !previousPlan) return;
+
+    setSavingTransportOptionKey(selectionKey);
+    setError("");
+    try {
+      const updatedChat = await selectTripChatTransportOption({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        day,
+        legIndex,
+        mode,
+        optionKey,
+        source: option.source,
+        distanceMeters: option.distanceMeters,
+        estimatedDurationMinutes: option.estimatedDurationMinutes
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      showPlannerToast("Đã chọn phương tiện");
+    } catch (caught: any) {
+      setSelectedPlanLegOptionKeys(previousOptionKeys);
+      setPlan(previousPlan);
+      setError(caught?.message || "Không thể lưu lựa chọn phương tiện.");
+    } finally {
+      setSavingTransportOptionKey(null);
+    }
+  }
+
+  function selectRouteOnMapWithoutFocus(routeKey: string) {
+    setSelectedMapPlaceKey(null);
+    setSelectedMapRouteKey(routeKey);
   }
 
   function focusRouteOnMap(routeKey: string) {
@@ -1692,6 +2042,64 @@ function Planner() {
     focusRouteOnMap(routeKey);
   }
 
+  function handleItineraryRouteHighlight(
+    event: ReactMouseEvent<HTMLButtonElement>,
+    routeKey: string
+  ) {
+    event.stopPropagation();
+    if (selectedMapRouteKey === routeKey) {
+      setSelectedMapRouteKey(null);
+      return;
+    }
+    focusRouteOnMap(routeKey);
+  }
+
+  function focusPlaceOnMap(mapKey: string) {
+    setSelectedMapRouteKey(null);
+    setSelectedMapPlaceKey(mapKey);
+    window.requestAnimationFrame(() => {
+      document.querySelector(".plannerMap")?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+      });
+    });
+  }
+
+  function isInteractiveItineraryTarget(
+    target: EventTarget | null,
+    card: HTMLElement
+  ) {
+    if (!(target instanceof Element)) return false;
+    const interactiveTarget = target.closest(
+      'button, a, input, textarea, select, summary, [role="button"], [role="tab"], [role="option"]'
+    );
+    return interactiveTarget != null && interactiveTarget !== card;
+  }
+
+  function clearMapHighlight() {
+    if (!selectedMapPlaceKey && !selectedMapRouteKey) return;
+    setSelectedMapPlaceKey(null);
+    setSelectedMapRouteKey(null);
+  }
+
+  function clearMapHighlightFromExternalControlClick(
+    event: ReactMouseEvent<HTMLElement>
+  ) {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".plannerMap")) return;
+    // Route controls own their select/cancel toggle. Clearing during the
+    // capture phase would render the button again before its click handler
+    // runs, causing a cancel click to immediately select the route again.
+    if (target.closest(".itineraryRouteMapButton")) return;
+    if (
+      !target.closest(
+        'button, a, input, textarea, select, summary, [role="button"], [role="tab"], [role="option"]'
+      )
+    ) return;
+    clearMapHighlight();
+  }
+
   const selectPlaceFromMap = useCallback((mapKey: string) => {
     setSelectedMapRouteKey(null);
     setSelectedMapPlaceKey(mapKey);
@@ -1699,7 +2107,7 @@ function Planner() {
 
   const locationMessage = useMemo(() => {
     if (directionsStatus === "routing" && activePlanDay != null) {
-      return `Đang tính tuyến đường ngày ${activePlanDay}…`;
+      return "Đang tính tuyến đường…";
     }
     if (locationStatus === "locating") {
       return "Đang lấy vị trí từ thiết bị…";
@@ -1727,7 +2135,7 @@ function Planner() {
           minimumFractionDigits: totalDistanceMeters < 1000 ? 1 : 0
         }
       );
-      return `⏱ ${totalMinutes} phút · ${totalKilometers} km`;
+      return `⏱ ${formatDuration(totalMinutes)} · ${totalKilometers} km`;
     }
     return null;
   }, [
@@ -2100,18 +2508,10 @@ function Planner() {
           }
         : null
     );
+    const conversationMessages = visibleConversationMessages(chat);
     setMessages(
-      chat.messages.length
-        ? chat.messages.map((message) => ({
-            id: message.id,
-            role: message.role,
-            text: [
-              message.content,
-              message.attachmentNames.length
-                ? `📎 ${message.attachmentNames.length} ảnh`
-                : ""
-            ].filter(Boolean).join("\n")
-          }))
+      conversationMessages.length
+        ? conversationMessages
         : [{
             id: `welcome-${chat.id}`,
             role: "assistant",
@@ -2136,8 +2536,38 @@ function Planner() {
   }
 
   return (
-    <main className="plannerPage">
-      <div className="plannerWorkspace pageWidth">
+    <main
+      className="plannerPage"
+      onClickCapture={clearMapHighlightFromExternalControlClick}
+    >
+      {plannerToast ? (
+        <div className="plannerToast" key={plannerToast.id} role="status">
+          <span aria-hidden="true">✓</span>
+          {plannerToast.text}
+        </div>
+      ) : null}
+      {reorderingDay != null ? (
+        <div
+          aria-labelledby="route-recalculation-title"
+          aria-modal="true"
+          autoFocus
+          className="plannerInteractionLock"
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+          tabIndex={-1}
+        >
+          <div className="plannerInteractionLockCard">
+            <span aria-hidden="true" className="plannerInteractionLockSpinner" />
+            <strong id="route-recalculation-title">Đang cập nhật tuyến đường…</strong>
+            <small>Vui lòng đợi một chút. Lịch trình sẽ mở lại ngay khi tuyến mới sẵn sàng.</small>
+          </div>
+        </div>
+      ) : null}
+      <div
+        aria-busy={reorderingDay != null}
+        className="plannerWorkspace pageWidth"
+        inert={reorderingDay != null ? true : undefined}
+      >
         {user && !historyCollapsed ? (
           <>
             <button
@@ -2505,30 +2935,9 @@ function Planner() {
                 <MenuIcon />
               </button>
             ) : null}
-            <button
-              type="button"
-              data-testid="supervisor-toggle"
-              data-supervisor-enabled={supervisorToggle ? "true" : "false"}
-              className={`supervisorToggle ${supervisorToggle ? "on" : "off"}`}
-              aria-pressed={supervisorToggle}
-              aria-label={
-                supervisorToggle
-                  ? "Tắt supervisor (roll back về luồng cũ)"
-                  : "Bật supervisor (luồng mới có confirm)"
-              }
-              onClick={toggleSupervisor}
-              title={
-                supervisorToggle
-                  ? "Supervisor đang bật — click để tắt khi cần rollback"
-                  : "Supervisor đang tắt — click để bật lại"
-              }
-            >
-              <span className="supervisorToggleDot" aria-hidden="true" />
-              Supervisor {supervisorToggle ? "ON" : "OFF"}
-            </button>
           </header>
           {displayedPlan && displayedExploreResult ? (
-            <div className="exploreResult">
+            <div className="exploreResult" ref={itineraryScrollRef}>
               <section className="tripSummaryCard">
                 <div className="tripSummaryIntro">
                   <span className="destinationPin" aria-hidden="true">⌖</span>
@@ -2631,7 +3040,12 @@ function Planner() {
                 >
                   {displayedPlanDays.map((displayedPlanDay) => (
                     <article
-                      className="explorerDayCard"
+                      className={`explorerDayCard ${
+                        selectedMapRouteKey?.startsWith(`day-${displayedPlanDay.day}-`) ||
+                        selectedMapRouteKey?.startsWith(`day-directions-${displayedPlanDay.day}-`)
+                          ? "has-map-route-selection"
+                          : ""
+                      }`}
                       key={displayedPlanDay.day}
                       style={{
                         "--day-color": planDayColors.get(
@@ -2642,177 +3056,147 @@ function Planner() {
                         ) ?? "#365f5a"
                       } as CSSProperties}
                     >
-                      {activePlanDay === displayedPlanDay.day ? (
-                        <div
-                          className={`dayNavigationStart ${navigationOrigin ? "isSelected" : "isPending"}`}
-                        >
-                          <div className="dayNavigationStartHeader">
-                            <span className="dayNavigationStartEyebrow">
-                              Điểm bắt đầu · Ngày {displayedPlanDay.day}
-                            </span>
-                            {navigationOrigin?.detail ? (
-                              <small>{navigationOrigin.detail}</small>
-                            ) : !navigationOrigin ? (
-                              <small>
-                                {locationStatus === "locating"
-                                  ? "Đang xin quyền và xác định vị trí của bạn…"
-                                  : "Dùng vị trí hiện tại hoặc tìm một địa điểm khác"}
-                              </small>
-                            ) : null}
-                          </div>
-                          <div className="dayNavigationStartSearch">
-                            <div
-                              className={`dayNavigationStartField ${startPointMode === "current" ? "isCurrent" : "isSearch"}`}
-                            >
-                              <span className="dayNavigationStartFieldIcon" aria-hidden="true">
-                                {startPointMode === "current" ? "◎" : "⌕"}
-                              </span>
-                              <input
-                                aria-autocomplete="list"
-                                aria-controls={`start-point-suggestions-${displayedPlanDay.day}`}
-                                aria-expanded={startPointSuggestions.length > 0}
-                                aria-label="Tìm điểm bắt đầu"
-                                autoComplete="off"
-                                id={`start-point-search-${displayedPlanDay.day}`}
-                                onChange={(event) => updateStartPointQuery(event.target.value)}
-                                onFocus={(event) => {
-                                  setStartPointSearchOpen(true);
-                                  if (startPointMode === "current") event.currentTarget.select();
-                                }}
-                                placeholder={
-                                  locationStatus === "locating"
-                                    ? "Đang xác định vị trí hiện tại…"
-                                    : "Tìm khách sạn, ga tàu, sân bay…"
-                                }
-                                role="combobox"
-                                type="search"
-                                value={
-                                  startPointMode === "current" && currentLocation
-                                    ? "Vị trí hiện tại"
-                                    : startPointQuery
-                                }
-                              />
-                              {searchingStartPoint ? (
-                                <span
-                                  aria-label="Đang tìm địa điểm"
-                                  className="dayNavigationStartSpinner"
-                                  role="status"
-                                />
-                              ) : null}
-                              <button
-                                aria-label="Dùng vị trí hiện tại"
-                                className="dayNavigationUseCurrentButton"
-                                disabled={locationStatus === "locating"}
-                                onClick={chooseCurrentStartPoint}
-                                title="Dùng vị trí hiện tại"
-                                type="button"
-                              >
-                                <span aria-hidden="true">⌖</span>
-                              </button>
-                            </div>
-                            {startPointSearchOpen ? (
-                              <>
-                              {startPointSuggestions.length > 0 ? (
-                                <div
-                                  className="dayNavigationStartSuggestions"
-                                  id={`start-point-suggestions-${displayedPlanDay.day}`}
-                                  role="listbox"
-                                >
-                                  {startPointSuggestions.map((suggestion, suggestionIndex) => (
-                                    <button
-                                      key={suggestion.placeId || `${suggestion.name}-${suggestionIndex}`}
-                                      onClick={() => chooseSearchedStartPoint(suggestion)}
-                                      role="option"
-                                      type="button"
-                                    >
-                                      <strong>{suggestion.name}</strong>
-                                      {suggestion.address ? <small>{suggestion.address}</small> : null}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : null}
-                              {!searchingStartPoint &&
-                              startPointSearchCompleted &&
-                              startPointSuggestions.length === 0 ? (
-                                <small role={startPointSearchFailed ? "alert" : "status"}>
-                                  {startPointSearchFailed
-                                    ? "Không thể tải dữ liệu địa điểm. Vui lòng thử lại."
-                                    : "Không tìm thấy địa điểm phù hợp."}
-                                </small>
-                              ) : null}
-                              </>
-                            ) : null}
-                            {locationStatus === "error" && locationError ? (
-                              <small role="alert">
-                                {locationError} Bạn vẫn có thể tìm địa điểm khác.
-                              </small>
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
                       {directionsActive &&
                       activePlanDay === displayedPlanDay.day &&
                       dayDirectionLegs.length > 0 ? (
                         <div
-                          aria-label={`Chỉ đường từ ${navigationOrigin?.label ?? "điểm bắt đầu"} đến ${activeNavigationDestination?.name ?? "địa điểm đầu tiên"}`}
+                          aria-label={`Tuyến đến ${dayDirectionLegs[0]?.toPlace ?? activeNavigationDestination?.name ?? "địa điểm đã chọn"}`}
                           className="dayNavigationChoices dayNavigationChoices--firstLeg"
                         >
                           {dayDirectionLegs.slice(0, 1).map((leg, legIndex) => {
                             const options = transportOptionsForLeg(leg);
                             const selected = selectedTransportOption(
                               leg,
-                              selectedDirectionModes[legIndex]
+                              selectedDirectionOptionKeys[legIndex]
                             );
                             const directionRouteKey = isDrawableTransportRoute(selected)
-                              ? `day-directions-${displayedPlanDay.day}-${legIndex}-${selected.mode}`
+                              ? directionTransportRouteMapKey(
+                                  displayedPlanDay.day,
+                                  legIndex,
+                                  selected
+                                )
                               : null;
+                            if (options.length <= 1) {
+                              return (
+                                <div
+                                  className={`dayNavigationLeg dayNavigationLeg--routeStrip ${selectedMapRouteKey === directionRouteKey ? "is-map-route-selected" : ""}`}
+                                  data-map-route-key={directionRouteKey ?? undefined}
+                                  key={`${leg.fromPlace}-${leg.toPlace}-${legIndex}`}
+                                >
+                                  <button
+                                    className="dayNavigationLegButton dayNavigationLegButton--routeStrip"
+                                    disabled={!directionRouteKey}
+                                    onClick={directionRouteKey
+                                      ? () => selectRouteFromItinerary(directionRouteKey)
+                                      : undefined}
+                                    type="button"
+                                  >
+                                    <span className="itineraryRouteIcon" aria-hidden="true">
+                                      <TransportModeIcon mode={selected.mode} />
+                                    </span>
+                                    <span className="dayNavigationLegCopy">
+                                      <small>
+                                        {formatDuration(selected.estimatedDurationMinutes)}
+                                        {" · "}{formatDistance(selected.distanceMeters)}
+                                      </small>
+                                    </span>
+                                  </button>
+                                  {directionRouteKey ? (
+                                    <button
+                                      aria-label={
+                                        selectedMapRouteKey === directionRouteKey
+                                          ? `Huỷ làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace}`
+                                          : `Làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace} trên bản đồ`
+                                      }
+                                      aria-pressed={selectedMapRouteKey === directionRouteKey}
+                                      className="itineraryRouteMapButton"
+                                      onClick={(event) =>
+                                        handleItineraryRouteHighlight(event, directionRouteKey)
+                                      }
+                                      title={selectedMapRouteKey === directionRouteKey ? "Huỷ highlight" : "Highlight trên bản đồ"}
+                                      type="button"
+                                    >
+                                      <span aria-hidden="true">
+                                        <MapPinIcon />
+                                      </span>
+                                      <span>{selectedMapRouteKey === directionRouteKey ? "Huỷ" : "Route"}</span>
+                                    </button>
+                                  ) : null}
+                                </div>
+                              );
+                            }
                             return (
                               <details
-                                className={`dayNavigationLeg ${selectedMapRouteKey === directionRouteKey ? "is-map-route-selected" : ""}`}
+                                className={`dayNavigationLeg dayNavigationLeg--routeStrip ${selectedMapRouteKey === directionRouteKey ? "is-map-route-selected" : ""}`}
                                 data-map-route-key={directionRouteKey ?? undefined}
                                 key={`${leg.fromPlace}-${leg.toPlace}-${legIndex}`}
-                                onClick={directionRouteKey
-                                  ? (event) => {
-                                      if (!(event.target as Element).closest("summary")) return;
-                                      selectRouteFromItinerary(directionRouteKey);
-                                    }
-                                  : undefined}
                               >
-                                <summary>
+                                <summary className="dayNavigationLegSummary--routeStrip">
                                   <span className="itineraryRouteIcon" aria-hidden="true">
                                     <TransportModeIcon mode={selected.mode} />
                                   </span>
-                                  <span>
-                                    <b>{leg.fromPlace}</b>
-                                    {" → "}
-                                    <b>{leg.toPlace}</b>
+                                  <span className="dayNavigationLegCopy">
+                                    <small>
+                                      {formatDuration(selected.estimatedDurationMinutes)}
+                                      {" · "}{formatDistance(selected.distanceMeters)}
+                                    </small>
                                   </span>
-                                  <small>
-                                    {transportModeLabel(selected.mode)}
-                                    {" · "}
-                                    {selected.estimatedDurationMinutes} phút
-                                  </small>
                                   <ChevronDownIcon />
                                 </summary>
+                                {directionRouteKey ? (
+                                  <button
+                                    aria-label={
+                                      selectedMapRouteKey === directionRouteKey
+                                        ? `Huỷ làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace}`
+                                        : `Làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace} trên bản đồ`
+                                    }
+                                    aria-pressed={selectedMapRouteKey === directionRouteKey}
+                                    className="itineraryRouteMapButton"
+                                    onClick={(event) =>
+                                      handleItineraryRouteHighlight(event, directionRouteKey)
+                                    }
+                                    title={selectedMapRouteKey === directionRouteKey ? "Huỷ highlight" : "Highlight trên bản đồ"}
+                                    type="button"
+                                  >
+                                    <span aria-hidden="true">
+                                      <MapPinIcon />
+                                    </span>
+                                    <span>{selectedMapRouteKey === directionRouteKey ? "Huỷ" : "Route"}</span>
+                                  </button>
+                                ) : null}
                                 <div className="itineraryRouteAlternatives">
-                                  {options.map((option, optionIndex) => (
-                                    <TransportOptionCard
-                                      fromPlace={leg.fromPlace}
-                                      key={`${option.mode}-${option.source}-${optionIndex}`}
-                                      onSelect={() =>
-                                        chooseDirectionOption(
-                                          legIndex,
-                                          option.mode
+                                  {options.map((option, optionIndex) => {
+                                    const matchingPlanLegIndex = displayedPlanDay.transportLegs.findIndex(
+                                      (planLeg) => transportLegsMatch(planLeg, leg)
+                                    );
+                                    const matchingPlanLegKey = matchingPlanLegIndex >= 0
+                                      ? planLegSelectionKey(
+                                          displayedPlanDay.day,
+                                          matchingPlanLegIndex
                                         )
-                                      }
-                                      option={option}
-                                      primary={optionIndex === 0}
-                                      selected={
-                                        selected.mode === option.mode
-                                      }
-                                      toPlace={leg.toPlace}
-                                    />
-                                  ))}
+                                      : null;
+                                    return (
+                                      <TransportOptionCard
+                                        key={`${option.mode}-${option.source}-${optionIndex}`}
+                                        onSelect={() =>
+                                          void chooseDirectionOption(
+                                            legIndex,
+                                            option
+                                          )
+                                        }
+                                        option={option}
+                                        primary={optionIndex === 0}
+                                        saving={
+                                          matchingPlanLegKey != null &&
+                                          savingTransportOptionKey === matchingPlanLegKey
+                                        }
+                                        selected={
+                                          transportOptionSelectionKey(selected) ===
+                                          transportOptionSelectionKey(option)
+                                        }
+                                      />
+                                    );
+                                  })}
                                 </div>
                               </details>
                             );
@@ -2844,6 +3228,7 @@ function Planner() {
                             personalNotes
                           ].filter(Boolean).length;
                           const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
+                          const displayItemName = itineraryDisplayName(item.name);
                           const isNoteEditorOpen = Boolean(
                             noteEditor
                             && noteEditor.day === displayedPlanDay.day
@@ -2851,8 +3236,16 @@ function Planner() {
                             && noteEditor.itemName === item.name
                           );
                           const mapKey = hasPlanItemCoordinates(item)
-                            ? planItemMapKey(displayedPlanDay.day, itemIndex, item.name)
+                            ? planItemMapKey({
+                                day: displayedPlanDay.day,
+                                itemId: item.itemId,
+                                itemIndex,
+                                name: item.name
+                              })
                             : null;
+                          const mapOrder = mapKey
+                            ? mapOrderByPlaceKey.get(mapKey)
+                            : undefined;
                           const transportLeg = transportLegAfterItem(displayedPlanDay, item, itemIndex);
                           const transportLegIndex = transportLeg
                             ? displayedPlanDay.transportLegs.indexOf(
@@ -2863,7 +3256,7 @@ function Planner() {
                             transportLeg && transportLegIndex >= 0
                               ? selectedTransportOption(
                                   transportLeg,
-                                  selectedPlanLegModes[
+                                  selectedPlanLegOptionKeys[
                                     planLegSelectionKey(
                                       displayedPlanDay.day,
                                       transportLegIndex
@@ -2871,14 +3264,51 @@ function Planner() {
                                   ]
                                 )
                               : null;
-                          const routeMapKey =
-                            selectedTransportLeg && transportLegIndex >= 0 &&
-                            isDrawableTransportRoute(selectedTransportLeg)
-                              ? `day-${displayedPlanDay.day}-leg-${transportLegIndex}-${selectedTransportLeg.mode}`
+                          const directionLegIndex = transportLeg
+                            ? dayDirectionLegs.findIndex((leg) =>
+                                transportLegsMatch(leg, transportLeg)
+                              )
+                            : -1;
+                          const selectedDirectionLeg =
+                            directionLegIndex >= 0
+                              ? selectedTransportOption(
+                                  dayDirectionLegs[directionLegIndex],
+                                  selectedDirectionOptionKeys[directionLegIndex]
+                                )
                               : null;
+                          const routeMapKey =
+                            selectedDirectionLeg &&
+                            directionLegIndex >= 0 &&
+                            activePlanDay === displayedPlanDay.day &&
+                            directionsActive &&
+                            isDrawableTransportRoute(selectedDirectionLeg)
+                              ? directionTransportRouteMapKey(
+                                  displayedPlanDay.day,
+                                  directionLegIndex,
+                                  selectedDirectionLeg
+                                )
+                              : selectedTransportLeg && transportLegIndex >= 0 &&
+                                  isDrawableTransportRoute(selectedTransportLeg)
+                                ? planTransportRouteMapKey(
+                                    displayedPlanDay.day,
+                                    transportLegIndex,
+                                    selectedTransportLeg
+                                  )
+                                : null;
                           const transportLegOptions = transportLeg
                             ? transportOptionsForLeg(transportLeg)
                             : [];
+                          const transportOptionsPanelKey = transportLegIndex >= 0
+                            ? planLegSelectionKey(
+                                displayedPlanDay.day,
+                                transportLegIndex
+                              )
+                            : `${displayedPlanDay.day}:${itemIndex}`;
+                          const transportOptionsPanelId =
+                            `transport-options-${displayedPlanDay.day}-${itemIndex}`;
+                          const transportOptionsExpanded = Boolean(
+                            expandedTransportOptionKeys[transportOptionsPanelKey]
+                          );
                           const timelineCategory = item.timelineCategory ?? "activity";
                           const isNonActivity = (
                             timelineCategory === "break"
@@ -2899,32 +3329,61 @@ function Planner() {
                           );
                           const canReorder = Boolean(item.itemId && activeChatId && !mutatingItem);
                           const placeImageUrl = item.imageUrls?.find(isDisplayableImageUrl) ?? null;
+                          const itineraryImageUrl = placeImageUrl ?? ITINERARY_NO_IMAGE_SRC;
                           const isDragging = draggedItemKey?.itemId === item.itemId;
                           const isDragTarget = dragOverItemId === item.itemId && !isDragging;
-                          const itemActions = item.itemId && activeChatId ? (
-                            <div
-                              className="itineraryActions itineraryActions--cardTop"
+                          const itemDragHandle = item.itemId && activeChatId ? (
+                            <button
+                              aria-label={`Kéo ${displayItemName} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
+                              className="itineraryDragHandle"
+                              draggable={canReorder}
+                              onKeyDown={(event) => {
+                                if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                                event.preventDefault();
+                                handleMoveItemOrder(
+                                  displayedPlanDay.day,
+                                  itemIndex,
+                                  event.key === "ArrowUp" ? "up" : "down"
+                                );
+                              }}
+                              title="Kéo để đổi vị trí"
+                              type="button"
                             >
+                              <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.25"/><circle cx="15" cy="7" r="1.25"/><circle cx="9" cy="12" r="1.25"/><circle cx="15" cy="12" r="1.25"/><circle cx="9" cy="17" r="1.25"/><circle cx="15" cy="17" r="1.25"/></svg>
+                            </button>
+                          ) : null;
+                          const itemNoteAction = activityNoteCount || (item.itemId && activeChatId) ? (
+                            <button
+                              aria-controls={notePanelId}
+                              aria-expanded={isNoteEditorOpen}
+                              aria-label={activityNoteCount ? `Mở ${activityNoteCount} mục ghi chú cho ${displayItemName}` : `Thêm ghi chú cho ${displayItemName}`}
+                              className="itineraryActionButton itineraryNoteActionButton"
+                              onClick={() => setNoteEditor(isNoteEditorOpen ? null : {
+                                day: displayedPlanDay.day,
+                                itemId: item.itemId ?? null,
+                                itemName: item.name,
+                                sourceNote: sourceActivityNote,
+                                additionalContext: additionalContextNote,
+                                personalNotes: personalNotes ?? ""
+                              })}
+                              title={activityNoteCount ? "Ghi chú hoạt động" : "Thêm ghi chú"}
+                              type="button"
+                            >
+                              <svg viewBox="0 0 24 24">
+                                <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
+                                <path d="M14 3v6h6M8 13h8M8 17h5" />
+                              </svg>
+                              {activityNoteCount ? (
+                                <span className="activityNotesButtonCount" aria-hidden="true">
+                                  {activityNoteCount}
+                                </span>
+                              ) : null}
+                            </button>
+                          ) : null;
+                          const itemMutationActions = item.itemId && activeChatId ? (
+                            <>
                               <button
-                                aria-label={`Kéo ${item.name} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
-                                className="itineraryDragHandle"
-                                draggable={canReorder}
-                                onKeyDown={(event) => {
-                                  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-                                  event.preventDefault();
-                                  handleMoveItemOrder(
-                                    displayedPlanDay.day,
-                                    itemIndex,
-                                    event.key === "ArrowUp" ? "up" : "down"
-                                  );
-                                }}
-                                title="Kéo để đổi vị trí"
-                                type="button"
-                              >
-                                <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.25"/><circle cx="15" cy="7" r="1.25"/><circle cx="9" cy="12" r="1.25"/><circle cx="15" cy="12" r="1.25"/><circle cx="9" cy="17" r="1.25"/><circle cx="15" cy="17" r="1.25"/></svg>
-                              </button>
-                              <button
-                                aria-label={`Sửa ${item.name}`}
+                                aria-label={`Sửa ${displayItemName}`}
                                 className="itineraryActionButton"
                                 onClick={() => {
                                   openItemEditor(
@@ -2939,7 +3398,7 @@ function Planner() {
                                 <svg viewBox="0 0 24 24"><path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z"/></svg>
                               </button>
                               <button
-                                aria-label={`Xóa ${item.name}`}
+                                aria-label={`Xóa ${displayItemName}`}
                                 className="itineraryActionButton danger"
                                 onClick={() => handleDeleteItem(displayedPlanDay.day, item.itemId!)}
                                 title="Xóa địa điểm"
@@ -2947,8 +3406,85 @@ function Planner() {
                               >
                                 <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5"/></svg>
                               </button>
+                            </>
+                          ) : null;
+                          const itemInfoActions = itemNoteAction ? (
+                            <div className="itineraryActions itineraryActions--rail itineraryActions--railInfo">
+                              {itemNoteAction}
                             </div>
                           ) : null;
+                          const itemManageActions = (
+                            itemDragHandle
+                            || itemMutationActions
+                          ) ? (
+                            <div className="itineraryActions itineraryActions--rail itineraryActions--railManage">
+                              {itemDragHandle}
+                              {itemMutationActions}
+                            </div>
+                          ) : null;
+                          const itemSideRail = itemInfoActions || itemManageActions ? (
+                            <div className="itineraryPlaceDragRail">
+                              {itemInfoActions}
+                              {itemManageActions}
+                            </div>
+                          ) : null;
+                          const itemNotePanel = isNoteEditorOpen && noteEditor ? (
+                            <form
+                              className="activityNotesInlinePanel"
+                              id={notePanelId}
+                              onSubmit={(event) => {
+                                if (!noteEditor.itemId) {
+                                  event.preventDefault();
+                                  setNoteEditor(null);
+                                  return;
+                                }
+                                void handleSavePersonalNotes(event, noteEditor.day, noteEditor.itemId);
+                              }}
+                            >
+                              {noteEditor.sourceNote || noteEditor.additionalContext ? (
+                                <div className="activityNotesReferences">
+                                  {noteEditor.sourceNote ? (
+                                    <section>
+                                      <strong>Từ nguồn tham khảo</strong>
+                                      <p>{noteEditor.sourceNote}</p>
+                                    </section>
+                                  ) : null}
+                                  {noteEditor.additionalContext ? (
+                                    <section>
+                                      <strong>Thông tin bổ sung</strong>
+                                      <p>{noteEditor.additionalContext}</p>
+                                    </section>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              <label htmlFor={`${notePanelId}-personal`}>Ghi chú của bạn</label>
+                              <textarea
+                                autoFocus
+                                id={`${notePanelId}-personal`}
+                                name="personalNotes"
+                                onChange={(event) => setNoteEditor({
+                                  ...noteEditor,
+                                  personalNotes: event.target.value
+                                })}
+                                placeholder="Viết ghi chú cho hoạt động này…"
+                                readOnly={!noteEditor.itemId || !activeChatId}
+                                rows={4}
+                                value={noteEditor.personalNotes}
+                              />
+                              {noteEditor.itemId && activeChatId ? (
+                                <div className="activityNotesInlineActions">
+                                  <button disabled={mutatingItem} type="submit">
+                                    {mutatingItem ? "Đang lưu…" : "Lưu ghi chú"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </form>
+                          ) : null;
+                          const openingHoursText = formatOpeningHoursForPlanDay(
+                            item.openingHours,
+                            displayedPlanDay.day,
+                            displayedExploreResult?.explorer.tripSpec.startDate
+                          );
                           return (
                             <Fragment key={item.itemId ?? `${displayedPlanDay.day}-${itemIndex}`}>
                               <div
@@ -3002,12 +3538,12 @@ function Planner() {
                               {isNonActivity ? (
                                 <div className="itineraryBreakCard">
                                   <div className="itineraryBreakContent">
-                                    <strong>{item.name}</strong>
+                                    <strong>{displayItemName}</strong>
                                     {displayNotes ? <p>{displayNotes}</p> : null}
                                   </div>
                                   {canReorder ? (
                                     <button
-                                      aria-label={`Kéo ${item.name} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
+                                      aria-label={`Kéo ${displayItemName} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
                                       className="itineraryDragHandle"
                                       draggable
                                       onKeyDown={(event) => {
@@ -3035,65 +3571,93 @@ function Planner() {
                                     aria-hidden="true"
                                   />
                                   <div
-                                    className={`itineraryPlaceCard ${placeImageUrl ? "itineraryPlaceCard--withImage" : ""}`}
+                                    aria-label={mapKey ? `Hiển thị ${displayItemName} trên bản đồ` : undefined}
+                                    className={`itineraryPlaceCard itineraryPlaceCard--withImage ${itemSideRail ? "itineraryPlaceCard--withDrag" : ""} ${mapKey ? "itineraryPlaceCard--mapInteractive" : ""} ${mapKey && selectedMapPlaceKey === mapKey ? "is-map-place-selected" : ""}`}
+                                    data-map-place-key={mapKey ?? undefined}
+                                    onClick={(event) => {
+                                      if (
+                                        !mapKey ||
+                                        isInteractiveItineraryTarget(event.target, event.currentTarget)
+                                      ) return;
+                                      focusPlaceOnMap(mapKey);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (
+                                        !mapKey ||
+                                        isInteractiveItineraryTarget(event.target, event.currentTarget) ||
+                                        (event.key !== "Enter" && event.key !== " ")
+                                      ) return;
+                                      event.preventDefault();
+                                      focusPlaceOnMap(mapKey);
+                                    }}
+                                    role={mapKey ? "button" : undefined}
+                                    tabIndex={mapKey ? 0 : undefined}
                                   >
-                                    {placeImageUrl ? (
-                                      <div className="itineraryPlaceMedia">
-                                        <div className="itineraryPlaceImage">
-                                          <img
-                                            alt={`Ảnh ${item.name}`}
-                                            draggable={false}
-                                            loading="lazy"
-                                            src={placeImageUrl}
-                                          />
-                                        </div>
+                                    {itemSideRail}
+                                    <div className="itineraryPlaceMedia">
+                                      <div className={`itineraryPlaceImage ${placeImageUrl ? "" : "itineraryPlaceImage--fallback"}`}>
+                                        <img
+                                          alt={placeImageUrl ? `Ảnh ${displayItemName}` : `Chưa có ảnh cho ${displayItemName}`}
+                                          draggable={false}
+                                          loading="lazy"
+                                          onError={(event) => {
+                                            if (event.currentTarget.src.endsWith(ITINERARY_NO_IMAGE_SRC)) return;
+                                            event.currentTarget.src = ITINERARY_NO_IMAGE_SRC;
+                                            event.currentTarget.alt = `Chưa có ảnh cho ${displayItemName}`;
+                                            event.currentTarget.closest(".itineraryPlaceImage")?.classList.add("itineraryPlaceImage--fallback");
+                                          }}
+                                          src={itineraryImageUrl}
+                                        />
                                       </div>
-                                    ) : null}
+                                    </div>
                                     <div className="itineraryPlaceContent">
                                     <header>
                                       <div className="itineraryPlaceMain">
                                         <div className="itineraryPlaceTitle">
+                                          {mapOrder != null ? (
+                                            <span
+                                              aria-hidden="true"
+                                              className="itineraryPlaceOrder"
+                                            >
+                                              {mapOrder}.
+                                            </span>
+                                          ) : null}
                                           {mapKey ? (
                                             <button
                                               className="placeMapButton"
-                                              onClick={() => {
-                                                setSelectedMapPlaceKey(mapKey);
-                                                window.requestAnimationFrame(() => {
-                                                  document.querySelector(".plannerMap")?.scrollIntoView({
-                                                    behavior: "smooth",
-                                                    block: "nearest"
-                                                  });
-                                                });
-                                              }}
-                                              aria-label={`Hiển thị ${item.name} trên bản đồ`}
+                                              onClick={() => focusPlaceOnMap(mapKey)}
+                                              aria-label={`Hiển thị ${displayItemName} trên bản đồ`}
                                               type="button"
                                             >
-                                              <strong>{item.name}</strong>
+                                              <strong>{displayItemName}</strong>
                                             </button>
-                                          ) : <strong>{item.name}</strong>}
-                                          {sourceLabel ? (
-                                            <span
-                                              className={`itinerarySourceTag itinerarySourceTag--${sourceLabel.kind}`}
-                                            >
-                                              {sourceLabel.url ? (
-                                                <>
-                                                  <a
-                                                    href={sourceLabel.url}
-                                                    rel="noreferrer"
-                                                    target="_blank"
-                                                    title={sourceLabel.url}
-                                                  >
-                                                    {sourceLabel.text}
-                                                  </a>
-                                                  {sourceLabel.providerSuffix}
-                                                </>
-                                              ) : sourceLabel.text}
-                                            </span>
-                                          ) : null}
+                                          ) : <strong>{displayItemName}</strong>}
                                         </div>
+                                        {item.rating != null ? (
+                                          <div className="itineraryPlaceRating" aria-label={`Đánh giá ${item.rating} trên 5`}>
+                                            <span aria-hidden="true">★</span>
+                                            <strong>{item.rating.toFixed(1)}</strong>
+                                            {item.reviewCount != null && item.reviewCount > 0 ? (
+                                              item.sourceLink ? (
+                                                <a
+                                                  className="itineraryGoogleReviewLink"
+                                                  href={item.sourceLink}
+                                                  onClick={(event) => event.stopPropagation()}
+                                                  rel="noreferrer"
+                                                  target="_blank"
+                                                  title="Mở đánh giá trên Google Maps"
+                                                >
+                                                  <GoogleMapsTinyIcon />
+                                                  <small>{formatCompactCount(item.reviewCount)} lượt đánh giá</small>
+                                                </a>
+                                              ) : (
+                                                <small>{formatCompactCount(item.reviewCount)} lượt đánh giá</small>
+                                              )
+                                            ) : null}
+                                          </div>
+                                        ) : null}
                                       </div>
                                       <div className="itineraryPlaceQuickActions">
-                                        {itemActions}
                                         <span
                                           aria-label={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
                                           className="itineraryTypeIcon"
@@ -3114,127 +3678,29 @@ function Planner() {
                                             </svg>
                                           )}
                                         </span>
+                                        {sourceLabel?.url ? (
+                                          <a
+                                            aria-label={`Mở link ${sourceLabel.text} của ${displayItemName}`}
+                                            className={`itinerarySourceIconLink itinerarySourceIconLink--${sourceLabel.provider}`}
+                                            href={sourceLabel.url}
+                                            rel="noreferrer"
+                                            target="_blank"
+                                            title={`Link ${sourceLabel.text}: ${sourceLabel.displayUrl ?? sourceLabel.url}`}
+                                          >
+                                            <SourceProviderIcon provider={sourceLabel.provider} />
+                                            <span>URL</span>
+                                          </a>
+                                        ) : null}
                                       </div>
                                     </header>
-                                    {item.rating != null ? (
-                                      <div className="itineraryPlaceRating" aria-label={`Đánh giá ${item.rating} trên 5`}>
-                                        <span aria-hidden="true">★</span>
-                                        <strong>{item.rating.toFixed(1)}</strong>
-                                        {item.reviewCount != null && item.reviewCount > 0 ? (
-                                          <small>{formatCompactCount(item.reviewCount)} lượt đánh giá</small>
-                                        ) : null}
+                                    {openingHoursText ? (
+                                      <div className="itineraryPlaceHours">
+                                        <span>Giờ mở cửa</span>
+                                        <strong>{openingHoursText}</strong>
                                       </div>
                                     ) : null}
-                                    <div className="itineraryPlaceActionRow">
-                                      {typeof item.latitude === "number" &&
-                                      typeof item.longitude === "number" ? (
-                                        <button
-                                          aria-label={`Chỉ đường đến ${item.name}`}
-                                          className="itineraryNavigateButton"
-                                          onClick={() => {
-                                            const destination = activeDayDirectionStops.find(
-                                              (stop) => stop.mapKey === mapKey
-                                            );
-                                            if (destination) startDayDirections(destination);
-                                          }}
-                                          title="Chỉ đường đến đây"
-                                          type="button"
-                                        >
-                                          <svg aria-hidden="true" viewBox="0 0 24 24">
-                                            <path d="m12 3 9 9-9 9-9-9 9-9Z" />
-                                            <path d="M8 12h7M13 9l3 3-3 3" />
-                                          </svg>
-                                        </button>
-                                      ) : null}
-                                      {activityNoteCount || (item.itemId && activeChatId) ? (
-                                        <div className={`activityNotesDropdown ${isNoteEditorOpen ? "isOpen" : ""}`}>
-                                        <button
-                                          aria-controls={notePanelId}
-                                          aria-expanded={isNoteEditorOpen}
-                                          className="activityNotesTrigger"
-                                          onClick={() => setNoteEditor(isNoteEditorOpen ? null : {
-                                            day: displayedPlanDay.day,
-                                            itemId: item.itemId ?? null,
-                                            itemName: item.name,
-                                            sourceNote: sourceActivityNote,
-                                            additionalContext: additionalContextNote,
-                                            personalNotes: personalNotes ?? ""
-                                          })}
-                                          type="button"
-                                        >
-                                          <span className="activityNotesTitle">
-                                            <span className="activityNotesIcon" aria-hidden="true">
-                                              <svg viewBox="0 0 24 24">
-                                                <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
-                                                <path d="M14 3v6h6M8 13h8M8 17h5" />
-                                              </svg>
-                                            </span>
-                                            {activityNoteCount ? "Ghi chú hoạt động" : "Thêm ghi chú"}
-                                          </span>
-                                          <span className="activityNotesCount">
-                                            {activityNoteCount ? `${activityNoteCount} mục` : null}
-                                          </span>
-                                          <svg className="activityNotesChevron" aria-hidden="true" viewBox="0 0 24 24">
-                                            <path d="m9 18 6-6-6-6" />
-                                          </svg>
-                                        </button>
-                                        {isNoteEditorOpen && noteEditor ? (
-                                          <form
-                                            className="activityNotesInlinePanel"
-                                            id={notePanelId}
-                                            onSubmit={(event) => {
-                                              if (!noteEditor.itemId) {
-                                                event.preventDefault();
-                                                setNoteEditor(null);
-                                                return;
-                                              }
-                                              void handleSavePersonalNotes(event, noteEditor.day, noteEditor.itemId);
-                                            }}
-                                          >
-                                            {noteEditor.sourceNote || noteEditor.additionalContext ? (
-                                              <div className="activityNotesReferences">
-                                                {noteEditor.sourceNote ? (
-                                                  <section>
-                                                    <strong>Từ nguồn tham khảo</strong>
-                                                    <p>{noteEditor.sourceNote}</p>
-                                                  </section>
-                                                ) : null}
-                                                {noteEditor.additionalContext ? (
-                                                  <section>
-                                                    <strong>Thông tin bổ sung</strong>
-                                                    <p>{noteEditor.additionalContext}</p>
-                                                  </section>
-                                                ) : null}
-                                              </div>
-                                            ) : null}
-                                            <label htmlFor={`${notePanelId}-personal`}>Ghi chú của bạn</label>
-                                            <textarea
-                                              autoFocus
-                                              id={`${notePanelId}-personal`}
-                                              name="personalNotes"
-                                              onChange={(event) => setNoteEditor({
-                                                ...noteEditor,
-                                                personalNotes: event.target.value
-                                              })}
-                                              placeholder="Viết ghi chú cho hoạt động này…"
-                                              readOnly={!noteEditor.itemId || !activeChatId}
-                                              rows={4}
-                                              value={noteEditor.personalNotes}
-                                            />
-                                            {noteEditor.itemId && activeChatId ? (
-                                              <div className="activityNotesInlineActions">
-                                                <span>Nhấn Esc để đóng</span>
-                                                <button disabled={mutatingItem} type="submit">
-                                                  {mutatingItem ? "Đang lưu…" : "Lưu ghi chú"}
-                                                </button>
-                                              </div>
-                                            ) : null}
-                                          </form>
-                                        ) : null}
-                                        </div>
-                                      ) : null}
                                     </div>
-                                    </div>
+                                    {itemNotePanel}
                                   </div>
                                 </article>
                               )}
@@ -3242,71 +3708,102 @@ function Planner() {
                               {transportLeg && transportLegOptions.length > 0 ? (
                                 <div
                                   className={`itineraryRoute ${routeMapKey ? "has-map-route-link" : ""} ${routeMapKey && selectedMapRouteKey === routeMapKey ? "is-map-route-selected" : ""}`}
-                                  aria-label={`${transportModeLabel(selectedTransportLeg?.mode ?? transportLeg.mode)}, từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace}, khoảng ${selectedTransportLeg?.estimatedDurationMinutes ?? transportLeg.estimatedDurationMinutes} phút`}
+                                  aria-label={`${transportModeLabel(selectedTransportLeg?.mode ?? transportLeg.mode)}, từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace}, khoảng ${formatDuration(selectedTransportLeg?.estimatedDurationMinutes ?? transportLeg.estimatedDurationMinutes)}`}
                                   data-map-route-key={routeMapKey ?? undefined}
                                   role="group"
                                 >
-                                  {routeMapKey ? (
-                                    <button
-                                      aria-pressed={selectedMapRouteKey === routeMapKey}
+                                  <div className="itineraryRouteToolbar">
+                                    <div
                                       className="itineraryRouteLink"
-                                      onClick={() => selectRouteFromItinerary(routeMapKey)}
-                                      type="button"
                                     >
                                       <span className="itineraryRouteIcon" aria-hidden="true">
-                                        <TransportModeIcon mode={selectedTransportLeg?.mode ?? transportLeg.mode} />
+                                        <TransportModeIcon
+                                          mode={selectedTransportLeg?.mode ?? transportLeg.mode}
+                                        />
                                       </span>
                                       <span className="itineraryRouteCopy">
-                                        <strong>{transportLeg.fromPlace} → {transportLeg.toPlace}</strong>
                                         <small>
-                                          {selectedTransportLeg?.estimatedDurationMinutes ?? transportLeg.estimatedDurationMinutes} phút
+                                          {formatDuration(selectedTransportLeg?.estimatedDurationMinutes ?? transportLeg.estimatedDurationMinutes)}
                                           {" · "}{formatDistance(selectedTransportLeg?.distanceMeters ?? transportLeg.distanceMeters)}
                                         </small>
                                       </span>
+                                    </div>
+                                    {routeMapKey ? (
+                                      <button
+                                      aria-label={
+                                        selectedMapRouteKey === routeMapKey
+                                          ? `Huỷ làm nổi bật tuyến từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace}`
+                                          : `Làm nổi bật tuyến từ ${transportLeg.fromPlace} đến ${transportLeg.toPlace} trên bản đồ`
+                                      }
+                                      aria-pressed={selectedMapRouteKey === routeMapKey}
+                                      className="itineraryRouteMapButton"
+                                      onClick={(event) =>
+                                        handleItineraryRouteHighlight(event, routeMapKey)
+                                      }
+                                      title={selectedMapRouteKey === routeMapKey ? "Huỷ highlight" : "Highlight trên bản đồ"}
+                                      type="button"
+                                    >
+                                      <span aria-hidden="true">
+                                        <MapPinIcon />
+                                      </span>
+                                      <span>{selectedMapRouteKey === routeMapKey ? "Huỷ" : "Route"}</span>
                                     </button>
-                                  ) : (
-                                    <>
-                                      <span className="itineraryRouteIcon" aria-hidden="true">
-                                        <TransportModeIcon mode={selectedTransportLeg?.mode ?? transportLeg.mode} />
-                                      </span>
-                                      <span>
-                                        {selectedTransportLeg?.estimatedDurationMinutes ?? transportLeg.estimatedDurationMinutes} phút
-                                        {" · "}{formatDistance(selectedTransportLeg?.distanceMeters ?? transportLeg.distanceMeters)}
-                                      </span>
-                                    </>
-                                  )}
-                                  {transportLegOptions.length > 1 ? (
-                                    <details className="itineraryRouteDetails">
-                                      <summary>
+                                    ) : null}
+                                    {transportLegOptions.length > 1 ? (
+                                      <button
+                                        aria-controls={transportOptionsPanelId}
+                                        aria-expanded={transportOptionsExpanded}
+                                        className="itineraryRouteChoicesButton"
+                                        onClick={() =>
+                                          setExpandedTransportOptionKeys((current) => ({
+                                            ...current,
+                                            [transportOptionsPanelKey]: !current[transportOptionsPanelKey]
+                                          }))
+                                        }
+                                        type="button"
+                                      >
                                         Các lựa chọn
                                         <ChevronDownIcon />
-                                      </summary>
-                                      <div className="itineraryRouteAlternatives">
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                  {transportLegOptions.length > 1 && transportOptionsExpanded ? (
+                                      <div
+                                        className="itineraryRouteAlternatives"
+                                        id={transportOptionsPanelId}
+                                      >
                                         {transportLegOptions.map((option, optionIndex) => (
                                           <TransportOptionCard
-                                            fromPlace={transportLeg.fromPlace}
                                             key={`${option.mode}-${option.source}-${optionIndex}`}
                                             onSelect={
                                               transportLegIndex >= 0
                                                 ? () =>
-                                                    choosePlanTransportOption(
+                                                    void choosePlanTransportOption(
                                                       displayedPlanDay.day,
                                                       transportLegIndex,
-                                                      option.mode
+                                                      option
                                                     )
                                                 : undefined
                                             }
                                             option={option}
                                             primary={optionIndex === 0}
-                                            selected={
-                                              selectedTransportLeg?.mode ===
-                                              option.mode
+                                            saving={
+                                              savingTransportOptionKey ===
+                                              planLegSelectionKey(
+                                                displayedPlanDay.day,
+                                                transportLegIndex
+                                              )
                                             }
-                                            toPlace={transportLeg.toPlace}
+                                            selected={
+                                              selectedTransportLeg != null &&
+                                              transportOptionSelectionKey(
+                                                selectedTransportLeg
+                                              ) ===
+                                              transportOptionSelectionKey(option)
+                                            }
                                           />
                                         ))}
                                       </div>
-                                    </details>
                                   ) : null}
                                 </div>
                               ) : null}
@@ -3320,6 +3817,10 @@ function Planner() {
                           onClick={() => {
                             setAddingDay(displayedPlanDay.day);
                             setAddName("");
+                            setAddPosition(
+                              plan?.days.find((day) => day.day === displayedPlanDay.day)?.items.length
+                                ?? displayedPlanDay.items.length
+                            );
                             setAddNotes("");
                             setSelectedSuggestion(null);
                             setPlaceSuggestions([]);
@@ -3360,7 +3861,10 @@ function Planner() {
         </section>
 
         <PlannerMap
-          currentLocation={navigationOrigin}
+          currentLocation={mapDirectionOrigin}
+          navigationMode={
+            directionsActive ? selectedDayDirectionLegs[0]?.mode ?? null : null
+          }
           dayColorKeys={planDayColorKeys}
           directionsActive={directionsActive}
           directionsBusy={directionsStatus === "routing"}
@@ -3385,25 +3889,33 @@ function Planner() {
           }
           locationMessage={locationMessage}
           onLocate={recenterCurrentPosition}
-          onOriginQueryChange={updateStartPointQuery}
+          onOriginQueryChange={updateDirectionOriginQuery}
           onStartDirections={openDirectionsSearch}
           onSubmitDirections={submitDirectionSearch}
           onToggleMapDestinationPick={() =>
             setMapDestinationPickActive((current) => !current)
           }
-          onUseCurrentOrigin={chooseCurrentStartPoint}
-          onViewDayRoute={viewDayRoute}
-          originQuery={
-            startPointMode === "current" && currentLocation
-              ? "Vị trí hiện tại"
-              : startPointQuery
-          }
-          originSearchBusy={searchingStartPoint}
-          originSuggestions={directionOriginSuggestions}
+          onUseCurrentOrigin={chooseCurrentDirectionOrigin}
+          originQuery={directionOriginQuery}
+          originSearchBusy={searchingDirectionOrigin}
+          originSuggestions={directionOriginSearchSuggestions}
           onSelect={selectPlaceFromMap}
           onSelectRoute={selectRouteFromMap}
           places={mapPlaces}
           routes={mapRoutes}
+          routeSummary={
+            activePlanDay != null
+              ? {
+                  title:
+                    activeDayRouteSummary.durationMinutes > 0 ||
+                    activeDayRouteSummary.distanceMeters > 0
+                      ? `${formatDuration(activeDayRouteSummary.durationMinutes)} · ${formatDistance(activeDayRouteSummary.distanceMeters)}`
+                      : "Chưa có tuyến đường",
+                  subtitle:
+                    `Tổng tuyến đường ngày ${activePlanDay}`
+                }
+              : null
+          }
           selectedDirectionDestination={
             selectedNavigationDestination
               ? {
@@ -3504,7 +4016,23 @@ function Planner() {
                     </svg>
                   </button>
                 ) : null}
+                <button
+                  aria-label="Dùng vị trí hiện tại"
+                  className={`editPlaceLocateButton${placeLocationTarget === "edit" && locationStatus === "locating" ? " isLocating" : ""}`}
+                  disabled={locationStatus === "locating"}
+                  onClick={() => useCurrentLocationForPlace("edit")}
+                  title="Dùng vị trí hiện tại"
+                  type="button"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5" />
+                    <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                  </svg>
+                </button>
               </div>
+              {placeLocationTarget === "edit" && locationStatus === "error" && locationError ? (
+                <span className="itinerarySearchStatus isError" role="alert">{locationError}</span>
+              ) : null}
               {searchingEditSuggestions ? (
                 <span className="itinerarySearchStatus" role="status">
                   Đang tìm địa điểm…
@@ -3602,16 +4130,16 @@ function Planner() {
           role="dialog"
         >
           <form
-            className="itineraryMutationForm editPlaceNotesWindow"
+            className="itineraryMutationForm editPlaceNotesWindow addPlaceWindow"
             onClick={(e) => e.stopPropagation()}
             onSubmit={handleAddPlanItem}
           >
-            <header className="itineraryMutationHeader editPlaceNotesHeader">
+            <header className="itineraryMutationHeader editPlaceNotesHeader addPlaceHeader">
               <div className="itineraryMutationHeading">
                 <span className="itineraryMutationEyebrow">Ngày {addingDay}</span>
                 <div>
                   <h3 id="add-place-title">Thêm địa điểm</h3>
-                  <p>Chọn một điểm dừng mới cho lịch trình của bạn.</p>
+                  <p>Tạo điểm dừng mới trong lịch trình của bạn</p>
                 </div>
               </div>
               <button
@@ -3625,10 +4153,11 @@ function Planner() {
                 </svg>
               </button>
             </header>
-            <div className="itineraryMutationBody editPlaceNotesPaper">
+            <div className="itineraryMutationBody editPlaceNotesPaper addPlacePaper">
             <div className="itineraryMutationField itinerarySearchContainer">
               <label htmlFor="add-place-search">
-                <span className="editPlaceSearchLabel">Tìm và chọn địa điểm <span aria-hidden="true">*</span></span>
+                <span className="editPlaceSearchLabel">Địa điểm</span>
+                <small className="addPlaceRequired">Bắt buộc</small>
               </label>
               <div className="itineraryMutationInputWrap editPlaceSearchControl">
                 <span className="editPlaceSearchIcon" aria-hidden="true">
@@ -3640,6 +4169,7 @@ function Planner() {
                 <input
                   aria-autocomplete="list"
                   aria-controls="add-place-suggestions"
+                  aria-describedby="add-place-search-help"
                   aria-expanded={placeSuggestions.length > 0}
                   autoComplete="off"
                   id="add-place-search"
@@ -3649,7 +4179,7 @@ function Planner() {
                     setAddSearchCompleted(false);
                     setAddSearchFailed(false);
                   }}
-                  placeholder="Nhập tên địa điểm để tìm"
+                  placeholder="Tìm nhà hàng, điểm tham quan…"
                   required
                   role="combobox"
                   type="text"
@@ -3674,7 +4204,23 @@ function Planner() {
                     </svg>
                   </button>
                 ) : null}
+                <button
+                  aria-label="Dùng vị trí hiện tại"
+                  className={`editPlaceLocateButton${placeLocationTarget === "add" && locationStatus === "locating" ? " isLocating" : ""}`}
+                  disabled={locationStatus === "locating"}
+                  onClick={() => useCurrentLocationForPlace("add")}
+                  title="Dùng vị trí hiện tại"
+                  type="button"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5" />
+                    <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                  </svg>
+                </button>
               </div>
+              {placeLocationTarget === "add" && locationStatus === "error" && locationError ? (
+                <span className="itinerarySearchStatus isError" role="alert">{locationError}</span>
+              ) : null}
               {searchingSuggestions ? (
                 <span className="itinerarySearchStatus" role="status">
                   Đang tìm địa điểm…
@@ -3705,49 +4251,110 @@ function Planner() {
             </div>
 
             {selectedSuggestion ? (
-              <div className="selectedPlaceBadge">
+              <div className="selectedPlaceBadge" id="add-place-search-help">
                 <span className="selectedPlaceBadgeIcon" aria-hidden="true">
                   <svg viewBox="0 0 24 24"><path d="m7 12 3 3 7-7" /></svg>
                 </span>
                 <span><strong>Đã chọn vị trí</strong>{selectedSuggestion.address || selectedSuggestion.name}</span>
               </div>
             ) : addSearchCompleted && addSearchFailed ? (
-              <p className="itinerarySearchHint" role="alert">
+              <p className="itinerarySearchHint" id="add-place-search-help" role="alert">
                 Không thể tải dữ liệu Places lúc này. Vui lòng thử lại.
               </p>
             ) : addSearchCompleted && addName.trim().length >= 2 && placeSuggestions.length === 0 ? (
-              <p className="itinerarySearchHint" role="status">
+              <p className="itinerarySearchHint" id="add-place-search-help" role="status">
                 Không tìm thấy địa điểm phù hợp trong dữ liệu Places. Hãy thử tên hoặc từ khóa khác.
               </p>
             ) : addName.trim() ? (
-              <p className="itinerarySearchHint">
+              <p className="itinerarySearchHint" id="add-place-search-help">
                 Bạn phải chọn một kết quả trong danh sách để thêm đúng địa điểm và vị trí bản đồ.
               </p>
-            ) : null}
+            ) : (
+              <p className="itinerarySearchHint addPlaceSearchHelp" id="add-place-search-help">
+                Chọn một kết quả gợi ý để đồng bộ đúng vị trí trên bản đồ.
+              </p>
+            )}
 
-            <div className="itineraryMutationField">
-              <label>Loại địa điểm</label>
-              <select
-                onChange={(e) => setAddPlaceType(e.target.value)}
-                value={addPlaceType}
-              >
-                <option value="attraction">Tham quan / Vui chơi</option>
-                <option value="food">Ăn uống / Nhà hàng</option>
-                <option value="cafe">Cà phê / Giải khát</option>
-                <option value="hotel">Khách sạn / Lưu trú</option>
-              </select>
+            <div className="addPlaceDetails">
+              <div className="itineraryMutationField addPlaceTypeField">
+                <label htmlFor="add-place-type">Loại địa điểm</label>
+                <div className="addPlaceSelectWrap">
+                  <span aria-hidden="true" className="addPlaceFieldIcon">
+                    <svg viewBox="0 0 24 24"><path d="M4 7.5h16M7.5 4v7M4 16.5h16M16.5 13v7" /></svg>
+                  </span>
+                  <select
+                    id="add-place-type"
+                    onChange={(e) => setAddPlaceType(e.target.value)}
+                    value={addPlaceType}
+                  >
+                    <option value="attraction">Tham quan / Vui chơi</option>
+                    <option value="food">Ăn uống / Nhà hàng</option>
+                    <option value="cafe">Cà phê / Giải khát</option>
+                    <option value="hotel">Khách sạn / Lưu trú</option>
+                  </select>
+                  <svg aria-hidden="true" className="addPlaceSelectChevron" viewBox="0 0 24 24">
+                    <path d="m7 10 5 5 5-5" />
+                  </svg>
+                </div>
+              </div>
+              <div className="itineraryMutationField addPlacePositionField">
+                <label htmlFor="add-place-position">Vị trí trong ngày</label>
+                <div className="addPlaceSelectWrap">
+                  <span aria-hidden="true" className="addPlaceFieldIcon">
+                    <svg viewBox="0 0 24 24"><path d="M12 4v16M7 9l5-5 5 5M7 15h10" /></svg>
+                  </span>
+                  <select
+                    id="add-place-position"
+                    onChange={(event) => setAddPosition(Number(event.target.value))}
+                    value={addPosition}
+                  >
+                    <option value={0}>
+                      {addingDayVisibleItems.length
+                        ? `Đầu ngày — trước ${addingDayVisibleItems[0].name}`
+                        : "Địa điểm đầu tiên trong ngày"}
+                    </option>
+                    {addingDayVisibleItems.map((item, itemIndex) => (
+                      <option
+                        key={item.itemId || `${item.name}-${itemIndex}`}
+                        value={
+                          itemIndex === addingDayVisibleItems.length - 1
+                            ? addingPlanDay?.items.length ?? itemIndex + 1
+                            : (addingPlanDay?.items.indexOf(item) ?? itemIndex) + 1
+                        }
+                      >
+                        {itemIndex === addingDayVisibleItems.length - 1
+                          ? `Cuối ngày — sau ${item.name}`
+                          : `Sau ${item.name}`}
+                      </option>
+                    ))}
+                  </select>
+                  <svg aria-hidden="true" className="addPlaceSelectChevron" viewBox="0 0 24 24">
+                    <path d="m7 10 5 5 5-5" />
+                  </svg>
+                </div>
+                <small className="itineraryMutationHelper">
+                  Địa điểm mới sẽ được chèn vào vị trí này trong lịch trình Ngày {addingDay}.
+                </small>
+              </div>
+              <div className="itineraryMutationField addPlaceNotesField">
+                <label htmlFor="add-place-notes">
+                  <span>Ghi chú</span>
+                  <small>Tùy chọn</small>
+                </label>
+                <textarea
+                  id="add-place-notes"
+                  onChange={(e) => setAddNotes(e.target.value)}
+                  placeholder="Ví dụ: Đến trước 8:00, thử món phở tái lăn…"
+                  rows={3}
+                  value={addNotes}
+                />
+              </div>
             </div>
-            <div className="itineraryMutationField">
-              <label>Ghi chú (Tùy chọn)</label>
-              <textarea
-                onChange={(e) => setAddNotes(e.target.value)}
-                placeholder="Ví dụ: Ăn bát phở tái lăn"
-                rows={2}
-                value={addNotes}
-              />
             </div>
-            </div>
-            <div className="itineraryMutationActions">
+            <div className="itineraryMutationActions addPlaceActions">
+              <p aria-live="polite" className="addPlaceActionHint">
+                {selectedSuggestion ? "Địa điểm đã sẵn sàng để thêm" : "Hãy chọn một địa điểm từ kết quả tìm kiếm"}
+              </p>
               <button className="cancel" onClick={() => {
                 setAddingDay(null);
               }} type="button">
@@ -3902,8 +4509,8 @@ function hasPlanItemCoordinates(
   );
 }
 
-function planItemMapKey(day: number, itemIndex: number, name: string): string {
-  return `plan-${day}-${itemIndex}-${name}`;
+function itineraryDisplayName(name: string): string {
+  return name.replace(/^Điểm du lịch\s+/i, "").trim() || name;
 }
 
 function dateKeyForTripDay(
@@ -4029,60 +4636,150 @@ function geolocationErrorMessage(error: GeolocationPositionError): string {
   return "Không thể lấy vị trí hiện tại.";
 }
 
+type DeviceOrientationPermissionEvent = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<PermissionState>;
+};
+
+type DeviceOrientationEventWithCompass = DeviceOrientationEvent & {
+  webkitCompassHeading?: number;
+};
+
+function normalizeDeviceHeading(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return ((value % 360) + 360) % 360;
+}
+
+function headingFromOrientationEvent(
+  event: DeviceOrientationEvent
+): number | null {
+  const iosHeading = (event as DeviceOrientationEventWithCompass)
+    .webkitCompassHeading;
+  const normalizedIosHeading = normalizeDeviceHeading(iosHeading);
+  if (normalizedIosHeading != null) return normalizedIosHeading;
+  const alphaHeading = normalizeDeviceHeading(event.alpha);
+  return alphaHeading == null ? null : normalizeDeviceHeading(360 - alphaHeading);
+}
+
 function itinerarySourceLabel(
   sourceRefs: string[],
   sourceProvider: string | null | undefined,
   source: string
 ): {
-  kind: "url" | "finder" | "selected";
+  kind: "url" | "selected";
   text: string;
   url?: string;
-  providerSuffix?: string;
+  provider: SourceProviderKind;
+  displayUrl?: string;
 } | null {
-  const providerSuffix = sourceProvider
-    ? ` · ${sourceProvider.toUpperCase()}`
-    : "";
   for (const sourceRef of sourceRefs) {
     if (!sourceRef.startsWith("http://")
       && !sourceRef.startsWith("https://")) {
       continue;
     }
+    const provider = sourceProviderKind(sourceRef, sourceProvider);
     return {
       kind: "url",
-      text: sourceLinkLabel(sourceRef),
+      text: `${sourceProviderLabel(provider)} URL`,
       url: sourceRef,
-      providerSuffix
+      provider,
+      displayUrl: compactSourceUrl(sourceRef)
     };
   }
   if (source === "finder_suggestion" || source === "finder") {
-    return {
-      kind: "finder",
-      text: "Finder gợi ý"
-    };
+    return null;
   }
   if (source === "selected_place") {
     return {
       kind: "selected",
-      text: "Địa điểm đã chọn"
+      text: "Địa điểm đã chọn",
+      provider: "url"
     };
   }
   return null;
 }
 
-function sourceLinkLabel(sourceUrl: string): string {
+type SourceProviderKind = "youtube" | "tiktok" | "instagram" | "url";
+
+function sourceProviderKind(
+  sourceUrl: string,
+  sourceProvider: string | null | undefined
+): SourceProviderKind {
+  const normalizedProvider = sourceProvider?.toLowerCase() ?? "";
+  if (normalizedProvider.includes("youtube")) return "youtube";
+  if (normalizedProvider.includes("tiktok")) return "tiktok";
+  if (normalizedProvider.includes("instagram")) return "instagram";
   try {
     const hostname = new URL(sourceUrl).hostname.toLowerCase();
     if (hostname === "youtu.be" || hostname === "youtube.com"
       || hostname.endsWith(".youtube.com")) {
-      return "YouTube";
+      return "youtube";
     }
     if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) {
-      return "TikTok";
+      return "tiktok";
     }
-    return hostname.replace(/^www\./, "");
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) {
+      return "instagram";
+    }
+    return "url";
+  } catch {
+    return "url";
+  }
+}
+
+function sourceProviderLabel(provider: SourceProviderKind): string {
+  if (provider === "youtube") return "YouTube";
+  if (provider === "tiktok") return "TikTok";
+  if (provider === "instagram") return "Instagram";
+  return "Nguồn";
+}
+
+function compactSourceUrl(sourceUrl: string): string {
+  try {
+    const url = new URL(sourceUrl);
+    const hostname = url.hostname.replace(/^www\./, "");
+    const path = `${url.pathname}${url.search}`.replace(/\/$/, "");
+    return `${hostname}${path}` || hostname;
   } catch {
     return sourceUrl;
   }
+}
+
+function SourceProviderIcon({ provider }: { provider: SourceProviderKind }) {
+  if (provider === "youtube") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M4.5 7.5c.2-1.1 1.1-2 2.2-2.2C8.4 5 12 5 12 5s3.6 0 5.3.3c1.1.2 2 1.1 2.2 2.2.3 1.4.3 4.5.3 4.5s0 3.1-.3 4.5c-.2 1.1-1.1 2-2.2 2.2-1.7.3-5.3.3-5.3.3s-3.6 0-5.3-.3c-1.1-.2-2-1.1-2.2-2.2-.3-1.4-.3-4.5-.3-4.5s0-3.1.3-4.5Z" />
+        <path d="m10 9 5 3-5 3V9Z" />
+      </svg>
+    );
+  }
+  if (provider === "tiktok") {
+    return (
+      <svg aria-hidden="true" className="sourceProviderIconTikTok" viewBox="0 0 24 24">
+        <path className="sourceProviderIconTikTokCyan" d="M13.2 4v10.1a4.2 4.2 0 1 1-4.2-4.2" />
+        <path className="sourceProviderIconTikTokCyan" d="M13.2 4c.7 2.7 2.4 4.4 5 4.9" />
+        <path className="sourceProviderIconTikTokRed" d="M14.8 4.8v10.1a4.2 4.2 0 1 1-4.2-4.2" />
+        <path className="sourceProviderIconTikTokRed" d="M14.8 4.8c.7 2.7 2.4 4.4 5 4.9" />
+        <path className="sourceProviderIconTikTokBlack" d="M14 4.4v10.1a4.2 4.2 0 1 1-4.2-4.2" />
+        <path className="sourceProviderIconTikTokBlack" d="M14 4.4c.7 2.7 2.4 4.4 5 4.9" />
+      </svg>
+    );
+  }
+  if (provider === "instagram") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <rect x="5" y="5" width="14" height="14" rx="4" />
+        <circle cx="12" cy="12" r="3.2" />
+        <path d="M16.8 7.4h.1" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1l-.8.8" />
+      <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
+    </svg>
+  );
 }
 
 function paceLabel(pace: string): string {
@@ -4106,15 +4803,110 @@ function formatCompactCount(value: number): string {
   return new Intl.NumberFormat("vi-VN", { notation: "compact" }).format(value);
 }
 
+function formatOpeningHoursForPlanDay(
+  openingHours: Array<{
+    dayOfWeek?: number | null;
+    rawTimeSlots?: string | null;
+    openTime?: string | null;
+    closeTime?: string | null;
+    is24Hours?: boolean | null;
+  }> | undefined,
+  dayNumber: number,
+  startDate?: string | null
+): string | null {
+  if (!openingHours?.length) return null;
+  const dayOfWeek = dayOfWeekForTripDay(dayNumber, startDate);
+  const entry = openingHours.find((candidate) => (
+    dayOfWeek != null && candidate.dayOfWeek === dayOfWeek
+  ));
+  if (!entry) return formatOpeningHoursSummary(openingHours);
+  if (entry?.is24Hours) return "Mở cửa 24 giờ";
+  return formatOpeningHourSlots(entry);
+}
+
+function formatOpeningHoursSummary(
+  openingHours: Array<{
+    dayName?: string | null;
+    rawTimeSlots?: string | null;
+    openTime?: string | null;
+    closeTime?: string | null;
+    is24Hours?: boolean | null;
+  }>
+): string | null {
+  const normalized = openingHours
+    .map((entry) => ({
+      label: openingHourDayLabel(entry.dayName),
+      value: entry.is24Hours ? "Mở cửa 24 giờ" : formatOpeningHourSlots(entry)
+    }))
+    .filter((entry): entry is { label: string | null; value: string } => Boolean(entry.value));
+  if (normalized.length === 0) return null;
+  const uniqueValues = new Set(normalized.map((entry) => entry.value));
+  if (uniqueValues.size === 1) return normalized[0].value;
+  return normalized
+    .slice(0, 3)
+    .map((entry) => entry.label ? `${entry.label}: ${entry.value}` : entry.value)
+    .join("; ");
+}
+
+function formatOpeningHourSlots(entry: {
+  rawTimeSlots?: string | null;
+  openTime?: string | null;
+  closeTime?: string | null;
+}): string | null {
+  const rawSlots = entry.rawTimeSlots?.trim();
+  if (rawSlots) return rawSlots;
+
+  const openTime = entry.openTime?.trim();
+  const closeTime = entry.closeTime?.trim();
+  if (openTime && closeTime) return `${openTime}–${closeTime}`;
+  return openTime || closeTime || null;
+}
+
+function openingHourDayLabel(value?: string | null): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  const labels: Record<string, string> = {
+    monday: "T2",
+    tuesday: "T3",
+    wednesday: "T4",
+    thursday: "T5",
+    friday: "T6",
+    saturday: "T7",
+    sunday: "CN"
+  };
+  return labels[normalized] ?? value?.trim() ?? null;
+}
+
+function dayOfWeekForTripDay(
+  dayNumber: number,
+  startDate?: string | null
+): number | null {
+  if (!startDate) return null;
+  const date = new Date(`${startDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + Math.max(0, dayNumber - 1));
+  const day = date.getDay();
+  return day === 0 ? 7 : day;
+}
+
+function GoogleMapsTinyIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 21s6-5.4 6-11a6 6 0 0 0-12 0c0 5.6 6 11 6 11Z" />
+      <circle cx="12" cy="10" r="2.2" />
+    </svg>
+  );
+}
+
 function transportModeLabel(mode: string): string {
   const normalized = mode.toLowerCase();
-  if (normalized.includes("walk")) return "Đi bộ";
+  if (isWalkingMode(mode)) return "Đi bộ";
   if (normalized.includes("public") || normalized.includes("transit")) {
     return "Phương tiện công cộng";
   }
   if (normalized.includes("bike") || normalized.includes("motor")) return "Xe máy";
   if (normalized.includes("ride") || normalized.includes("hailing")) return "Xe công nghệ";
-  if (normalized.includes("car") || normalized.includes("taxi")) return "Ô tô";
+  if (isCarMode(mode)) return "Ô tô";
   if (normalized.includes("bus")) return "Xe buýt";
   if (normalized.includes("train")) return "Tàu hỏa";
   if (normalized.includes("flight") || normalized.includes("plane")) return "Máy bay";
@@ -4132,19 +4924,14 @@ function transportLegAfterItem(
   const exactLeg = day.transportLegs.find((leg) => {
     const startsAtItem = item.itemId && leg.fromItemId
       ? item.itemId === leg.fromItemId
-      : item.name.trim().toLocaleLowerCase("vi") === leg.fromPlace.trim().toLocaleLowerCase("vi");
+      : planPlaceNamesMatch(item.name, leg.fromPlace);
     if (!startsAtItem || !nextItem) return false;
     return nextItem.itemId && leg.toItemId
       ? nextItem.itemId === leg.toItemId
-      : nextItem.name.trim().toLocaleLowerCase("vi") === leg.toPlace.trim().toLocaleLowerCase("vi");
+      : planPlaceNamesMatch(nextItem.name, leg.toPlace);
   });
 
-  if (exactLeg) return exactLeg;
-  return day.transportLegs.find((leg) =>
-    item.itemId && leg.fromItemId
-      ? item.itemId === leg.fromItemId
-      : item.name.trim().toLocaleLowerCase("vi") === leg.fromPlace.trim().toLocaleLowerCase("vi")
-  );
+  return exactLeg ?? null;
 }
 
 function transportOptionsForLeg(
@@ -4160,6 +4947,10 @@ function planLegSelectionKey(day: number, legIndex: number): string {
   return `${day}:${legIndex}`;
 }
 
+function planPlaceNamesMatch(left: string, right: string): boolean {
+  return left.trim().toLocaleLowerCase("vi") === right.trim().toLocaleLowerCase("vi");
+}
+
 function transportLegsMatch(
   left: TransportLeg,
   right: TransportLeg
@@ -4167,39 +4958,87 @@ function transportLegsMatch(
   const sameFrom =
     left.fromItemId && right.fromItemId
       ? left.fromItemId === right.fromItemId
-      : left.fromPlace.trim().toLocaleLowerCase("vi") ===
-        right.fromPlace.trim().toLocaleLowerCase("vi");
+      : planPlaceNamesMatch(left.fromPlace, right.fromPlace);
   const sameTo =
     left.toItemId && right.toItemId
       ? left.toItemId === right.toItemId
-      : left.toPlace.trim().toLocaleLowerCase("vi") ===
-        right.toPlace.trim().toLocaleLowerCase("vi");
+      : planPlaceNamesMatch(left.toPlace, right.toPlace);
   return sameFrom && sameTo;
-}
-
-function directionItineraryOrder(
-  legs: TransportLeg[],
-  item: TravelPlan["days"][number]["items"][number]
-): number | null {
-  const index = legs.findIndex((leg) =>
-    item.itemId && leg.toItemId
-      ? item.itemId === leg.toItemId
-      : item.name.trim().toLocaleLowerCase("vi") ===
-        leg.toPlace.trim().toLocaleLowerCase("vi")
-  );
-  return index >= 0 ? index + 1 : null;
 }
 
 function selectedTransportOption(
   leg: TransportLeg,
-  selectedMode?: string
+  selectedOptionKey?: string
 ): TransportOption {
   const options = transportOptionsForLeg(leg);
-  return (
-    options.find((option) => option.mode === selectedMode)
-    ?? options[0]
-    ?? leg
-  );
+  return resolveSelectedTransportOption(options, leg, selectedOptionKey);
+}
+
+function planTransportRouteMapKey(
+  day: number,
+  legIndex: number,
+  option: TransportOption
+): string {
+  return `day-${day}-leg-${legIndex}-${transportOptionSelectionKey(option)}`;
+}
+
+function directionTransportRouteMapKey(
+  day: number,
+  legIndex: number,
+  option: TransportOption
+): string {
+  return `day-directions-${day}-${legIndex}-${transportOptionSelectionKey(option)}`;
+}
+
+function promoteTransportOptionInPlan(
+  plan: TravelPlan,
+  dayNumber: number,
+  legIndex: number,
+  selectedOption: TransportOption
+): TravelPlan {
+  return {
+    ...plan,
+    days: plan.days.map((day) => {
+      if (day.day !== dayNumber) return day;
+      return {
+        ...day,
+        transportLegs: day.transportLegs.map((leg, index) => {
+          if (index !== legIndex) return leg;
+          const candidates = [leg, ...(leg.alternatives ?? [])];
+          const selected = candidates.find(
+            (option) =>
+              transportOptionSelectionKey(option) ===
+              transportOptionSelectionKey(selectedOption)
+          ) ?? candidates.find(
+            (option) =>
+              option.mode.toLowerCase() === selectedOption.mode.toLowerCase()
+          );
+          if (!selected) return leg;
+          const selectedIndex = candidates.indexOf(selected);
+          const alternativeKeys = new Set<string>();
+          const alternatives = candidates.filter((option, optionIndex) => {
+            if (optionIndex === selectedIndex) return false;
+            const key = transportOptionSelectionKey(option);
+            if (alternativeKeys.has(key)) return false;
+            alternativeKeys.add(key);
+            return true;
+          });
+          return {
+            ...leg,
+            mode: selected.mode,
+            distanceMeters: selected.distanceMeters,
+            estimatedDurationMinutes: selected.estimatedDurationMinutes,
+            geometryCoordinates: selected.geometryCoordinates,
+            source: selected.source,
+            verified: selected.verified,
+            fetchedAt: selected.fetchedAt,
+            details: selected.details,
+            alternatives
+          };
+        })
+      };
+    })
+  };
 }
 
 function isDevelopmentTransitFixture(option: TransportOption): boolean {
@@ -4227,10 +5066,18 @@ function formatDistance(distanceMeters: number): string {
   })} km`;
 }
 
+function formatDuration(durationMinutes: number): string {
+  const roundedMinutes = Math.max(1, Math.round(durationMinutes));
+  if (roundedMinutes < 60) return `${roundedMinutes} phút`;
+  const hours = Math.floor(roundedMinutes / 60);
+  const minutes = roundedMinutes % 60;
+  return minutes > 0 ? `${hours} giờ ${minutes} phút` : `${hours} giờ`;
+}
+
 function TransportModeIcon({ mode }: { mode: string }) {
   const normalized = mode.toLowerCase();
 
-  if (normalized.includes("walk")) {
+  if (isWalkingMode(mode)) {
     return (
       <svg viewBox="0 0 24 24">
         <circle cx="13" cy="4" r="2" />
@@ -4249,11 +5096,7 @@ function TransportModeIcon({ mode }: { mode: string }) {
     );
   }
 
-  if (
-    normalized.includes("bus") ||
-    normalized.includes("public") ||
-    normalized.includes("transit")
-  ) {
+  if (isPublicTransitMode(mode)) {
     return (
       <svg viewBox="0 0 24 24">
         <rect x="5" y="3" width="14" height="16" rx="3" />
@@ -4305,17 +5148,15 @@ function TransportModeIcon({ mode }: { mode: string }) {
 
 function TransportOptionCard({
   option,
-  fromPlace,
-  toPlace,
   primary = false,
   selected = false,
+  saving = false,
   onSelect
 }: {
   option: TransportOption;
-  fromPlace: string;
-  toPlace: string;
   primary?: boolean;
   selected?: boolean;
+  saving?: boolean;
   onSelect?: () => void;
 }) {
   const lines = option.details?.lines ?? [];
@@ -4331,16 +5172,16 @@ function TransportOptionCard({
           <TransportModeIcon mode={option.mode} />
         </span>
         <strong>{transportModeLabel(option.mode)}</strong>
+        {isPublicTransitMode(option.mode) ? (
+          <span className="transportLineBadge">
+            Xe buýt{lineLabel ? ` · ${lineLabel}` : ""}
+          </span>
+        ) : null}
         <span className="transportDuration">
           <ClockIcon />
-          {option.estimatedDurationMinutes} phút
+          {formatDuration(option.estimatedDurationMinutes)}
         </span>
       </div>
-      <p>
-        <span>{fromPlace}</span>
-        <b aria-hidden="true">→</b>
-        <span>{toPlace}</span>
-      </p>
       {isPublicTransitMode(option.mode) && lineLabel && segments.length === 0 ? (
         <small>{lineLabel}</small>
       ) : null}
@@ -4376,7 +5217,7 @@ function TransportOptionCard({
                   </p>
                   <small>
                     {segmentLine ? `${segmentLine} · ` : ""}
-                    {segment.estimatedDurationMinutes} phút · {formatDistance(segment.distanceMeters)}
+                    {formatDuration(segment.estimatedDurationMinutes)} · {formatDistance(segment.distanceMeters)}
                   </small>
                 </div>
               </li>
@@ -4384,11 +5225,11 @@ function TransportOptionCard({
           })}
         </ol>
       ) : null}
-      {isDevelopmentTransitFixture(option) ? (
-        <small>Lịch development: giờ chạy cũ 2018 được dịch ngày</small>
-      ) : null}
       {!option.verified && !isDevelopmentTransitFixture(option) ? (
         <small>Tuyến ước tính</small>
+      ) : null}
+      {selected && saving ? (
+        <small role="status">Đang lưu lựa chọn...</small>
       ) : null}
     </>
   );
@@ -4446,6 +5287,15 @@ function ClockIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 21s7-5.4 7-12a7 7 0 0 0-14 0c0 6.6 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
     </svg>
   );
 }

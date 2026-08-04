@@ -70,6 +70,29 @@ class ReorderItemsRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SelectTransportOptionRequest(BaseModel):
+    mode: str = Field(min_length=1, max_length=40)
+    option_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=4000,
+        alias="optionKey",
+    )
+    source: str | None = Field(default=None, min_length=1, max_length=80)
+    distance_meters: int | None = Field(
+        default=None,
+        ge=0,
+        alias="distanceMeters",
+    )
+    estimated_duration_minutes: int | None = Field(
+        default=None,
+        ge=0,
+        alias="estimatedDurationMinutes",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
 class MutationResponse(BaseModel):
     plan: Plan
     affected_days: Annotated[list[int], Field(alias="affectedDays")]

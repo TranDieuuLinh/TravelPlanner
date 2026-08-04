@@ -19,6 +19,7 @@ from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.plan_mutation_schema import (
     AddItemRequest,
     ReorderItemsRequest,
+    SelectTransportOptionRequest,
     UpdateItemRequest,
 )
 from app.modules.plans.plan_mutation_service import PlanMutationService
@@ -592,10 +593,11 @@ class TripChatService:
         self.plan_service.repository.save(result.plan)
 
         revision = chat.revision + 1
-        summary = f"Đã thêm địa điểm '{payload.name}' vào Ngày {payload.day} (bản sửa đổi {revision})."
         saved = self.repository.save_plan_mutation(
             chat,
-            action_summary=summary,
+            # Direct editor actions are persisted as plan revisions, not chat
+            # messages. The client acknowledges them with a transient toast.
+            action_summary=None,
             plan_payload=result.plan.model_dump(mode="json", by_alias=True),
             revision=revision,
         )
@@ -629,10 +631,9 @@ class TripChatService:
         self.plan_service.repository.save(result.plan)
 
         revision = chat.revision + 1
-        summary = f"Đã cập nhật thông tin địa điểm trong Ngày {day} (bản sửa đổi {revision})."
         saved = self.repository.save_plan_mutation(
             chat,
-            action_summary=summary,
+            action_summary=None,
             plan_payload=result.plan.model_dump(mode="json", by_alias=True),
             revision=revision,
         )
@@ -665,10 +666,9 @@ class TripChatService:
         self.plan_service.repository.save(result.plan)
 
         revision = chat.revision + 1
-        summary = f"Đã xóa địa điểm khỏi Ngày {day} (bản sửa đổi {revision})."
         saved = self.repository.save_plan_mutation(
             chat,
-            action_summary=summary,
+            action_summary=None,
             plan_payload=result.plan.model_dump(mode="json", by_alias=True),
             revision=revision,
         )
@@ -706,10 +706,9 @@ class TripChatService:
         self.plan_service.repository.save(result.plan)
 
         revision = chat.revision + 1
-        summary = f"Đã xóa địa điểm '{name}' khỏi danh sách chưa xếp lịch (bản sửa đổi {revision})."
         saved = self.repository.save_plan_mutation(
             chat,
-            action_summary=summary,
+            action_summary=None,
             plan_payload=result.plan.model_dump(mode="json", by_alias=True),
             revision=revision,
         )
@@ -742,10 +741,52 @@ class TripChatService:
         self.plan_service.repository.save(result.plan)
 
         revision = chat.revision + 1
-        summary = f"Đã sắp xếp lại thứ tự địa điểm Ngày {day} (bản sửa đổi {revision})."
         saved = self.repository.save_plan_mutation(
             chat,
-            action_summary=summary,
+            action_summary=None,
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self._read(saved)
+
+    def select_transport_option(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        day: int,
+        leg_index: int,
+        payload: SelectTransportOptionRequest,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
+            )
+        if chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_PLAN",
+                "Chưa có lịch trình nào được tạo trong cuộc trò chuyện này.",
+            )
+        plan = Plan.model_validate(chat.current_plan)
+        result = self.mutation_service.select_transport_option(
+            plan,
+            day,
+            leg_index,
+            payload,
+        )
+        self.plan_service.repository.save(result.plan)
+
+        revision = chat.revision + 1
+        saved = self.repository.save_plan_mutation(
+            chat,
+            # Route-option clicks are direct UI state changes. Persist their
+            # revisions without flooding the conversational Planner history.
+            action_summary=None,
             plan_payload=result.plan.model_dump(mode="json", by_alias=True),
             revision=revision,
         )

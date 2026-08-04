@@ -1,5 +1,14 @@
 import { apiFetch } from "@/lib/api";
 
+export type OpeningHourEntry = {
+  dayOfWeek?: number | null;
+  dayName?: string | null;
+  rawTimeSlots?: string | null;
+  openTime?: string | null;
+  closeTime?: string | null;
+  is24Hours?: boolean | null;
+};
+
 export type PlanItem = {
   itemId?: string | null;
   placeId?: string | null;
@@ -22,6 +31,8 @@ export type PlanItem = {
   imageUrls?: string[];
   rating?: number | null;
   reviewCount?: number | null;
+  openingHours?: OpeningHourEntry[];
+  sourceLink?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 };
@@ -315,6 +326,8 @@ export type ExplorePlace = {
   imageUrls?: string[];
   rating?: number | null;
   reviewCount?: number | null;
+  openingHours?: OpeningHourEntry[];
+  sourceLink?: string | null;
 };
 
 export type ExploreResponse = {
@@ -712,12 +725,17 @@ export async function createTripChat(title?: string): Promise<TripChat> {
   });
 }
 
-export async function listTripChats(): Promise<TripChatSummary[]> {
-  return apiFetch<TripChatSummary[]>("/trip-chats");
+export async function listTripChats(
+  init: Pick<RequestInit, "signal"> = {}
+): Promise<TripChatSummary[]> {
+  return apiFetch<TripChatSummary[]>("/trip-chats", init);
 }
 
-export async function getTripChat(chatId: string): Promise<TripChat> {
-  return apiFetch<TripChat>(`/trip-chats/${chatId}`);
+export async function getTripChat(
+  chatId: string,
+  init: Pick<RequestInit, "signal"> = {}
+): Promise<TripChat> {
+  return apiFetch<TripChat>(`/trip-chats/${chatId}`, init);
 }
 
 export async function deleteTripChat(chatId: string): Promise<void> {
@@ -861,6 +879,7 @@ export async function addTripChatItem(input: {
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.notes) form.append("notes", input.item.notes);
   if (input.item.personalNotes) form.append("personalNotes", input.item.personalNotes);
+  if (input.item.position != null) form.append("position", String(input.item.position));
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/items`, {
     method: "POST",
@@ -955,6 +974,41 @@ export async function reorderTripChatItem(input: {
     method: "PUT",
     body: form
   });
+}
+
+export async function selectTripChatTransportOption(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  legIndex: number;
+  mode: string;
+  optionKey?: string;
+  source?: string;
+  distanceMeters?: number;
+  estimatedDurationMinutes?: number;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  form.append("mode", input.mode);
+  if (input.optionKey) form.append("optionKey", input.optionKey);
+  if (input.source) form.append("source", input.source);
+  if (input.distanceMeters != null) {
+    form.append("distanceMeters", String(input.distanceMeters));
+  }
+  if (input.estimatedDurationMinutes != null) {
+    form.append(
+      "estimatedDurationMinutes",
+      String(input.estimatedDurationMinutes)
+    );
+  }
+
+  return apiFetch<TripChat>(
+    `/trip-chats/${input.chatId}/plan/days/${input.day}/transport-legs/${input.legIndex}/selection`,
+    {
+      method: "PUT",
+      body: form
+    }
+  );
 }
 
 // --- Conversation supervisor endpoints -------------------------------------

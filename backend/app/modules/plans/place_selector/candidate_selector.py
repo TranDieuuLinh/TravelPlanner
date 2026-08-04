@@ -646,6 +646,7 @@ class CandidateSelector:
             sourceProvider=selected.source_provider,
             openingHours=[],
             dataConfidence="user_confirmed",
+            sourceLink=selected.source_refs[0] if selected.source_refs else None,
             sourceOrder=selected.source_order,
             sourceDay=selected.source_day,
             sourceTimeHint=selected.source_time_hint,

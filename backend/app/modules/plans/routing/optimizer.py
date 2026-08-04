@@ -50,6 +50,7 @@ class GeographicRouteOptimizer:
         trip_start_date: str | None = None,
         preferred_modes: set[str] | None = None,
         avoid_modes: set[str] | None = None,
+        reusable_legs: list[PlanTransportLeg] | None = None,
     ) -> tuple[list[PlanItem], list[PlanTransportLeg]]:
         located_positions = [
             index
@@ -67,6 +68,7 @@ class GeographicRouteOptimizer:
                 trip_start_date=trip_start_date,
                 preferred_modes=preferred_modes or set(),
                 avoid_modes=avoid_modes or set(),
+                reusable_legs=reusable_legs,
             )
         order = self._best_nearest_neighbour_order(located, start=start)
         order = self._two_opt(located, order, start=start)
@@ -516,21 +518,37 @@ class GeographicRouteOptimizer:
         trip_start_date: str | None,
         preferred_modes: set[str],
         avoid_modes: set[str],
+        reusable_legs: list[PlanTransportLeg] | None = None,
     ) -> list[PlanTransportLeg]:
-        return [
-            self.calculate_leg(
-                origin,
-                destination,
-                departure_time=_leg_departure_time(
+        reusable_by_pair = {
+            (leg.from_item_id, leg.to_item_id): leg
+            for leg in reusable_legs or []
+            if leg.from_item_id and leg.to_item_id
+        }
+        legs: list[PlanTransportLeg] = []
+        for origin, destination in zip(items, items[1:]):
+            reusable = reusable_by_pair.get((origin.item_id, destination.item_id))
+            if (
+                reusable is not None
+                and reusable.from_place == origin.name
+                and reusable.to_place == destination.name
+            ):
+                legs.append(reusable)
+                continue
+            legs.append(
+                self.calculate_leg(
                     origin,
-                    day=day,
-                    trip_start_date=trip_start_date,
-                ),
-                preferred_modes=preferred_modes,
-                avoid_modes=avoid_modes,
+                    destination,
+                    departure_time=_leg_departure_time(
+                        origin,
+                        day=day,
+                        trip_start_date=trip_start_date,
+                    ),
+                    preferred_modes=preferred_modes,
+                    avoid_modes=avoid_modes,
+                )
             )
-            for origin, destination in zip(items, items[1:])
-        ]
+        return legs
 
     def _best_provider_route(
         self,

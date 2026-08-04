@@ -10,6 +10,11 @@ import type {
 import { createDayColorMap } from "@/lib/day-colors";
 import { routeForwardBearing } from "@/lib/map-navigation";
 import { formatPlanNote } from "@/lib/plan-note";
+import {
+  isCarMode,
+  isPublicTransitMode,
+  isWalkingMode
+} from "@/lib/transport-options";
 import type { ExplorePlace } from "@/lib/plans";
 
 export type PlannerMapPlace = ExplorePlace & {
@@ -67,7 +72,12 @@ export type PlannerMapSearchPlace = {
 type PlannerMapProps = {
   places: PlannerMapPlace[];
   routes: PlannerMapRoute[];
+  routeSummary: {
+    title: string;
+    subtitle: string;
+  } | null;
   currentLocation: PlannerMapCurrentLocation | null;
+  navigationMode: string | null;
   directionsActive: boolean;
   directionsBusy: boolean;
   directionsSearchOpen: boolean;
@@ -98,7 +108,6 @@ type PlannerMapProps = {
   onChooseDestination: (place: PlannerMapSearchPlace) => void;
   onToggleMapDestinationPick: () => void;
   onChooseMapDestination: (place: PlannerMapSearchPlace) => void;
-  onViewDayRoute: () => void;
   onCancelDirections: () => void;
   selectedKey: string | null;
   selectedRouteKey: string | null;
@@ -128,133 +137,30 @@ const VALHALLA_ROUTING_ATTRIBUTION =
   '<a href="https://valhalla.github.io/valhalla/">Valhalla routing</a>';
 const OTP_ROUTING_ATTRIBUTION =
   'Transit by <a href="https://www.opentripplanner.org/">OpenTripPlanner</a>';
+const MAP_MAX_MOUSE_PITCH = 60;
+const MAP_CONTROL_PAN_PIXELS = 160;
+const MAP_CONTROL_ROTATE_DEGREES = 30;
+const MAP_KEYBOARD_ROTATE_DEGREES = 8;
+const MAP_KEYBOARD_PITCH_DEGREES = 4;
+const CURRENT_LOCATION_HEADING_TIP_OFFSET_PIXELS = 10;
 
 type MapRouteMode = "walk" | "car" | "transit" | "bike" | "unknown";
 
 function mapRouteMode(mode: string): MapRouteMode {
   const normalized = mode.toLowerCase();
-  if (normalized.includes("walk") || normalized.includes("pedestrian")) {
+  if (isWalkingMode(mode)) {
     return "walk";
   }
-  if (
-    normalized.includes("car") ||
-    normalized.includes("auto") ||
-    normalized.includes("taxi")
-  ) {
+  if (isCarMode(mode)) {
     return "car";
   }
   if (normalized.includes("bike") || normalized.includes("motor")) {
     return "bike";
   }
-  if (
-    ["bus", "train", "public", "transit"].some((token) =>
-      normalized.includes(token)
-    )
-  ) {
+  if (isPublicTransitMode(mode)) {
     return "transit";
   }
   return "unknown";
-}
-
-function mapRouteModeDetails(
-  mode: string
-): { icon: string; label: string } | null {
-  switch (mapRouteMode(mode)) {
-    case "walk":
-      return { icon: "🚶", label: "Đi bộ" };
-    case "car":
-      return { icon: "🚗", label: "Ô tô" };
-    case "bike":
-      return { icon: "🛵", label: "Xe máy" };
-    case "transit":
-      return { icon: "🚌", label: "Phương tiện công cộng" };
-    default:
-      return null;
-  }
-}
-
-function createCurrentLocationModeIcon(
-  mode: MapRouteMode
-): SVGSVGElement | null {
-  if (mode !== "car" && mode !== "walk") return null;
-
-  const svgNamespace = "http://www.w3.org/2000/svg";
-  const icon = document.createElementNS(svgNamespace, "svg");
-  icon.setAttribute("aria-hidden", "true");
-  icon.setAttribute("viewBox", "0 0 24 24");
-
-  if (mode === "walk") {
-    const head = document.createElementNS(svgNamespace, "circle");
-    head.setAttribute("cx", "13");
-    head.setAttribute("cy", "4");
-    head.setAttribute("r", "2");
-    const body = document.createElementNS(svgNamespace, "path");
-    body.setAttribute("d", "m10 21 2-6-3-3 2-5 4 3 3 1M12 15l4 6M9 12l-4 3");
-    icon.append(head, body);
-    return icon;
-  }
-
-  const roof = document.createElementNS(svgNamespace, "path");
-  roof.setAttribute("d", "m5 11 2-5h10l2 5");
-  const body = document.createElementNS(svgNamespace, "path");
-  body.setAttribute("d", "M4 12a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5H4zM6 17v2m12-2v2");
-  const leftWheel = document.createElementNS(svgNamespace, "circle");
-  leftWheel.setAttribute("cx", "8");
-  leftWheel.setAttribute("cy", "14");
-  leftWheel.setAttribute("r", "1");
-  const rightWheel = document.createElementNS(svgNamespace, "circle");
-  rightWheel.setAttribute("cx", "16");
-  rightWheel.setAttribute("cy", "14");
-  rightWheel.setAttribute("r", "1");
-  icon.append(roof, body, leftWheel, rightWheel);
-  return icon;
-}
-
-function formatRouteDistance(distanceMeters: number): string {
-  if (distanceMeters < 1000) return `${Math.max(0, Math.round(distanceMeters))} m`;
-  return `${(distanceMeters / 1000).toLocaleString("vi-VN", {
-    maximumFractionDigits: 1
-  })} km`;
-}
-
-function formatRouteDuration(durationMinutes: number): string {
-  const roundedMinutes = Math.max(1, Math.round(durationMinutes));
-  if (roundedMinutes < 60) return `${roundedMinutes} phút`;
-  const hours = Math.floor(roundedMinutes / 60);
-  const minutes = roundedMinutes % 60;
-  return minutes > 0 ? `${hours} giờ ${minutes} phút` : `${hours} giờ`;
-}
-
-function routeMidpoint(
-  coordinates: [number, number][]
-): [number, number] | null {
-  if (coordinates.length < 2) return null;
-  const lengths = coordinates.slice(1).map((coordinate, index) => {
-    const previous = coordinates[index];
-    return Math.hypot(
-      coordinate[0] - previous[0],
-      coordinate[1] - previous[1]
-    );
-  });
-  const totalLength = lengths.reduce((total, length) => total + length, 0);
-  if (totalLength === 0) return coordinates[0];
-
-  const targetLength = totalLength / 2;
-  let traversed = 0;
-  for (let index = 0; index < lengths.length; index += 1) {
-    const segmentLength = lengths[index];
-    if (traversed + segmentLength >= targetLength) {
-      const ratio = (targetLength - traversed) / segmentLength;
-      const start = coordinates[index];
-      const end = coordinates[index + 1];
-      return [
-        start[0] + (end[0] - start[0]) * ratio,
-        start[1] + (end[1] - start[1]) * ratio
-      ];
-    }
-    traversed += segmentLength;
-  }
-  return coordinates.at(-1) ?? null;
 }
 
 function hasCoordinates(
@@ -270,6 +176,90 @@ function hasCoordinates(
     place.longitude >= -180 &&
     place.longitude <= 180
   );
+}
+
+function normalizeBearing(value: number): number {
+  return ((value % 360) + 360) % 360;
+}
+
+function clampPitch(value: number): number {
+  return Math.min(MAP_MAX_MOUSE_PITCH, Math.max(0, value));
+}
+
+function rotateMapBy(map: MapLibreMap, degrees: number) {
+  map.easeTo({
+    bearing: normalizeBearing(map.getBearing() + degrees),
+    duration: 240,
+    essential: true
+  });
+}
+
+function pitchMapBy(map: MapLibreMap, degrees: number) {
+  map.easeTo({
+    duration: 120,
+    essential: true,
+    pitch: clampPitch(map.getPitch() + degrees)
+  });
+}
+
+function panMapBy(map: MapLibreMap, x: number, y: number) {
+  map.panBy([x, y], {
+    duration: 240,
+    essential: true
+  });
+}
+
+function currentLocationMarkerOffset(heading: number | null | undefined) {
+  if (typeof heading !== "number" || !Number.isFinite(heading)) return undefined;
+
+  const radians = (heading * Math.PI) / 180;
+  return [
+    -Math.sin(radians) * CURRENT_LOCATION_HEADING_TIP_OFFSET_PIXELS,
+    Math.cos(radians) * CURRENT_LOCATION_HEADING_TIP_OFFSET_PIXELS
+  ] as [number, number];
+}
+
+function createNavigationModeIcon(
+  mode: MapRouteMode
+): SVGSVGElement | null {
+  if (mode !== "car" && mode !== "walk") return null;
+
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(svgNamespace, "svg");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("viewBox", "0 0 24 24");
+
+  if (mode === "walk") {
+    const head = document.createElementNS(svgNamespace, "circle");
+    head.setAttribute("cx", "13");
+    head.setAttribute("cy", "4");
+    head.setAttribute("r", "2");
+    const body = document.createElementNS(svgNamespace, "path");
+    body.setAttribute(
+      "d",
+      "m10 21 2-6-3-3 2-5 4 3 3 1M12 15l4 6M9 12l-4 3"
+    );
+    icon.append(head, body);
+    return icon;
+  }
+
+  const roof = document.createElementNS(svgNamespace, "path");
+  roof.setAttribute("d", "m5 11 2-5h10l2 5");
+  const body = document.createElementNS(svgNamespace, "path");
+  body.setAttribute(
+    "d",
+    "M4 12a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5H4zM6 17v2m12-2v2"
+  );
+  const leftWheel = document.createElementNS(svgNamespace, "circle");
+  leftWheel.setAttribute("cx", "8");
+  leftWheel.setAttribute("cy", "14");
+  leftWheel.setAttribute("r", "1");
+  const rightWheel = document.createElementNS(svgNamespace, "circle");
+  rightWheel.setAttribute("cx", "16");
+  rightWheel.setAttribute("cy", "14");
+  rightWheel.setAttribute("r", "1");
+  icon.append(roof, body, leftWheel, rightWheel);
+  return icon;
 }
 
 function applyCleanPlannerStyle(map: MapLibreMap) {
@@ -391,7 +381,9 @@ function createAccuracyPolygon(
 export function PlannerMap({
   places,
   routes,
+  routeSummary,
   currentLocation,
+  navigationMode,
   directionsActive,
   directionsBusy,
   directionsSearchOpen,
@@ -422,7 +414,6 @@ export function PlannerMap({
   onChooseDestination,
   onToggleMapDestinationPick,
   onChooseMapDestination,
-  onViewDayRoute,
   onCancelDirections,
   selectedKey,
   selectedRouteKey,
@@ -440,8 +431,16 @@ export function PlannerMap({
   const attributionControlRef = useRef<AttributionControl | null>(null);
   const lastPlacesSignatureRef = useRef("");
   const lastCurrentRouteSignatureRef = useRef("");
+  const handledLocationFocusRequestRef = useRef(0);
+  const panDragRef = useRef<{
+    pointerId: number;
+    buttonMask: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapDragging, setMapDragging] = useState(false);
 
   routesRef.current = routes;
 
@@ -491,15 +490,21 @@ export function PlannerMap({
         attributionControl: false,
         center: VIETNAM_CENTER,
         container: containerRef.current,
+        dragPan: true,
+        dragRotate: false,
+        keyboard: false,
         maxZoom: 19,
+        pitchWithRotate: true,
         style: MAP_STYLE_URL,
+        touchPitch: true,
         zoom: 4.7
       });
 
       map.addControl(
-        new maplibre.NavigationControl({ showCompass: false }),
+        new maplibre.NavigationControl({ showCompass: true }),
         "top-right"
       );
+      map.touchZoomRotate.enableRotation();
       const attributionControl = new maplibre.AttributionControl({
         compact: true,
         customAttribution: OSM_ATTRIBUTION
@@ -542,6 +547,154 @@ export function PlannerMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!mapReady || !map) return;
+
+    const canvas = map.getCanvas();
+    const mapContainer = map.getContainer();
+    mapContainer.tabIndex = 0;
+    mapContainer.setAttribute(
+      "aria-label",
+      "Bản đồ. Nhấp vào bản đồ rồi dùng A hoặc D để xoay 360, W hoặc S để nghiêng, phím mũi tên để di chuyển."
+    );
+    map.dragPan.enable();
+
+    const stopMousePan = (event?: PointerEvent) => {
+      const drag = panDragRef.current;
+      if (!drag) return;
+      if (event && event.pointerId !== drag.pointerId) return;
+      if (canvas.hasPointerCapture(drag.pointerId)) {
+        canvas.releasePointerCapture(drag.pointerId);
+      }
+      panDragRef.current = null;
+      setMapDragging(false);
+    };
+
+    const startMousePan = (event: PointerEvent) => {
+      if (event.pointerType !== "mouse") return;
+      if (event.button !== 2) return;
+      event.preventDefault();
+      event.stopPropagation();
+      map.stop();
+      panDragRef.current = {
+        pointerId: event.pointerId,
+        buttonMask: event.button === 2 ? 2 : 1,
+        lastX: event.clientX,
+        lastY: event.clientY
+      };
+      canvas.setPointerCapture(event.pointerId);
+      setMapDragging(true);
+    };
+    const panMapWithMouse = (event: PointerEvent) => {
+      const drag = panDragRef.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if ((event.buttons & drag.buttonMask) === 0) {
+        stopMousePan(event);
+        return;
+      }
+      const movementX = event.clientX - drag.lastX;
+      const movementY = event.clientY - drag.lastY;
+      drag.lastX = event.clientX;
+      drag.lastY = event.clientY;
+      map.panBy([movementX, movementY], {
+        animate: false,
+        duration: 0,
+        essential: true
+      });
+    };
+    const stopMousePanByButton = (event: PointerEvent) => {
+      if (event.button !== 2) return;
+      stopMousePan(event);
+    };
+    const preventContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    const focusMapForKeyboard = () => {
+      mapContainer.focus({ preventScroll: true });
+    };
+    const moveWithKeyboard = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLElement &&
+        ["BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(event.target.tagName)
+      ) {
+        return;
+      }
+
+      if (event.shiftKey && event.key === "ArrowLeft") {
+        event.preventDefault();
+        rotateMapBy(map, -MAP_CONTROL_ROTATE_DEGREES);
+        return;
+      }
+      if (event.shiftKey && event.key === "ArrowRight") {
+        event.preventDefault();
+        rotateMapBy(map, MAP_CONTROL_ROTATE_DEGREES);
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "a") {
+        event.preventDefault();
+        rotateMapBy(map, -MAP_KEYBOARD_ROTATE_DEGREES);
+      } else if (key === "d") {
+        event.preventDefault();
+        rotateMapBy(map, MAP_KEYBOARD_ROTATE_DEGREES);
+      } else if (key === "w") {
+        event.preventDefault();
+        pitchMapBy(map, MAP_KEYBOARD_PITCH_DEGREES);
+      } else if (key === "s") {
+        event.preventDefault();
+        pitchMapBy(map, -MAP_KEYBOARD_PITCH_DEGREES);
+      } else if (key === "r") {
+        event.preventDefault();
+        map.easeTo({
+          bearing: 0,
+          duration: 240,
+          essential: true,
+          pitch: 0
+        });
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        panMapBy(map, -MAP_CONTROL_PAN_PIXELS, 0);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        panMapBy(map, MAP_CONTROL_PAN_PIXELS, 0);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        panMapBy(map, 0, -MAP_CONTROL_PAN_PIXELS);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        panMapBy(map, 0, MAP_CONTROL_PAN_PIXELS);
+      }
+    };
+
+    canvas.addEventListener("pointerdown", startMousePan, { capture: true });
+    canvas.addEventListener("pointerdown", focusMapForKeyboard);
+    canvas.addEventListener("pointermove", panMapWithMouse);
+    canvas.addEventListener("pointerup", stopMousePan);
+    canvas.addEventListener("pointercancel", stopMousePan);
+    canvas.addEventListener("lostpointercapture", stopMousePan);
+    canvas.addEventListener("contextmenu", preventContextMenu);
+    mapContainer.addEventListener("keydown", moveWithKeyboard);
+    document.addEventListener("pointerup", stopMousePanByButton);
+
+    return () => {
+      canvas.removeEventListener("pointerdown", startMousePan, { capture: true });
+      canvas.removeEventListener("pointerdown", focusMapForKeyboard);
+      canvas.removeEventListener("pointermove", panMapWithMouse);
+      canvas.removeEventListener("pointerup", stopMousePan);
+      canvas.removeEventListener("pointercancel", stopMousePan);
+      canvas.removeEventListener("lostpointercapture", stopMousePan);
+      canvas.removeEventListener("contextmenu", preventContextMenu);
+      mapContainer.removeEventListener("keydown", moveWithKeyboard);
+      document.removeEventListener("pointerup", stopMousePanByButton);
+      stopMousePan();
+      map.dragPan.enable();
+    };
+  }, [mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!mapReady || !map || !mapDestinationPickActive) return;
 
     const choosePoint = (event: MapLayerMouseEvent) => {
@@ -561,6 +714,48 @@ export function PlannerMap({
       map.getCanvas().style.cursor = "";
     };
   }, [mapDestinationPickActive, mapReady, onChooseMapDestination]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+
+    const compassButton = map
+      .getContainer()
+      .querySelector<HTMLButtonElement>(".maplibregl-ctrl-compass");
+    if (!compassButton) return;
+
+    const defaultTitle = compassButton.getAttribute("title");
+    const defaultAriaLabel = compassButton.getAttribute("aria-label");
+    compassButton.title = "Định vị, phóng to và chuyển sang góc nhìn POV";
+    compassButton.setAttribute(
+      "aria-label",
+      "Định vị vị trí hiện tại, phóng to và chuyển bản đồ sang góc nhìn POV"
+    );
+    compassButton.disabled = locationBusy;
+
+    const locateFromCompass = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      onLocate();
+    };
+
+    compassButton.addEventListener("click", locateFromCompass, {
+      capture: true
+    });
+    return () => {
+      compassButton.removeEventListener("click", locateFromCompass, {
+        capture: true
+      });
+      compassButton.disabled = false;
+      compassButton.title = defaultTitle ?? "Reset bearing to north";
+      if (defaultAriaLabel) {
+        compassButton.setAttribute("aria-label", defaultAriaLabel);
+      } else {
+        compassButton.removeAttribute("aria-label");
+      }
+    };
+  }, [locationBusy, mapReady, onLocate]);
 
   useEffect(() => {
     const maplibre = maplibreRef.current;
@@ -614,12 +809,28 @@ export function PlannerMap({
       name.textContent = `${place.mapOrder}. ${place.name}`;
       const day = document.createElement("small");
       day.textContent = place.dayLabel;
-      const time = document.createElement("span");
-      time.textContent = place.timeWindow;
+      const openingHours = formatOpeningHoursForDay(place.openingHours, place.dayLabel);
+      const hours = document.createElement("span");
+      hours.className = "candidateMapPopupHours";
+      hours.textContent = openingHours ? `Giờ mở cửa: ${openingHours}` : "Giờ mở cửa: chưa có dữ liệu";
       const address = document.createElement("span");
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
-      popupContent.append(name, day, time, address);
+      popupContent.append(name, day, hours, address);
+      if (place.rating != null) {
+        const rating = document.createElement(place.sourceLink ? "a" : "span");
+        rating.className = "candidateMapPopupRating";
+        rating.textContent = `★ ${place.rating.toFixed(1)}${
+          place.reviewCount ? ` · ${formatCompactCount(place.reviewCount)} lượt đánh giá` : ""
+        }`;
+        if (place.sourceLink && rating instanceof HTMLAnchorElement) {
+          rating.href = place.sourceLink;
+          rating.target = "_blank";
+          rating.rel = "noreferrer";
+          rating.title = "Mở đánh giá trên Google Maps";
+        }
+        popupContent.append(rating);
+      }
       if (place.imageUrl) {
         const photo = document.createElement("img");
         photo.className = "candidateMapPopupPhoto";
@@ -657,15 +868,14 @@ export function PlannerMap({
     });
 
     if (currentLocation) {
-      const activeLocationRoute = routes.find(
-        (route) => route.kind === "current_location"
-      );
-      const activeLocationMode = activeLocationRoute
-        ? mapRouteMode(activeLocationRoute.mode)
+      const activeNavigationMode = directionsActive
+        ? mapRouteMode(navigationMode ?? "")
         : "unknown";
-      const activeLocationModeDetails = activeLocationRoute
-        ? mapRouteModeDetails(activeLocationRoute.mode)
-        : null;
+      const navigationModeLabel = activeNavigationMode === "car"
+        ? "Ô tô"
+        : activeNavigationMode === "walk"
+          ? "Đi bộ"
+          : null;
       const accuracySourceId = "vsf-current-location-accuracy";
       const accuracyFillId = "vsf-current-location-accuracy-fill";
       const accuracyOutlineId = "vsf-current-location-accuracy-outline";
@@ -710,19 +920,17 @@ export function PlannerMap({
       const element = document.createElement("button");
       element.className = [
         "currentLocationMarker",
-        activeLocationMode === "car" || activeLocationMode === "walk"
-          ? `mode-${activeLocationMode}`
-          : ""
+        navigationModeLabel ? `mode-${activeNavigationMode}` : ""
       ].filter(Boolean).join(" ");
       element.type = "button";
       const locationLabel = currentLocation.label ?? "Vị trí của bạn";
-      const accessibleLocationLabel = activeLocationModeDetails
-        ? `${locationLabel} · ${activeLocationModeDetails.label}`
+      const accessibleLocationLabel = navigationModeLabel
+        ? `${locationLabel} · ${navigationModeLabel}`
         : locationLabel;
       element.title = accessibleLocationLabel;
       element.setAttribute("aria-label", accessibleLocationLabel);
       const markerBody = document.createElement("span");
-      const modeIcon = createCurrentLocationModeIcon(activeLocationMode);
+      const modeIcon = createNavigationModeIcon(activeNavigationMode);
       if (modeIcon) {
         markerBody.className = "has-travel-mode";
         markerBody.append(modeIcon);
@@ -748,7 +956,12 @@ export function PlannerMap({
         detail.textContent = currentLocation.detail;
         popupContent.append(detail);
       }
-      const marker = new maplibre.Marker({ element })
+      const marker = new maplibre.Marker({
+        element,
+        offset: modeIcon
+          ? undefined
+          : currentLocationMarkerOffset(currentLocation.heading)
+      })
         .setLngLat([currentLocation.longitude, currentLocation.latitude])
         .setPopup(
           new maplibre.Popup({ offset: 22 }).setDOMContent(popupContent)
@@ -804,96 +1017,6 @@ export function PlannerMap({
       dynamicMarkersRef.current.push(marker);
     };
 
-    const addRouteModeMarker = (
-      coordinates: [number, number][],
-      routeKey: string,
-      routeDetails: {
-        mode: string;
-        fromPlace: string;
-        toPlace: string;
-        distanceMeters: number;
-        estimatedDurationMinutes: number;
-        line?: string | null;
-        headsign?: string | null;
-      }
-    ) => {
-      const midpoint = routeMidpoint(coordinates);
-      if (!midpoint) return;
-      const modeKind = mapRouteMode(routeDetails.mode);
-      const details = mapRouteModeDetails(routeDetails.mode);
-      if (!details) return;
-      const element = document.createElement("button");
-      element.className = [
-        "mapRouteModeBadge",
-        `mode-${modeKind}`,
-        selectedRouteKey === routeKey ? "is-selected" : ""
-      ].filter(Boolean).join(" ");
-      element.type = "button";
-      element.setAttribute(
-        "aria-pressed",
-        String(selectedRouteKey === routeKey)
-      );
-      element.title = `Xem chặng ${routeDetails.fromPlace} đến ${routeDetails.toPlace}`;
-      element.setAttribute(
-        "aria-label",
-        `${details.label} từ ${routeDetails.fromPlace} đến ${routeDetails.toPlace}, ${formatRouteDuration(routeDetails.estimatedDurationMinutes)}`
-      );
-      const icon = document.createElement("span");
-      icon.setAttribute("aria-hidden", "true");
-      icon.textContent = details.icon;
-      const label = document.createElement("strong");
-      label.textContent = details.label;
-      element.append(icon, label);
-
-      const popupContent = document.createElement("div");
-      popupContent.className = "mapRoutePopup";
-      const heading = document.createElement("strong");
-      heading.textContent = details.label;
-      const endpoints = document.createElement("div");
-      endpoints.className = "mapRoutePopupEndpoints";
-      const from = document.createElement("span");
-      from.dataset.marker = "A";
-      from.textContent = routeDetails.fromPlace;
-      const to = document.createElement("span");
-      to.dataset.marker = "B";
-      to.textContent = routeDetails.toPlace;
-      endpoints.append(from, to);
-      const metrics = document.createElement("div");
-      metrics.className = "mapRoutePopupMetrics";
-      const duration = document.createElement("b");
-      duration.textContent = formatRouteDuration(
-        routeDetails.estimatedDurationMinutes
-      );
-      const distance = document.createElement("span");
-      distance.textContent = formatRouteDistance(routeDetails.distanceMeters);
-      metrics.append(duration, distance);
-      popupContent.append(heading, endpoints, metrics);
-      if (routeDetails.line || routeDetails.headsign) {
-        const transitDetail = document.createElement("small");
-        transitDetail.textContent = [
-          routeDetails.line ? `Tuyến ${routeDetails.line}` : null,
-          routeDetails.headsign ? `hướng ${routeDetails.headsign}` : null
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        popupContent.append(transitDetail);
-      }
-
-      const marker = new maplibre.Marker({ anchor: "center", element })
-        .setLngLat([midpoint[1], midpoint[0]])
-        .setPopup(
-          new maplibre.Popup({
-            className: "mapRoutePopupShell",
-            closeButton: true,
-            maxWidth: "300px",
-            offset: 24
-          }).setDOMContent(popupContent)
-        )
-        .addTo(map);
-      element.addEventListener("click", () => onSelectRoute(routeKey));
-      dynamicMarkersRef.current.push(marker);
-    };
-
     const drawableRoutes = routes.flatMap((route) => {
       const isCurrentLocationRoute = route.kind === "current_location";
       const routeColor = isCurrentLocationRoute
@@ -941,7 +1064,13 @@ export function PlannerMap({
       enter: () => void;
       leave: () => void;
     }> = [];
-    drawableRoutes.forEach((path, pathIndex) => {
+    const orderedDrawableRoutes = [...drawableRoutes].sort((left, right) => {
+      const leftSelected = selectedRouteKey === left.route.key;
+      const rightSelected = selectedRouteKey === right.route.key;
+      if (leftSelected === rightSelected) return 0;
+      return leftSelected ? 1 : -1;
+    });
+    orderedDrawableRoutes.forEach((path, pathIndex) => {
       if (path.coordinates.length < 2) return;
       const modeKind = mapRouteMode(path.mode);
       const isWalk = modeKind === "walk";
@@ -953,10 +1082,8 @@ export function PlannerMap({
       const lineId = `${sourceId}-line`;
       const hitAreaId = `${sourceId}-hit-area`;
       const dashArray = isWalk
-        ? [0.8, 1.8]
-        : path.route.verified || isTransit
-          ? undefined
-          : [1.5, 1.7];
+        ? [0.35, 1.75]
+        : undefined;
       const lineColor = isWalk
         ? MAP_WALK_ROUTE_COLOR
         : isTransit
@@ -982,9 +1109,11 @@ export function PlannerMap({
         source: sourceId,
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": "rgba(255, 255, 255, 0.94)",
-          "line-opacity": hasRouteSelection && !isSelected ? 0.42 : 1,
-          "line-width": isSelected ? 13 : isWalk ? 7 : 9,
+          "line-color": isSelected
+            ? "rgba(255, 255, 255, 1)"
+            : "rgba(255, 255, 255, 0.94)",
+          "line-opacity": hasRouteSelection && !isSelected ? 0.62 : 1,
+          "line-width": isSelected ? (isWalk ? 10 : 13) : isWalk ? 7 : 9,
           ...(dashArray ? { "line-dasharray": dashArray } : {})
         }
       });
@@ -995,8 +1124,8 @@ export function PlannerMap({
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": lineColor,
-          "line-opacity": hasRouteSelection && !isSelected ? 0.3 : 0.96,
-          "line-width": isSelected ? 8 : isWalk ? 3.5 : 5.5,
+          "line-opacity": hasRouteSelection && !isSelected ? 0.46 : 0.98,
+          "line-width": isSelected ? (isWalk ? 5.5 : 7.5) : isWalk ? 3.5 : 5.5,
           ...(dashArray ? { "line-dasharray": dashArray } : {})
         }
       });
@@ -1027,9 +1156,6 @@ export function PlannerMap({
       routeInteractions.push({ layerId: hitAreaId, click, enter, leave });
       dynamicSourceIdsRef.current.push(sourceId);
       dynamicLayerIdsRef.current.push(casingId, lineId, hitAreaId);
-      if (!isWalk && !isTransit) {
-        addRouteModeMarker(path.coordinates, path.route.key, path);
-      }
     });
 
     routes.forEach((route) => {
@@ -1121,8 +1247,10 @@ export function PlannerMap({
   }, [
     currentLocation,
     dayColors,
+    directionsActive,
     locatedPlaces,
     mapReady,
+    navigationMode,
     onSelect,
     onSelectRoute,
     routes,
@@ -1164,7 +1292,16 @@ export function PlannerMap({
   }, [mapReady, routeFocusRequest, routes, selectedRouteKey]);
 
   useEffect(() => {
-    if (locationFocusRequest <= 0 || !currentLocation || !mapReady) return;
+    if (locationFocusRequest === 0) {
+      handledLocationFocusRequestRef.current = 0;
+      return;
+    }
+    if (
+      locationFocusRequest <= handledLocationFocusRequestRef.current ||
+      !currentLocation ||
+      !mapReady
+    ) return;
+    handledLocationFocusRequestRef.current = locationFocusRequest;
     focusCurrentLocation();
   }, [currentLocation, locationFocusRequest, mapReady]);
 
@@ -1187,7 +1324,7 @@ export function PlannerMap({
         : null;
 
     map.flyTo({
-      bearing: routeBearing ?? deviceHeading ?? map.getBearing(),
+      bearing: deviceHeading ?? routeBearing ?? map.getBearing(),
       center: [currentLocation.longitude, currentLocation.latitude],
       duration: 900,
       essential: true,
@@ -1243,13 +1380,27 @@ export function PlannerMap({
     });
   }
 
+  const hasDeviceLocation = currentLocation?.kind === "device";
+  const showLocationControls =
+    Boolean(locationMessage) || directionsActive;
+
   return (
     <section
       aria-label={directionsActive ? "Bản đồ chỉ đường toàn màn hình" : "Bản đồ địa điểm đề xuất"}
-      className={`plannerMap panel${directionsActive ? " isNavigationMode" : ""}`}
+      className={[
+        "plannerMap panel",
+        directionsActive ? "isNavigationMode" : "",
+        mapDragging ? "isDragging" : ""
+      ].filter(Boolean).join(" ")}
     >
       <div className="plannerMapCanvasWrap">
         <div className="plannerMapCanvas" ref={containerRef} />
+        {!directionsActive && routeSummary ? (
+          <div className="mapRouteSummaryBadge" aria-live="polite">
+            <strong>{routeSummary.title}</strong>
+            <small>{routeSummary.subtitle}</small>
+          </div>
+        ) : null}
         <div className="mapTravelControls">
           {!directionsActive && directionsSearchOpen ? (
             <div className="mapDirectionsSearchPanel" role="dialog" aria-label="Tìm đường giữa hai địa điểm">
@@ -1325,20 +1476,9 @@ export function PlannerMap({
           {!directionsActive && directionsDay != null ? (
             <div className="mapDirectionsToolbar">
               <div
-                aria-label={`Lựa chọn lộ trình cho ngày ${directionsDay}`}
-                className="mapDirectionsControl"
+                aria-label={`Chỉ đường cho ngày ${directionsDay}`}
+                className="mapDirectionsControl mapDirectionsControl--navigateOnly"
               >
-                <button
-                  className="mapDirectionsButton mapDirectionsButton--overview"
-                  disabled={!directionsEnabled || directionsBusy}
-                  onClick={onViewDayRoute}
-                  type="button"
-                >
-                  <FitMapIcon />
-                  <span>
-                    <strong>{`Xem lộ trình ngày ${directionsDay}`}</strong>
-                  </span>
-                </button>
                 <button
                   className="mapDirectionsButton mapDirectionsButton--navigate"
                   disabled={!directionsEnabled || directionsBusy}
@@ -1355,29 +1495,39 @@ export function PlannerMap({
               </div>
             </div>
           ) : null}
-          {locationMessage ? (
+          {showLocationControls ? (
             <div className={`mapLocationStatusRow${directionsActive ? " isDirectionsActive" : ""}`}>
-              {directionsActive && currentLocation?.kind === "device" ? (
+              {directionsActive && hasDeviceLocation ? (
                 <button
-                  aria-label="Căn bản đồ theo vị trí và hướng tuyến đường"
+                  aria-label={
+                    directionsActive
+                      ? "Căn bản đồ theo vị trí và hướng tuyến đường"
+                      : "Phóng tới vị trí hiện tại và hướng nhìn"
+                  }
                   className="mapLocationButton"
                   disabled={locationBusy}
                   onClick={onLocate}
-                  title="Căn theo vị trí và hướng tuyến đường"
+                  title={
+                    directionsActive
+                      ? "Căn theo vị trí và hướng tuyến đường"
+                      : "Phóng tới vị trí hiện tại và hướng nhìn"
+                  }
                   type="button"
                 >
                   <CompassIcon />
                   <span>{locationBusy ? "Đang định vị…" : "La bàn"}</span>
                 </button>
               ) : null}
-              <div
-                aria-live="polite"
-                className={`mapLocationStatus${locationMessage.startsWith("⏱") ? " isTimer" : ""}${directionsBusy ? " isRouting" : ""}`}
-                role="status"
-              >
-                {directionsBusy ? <span className="mapRoutingSpinner" aria-hidden="true" /> : null}
-                <span>{locationMessage}</span>
-              </div>
+              {locationMessage ? (
+                <div
+                  aria-live="polite"
+                  className={`mapLocationStatus${locationMessage.startsWith("⏱") ? " isTimer" : ""}${directionsBusy ? " isRouting" : ""}`}
+                  role="status"
+                >
+                  {directionsBusy ? <span className="mapRoutingSpinner" aria-hidden="true" /> : null}
+                  <span>{locationMessage}</span>
+                </div>
+              ) : null}
               {directionsActive ? (
                 <button
                   className="mapDirectionsCancelButton"
@@ -1407,6 +1557,83 @@ export function PlannerMap({
       </div>
     </section>
   );
+}
+
+function formatCompactCount(value: number): string {
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
+  if (value >= 1000) return `${Number((value / 1000).toFixed(1))}N`;
+  return String(value);
+}
+
+function formatOpeningHoursForDay(
+  openingHours: ExplorePlace["openingHours"],
+  dayLabel: string
+): string | null {
+  if (!openingHours?.length) return null;
+  const dayIndex = dayIndexFromVietnameseLabel(dayLabel);
+  const entry = openingHours.find((candidate) => (
+    dayIndex != null && candidate.dayOfWeek === dayIndex
+  ));
+  if (!entry) return formatOpeningHoursSummary(openingHours);
+  if (entry?.is24Hours) return "Mở cửa 24 giờ";
+  return formatOpeningHourSlots(entry);
+}
+
+function formatOpeningHoursSummary(
+  openingHours: NonNullable<ExplorePlace["openingHours"]>
+): string | null {
+  const normalized = openingHours
+    .map((entry) => ({
+      label: openingHourDayLabel(entry.dayName),
+      value: entry.is24Hours ? "Mở cửa 24 giờ" : formatOpeningHourSlots(entry)
+    }))
+    .filter((entry): entry is { label: string | null; value: string } => Boolean(entry.value));
+  if (normalized.length === 0) return null;
+  const uniqueValues = new Set(normalized.map((entry) => entry.value));
+  if (uniqueValues.size === 1) return normalized[0].value;
+  return normalized
+    .slice(0, 3)
+    .map((entry) => entry.label ? `${entry.label}: ${entry.value}` : entry.value)
+    .join("; ");
+}
+
+function formatOpeningHourSlots(
+  entry: NonNullable<ExplorePlace["openingHours"]>[number]
+): string | null {
+  const rawSlots = entry.rawTimeSlots?.trim();
+  if (rawSlots) return rawSlots;
+
+  const openTime = entry.openTime?.trim();
+  const closeTime = entry.closeTime?.trim();
+  if (openTime && closeTime) return `${openTime}–${closeTime}`;
+  return openTime || closeTime || null;
+}
+
+function openingHourDayLabel(value?: string | null): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  const labels: Record<string, string> = {
+    monday: "T2",
+    tuesday: "T3",
+    wednesday: "T4",
+    thursday: "T5",
+    friday: "T6",
+    saturday: "T7",
+    sunday: "CN"
+  };
+  return labels[normalized] ?? value?.trim() ?? null;
+}
+
+function dayIndexFromVietnameseLabel(value: string): number | null {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("thứ hai")) return 1;
+  if (normalized.includes("thứ ba")) return 2;
+  if (normalized.includes("thứ tư")) return 3;
+  if (normalized.includes("thứ năm")) return 4;
+  if (normalized.includes("thứ sáu")) return 5;
+  if (normalized.includes("thứ bảy")) return 6;
+  if (normalized.includes("chủ nhật")) return 7;
+  return null;
 }
 
 function FitMapIcon() {

@@ -45,8 +45,54 @@ function hasBrokenTurbopackRuntime(outputDirectory) {
   return !existsSync(resolve(dirname(documentBundle), runtimeImport[1]));
 }
 
-if (hasBrokenTurbopackRuntime(devOutputTarget)) {
-  console.warn("Detected an incomplete Turbopack cache; rebuilding it.");
+function hasIncompleteWebpackRuntime(outputDirectory) {
+  const buildManifest = join(outputDirectory, "build-manifest.json");
+  if (!existsSync(buildManifest)) return false;
+
+  const requiredBrowserChunks = [
+    join(outputDirectory, "static", "chunks", "main-app.js"),
+    join(outputDirectory, "static", "chunks", "app-pages-internals.js")
+  ];
+
+  if (requiredBrowserChunks.some((chunkPath) => !existsSync(chunkPath))) {
+    return true;
+  }
+
+  const documentBundle = join(
+    outputDirectory,
+    "server",
+    "pages",
+    "_document.js"
+  );
+  if (!existsSync(documentBundle)) return false;
+
+  const documentSource = readFileSync(documentBundle, "utf8");
+  const documentEntry = documentSource.match(/__webpack_exec__\(["']([^"']+)["']\)/);
+  const documentChunks = documentSource.match(
+    /__webpack_require__\.X\(0,\s*\[([^\]]*)\]/
+  );
+  if (!documentEntry || !documentChunks) return false;
+
+  const requiredServerChunks = Array.from(
+    documentChunks[1].matchAll(/["']([^"']+)["']/g),
+    (match) => match[1]
+  );
+  const entryModuleMarker = `/***/ "${documentEntry[1]}":`;
+
+  return !requiredServerChunks.some((chunkId) => {
+    const chunkPath = join(outputDirectory, "server", `${chunkId}.js`);
+    return (
+      existsSync(chunkPath) &&
+      readFileSync(chunkPath, "utf8").includes(entryModuleMarker)
+    );
+  });
+}
+
+if (
+  hasBrokenTurbopackRuntime(devOutputTarget) ||
+  hasIncompleteWebpackRuntime(devOutputTarget)
+) {
+  console.warn("Detected an incomplete Next dev cache; rebuilding it.");
   rmSync(devOutputTarget, { recursive: true, force: true });
 }
 

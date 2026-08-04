@@ -12,6 +12,8 @@ from app.modules.plans.domain.entities import (
     Plan,
     PlanDay,
     PlanItem,
+    PlanTransportLeg,
+    PlanTransportOption,
     TravelIntent,
     UnscheduledPlace,
 )
@@ -20,6 +22,7 @@ from app.modules.plans.plan_mutation_schema import (
     AddItemRequest,
     MoveItemRequest,
     ReorderItemsRequest,
+    SelectTransportOptionRequest,
     UpdateItemRequest,
 )
 from app.modules.plans.plan_mutation_service import PlanMutationService
@@ -120,6 +123,30 @@ def test_add_item_success():
     assert added.name == "Phở Thìn Lò Đúc"
     assert added.source == "manual"
     assert len(day1.transport_legs) == 2
+
+
+def test_add_item_at_requested_position():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+
+    result = asyncio.run(
+        service.add_item(
+            plan,
+            AddItemRequest(
+                day=1,
+                name="Điểm dừng xen giữa",
+                position=1,
+                latitude=21.03,
+                longitude=105.84,
+            ),
+        )
+    )
+
+    assert [item.name for item in result.plan.days[0].items] == [
+        "Hồ Hoàn Kiếm",
+        "Điểm dừng xen giữa",
+        "Chợ Đồng Xuân",
+    ]
 
 
 def test_add_item_removes_matching_unscheduled_place():
@@ -433,6 +460,259 @@ def test_reorder_items_saves_new_order_and_recalculates_valhalla_legs():
         ((21.0375, 105.85), (21.0285, 105.8542), "pedestrian"),
         ((21.0375, 105.85), (21.0285, 105.8542), "car"),
     ]
+
+
+def test_reorder_items_reuses_route_legs_that_remain_adjacent():
+    route_provider = RecordingValhallaRouteProvider()
+    service = PlanMutationService(
+        route_optimizer=GeographicRouteOptimizer(route_provider)
+    )
+    plan = make_sample_plan()
+    original_items = [
+        plan.days[0].items[0].model_copy(
+            update={"duration_minutes": 60, "time_window": "09:00-10:00"}
+        ),
+        plan.days[0].items[1].model_copy(
+            update={"duration_minutes": 60, "time_window": "10:15-11:15"}
+        ),
+    ]
+    extra_items = [
+        PlanItem(
+            itemId="item-1-3",
+            name="Nhà hát Lớn Hà Nội",
+            timeWindow="11:30-12:30",
+            placeType="attraction",
+            timelineCategory="activity",
+            source="finder",
+            durationMinutes=60,
+            latitude=21.0243,
+            longitude=105.8575,
+        ),
+        PlanItem(
+            itemId="item-1-4",
+            name="Bảo tàng Lịch sử Quốc gia",
+            timeWindow="12:45-13:45",
+            placeType="attraction",
+            timelineCategory="activity",
+            source="finder",
+            durationMinutes=60,
+            latitude=21.0245,
+            longitude=105.8584,
+        ),
+    ]
+    items = [*original_items, *extra_items]
+    existing_legs = [
+        PlanTransportLeg(
+            fromItemId=origin.item_id,
+            toItemId=destination.item_id,
+            fromPlace=origin.name,
+            toPlace=destination.name,
+            mode="walk",
+            distanceMeters=250,
+            estimatedDurationMinutes=4,
+            geometryCoordinates=[
+                (origin.latitude, origin.longitude),
+                (destination.latitude, destination.longitude),
+            ],
+            source="valhalla_routing",
+            verified=True,
+        )
+        for origin, destination in zip(items, items[1:])
+    ]
+    plan = plan.model_copy(
+        update={
+            "days": [
+                plan.days[0].model_copy(
+                    update={"items": items, "transport_legs": existing_legs}
+                ),
+                plan.days[1],
+            ]
+        }
+    )
+
+    result = service.reorder_items(
+        plan,
+        day_number=1,
+        request=ReorderItemsRequest(
+            itemIds=["item-1-2", "item-1-1", "item-1-3", "item-1-4"]
+        ),
+    )
+
+    day = result.plan.days[0]
+    assert [(leg.from_item_id, leg.to_item_id) for leg in day.transport_legs] == [
+        ("item-1-2", "item-1-1"),
+        ("item-1-1", "item-1-3"),
+        ("item-1-3", "item-1-4"),
+    ]
+    assert len(route_provider.requested_pairs) == 4
+    assert day.transport_legs[-1] == existing_legs[-1]
+
+
+def test_select_transport_option_promotes_choice_without_reordering_items():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+    day = plan.days[0].model_copy(
+        update={
+            "transport_legs": [
+                PlanTransportLeg(
+                    fromItemId="item-1-1",
+                    toItemId="item-1-2",
+                    fromPlace="Hồ Hoàn Kiếm",
+                    toPlace="Chợ Đồng Xuân",
+                    mode="car",
+                    distanceMeters=2200,
+                    estimatedDurationMinutes=12,
+                    geometryCoordinates=[
+                        (21.0285, 105.8542),
+                        (21.0375, 105.8500),
+                    ],
+                    source="valhalla_routing",
+                    verified=True,
+                    alternatives=[
+                        PlanTransportOption(
+                            mode="walk",
+                            distanceMeters=1600,
+                            estimatedDurationMinutes=24,
+                            geometryCoordinates=[
+                                (21.0285, 105.8542),
+                                (21.0375, 105.8500),
+                            ],
+                            source="valhalla_routing",
+                            verified=True,
+                        )
+                    ],
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"days": [day, plan.days[1]]})
+
+    result = service.select_transport_option(
+        plan,
+        day_number=1,
+        leg_index=0,
+        request=SelectTransportOptionRequest(mode="walk"),
+    )
+
+    updated_day = result.plan.days[0]
+    assert [item.item_id for item in updated_day.items] == ["item-1-1", "item-1-2"]
+    assert updated_day.transport_legs[0].mode == "walk"
+    assert updated_day.transport_legs[0].estimated_duration_minutes == 24
+    assert [option.mode for option in updated_day.transport_legs[0].alternatives] == [
+        "car"
+    ]
+
+
+def test_select_transport_option_uses_option_key_for_repeated_mode_variants():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+    day = plan.days[0].model_copy(
+        update={
+            "transport_legs": [
+                PlanTransportLeg(
+                    fromItemId="item-1-1",
+                    toItemId="item-1-2",
+                    fromPlace="Hồ Hoàn Kiếm",
+                    toPlace="Chợ Đồng Xuân",
+                    mode="public_transit",
+                    distanceMeters=2900,
+                    estimatedDurationMinutes=32,
+                    geometryCoordinates=[
+                        (21.0285, 105.8542),
+                        (21.0375, 105.8500),
+                    ],
+                    source="opentripplanner_transit",
+                    verified=True,
+                    details={
+                        "lines": ["14"],
+                        "segments": [
+                            {
+                                "mode": "BUS",
+                                "line": "14",
+                                "estimatedDurationMinutes": 20,
+                                "distanceMeters": 2200,
+                            }
+                        ],
+                    },
+                    alternatives=[
+                        PlanTransportOption(
+                            mode="public_transit",
+                            distanceMeters=2900,
+                            estimatedDurationMinutes=32,
+                            geometryCoordinates=[
+                                (21.0285, 105.8542),
+                                (21.0320, 105.8520),
+                                (21.0375, 105.8500),
+                            ],
+                            source="opentripplanner_transit",
+                            verified=True,
+                            details={
+                                "lines": ["31"],
+                                "segments": [
+                                    {
+                                        "mode": "BUS",
+                                        "line": "31",
+                                        "estimatedDurationMinutes": 18,
+                                        "distanceMeters": 2100,
+                                    }
+                                ],
+                            },
+                        )
+                    ],
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"days": [day, plan.days[1]]})
+
+    result = service.select_transport_option(
+        plan,
+        day_number=1,
+        leg_index=0,
+        request=SelectTransportOptionRequest(
+            mode="public_transit",
+            optionKey="public_transit::opentripplanner_transit::32::2900::31::BUS:31:18:2100",
+            source="opentripplanner_transit",
+            distanceMeters=2900,
+            estimatedDurationMinutes=32,
+        ),
+    )
+
+    leg = result.plan.days[0].transport_legs[0]
+    assert leg.details["lines"] == ["31"]
+    assert len(leg.geometry_coordinates) == 3
+    assert [option.details["lines"] for option in leg.alternatives] == [["14"]]
+
+
+def test_select_transport_option_rejects_unavailable_mode():
+    service = PlanMutationService()
+    plan = make_sample_plan()
+    day = plan.days[0].model_copy(
+        update={
+            "transport_legs": [
+                PlanTransportLeg(
+                    fromPlace="Hồ Hoàn Kiếm",
+                    toPlace="Chợ Đồng Xuân",
+                    mode="car",
+                    distanceMeters=2200,
+                    estimatedDurationMinutes=12,
+                    source="valhalla_routing",
+                    verified=True,
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"days": [day, plan.days[1]]})
+
+    with pytest.raises(AppError) as exc_info:
+        service.select_transport_option(
+            plan,
+            day_number=1,
+            leg_index=0,
+            request=SelectTransportOptionRequest(mode="bus"),
+        )
+
+    assert exc_info.value.status_code == 400
 
 
 class RecordingValhallaRouteProvider:

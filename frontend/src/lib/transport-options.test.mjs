@@ -3,7 +3,11 @@ import test from "node:test";
 
 import {
   isAvailableTransportOption,
+  isCarMode,
   isGenericTransportMode,
+  isWalkingMode,
+  resolveSelectedTransportOption,
+  transportOptionSelectionKey,
   visibleTransportOptions
 } from "./transport-options.ts";
 
@@ -45,6 +49,15 @@ test("hides generic mixed and unknown transport modes", () => {
   assert.equal(isAvailableTransportOption({ ...route, mode: "unknown" }), false);
 });
 
+test("recognizes walking and driving mode aliases", () => {
+  assert.equal(isWalkingMode("walk"), true);
+  assert.equal(isWalkingMode("walking"), true);
+  assert.equal(isWalkingMode("pedestrian"), true);
+  assert.equal(isCarMode("car"), true);
+  assert.equal(isCarMode("driving"), true);
+  assert.equal(isCarMode("ride_hailing"), true);
+});
+
 const walking = {
   ...route,
   mode: "walk",
@@ -73,4 +86,62 @@ test("shows car but not walking for a leg at or above 3 km", () => {
 test("does not expose mixed as a fallback option", () => {
   const mixed = { ...car, mode: "mixed" };
   assert.deepEqual(visibleTransportOptions([mixed, walking], 4500), []);
+});
+
+test("selection key distinguishes repeated transit mode variants", () => {
+  const route31 = {
+    ...route,
+    estimatedDurationMinutes: 32,
+    distanceMeters: 2900,
+    details: {
+      lines: ["31"],
+      segments: [{
+        mode: "BUS",
+        line: "31",
+        estimatedDurationMinutes: 18,
+        distanceMeters: 2100
+      }]
+    }
+  };
+  const route14 = {
+    ...route31,
+    details: {
+      lines: ["14"],
+      segments: [{
+        mode: "BUS",
+        line: "14",
+        estimatedDurationMinutes: 20,
+        distanceMeters: 2200
+      }]
+    }
+  };
+
+  assert.notEqual(
+    transportOptionSelectionKey(route31),
+    transportOptionSelectionKey(route14)
+  );
+});
+
+test("keeps the persisted transport choice when temporary selection state resets", () => {
+  const selectedTransit = {
+    ...route,
+    estimatedDurationMinutes: 85,
+    distanceMeters: 25_616,
+    details: { lines: ["Route_06E_2", "Route_08A_1"] }
+  };
+  const alternativeCar = {
+    ...car,
+    estimatedDurationMinutes: 42,
+    distanceMeters: 24_900
+  };
+  const displayedOptions = visibleTransportOptions(
+    [selectedTransit, alternativeCar],
+    selectedTransit.distanceMeters
+  );
+
+  assert.equal(displayedOptions[0], alternativeCar);
+  assert.equal(
+    resolveSelectedTransportOption(displayedOptions, selectedTransit),
+    selectedTransit
+  );
 });

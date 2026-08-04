@@ -27,6 +27,7 @@ from app.modules.plans.plan_mutation_schema import (
     AddItemForm,
     AddItemRequest,
     ReorderItemsRequest,
+    SelectTransportOptionRequest,
     UpdateItemForm,
     UpdateItemRequest,
 )
@@ -303,6 +304,48 @@ def reorder_trip_chat_items(
         expected_revision=expected_revision,
         day=day,
         payload=ReorderItemsRequest(itemIds=item_ids),
+    )
+
+
+@router.put(
+    "/{chat_id}/plan/days/{day}/transport-legs/{leg_index}/selection",
+    response_model=TripChatRead,
+)
+def select_trip_chat_transport_option(
+    chat_id: str,
+    day: int,
+    leg_index: int,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    mode: Annotated[str, Form(min_length=1, max_length=40)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+    option_key: Annotated[
+        str | None,
+        Form(alias="optionKey", min_length=1, max_length=4000),
+    ] = None,
+    source: Annotated[str | None, Form(min_length=1, max_length=80)] = None,
+    distance_meters: Annotated[
+        int | None,
+        Form(alias="distanceMeters", ge=0),
+    ] = None,
+    estimated_duration_minutes: Annotated[
+        int | None,
+        Form(alias="estimatedDurationMinutes", ge=0),
+    ] = None,
+) -> TripChatRead:
+    return service.select_transport_option(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        day=day,
+        leg_index=leg_index,
+        payload=SelectTransportOptionRequest(
+            mode=mode,
+            optionKey=option_key,
+            source=source,
+            distanceMeters=distance_meters,
+            estimatedDurationMinutes=estimated_duration_minutes,
+        ),
     )
 
 

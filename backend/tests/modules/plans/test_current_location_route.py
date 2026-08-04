@@ -248,6 +248,13 @@ def test_day_directions_returns_recommended_routes_with_per_leg_choices(
         option["details"]["segments"][-1]["toPlace"]
         for option in transit_choices
     ] == ["Điểm 1", "Điểm 2"]
+    assert road.requested_modes == [
+        "pedestrian",
+        "car",
+        "pedestrian",
+        "car",
+    ]
+    assert len(transit.departure_times) == 2
 
 
 def test_day_directions_uses_itinerary_time_for_later_legs(
@@ -286,8 +293,6 @@ def test_day_directions_uses_itinerary_time_for_later_legs(
     assert response.status_code == 200
     assert transit.departure_times == [
         datetime.fromisoformat("2026-08-01T00:15:00+07:00"),
-        datetime.fromisoformat("2026-08-01T00:15:00+07:00"),
-        datetime.fromisoformat("2026-08-01T10:00:00+07:00"),
         datetime.fromisoformat("2026-08-01T10:00:00+07:00"),
     ]
 

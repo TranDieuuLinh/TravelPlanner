@@ -512,6 +512,7 @@ class SelectablePlace(BaseModel):
     review_count: int = Field(default=0, alias="reviewCount")
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     data_confidence: str = Field(default="low", alias="dataConfidence")
+    source_link: str | None = Field(default=None, alias="sourceLink")
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
     source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
@@ -754,6 +755,7 @@ class RepositoryPlaceSelectionTool:
                 if image.image_url
             ],
             dataConfidence=place.data_confidence,
+            sourceLink=place.source_link,
         )
 
 

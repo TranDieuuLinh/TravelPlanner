@@ -1535,6 +1535,8 @@ class PlaceSelectorService:
             imageUrls=candidate.image_urls,
             rating=candidate.rating,
             reviewCount=candidate.review_count,
+            openingHours=candidate.opening_hours,
+            sourceLink=candidate.source_link,
             sourceOrder=candidate.source_order,
             sourceDay=candidate.source_day,
             sourceTimeHint=candidate.source_time_hint,

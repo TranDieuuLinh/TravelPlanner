@@ -186,6 +186,10 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
   mới của một ngày. Request dùng `multipart/form-data` với `expectedRevision`
   và các field `itemIds` lặp lại theo đúng thứ tự hiển thị mong muốn.
 
+Các thao tác trực tiếp trong editor (thêm, sửa, xóa, sắp xếp item và chọn
+phương tiện) vẫn tạo plan revision nhưng không tạo `TripChatMessage`. Client
+phản hồi thành công bằng toast tạm thời để lịch sử chat chỉ giữ hội thoại.
+
 Request gửi message dùng `multipart/form-data`:
 
 - `content`: yêu cầu mới của user;

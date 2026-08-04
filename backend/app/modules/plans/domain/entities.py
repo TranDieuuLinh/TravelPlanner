@@ -150,6 +150,8 @@ class PlanItem(BaseModel):
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0, alias="reviewCount")
+    opening_hours: list[dict] = Field(default_factory=list, alias="openingHours")
+    source_link: str | None = Field(default=None, alias="sourceLink")
     source_order: int | None = Field(default=None, ge=1, alias="sourceOrder")
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
     source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")

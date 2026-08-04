@@ -8,7 +8,13 @@ from app.modules.places.resolver import (
     ProvisionalPlaceResolver,
 )
 from app.modules.plans.checks.overall_checker import OverallChecker
-from app.modules.plans.domain.entities import Plan, PlanDay, PlanItem
+from app.modules.plans.domain.entities import (
+    Plan,
+    PlanDay,
+    PlanItem,
+    PlanTransportLeg,
+    PlanTransportOption,
+)
 from app.modules.plans.domain.enums import PlanStatus
 from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
 from app.modules.plans.plan_mutation_schema import (
@@ -17,6 +23,7 @@ from app.modules.plans.plan_mutation_schema import (
     MutationResponse,
     PlaceSuggestion,
     ReorderItemsRequest,
+    SelectTransportOptionRequest,
     UpdateItemRequest,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
@@ -315,7 +322,86 @@ class PlanMutationService:
 
         reordered_items.extend(items_by_id.values())
 
-        updated_day = self._reoptimize_day(day, reordered_items)
+        updated_day = self._reoptimize_day(
+            day,
+            reordered_items,
+            reuse_transport_legs=True,
+        )
+        return self._finalize_mutation(plan, [updated_day])
+
+    def select_transport_option(
+        self,
+        plan: Plan,
+        day_number: int,
+        leg_index: int,
+        request: SelectTransportOptionRequest,
+    ) -> MutationResponse:
+        day = self._get_day(plan, day_number)
+        if leg_index < 0 or leg_index >= len(day.transport_legs):
+            raise AppError(
+                404,
+                "TRANSPORT_LEG_NOT_FOUND",
+                f"Không tìm thấy chặng di chuyển trong Ngày {day_number}.",
+            )
+
+        current_leg = day.transport_legs[leg_index]
+        candidates = [_option_from_leg(current_leg), *current_leg.alternatives]
+        selected = next(
+            (
+                option
+                for option in candidates
+                if request.option_key
+                and _transport_option_selection_key(option) == request.option_key
+            ),
+            None,
+        )
+        mode_matches = [
+            option
+            for option in candidates
+            if option.mode.casefold() == request.mode.casefold()
+        ]
+        selected = selected or next(
+            (
+                option
+                for option in mode_matches
+                if _transport_option_matches_request(option, request)
+            ),
+            None,
+        ) or (mode_matches[0] if mode_matches else None)
+        if selected is None:
+            raise AppError(
+                400,
+                "TRANSPORT_OPTION_NOT_AVAILABLE",
+                "Phương tiện này không có trong các lựa chọn của chặng.",
+            )
+
+        next_alternatives: list[PlanTransportOption] = []
+        alternative_keys: set[tuple[str, str, int, int]] = set()
+        for option in candidates:
+            if option is selected:
+                continue
+            key = _transport_option_key(option)
+            if key in alternative_keys:
+                continue
+            alternative_keys.add(key)
+            next_alternatives.append(option)
+
+        updated_leg = current_leg.model_copy(
+            update={
+                "mode": selected.mode,
+                "distance_meters": selected.distance_meters,
+                "estimated_duration_minutes": selected.estimated_duration_minutes,
+                "geometry_coordinates": selected.geometry_coordinates,
+                "source": selected.source,
+                "verified": selected.verified,
+                "fetched_at": selected.fetched_at,
+                "details": selected.details,
+                "alternatives": next_alternatives,
+            }
+        )
+        updated_legs = list(day.transport_legs)
+        updated_legs[leg_index] = updated_leg
+        updated_day = day.model_copy(update={"transport_legs": updated_legs})
         return self._finalize_mutation(plan, [updated_day])
 
     def _get_day(self, plan: Plan, day_number: int) -> PlanDay:
@@ -338,16 +424,44 @@ class PlanMutationService:
             f"Không tìm thấy địa điểm trong Ngày {day.day}.",
         )
 
-    def _reoptimize_day(self, day: PlanDay, items: list[PlanItem]) -> PlanDay:
+    def _reoptimize_day(
+        self,
+        day: PlanDay,
+        items: list[PlanItem],
+        *,
+        reuse_transport_legs: bool = False,
+    ) -> PlanDay:
         first_time_window = day.items[0].time_window if day.items else None
         adjusted_items = self._readjust_time_windows(
             items,
             first_time_window=first_time_window,
         )
+        reusable_legs: list[PlanTransportLeg] | None = None
+        if reuse_transport_legs:
+            original_windows = {
+                item.item_id: item.time_window
+                for item in day.items
+                if item.item_id
+            }
+            adjusted_windows = {
+                item.item_id: item.time_window
+                for item in adjusted_items
+                if item.item_id
+            }
+            # Transit routes are departure-time dependent. Only reuse a leg
+            # when its origin keeps the same slot after the reorder.
+            reusable_legs = [
+                leg
+                for leg in day.transport_legs
+                if leg.from_item_id
+                and original_windows.get(leg.from_item_id)
+                == adjusted_windows.get(leg.from_item_id)
+            ]
         optimized_items, transport_legs = self.route_optimizer.optimize(
             adjusted_items,
             preserve_order=True,
             day=day.day,
+            reusable_legs=reusable_legs,
         )
         return day.model_copy(
             update={
@@ -451,6 +565,79 @@ def _search_key(value: str) -> str:
         if not unicodedata.combining(character)
     )
     return " ".join(without_marks.replace("đ", "d").split())
+
+
+def _option_from_leg(leg: PlanTransportLeg) -> PlanTransportOption:
+    return PlanTransportOption(
+        mode=leg.mode,
+        distanceMeters=leg.distance_meters,
+        estimatedDurationMinutes=leg.estimated_duration_minutes,
+        geometryCoordinates=leg.geometry_coordinates,
+        source=leg.source,
+        verified=leg.verified,
+        fetchedAt=leg.fetched_at,
+        details=leg.details,
+    )
+
+
+def _transport_option_matches_request(
+    option: PlanTransportOption,
+    request: SelectTransportOptionRequest,
+) -> bool:
+    if request.source is not None and option.source != request.source:
+        return False
+    if (
+        request.distance_meters is not None
+        and round(option.distance_meters) != round(request.distance_meters)
+    ):
+        return False
+    if (
+        request.estimated_duration_minutes is not None
+        and option.estimated_duration_minutes != request.estimated_duration_minutes
+    ):
+        return False
+    return True
+
+
+def _transport_option_key(option: PlanTransportOption) -> tuple[str, str, int, int]:
+    return (
+        option.mode.casefold(),
+        option.source,
+        round(option.distance_meters),
+        option.estimated_duration_minutes,
+    )
+
+
+def _transport_option_selection_key(option: PlanTransportOption) -> str:
+    details = option.details if isinstance(option.details, dict) else {}
+    lines = details.get("lines") if isinstance(details.get("lines"), list) else []
+    segments = (
+        details.get("segments")
+        if isinstance(details.get("segments"), list)
+        else []
+    )
+    segment_key = "|".join(
+        ":".join(
+            [
+                str(segment.get("mode", "")),
+                str(segment.get("line") or ""),
+                str(segment.get("estimatedDurationMinutes", "")),
+                str(round(float(segment.get("distanceMeters", 0) or 0))),
+            ]
+        )
+        for segment in segments
+        if isinstance(segment, dict)
+    )
+    return "::".join(
+        [
+            option.mode.casefold(),
+            option.source,
+            str(option.estimated_duration_minutes),
+            str(round(option.distance_meters)),
+            ",".join(str(line) for line in lines),
+            segment_key,
+        ]
+    )
 
 
 def _record_search_names(record: PlaceLookupRecord) -> list[str]:
