@@ -14,7 +14,10 @@ from app.modules.plans.trip_theme_planner.required_experience_validator import (
     RequiredExperienceGraphValidationError,
     validate_required_experience,
 )
-from .test_trip_theme_graph_candidate_projection import _bundle, _ranked
+from tests.modules.plans.test_trip_theme_graph_candidate_projection import (
+    _bundle,
+    _ranked,
+)
 
 
 def _requirement(policy: str, **overrides: Any) -> RequiredExperience:
@@ -37,7 +40,7 @@ def _evidence_bundle():
 
 @pytest.mark.parametrize("policy,kwargs", [
     ("required_anchor", {}),
-    ("choose_one", {"candidatePlaceIds": ["place-a", "place-b"]}),
+    ("choose_one", {"candidatePlaceIds": ["place-a", "place-b"], "evidenceClaimIds": ["claim-a", "claim-b"]}),
     ("open_candidate", {"activityId": "activity-a", "anchorPlaceIds": []}),
 ])
 def test_required_experience_graph_validation_happy_path(policy: str, kwargs: dict[str, Any]) -> None:
