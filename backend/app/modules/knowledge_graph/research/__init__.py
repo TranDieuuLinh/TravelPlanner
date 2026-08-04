@@ -8,6 +8,7 @@ from app.modules.knowledge_graph.research.experience_fit_tool import (
     ExperienceFitInput,
     ExperienceFitOutput,
     kg_evaluate_experience_fit,
+)
 from app.modules.knowledge_graph.research.experience_tool import (
     kg_discover_experiences,
 )
@@ -22,23 +23,35 @@ from app.modules.knowledge_graph.research.schema import (
     AreaType,
     BudgetLevel,
     CheckStatus,
+    ConflictedExperience,
     DimensionCheck,
     EntitySummary,
+    EntitySummaryFit,
     EdgeEvidence,
-    EntitySummary,
     ExperienceDiscoveryInput,
+    FitResult,
     GraphEvidenceBundle,
     GraphEvidenceClaim,
     GraphSnapshot,
     GraphStats,
     PLACE_TYPES,
+    RankedExperience,
     Recommendation,
     RecommendationPriority,
+    ResearchTrace,
     ScopeResolveInput,
     ScopeResolveOutput,
     TransportMode,
+    TravelBudget,
+    TripResearchBundle,
+    TripResearchInput,
     TrustLevel,
     UnknownClaim,
+)
+from app.modules.knowledge_graph.research.orchestrator import (
+    GraphResearchOrchestrator,
+    GraphScopeError,
+    orchestrate_trip_research,
 )
 from app.modules.knowledge_graph.research.scope_tool import (
     LegacyAreaWarning,
@@ -50,6 +63,10 @@ __all__ = [
     "ScopeResolutionRepository",
     # Scopes
     "KnowledgeGraphResearchRepository",
+    # Orchestrator
+    "GraphResearchOrchestrator",
+    "GraphScopeError",
+    "orchestrate_trip_research",
     # Tools
     "kg_resolve_scope",
     "kg_discover_experiences",
@@ -67,7 +84,7 @@ __all__ = [
     "ExperienceFitOutput",
     "CheckStatus",
     "DimensionCheck",
-    "EntitySummary",
+    "EntitySummaryFit",
     "BudgetLevel",
     "TransportMode",
     "EntityNotFoundError",
@@ -84,4 +101,12 @@ __all__ = [
     "GraphSnapshot",
     "PLACE_TYPES",
     "ActivityTypes",
+    # Trip Research Orchestrator
+    "TravelBudget",
+    "TripResearchInput",
+    "TripResearchBundle",
+    "RankedExperience",
+    "ConflictedExperience",
+    "FitResult",
+    "ResearchTrace",
 ]

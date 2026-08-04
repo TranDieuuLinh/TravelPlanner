@@ -15,7 +15,7 @@ from app.modules.knowledge_graph.research.schema import (
     BudgetLevel,
     CheckStatus,
     DimensionCheck,
-    EntitySummary,
+    EntitySummaryFit,
     ExperienceFitInput,
     ExperienceFitOutput,
     TransportMode,
@@ -785,7 +785,7 @@ def kg_evaluate_experience_fit(
                 "Verify before visiting."
             )
 
-    entity_summary = EntitySummary(
+    entity_summary = EntitySummaryFit(
         id=entity.id,
         name=entity.canonical_name,
         type=entity.entity_type,
