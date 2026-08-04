@@ -9390,6 +9390,61 @@ svg {
   box-shadow: 0 0 0 2px #c3ddd7;
 }
 
+.itinerary .itineraryPlaceTitle {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 5px;
+}
+
+.itinerary .itineraryPlaceTitle .itinerarySourceTag {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  font-size: .54rem;
+  line-height: 1;
+}
+
+.itinerary .itineraryPlaceQuickActions {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.itinerary .itineraryPlaceQuickActions .itineraryActions {
+  margin-left: 0;
+}
+
+.itinerary .itineraryPlaceActionRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.itinerary .itineraryNavigateButton {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-color: #d7e3df;
+  border-radius: 11px;
+  padding: 0;
+  background: #f8fbfa;
+}
+
+.itinerary .itineraryNavigateButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.itinerary .itineraryPlaceActionRow .activityNotesDropdown {
+  flex: 1 1 180px;
+  min-width: 0;
+  margin-top: 0;
+}
+
 @media (max-width: 640px) {
   .itinerary .itineraryPlaceTitle { gap: 6px; }
   .itinerary .itineraryTypeIcon {
@@ -9398,6 +9453,14 @@ svg {
     flex-basis: 28px;
   }
   .itinerary .itineraryTypeIcon svg { width: 14px; height: 14px; }
+  .itinerary .itineraryPlaceQuickActions { gap: 3px; }
+  .itinerary .itineraryPlaceActionRow { gap: 7px; }
+  .itinerary .itineraryNavigateButton {
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    flex-basis: 36px;
+  }
 }
 
 /* Planner chatbot polish — calmer surface, clearer conversation hierarchy. */

@@ -2903,7 +2903,7 @@ function Planner() {
                           const isDragTarget = dragOverItemId === item.itemId && !isDragging;
                           const itemActions = item.itemId && activeChatId ? (
                             <div
-                              className={`itineraryActions itineraryActions--cardTop ${placeImageUrl ? "itineraryActions--imageOverlay" : ""}`}
+                              className="itineraryActions itineraryActions--cardTop"
                             >
                               <button
                                 aria-label={`Kéo ${item.name} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
@@ -3039,7 +3039,6 @@ function Planner() {
                                   >
                                     {placeImageUrl ? (
                                       <div className="itineraryPlaceMedia">
-                                        {itemActions}
                                         <div className="itineraryPlaceImage">
                                           <img
                                             alt={`Ảnh ${item.name}`}
@@ -3051,7 +3050,6 @@ function Planner() {
                                       </div>
                                     ) : null}
                                     <div className="itineraryPlaceContent">
-                                    {!placeImageUrl ? itemActions : null}
                                     <header>
                                       <div className="itineraryPlaceMain">
                                         <div className="itineraryPlaceTitle">
@@ -3073,50 +3071,51 @@ function Planner() {
                                               <strong>{item.name}</strong>
                                             </button>
                                           ) : <strong>{item.name}</strong>}
+                                          {sourceLabel ? (
+                                            <span
+                                              className={`itinerarySourceTag itinerarySourceTag--${sourceLabel.kind}`}
+                                            >
+                                              {sourceLabel.url ? (
+                                                <>
+                                                  <a
+                                                    href={sourceLabel.url}
+                                                    rel="noreferrer"
+                                                    target="_blank"
+                                                    title={sourceLabel.url}
+                                                  >
+                                                    {sourceLabel.text}
+                                                  </a>
+                                                  {sourceLabel.providerSuffix}
+                                                </>
+                                              ) : sourceLabel.text}
+                                            </span>
+                                          ) : null}
                                         </div>
                                       </div>
-                                      <span
-                                        aria-label={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
-                                        className="itineraryTypeIcon"
-                                        role="img"
-                                        title={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
-                                      >
-                                        {isFoodStop ? (
-                                          <svg viewBox="0 0 24 24">
-                                            <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                                            <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                                          </svg>
-                                        ) : (
-                                          <svg viewBox="0 0 24 24">
-                                            <circle cx="6" cy="6" r="2.5" />
-                                            <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
-                                            <path d="m2 21 6-9 4 5 2-3 8 7" />
-                                            <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                                          </svg>
-                                        )}
-                                      </span>
-                                    </header>
-                                    {sourceLabel ? (
-                                      <div className="itineraryPlaceTags">
+                                      <div className="itineraryPlaceQuickActions">
+                                        {itemActions}
                                         <span
-                                          className={`itinerarySourceTag itinerarySourceTag--${sourceLabel.kind}`}
+                                          aria-label={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
+                                          className="itineraryTypeIcon"
+                                          role="img"
+                                          title={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
                                         >
-                                          {sourceLabel.url ? (
-                                            <>
-                                              <a
-                                                href={sourceLabel.url}
-                                                rel="noreferrer"
-                                                target="_blank"
-                                                title={sourceLabel.url}
-                                              >
-                                                {sourceLabel.text}
-                                              </a>
-                                              {sourceLabel.providerSuffix}
-                                            </>
-                                          ) : sourceLabel.text}
+                                          {isFoodStop ? (
+                                            <svg viewBox="0 0 24 24">
+                                              <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                              <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                                            </svg>
+                                          ) : (
+                                            <svg viewBox="0 0 24 24">
+                                              <circle cx="6" cy="6" r="2.5" />
+                                              <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                                              <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                              <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                                            </svg>
+                                          )}
                                         </span>
                                       </div>
-                                    ) : null}
+                                    </header>
                                     {item.rating != null ? (
                                       <div className="itineraryPlaceRating" aria-label={`Đánh giá ${item.rating} trên 5`}>
                                         <span aria-hidden="true">★</span>
@@ -3126,27 +3125,29 @@ function Planner() {
                                         ) : null}
                                       </div>
                                     ) : null}
-                                    {typeof item.latitude === "number" &&
-                                    typeof item.longitude === "number" ? (
-                                      <button
-                                        className="itineraryNavigateButton"
-                                        onClick={() => {
-                                          const destination = activeDayDirectionStops.find(
-                                            (stop) => stop.mapKey === mapKey
-                                          );
-                                          if (destination) startDayDirections(destination);
-                                        }}
-                                        type="button"
-                                      >
-                                        <svg aria-hidden="true" viewBox="0 0 24 24">
-                                          <path d="m12 3 9 9-9 9-9-9 9-9Z" />
-                                          <path d="M8 12h7M13 9l3 3-3 3" />
-                                        </svg>
-                                        Chỉ đường đến đây
-                                      </button>
-                                    ) : null}
-                                    {activityNoteCount || (item.itemId && activeChatId) ? (
-                                      <div className={`activityNotesDropdown ${isNoteEditorOpen ? "isOpen" : ""}`}>
+                                    <div className="itineraryPlaceActionRow">
+                                      {typeof item.latitude === "number" &&
+                                      typeof item.longitude === "number" ? (
+                                        <button
+                                          aria-label={`Chỉ đường đến ${item.name}`}
+                                          className="itineraryNavigateButton"
+                                          onClick={() => {
+                                            const destination = activeDayDirectionStops.find(
+                                              (stop) => stop.mapKey === mapKey
+                                            );
+                                            if (destination) startDayDirections(destination);
+                                          }}
+                                          title="Chỉ đường đến đây"
+                                          type="button"
+                                        >
+                                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                                            <path d="m12 3 9 9-9 9-9-9 9-9Z" />
+                                            <path d="M8 12h7M13 9l3 3-3 3" />
+                                          </svg>
+                                        </button>
+                                      ) : null}
+                                      {activityNoteCount || (item.itemId && activeChatId) ? (
+                                        <div className={`activityNotesDropdown ${isNoteEditorOpen ? "isOpen" : ""}`}>
                                         <button
                                           aria-controls={notePanelId}
                                           aria-expanded={isNoteEditorOpen}
@@ -3230,8 +3231,9 @@ function Planner() {
                                             ) : null}
                                           </form>
                                         ) : null}
-                                      </div>
-                                    ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
                                     </div>
                                   </div>
                                 </article>
