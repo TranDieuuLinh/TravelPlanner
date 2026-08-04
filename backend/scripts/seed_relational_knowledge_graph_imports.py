@@ -15,7 +15,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_ROOT = BACKEND_ROOT.parent
+WORKSPACE_ROOT = BACKEND_ROOT
 sys.path.insert(0, str(BACKEND_ROOT))
 # Script chỉ thao tác file Knowledge Graph; tránh để cấu hình place resolver cũ
 # trong .env chặn việc nạp BACKEND_ROOT từ app.core.config.
