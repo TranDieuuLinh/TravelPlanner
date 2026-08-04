@@ -160,7 +160,12 @@ async function request<T>(
       headers,
       credentials: "include"
     });
-  } catch {
+  } catch (error) {
+    // Filter/page changes intentionally cancel the previous request. Preserve
+    // AbortError so callers do not report it as a backend connection failure.
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
     throw new APIError(
       0,
       "NETWORK_ERROR",
@@ -628,16 +633,50 @@ export type KGRelationshipListPage = {
   hasMore: boolean;
 };
 
-export function getKGStats(): Promise<KGStats> {
-  return request("/admin/knowledge-graph/stats");
+type KGWireRecord = Record<string, unknown>;
+
+function kgField<T>(record: KGWireRecord, camelKey: string, snakeKey: string): T {
+  return (record[camelKey] ?? record[snakeKey]) as T;
 }
 
-export function listKGEntities(filters: {
+function normalizeKGEntitySummary(raw: KGWireRecord): KGEntitySummary {
+  return {
+    id: String(raw.id ?? ""),
+    canonicalName: kgField<string>(raw, "canonicalName", "canonical_name") ?? "",
+    entityType: kgField<string>(raw, "entityType", "entity_type") ?? "Unknown",
+    status: String(raw.status ?? "draft"),
+    createdAt: kgField<string>(raw, "createdAt", "created_at") ?? "",
+    updatedAt: kgField<string>(raw, "updatedAt", "updated_at") ?? "",
+  };
+}
+
+function normalizeKGRelationship(raw: KGWireRecord): KGRelationshipSummary {
+  return {
+    id: Number(raw.id ?? 0),
+    fromEntityId: kgField<string>(raw, "fromEntityId", "from_entity_id") ?? "",
+    relationship: String(raw.relationship ?? raw.relationship_type ?? ""),
+    toEntityId: kgField<string>(raw, "toEntityId", "to_entity_id") ?? "",
+    source: (raw.source as string | null | undefined) ?? null,
+    createdAt: kgField<string>(raw, "createdAt", "created_at") ?? "",
+  };
+}
+
+export async function getKGStats(): Promise<KGStats> {
+  const raw = await request<KGWireRecord>("/admin/knowledge-graph/stats");
+  return {
+    entityCount: kgField<number>(raw, "entityCount", "entity_count") ?? 0,
+    aliasCount: kgField<number>(raw, "aliasCount", "alias_count") ?? 0,
+    relationshipCount: kgField<number>(raw, "relationshipCount", "relationship_count") ?? 0,
+  };
+}
+
+export async function listKGEntities(filters: {
   limit?: number;
   offset?: number;
   search?: string;
   entityType?: string;
   status?: string;
+  signal?: AbortSignal;
 }): Promise<KGEntityListPage> {
   const params = new URLSearchParams();
   if (filters.limit !== undefined) params.set("limit", String(filters.limit));
@@ -646,10 +685,21 @@ export function listKGEntities(filters: {
   if (filters.entityType) params.set("entity_type", filters.entityType);
   if (filters.status) params.set("status", filters.status);
   const query = params.toString();
-  return request(`/admin/knowledge-graph/entities${query ? `?${query}` : ""}`);
+  const raw = await request<KGWireRecord>(
+    `/admin/knowledge-graph/entities${query ? `?${query}` : ""}`,
+    { signal: filters.signal }
+  );
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  return {
+    items: items.map((item) => normalizeKGEntitySummary(item as KGWireRecord)),
+    total: Number(raw.total ?? 0),
+    limit: Number(raw.limit ?? filters.limit ?? 50),
+    offset: Number(raw.offset ?? filters.offset ?? 0),
+    hasMore: kgField<boolean>(raw, "hasMore", "has_more") ?? false,
+  };
 }
 
-export function getKGEntityDetail(
+export async function getKGEntityDetail(
   entityId: string,
   options?: {
     aliasOffset?: number;
@@ -668,12 +718,38 @@ export function getKGEntityDetail(
   if (options?.relationshipOffset !== undefined) params.set("relationship_offset", String(options.relationshipOffset));
   if (options?.relationshipLimit !== undefined) params.set("relationship_limit", String(options.relationshipLimit));
   const query = params.toString();
-  return request(
+  const raw = await request<KGWireRecord>(
     `/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}${query ? `?${query}` : ""}`
   );
+  const aliases = Array.isArray(raw.aliases) ? raw.aliases as KGWireRecord[] : [];
+  const properties = Array.isArray(raw.properties) ? raw.properties as KGWireRecord[] : [];
+  const relationships = Array.isArray(raw.relationships) ? raw.relationships as KGWireRecord[] : [];
+  return {
+    ...normalizeKGEntitySummary(raw),
+    aliases: aliases.map((item) => ({
+      id: Number(item.id ?? 0),
+      alias: String(item.alias ?? ""),
+      language: String(item.language ?? ""),
+      createdAt: kgField<string>(item, "createdAt", "created_at") ?? "",
+    })),
+    aliasTotal: kgField<number>(raw, "aliasTotal", "alias_total") ?? 0,
+    aliasHasMore: kgField<boolean>(raw, "aliasHasMore", "alias_has_more") ?? false,
+    properties: properties.map((item) => ({
+      id: Number(item.id ?? 0),
+      key: String(item.key ?? ""),
+      value: String(item.value ?? ""),
+      source: (item.source as string | null | undefined) ?? null,
+      updatedAt: kgField<string>(item, "updatedAt", "updated_at") ?? "",
+    })),
+    propertyTotal: kgField<number>(raw, "propertyTotal", "property_total") ?? 0,
+    propertyHasMore: kgField<boolean>(raw, "propertyHasMore", "property_has_more") ?? false,
+    relationships: relationships.map(normalizeKGRelationship),
+    relationshipTotal: kgField<number>(raw, "relationshipTotal", "relationship_total") ?? 0,
+    relationshipHasMore: kgField<boolean>(raw, "relationshipHasMore", "relationship_has_more") ?? false,
+  };
 }
 
-export function listKGRelationships(filters: {
+export async function listKGRelationships(filters: {
   limit?: number;
   offset?: number;
   relationship?: string;
@@ -689,5 +765,34 @@ export function listKGRelationships(filters: {
   if (filters.toEntityId) params.set("to_entity_id", filters.toEntityId);
   if (filters.search) params.set("search", filters.search);
   const query = params.toString();
-  return request(`/admin/knowledge-graph/relationships${query ? `?${query}` : ""}`);
+  const raw = await request<KGWireRecord>(
+    `/admin/knowledge-graph/relationships${query ? `?${query}` : ""}`
+  );
+  const items = Array.isArray(raw.items) ? raw.items as KGWireRecord[] : [];
+  return {
+    items: items.map(normalizeKGRelationship),
+    total: Number(raw.total ?? 0),
+    limit: Number(raw.limit ?? filters.limit ?? 50),
+    offset: Number(raw.offset ?? filters.offset ?? 0),
+    hasMore: kgField<boolean>(raw, "hasMore", "has_more") ?? false,
+  };
+}
+
+export type KGOntology = {
+  nodeTypes: string[];
+  relationshipTypes: string[];
+  nodeTypeProperties: Record<string, { requiredProperties: string[]; optionalProperties: string[] }>;
+};
+
+export async function getKGOntology(): Promise<KGOntology> {
+  const raw = await request<KGWireRecord>("/admin/knowledge-graph/ontology");
+  return {
+    nodeTypes: kgField<string[]>(raw, "nodeTypes", "node_types") ?? [],
+    relationshipTypes: kgField<string[]>(raw, "relationshipTypes", "relationship_types") ?? [],
+    nodeTypeProperties: kgField<KGOntology["nodeTypeProperties"]>(
+      raw,
+      "nodeTypeProperties",
+      "node_type_properties"
+    ) ?? {},
+  };
 }

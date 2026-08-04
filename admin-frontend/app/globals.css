@@ -1779,7 +1779,45 @@ select {
 }
 
 .kgControlBar {
-  grid-template-columns: minmax(260px, 1fr) 170px 170px auto;
+  grid-template-columns: minmax(260px, 1fr) 150px 130px 120px auto auto;
+  align-items: end;
+}
+
+.kgFilterField {
+  display: grid;
+  gap: 6px;
+}
+
+.kgFilterField > span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.54rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.kgClearFilters {
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 15px;
+  background: rgba(11, 23, 21, 0.72);
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.kgClearFilters:disabled {
+  opacity: 0.35;
+}
+
+.kgResultCount {
+  align-self: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  white-space: nowrap;
 }
 
 .kgDataLayout {
@@ -1834,6 +1872,41 @@ select {
 
 .kgEntityCard p {
   margin: 11px 0 0;
+}
+
+.kgPagination {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(80px, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding: 10px;
+  background: #0b1715;
+}
+
+.kgPagination button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(103, 232, 189, 0.04);
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 0.56rem;
+}
+
+.kgPagination button:disabled {
+  color: var(--muted);
+  opacity: 0.38;
+}
+
+.kgPagination span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  text-align: center;
 }
 
 .kgNodeType {
@@ -2675,6 +2748,9 @@ select {
 }
 
 @media (max-width: 1100px) {
+  .kgControlBar { grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(110px, 0.45fr)); }
+  .kgClearFilters,
+  .kgResultCount { justify-self: start; }
   .kgRelationshipGrid { grid-template-columns: 1fr; }
   .kgRelationshipEditor,
   .kgOntologyEditor,
@@ -2709,6 +2785,8 @@ select {
   .kgIssueList > button > i { display: none; }
   .kgFooter { align-items: flex-start; flex-direction: column; }
   .kgFooter button { width: 100%; }
+  .kgPagination { grid-template-columns: repeat(2, 1fr); }
+  .kgPagination span { grid-column: 1 / -1; grid-row: 1; padding: 5px; }
 }
 
 /* AI knowledge graph import review */

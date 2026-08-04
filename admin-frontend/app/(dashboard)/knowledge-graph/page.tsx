@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
+  getKGOntology,
   getKGStats,
   listKGEntities,
   getKGEntityDetail,
   type KGStats,
   type KGEntitySummary,
   type KGEntityDetail,
+  type KGOntology,
 } from "../../../lib/api";
 import { KnowledgeGraphAIImports } from "../../components/KnowledgeGraphAIImports";
 
@@ -19,9 +21,11 @@ const TABS: Array<{ id: WorkspaceTab; label: string }> = [
 ];
 
 const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 
 export default function KnowledgeGraphPage() {
   const [stats, setStats] = useState<KGStats | null>(null);
+  const [ontology, setOntology] = useState<KGOntology | null>(null);
   const [entities, setEntities] = useState<KGEntitySummary[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<KGEntityDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,12 +34,14 @@ export default function KnowledgeGraphPage() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("entities");
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const [entityType, setEntityType] = useState("");
+  const [status, setStatus] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Debounced search
   useEffect(() => {
@@ -45,8 +51,7 @@ export default function KnowledgeGraphPage() {
     searchTimeoutRef.current = setTimeout(() => {
       if (searchInput !== search) {
         setSearch(searchInput);
-        setOffset(0);
-        setEntities([]);
+        setPage(0);
       }
     }, 300);
     return () => {
@@ -66,52 +71,55 @@ export default function KnowledgeGraphPage() {
     }
   }, []);
 
-  // Load entities with pagination
-  const loadEntities = useCallback(async (currentOffset: number, currentSearch: string, append = false) => {
-    // Cancel any pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-
-    setLoadingEntities(true);
+  // Load ontology (node types, relationship types, property definitions)
+  const loadOntology = useCallback(async () => {
     try {
-      const data = await listKGEntities({
-        limit: DEFAULT_PAGE_SIZE,
-        offset: currentOffset,
-        search: currentSearch || undefined,
-      });
-
-      if (append) {
-        setEntities((prev) => [...prev, ...data.items]);
-      } else {
-        setEntities(data.items);
-      }
-      setTotal(data.total);
-      setHasMore(data.hasMore);
-      setOffset(currentOffset + data.items.length);
+      const data = await getKGOntology();
+      setOntology(data);
     } catch (err) {
-      if (err instanceof Error && err.name !== "AbortError") {
-        setError(err.message || "Failed to load entities");
-      }
-    } finally {
-      setLoadingEntities(false);
-      setLoading(false);
+      console.error("Failed to load ontology:", err);
     }
   }, []);
 
   // Initial load
   useEffect(() => {
     loadStats();
-    loadEntities(0, "", false);
-  }, [loadStats, loadEntities]);
+    loadOntology();
+  }, [loadStats, loadOntology]);
 
-  // Reload when search changes
+  // Fetch exactly one server-side page. Old requests are cancelled when filters change.
   useEffect(() => {
-    if (!loading) {
-      loadEntities(0, search, false);
-    }
-  }, [search]);
+    const controller = new AbortController();
+    setLoadingEntities(true);
+    setError("");
+
+    listKGEntities({
+      limit: pageSize,
+      offset: page * pageSize,
+      search: search || undefined,
+      entityType: entityType || undefined,
+      status: status || undefined,
+      signal: controller.signal,
+    })
+      .then((data) => {
+        setEntities(data.items);
+        setTotal(data.total);
+        setSelectedEntity(null);
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.name !== "AbortError") {
+          setError(err.message || "Failed to load entities");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadingEntities(false);
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [page, pageSize, search, entityType, status, refreshVersion]);
 
   // Load entity detail
   const loadEntityDetail = useCallback(async (entityId: string) => {
@@ -133,13 +141,6 @@ export default function KnowledgeGraphPage() {
     loadEntityDetail(entity.id);
   }, [loadEntityDetail]);
 
-  // Load more entities
-  const handleLoadMore = useCallback(() => {
-    if (!loadingEntities && hasMore) {
-      loadEntities(offset, search, true);
-    }
-  }, [loadingEntities, hasMore, offset, search, loadEntities]);
-
   // Handle search change
   const handleSearchChange = useCallback((value: string) => {
     setSearchInput(value);
@@ -148,8 +149,22 @@ export default function KnowledgeGraphPage() {
   // Refresh after AI import apply
   const handleApplied = useCallback(() => {
     loadStats();
-    loadEntities(0, search, false);
-  }, [loadStats, loadEntities, search]);
+    setPage(0);
+    setRefreshVersion((value) => value + 1);
+  }, [loadStats]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : page * pageSize + 1;
+  const rangeEnd = Math.min((page + 1) * pageSize, total);
+  const hasFilters = Boolean(searchInput || entityType || status);
+
+  const clearFilters = useCallback(() => {
+    setSearchInput("");
+    setSearch("");
+    setEntityType("");
+    setStatus("");
+    setPage(0);
+  }, []);
 
   return (
     <section className="kgPage">
@@ -220,9 +235,9 @@ export default function KnowledgeGraphPage() {
       {/* AI Imports Tab */}
       {activeTab === "aiImports" && (
         <KnowledgeGraphAIImports
-          nodeTypes={[]}
-          nodeTypeProperties={{}}
-          relationshipTypes={[]}
+          nodeTypes={ontology?.nodeTypes ?? []}
+          nodeTypeProperties={ontology?.nodeTypeProperties ?? {}}
+          relationshipTypes={ontology?.relationshipTypes ?? []}
           onApplied={handleApplied}
         />
       )}
@@ -241,8 +256,61 @@ export default function KnowledgeGraphPage() {
                 placeholder="Search by name or ID..."
               />
             </label>
+            <label className="kgFilterField">
+              <span>Node type</span>
+              <select
+                value={entityType}
+                onChange={(event) => {
+                  setEntityType(event.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="">All types</option>
+                {(ontology?.nodeTypes ?? []).map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </label>
+            <label className="kgFilterField">
+              <span>Status</span>
+              <select
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="verified">Verified</option>
+              </select>
+            </label>
+            <label className="kgFilterField kgPageSizeField">
+              <span>Rows</span>
+              <select
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(0);
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="kgClearFilters"
+              onClick={clearFilters}
+              disabled={!hasFilters}
+            >
+              Clear
+            </button>
             <span className="kgResultCount">
-              {loading ? "Loading..." : `${total.toLocaleString()} entities`}
+              {loadingEntities
+                ? "Querying PostgreSQL..."
+                : `${rangeStart.toLocaleString()}–${rangeEnd.toLocaleString()} of ${total.toLocaleString()}`}
             </span>
           </section>
 
@@ -251,13 +319,14 @@ export default function KnowledgeGraphPage() {
             {/* Entity List */}
             <div className="runList kgEntityList">
               <header>
-                <span>{total.toLocaleString()} total</span>
-                {search && <small>Filtered: &quot;{search}&quot;</small>}
+                <span>Page {page + 1} of {totalPages.toLocaleString()}</span>
+                {(search || entityType || status) && <small>Server-side query</small>}
               </header>
 
-              {loading && entities.length === 0 ? (
+              {loadingEntities ? (
                 <div className="emptyState">
-                  <b>Loading entities...</b>
+                  <b>Querying entities...</b>
+                  <p>Only the requested page is loaded into the browser.</p>
                 </div>
               ) : entities.length === 0 ? (
                 <div className="emptyState">
@@ -274,8 +343,8 @@ export default function KnowledgeGraphPage() {
                       onClick={() => handleSelectEntity(entity)}
                     >
                       <div className="kgEntityCardTop">
-                        <span className={`kgNodeType kgNode-${entity.entityType.toLowerCase()}`}>
-                          {entity.entityType}
+                        <span className={`kgNodeType kgNode-${(entity.entityType || "unknown").toLowerCase()}`}>
+                          {entity.entityType || "Unknown"}
                         </span>
                         <span className={`status status-${entity.status === "missing" ? "failed" : entity.status}`}>
                           {entity.status}
@@ -286,17 +355,13 @@ export default function KnowledgeGraphPage() {
                     </button>
                   ))}
 
-                  {/* Load More */}
-                  {hasMore && (
-                    <button
-                      type="button"
-                      className="kgLoadMoreButton"
-                      onClick={handleLoadMore}
-                      disabled={loadingEntities}
-                    >
-                      {loadingEntities ? "Loading..." : `Load more (${total - offset} remaining)`}
-                    </button>
-                  )}
+                  <nav className="kgPagination" aria-label="Entity pages">
+                    <button type="button" onClick={() => setPage(0)} disabled={page === 0}>First</button>
+                    <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0}>Previous</button>
+                    <span>{rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()}</span>
+                    <button type="button" onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))} disabled={page >= totalPages - 1}>Next</button>
+                    <button type="button" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}>Last</button>
+                  </nav>
                 </>
               )}
             </div>
