@@ -151,7 +151,7 @@ class DimensionCheck(BaseModel):
     )
 
 
-class EntitySummary(BaseModel):
+class EntitySummaryFit(BaseModel):
     """Minimal entity representation returned in fit evaluation."""
 
     id: str = Field(description="Entity identifier")
@@ -216,7 +216,7 @@ class ExperienceFitInput(BaseModel):
 class ExperienceFitOutput(BaseModel):
     """Output schema for kg_evaluate_experience_fit tool."""
 
-    entity: EntitySummary | None = Field(
+    entity: EntitySummaryFit | None = Field(
         default=None,
         description="Summary of the evaluated entity",
     )
@@ -230,6 +230,9 @@ class ExperienceFitOutput(BaseModel):
     warnings: list[str] = Field(
         default_factory=list,
         description="Non-fatal warnings and recommendations",
+    )
+
+
 # --- Experience Discovery Schemas ---
 
 
@@ -378,4 +381,155 @@ class ExperienceDiscoveryInput(BaseModel):
     limit: int = Field(default=20, ge=1, le=50, description="Maximum claims to return")
     includeInferred: bool = Field(
         default=True, description="Include inferred claims"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trip Research Orchestrator schemas
+# ---------------------------------------------------------------------------
+
+
+class TravelBudget(BaseModel):
+    """Budget information for a trip research request."""
+
+    level: BudgetLevel = Field(
+        default=BudgetLevel.MEDIUM, description="Budget level classification"
+    )
+    targetAmount: float | None = Field(
+        default=None, ge=0, description="Target total budget amount"
+    )
+    currency: str = Field(
+        default="VND", description="Currency code"
+    )
+
+
+class TripResearchInput(BaseModel):
+    """Input schema for the GraphResearchOrchestrator.
+
+    This is the input contract for the trip research orchestration flow.
+    """
+
+    destination: str = Field(min_length=1, description="Primary destination name")
+    destinationStays: list[str] = Field(
+        default_factory=list, description="Additional destinations or stays"
+    )
+    selectedPlaceIds: list[str] = Field(
+        default_factory=list, description="Place IDs pre-selected by user"
+    )
+    interests: list[str] = Field(
+        default_factory=list, description="Interest tags (e.g. culture, coffee)"
+    )
+    travelStyle: str = Field(
+        default="balanced", description="Travel style preference"
+    )
+    pace: str = Field(
+        default="balanced", description="Trip pace (relaxed, balanced, busy)"
+    )
+    days: int = Field(ge=1, le=30, default=3, description="Number of trip days")
+    partySize: int = Field(ge=1, le=20, default=2, description="Number of travelers")
+    startDate: str | None = Field(
+        default=None, description="Trip start date (ISO 8601)"
+    )
+    endDate: str | None = Field(
+        default=None, description="Trip end date (ISO 8601)"
+    )
+    budget: TravelBudget = Field(
+        default_factory=TravelBudget, description="Budget constraints"
+    )
+    constraints: list[str] = Field(
+        default_factory=list, description="Additional user constraints"
+    )
+    excludedPlaceTypes: list[str] = Field(
+        default_factory=list, description="Place types to exclude"
+    )
+    preferredModes: list[TransportMode] = Field(
+        default_factory=list, description="Preferred transport modes"
+    )
+    avoidModes: list[TransportMode] = Field(
+        default_factory=list, description="Transport modes to avoid"
+    )
+    includeInferred: bool = Field(
+        default=True, description="Include inferred claims"
+    )
+    candidateLimit: int = Field(
+        default=30, ge=1, le=100, description="Maximum candidates to return"
+    )
+
+
+class FitResult(BaseModel):
+    """Fit evaluation result for a single candidate."""
+
+    status: CheckStatus = Field(description="Overall fit status")
+    hasHardConflict: bool = Field(
+        description="Whether this candidate has a hard constraint conflict"
+    )
+    dimensionCount: int = Field(description="Number of dimensions evaluated")
+
+
+class RankedExperience(BaseModel):
+    """An experience candidate with rank and reasons."""
+
+    claim: GraphEvidenceClaim = Field(description="The evidence claim")
+    fit: FitResult = Field(description="Fit evaluation result")
+    rank: int = Field(ge=1, description="Final rank (1-based)")
+    rankReasons: list[str] = Field(
+        default_factory=list, description="Reasons for this rank"
+    )
+
+
+class ConflictedExperience(BaseModel):
+    """An experience that has hard constraint conflicts."""
+
+    claim: GraphEvidenceClaim = Field(description="The evidence claim")
+    fit: FitResult = Field(description="Fit evaluation result")
+    conflictReasons: list[str] = Field(
+        default_factory=list, description="Hard constraint violations"
+    )
+
+
+class ResearchTrace(BaseModel):
+    """Execution trace for debugging and observability."""
+
+    scopeResultCount: int = Field(
+        default=0, description="Number of areas in resolved scope"
+    )
+    discoveredClaimCount: int = Field(
+        default=0, description="Number of claims discovered"
+    )
+    evaluatedExperienceCount: int = Field(
+        default=0, description="Number of experiences evaluated"
+    )
+    eligibleExperienceCount: int = Field(
+        default=0, description="Number of eligible experiences in output"
+    )
+    conflictedExperienceCount: int = Field(
+        default=0, description="Number of conflicted experiences in output"
+    )
+
+
+class TripResearchBundle(BaseModel):
+    """Output bundle from the trip research orchestration.
+
+    This is the bounded output contract containing ranked experiences,
+    conflicts, and metadata for downstream planning.
+    """
+
+    scope: ScopeResolveOutput = Field(description="Resolved geographic scope")
+    eligibleExperiences: list[RankedExperience] = Field(
+        default_factory=list, description="Eligible experiences sorted by rank"
+    )
+    conflictedExperiences: list[ConflictedExperience] = Field(
+        default_factory=list, description="Experiences with hard conflicts"
+    )
+    unknowns: list[GraphEvidenceClaim] = Field(
+        default_factory=list, description="Experiences with unknown fit status"
+    )
+    warnings: list[str] = Field(
+        default_factory=list, description="Non-fatal warnings"
+    )
+    graphSnapshot: GraphSnapshot = Field(
+        description="Graph state snapshot at time of research"
+    )
+    trace: ResearchTrace = Field(
+        default_factory=ResearchTrace, description="Execution trace"
     )

@@ -21,20 +21,22 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.modules.knowledge_graph.research import (
     BudgetLevel,
+    ExperienceDiscoveryInput,
     ExperienceFitInput,
     ExperienceFitOutput,
+    GraphEvidenceBundle,
+    GraphSnapshot,
+    GraphResearchOrchestrator,
+    GraphScopeError,
     ScopeResolveInput,
     ScopeResolveOutput,
     ScopeResolutionRepository,
     TransportMode,
-    kg_evaluate_experience_fit,
-    ExperienceDiscoveryInput,
-    GraphEvidenceBundle,
-    GraphSnapshot,
-    ScopeResolveInput,
-    ScopeResolveOutput,
-    ScopeResolutionRepository,
+    TravelBudget,
+    TripResearchBundle,
+    TripResearchInput,
     kg_discover_experiences,
+    kg_evaluate_experience_fit,
     kg_resolve_scope,
 )
 
@@ -146,21 +148,6 @@ def cmd_evaluate_fit(
     print(f"# Evaluate Fit: {target}", file=sys.stderr)
     print(f"# Destination: {destination} | Days: {days} | Party: {party_size}", file=sys.stderr)
     print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
-def cmd_discover_experiences(
-    destination: str | None,
-    root_area_id: str | None,
-    interests: list[str] | None,
-    selected_place_ids: list[str] | None,
-    limit: int,
-    include_inferred: bool,
-    pretty: bool,
-) -> int:
-    """Discover special experiences for a destination."""
-    dest_arg = destination or root_area_id or "unknown"
-    print(f"# Discover Experiences: {dest_arg}", file=sys.stderr)
-    print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
-    if interests:
-        print(f"# Interests: {', '.join(interests)}", file=sys.stderr)
     print(file=sys.stderr)
 
     session = SessionLocal()
@@ -173,11 +160,6 @@ def cmd_discover_experiences(
                 overallStatus="unknown",
                 checks=[],
                 warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
-            output = GraphEvidenceBundle(
-                claims=[],
-                unknowns=[],
-                warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
-                graphSnapshot=GraphSnapshot(timestamp=""),
             )
             print(output.model_dump_json(by_alias=True, indent=2 if pretty else None), file=sys.stdout)
             print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
@@ -225,6 +207,55 @@ def cmd_discover_experiences(
         )
 
         result = kg_evaluate_experience_fit(repo, input_data)
+
+        indent = 2 if pretty else None
+        print(result.model_dump_json(by_alias=True, indent=indent), file=sys.stdout)
+
+        for warning in result.warnings:
+            if "KNOWLEDGE_GRAPH_EMPTY" in warning:
+                print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
+                return 1
+
+        return 0
+    except Exception as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+
+
+def cmd_discover_experiences(
+    destination: str | None,
+    root_area_id: str | None,
+    interests: list[str] | None,
+    selected_place_ids: list[str] | None,
+    limit: int,
+    include_inferred: bool,
+    pretty: bool,
+) -> int:
+    """Discover special experiences for a destination."""
+    dest_arg = destination or root_area_id or "unknown"
+    print(f"# Discover Experiences: {dest_arg}", file=sys.stderr)
+    print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
+    if interests:
+        print(f"# Interests: {', '.join(interests)}", file=sys.stderr)
+    print(file=sys.stderr)
+
+    session = SessionLocal()
+    try:
+        repo = ScopeResolutionRepository(session)
+
+        if repo.is_empty():
+            output = GraphEvidenceBundle(
+                claims=[],
+                unknowns=[],
+                warnings=["KNOWLEDGE_GRAPH_EMPTY: Graph has no entities. Import data first."],
+                graphSnapshot=GraphSnapshot(timestamp=""),
+            )
+            print(output.model_dump_json(by_alias=True, indent=2 if pretty else None), file=sys.stdout)
+            print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
+            return 1
+
         input_data = ExperienceDiscoveryInput(
             destination=destination,
             rootAreaId=root_area_id,
@@ -241,7 +272,6 @@ def cmd_discover_experiences(
 
         for warning in result.warnings:
             if "KNOWLEDGE_GRAPH_EMPTY" in warning:
-                print(warning.split(":")[0], file=sys.stderr)
                 print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
                 return 1
             if "DESTINATION_NOT_FOUND" in warning:
@@ -249,6 +279,118 @@ def cmd_discover_experiences(
                 return 1
 
         return 0
+    except Exception as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    finally:
+        session.close()
+
+
+def cmd_research_trip(
+    destination: str,
+    interests: list[str] | None,
+    selected_place_ids: list[str] | None,
+    days: int,
+    party_size: int,
+    start_date: str | None,
+    end_date: str | None,
+    budget_level: str | None,
+    budget_amount: float | None,
+    excluded_types: list[str],
+    preferred_modes: list[str],
+    avoid_modes: list[str],
+    exclude_inferred: bool,
+    limit: int,
+    pretty: bool,
+) -> int:
+    """Run full trip research orchestration."""
+    print(f"# Research Trip: {destination}", file=sys.stderr)
+    print(f"# Database: postgresql+psycopg://***", file=sys.stderr)
+    print(f"# Days: {days} | Party: {party_size}", file=sys.stderr)
+    if interests:
+        print(f"# Interests: {', '.join(interests)}", file=sys.stderr)
+    print(file=sys.stderr)
+
+    session = SessionLocal()
+    try:
+        repo = ScopeResolutionRepository(session)
+
+        if repo.is_empty():
+            print(json.dumps({
+                "error": "KNOWLEDGE_GRAPH_EMPTY",
+                "message": "Graph has no entities. Import data first.",
+            }, ensure_ascii=False), file=sys.stderr)
+            print("KNOWLEDGE_GRAPH_EMPTY", file=sys.stderr)
+            return 1
+
+        # Parse budget level
+        parsed_budget_level: BudgetLevel = BudgetLevel.MEDIUM
+        if budget_level is not None:
+            try:
+                parsed_budget_level = BudgetLevel(budget_level.lower())
+            except ValueError:
+                print(json.dumps({"error": f"Invalid budget level: {budget_level}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        # Parse transport modes
+        parsed_preferred: list[TransportMode] = []
+        for mode in preferred_modes:
+            try:
+                parsed_preferred.append(TransportMode(mode.lower()))
+            except ValueError:
+                print(json.dumps({"error": f"Invalid transport mode: {mode}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        parsed_avoid: list[TransportMode] = []
+        for mode in avoid_modes:
+            try:
+                parsed_avoid.append(TransportMode(mode.lower()))
+            except ValueError:
+                print(json.dumps({"error": f"Invalid transport mode: {mode}"}, ensure_ascii=False), file=sys.stderr)
+                return 1
+
+        # Build input
+        input_data = TripResearchInput(
+            destination=destination,
+            selectedPlaceIds=selected_place_ids or [],
+            interests=interests or [],
+            days=days,
+            partySize=party_size,
+            startDate=start_date,
+            endDate=end_date,
+            budget=TravelBudget(
+                level=parsed_budget_level,
+                targetAmount=budget_amount,
+                currency="VND",
+            ),
+            excludedPlaceTypes=excluded_types,
+            preferredModes=parsed_preferred,
+            avoidModes=parsed_avoid,
+            includeInferred=not exclude_inferred,
+            candidateLimit=limit,
+        )
+
+        # Run orchestration
+        orchestrator = GraphResearchOrchestrator(repo, repo)
+        result = orchestrator.research(input_data)
+
+        indent = 2 if pretty else None
+        print(result.model_dump_json(by_alias=True, indent=indent), file=sys.stdout)
+
+        # Check for scope error
+        for warning in result.warnings:
+            if "GRAPH_SCOPE_NOT_FOUND" in warning:
+                print("GRAPH_SCOPE_NOT_FOUND", file=sys.stderr)
+                return 1
+            if "GRAPH_EXPERIENCE_COVERAGE_EMPTY" in warning:
+                print("GRAPH_EXPERIENCE_COVERAGE_EMPTY", file=sys.stderr)
+                return 0
+
+        return 0
+    except GraphScopeError as e:
+        print(json.dumps({"error": e.CODE, "message": str(e)}, ensure_ascii=False), file=sys.stderr)
+        print(e.CODE, file=sys.stderr)
+        return 1
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)
         return 1
@@ -383,6 +525,11 @@ def main() -> int:
         help="Additional user-defined constraints",
     )
     fit_parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON output",
+    )
+
     discover_parser = subparsers.add_parser(
         "discover-experiences",
         help="Discover special experiences in a destination",
@@ -425,6 +572,98 @@ def main() -> int:
         help="Pretty-print JSON output",
     )
 
+    research_parser = subparsers.add_parser(
+        "research-trip",
+        help="Run full trip research orchestration",
+    )
+    research_parser.add_argument(
+        "--destination",
+        required=True,
+        help="Destination name to research",
+    )
+    research_parser.add_argument(
+        "--interest",
+        action="append",
+        dest="interests",
+        help="Interest tag (can be specified multiple times)",
+    )
+    research_parser.add_argument(
+        "--selected-place-id",
+        action="append",
+        dest="selected_place_ids",
+        help="Pre-selected Place entity ID (can be specified multiple times)",
+    )
+    research_parser.add_argument(
+        "--days",
+        type=int,
+        default=3,
+        help="Number of trip days (default: 3)",
+    )
+    research_parser.add_argument(
+        "--party-size",
+        type=int,
+        default=2,
+        dest="party_size",
+        help="Number of travelers (default: 2)",
+    )
+    research_parser.add_argument(
+        "--start-date",
+        dest="start_date",
+        help="Trip start date (ISO 8601)",
+    )
+    research_parser.add_argument(
+        "--end-date",
+        dest="end_date",
+        help="Trip end date (ISO 8601)",
+    )
+    research_parser.add_argument(
+        "--budget-level",
+        choices=["low", "medium", "high", "luxury"],
+        dest="budget_level",
+        help="Budget level preference",
+    )
+    research_parser.add_argument(
+        "--budget-amount",
+        type=float,
+        dest="budget_amount",
+        help="Target total budget in VND",
+    )
+    research_parser.add_argument(
+        "--exclude-place-type",
+        action="append",
+        dest="excluded_types",
+        help="Place type to exclude (can be specified multiple times)",
+    )
+    research_parser.add_argument(
+        "--preferred-mode",
+        action="append",
+        dest="preferred_modes",
+        help="Preferred transport mode (can be specified multiple times)",
+    )
+    research_parser.add_argument(
+        "--avoid-mode",
+        action="append",
+        dest="avoid_modes",
+        help="Transport mode to avoid (can be specified multiple times)",
+    )
+    research_parser.add_argument(
+        "--exclude-inferred",
+        action="store_true",
+        dest="exclude_inferred",
+        help="Exclude inferred claims",
+    )
+    research_parser.add_argument(
+        "--limit",
+        type=int,
+        default=30,
+        help="Maximum candidates to return (default: 30, max: 100)",
+    )
+    research_parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON output",
+    )
+
     args = parser.parse_args()
 
     if args.command == "stats":
@@ -453,6 +692,8 @@ def main() -> int:
             avoided_transport=args.avoided_transport,
             accessibility=args.accessibility,
             constraints=args.constraints,
+            pretty=args.pretty,
+        )
     elif args.command == "discover-experiences":
         return cmd_discover_experiences(
             destination=args.destination,
@@ -461,6 +702,24 @@ def main() -> int:
             selected_place_ids=args.place_ids,
             limit=args.limit,
             include_inferred=args.include_inferred,
+            pretty=args.pretty,
+        )
+    elif args.command == "research-trip":
+        return cmd_research_trip(
+            destination=args.destination,
+            interests=args.interests,
+            selected_place_ids=args.selected_place_ids,
+            days=args.days,
+            party_size=args.party_size,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            budget_level=args.budget_level,
+            budget_amount=args.budget_amount,
+            excluded_types=args.excluded_types or [],
+            preferred_modes=args.preferred_modes or [],
+            avoid_modes=args.avoid_modes or [],
+            exclude_inferred=args.exclude_inferred,
+            limit=args.limit,
             pretty=args.pretty,
         )
     else:
