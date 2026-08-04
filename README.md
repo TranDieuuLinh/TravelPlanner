@@ -63,7 +63,8 @@ VSF_TravelPlanner/
 
 ## Chạy dự án trên máy cá nhân
 
-Docker Compose chạy PostgreSQL, backend và sidecar Google Maps dùng Playwright:
+Docker Compose chạy các service backend gồm PostgreSQL, backend, sidecar Google
+Maps và hai routing service:
 
 ```bash
 docker compose up --build
@@ -74,8 +75,11 @@ API và tài liệu API có tại `http://localhost:8000` và
 trước khi nhận request. Dữ liệu PostgreSQL nằm trong volume `postgres_data`.
 Image sidecar tự cài package Playwright đã pin, Chromium và các thư viện hệ điều
 hành cần thiết khi build; không cần cài Playwright hoặc browser trên máy host.
-Frontend người dùng và Planning Control chạy trực tiếp trên host, không nằm
-trong Docker Compose.
+Frontend người dùng và Planning Control chạy riêng trên host bằng `npm run dev`.
+Valhalla chạy tại `http://localhost:8002`.
+OpenTripPlanner chạy tại `http://localhost:8080` khi đã chuẩn bị graph và feed
+theo `routing-data/README.md`; nếu chưa có dữ liệu, container vẫn được giữ ở
+trạng thái chờ và backend dùng fallback route.
 
 Khi cần chạy backend trực tiếp trên host nhưng vẫn dùng PostgreSQL trong Docker:
 
@@ -90,7 +94,7 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Sau đó có thể chạy frontend trực tiếp trên host:
+Chạy frontend riêng trên host:
 
 ```bash
 cd frontend
@@ -99,7 +103,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Planning Control là một Next.js app riêng chạy trên host tại
+Planning Control là một Next.js app riêng; khi chạy trên host, nó dùng
 `http://localhost:3001`:
 
 ```bash

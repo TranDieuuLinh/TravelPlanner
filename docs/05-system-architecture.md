@@ -20,10 +20,12 @@ Router FastAPI
     +-- profiles/marketplace: endpoint placeholder
 ```
 
-`docker-compose.yml` mặc định chạy backend và PostgreSQL. Profile `routing`
-chạy thêm Valhalla và OpenTripPlanner sau khi dữ liệu OTP đã được build theo
-`routing-data/README.md`. Frontend Next.js được chạy riêng trên host khi cần
-phát triển hoặc kiểm thử giao diện.
+`docker-compose.yml` mặc định chạy PostgreSQL, backend, sidecar Google Maps,
+Valhalla và OpenTripPlanner. Frontend Next.js chạy riêng trên host bằng
+`npm run dev`. OpenTripPlanner giữ container ở trạng
+thái chờ nếu dữ liệu graph/OSM/GTFS chưa được chuẩn bị; khi đó backend vẫn dùng
+fallback route. Frontend Next.js cũng có thể chạy riêng trên host khi cần phát
+triển hoặc kiểm thử giao diện.
 PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backend trực
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
