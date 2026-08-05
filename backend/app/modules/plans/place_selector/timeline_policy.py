@@ -17,6 +17,16 @@ class MealAnchor:
     role: str
     start_minutes: int
     duration_minutes: int = 60
+    earliest_start_minutes: int | None = None
+    latest_start_minutes: int | None = None
+
+    @property
+    def earliest(self) -> int:
+        return self.earliest_start_minutes or self.start_minutes
+
+    @property
+    def latest(self) -> int:
+        return self.latest_start_minutes or self.start_minutes
 
     @property
     def end_minutes(self) -> int:
@@ -34,9 +44,12 @@ class ActivityWindow:
 
 
 MEAL_ANCHORS = (
-    MealAnchor("breakfast_meal", 8 * 60),
-    MealAnchor("lunch_meal", 12 * 60),
-    MealAnchor("dinner_meal", 18 * 60),
+    # The target is used for ranking and the window is a soft constraint. A
+    # late attraction must be able to push lunch/dinner without creating a
+    # fake overlap.
+    MealAnchor("breakfast_meal", 8 * 60, earliest_start_minutes=7 * 60, latest_start_minutes=9 * 60 + 30),
+    MealAnchor("lunch_meal", 12 * 60, earliest_start_minutes=11 * 60 + 30, latest_start_minutes=14 * 60),
+    MealAnchor("dinner_meal", 18 * 60, earliest_start_minutes=17 * 60 + 30, latest_start_minutes=20 * 60),
 )
 
 ACTIVITY_WINDOWS = (
@@ -48,6 +61,27 @@ ACTIVITY_WINDOWS = (
 DAILY_ACTIVITY_MINUTES = sum(
     window.end_minutes - window.start_minutes for window in ACTIVITY_WINDOWS
 )
+
+
+def time_hint_period(hint: str | None) -> str | None:
+    """Normalize URL/KG timing hints to the three planner day parts."""
+    value = (hint or "").casefold().replace("-", " ").replace("_", " ")
+    if any(token in value for token in ("night", "evening", "after dark", "sunset", "dinner")):
+        return "evening"
+    if any(token in value for token in ("afternoon", "lunch", "noon")):
+        return "afternoon"
+    if any(token in value for token in ("morning", "breakfast", "sunrise")):
+        return "morning"
+    return None
+
+
+def activity_window_period(index: int) -> str:
+    return ("morning", "afternoon", "evening")[min(index, 2)]
+
+
+def hint_matches_activity_window(hint: str | None, index: int) -> bool:
+    period = time_hint_period(hint)
+    return period is None or period == activity_window_period(index)
 
 
 def selected_activity_duration(source_duration_minutes: int | None) -> int:

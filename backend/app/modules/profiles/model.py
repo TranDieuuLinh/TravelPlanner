@@ -9,7 +9,7 @@ from app.db.base import Base
 class UserVisitedPlace(Base):
     __tablename__ = "user_visited_places"
     __table_args__ = (
-        UniqueConstraint("user_id", "place_id", name="uq_user_visited_places_user_place"),
+        UniqueConstraint("user_id", "entity_id", name="uq_user_visited_places_user_entity"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -18,8 +18,9 @@ class UserVisitedPlace(Base):
         nullable=False,
         index=True,
     )
-    place_id: Mapped[str] = mapped_column(
-        ForeignKey("places.id", ondelete="CASCADE"),
+    entity_id: Mapped[str] = mapped_column(
+        String(96),
+        ForeignKey("knowledge_entities.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

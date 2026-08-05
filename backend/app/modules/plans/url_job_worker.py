@@ -1,10 +1,13 @@
 import asyncio
+import json
 import logging
+import time
 from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.modules.plans.chat_model import TripChatMessage
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.destination_inference import (
@@ -20,6 +23,7 @@ from app.shared.errors import AppError
 
 
 logger = logging.getLogger(__name__)
+terminal_logger = logging.getLogger("uvicorn.error")
 
 
 class UrlImportJobWorker:
@@ -93,6 +97,7 @@ class UrlImportJobWorker:
             if job is None:
                 return False
             job_id = job.id
+            processing_started_at = time.perf_counter()
             process_task = asyncio.create_task(
                 self._process(db, job_id),
                 name=f"url-import-job-{job_id}",
@@ -142,6 +147,11 @@ class UrlImportJobWorker:
             else:
                 repository.succeed(job_id, revision)
             finally:
+                self._log_terminal_timing(
+                    db,
+                    job_id=job_id,
+                    processing_started_at=processing_started_at,
+                )
                 self._cancel_requested_job_ids.discard(job_id)
                 if self._active_job_id == job_id:
                     self._active_job_id = None
@@ -149,6 +159,72 @@ class UrlImportJobWorker:
                     self._active_completion = None
                 completion.set()
             return True
+
+    @staticmethod
+    def _log_terminal_timing(
+        db: Session,
+        *,
+        job_id: str,
+        processing_started_at: float,
+    ) -> None:
+        """Log one privacy-safe end-to-end summary for a terminal URL job."""
+        try:
+            job = db.get(UrlImportJob, job_id)
+            if job is None:
+                return
+            if job.status in {"queued", "running"}:
+                # The application may be shutting down while the task is
+                # still resumable; do not present that as a terminal result.
+                return
+            processing_seconds = round(
+                max(0.0, time.perf_counter() - processing_started_at),
+                3,
+            )
+            explorer_seconds = _timing_total_seconds(job.explorer_timing)
+            planner_seconds = _timing_total_seconds(job.planner_timing)
+            queue_wait_seconds = None
+            if job.created_at is not None and job.started_at is not None:
+                queue_wait_seconds = round(
+                    max(
+                        0.0,
+                        (job.started_at - job.created_at).total_seconds(),
+                    ),
+                    3,
+                )
+            accounted_seconds = round(
+                (explorer_seconds or 0.0) + (planner_seconds or 0.0),
+                3,
+            )
+            terminal_logger.info(
+                "VSF_TIMING url_job %s",
+                json.dumps(
+                    {
+                        "event": "url_job_timing",
+                        "jobId": job_id,
+                        "sourceType": job.source_type,
+                        "status": job.status,
+                        "attemptCount": job.attempt_count,
+                        "queueWaitSeconds": queue_wait_seconds,
+                        "processingWallSeconds": processing_seconds,
+                        "explorerSeconds": explorer_seconds,
+                        "plannerSeconds": planner_seconds,
+                        "accountedSeconds": accounted_seconds,
+                        "orchestrationOverheadSeconds": round(
+                            max(0.0, processing_seconds - accounted_seconds),
+                            3,
+                        ),
+                        "errorCode": job.error_code,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "Could not emit terminal timing for URL import job %s.",
+                job_id,
+                exc_info=True,
+            )
 
     async def _process(self, db: Session, job_id: str) -> int:
         job = db.get(UrlImportJob, job_id)
@@ -209,6 +285,11 @@ class UrlImportJobWorker:
                     urls=[] if is_image else [job.url],
                     images=images,
                     force_url_refresh=job.force_refresh,
+                    turn_id=(
+                        job.batch_id
+                        if job.batch_id and db.get(TripChatMessage, job.batch_id)
+                        else None
+                    ),
                 )
                 return result.revision
             except AppError as exc:
@@ -222,3 +303,12 @@ class UrlImportJobWorker:
             "VERSION_CONFLICT",
             "Lịch trình liên tục thay đổi trong khi xử lý URL. Hãy thử lại tác vụ.",
         )
+
+
+def _timing_total_seconds(value: object) -> float | None:
+    if not isinstance(value, dict):
+        return None
+    raw_total = value.get("totalSeconds")
+    if not isinstance(raw_total, (int, float)):
+        return None
+    return round(max(0.0, float(raw_total)), 3)

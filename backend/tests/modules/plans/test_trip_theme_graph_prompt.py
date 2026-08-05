@@ -81,6 +81,8 @@ def _claim(
     anchor_place_name: str = "Anchor Place",
     source: str = "https://example.com/source",
     priority: RecommendationPriority = RecommendationPriority.MUST,
+    time_slots: list[str | dict] | None = None,
+    recommended_visit_minutes: int | None = None,
 ) -> GraphEvidenceClaim:
     activity = None
     if activity_id is not None:
@@ -104,7 +106,13 @@ def _claim(
         path=path,
         anchorPlace=anchor_place,
         activity=activity,
-        recommendations=[Recommendation(priority=priority)],
+        recommendations=[
+            Recommendation(
+                priority=priority,
+                timeSlots=time_slots or [],
+                recommendedVisitMinutes=recommended_visit_minutes,
+            )
+        ],
         evidence=[EdgeEvidence(source=source, recommendations=[])],
         trust=TrustLevel.SOURCE_BACKED,
     )
@@ -133,6 +141,8 @@ def _graph_bundle() -> TripResearchBundle:
         anchor_place_id="place-cafe-giang",
         anchor_place_name="Cafe Giảng",
         source="https://example.com/cafe-source",
+        time_slots=["19:00-21:00"],
+        recommended_visit_minutes=60,
     )
     cooking_claim_a = _claim(
         claim_id="claim-cooking-a",
@@ -425,6 +435,12 @@ class TestRequiredAnchorSelection:
                     "reason": "Anchor coffee tour at Cafe Giảng.",
                     "evidenceClaimIds": ["claim-coffee-tour"],
                     "sourceRefs": ["https://example.com/cafe-source"],
+                    # Backend validation must replace model-echoed timing with
+                    # the recommendation attached to the validated graph edge.
+                    "preferredTimeWindows": [
+                        {"start": "09:00", "end": "10:00"}
+                    ],
+                    "recommendedVisitMinutes": 15,
                 }
             ],
         )
@@ -447,6 +463,10 @@ class TestRequiredAnchorSelection:
         assert requirement.selection_policy.value == "required_anchor"
         assert requirement.anchor_place_ids == ["place-cafe-giang"]
         assert "claim-coffee-tour" in requirement.evidence_claim_ids
+        assert requirement.model_dump(mode="json", by_alias=True)[
+            "preferredTimeWindows"
+        ] == [{"start": "19:00", "end": "21:00"}]
+        assert requirement.recommended_visit_minutes == 60
         assert llm.macro_calls == 1
         assert orchestrator.calls == 1
 

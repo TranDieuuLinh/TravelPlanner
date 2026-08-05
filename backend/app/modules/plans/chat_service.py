@@ -88,6 +88,7 @@ class TripChatService:
         urls: list[str],
         images: list[ImageUploadPayload],
         force_url_refresh: bool = False,
+        turn_id: str | None = None,
     ) -> TripChatRead:
         """Generate (or regenerate) a plan from a free-form prompt + attachments.
 
@@ -108,6 +109,7 @@ class TripChatService:
             urls=urls,
             images=images,
             force_url_refresh=force_url_refresh,
+            turn_id=turn_id,
         )
 
     async def generate_plan_revision(

@@ -9,7 +9,7 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.preferences.schema import PreferenceDimension
 
 
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v2"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v3"
 
 _THEME_PROFILE_DIMENSIONS = {
     PreferenceDimension.category,
@@ -75,6 +75,9 @@ Planning rules:
      candidate. PlaceSelector will pick a supporting place later.
    Every entry MUST list at least one evidenceClaimIds value from the
    catalog, and sourceRefs MUST come from the same candidate's sourceRefs.
+   Omit preferredTimeWindows and recommendedVisitMinutes. The backend copies
+   those fields deterministically from the validated catalog recommendation;
+   model-provided timing values are ignored.
    Do NOT invent Place, Activity, or claim IDs that are not in the catalog.
    requiredExperiences entries MUST NOT include day, route, allocation,
    scheduledDay, dayIndex, routeId, allocationId or any calendar/bucket fields.

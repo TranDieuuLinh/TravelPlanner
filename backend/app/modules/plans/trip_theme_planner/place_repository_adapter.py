@@ -1,5 +1,5 @@
 """
-Adapter for SqlAlchemyPlaceRepository to implement PlaceRepositoryForTools protocol.
+Adapter for the Knowledge Graph place projection used by research tools.
 
 Adds methods required by research tools:
 - list_for_overview
@@ -10,16 +10,13 @@ Adds methods required by research tools:
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
-
-from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
 
-from app.modules.places.model import Place
+from app.modules.knowledge_graph.place_repository import (
+    KnowledgeGraphPlaceRecord,
+    KnowledgeGraphPlaceRepository,
+)
 from app.modules.plans.trip_theme_planner.research_tools_orchestrator import PlaceRepositoryForTools
-
-if TYPE_CHECKING:
-    pass
 
 
 EARTH_RADIUS_KM = 6371.0
@@ -41,16 +38,16 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 class PlaceRepositoryAdapter:
     """
-    Adapter that wraps SqlAlchemyPlaceRepository to implement PlaceRepositoryForTools.
+    Adapter that projects KG entities into the research-tools protocol.
     
     This allows the existing repository to work with the new research tools
     without modifying the original class.
     """
 
     def __init__(self, session: Session) -> None:
-        self._session = session
+        self._repository = KnowledgeGraphPlaceRepository(session)
 
-    def list_for_overview(self, region_key: str) -> list[Place]:
+    def list_for_overview(self, region_key: str) -> list[KnowledgeGraphPlaceRecord]:
         """
         List all places for a region (including sub-regions).
         
@@ -60,25 +57,17 @@ class PlaceRepositoryAdapter:
         Returns:
             List of Place objects
         """
-        query = (
-            select(Place)
-            .where(
-                Place.deleted_at.is_(None),
-                or_(
-                    Place.region_key == region_key,
-                    Place.region_key.like(f"{region_key},%"),
-                ),
-            )
-            .order_by(Place.place_type, Place.name)
+        return sorted(
+            self._repository.list_for_place_selection(region_key, limit=100000),
+            key=lambda place: (place.place_type, place.name),
         )
-        return list(self._session.scalars(query))
 
     def list_within_radius(
         self,
         center_lat: float,
         center_lng: float,
         radius_km: float,
-    ) -> list[Place]:
+    ) -> list[KnowledgeGraphPlaceRecord]:
         """
         List active places within a geographic radius.
         
@@ -92,32 +81,9 @@ class PlaceRepositoryAdapter:
         Returns:
             List of Place objects within radius
         """
-        # Calculate bounding box for pre-filtering
-        lat_delta = radius_km / 111.0  # ~111km per degree latitude
-        lng_delta = radius_km / (111.0 * math.cos(math.radians(center_lat)))
-
-        min_lat = center_lat - lat_delta
-        max_lat = center_lat + lat_delta
-        min_lng = center_lng - lng_delta
-        max_lng = center_lng + lng_delta
-
-        # Pre-filter with bounding box
-        query = (
-            select(Place)
-            .where(
-                Place.deleted_at.is_(None),
-                Place.status == "active",
-                Place.latitude.isnot(None),
-                Place.longitude.isnot(None),
-                Place.latitude >= min_lat,
-                Place.latitude <= max_lat,
-                Place.longitude >= min_lng,
-                Place.longitude <= max_lng,
-            )
-            .order_by(Place.region_key, Place.place_type)
+        candidates = self._repository.list_active_for_planner_research(
+            limit=100000
         )
-
-        candidates = list(self._session.scalars(query))
 
         # Verify with haversine and filter
         results = []
@@ -134,22 +100,17 @@ class PlaceRepositoryAdapter:
 
         return results
 
-    def list_all_active(self) -> list[Place]:
+    def list_all_active(self) -> list[KnowledgeGraphPlaceRecord]:
         """
         List all active places in the database.
         
         Returns:
             List of all active Place objects
         """
-        query = (
-            select(Place)
-            .where(
-                Place.deleted_at.is_(None),
-                Place.status == "active",
-            )
-            .order_by(Place.region_key, Place.place_type)
+        return sorted(
+            self._repository.list_active_for_planner_research(limit=100000),
+            key=lambda place: (place.region_key, place.place_type),
         )
-        return list(self._session.scalars(query))
 
 
 def create_tools_repository(session: Session) -> PlaceRepositoryAdapter:

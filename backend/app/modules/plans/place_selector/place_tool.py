@@ -4,11 +4,11 @@ import logging
 import re
 import unicodedata
 from math import log10
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from app.modules.places.model import Place
+from app.modules.plans.domain.entities import PreferredTimeWindow
 from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -534,6 +534,10 @@ class SelectablePlace(BaseModel):
         le=720,
         alias="sourceDurationMinutes",
     )
+    preferred_time_windows: list[PreferredTimeWindow] = Field(
+        default_factory=list,
+        alias="preferredTimeWindows",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -557,14 +561,14 @@ class PlaceSelectionTool(Protocol):
 
 
 class PlaceSelectionRepository(Protocol):
-    def get(self, place_id: str) -> Place | None: ...
+    def get(self, place_id: str) -> Any | None: ...
 
     def list_for_place_selection(
         self,
         region_key: str,
         *,
         limit: int = 10000,
-    ) -> list[Place]: ...
+    ) -> list[Any]: ...
 
 
 class EmptyPlaceSelectionTool:
@@ -714,7 +718,7 @@ class RepositoryPlaceSelectionTool:
             )
         return candidates
 
-    def _to_selectable_place(self, place: Place) -> SelectablePlace:
+    def _to_selectable_place(self, place: Any) -> SelectablePlace:
         metadata = place.metadata_json or {}
         tags = read_tags(place)
         minimum_duration = _minimum_duration_minutes(metadata)
