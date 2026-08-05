@@ -54,7 +54,14 @@ def test_place_selector_resolves_required_anchor_into_selected_place() -> None:
             "intent": {"destination": "Hà Nội"},
             "tripSpec": {"days": 1},
             "regionKey": "vn:hanoi",
-            "requiredExperiences": [_base_requirement()],
+            "requiredExperiences": [
+                _base_requirement(
+                    preferredTimeWindows=[
+                        {"start": "19:00", "end": "21:00"}
+                    ],
+                    recommendedVisitMinutes=60,
+                )
+            ],
         }
     )
 
@@ -64,7 +71,41 @@ def test_place_selector_resolves_required_anchor_into_selected_place() -> None:
 
     assert [place.place_id for place in resolved] == ["place-bun-cha"]
     assert resolved[0].must_visit is True
+    assert resolved[0].source_duration_minutes == 60
+    assert resolved[0].preferred_time_windows[0].start == "19:00"
     assert unresolved == []
+
+
+def test_current_trip_time_hint_overrides_graph_preferred_windows() -> None:
+    selection_input = PlaceSelectionInput.model_validate(
+        {
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 1},
+            "regionKey": "vn:hanoi",
+            "selectedPlaces": [
+                {
+                    "placeId": "place-bun-cha",
+                    "name": "Bún chả Hà Nội",
+                    "sourceTimeHint": "morning",
+                }
+            ],
+            "requiredExperiences": [
+                _base_requirement(
+                    preferredTimeWindows=[
+                        {"start": "19:00", "end": "21:00"}
+                    ],
+                    recommendedVisitMinutes=60,
+                )
+            ],
+        }
+    )
+
+    resolved, _ = PlaceSelectorService(
+        _RequiredPlaceTool()
+    )._required_experience_places(selection_input)
+
+    assert resolved[0].source_time_hint == "morning"
+    assert resolved[0].preferred_time_windows == []
 
 
 def _base_requirement(**overrides: object) -> dict[str, object]:
@@ -112,7 +153,12 @@ def test_required_experience_schema_accepts_required_anchor_payload() -> None:
 
 
 def test_required_experience_schema_serializes_as_camel_case() -> None:
-    requirement = RequiredExperience.model_validate(_base_requirement())
+    requirement = RequiredExperience.model_validate(
+        _base_requirement(
+            preferredTimeWindows=[{"start": "09:00", "end": "11:30"}],
+            recommendedVisitMinutes=75,
+        )
+    )
 
     payload = requirement.model_dump(mode="json", by_alias=True)
 
@@ -122,6 +168,10 @@ def test_required_experience_schema_serializes_as_camel_case() -> None:
     assert payload["minimumRequired"] == 1
     assert payload["evidenceClaimIds"] == ["claim-1"]
     assert payload["sourceRefs"] == ["https://example.com/reel"]
+    assert payload["preferredTimeWindows"] == [
+        {"start": "09:00", "end": "11:30"}
+    ]
+    assert payload["recommendedVisitMinutes"] == 75
 
 
 def test_required_experience_schema_requires_anchor_for_required_anchor_policy() -> (

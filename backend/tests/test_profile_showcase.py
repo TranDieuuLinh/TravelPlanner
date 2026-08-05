@@ -1,11 +1,10 @@
 from datetime import date, datetime, timezone
-from decimal import Decimal
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.modules.places.model import Place
 from app.integrations.media import LocalPostMediaStorage
+from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
 from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.profiles.router import get_post_media_storage
 from app.modules.users.model import User
@@ -13,24 +12,32 @@ from app.main import app
 from tests.helpers import csrf_headers
 
 
-def _place(place_id: str, name: str = "Phố cổ Hội An") -> Place:
-    return Place(
+def _place(place_id: str, name: str = "Phố cổ Hội An") -> KnowledgeEntity:
+    place = KnowledgeEntity(
         id=place_id,
-        name=name,
-        place_type="historic_area",
-        address="Phường Minh An, Hội An",
-        city="Hội An",
-        country="Việt Nam",
-        country_code="VN",
-        region_key="vn:quang-nam:hoi-an",
-        primary_area="Hội An",
-        latitude=Decimal("15.8800584"),
-        longitude=Decimal("108.3380469"),
-        status="active",
-        opening_hours=[],
-        data_confidence="high",
-        metadata_json={},
+        canonical_name=name,
+        normalized_name=name.casefold(),
+        entity_type="TravelPlace",
+        status="verified",
     )
+    values = {
+        "place_type": "historic_area",
+        "address": "Phường Minh An, Hội An",
+        "city": "Hội An",
+        "country": "Việt Nam",
+        "country_code": "VN",
+        "region_key": "vn:quang-nam:hoi-an",
+        "primary_area": "Hội An",
+        "latitude": "15.8800584",
+        "longitude": "108.3380469",
+        "catalog_status": "active",
+        "data_confidence": "high",
+    }
+    place.properties = [
+        KnowledgeProperty(key=key, value=value)
+        for key, value in values.items()
+    ]
+    return place
 
 
 def test_profile_showcase_returns_only_authenticated_users_content(
@@ -53,14 +60,14 @@ def test_profile_showcase_returns_only_authenticated_users_content(
             UserVisitedPlace(
                 id="profile-visit-current",
                 user_id=current_user.id,
-                place_id=place.id,
+                entity_id=place.id,
                 visited_at=date(2026, 6, 14),
                 note="Một buổi chiều ở Hội An.",
             ),
             UserVisitedPlace(
                 id="profile-visit-other",
                 user_id=other_user.id,
-                place_id=other_place.id,
+                entity_id=other_place.id,
                 visited_at=date(2026, 5, 1),
             ),
             UserPost(
@@ -113,7 +120,7 @@ def test_user_can_mark_resolved_place_as_visited(
     assert response.status_code == 201
     assert response.json()["placeId"] == place.id
     assert response.json()["visitedAt"] == "2026-07-20"
-    assert db_session.query(UserVisitedPlace).filter_by(place_id=place.id).count() == 1
+    assert db_session.query(UserVisitedPlace).filter_by(entity_id=place.id).count() == 1
 
 
 def test_user_can_publish_post_or_reel_with_required_location(

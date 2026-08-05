@@ -630,6 +630,9 @@ class CandidateSelector:
                         "source_time_hint": selected.source_time_hint,
                         "source_activity": selected.source_activity,
                         "source_duration_minutes": selected.source_duration_minutes,
+                        "preferred_time_windows": list(
+                            selected.preferred_time_windows
+                        ),
                         "notes": selected.notes,
                         "image_urls": (
                             list(selected.image_urls) or stored_place.image_urls
@@ -673,6 +676,7 @@ class CandidateSelector:
             sourceTimeHint=selected.source_time_hint,
             sourceActivity=selected.source_activity,
             sourceDurationMinutes=selected.source_duration_minutes,
+            preferredTimeWindows=selected.preferred_time_windows,
             notes=selected.notes,
             personalNotes=selected.personal_notes,
             imageUrls=selected.image_urls,

@@ -111,10 +111,6 @@ class Place(Base):
         onupdate=func.now(),
         nullable=False,
     )
-    images: Mapped[list["PlaceImage"]] = relationship(
-        back_populates="place",
-        order_by="PlaceImage.id",
-    )
 
 
 class PlaceAmenity(Base):
@@ -158,25 +154,29 @@ class PlaceOpeningHour(Base):
     time_slots: Mapped[str] = mapped_column(Text, nullable=False)
 
 
-class PlaceImage(Base):
-    __tablename__ = "place_images"
+class KnowledgeEntityImage(Base):
+    __tablename__ = "knowledge_entity_images"
     __table_args__ = (
         UniqueConstraint(
-            "place_id", "image_url", name="uq_place_images_place_url"
+            "entity_id", "image_url", name="uq_knowledge_entity_images_entity_url"
         ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    place_id: Mapped[str] = mapped_column(
+    entity_id: Mapped[str] = mapped_column(
         String(PLACE_ID_LENGTH),
-        ForeignKey("places.id", ondelete="CASCADE"),
+        ForeignKey("knowledge_entities.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     image_title: Mapped[str | None] = mapped_column(
         String(SHORT_LABEL), nullable=True
     )
     image_url: Mapped[str] = mapped_column(Text, nullable=False)
-    place: Mapped[Place] = relationship(back_populates="images")
+
+
+# Temporary import compatibility while callers move to the canonical name.
+PlaceImage = KnowledgeEntityImage
 
 
 class PlaceReview(Base):
@@ -185,10 +185,11 @@ class PlaceReview(Base):
     id: Mapped[str] = mapped_column(
         String(PLACE_ID_LENGTH), primary_key=True
     )
-    place_id: Mapped[str] = mapped_column(
+    entity_id: Mapped[str] = mapped_column(
         String(PLACE_ID_LENGTH),
-        ForeignKey("places.id", ondelete="CASCADE"),
+        ForeignKey("knowledge_entities.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     author_name: Mapped[str | None] = mapped_column(
         String(NAME_LENGTH), nullable=True

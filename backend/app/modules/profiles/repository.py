@@ -1,7 +1,10 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.places.model import Place
+from app.modules.knowledge_graph.place_repository import (
+    KnowledgeGraphPlaceRecord,
+    KnowledgeGraphPlaceRepository,
+)
 from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.users.model import User
 
@@ -9,20 +12,27 @@ from app.modules.users.model import User
 class ProfileRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.places = KnowledgeGraphPlaceRepository(db)
 
-    def list_visited_places(self, user_id: int) -> list[tuple[UserVisitedPlace, Place]]:
-        statement = (
-            select(UserVisitedPlace, Place)
-            .join(Place, Place.id == UserVisitedPlace.place_id)
-            .where(
-                UserVisitedPlace.user_id == user_id,
-                Place.deleted_at.is_(None),
-                Place.latitude.is_not(None),
-                Place.longitude.is_not(None),
-            )
+    def list_visited_places(
+        self, user_id: int
+    ) -> list[tuple[UserVisitedPlace, KnowledgeGraphPlaceRecord]]:
+        visits = list(
+            self.db.scalars(
+                select(UserVisitedPlace)
+                .where(
+                    UserVisitedPlace.user_id == user_id,
+                    UserVisitedPlace.entity_id.is_not(None),
+                )
             .order_by(UserVisitedPlace.visited_at.desc(), UserVisitedPlace.created_at.desc())
+            )
         )
-        return list(self.db.execute(statement).all())
+        result: list[tuple[UserVisitedPlace, KnowledgeGraphPlaceRecord]] = []
+        for visit in visits:
+            place = self.places.get(visit.entity_id or "")
+            if place and place.latitude is not None and place.longitude is not None:
+                result.append((visit, place))
+        return result
 
     def list_posts(self, user_id: int) -> list[UserPost]:
         return list(
@@ -44,14 +54,14 @@ class ProfileRepository:
         )
         return list(self.db.execute(statement).all())
 
-    def get_place(self, place_id: str) -> Place | None:
-        return self.db.get(Place, place_id)
+    def get_place(self, entity_id: str) -> KnowledgeGraphPlaceRecord | None:
+        return self.places.get(entity_id)
 
     def get_visited_place(self, user_id: int, place_id: str) -> UserVisitedPlace | None:
         return self.db.scalar(
             select(UserVisitedPlace).where(
                 UserVisitedPlace.user_id == user_id,
-                UserVisitedPlace.place_id == place_id,
+                UserVisitedPlace.entity_id == place_id,
             )
         )
 

@@ -8,6 +8,7 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.place_selector.place_tool import SelectablePlace
 
 
 def _item(
@@ -130,8 +131,9 @@ def test_timeline_overflows_activity_when_route_time_misses_next_meal() -> None:
         [_leg(breakfast, activity, 20), _leg(activity, lunch, 20)],
     )
 
-    assert [item.item_id for item in overflow] == ["activity"]
-    assert [item.item_id for item in scheduled] == ["breakfast", "lunch"]
+    assert overflow == []
+    assert [item.item_id for item in scheduled] == ["breakfast", "activity", "lunch"]
+    assert next(item for item in scheduled if item.role == "lunch_meal").time_window == "12:10-13:10"
 
 
 def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -> None:
@@ -163,6 +165,86 @@ def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -
     ]
     assert [item.name for item in scheduled] == ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]
     assert result.unscheduled_places == []
+
+
+class _RequiredTimingPlaceTool:
+    def get(self, place_id: str) -> SelectablePlace | None:
+        if place_id != "place-night-market":
+            return None
+        return SelectablePlace(
+            placeId=place_id,
+            name="Chợ đêm",
+            placeType="attraction",
+            regionKey="vn,ha-noi",
+            latitude=21.03,
+            longitude=105.85,
+        )
+
+    def search(self, **kwargs):
+        return []
+
+
+def _required_timing_input(duration: int) -> PlaceSelectionInput:
+    return PlaceSelectionInput.model_validate(
+        {
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 1},
+            "regionKey": "vn,ha-noi",
+            "requiredExperiences": [
+                {
+                    "requirementId": "req-night-market",
+                    "theme": "Chợ đêm",
+                    "selectionPolicy": "required_anchor",
+                    "anchorPlaceIds": ["place-night-market"],
+                    "minimumRequired": 1,
+                    "priority": "must",
+                    "reason": "Trải nghiệm phù hợp vào buổi tối.",
+                    "evidenceClaimIds": ["claim-night-market"],
+                    "sourceRefs": ["https://example.com/night-market"],
+                    "preferredTimeWindows": [
+                        {"start": "19:00", "end": "21:00"}
+                    ],
+                    "recommendedVisitMinutes": duration,
+                }
+            ],
+            "allowPlaceSuggestions": False,
+        }
+    )
+
+
+def test_route_first_uses_graph_preferred_time_window() -> None:
+    selector = PlaceSelectorService(
+        _RequiredTimingPlaceTool(),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
+    )
+
+    result = selector.fill_agent_plan(_required_timing_input(60))
+
+    activity = next(
+        item
+        for item in result.final_days[0].items
+        if item.timeline_category == "activity"
+    )
+    assert activity.time_window == "19:00-20:00"
+    assert activity.preferred_time_windows[0].start == "19:00"
+    assert not any("outside its graph-recommended" in warning for warning in result.warnings)
+
+
+def test_route_first_falls_back_when_graph_window_cannot_fit_duration() -> None:
+    selector = PlaceSelectorService(
+        _RequiredTimingPlaceTool(),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
+    )
+
+    result = selector.fill_agent_plan(_required_timing_input(150))
+
+    activity = next(
+        item
+        for item in result.final_days[0].items
+        if item.timeline_category == "activity"
+    )
+    assert activity.time_window == "09:00-11:30"
+    assert any("outside its graph-recommended" in warning for warning in result.warnings)
 
 
 def test_overflow_retries_once_in_another_day() -> None:

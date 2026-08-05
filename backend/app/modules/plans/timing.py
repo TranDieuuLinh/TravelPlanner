@@ -1,3 +1,5 @@
+import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -5,6 +7,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import Plan
+
+
+terminal_logger = logging.getLogger("uvicorn.error")
 
 
 class PlanTimingStage(BaseModel):
@@ -52,7 +57,7 @@ class PlanTimingTrace:
         )
 
     def finish(self, plan: Plan) -> PlanTimingReport:
-        return PlanTimingReport(
+        report = PlanTimingReport(
             status="completed",
             totalSeconds=_seconds(time.perf_counter() - self.started_at),
             stages=self.stages,
@@ -62,6 +67,18 @@ class PlanTimingTrace:
             unscheduledCount=len(plan.unscheduled_places),
             warningCount=len(plan.warnings),
         )
+        terminal_logger.info(
+            "VSF_TIMING planner %s",
+            json.dumps(
+                {
+                    "event": "planner_timing",
+                    **report.model_dump(mode="json", by_alias=True),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+        return report
 
 
 def _seconds(value: float) -> float:

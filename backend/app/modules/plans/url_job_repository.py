@@ -4,7 +4,8 @@ from uuid import uuid4
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.modules.plans.chat_model import TripChat
+from app.modules.plans.chat_model import TripChat, TripChatMessage
+from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.plans.url_job_schema import UrlImportJobRead
 from app.shared.errors import AppError
@@ -25,6 +26,7 @@ class UrlImportJobRepository:
         expected_revision: int,
         urls: list[str],
         request_content: str,
+        display_content: str,
         force_refresh: bool = False,
     ) -> list[UrlImportJob]:
         chat = self.db.scalar(
@@ -42,6 +44,15 @@ class UrlImportJobRepository:
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
             )
         batch_id = str(uuid4())
+        turn = TripChatRepository(self.db).create_turn(
+            chat,
+            client_turn_id=f"url-batch-{batch_id}",
+            content=display_content,
+            attachment_names=[],
+            expected_revision=expected_revision,
+            commit=False,
+        )
+        batch_id = turn.lifecycle_id
         jobs = [
             UrlImportJob(
                 id=str(uuid4()),
@@ -93,6 +104,15 @@ class UrlImportJobRepository:
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
             )
         batch_id = str(uuid4())
+        turn = TripChatRepository(self.db).create_turn(
+            chat,
+            client_turn_id=f"image-batch-{batch_id}",
+            content=request_content,
+            attachment_names=[file_name for file_name, _, _ in images],
+            expected_revision=expected_revision,
+            commit=False,
+        )
+        batch_id = turn.lifecycle_id
         jobs = [
             UrlImportJob(
                 id=str(uuid4()),
@@ -154,6 +174,17 @@ class UrlImportJobRepository:
         return job
 
     def recover_interrupted(self) -> int:
+        batch_ids = list(
+            self.db.scalars(
+                select(UrlImportJob.batch_id)
+                .where(
+                    UrlImportJob.import_kind == "explorer_job",
+                    UrlImportJob.processing_status == "running",
+                    UrlImportJob.batch_id.is_not(None),
+                )
+                .distinct()
+            )
+        )
         result = self.db.execute(
             update(UrlImportJob)
             .where(
@@ -166,19 +197,32 @@ class UrlImportJobRepository:
             )
             .execution_options(synchronize_session=False)
         )
+        self.db.flush()
+        for batch_id in batch_ids:
+            self._set_batch_turn_status(batch_id, "queued")
         self.db.commit()
         return result.rowcount or 0
 
     def fail_stale_running(self, *, timeout_seconds: float) -> int:
         cutoff = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
+        stale_filter = (
+            (UrlImportJob.processing_status == "running")
+            & (UrlImportJob.import_kind == "explorer_job")
+            & (
+                (UrlImportJob.started_at.is_(None))
+                | (UrlImportJob.started_at <= cutoff)
+            )
+        )
+        batch_ids = list(
+            self.db.scalars(
+                select(UrlImportJob.batch_id)
+                .where(stale_filter, UrlImportJob.batch_id.is_not(None))
+                .distinct()
+            )
+        )
         result = self.db.execute(
             update(UrlImportJob)
-            .where(
-                UrlImportJob.processing_status == "running",
-                UrlImportJob.import_kind == "explorer_job",
-                (UrlImportJob.started_at.is_(None))
-                | (UrlImportJob.started_at <= cutoff),
-            )
+            .where(stale_filter)
             .values(
                 processing_status="failed",
                 status="failed",
@@ -192,6 +236,9 @@ class UrlImportJobRepository:
             )
             .execution_options(synchronize_session=False)
         )
+        self.db.flush()
+        for batch_id in batch_ids:
+            self._sync_batch_turn(batch_id)
         self.db.commit()
         return result.rowcount or 0
 
@@ -229,6 +276,7 @@ class UrlImportJobRepository:
         job.error_code = None
         job.error_message = None
         job.attempt_count += 1
+        self._set_batch_turn_status(job.batch_id, "executing")
         self.db.commit()
         self.db.refresh(job)
         return job
@@ -248,6 +296,8 @@ class UrlImportJobRepository:
             chat.latest_planner_timing if chat is not None else None
         )
         job.finished_at = datetime.now(UTC)
+        self.db.flush()
+        self._sync_batch_turn(job.batch_id, revision=revision)
         self.db.commit()
 
     def fail(self, job_id: str, *, code: str, message: str) -> None:
@@ -259,6 +309,8 @@ class UrlImportJobRepository:
         job.error_code = code[:64]
         job.error_message = message[:1000]
         job.finished_at = datetime.now(UTC)
+        self.db.flush()
+        self._sync_batch_turn(job.batch_id)
         self.db.commit()
 
     def retry(self, job_id: str, user_id: int) -> UrlImportJob:
@@ -275,6 +327,7 @@ class UrlImportJobRepository:
         job.error_message = None
         job.explorer_timing = None
         job.planner_timing = None
+        self._set_batch_turn_status(job.batch_id, "queued")
         self.db.commit()
         self.db.refresh(job)
         return job
@@ -318,6 +371,8 @@ class UrlImportJobRepository:
         return job
 
     def delete_queued(self, job_id: str, user_id: int) -> None:
+        job = self.get_for_user(job_id, user_id)
+        batch_id = job.batch_id
         result = self.db.execute(
             delete(UrlImportJob).where(
                 UrlImportJob.id == job_id,
@@ -327,10 +382,11 @@ class UrlImportJobRepository:
             )
         )
         if result.rowcount:
+            self.db.flush()
+            self._sync_batch_turn(batch_id)
             self.db.commit()
             return
 
-        job = self.get_for_user(job_id, user_id)
         raise AppError(
             409,
             "URL_IMPORT_JOB_NOT_QUEUED",
@@ -340,6 +396,8 @@ class UrlImportJobRepository:
 
     def delete_running(self, job_id: str) -> bool:
         """Delete a job only after its in-process task has been cancelled."""
+        job = self.db.get(UrlImportJob, job_id)
+        batch_id = job.batch_id if job is not None else None
         result = self.db.execute(
             delete(UrlImportJob).where(
                 UrlImportJob.id == job_id,
@@ -347,6 +405,9 @@ class UrlImportJobRepository:
                 UrlImportJob.processing_status == "running",
             )
         )
+        self.db.flush()
+        if result.rowcount:
+            self._sync_batch_turn(batch_id)
         self.db.commit()
         return bool(result.rowcount)
 
@@ -408,3 +469,55 @@ class UrlImportJobRepository:
             startedAt=job.started_at,
             finishedAt=job.finished_at,
         )
+
+    def _batch_turn(self, batch_id: str | None) -> TripChatMessage | None:
+        if not batch_id:
+            return None
+        return self.db.scalar(
+            select(TripChatMessage).where(
+                TripChatMessage.id == batch_id,
+                TripChatMessage.message_kind == "turn_request",
+            )
+        )
+
+    def _set_batch_turn_status(self, batch_id: str | None, status: str) -> None:
+        turn = self._batch_turn(batch_id)
+        if turn is None:
+            return
+        turn.status = status
+        if status in ACTIVE_JOB_STATUSES or status == "executing":
+            turn.error_code = None
+            turn.error_message = None
+        turn.updated_at = datetime.now(UTC)
+
+    def _sync_batch_turn(
+        self,
+        batch_id: str | None,
+        *,
+        revision: int | None = None,
+    ) -> None:
+        turn = self._batch_turn(batch_id)
+        if turn is None:
+            return
+        sibling_statuses = list(
+            self.db.scalars(
+                select(UrlImportJob.processing_status).where(
+                    UrlImportJob.import_kind == "explorer_job",
+                    UrlImportJob.batch_id == batch_id,
+                )
+            )
+        )
+        if not sibling_statuses:
+            turn.status = "cancelled"
+        elif any(status in ACTIVE_JOB_STATUSES for status in sibling_statuses):
+            turn.status = "executing"
+        elif any(status == "failed" for status in sibling_statuses):
+            turn.status = "failed"
+            turn.error_code = "URL_IMPORT_BATCH_FAILED"
+            turn.error_message = "Có nguồn không thể xử lý. Bạn có thể chạy lại nguồn bị lỗi."
+        else:
+            turn.status = "completed"
+            if revision is not None:
+                turn.plan_revision = revision
+                turn.result_summary = {"planRevision": revision}
+        turn.updated_at = datetime.now(UTC)

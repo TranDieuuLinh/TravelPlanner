@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+
+from app.modules.plans.domain.entities import PreferredTimeWindow
 
 
 _CLOCK_PATTERN = re.compile(r"(?<!\d)(\d{1,3}):([0-5]\d)")
@@ -47,3 +50,43 @@ def window_duration(value: str) -> int | None:
     if start is None or end is None:
         return None
     return max(0, end - start)
+
+
+def preferred_start_minutes(
+    windows: Iterable[PreferredTimeWindow],
+    *,
+    interval_start: int,
+    interval_end: int,
+    duration_minutes: int,
+) -> int | None:
+    """Return the earliest start that fully fits a soft preferred window."""
+
+    starts: list[int] = []
+    for window in windows:
+        preferred_start = parse_clock_minutes(window.start)
+        preferred_end = parse_clock_minutes(window.end)
+        if preferred_start is None or preferred_end is None:
+            continue
+        start = max(interval_start, preferred_start)
+        if start + duration_minutes <= min(interval_end, preferred_end):
+            starts.append(start)
+    return min(starts) if starts else None
+
+
+def time_window_matches_preference(
+    time_window: str,
+    duration_minutes: int,
+    windows: Iterable[PreferredTimeWindow],
+) -> bool:
+    preferred = list(windows)
+    if not preferred:
+        return True
+    start = parse_clock_minutes(time_window)
+    if start is None:
+        return False
+    return preferred_start_minutes(
+        preferred,
+        interval_start=start,
+        interval_end=start + duration_minutes,
+        duration_minutes=duration_minutes,
+    ) == start

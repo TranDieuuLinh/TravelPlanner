@@ -36,6 +36,22 @@ ONTOLOGY_RELATIONSHIP_TYPES = [
     "TARGETS_PLACE",
 ]
 
+PLACE_RUNTIME_PROPERTIES = [
+    "region_key",
+    "place_type",
+    "city",
+    "country",
+    "country_code",
+    "primary_area",
+    "catalog_status",
+    "data_confidence",
+    "plus_code",
+    "typical_duration_minutes",
+    "source_fetched_at",
+    "revision",
+    "metadata",
+]
+
 ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
     "Area": {
         "requiredProperties": ["description"],
@@ -56,6 +72,8 @@ ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
             "source_url",
             "place_category",
             "special_experience",
+            "opening_hours",
+            *PLACE_RUNTIME_PROPERTIES,
         ],
     },
     "Restaurant": {
@@ -68,6 +86,8 @@ ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
             "source_url",
             "cuisine",
             "special_experience",
+            "opening_hours",
+            *PLACE_RUNTIME_PROPERTIES,
         ],
     },
     "DrinkDessert": {
@@ -80,6 +100,8 @@ ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
             "source_url",
             "beverage_category",
             "special_experience",
+            "opening_hours",
+            *PLACE_RUNTIME_PROPERTIES,
         ],
     },
     "Accommodation": {
@@ -92,6 +114,8 @@ ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
             "source_url",
             "accommodation_type",
             "special_experience",
+            "opening_hours",
+            *PLACE_RUNTIME_PROPERTIES,
         ],
     },
     "Activity": {

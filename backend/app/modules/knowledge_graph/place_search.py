@@ -19,6 +19,7 @@ from app.modules.knowledge_graph.model import (
 from app.modules.knowledge_graph.research.repository import ScopeResolutionRepository
 from app.modules.knowledge_graph.research.schema import PLACE_TYPES
 from app.modules.knowledge_graph.text import normalize_knowledge_text
+from app.modules.places.model import KnowledgeEntityImage
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,15 @@ class KnowledgeGraphPlaceSearchRepository:
         ):
             properties_by_entity[prop.entity_id][prop.key] = prop
 
+        image_by_entity: dict[str, str] = {}
+        for image in self.db.scalars(
+            select(KnowledgeEntityImage)
+            .where(KnowledgeEntityImage.entity_id.in_(entity_ids))
+            .order_by(KnowledgeEntityImage.id)
+        ):
+            if image.entity_id and image.image_url:
+                image_by_entity.setdefault(image.entity_id, image.image_url)
+
         ranked: list[tuple[int, int, float, str, KnowledgeGraphPlaceMatch]] = []
         for entity in entities:
             score = _name_match_score(
@@ -116,7 +126,11 @@ class KnowledgeGraphPlaceSearchRepository:
             )
             if score is None:
                 continue
-            match = _to_place_match(entity, properties_by_entity[entity.id])
+            match = _to_place_match(
+                entity,
+                properties_by_entity[entity.id],
+                image_url=image_by_entity.get(entity.id),
+            )
             if match is None:
                 continue
             ranked.append(
@@ -165,6 +179,8 @@ def _name_match_score(query_key: str, names: list[str]) -> int | None:
 def _to_place_match(
     entity: KnowledgeEntity,
     properties: dict[str, KnowledgeProperty],
+    *,
+    image_url: str | None = None,
 ) -> KnowledgeGraphPlaceMatch | None:
     latitude = _finite_float(_property_value(properties, "latitude"))
     longitude = _finite_float(_property_value(properties, "longitude"))
@@ -188,7 +204,8 @@ def _to_place_match(
         review_count=_integer(_property_value(properties, "review_count")),
         price_level=_integer(_property_value(properties, "price_level")),
         image_url=(
-            _property_value(properties, "image_url")
+            image_url
+            or _property_value(properties, "image_url")
             or _property_value(properties, "image")
         ),
         phone=_property_value(properties, "phone"),
@@ -231,6 +248,17 @@ def _string_list(value: str | None) -> list[str] | None:
     except (TypeError, ValueError):
         decoded = None
     if isinstance(decoded, list):
-        result = [str(item).strip() for item in decoded if str(item).strip()]
+        result: list[str] = []
+        for item in decoded:
+            if isinstance(item, dict):
+                day = str(item.get("dayName") or item.get("day") or "").strip()
+                slots = str(
+                    item.get("rawTimeSlots") or item.get("timeSlots") or ""
+                ).strip()
+                rendered = f"{day}: {slots}" if day and slots else slots or day
+            else:
+                rendered = str(item).strip()
+            if rendered:
+                result.append(rendered)
         return result or None
     return [value]

@@ -74,6 +74,27 @@ def test_day_optimizer_keeps_meal_anchor_but_reorders_activities() -> None:
     assert optimized[2].time_window == "14:00-15:00"
 
 
+def test_day_optimizer_penalizes_missing_graph_preferred_window() -> None:
+    optimizer = _optimizer(CoordinateMatrixProvider())
+    timed = _activity("far", 10, "08:00-09:00", role="main_activity").model_copy(
+        update={
+            "preferred_time_windows": [
+                {"start": "08:00", "end": "09:00"}
+            ]
+        }
+    )
+    items = [
+        timed,
+        _meal("meal", 2, "12:00-13:00"),
+        _activity("near", 1, "14:00-15:00", role="support_activity"),
+    ]
+
+    optimized, _ = optimizer.optimize(items, start=(0.0, 0.0))
+
+    assert [item.place_id for item in optimized] == ["far", "meal", "near"]
+    assert optimized[0].time_window == "08:00-09:00"
+
+
 def test_source_day_activity_never_moves_to_another_day() -> None:
     optimizer = _optimizer(CoordinateMatrixProvider())
     fixed = _activity("url-stop", 100, "08:00-09:00").model_copy(

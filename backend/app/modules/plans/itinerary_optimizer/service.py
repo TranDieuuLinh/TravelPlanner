@@ -10,7 +10,10 @@ from app.modules.plans.domain.entities import PlanDay, PlanItem, PlanTransportLe
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.routing.provider import TravelTimeMatrixProvider
 from app.modules.plans.place_selector.timeline_policy import DAILY_ACTIVITY_MINUTES
-from app.modules.plans.place_selector.time_windows import parse_clock_minutes
+from app.modules.plans.place_selector.time_windows import (
+    parse_clock_minutes,
+    time_window_matches_preference,
+)
 from app.modules.plans.trip_theme_planner.opening_hours_parser import (
     extract_time_intervals,
     is_24_hours,
@@ -18,6 +21,7 @@ from app.modules.plans.trip_theme_planner.opening_hours_parser import (
 
 
 logger = logging.getLogger(__name__)
+PREFERRED_TIME_WINDOW_MISS_PENALTY_SECONDS = 90 * 60
 
 
 class ItineraryOptimizer(Protocol):
@@ -308,7 +312,22 @@ class RouteFirstItineraryOptimizer:
                 * 10
             )
             balance_penalty = abs(day_minutes - target_minutes) * 60
-            costs.append(travel_cost + overflow_penalty + balance_penalty)
+            timing_penalty = sum(
+                PREFERRED_TIME_WINDOW_MISS_PENALTY_SECONDS
+                for item in day.items
+                if item.preferred_time_windows
+                and not time_window_matches_preference(
+                    item.time_window,
+                    item.duration_minutes or 0,
+                    item.preferred_time_windows,
+                )
+            )
+            costs.append(
+                travel_cost
+                + overflow_penalty
+                + balance_penalty
+                + timing_penalty
+            )
         return costs
 
     @staticmethod
@@ -521,15 +540,22 @@ class RouteFirstItineraryOptimizer:
         }
         assigned = dict(zip(movable_positions, ordered_items))
         path: list[int] = []
+        timing_penalty = 0
         if start_matrix_index is not None:
             path.append(start_matrix_index)
         for position, item in enumerate(items):
             selected = assigned.get(position, item)
+            if selected.preferred_time_windows and not time_window_matches_preference(
+                item.time_window,
+                selected.duration_minutes or 0,
+                selected.preferred_time_windows,
+            ):
+                timing_penalty += PREFERRED_TIME_WINDOW_MISS_PENALTY_SECONDS
             source_position = original_position_by_identity[id(selected)]
             matrix_position = matrix_index.get(source_position)
             if matrix_position is not None:
                 path.append(matrix_position)
-        return sum(
+        return timing_penalty + sum(
             matrix[origin][destination] for origin, destination in zip(path, path[1:])
         )
 

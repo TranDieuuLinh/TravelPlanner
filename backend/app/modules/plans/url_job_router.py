@@ -70,6 +70,7 @@ def enqueue_url_jobs(
         expected_revision=expected_revision,
         urls=normalized_urls,
         request_content=request_content,
+        display_content=content.strip(),
         force_refresh=force_refresh,
     )
     return UrlImportJobBatchRead(jobs=[repository.read(job) for job in jobs])

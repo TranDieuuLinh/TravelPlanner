@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 
 from app.modules.knowledge_graph.research import (
     CheckStatus,
@@ -14,10 +15,10 @@ from app.modules.plans.dto.agent_contracts import (
     RequiredExperience,
     RequiredExperienceSelectionPolicy,
 )
+from app.modules.plans.domain.entities import PreferredTimeWindow
 from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
     GraphCandidateCatalog,
     _activity_id,
-    _anchor_place_id,
     _place_ids,
 )
 
@@ -73,7 +74,99 @@ def validate_required_experience(
     elif policy is RequiredExperienceSelectionPolicy.open_candidate:
         if requirement.activity_id not in activities:
             raise RequiredExperienceGraphValidationError("open candidate activity is not evidence-backed")
+    if isinstance(evidence, GraphCandidateCatalog):
+        return _enrich_timing_guidance(requirement, evidence)
     return requirement
+
+
+_CLOCK_RANGE = re.compile(
+    r"^\s*((?:[01]?\d|2[0-3]):[0-5]\d)\s*-\s*"
+    r"((?:[01]?\d|2[0-3]):[0-5]\d)\s*$"
+)
+_DAY_PART_WINDOWS = {
+    "morning": ("09:00", "12:00"),
+    "afternoon": ("13:00", "18:00"),
+    "evening": ("19:00", "21:00"),
+    "night": ("19:00", "21:00"),
+}
+
+
+def _enrich_timing_guidance(
+    requirement: RequiredExperience,
+    catalog: GraphCandidateCatalog,
+) -> RequiredExperience:
+    """Hydrate graph timing server-side instead of trusting LLM-echoed values."""
+
+    claim_ids = set(requirement.evidence_claim_ids)
+    candidates = [
+        candidate
+        for candidate in catalog.candidates
+        if claim_ids and claim_ids <= set(candidate.claim_ids)
+    ]
+    recommendation = (
+        candidates[0].recommendation if len(candidates) == 1 else None
+    )
+    windows = (
+        _normalize_preferred_time_windows(recommendation.timeSlots)
+        if recommendation is not None
+        else []
+    )
+    duration = (
+        recommendation.recommendedVisitMinutes
+        if recommendation is not None
+        and recommendation.recommendedVisitMinutes is not None
+        and 15 <= recommendation.recommendedVisitMinutes <= 720
+        else None
+    )
+    return requirement.model_copy(
+        update={
+            "preferred_time_windows": windows,
+            "recommended_visit_minutes": duration,
+        }
+    )
+
+
+def _normalize_preferred_time_windows(
+    raw_slots: Iterable[str | dict],
+) -> list[PreferredTimeWindow]:
+    windows: list[PreferredTimeWindow] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_slot in raw_slots:
+        start: str | None = None
+        end: str | None = None
+        if isinstance(raw_slot, dict):
+            raw_start = raw_slot.get("start")
+            raw_end = raw_slot.get("end")
+            if isinstance(raw_start, str) and isinstance(raw_end, str):
+                start, end = raw_start, raw_end
+        elif isinstance(raw_slot, str):
+            match = _CLOCK_RANGE.fullmatch(raw_slot)
+            if match is not None:
+                start, end = match.groups()
+            else:
+                start, end = _DAY_PART_WINDOWS.get(
+                    raw_slot.strip().casefold().replace("_", " "),
+                    (None, None),
+                )
+        if start is None or end is None:
+            continue
+        start = _canonical_clock(start)
+        end = _canonical_clock(end)
+        key = (start, end)
+        if key in seen:
+            continue
+        try:
+            window = PreferredTimeWindow(start=start, end=end)
+        except ValueError:
+            continue
+        seen.add(key)
+        windows.append(window)
+    return windows
+
+
+def _canonical_clock(value: str) -> str:
+    hour, minute = value.strip().split(":", 1)
+    return f"{int(hour):02d}:{int(minute):02d}"
 
 
 def _claims(evidence: TripResearchBundle | GraphCandidateCatalog) -> list[GraphEvidenceClaim]:

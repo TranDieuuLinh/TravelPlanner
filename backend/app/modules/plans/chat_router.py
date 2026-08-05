@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_user, require_csrf
+from app.modules.knowledge_graph.place_repository import KnowledgeGraphPlaceRepository
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import (
     RetryCandidateResolutionsRequest,
@@ -31,7 +32,6 @@ from app.modules.plans.plan_mutation_schema import (
     UpdateItemForm,
     UpdateItemRequest,
 )
-from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.router import (
     _extract_urls,
     _normalize_urls,
@@ -48,7 +48,7 @@ def get_trip_chat_service(
         TripChatRepository(db),
         get_plan_service(db),
         get_plan_mutation_service(db),
-        SqlAlchemyPlaceRepository(db),
+        KnowledgeGraphPlaceRepository(db),
     )
 
 

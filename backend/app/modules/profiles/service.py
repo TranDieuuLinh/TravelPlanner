@@ -56,7 +56,7 @@ class ProfileService:
 
     def mark_place_visited(self, user: User, payload: VisitedPlaceCreate) -> VisitedPlaceRead:
         place = self.profiles.get_place(payload.place_id)
-        if not place or place.deleted_at is not None:
+        if not place or place.status != "active":
             raise AppError(status.HTTP_404_NOT_FOUND, "PLACE_NOT_FOUND", "Không tìm thấy địa điểm.")
         if place.latitude is None or place.longitude is None:
             raise AppError(
@@ -74,7 +74,7 @@ class ProfileService:
                 UserVisitedPlace(
                     id=str(uuid4()),
                     user_id=user.id,
-                    place_id=place.id,
+                    entity_id=place.id,
                     visited_at=payload.visited_at,
                     note=payload.note,
                 )
