@@ -1382,7 +1382,7 @@ class TripThemeOnlyLLM(FakePlannerLLM):
                 "theme": "Lịch sử",
                 "focusTags": ["history"],
                 "minimumActivities": 1,
-                "targetRegionKeys": ["vn,ha-noi"],
+                "targetRegionKeys": ["vn,ha-noi,hoan-kiem"],
             },
             {
                 "theme": "Nghệ thuật",

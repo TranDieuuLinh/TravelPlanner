@@ -383,7 +383,7 @@ class TripThemePlannerService:
             draft.trip_themes,
             days=planner_input.trip_spec.days,
         )
-        allowed_regions = {
+        allowed_region_prefixes = {
             planner_input.region_context.region_key,
             *(
                 place.region_key
@@ -392,7 +392,15 @@ class TripThemePlannerService:
             ),
         }
         for requirement in themes:
-            unknown_regions = set(requirement.target_region_keys) - allowed_regions
+            unknown_regions = {
+                region_key
+                for region_key in requirement.target_region_keys
+                if not any(
+                    region_key == prefix
+                    or region_key.startswith(f"{prefix},")
+                    for prefix in allowed_region_prefixes
+                )
+            }
             if unknown_regions:
                 raise ValueError(
                     "Trip theme references an unknown targetRegionKey: "

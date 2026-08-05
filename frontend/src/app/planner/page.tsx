@@ -4668,9 +4668,11 @@ function Planner() {
                                 const canReorder = Boolean(
                                   item.itemId && activeChatId && !mutatingItem
                                 );
+                                const placeImageUrls = (item.imageUrls ?? [])
+                                  .filter(isDisplayableImageUrl)
+                                  .map((url) => url.trim());
                                 const placeImageUrl =
-                                  item.imageUrls?.find(isDisplayableImageUrl) ??
-                                  null;
+                                  placeImageUrls[0] ?? null;
                                 const itineraryImageUrl =
                                   placeImageUrl ?? ITINERARY_NO_IMAGE_SRC;
                                 const isDragging =
@@ -5019,8 +5021,23 @@ function Planner() {
                                                       : `Chưa có ảnh cho ${displayItemName}`
                                                   }
                                                   draggable={false}
-                                                  loading="lazy"
+                                                  loading={itemIndex < 3 ? "eager" : "lazy"}
+                                                  referrerPolicy="no-referrer"
                                                   onError={(event) => {
+                                                    const currentIndex = Number(
+                                                      event.currentTarget.dataset.imageIndex ??
+                                                        "0"
+                                                    );
+                                                    const nextImageUrl =
+                                                      placeImageUrls[currentIndex + 1];
+
+                                                    if (nextImageUrl) {
+                                                      event.currentTarget.dataset.imageIndex =
+                                                        String(currentIndex + 1);
+                                                      event.currentTarget.src = nextImageUrl;
+                                                      return;
+                                                    }
+
                                                     if (
                                                       event.currentTarget.src.endsWith(
                                                         ITINERARY_NO_IMAGE_SRC
@@ -5038,6 +5055,7 @@ function Planner() {
                                                         "itineraryPlaceImage--fallback"
                                                       );
                                                   }}
+                                                  data-image-index="0"
                                                   src={itineraryImageUrl}
                                                 />
                                               </div>

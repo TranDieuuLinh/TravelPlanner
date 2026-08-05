@@ -26,6 +26,7 @@ from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.schema import MainPlanFromTripIntentCreate, SelectedPlaceCreate
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
+from app.modules.plans.trip_intent import TripIntent
 from app.modules.plans.trip_theme_planner.region_context import (
     canonical_destination_name,
 )
@@ -195,7 +196,7 @@ class TripChatService:
                 explore.explorer.candidate_reviews,
             )
         if not _is_confirmed_destination(explore.explorer.trip_intent.destination):
-            question = "Bạn muốn đi du lịch ở đâu?"
+            question = _missing_destination_question(explore.explorer.trip_intent)
             saved = self.repository.save_intent_draft(
                 chat,
                 user_content=content,
@@ -1017,6 +1018,19 @@ def _requests_more_days(content: str) -> bool:
             "kéo dài chuyến",
         )
     )
+
+
+def _missing_destination_question(trip_intent: TripIntent) -> str:
+    must_visit = list(trip_intent.preferences.must_visit_places or [])
+    if must_visit:
+        places = ", ".join(must_visit[:2])
+        if len(must_visit) > 2:
+            places += " và một số điểm khác"
+        return (
+            f"Mình đã ghi nhận bạn muốn ghé {places}. "
+            "Bạn muốn đi ở tỉnh hoặc thành phố nào?"
+        )
+    return "Bạn muốn đi du lịch ở tỉnh hoặc thành phố nào?"
 
 
 def _is_reference_item(source_refs: list[str]) -> bool:

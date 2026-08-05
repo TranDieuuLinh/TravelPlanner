@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import re
 import time
 
@@ -52,6 +53,47 @@ class StubLLMClient(LLMClient):
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         raise RuntimeError("No LLM provider configured.")
+
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        """Return a safe local supervisor response when no provider is set.
+
+        The deterministic routing in ConversationSupervisor handles the common
+        high-signal cases before reaching here. This fallback exists for the
+        remaining ambiguous cases so local development gets a useful question
+        instead of a provider error. It intentionally never proposes a plan
+        mutation and never claims that an action was completed.
+        """
+        del system_prompt, response_schema
+        try:
+            payload = json.loads(user_payload)
+        except (TypeError, ValueError):
+            payload = {}
+        current_plan = payload.get("currentPlan")
+        if current_plan:
+            response = {
+                "intent": "clarify",
+                "confidence": 0.9,
+                "responseText": "Mình cần biết rõ bạn muốn tư vấn hay thay đổi mục nào trong lịch trình.",
+                "clarifyingQuestion": "Bạn muốn xem giải thích, thêm địa điểm, hay chỉnh sửa một điểm cụ thể?",
+                "options": [
+                    {"label": "Tư vấn", "value": "Tư vấn về lịch trình hiện tại"},
+                    {"label": "Thêm địa điểm", "value": "Thêm một địa điểm vào lịch trình"},
+                    {"label": "Chỉnh sửa", "value": "Chỉnh sửa một địa điểm trong lịch trình"},
+                ],
+            }
+        else:
+            response = {
+                "intent": "travel_advice",
+                "confidence": 0.85,
+                "responseText": "Mình có thể tư vấn điểm đến hoặc hỗ trợ bạn lên lịch trình. Bạn muốn hỏi điều gì?",
+            }
+        return json.dumps(response, ensure_ascii=False)
 
 
 class GeminiLLMClient(LLMClient):
