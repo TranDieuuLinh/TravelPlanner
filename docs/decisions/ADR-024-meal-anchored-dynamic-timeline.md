@@ -1,0 +1,42 @@
+# ADR-024: Timeline động với meal anchor cố định
+
+- Trạng thái: Đã chấp nhận
+- Ngày: 2026-08-05
+
+## Bối cảnh
+
+ADR-012 giới hạn route-first ở đúng hai activity mỗi ngày và dùng `timeWindow`
+như marker thứ tự. Quy tắc theo số lượng không phản ánh thời lượng thật: một tour
+dài có thể chiếm gần cả ngày, trong khi nhiều điểm ngắn và gần nhau có thể cùng
+vừa một ngày. Pace cũng không phải bằng chứng trực tiếp cho capacity thời gian.
+
+## Quyết định
+
+- Route-first dùng timeline địa phương 08:00–21:00.
+- Breakfast 08:00–09:00, lunch 12:00–13:00 và dinner 18:00–19:00 là anchor cố
+  định. Khi không resolve được venue ăn, Planner giữ warning thay vì tạo Place giả.
+- Activity lấp các khoảng 09:00–12:00, 13:00–18:00 và 19:00–21:00.
+- Không giới hạn activity theo count hoặc pace. Capacity được tính từ duration
+  nguồn, duration catalog hoặc fallback 90 phút, cộng transition.
+- Candidate được kiểm tra giờ mở cửa tại khung dự kiến khi dữ liệu có sẵn.
+- Sau route enrichment, timeline được fit lại bằng duration của route leg. Khi
+  thiếu leg provider, dùng transition estimate 15 phút và giữ trạng thái route
+  chưa verified theo contract hiện hành.
+- Activity không vừa trước anchor tiếp theo trở thành `UnscheduledPlace` với
+  `reasonCode=insufficient_time` sau đúng một lần thử chuyển sang ngày khả thi
+  khác; không âm thầm bỏ hoặc đẩy meal anchor.
+- `OverallChecker` kiểm tra window cùng ngày, overlap và meal anchor; không kiểm
+  tra mật độ theo pace.
+- Global allocation chỉ dùng matrix để gom cụm/cân bằng duration giữa các ngày.
+  Route leg chi tiết luôn được tính và fit riêng theo từng ngày; không nối route
+  xuyên qua ranh giới ngày.
+- Domain timeline không quyết định hoặc trình bày loại phương tiện. Mode vẫn
+  thuộc route enrichment và lựa chọn hiển thị hiện có.
+
+## Hệ quả
+
+- Một ngày có thể có một, hai hoặc nhiều activity tùy duration và transition.
+- `timeWindow` route-first trở thành giờ lịch thật và có thể hiển thị cho user.
+- Việc đổi giờ ăn mặc định hoặc cho user cấu hình anchor sau này phải đi qua một
+  timeline policy thay vì rải constant trong selector/checker.
+- Heuristic hiện tại lấp lịch deterministic và không tuyên bố tối ưu toàn cục.

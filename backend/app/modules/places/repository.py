@@ -6,7 +6,6 @@ import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterator, Protocol
-from uuid import uuid4
 
 from sqlalchemy import Select, Text, case, cast, func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -14,8 +13,6 @@ from sqlalchemy.orm import Session, selectinload
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import (
     Place,
-    PlaceRegionCatalogState,
-    PlaceRegionSnapshot,
 )
 
 
@@ -26,22 +23,6 @@ class PlaceStatisticsRepository(Protocol):
         self,
         region_key: str | None = None,
     ) -> Iterator[PlaceStatisticsRecord]: ...
-
-    def get_current_snapshot(
-        self,
-        region_key: str,
-    ) -> PlaceRegionSnapshot | None: ...
-
-    def save_region_snapshot(
-        self,
-        *,
-        region_key: str,
-        algorithm_version: str,
-        source_signature: dict[str, str | int],
-        regions: list[dict],
-        generated_at: datetime,
-        expires_at: datetime,
-    ) -> PlaceRegionSnapshot: ...
 
 
 class SqlAlchemyPlaceRepository:
@@ -406,80 +387,6 @@ class SqlAlchemyPlaceRepository:
     def refresh(self, place: Place) -> None:
         self.session.refresh(place)
 
-    def get_current_snapshot(
-        self,
-        region_key: str,
-    ) -> PlaceRegionSnapshot | None:
-        state = self.session.get(PlaceRegionCatalogState, region_key)
-        if state is None or state.current_snapshot_id is None:
-            return None
-        return self.session.get(PlaceRegionSnapshot, state.current_snapshot_id)
-
-    def save_region_snapshot(
-        self,
-        *,
-        region_key: str,
-        algorithm_version: str,
-        source_signature: dict[str, str | int],
-        regions: list[dict],
-        generated_at: datetime,
-        expires_at: datetime,
-    ) -> PlaceRegionSnapshot:
-        state = self.session.scalar(
-            select(PlaceRegionCatalogState)
-            .where(PlaceRegionCatalogState.region_key == region_key)
-            .with_for_update()
-        )
-        if state is None:
-            state = PlaceRegionCatalogState(
-                region_key=region_key,
-                catalog_version=0,
-                refresh_status="pending",
-                refresh_attempts=0,
-            )
-            self.session.add(state)
-            self.session.flush()
-
-        root_metrics = next(
-            (region for region in regions if region["regionKey"] == region_key),
-            None,
-        )
-        next_version = state.catalog_version + 1
-        snapshot = PlaceRegionSnapshot(
-            id=str(uuid4()),
-            region_key=region_key,
-            catalog_version=next_version,
-            algorithm_version=algorithm_version,
-            source_fingerprint=str(source_signature["fingerprint"]),
-            place_count=int(root_metrics["placeCount"]) if root_metrics else 0,
-            active_place_count=(
-                int(root_metrics["activePlaceCount"]) if root_metrics else 0
-            ),
-            source_max_updated_at=_parse_optional_datetime(
-                str(source_signature.get("maxUpdatedAt", ""))
-            ),
-            metrics_json={
-                "requestedRegionKey": region_key,
-                "rollupPolicy": "Requested region and its descendant region_key values.",
-                "regions": regions,
-            },
-            generated_at=generated_at,
-            expires_at=expires_at,
-        )
-        self.session.add(snapshot)
-        self.session.flush()
-
-        state.catalog_version = next_version
-        state.current_snapshot_id = snapshot.id
-        state.dirty_since = None
-        state.refresh_status = "clean"
-        state.refresh_attempts = 0
-        state.next_retry_at = None
-        state.last_error_code = None
-        self.session.commit()
-        self.session.refresh(snapshot)
-        return snapshot
-
     def _scope_query(self, query: Select, region_key: str | None) -> Select:
         if region_key is None:
             return query
@@ -563,9 +470,3 @@ def _alias_language(value: str) -> str:
     ):
         return "vi"
     return "und"
-
-
-def _parse_optional_datetime(value: str) -> datetime | None:
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))

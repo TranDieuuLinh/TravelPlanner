@@ -37,7 +37,6 @@ Runtime dùng `SqlAlchemyPlaceRepository`. Create/update qua `PlaceCatalogServic
 chỉ tăng `revision`, không chạy thống kê. Khi Planner yêu cầu một `region_key`,
 tool kiểm tra fingerprint riêng của khu vực và các vùng con:
 
-- fingerprint không đổi: trả snapshot hiện tại trong PostgreSQL;
-- fingerprint thay đổi: tạo dòng `place_region_snapshots` mới và cập nhật
-  `place_region_catalog_state`;
-- thay đổi ở khu vực khác không làm cache đang được yêu cầu hết hạn.
+- metrics được tính trực tiếp từ `places` thuộc khu vực và các vùng con;
+- fingerprint được gắn vào runtime planning context để truy vết;
+- thay đổi ở khu vực khác không đổi fingerprint của khu vực đang được yêu cầu.

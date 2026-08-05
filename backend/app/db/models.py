@@ -18,8 +18,6 @@ from app.modules.places.model import (
     PlaceAmenity,
     PlaceImage,
     PlaceOpeningHour,
-    PlaceRegionCatalogState,
-    PlaceRegionSnapshot,
     PlaceReview,
 )
 from app.modules.plans.explorer.model import (
@@ -69,8 +67,6 @@ __all__ = [
     "PlaceAmenity",
     "PlaceImage",
     "PlaceOpeningHour",
-    "PlaceRegionCatalogState",
-    "PlaceRegionSnapshot",
     "PlaceReview",
     "PlanningRun",
     "PlanningRunStage",

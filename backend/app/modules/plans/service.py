@@ -34,6 +34,11 @@ from app.modules.plans.explorer.place_policy import (
     is_meal_place,
     is_schedulable_place,
 )
+from app.modules.plans.place_selector.timeline_policy import (
+    DAILY_ACTIVITY_MINUTES,
+    MEAL_ANCHORS,
+    activity_allocation_cost,
+)
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.explorer.schema import (
@@ -46,7 +51,10 @@ from app.modules.plans.explorer.schema import (
     FullExploreRequest,
     UnifiedPlaceCandidate,
 )
-from app.modules.plans.explorer.tools.image_ocr import ImageOcrService, ImageUploadPayload
+from app.modules.plans.explorer.tools.image_ocr import (
+    ImageOcrService,
+    ImageUploadPayload,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelExtractionResult,
     UrlReelInput,
@@ -112,9 +120,7 @@ class PlanService:
         )
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
         self.explorer_persistence = explorer_persistence
-        self.preference_learning = (
-            preference_learning or PreferenceLearningService()
-        )
+        self.preference_learning = preference_learning or PreferenceLearningService()
         self.traveler_profile_repository = traveler_profile_repository
         self.explorer_timing_logger = explorer_timing_logger
         self.place_alias_enricher = place_alias_enricher
@@ -122,10 +128,26 @@ class PlanService:
 
     def feature_map(self) -> list[FeatureMapItem]:
         return [
-            FeatureMapItem(stage="explore", feature="Explorer", description="Clarify destination, budget, pace, interests, and constraints."),
-            FeatureMapItem(stage="theme", feature="TripThemePlanner", description="Create trip-wide experience requirements without assigning calendar days."),
-            FeatureMapItem(stage="select", feature="PlaceSelector", description="Create day slots, select Places, optimize routes, and commit each day."),
-            FeatureMapItem(stage="backup", feature="Backup Plan", description="Create a separate backup plan without mutating the locked main plan."),
+            FeatureMapItem(
+                stage="explore",
+                feature="Explorer",
+                description="Clarify destination, budget, pace, interests, and constraints.",
+            ),
+            FeatureMapItem(
+                stage="theme",
+                feature="TripThemePlanner",
+                description="Create trip-wide experience requirements without assigning calendar days.",
+            ),
+            FeatureMapItem(
+                stage="select",
+                feature="PlaceSelector",
+                description="Create day slots, select Places, optimize routes, and commit each day.",
+            ),
+            FeatureMapItem(
+                stage="backup",
+                feature="Backup Plan",
+                description="Create a separate backup plan without mutating the locked main plan.",
+            ),
         ]
 
     async def explore_full(
@@ -290,9 +312,7 @@ class PlanService:
                     return _with_url_cache_timing(
                         cached,
                         status="hit",
-                        duration_seconds=(
-                            time.perf_counter() - cache_lookup_started
-                        ),
+                        duration_seconds=(time.perf_counter() - cache_lookup_started),
                     )
             cache_status = "bypassed" if bypass_cache else "miss"
             cache_lookup_seconds = time.perf_counter() - cache_lookup_started
@@ -384,7 +404,8 @@ class PlanService:
                 )
                 graph_resolution = (
                     graph_resolver(candidate, destination=destination)
-                    if callable(graph_resolver) else None
+                    if callable(graph_resolver)
+                    else None
                 )
                 if graph_resolution is not None:
                     resolutions[index] = _with_authoritative_place_category(
@@ -399,9 +420,7 @@ class PlanService:
                 destination=destination,
             )
             for index, resolution in zip(missing_indexes, fresh, strict=True):
-                resolutions[index] = _with_authoritative_place_category(
-                    resolution
-                )
+                resolutions[index] = _with_authoritative_place_category(resolution)
         return [resolution for resolution in resolutions if resolution is not None]
 
     async def retry_candidate_reviews(
@@ -459,17 +478,11 @@ class PlanService:
     ) -> ExploreIntakeResponse:
         explicitly_requested_days = payload.trip_spec.days
         destination_stays = _url_destination_stays(url_reel_results)
-        has_reference_input = bool(
-            payload.urls or payload.image_contexts
-        )
-        provisional_reference_days = _url_result_coverage_days(
-            url_reel_results
-        )
+        has_reference_input = bool(payload.urls or payload.image_contexts)
+        provisional_reference_days = _url_result_coverage_days(url_reel_results)
         if payload.trip_spec.days is None and destination_stays:
             payload = payload.model_copy(deep=True)
-            payload.trip_spec.days = max(
-                stay.end_day for stay in destination_stays
-            )
+            payload.trip_spec.days = max(stay.end_day for stay in destination_stays)
         elif payload.trip_spec.days is None and has_reference_input:
             payload = payload.model_copy(deep=True)
             payload.trip_spec.days = max(
@@ -577,9 +590,7 @@ class PlanService:
                                     if detail.authority != "low"
                                 ]
                             ),
-                            "coverage": (
-                                result.extracted_context.extraction_coverage
-                            ),
+                            "coverage": (result.extracted_context.extraction_coverage),
                         }
                         for result in insufficient_coverage
                     ]
@@ -639,6 +650,7 @@ class PlanService:
             or payload.destination
         )
         if payload.urls:
+
             async def format_context():
                 started_at = time.perf_counter()
                 try:
@@ -710,8 +722,7 @@ class PlanService:
         canonical_resolutions = _dedupe_place_resolutions(resolutions)
         trace.candidate_count = len(canonical_resolutions)
         trace.resolved_count = sum(
-            resolution.status == "resolved"
-            for resolution in canonical_resolutions
+            resolution.status == "resolved" for resolution in canonical_resolutions
         )
         trace.add_resolution_attempts(
             resolutions,
@@ -803,10 +814,7 @@ class PlanService:
         )
         stored_profile: object = payload.user_state.preference_profile
         preference_user_id: int | None = None
-        if (
-            payload.user_state.user_id
-            and self.traveler_profile_repository is not None
-        ):
+        if payload.user_state.user_id and self.traveler_profile_repository is not None:
             try:
                 preference_user_id = int(payload.user_state.user_id)
             except ValueError:
@@ -885,9 +893,7 @@ class PlanService:
             explorer=explorer,
             allowPlaceSuggestions=(
                 False
-                if (
-                    destination_stays and not schedulable_candidates
-                )
+                if (destination_stays and not schedulable_candidates)
                 or any(
                     result.extracted_context.coverage_status == "review"
                     for result in url_reel_results
@@ -1040,8 +1046,7 @@ class PlanService:
         # An explicit duration/date range is a hard boundary and keeps overflow
         # visible in UnscheduledPlace instead.
         expand_for_url_places = any(
-            _has_url_source_ref(place.source_refs)
-            for place in selected_places
+            _has_url_source_ref(place.source_refs) for place in selected_places
         )
         disable_suggestions_for_url_overflow = False
         if payload.expand_days_to_fit_selected_places:
@@ -1066,14 +1071,14 @@ class PlanService:
         workflow_payload = payload.model_copy(
             update={"selected_places": selected_places}
         )
-        plan, timing_report = await (
-            self.main_workflow.run_from_explorer_with_timing(workflow_payload)
+        plan, timing_report = await self.main_workflow.run_from_explorer_with_timing(
+            workflow_payload
         )
         plan = _ensure_url_place_coverage(plan, selected_places)
-        # Count-based capacity handles normal overflow. A route-aware timeline
-        # can still push a URL stop past midnight; retry with extra days rather
-        # than returning that source place as optional/unscheduled. Hard policy
-        # rejections are intentionally not bypassed.
+        # Duration capacity handles normal overflow. Calculated route legs can
+        # still make a day miss its next meal anchor; retry with extra days
+        # rather than returning that source place as optional/unscheduled. Hard
+        # policy rejections are intentionally not bypassed.
         for _ in range(3 if payload.expand_days_to_fit_selected_places else 0):
             retryable_url_overflow = _retryable_url_unscheduled_places(
                 plan,
@@ -1081,13 +1086,11 @@ class PlanService:
             )
             if not retryable_url_overflow or workflow_payload.trip_spec.days >= 30:
                 break
-            extra_days = max(
-                1,
-                math.ceil(
-                    len(retryable_url_overflow)
-                    / _selected_place_capacity(payload.intent.pace.value)
-                ),
+            required_days = _required_days_for_selected_places(
+                selected_places,
+                pace=payload.intent.pace.value,
             )
+            extra_days = max(1, required_days - workflow_payload.trip_spec.days)
             next_days = min(
                 30,
                 workflow_payload.trip_spec.days + extra_days,
@@ -1100,11 +1103,10 @@ class PlanService:
                     "allow_place_suggestions": False,
                 }
             )
-            plan, timing_report = await (
-                self.main_workflow.run_from_explorer_with_timing(
-                    workflow_payload
-                )
-            )
+            (
+                plan,
+                timing_report,
+            ) = await self.main_workflow.run_from_explorer_with_timing(workflow_payload)
             plan = _ensure_url_place_coverage(plan, selected_places)
         self.repository.save(plan)
         return plan, timing_report
@@ -1117,7 +1119,9 @@ class PlanService:
         self.repository.save(plan)
         return plan
 
-    async def create_backup_plan(self, plan_id: str, payload: BackupPlanCreate) -> PlanBundleRead:
+    async def create_backup_plan(
+        self, plan_id: str, payload: BackupPlanCreate
+    ) -> PlanBundleRead:
         main_plan = self.repository.get(plan_id)
         backup_plan, validation = await self.backup_workflow.run(main_plan, payload)
         self.repository.save(backup_plan)
@@ -1146,14 +1150,12 @@ def _url_result_coverage_days(
     if not details:
         return 0
     source_days = [
-        detail.source_day
-        for detail in details
-        if detail.source_day is not None
+        detail.source_day for detail in details if detail.source_day is not None
     ]
     if source_days and len(source_days) == len(details):
         return max(source_days)
     return max(
-        math.ceil(len(details) / 3),
+        _timed_stop_coverage_days(details),
         max(source_days, default=0),
     )
 
@@ -1185,11 +1187,13 @@ def _candidate_coverage_days(
     *,
     pace: str,
 ) -> int:
+    del pace
     source_candidates = [
         candidate
         for candidate in candidates
         if any(
-            source.type in {
+            source.type
+            in {
                 PlaceCandidateSourceType.url,
                 PlaceCandidateSourceType.ocr,
             }
@@ -1198,7 +1202,6 @@ def _candidate_coverage_days(
     ]
     if not source_candidates:
         return 0
-    capacity = 2
     source_days = [
         candidate.source_day
         for candidate in source_candidates
@@ -1206,8 +1209,29 @@ def _candidate_coverage_days(
     ]
     if source_days and len(source_days) == len(source_candidates):
         return max(source_days)
-    inferred = math.ceil(len(source_candidates) / capacity)
+    inferred = _timed_stop_coverage_days(source_candidates)
     return max([inferred, *source_days])
+
+
+def _timed_stop_coverage_days(stops) -> int:
+    activity_minutes = 0
+    meal_count = 0
+    for stop in stops:
+        category = getattr(stop, "category", None)
+        category_value = getattr(category, "value", category)
+        if is_meal_place(
+            tags=[str(category_value)] if category_value else [],
+            source_activity=getattr(stop, "source_activity", None),
+        ):
+            meal_count += 1
+            continue
+        activity_minutes += activity_allocation_cost(
+            getattr(stop, "source_duration_minutes", None)
+        )
+    return max(
+        math.ceil(activity_minutes / DAILY_ACTIVITY_MINUTES) if activity_minutes else 0,
+        math.ceil(meal_count / len(MEAL_ANCHORS)) if meal_count else 0,
+    )
 
 
 def _source_days_need_place_selector(
@@ -1216,41 +1240,43 @@ def _source_days_need_place_selector(
     days: int,
     pace: str,
 ) -> bool:
+    del pace
     source_candidates = [
         candidate
         for candidate in candidates
         if any(
-            source.type in {
+            source.type
+            in {
                 PlaceCandidateSourceType.url,
                 PlaceCandidateSourceType.ocr,
             }
             for source in candidate.sources
         )
     ]
-    capacity = 2
     explicit_counts = {day: 0 for day in range(1, days + 1)}
-    unassigned_count = 0
+    occupied_minutes = {day: 0 for day in range(1, days + 1)}
+    unassigned = []
     for candidate in source_candidates:
-        if (
-            candidate.source_day is None
-            or candidate.source_day not in explicit_counts
-        ):
-            unassigned_count += 1
+        if candidate.source_day is None or candidate.source_day not in explicit_counts:
+            unassigned.append(candidate)
             continue
         explicit_counts[candidate.source_day] += 1
-
-    # Pack candidates without a source day the same way Planner does. PlaceSelector
-    # is needed only for requested days with no URL coverage; it must not pad
-    # every sparse reference day up to a generic activity quota.
-    for day in explicit_counts:
-        assigned = min(
-            max(0, capacity - explicit_counts[day]),
-            unassigned_count,
+        occupied_minutes[candidate.source_day] += activity_allocation_cost(
+            candidate.source_duration_minutes
         )
-        explicit_counts[day] += assigned
-        unassigned_count -= assigned
-        if unassigned_count == 0:
-            break
+
+    # Balance candidates without a source day by their duration, matching the
+    # selector's day allocation. PlaceSelector is needed only for requested days
+    # with no URL coverage; it must not pad every sparse reference day.
+    for candidate in unassigned:
+        day = min(
+            occupied_minutes,
+            key=lambda candidate_day: (occupied_minutes[candidate_day], candidate_day),
+        )
+        explicit_counts[day] += 1
+        occupied_minutes[day] += activity_allocation_cost(
+            candidate.source_duration_minutes
+        )
     return any(count == 0 for count in explicit_counts.values())
 
 
@@ -1340,18 +1366,13 @@ def _selected_place_from_resolution(
         placeId=resolution.place_id,
         name=resolution.name or resolution.candidate.name,
         latitude=(
-            float(resolution.latitude)
-            if resolution.latitude is not None
-            else None
+            float(resolution.latitude) if resolution.latitude is not None else None
         ),
         longitude=(
-            float(resolution.longitude)
-            if resolution.longitude is not None
-            else None
+            float(resolution.longitude) if resolution.longitude is not None else None
         ),
         sourceRefs=[
-            source.url or source.type.value
-            for source in resolution.candidate.sources
+            source.url or source.type.value for source in resolution.candidate.sources
         ],
         sourceProvider=resolution.provider,
     )
@@ -1370,10 +1391,7 @@ def _resolution_preference_score(
 
 
 def _has_url_source_ref(source_refs: list[str]) -> bool:
-    return any(
-        source.startswith(("http://", "https://"))
-        for source in source_refs
-    )
+    return any(source.startswith(("http://", "https://")) for source in source_refs)
 
 
 def _same_selected_place(
@@ -1387,15 +1405,9 @@ def _same_selected_place(
     right_tokens = set(_selected_place_tokens(right.name))
     if not left_tokens or not right_tokens:
         return False
-    names_overlap = (
-        left_tokens == right_tokens
-        or (
-            min(len(left_tokens), len(right_tokens)) >= 2
-            and (
-                left_tokens.issubset(right_tokens)
-                or right_tokens.issubset(left_tokens)
-            )
-        )
+    names_overlap = left_tokens == right_tokens or (
+        min(len(left_tokens), len(right_tokens)) >= 2
+        and (left_tokens.issubset(right_tokens) or right_tokens.issubset(left_tokens))
     )
     if not names_overlap:
         return False
@@ -1419,9 +1431,7 @@ def _same_selected_place(
 def _selected_place_tokens(value: str) -> list[str]:
     normalized = unicodedata.normalize("NFD", value.strip().casefold())
     without_marks = "".join(
-        character
-        for character in normalized
-        if unicodedata.category(character) != "Mn"
+        character for character in normalized if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.findall(r"[a-z0-9]+", without_marks)
 
@@ -1454,10 +1464,14 @@ def _prefer_selected_place(
     preferred = incoming if score(incoming) > score(current) else current
     return preferred.model_copy(
         update={
-            "source_refs": list(dict.fromkeys([
-                *current.source_refs,
-                *incoming.source_refs,
-            ])),
+            "source_refs": list(
+                dict.fromkeys(
+                    [
+                        *current.source_refs,
+                        *incoming.source_refs,
+                    ]
+                )
+            ),
             "tags": list(dict.fromkeys([*current.tags, *incoming.tags])),
             "notes": preferred.notes or current.notes or incoming.notes,
             "personal_notes": (
@@ -1476,9 +1490,10 @@ def _required_days_for_selected_places(
     *,
     pace: str,
 ) -> int:
-    activity_capacity = _selected_place_capacity(pace)
-    meal_capacity = 3
-    occupancy: dict[tuple[int, str], int] = {}
+    del pace
+    meal_capacity = len(MEAL_ANCHORS)
+    activity_minutes_by_day: dict[int, int] = {}
+    meals_by_day: dict[int, int] = {}
     required_days = 1
     ordered_places = sorted(
         selected_places,
@@ -1497,18 +1512,21 @@ def _required_days_for_selected_places(
             )
             else "activity"
         )
-        capacity = meal_capacity if slot_kind == "meal" else activity_capacity
         day = place.source_day or 1
-        while day < 30 and occupancy.get((day, slot_kind), 0) >= capacity:
-            day += 1
-        occupancy[(day, slot_kind)] = occupancy.get((day, slot_kind), 0) + 1
+        if slot_kind == "meal":
+            while day < 30 and meals_by_day.get(day, 0) >= meal_capacity:
+                day += 1
+            meals_by_day[day] = meals_by_day.get(day, 0) + 1
+        else:
+            cost = activity_allocation_cost(place.source_duration_minutes)
+            while (
+                day < 30
+                and activity_minutes_by_day.get(day, 0) + cost > DAILY_ACTIVITY_MINUTES
+            ):
+                day += 1
+            activity_minutes_by_day[day] = activity_minutes_by_day.get(day, 0) + cost
         required_days = max(required_days, day)
     return min(30, required_days)
-
-
-def _selected_place_capacity(pace: str) -> int:
-    del pace
-    return 2
 
 
 def _retryable_url_unscheduled_places(
@@ -1516,6 +1534,7 @@ def _retryable_url_unscheduled_places(
     selected_places: list[SelectedPlaceCreate],
 ) -> list[UnscheduledPlace]:
     retryable_reasons = {
+        "insufficient_time",
         "no_day_capacity",
         "no_available_slot",
         "planner_omitted_selected_place",
@@ -1582,9 +1601,7 @@ def _ensure_url_place_coverage(
                     "source_refs": list(
                         dict.fromkeys([*item.source_refs, *place.source_refs])
                     ),
-                    "source_provider": (
-                        item.source_provider or place.source_provider
-                    ),
+                    "source_provider": (item.source_provider or place.source_provider),
                     "source_activity": item.source_activity or place.source_activity,
                 }
             )
@@ -1630,9 +1647,7 @@ def _ensure_url_place_coverage(
             )
         )
 
-    return plan.model_copy(
-        update={"days": days, "unscheduled_places": unscheduled}
-    )
+    return plan.model_copy(update={"days": days, "unscheduled_places": unscheduled})
 
 
 def _plan_place_matches_selected(
@@ -1671,25 +1686,20 @@ def _place_candidate_review(
     candidate = resolution.candidate
     source_urls = list(
         dict.fromkeys(
-            canonicalize_url(source.url)
-            for source in candidate.sources
-            if source.url
+            canonicalize_url(source.url) for source in candidate.sources if source.url
         )
     )
     url_candidate = has_url_source(candidate)
-    schedulable = (
-        resolution.status == "resolved"
-        and is_schedulable_place(
-            is_url_source=url_candidate,
-            resolution_status=resolution.status,
-            latitude=resolution.latitude,
-            longitude=resolution.longitude,
-            candidate_name=candidate.name,
-            resolved_name=resolution.name,
-            city=resolution.city,
-            destination=destination,
-            country=resolution.country,
-        )
+    schedulable = resolution.status == "resolved" and is_schedulable_place(
+        is_url_source=url_candidate,
+        resolution_status=resolution.status,
+        latitude=resolution.latitude,
+        longitude=resolution.longitude,
+        candidate_name=candidate.name,
+        resolved_name=resolution.name,
+        city=resolution.city,
+        destination=destination,
+        country=resolution.country,
     )
     has_coordinate_pair = (
         resolution.latitude is not None and resolution.longitude is not None
@@ -1707,10 +1717,7 @@ def _place_candidate_review(
             resolution,
             destination=destination,
         )
-        and (
-            bool(candidate.address_hint)
-            or "name_mismatch" not in rejection_reasons
-        )
+        and (bool(candidate.address_hint) or "name_mismatch" not in rejection_reasons)
     )
     identity = "|".join(
         [
@@ -1740,19 +1747,15 @@ def _place_candidate_review(
     )
     return PlaceCandidateReview(
         candidateId=(
-            candidate_id
-            or hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+            candidate_id or hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
         ),
         name=candidate.name,
-        category=ItineraryItemCategory(
-            canonical_place_category(resolution.place_type)
-        ),
+        category=ItineraryItemCategory(canonical_place_category(resolution.place_type)),
         status="resolved" if schedulable else "needs_review",
         resolutionReason=(
             None
             if schedulable
-            else resolution.resolution_reason
-            or "identity_or_coordinates_unverified"
+            else resolution.resolution_reason or "identity_or_coordinates_unverified"
         ),
         provider=resolution.provider,
         resolvedName=frontend_name if schedulable else None,
@@ -1863,13 +1866,9 @@ def _candidate_from_review(
 def _with_authoritative_place_category(
     resolution: PlaceResolution,
 ) -> PlaceResolution:
-    category = ItineraryItemCategory(
-        canonical_place_category(resolution.place_type)
-    )
+    category = ItineraryItemCategory(canonical_place_category(resolution.place_type))
     return resolution.model_copy(
         update={
-            "candidate": resolution.candidate.model_copy(
-                update={"category": category}
-            )
+            "candidate": resolution.candidate.model_copy(update={"category": category})
         }
     )

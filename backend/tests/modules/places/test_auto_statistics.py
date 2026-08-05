@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Iterator
 
 import pytest
@@ -143,21 +142,22 @@ def test_service_skips_refresh_when_source_is_unchanged(tmp_path: Path) -> None:
     assert payload["regions"][0]["regionKey"] == "vn,ha-noi"
 
 
-def test_planner_snapshot_refreshes_after_expiration(tmp_path: Path) -> None:
-    repository = FakeSnapshotRepository(
-        expires_at=datetime(2026, 7, 26, tzinfo=timezone.utc)
-    )
+def test_planner_statistics_are_computed_without_database_snapshots(
+    tmp_path: Path,
+) -> None:
+    repository = FakePlaceStatisticsRepository([_example_place()])
     service = AutoPlaceStatisticsService(
         repository,
         tmp_path / "statistics.json",
     )
 
-    result = service.get_for_planner("vn,ha-noi")
+    first = service.get_for_planner("vn,ha-noi")
+    second = service.get_for_planner("vn,ha-noi")
 
-    assert result.status == "refreshed"
-    assert repository.save_calls == 1
-    assert repository.saved_expires_at is not None
-    assert repository.saved_expires_at > repository.saved_generated_at
+    assert first.status == "computed"
+    assert first.snapshot_id == second.snapshot_id
+    assert first.catalog_version == second.catalog_version
+    assert first.snapshot_id.startswith("live-")
 
 
 def test_statistics_reject_invalid_region_key() -> None:
@@ -237,49 +237,6 @@ class FakePlaceStatisticsRepository:
                 or place.region_key.startswith(f"{region_key},")
             ):
                 yield place
-
-
-class FakeSnapshotRepository(FakePlaceStatisticsRepository):
-    def __init__(self, *, expires_at: datetime) -> None:
-        super().__init__([_example_place()])
-        self.save_calls = 0
-        self.saved_generated_at = datetime.min.replace(tzinfo=timezone.utc)
-        self.saved_expires_at: datetime | None = None
-        self.current_snapshot = SimpleNamespace(
-            id="old-snapshot",
-            catalog_version=1,
-            algorithm_version="auto_statistics_v3_0",
-            source_fingerprint="fake-1",
-            generated_at=datetime(2026, 7, 25, tzinfo=timezone.utc),
-            expires_at=expires_at,
-            metrics_json={"regions": []},
-        )
-
-    def get_current_snapshot(self, region_key: str):
-        return self.current_snapshot
-
-    def save_region_snapshot(
-        self,
-        *,
-        region_key: str,
-        algorithm_version: str,
-        source_signature: dict[str, str | int],
-        regions: list[dict],
-        generated_at: datetime,
-        expires_at: datetime,
-    ):
-        self.save_calls += 1
-        self.saved_generated_at = generated_at
-        self.saved_expires_at = expires_at
-        return SimpleNamespace(
-            id="new-snapshot",
-            catalog_version=2,
-            algorithm_version=algorithm_version,
-            source_fingerprint=source_signature["fingerprint"],
-            generated_at=generated_at,
-            expires_at=expires_at,
-            metrics_json={"regions": regions},
-        )
 
 
 def _example_place(

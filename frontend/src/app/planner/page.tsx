@@ -249,6 +249,7 @@ const NEW_CHAT_GREETING = "Dán link hoặc mô tả chuyến đi để mình pl
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
 const URL_PATTERN_GLOBAL = /https?:\/\/[^\s<>"']+/gi;
 const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
+const UNSCHEDULED_PLAN_DAY = -1;
 const ITINERARY_MIN_PERCENT = 28;
 const ITINERARY_MAX_PERCENT = 68;
 const FLOATING_CHAT_MARGIN = 8;
@@ -510,6 +511,7 @@ function Planner() {
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
+  const [initialPlanningActive, setInitialPlanningActive] = useState(false);
   const [processingElapsedSeconds, setProcessingElapsedSeconds] = useState(0);
   const [activePlanningJobs, setActivePlanningJobs] = useState<
     ActivePlanningJob[]
@@ -920,8 +922,10 @@ function Planner() {
       if (job.chatId !== activeChatId) return;
       if (job.status === "queued" || job.status === "running") {
         setBackgroundPlanning(true);
+        setWorkflowStage(job.explorerTiming ? "planning" : "exploring");
       } else if (job.status === "failed") {
         setBackgroundPlanning(false);
+        setInitialPlanningActive(false);
         setActivePlanningJobs([]);
         setError(job.errorMessage || "Không thể tạo lịch trình từ URL này.");
       }
@@ -950,6 +954,7 @@ function Planner() {
       setGuidedIntakeStep("complete");
       setGuidedIntakeOpen(false);
       setBackgroundPlanning(false);
+      setInitialPlanningActive(false);
       setActivePlanningJobs([]);
       setExploreResult(job.result.explore);
       setPlan(job.result.plan);
@@ -966,6 +971,17 @@ function Planner() {
         (job) => job.status === "queued" || job.status === "running"
       );
       setBackgroundPlanning(active);
+      if (active) {
+        setWorkflowStage(
+          jobs.some(
+            (job) =>
+              (job.status === "queued" || job.status === "running") &&
+              job.phase === "planning"
+          )
+            ? "planning"
+            : "exploring"
+        );
+      }
     };
     window.addEventListener(GUEST_URL_JOB_RESULT_EVENT, handleGuestResult);
     window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
@@ -1115,7 +1131,11 @@ function Planner() {
             result.turn.chatId
           )
         ) {
-          setWorkflowStage("ready");
+          setInitialPlanningActive(false);
+          setWorkflowStage(
+            result.outcome === "completed" ? "ready" : "failed"
+          );
+          if (result.turn.errorMessage) setError(result.turn.errorMessage);
           setSelectedMapPlaceKey(null);
         }
       }
@@ -1125,6 +1145,41 @@ function Planner() {
 
   const conversationTurn = useConversationTurn(handleTurnTerminal);
   conversationTurnRef.current = conversationTurn;
+
+  useEffect(() => {
+    if (!initialPlanningActive) return;
+    if (conversationTurn.error) {
+      setInitialPlanningActive(false);
+      setWorkflowStage("failed");
+      setError(conversationTurn.error);
+      return;
+    }
+    if (
+      conversationTurn.status === "queued" ||
+      conversationTurn.status === "classifying"
+    ) {
+      setWorkflowStage("exploring");
+      return;
+    }
+    if (
+      conversationTurn.status === "executing" ||
+      conversationTurn.status === "awaiting_confirmation"
+    ) {
+      setWorkflowStage("planning");
+      return;
+    }
+    if (
+      conversationTurn.status === "failed" ||
+      conversationTurn.status === "cancelled"
+    ) {
+      setInitialPlanningActive(false);
+      setWorkflowStage("failed");
+    }
+  }, [
+    conversationTurn.error,
+    conversationTurn.status,
+    initialPlanningActive,
+  ]);
 
   function openItemEditor(
     day: number,
@@ -1665,6 +1720,7 @@ function Planner() {
         setLocationError("");
         setWorkflowStage("idle");
         setBackgroundPlanning(false);
+        setInitialPlanningActive(false);
         setActivePlanningJobs([]);
         setChatCollapsed(false);
         setGuidedIntakeStep(hasPrefilledRequest ? "complete" : "destination");
@@ -1694,6 +1750,7 @@ function Planner() {
     setExploreResult(null);
     setPlan(null);
     setBackgroundPlanning(false);
+    setInitialPlanningActive(false);
     setActivePlanningJobs([]);
     setChatCollapsed(false);
     setGuidedIntakeStep(hasPrefilledRequest ? "complete" : "destination");
@@ -1780,7 +1837,8 @@ function Planner() {
     [plan]
   );
   const awaitingInitialPlan =
-    !displayedPlan && (backgroundPlanning || loading);
+    !displayedPlan &&
+    (initialPlanningActive || backgroundPlanning || loading);
 
   useEffect(() => {
     if (!awaitingInitialPlan) {
@@ -1828,6 +1886,7 @@ function Planner() {
   useEffect(() => {
     setActivePlanDay((current) => {
       if (current == null) return displayedPlan?.days[0]?.day ?? null;
+      if (current === UNSCHEDULED_PLAN_DAY) return current;
       if (displayedPlan?.days.some((day) => day.day === current))
         return current;
       return displayedPlan?.days[0]?.day ?? null;
@@ -2959,7 +3018,12 @@ function Planner() {
     };
     if (displayUserMessage) setMessages((current) => [...current, userMessage]);
     setPrompt("");
+    if (!plan) {
+      setInitialPlanningActive(true);
+      setWorkflowStage("exploring");
+    }
     if (!user && requestUrls.length > 0) {
+      setIntakeKind("url");
       setBackgroundPlanning(true);
       const createdGuestJobs: GuestUrlImportJob[] = [];
       if (requestUrls.length > 0) {
@@ -2982,6 +3046,7 @@ function Planner() {
       return;
     }
     if (user && requestUrls.length > 0) {
+      setIntakeKind("url");
       setQueueingUrls(true);
       setBackgroundPlanning(true);
       setError("");
@@ -3040,6 +3105,7 @@ function Planner() {
         ]);
       } catch (caught) {
         setBackgroundPlanning(false);
+        setInitialPlanningActive(false);
         const message =
           caught instanceof Error
             ? caught.message
@@ -3113,6 +3179,7 @@ function Planner() {
         allowPlaceSuggestions: nextExploreResult.allowPlaceSuggestions,
       });
       setPlan(generation.plan);
+      setInitialPlanningActive(false);
       setWorkflowStage("ready");
       setSelectedMapPlaceKey(null);
       setMessages((current) => [
@@ -3129,6 +3196,7 @@ function Planner() {
       if (activeRequestIdRef.current !== requestId) return;
       const message =
         caught instanceof Error ? caught.message : "Có lỗi xảy ra.";
+      setInitialPlanningActive(false);
       setWorkflowStage("failed");
       setError(message);
       setMessages((current) => [
@@ -3154,6 +3222,7 @@ function Planner() {
     setSelectedMapPlaceKey(null);
     setWorkflowStage("idle");
     setBackgroundPlanning(false);
+    setInitialPlanningActive(false);
     setActivePlanningJobs([]);
     setChatCollapsed(false);
     setError("");
@@ -3202,6 +3271,7 @@ function Planner() {
     setActiveChatId(chatId);
     setLoading(false);
     setBackgroundPlanning(false);
+    setInitialPlanningActive(false);
     setActivePlanningJobs([]);
     setError("");
     try {
@@ -3315,6 +3385,7 @@ function Planner() {
     setWorkflowStage(chat.currentPlan ? "ready" : "idle");
     if (chat.currentPlan) {
       setBackgroundPlanning(false);
+      setInitialPlanningActive(false);
       setActivePlanningJobs([]);
     }
     setSelectedMapPlaceKey(null);
@@ -3884,7 +3955,7 @@ function Planner() {
                 </div>
               ) : null}
               <aside
-                aria-busy={loading}
+                aria-busy={awaitingInitialPlan}
                 aria-label="Trợ lý lập kế hoạch VSF"
                 className={`plannerChat panel ${
                   chatCollapsed ? "is-collapsed" : ""
@@ -3906,7 +3977,7 @@ function Planner() {
                 <PlannerChatHeader
                   collapsed={chatCollapsed}
                   contentId="planner-chat-content"
-                  loading={loading}
+                  loading={awaitingInitialPlan}
                   moveHandleProps={{
                     onKeyDown: moveChatWithKeyboard,
                     onPointerCancel: endChatPointerInteraction,
@@ -3917,8 +3988,8 @@ function Planner() {
                   }}
                   onToggle={toggleChatCollapsed}
                   status={
-                    loading
-                      ? "Đang xử lý yêu cầu…"
+                    awaitingInitialPlan
+                      ? "Đang chạy nền · có thể chuyển tab"
                       : workflowStage === "ready"
                         ? "Lịch trình sẵn sàng để chỉnh sửa"
                         : workflowStage === "failed"
@@ -3933,23 +4004,48 @@ function Planner() {
                   />
                   {awaitingInitialPlan ? (
                     <div
-                      aria-label={`Hệ thống đang xử lý yêu cầu. Thời gian chạy ${formatElapsedTime(processingElapsedSeconds)}`}
-                      aria-live="off"
+                      aria-atomic="false"
+                      aria-live="polite"
                       className="plannerInlineProcessing"
                       role="status"
                     >
+                      <span className="srOnly">
+                        Planner đang chạy nền. Bạn có thể chuyển tab; tiến trình
+                        sẽ tiếp tục cho đến khi lịch trình hoàn tất.
+                      </span>
                       <span aria-hidden="true" className="plannerPenguinTrack">
+                        <i className="plannerTrackDash plannerTrackDash--one" />
+                        <i className="plannerTrackDash plannerTrackDash--two" />
+                        <i className="plannerTrackSpark plannerTrackSpark--one">✦</i>
+                        <i className="plannerTrackSpark plannerTrackSpark--two">✦</i>
                         <span className="plannerRunningPenguin">
                           <PenguinMascot
                             className="plannerRunningPenguinImage"
-                            size={42}
+                            size={52}
                             variant="search"
                           />
+                          <i className="plannerRunnerDust plannerRunnerDust--one" />
+                          <i className="plannerRunnerDust plannerRunnerDust--two" />
                         </span>
                       </span>
-                      <span aria-hidden="true" className="plannerProcessingTimer">
-                        <span>Thời gian chạy</span>
-                        <strong>{formatElapsedTime(processingElapsedSeconds)}</strong>
+                      <span className="plannerProcessingMeta">
+                        <span className="plannerProcessingCopy">
+                          <strong>
+                            {processingActivity(
+                              workflowStage,
+                              intakeKind,
+                              processingElapsedSeconds
+                            )}
+                          </strong>
+                          <span>
+                            <i aria-hidden="true" />
+                            Đang chạy nền · bạn có thể chuyển tab
+                          </span>
+                        </span>
+                        <span aria-hidden="true" className="plannerProcessingTimer">
+                          <span>Thời gian</span>
+                          <strong>{formatElapsedTime(processingElapsedSeconds)}</strong>
+                        </span>
                       </span>
                     </div>
                   ) : null}
@@ -4177,7 +4273,7 @@ function Planner() {
 
                     <section className="tripPlanSection">
                       <div
-                        aria-label="Chọn ngày trong lịch trình"
+                        aria-label="Chọn chế độ xem lịch trình"
                         className="dayTabList"
                         onKeyDown={handleDayTabKeyDown}
                         role="tablist"
@@ -4239,12 +4335,47 @@ function Planner() {
                             </button>
                           );
                         })}
+                        <button
+                          aria-controls="plan-days-panel"
+                          aria-selected={
+                            activePlanDay === UNSCHEDULED_PLAN_DAY
+                          }
+                          className={
+                            activePlanDay === UNSCHEDULED_PLAN_DAY
+                              ? "active dayTabUnscheduled"
+                              : "dayTabUnscheduled"
+                          }
+                          id="plan-day-tab-unscheduled"
+                          onClick={() => {
+                            setActivePlanDay(UNSCHEDULED_PLAN_DAY);
+                            setSelectedMapPlaceKey(null);
+                            clearDayDirections();
+                          }}
+                          role="tab"
+                          style={{ "--day-color": "#b56a3c" } as CSSProperties}
+                          tabIndex={
+                            activePlanDay === UNSCHEDULED_PLAN_DAY ? 0 : -1
+                          }
+                          type="button"
+                        >
+                          <span className="dayTabLabel">
+                            <span className="dayTabDot" aria-hidden="true" />
+                            Chưa xếp
+                          </span>
+                          {(displayedPlan.unscheduledPlaces?.length ?? 0) > 0 ? (
+                            <small>
+                              {displayedPlan.unscheduledPlaces?.length} địa điểm
+                            </small>
+                          ) : null}
+                        </button>
                       </div>
                       <div
                         aria-labelledby={
                           activePlanDay == null
                             ? "plan-day-tab-all"
-                            : `plan-day-tab-${activePlanDay}`
+                            : activePlanDay === UNSCHEDULED_PLAN_DAY
+                              ? "plan-day-tab-unscheduled"
+                              : `plan-day-tab-${activePlanDay}`
                         }
                         className="planDayPanels"
                         id="plan-days-panel"
@@ -4275,6 +4406,11 @@ function Planner() {
                               } as CSSProperties
                             }
                           >
+                            {activePlanDay == null ? (
+                              <header className="dayCardHeading daySectionHeading">
+                                <strong>Ngày {displayedPlanDay.day}</strong>
+                              </header>
+                            ) : null}
                             {directionsActive &&
                             activePlanDay === displayedPlanDay.day &&
                             dayDirectionLegs.length > 0 ? (
@@ -5474,6 +5610,13 @@ function Planner() {
                             ) : null}
                           </article>
                         ))}
+                        {activePlanDay === UNSCHEDULED_PLAN_DAY ||
+                        (activePlanDay == null &&
+                          (displayedPlan.unscheduledPlaces?.length ?? 0) > 0) ? (
+                          <UnscheduledPlacesSection
+                            places={displayedPlan.unscheduledPlaces ?? []}
+                          />
+                        ) : null}
                       </div>
                     </section>
                   </div>
@@ -5842,11 +5985,19 @@ function Planner() {
             >
               <header className="itineraryMutationHeader editPlaceNotesHeader addPlaceHeader">
                 <div className="itineraryMutationHeading">
-                  <span className="itineraryMutationEyebrow">
-                    Ngày {addingDay}
+                  <span className="addPlaceHeaderIcon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12 21s6-5.35 6-11a6 6 0 1 0-12 0c0 5.65 6 11 6 11Z" />
+                      <path d="M12 7v6M9 10h6" />
+                    </svg>
                   </span>
                   <div>
-                    <h3 id="add-place-title">Thêm địa điểm</h3>
+                    <div className="addPlaceTitleRow">
+                      <h3 id="add-place-title">Thêm địa điểm</h3>
+                      <span className="itineraryMutationEyebrow">
+                        Ngày {addingDay}
+                      </span>
+                    </div>
                     <p>Tạo điểm dừng mới trong lịch trình của bạn</p>
                   </div>
                 </div>
@@ -5870,8 +6021,8 @@ function Planner() {
                   <div className="itineraryMutationInputWrap editPlaceSearchControl">
                     <span className="editPlaceSearchIcon" aria-hidden="true">
                       <svg viewBox="0 0 24 24">
-                        <circle cx="11" cy="11" r="6.5" />
-                        <path d="m16 16 4 4" />
+                        <circle cx="10.8" cy="10.8" r="6.8" />
+                        <path d="m16 16 4.25 4.25" />
                       </svg>
                     </span>
                     <input
@@ -5930,6 +6081,7 @@ function Planner() {
                       <svg aria-hidden="true" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="5" />
                         <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                        <circle className="addPlaceLocateDot" cx="12" cy="12" r="1.5" />
                       </svg>
                     </button>
                   </div>
@@ -6076,7 +6228,7 @@ function Planner() {
                     <div className="addPlaceSelectWrap">
                       <span aria-hidden="true" className="addPlaceFieldIcon">
                         <svg viewBox="0 0 24 24">
-                          <path d="M12 4v16M7 9l5-5 5 5M7 15h10" />
+                          <path d="M6 6h12M6 18h12M12 15V9M9.5 11.5 12 9l2.5 2.5" />
                         </svg>
                       </span>
                       <select
@@ -6138,7 +6290,8 @@ function Planner() {
                     <div className="addPlaceSelectWrap">
                       <span aria-hidden="true" className="addPlaceFieldIcon">
                         <svg viewBox="0 0 24 24">
-                          <path d="M4 7.5h16M7.5 4v7M4 16.5h16M16.5 13v7" />
+                          <path d="M4.5 6.5v5.1a2 2 0 0 0 .59 1.41l6.9 6.9a2 2 0 0 0 2.82 0l5.1-5.1a2 2 0 0 0 0-2.82l-6.9-6.9a2 2 0 0 0-1.41-.59H6.5a2 2 0 0 0-2 2Z" />
+                          <circle cx="9" cy="9" r="1.25" />
                         </svg>
                       </span>
                       <select
@@ -6190,6 +6343,161 @@ function Planner() {
         ) : null}
       </main>
     </>
+  );
+}
+
+function UnscheduledPlacesSection({
+  places,
+}: {
+  places: UnscheduledPlace[];
+}) {
+  if (places.length === 0) {
+    return (
+      <div className="unscheduledPlacesEmpty" role="status">
+        Chưa có địa điểm chưa xếp
+      </div>
+    );
+  }
+
+  return (
+    <article
+      aria-labelledby="unscheduled-places-heading"
+      className="explorerDayCard unscheduledPlacesSection"
+    >
+      <header className="dayCardHeading unscheduledPlacesHeading">
+        <strong id="unscheduled-places-heading">Chưa xếp</strong>
+      </header>
+      <div className="itineraryStops unscheduledPlaceList">
+          {places.map((place, index) => {
+            const displayName = itineraryDisplayName(place.name);
+            const categories = [place.placeType, ...(place.tags ?? [])].filter(
+              (value): value is string => Boolean(value)
+            );
+            const isFoodStop = categories.some((value) => {
+              const category = categoryFromPlaceType(value);
+              return category === "food" || category === "cafe";
+            });
+            const sourceLabel = itinerarySourceLabel(
+              place.sourceRefs ?? [],
+              place.sourceProvider,
+              "selected_place"
+            );
+            return (
+              <div
+                className="itineraryItemDragWrapper"
+                key={`${place.placeId ?? place.name}-${index}`}
+              >
+                <article
+                  className={`itineraryStop unscheduledPlaceStop ${
+                    isFoodStop
+                      ? "itineraryStop--food"
+                      : "itineraryStop--activity"
+                  }`}
+                >
+                  <div className="itineraryPlaceCard itineraryPlaceCard--withImage">
+                    <div className="itineraryPlaceMedia">
+                      <div className="itineraryPlaceImage itineraryPlaceImage--fallback">
+                        <img
+                          alt={`Chưa có ảnh cho ${displayName}`}
+                          draggable={false}
+                          loading="lazy"
+                          src={ITINERARY_NO_IMAGE_SRC}
+                        />
+                      </div>
+                    </div>
+                    <div className="itineraryPlaceContent">
+                      <header>
+                        <div className="itineraryPlaceMain">
+                          <div className="itineraryPlaceTitle">
+                            <strong>{displayName}</strong>
+                          </div>
+                          {place.rating != null ? (
+                            <div
+                              aria-label={`Đánh giá ${place.rating} trên 5`}
+                              className="itineraryPlaceRating"
+                            >
+                              <span aria-hidden="true">★</span>
+                              <strong>{place.rating.toFixed(1)}</strong>
+                              {place.reviewCount != null &&
+                              place.reviewCount > 0 ? (
+                                <small>
+                                  {formatCompactCount(place.reviewCount)} lượt
+                                  đánh giá
+                                </small>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="itineraryPlaceQuickActions">
+                          {sourceLabel?.url ? (
+                            <a
+                              aria-label={`Mở link ${sourceLabel.text} của ${displayName}`}
+                              className={`itinerarySourceIconLink itinerarySourceIconLink--${sourceLabel.provider}`}
+                              href={sourceLabel.url}
+                              rel="noreferrer"
+                              target="_blank"
+                              title={`Link ${sourceLabel.text}: ${
+                                sourceLabel.displayUrl ?? sourceLabel.url
+                              }`}
+                            >
+                              <SourceProviderIcon
+                                provider={sourceLabel.provider}
+                              />
+                              <span>URL</span>
+                            </a>
+                          ) : null}
+                        </div>
+                      </header>
+                      {place.address ? (
+                        <p className="unscheduledPlaceAddress">
+                          {place.address}
+                        </p>
+                      ) : null}
+                      <div className="itineraryPlaceHours unscheduledPlaceReason">
+                        <span>Chưa xếp</span>
+                        <strong>{place.reason}</strong>
+                      </div>
+                      {place.day != null || place.sourceActivity ? (
+                        <p className="unscheduledPlaceContext">
+                          {place.day != null
+                            ? `Ưu tiên Ngày ${place.day}`
+                            : null}
+                          {place.day != null && place.sourceActivity
+                            ? " · "
+                            : null}
+                          {place.sourceActivity}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span
+                      aria-label={
+                        isFoodStop ? "Ăn uống" : "Hoạt động tham quan"
+                      }
+                      className="itineraryTypeIcon"
+                      role="img"
+                      title={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
+                    >
+                      {isFoodStop ? (
+                        <svg viewBox="0 0 24 24">
+                          <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                          <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24">
+                          <circle cx="6" cy="6" r="2.5" />
+                          <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                          <path d="m2 21 6-9 4 5 2-3 8 7" />
+                          <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                        </svg>
+                      )}
+                    </span>
+                  </div>
+                </article>
+              </div>
+            );
+          })}
+      </div>
+    </article>
   );
 }
 

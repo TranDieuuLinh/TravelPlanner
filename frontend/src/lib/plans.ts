@@ -985,6 +985,7 @@ export type PlaceSuggestion = {
   website?: string | null;
   openingHours?: string[] | null;
   isVerified?: boolean;
+  source?: "knowledge_graph" | "google_maps_scraper" | string | null;
 };
 
 export const PLACE_SEARCH_TOP_K = 5;

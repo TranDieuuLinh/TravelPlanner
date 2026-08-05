@@ -78,17 +78,20 @@ Luồng tạo plan mặc định dùng `ITINERARY_OPTIMIZER_MODE=route_first`.
 chuyến qua `tripThemes`; nó không chia theme theo ngày. PlaceSelector tạo day
 slot từ `tripSpec.days`, sau đó route optimizer phân hoạt động theo cụm địa lý.
 `PlaceSelectorService` chọn candidate mà không gọi route pedestrian/auto/transit;
-sau đó module `plans/itinerary_optimizer` dùng một travel-time matrix
-để hoán đổi hai activity chính mỗi ngày giữa các ngày và tối ưu thứ tự trong từng ngày.
-Sau đó `MealStopSelector` chọn đủ ba bữa quanh hai activity, tạo thứ tự
-breakfast → activity 1 → lunch → activity 2 → dinner. Stop URL/OCR có provenance hoặc
+Sau đó global stage của module `plans/itinerary_optimizer` dùng travel-time matrix
+để gom activity theo cụm và cân bằng duration giữa các ngày; nó không tạo leg nối
+xuyên qua đêm. Per-day stage mới tối ưu thứ tự và tạo route leg chi tiết. PlaceSelector đặt ba anchor
+bữa ăn tại 08:00–09:00, 12:00–13:00 và 18:00–19:00, rồi lấp các khoảng còn lại
+đến 21:00 theo thời lượng tham quan, giờ mở cửa và thời gian chuyển tiếp đã tính.
+Số activity không bị giới hạn theo count hoặc pace. Nếu một activity tràn timeline,
+PlaceSelector thử đúng một ngày khả thi khác trước khi giữ `UnscheduledPlace`.
+Stop URL/OCR có provenance hoặc
 ngày/thứ tự nguồn không bị di chuyển. Chỉ khi allocation và thứ tự cuối cùng đã chốt,
 legacy route gateway mới
 bổ sung walking/car/transit leg chi tiết. Theme ngày là tín hiệu mềm và không nằm
 trong hàm mục tiêu route. Chế độ
 `legacy` giữ nguyên `GeographicRouteOptimizer` cũ để rollback. Xem ADR-012.
-Route-first hiện không lập giờ; `timeWindow` chỉ là marker thứ tự tương thích schema và
-không xuất hiện trong UI.
+`timeWindow` route-first là giờ lịch thực, không còn là marker thứ tự giả.
 
 ### Pipeline Explorer intake hiện tại
 

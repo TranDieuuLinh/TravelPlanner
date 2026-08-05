@@ -14,7 +14,6 @@ from app.modules.plans.dto.agent_contracts import (
     PlanningIntent,
     TripPlanningSpec,
 )
-from app.modules.plans.place_selector.service import PlaceSelectorService
 from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
@@ -86,9 +85,7 @@ def test_finder_uses_dynamic_skeleton_and_retries_candidates() -> None:
                 "mental": 80,
                 "energy": 80,
             },
-            "constraints": {
-                "allowedActivityIntensities": ["light", "moderate"]
-            },
+            "constraints": {"allowedActivityIntensities": ["light", "moderate"]},
         }
     )
 
@@ -139,11 +136,11 @@ def test_finder_preserves_address_from_selected_place_without_catalog_id() -> No
     macro_plan = _macro_plan().model_copy(
         update={
             "selection_days": [
-                _macro_plan().selection_days[0].model_copy(
+                _macro_plan()
+                .selection_days[0]
+                .model_copy(
                     update={
-                        "allocated_selected_place_refs": [
-                            "Hanoi Train Street (South)"
-                        ]
+                        "allocated_selected_place_refs": ["Hanoi Train Street (South)"]
                     }
                 )
             ]
@@ -167,9 +164,7 @@ def test_finder_preserves_address_from_selected_place_without_catalog_id() -> No
     )
 
     selected_item = next(
-        item
-        for item in result.days[0].items
-        if item.source == "selected_place"
+        item for item in result.days[0].items if item.source == "selected_place"
     )
     assert selected_item.address == "3 Trần Phú, Hoàn Kiếm, Hà Nội"
 
@@ -236,9 +231,7 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
 
     day = result.days[0]
     scheduled_by_role = {
-        item.role: item
-        for item in day.items
-        if item.place_id is not None
+        item.role: item for item in day.items if item.place_id is not None
     }
     assert scheduled_by_role["lunch_meal"].place_id == "local-lunch"
     assert scheduled_by_role["support_activity"].place_id == "gallery"
@@ -248,19 +241,15 @@ def test_finder_resolves_local_meal_slots_without_using_accommodation() -> None:
         item.notes != "Selected by deterministic Finder candidate loop."
         for item in day.items
     )
-    social = next(
-        item for item in day.items if item.role == "group_social_activity"
-    )
+    social = next(item for item in day.items if item.role == "group_social_activity")
     assert "-" in social.time_window
     assert social.notes == "Tính năng gợi ý hoạt động nhóm sẽ sớm ra mắt."
-    meal_queries = [
-        query
-        for query in tool.search_queries
-        if "local cuisine" in query
-    ]
+    meal_queries = [query for query in tool.search_queries if "local cuisine" in query]
     assert len(meal_queries) == 2
     assert all("món địa phương" in query for query in meal_queries)
-    assert not any("unresolved meal placeholder" in warning for warning in result.warnings)
+    assert not any(
+        "unresolved meal placeholder" in warning for warning in result.warnings
+    )
 
 
 def test_finder_uses_proximity_to_break_relevance_ties() -> None:
@@ -311,9 +300,7 @@ def test_finder_uses_proximity_to_break_relevance_ties() -> None:
     )
 
     support = next(
-        item
-        for item in result.days[0].items
-        if item.role == "support_activity"
+        item for item in result.days[0].items if item.role == "support_activity"
     )
     assert support.place_id == "near-culture"
 
@@ -529,16 +516,11 @@ def test_reference_intake_adds_catalog_only_to_empty_requested_days() -> None:
         allow_place_suggestions=True,
     )
 
-    assert [
-        item.name
-        for item in result.days[0].items
-        if item.source != "break"
-    ] == ["Place from video"]
+    assert [item.name for item in result.days[0].items if item.source != "break"] == [
+        "Place from video"
+    ]
     assert result.days[0].items[0].source_provider == "google_maps_scraper"
-    assert any(
-        item.source == "finder_suggestion"
-        for item in result.days[1].items
-    )
+    assert any(item.source == "finder_suggestion" for item in result.days[1].items)
 
 
 def test_route_first_supplements_reference_days_with_catalog_places() -> None:
@@ -595,9 +577,7 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
     )
     finder = PlaceSelectorService(
         tool,
-        route_optimizer=RouteFirstItineraryOptimizer(
-            GeographicRouteOptimizer()
-        ),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
     )
     macro_plan = PlaceSelectionBlueprint(
         title="Hanoi",
@@ -630,15 +610,8 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
     )
 
     real_items = [item for item in result.days[0].items if item.place_id]
-    assert len(real_items) == 5
-    assert [item.role for item in real_items] == [
-        "breakfast_meal",
-        "main_activity_1",
-        "lunch_meal",
-        "main_activity_2",
-        "dinner_meal",
-    ]
-    assert sum(item.timeline_category == "activity" for item in real_items) == 2
+    assert len(real_items) == 6
+    assert sum(item.timeline_category == "activity" for item in real_items) == 3
     assert sum(item.timeline_category == "food" for item in real_items) == 3
     assert any(item.name == source.name for item in real_items)
     assert any(item.source == "finder_suggestion" for item in real_items)
@@ -647,8 +620,7 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
         for item in result.days[0].items
     )
     assert not any(
-        item.role == "group_social_activity"
-        for item in result.days[0].items
+        item.role == "group_social_activity" for item in result.days[0].items
     )
 
 
@@ -661,18 +633,14 @@ def test_route_first_omits_unresolved_meal_slots() -> None:
     )
     finder = PlaceSelectorService(
         FakeFinderPlaceTool({source.place_id: source}, search_order=[]),
-        route_optimizer=RouteFirstItineraryOptimizer(
-            GeographicRouteOptimizer()
-        ),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
     )
     macro_plan = _macro_plan().model_copy(
         update={
             "selection_days": [
-                _macro_plan().selection_days[0].model_copy(
-                    update={
-                        "allocated_selected_place_refs": [source.place_id]
-                    }
-                )
+                _macro_plan()
+                .selection_days[0]
+                .model_copy(update={"allocated_selected_place_refs": [source.place_id]})
             ]
         }
     )
@@ -693,7 +661,9 @@ def test_route_first_omits_unresolved_meal_slots() -> None:
 
     assert [item.role for item in result.days[0].items] == ["main_activity_1"]
     assert not any(item.place_type == "meal" for item in result.days[0].items)
-    assert sum("omits unresolved meal slot" in warning for warning in result.warnings) == 3
+    assert (
+        sum("omits unresolved meal slot" in warning for warning in result.warnings) == 3
+    )
 
 
 def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> None:
@@ -750,14 +720,14 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
     )
     finder = PlaceSelectorService(
         tool,
-        route_optimizer=RouteFirstItineraryOptimizer(
-            GeographicRouteOptimizer()
-        ),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
     )
     macro_plan = _macro_plan().model_copy(
         update={
             "selection_days": [
-                _macro_plan().selection_days[0].model_copy(
+                _macro_plan()
+                .selection_days[0]
+                .model_copy(
                     update={
                         "allocated_selected_place_refs": [
                             source_cafe.place_id,
@@ -797,9 +767,7 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
     assert day_items["main_activity_1"].timeline_category == "activity"
     assert day_items["lunch_meal"].place_id == "source-lunch"
     assert day_items["lunch_meal"].source == "selected_place"
-    assert all(
-        item.place_id != "catalog-lunch" for item in result.days[0].items
-    )
+    assert all(item.place_id != "catalog-lunch" for item in result.days[0].items)
     assert result.unscheduled_places == []
 
 
@@ -849,9 +817,7 @@ def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> No
         ],
     )
     finder = PlaceSelectorService(
-        route_optimizer=RouteFirstItineraryOptimizer(
-            GeographicRouteOptimizer()
-        )
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer())
     )
 
     result = finder.fill_main_plan(
@@ -998,9 +964,7 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
     )
 
     suggestions = [
-        item
-        for item in result.days[0].items
-        if item.source == "finder_suggestion"
+        item for item in result.days[0].items if item.source == "finder_suggestion"
     ]
     assert len(suggestions) == 4
 
@@ -1042,11 +1006,7 @@ def test_finder_reports_selected_place_that_cannot_be_allocated() -> None:
         FakeFinderPlaceTool({"selected-heavy": heavy}, search_order=[]),
     )
     user_status = UserStatus.model_validate(
-        {
-            "constraints": {
-                "allowedActivityIntensities": ["light"]
-            }
-        }
+        {"constraints": {"allowedActivityIntensities": ["light"]}}
     )
 
     result = finder.fill_main_plan(
@@ -1121,14 +1081,8 @@ def test_catalog_cannot_consume_a_selected_place_before_its_allocated_day() -> N
         ],
     )
 
-    assert all(
-        item.place_id != "selected-day-2"
-        for item in result.days[0].items
-    )
-    assert any(
-        item.place_id == "selected-day-2"
-        for item in result.days[1].items
-    )
+    assert all(item.place_id != "selected-day-2" for item in result.days[0].items)
+    assert any(item.place_id == "selected-day-2" for item in result.days[1].items)
 
 
 def test_finder_rejects_place_outside_opening_hours() -> None:
@@ -1243,9 +1197,9 @@ def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> Non
     macro = _macro_plan().model_copy(
         update={
             "selection_days": [
-                _macro_plan().selection_days[0].model_copy(
-                    update={"allocated_selected_place_refs": ["inland"]}
-                )
+                _macro_plan()
+                .selection_days[0]
+                .model_copy(update={"allocated_selected_place_refs": ["inland"]})
             ]
         }
     )
@@ -1363,10 +1317,10 @@ def test_finder_leaves_route_aware_midnight_overflow_unscheduled() -> None:
     macro = _macro_plan().model_copy(
         update={
             "selection_days": [
-                _macro_plan().selection_days[0].model_copy(
-                    update={
-                        "allocated_selected_place_refs": ["late-1", "late-2"]
-                    }
+                _macro_plan()
+                .selection_days[0]
+                .model_copy(
+                    update={"allocated_selected_place_refs": ["late-1", "late-2"]}
                 )
             ]
         }

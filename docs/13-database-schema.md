@@ -21,8 +21,6 @@ model/migration với schema mục tiêu chưa triển khai.
 | `trip_revisions` | Implemented | Snapshot bất biến `trip_intent_payload + plan_payload + intake_id`, migration `20260805_0036` |
 | `knowledge_graph_imports.explorer_timing`, `planner_timing` | Implemented | Snapshot timing riêng cho Explorer job |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
-| `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
-| `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
 | `trips` | Planned | Liên quan module `plans` hiện đang dùng Pydantic/in-memory |
 | `itinerary_items` | Planned | Nên dùng thay `trip_places` vì lưu được lịch trình chi tiết |
 | `trip_members` | Planned | Cần cho chia sẻ trip |
@@ -160,44 +158,13 @@ payload riêng của provider.
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
 
-### `place_region_catalog_state`
+### Thống kê vùng cho Planner
 
-Mỗi `region_key` có một dòng mutable để biết danh mục đã thay đổi và có cần tạo
-snapshot mới hay không.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `region_key` | varchar(160) PK | Ví dụ `vn,da-nang,hai-chau` |
-| `catalog_version` | bigint | Tăng khi Place trong khu vực thay đổi |
-| `current_snapshot_id` | FK `place_region_snapshots.id`, nullable | Snapshot hiện tại Planner được phép dùng |
-| `dirty_since` | timestamptz, nullable | Thời điểm bắt đầu có thay đổi chưa tổng hợp |
-| `refresh_status` | varchar(16) | `clean`, `pending`, `running`, `failed` |
-| `refresh_attempts` | integer | Số lần worker đã thử |
-| `next_retry_at` | timestamptz, nullable | Thời điểm được retry |
-| `last_error_code` | varchar(64), nullable | Mã lỗi an toàn, không lưu payload provider |
-| `updated_at` | timestamptz | Cập nhật lúc |
-
-### `place_region_snapshots`
-
-Lưu snapshot thống kê bất biến mà Planner dùng để tạo `MacroPlan`. Snapshot mới
-không ghi đè snapshot cũ; sau khi tính thành công,
-`place_region_catalog_state.current_snapshot_id` mới được chuyển sang snapshot
-mới.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid/string PK | Opaque ID |
-| `region_key` | varchar(160) | Khu vực được thống kê |
-| `catalog_version` | bigint | Phiên bản danh mục Place nguồn |
-| `algorithm_version` | varchar(32) | Version của logic thống kê |
-| `source_fingerprint` | varchar(64) | Dấu vân tay dữ liệu Place thuộc khu vực và các vùng con |
-| `place_count` | integer | Tổng Place hợp lệ |
-| `active_place_count` | integer | Tổng Place đang hoạt động |
-| `source_max_updated_at` | timestamptz, nullable | Mốc dữ liệu Place mới nhất được sử dụng |
-| `metrics` | json | Thống kê theo loại, thời điểm, chất lượng và phân bố địa lý |
-| `generated_at` | timestamptz | Thời điểm tạo snapshot |
-| `expires_at` | timestamptz, nullable | Thời điểm nên làm mới |
-| `created_at` | timestamptz | Tạo lúc |
+Planner tính thống kê vùng trực tiếp từ catalog `places`; không còn lưu
+`place_region_snapshots` hoặc `place_region_catalog_state`. Contract runtime vẫn
+trả `RegionSnapshotReference`, nhưng `snapshotId` và `catalogVersion` được suy ra
+xác định từ fingerprint của dữ liệu Place hiện tại. Reference này dùng để truy
+vết planning run, không phải khóa ngoại tới một bảng snapshot.
 
 `metrics` có thể chứa:
 
@@ -222,25 +189,18 @@ Tag phải được chuẩn hóa và gộp alias trước khi đếm, ví dụ
 được tính một lần cho mỗi tag chuẩn hóa. Tag không có dạng semantic như số điện
 thoại hoặc chuỗi địa chỉ phải bị loại khỏi thống kê Planner.
 
-Snapshot không lưu route chính xác giữa mọi cặp Place, giao thông hiện tại, thời
+Thống kê không chứa route chính xác giữa mọi cặp Place, giao thông hiện tại, thời
 tiết, booking hoặc giá hiện tại. Finder và CheckOverall phải kiểm tra các dữ liệu
 động này khi điền và kiểm tra plan.
 
 ### Luồng tự động thống kê Place
 
 1. `PlaceCatalogService` thêm, sửa, đóng hoặc chuyển khu vực của Place và tăng
-   `places.revision`; không chạy thống kê ngay.
+   `places.revision`.
 2. Khi Planner yêu cầu một `region_key`, repository tính fingerprint từ các
    Place thuộc đúng khu vực đó và mọi `region_key` con.
-3. Nếu fingerprint và `algorithm_version` trùng snapshot hiện tại, Planner dùng
-   snapshot đó ngay.
-4. Nếu dữ liệu hoặc thuật toán thay đổi, hệ thống tính lại, tạo một
-   `place_region_snapshots` bất biến mới và tăng `catalog_version`.
-5. `place_region_catalog_state.current_snapshot_id` được chuyển sang snapshot
-   mới; snapshot cũ vẫn được giữ để truy vết.
-
-Thay đổi ở khu vực khác không làm snapshot đang được Planner yêu cầu hết hạn.
-Nếu refresh thất bại, snapshot cũ không bị ghi đè.
+3. Planner tính metrics trong memory và gắn fingerprint vào planning-run trace.
+4. Thay đổi ở khu vực khác không đổi fingerprint của khu vực đang lập kế hoạch.
 
 ### `trips`
 
@@ -562,8 +522,6 @@ users N--N trips through trip_members
 trips 1--N itinerary_items
 places 1--N itinerary_items
 places 1--N place_external_refs
-place_region_catalog_state 1--N place_region_snapshots
-place_region_catalog_state 0--1 current place_region_snapshots
 
 users 1--N marketplace_plans
 marketplace_plans 1--N marketplace_plan_versions
@@ -597,11 +555,6 @@ users 1--N user_posts
   index `source_fetched_at`; và nếu dùng Postgres thì cân nhắc geo index cho tọa
   độ.
 - `place_external_refs`: unique `provider, external_id`; index `place_id`.
-- `place_region_snapshots`: unique
-  `region_key, catalog_version, algorithm_version`; index
-  `region_key, generated_at`.
-- `place_region_catalog_state.current_snapshot_id` phải tham chiếu snapshot có
-  cùng `region_key`; bất biến này được bảo vệ trong service/transaction.
 - `trips.owner_id`, `itinerary_items.trip_id`, `itinerary_items.place_id`.
 - `itinerary_items`: unique mềm trên `trip_id, day_number, sort_order`.
 - `trip_members`: primary key `trip_id, user_id`.
@@ -630,8 +583,7 @@ users 1--N user_posts
 ## Migration plan đề xuất
 
 1. Thêm `places` và `place_external_refs`.
-2. Thêm `place_region_catalog_state`, `place_region_snapshots` và background job
-   cập nhật thống kê khu vực.
+2. Tính thống kê vùng trực tiếp từ catalog `places` theo fingerprint.
 3. Thêm `trips`, `trip_members`, `itinerary_items`.
 4. Chuyển module `plans` từ in-memory repository sang SQLAlchemy repository và
    lưu snapshot Place đã dùng trong lần lập plan.
@@ -652,17 +604,12 @@ Module `backend/app/modules/places/auto_statistics` dùng
 `SqlAlchemyPlaceRepository` để đọc `places` từ PostgreSQL. Import CSV chỉ nằm ở
 script biên `backend/scripts/import_places_to_postgres.py`, không phải repository
 runtime. Create/update Place qua `PlaceCatalogService` chỉ tăng `revision` và
-commit. Khi Planner yêu cầu một `region_key`, `auto_statistics` kiểm tra
-fingerprint của đúng khu vực đó và các vùng con:
-
-- fingerprint không đổi: đọc snapshot hiện tại từ
-  `place_region_snapshots`;
-- fingerprint thay đổi: tạo snapshot bất biến mới, tăng `catalog_version` và
-  chuyển `place_region_catalog_state.current_snapshot_id`;
-- thay đổi ở khu vực khác không làm snapshot đang được yêu cầu hết hạn.
+commit. Khi Planner yêu cầu một `region_key`, `auto_statistics` tính fingerprint
+và metrics trực tiếp từ Place thuộc đúng khu vực đó và các vùng con. Thay đổi ở
+khu vực khác không đổi fingerprint đang được yêu cầu.
 
 Planner workflow đã gọi trực tiếp `get_for_planner(region_key)`. Contract nhận
 `regionKey` chuẩn hóa; để tương thích request cũ, backend có thể chuẩn hóa
 destination Việt Nam, ví dụ `Hà Nội` thành `vn,ha-noi`. Snapshot ID và version
-được giữ trong internal trace/log của Planner, không đưa vào `MacroPlan` hoặc
-Finder context. Thay đổi này không thêm hoặc xóa cột database.
+được suy ra từ fingerprint và giữ trong internal trace/log của Planner; chúng
+không tham chiếu row PostgreSQL.
