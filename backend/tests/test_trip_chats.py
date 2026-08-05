@@ -116,6 +116,65 @@ def test_delete_trip_chat_requires_csrf(registered_client) -> None:
     assert response.json()["code"] == "CSRF_VALIDATION_FAILED"
 
 
+def test_user_can_delete_all_own_trip_chats_without_deleting_another_users_chats(
+    registered_client,
+    db_session,
+) -> None:
+    own_chat_ids = [
+        registered_client.post(
+            "/api/trip-chats",
+            json={"title": title},
+            headers=csrf_headers(registered_client),
+        ).json()["id"]
+        for title in ("Hà Nội", "Đà Nẵng")
+    ]
+    registered_client.post(
+        "/api/auth/logout",
+        headers=csrf_headers(registered_client),
+    )
+    registered_client.post(
+        "/api/auth/register",
+        json={
+            "email": "bulk-delete-second@example.com",
+            "password": "MatKhauManh123",
+            "fullName": "Second User",
+        },
+    )
+    other_chat_id = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Chat cần giữ"},
+        headers=csrf_headers(registered_client),
+    ).json()["id"]
+    registered_client.post(
+        "/api/auth/logout",
+        headers=csrf_headers(registered_client),
+    )
+    registered_client.post(
+        "/api/auth/login",
+        json={
+            "email": "traveler@example.com",
+            "password": "MatKhauManh123",
+        },
+    )
+
+    response = registered_client.delete(
+        "/api/trip-chats",
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 204
+    assert registered_client.get("/api/trip-chats").json() == []
+    assert all(db_session.get(TripChat, chat_id) is None for chat_id in own_chat_ids)
+    assert db_session.get(TripChat, other_chat_id) is not None
+
+
+def test_delete_all_trip_chats_requires_csrf(registered_client) -> None:
+    response = registered_client.delete("/api/trip-chats")
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "CSRF_VALIDATION_FAILED"
+
+
 def test_turn_lifecycle_reuses_user_message_row(
     db_session,
     registered_client,

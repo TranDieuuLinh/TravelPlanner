@@ -74,6 +74,9 @@ class TripChatService:
     def delete(self, chat_id: str, user: User) -> None:
         self.repository.delete(chat_id, user.id)
 
+    def delete_all_for_user(self, user: User) -> None:
+        self.repository.delete_all_for_user(user.id)
+
     async def amend(
         self,
         chat_id: str,

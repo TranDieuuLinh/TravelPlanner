@@ -70,6 +70,14 @@ def list_trip_chats(
     return service.list_for_user(current_user)
 
 
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+def delete_all_trip_chats(
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> None:
+    service.delete_all_for_user(current_user)
+
+
 @router.get("/{chat_id}", response_model=TripChatRead)
 def get_trip_chat(
     chat_id: str,

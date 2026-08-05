@@ -29,6 +29,7 @@ import {
   calculateDayDirections,
   createTripChat,
   createPlanFromExplorer,
+  deleteAllTripChats,
   deleteUrlImportJob,
   deleteTripChat,
   enqueueTripChatUrls,
@@ -509,6 +510,7 @@ function Planner() {
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
+  const [processingElapsedSeconds, setProcessingElapsedSeconds] = useState(0);
   const [activePlanningJobs, setActivePlanningJobs] = useState<
     ActivePlanningJob[]
   >([]);
@@ -522,6 +524,7 @@ function Planner() {
   const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+  const [deletingAllChats, setDeletingAllChats] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [itineraryWidthPercent, setItineraryWidthPercent] = useState(40);
@@ -1802,6 +1805,24 @@ function Planner() {
   );
   const awaitingInitialPlan =
     !displayedPlan && (backgroundPlanning || loading);
+
+  useEffect(() => {
+    if (!awaitingInitialPlan) {
+      setProcessingElapsedSeconds(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const updateElapsed = () => {
+      setProcessingElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      );
+    };
+
+    updateElapsed();
+    const timerId = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timerId);
+  }, [awaitingInitialPlan]);
 
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
@@ -3229,7 +3250,7 @@ function Planner() {
   }
 
   async function handleDeleteTripChat(chat: TripChatSummary) {
-    if (loading || deletingChatId) return;
+    if (loading || deletingChatId || deletingAllChats) return;
     if (
       !window.confirm(
         `Xóa toàn bộ lịch sử chat “${chat.title}”? Hành động này không thể hoàn tác.`
@@ -3252,6 +3273,31 @@ function Planner() {
       );
     } finally {
       setDeletingChatId(null);
+    }
+  }
+
+  async function handleDeleteAllTripChats() {
+    if (loading || deletingChatId || deletingAllChats || !tripChats.length) return;
+    if (
+      !window.confirm(
+        `Xóa tất cả ${tripChats.length} cuộc trò chuyện? Toàn bộ tin nhắn và lịch trình trong lịch sử sẽ bị xóa vĩnh viễn.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingAllChats(true);
+    setError("");
+    try {
+      await deleteAllTripChats();
+      setTripChats([]);
+      resetWorkflow();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Không thể xóa tất cả lịch sử chat."
+      );
+    } finally {
+      setDeletingAllChats(false);
     }
   }
 
@@ -3590,7 +3636,20 @@ function Planner() {
                 <div className="tripProjectList">
                   <div className="tripProjectSectionTitle">
                     <strong>Dự án</strong>
-                    <small>{tripChats.length}</small>
+                    <span>
+                      <small>{tripChats.length}</small>
+                      {tripChats.length ? (
+                        <button
+                          className="tripProjectDeleteAll"
+                          disabled={loading || deletingChatId !== null || deletingAllChats}
+                          onClick={() => void handleDeleteAllTripChats()}
+                          title="Xóa tất cả lịch sử chat"
+                          type="button"
+                        >
+                          {deletingAllChats ? "Đang xóa…" : "Xóa tất cả"}
+                        </button>
+                      ) : null}
+                    </span>
                   </div>
                   {tripChats.length ? (
                     <nav aria-label="Lịch sử dự án chuyến đi">
@@ -3625,7 +3684,7 @@ function Planner() {
                           <button
                             aria-label={`Xóa lịch sử chat ${chat.title}`}
                             className="tripProjectDelete"
-                            disabled={loading || deletingChatId !== null}
+                            disabled={loading || deletingChatId !== null || deletingAllChats}
                             onClick={() => void handleDeleteTripChat(chat)}
                             title="Xóa lịch sử chat"
                             type="button"
@@ -3899,13 +3958,24 @@ function Planner() {
                   />
                   {awaitingInitialPlan ? (
                     <div
-                      aria-live="polite"
-                      aria-label="Đang xử lý yêu cầu"
+                      aria-label={`Hệ thống đang xử lý yêu cầu. Thời gian chạy ${formatElapsedTime(processingElapsedSeconds)}`}
+                      aria-live="off"
                       className="plannerInlineProcessing"
                       role="status"
                     >
-                      <span aria-hidden="true" className="plannerInlineSpinner" />
-                      <span>Đang xử lý</span>
+                      <span aria-hidden="true" className="plannerPenguinTrack">
+                        <span className="plannerRunningPenguin">
+                          <PenguinMascot
+                            className="plannerRunningPenguinImage"
+                            size={42}
+                            variant="search"
+                          />
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="plannerProcessingTimer">
+                        <span>Thời gian chạy</span>
+                        <strong>{formatElapsedTime(processingElapsedSeconds)}</strong>
+                      </span>
                     </div>
                   ) : null}
                   {error ? <p className="formError">{error}</p> : null}
@@ -6404,6 +6474,12 @@ function shortDateLabelForTripDay(
 
   const [, month, date] = dateKey.split("-");
   return `${date}/${month}`;
+}
+
+function formatElapsedTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function processingDescription(
