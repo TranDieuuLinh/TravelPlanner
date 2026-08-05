@@ -4875,10 +4875,6 @@ function Planner() {
                                               : ""
                                           }`}
                                         >
-                                          <span
-                                            className="itineraryStopPin"
-                                            aria-hidden="true"
-                                          />
                                           <div
                                             aria-label={
                                               mapKey
@@ -5072,48 +5068,47 @@ function Planner() {
                                                       <span>URL</span>
                                                     </a>
                                                   ) : null}
-                                                  {itemNoteAction}
-                                                </div>
-                                                {item.itemId && activeChatId ? (
-                                                  <div
-                                                    className="itineraryActions"
-                                                    style={{ marginLeft: "auto" }}
-                                                  >
-                                                    <button
-                                                      aria-label={`Sửa ${displayItemName}`}
-                                                      className="itineraryActionButton"
-                                                      onClick={() => {
-                                                        openItemEditor(
-                                                          displayedPlanDay.day,
-                                                          item,
-                                                          personalNotes
-                                                        );
-                                                      }}
-                                                      title="Sửa địa điểm"
-                                                      type="button"
-                                                    >
-                                                      <svg viewBox="0 0 24 24">
-                                                        <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
-                                                      </svg>
-                                                    </button>
-                                                    <button
-                                                      aria-label={`Xóa ${displayItemName}`}
-                                                      className="itineraryActionButton danger"
-                                                      onClick={() =>
-                                                        handleDeleteItem(
-                                                          displayedPlanDay.day,
-                                                          item.itemId!
-                                                        )
-                                                      }
-                                                      title="Xóa địa điểm"
-                                                      type="button"
-                                                    >
-                                                      <svg viewBox="0 0 24 24">
-                                                        <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
-                                                      </svg>
-                                                    </button>
+                                                  <div className="itineraryPlaceQuickActionGroup">
+                                                    {itemNoteAction}
+                                                    {item.itemId && activeChatId ? (
+                                                      <div className="itineraryActions itineraryActions--column">
+                                                        <button
+                                                          aria-label={`Sửa ${displayItemName}`}
+                                                          className="itineraryActionButton"
+                                                          onClick={() => {
+                                                            openItemEditor(
+                                                              displayedPlanDay.day,
+                                                              item,
+                                                              personalNotes
+                                                            );
+                                                          }}
+                                                          title="Sửa địa điểm"
+                                                          type="button"
+                                                        >
+                                                          <svg viewBox="0 0 24 24">
+                                                            <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                                                          </svg>
+                                                        </button>
+                                                        <button
+                                                          aria-label={`Xóa ${displayItemName}`}
+                                                          className="itineraryActionButton danger"
+                                                          onClick={() =>
+                                                            handleDeleteItem(
+                                                              displayedPlanDay.day,
+                                                              item.itemId!
+                                                            )
+                                                          }
+                                                          title="Xóa địa điểm"
+                                                          type="button"
+                                                        >
+                                                          <svg viewBox="0 0 24 24">
+                                                            <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                                                          </svg>
+                                                        </button>
+                                                      </div>
+                                                    ) : null}
                                                   </div>
-                                                ) : null}
+                                                </div>
                                               </header>
                                               {openingHoursText ? (
                                                 <div className="itineraryPlaceHours">

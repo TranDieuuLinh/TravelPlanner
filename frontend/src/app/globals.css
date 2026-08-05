@@ -99,6 +99,7 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 0 28px;
 }
 .brand { display: flex; align-items: center; width: fit-content; font-size: 1.02rem; margin-top: 12px; }
+.brand h2 { margin: 0; }
 .brandCluster { display: flex; align-items: center; justify-self: start; gap: 10px; }
 .plannerHistoryMenu {
   display: grid;
@@ -1179,22 +1180,14 @@ h1, h2, h3, p { margin-top: 0; }
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .itineraryStop:not(.hasRoute) {
   margin-bottom: 16px;
 }
 .itineraryStopPin {
-  display: grid;
-  width: 12px;
-  height: 12px;
-  margin: 12px 0 0 11px;
-  align-items: center;
-  border: 3px solid #e4e7f0;
-  border-radius: 50%;
-  background: #69b9e8;
-  box-shadow: 0 0 0 1px #4da4d8, 0 3px 8px rgba(77, 164, 216, .18);
+  display: none;
 }
 .itineraryPlaceCard {
   display: grid;
@@ -1288,22 +1281,10 @@ h1, h2, h3, p { margin-top: 0; }
   box-shadow: 0 4px 14px rgba(54, 95, 90, .055);
 }
 .itineraryStop--food::after {
-  position: absolute;
-  z-index: -1;
-  top: 17px;
-  left: 23px;
-  width: 21px;
-  border-top: 2px dotted #e4e7f0;
-  content: "";
+  content: none;
 }
 .itineraryStop--food .itineraryStopPin {
-  width: 9px;
-  height: 9px;
-  margin-top: 13px;
-  margin-left: 13px;
-  border-width: 2px;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #365f5a;
+  display: none;
 }
 .itineraryStop--food .itineraryPlaceImage {
   width: 128px;
@@ -11391,25 +11372,17 @@ svg {
 }
 
 .itinerary .itineraryStops::before {
-  top: 31px;
-  bottom: 42px;
-  left: 16px;
-  border-left: 2px dashed #c6ddd7;
+  content: none;
 }
 
 .itinerary .itineraryStop {
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
 .itinerary .itineraryStopPin,
 .itinerary .itineraryStop:not(.itineraryStop--food) .itineraryStopPin {
-  width: 12px;
-  height: 12px;
-  margin: auto;
-  border: 3px solid #fff;
-  background: #16806d;
-  box-shadow: 0 0 0 2px #8fc8ba, 0 4px 10px rgba(54, 95, 90, .18);
+  display: none;
 }
 
 .itinerary .itineraryPlaceCard,
@@ -11968,8 +11941,7 @@ svg {
 }
 
 .itinerary .itineraryStop--food .itineraryStopPin {
-  background: #bd6545;
-  box-shadow: 0 0 0 2px #efd2c6;
+  display: none;
 }
 
 .itinerary .itineraryStop--activity .itineraryPlaceCard {
@@ -12012,6 +11984,20 @@ svg {
   justify-items: center;
   align-items: start;
   justify-content: flex-end;
+  gap: 6px;
+}
+
+.itinerary .itineraryPlaceQuickActionGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.itinerary .itineraryActions--column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 6px;
 }
 
