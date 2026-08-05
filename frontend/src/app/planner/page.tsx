@@ -361,6 +361,16 @@ function buildGuidedIntakeRequest(answers: GuidedIntakeAnswers): string {
     : "Giúp mình tạo một chuyến đi mới từ các nguồn đã nhập.";
 }
 
+const LEGACY_TRIP_THEME_ERROR = "TripThemePlanner cannot create trip themes";
+const FRIENDLY_TRIP_THEME_ERROR =
+  "Mình chưa thể lập lịch trình vì điểm đến này chưa có đủ địa điểm phù hợp; bạn hãy chọn một địa điểm cụ thể hoặc thử điểm đến khác.";
+
+function normalizeAssistantMessage(content: string): string {
+  return content.includes(LEGACY_TRIP_THEME_ERROR)
+    ? FRIENDLY_TRIP_THEME_ERROR
+    : content;
+}
+
 function visibleConversationMessages(chat: TripChat): ChatMessage[] {
   return chat.messages
     .filter(
@@ -375,7 +385,7 @@ function visibleConversationMessages(chat: TripChat): ChatMessage[] {
       id: message.id,
       role: message.role,
       text: [
-        message.content,
+        normalizeAssistantMessage(message.content),
         message.attachmentNames.length
           ? `📎 ${message.attachmentNames.length} ảnh`
           : "",
@@ -882,6 +892,11 @@ function Planner() {
 
   useEffect(() => {
     function keepFloatingChatVisible() {
+      if (window.innerWidth <= 900) {
+        setFloatingChatRect(null);
+        setChatCollapsed(false);
+        return;
+      }
       setFloatingChatRect((current) =>
         current ? clampFloatingChatRect(current) : null
       );
@@ -889,6 +904,17 @@ function Planner() {
     window.addEventListener("resize", keepFloatingChatVisible);
     return () => window.removeEventListener("resize", keepFloatingChatVisible);
   }, [clampFloatingChatRect]);
+
+  useEffect(() => {
+    if (!plan || chatCollapsed) return;
+    setFloatingChatRect((current) => {
+      if (!current) return null;
+      const looksCollapsed =
+        current.width <= FLOATING_CHAT_COLLAPSED_SIZE + 4 &&
+        current.height <= FLOATING_CHAT_COLLAPSED_SIZE + 4;
+      return looksCollapsed ? null : clampFloatingChatRect(current, false);
+    });
+  }, [chatCollapsed, clampFloatingChatRect, plan]);
 
   useEffect(() => {
     return () => {

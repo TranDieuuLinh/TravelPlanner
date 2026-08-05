@@ -801,7 +801,13 @@ export function PlannerMap({
   useEffect(() => {
     const maplibre = maplibreRef.current;
     const map = mapRef.current;
-    if (!mapReady || !maplibre || !map) return;
+    if (
+      !mapReady ||
+      !maplibre ||
+      !map ||
+      mapRef.current !== map ||
+      !map.isStyleLoaded()
+    ) return;
 
     dynamicMarkersRef.current.forEach((marker) => marker.remove());
     dynamicMarkersRef.current = [];
@@ -888,10 +894,12 @@ export function PlannerMap({
       }
 
       const popup = new maplibre.Popup({
-        anchor: "center",
+        // Keep the selected marker visible below the card instead of covering it.
+        anchor: "bottom",
         className: "candidateMapPopupShell",
         maxWidth: `${placePopupWidth}px`,
-        offset: 0
+        // Leave room for the marker itself (the popup tip is intentionally hidden).
+        offset: 38
       }).setDOMContent(popupContent);
       popup.on("open", () => {
         map.easeTo({

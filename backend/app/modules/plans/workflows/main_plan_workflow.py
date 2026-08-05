@@ -312,8 +312,8 @@ class MainPlanWorkflow:
                 422,
                 "TRIP_THEME_INPUT_INSUFFICIENT",
                 (
-                    "TripThemePlanner cannot create trip themes because the "
-                    "region has no catalog Places and no confirmed selected Places."
+                    "Mình chưa thể lập lịch trình vì điểm đến này chưa có đủ địa điểm phù hợp; "
+                    "bạn hãy chọn một địa điểm cụ thể hoặc thử điểm đến khác."
                 ),
                 {
                     "selectedPlaces": (
