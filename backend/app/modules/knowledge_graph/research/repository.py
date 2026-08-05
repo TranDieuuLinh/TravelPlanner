@@ -415,10 +415,13 @@ class ScopeResolutionRepository:
         """
         inference_source = None
 
-        if entity.status == "verified":
-            trust = TrustLevel.VERIFIED
-        elif edge_source and not edge_source.startswith(INFERENCE_PREFIX):
+        if edge_source and edge_source.startswith(INFERENCE_PREFIX):
+            trust = TrustLevel.INFERRED
+            inference_source = edge_source
+        elif edge_source:
             trust = TrustLevel.SOURCE_BACKED
+        elif entity.status == "verified":
+            trust = TrustLevel.VERIFIED
         else:
             trust = TrustLevel.INFERRED
             if edge_source:
@@ -514,19 +517,24 @@ class ScopeResolutionRepository:
 
     def query_special_experiences_in_scope(
         self,
-        area_ids: list[str],
+        location_ids: list[str],
         interests: list[str] | None = None,
         limit: int = 100,
     ) -> list[KnowledgeRelationship]:
-        """Query SPECIAL_EXPERIENCE edges from Areas in scope.
+        """Query schema-v7 SPECIAL_EXPERIENCE edges in scope.
 
-        Path: Area → SPECIAL_EXPERIENCE → Place
+        Path: LocationEntity → SPECIAL_EXPERIENCE → Activity
         """
         query = (
             select(KnowledgeRelationship)
+            .join(
+                KnowledgeEntity,
+                KnowledgeRelationship.to_entity_id == KnowledgeEntity.id,
+            )
             .where(
-                KnowledgeRelationship.from_entity_id.in_(area_ids),
+                KnowledgeRelationship.from_entity_id.in_(location_ids),
                 KnowledgeRelationship.relationship_type == "SPECIAL_EXPERIENCE",
+                KnowledgeEntity.entity_type.in_(ActivityTypes),
             )
             .limit(limit)
         )
@@ -542,20 +550,26 @@ class ScopeResolutionRepository:
 
         Path: Area → SPECIAL_EXPERIENCE → Activity
         """
-        activity_rels = (
+        return self.query_special_experiences_in_scope(area_ids, interests, limit)
+
+    def query_activity_targets_place(
+        self,
+        activity_ids: list[str],
+        limit: int = 100,
+    ) -> list[KnowledgeRelationship]:
+        """Query schema-v7 Activity → TARGETS_PLACE → Place anchors."""
+
+        if not activity_ids:
+            return []
+        query = (
             select(KnowledgeRelationship)
-            .join(
-                KnowledgeEntity,
-                KnowledgeRelationship.to_entity_id == KnowledgeEntity.id,
-            )
             .where(
-                KnowledgeRelationship.from_entity_id.in_(area_ids),
-                KnowledgeRelationship.relationship_type == "SPECIAL_EXPERIENCE",
-                KnowledgeEntity.entity_type.in_(ActivityTypes),
+                KnowledgeRelationship.from_entity_id.in_(activity_ids),
+                KnowledgeRelationship.relationship_type == "TARGETS_PLACE",
             )
             .limit(limit)
         )
-        return list(self.db.scalars(activity_rels).all())
+        return list(self.db.scalars(query).all())
 
     def query_place_offers_activity(
         self,
@@ -575,32 +589,6 @@ class ScopeResolutionRepository:
             .limit(limit)
         )
         return list(self.db.scalars(query).all())
-
-    def query_special_experience_to_place_offers_activity(
-        self,
-        area_ids: list[str],
-        limit: int = 100,
-    ) -> list[tuple[KnowledgeRelationship, KnowledgeRelationship]]:
-        """Query chained SPECIAL_EXPERIENCE + OFFERS_ACTIVITY paths.
-
-        Path: Area → SPECIAL_EXPERIENCE → Place → OFFERS_ACTIVITY → Activity
-        Returns tuples of (special_exp_rel, offers_rel).
-        """
-        special_exp_rels = self.query_special_experiences_in_scope(area_ids, limit=limit)
-        place_ids = list({rel.to_entity_id for rel in special_exp_rels})
-
-        if not place_ids:
-            return []
-
-        offers_rels = self.query_place_offers_activity(place_ids, limit=limit)
-        offers_by_place = {rel.from_entity_id: rel for rel in offers_rels}
-
-        chained: list[tuple[KnowledgeRelationship, KnowledgeRelationship]] = []
-        for se_rel in special_exp_rels:
-            if se_rel.to_entity_id in offers_by_place:
-                chained.append((se_rel, offers_by_place[se_rel.to_entity_id]))
-
-        return chained
 
     def query_located_in_place_offers_activity(
         self,

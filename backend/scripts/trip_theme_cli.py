@@ -25,6 +25,9 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.trip_theme_planner.graph_research import (
     TripThemeGraphResearchService,
 )
+from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
+    project_graph_candidate_catalog,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,6 +138,10 @@ def research_context(args: argparse.Namespace) -> int:
         output = {
             "researchInput": research_input.model_dump(mode="json", by_alias=True),
             "researchBundle": result.model_dump(mode="json", by_alias=True),
+            "graphCandidateCatalog": project_graph_candidate_catalog(result).model_dump(
+                mode="json",
+                by_alias=True,
+            ),
         }
         print(
             json.dumps(

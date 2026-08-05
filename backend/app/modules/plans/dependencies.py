@@ -48,9 +48,6 @@ from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelection
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
-from app.modules.plans.trip_theme_planner.research_tool import (
-    RepositoryPlannerResearchTool,
-)
 from app.modules.plans.trip_theme_planner.graph_research import (
     TripThemeGraphResearchService,
 )
@@ -179,7 +176,6 @@ def get_plan_service(
     trip_theme_planner = TripThemePlannerService(
         statistics,
         llm_client,
-        RepositoryPlannerResearchTool(place_repository),
         graph_research_service=graph_research_service,
     )
     place_selector = PlaceSelectorService(

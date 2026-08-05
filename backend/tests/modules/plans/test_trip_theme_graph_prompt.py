@@ -1,12 +1,14 @@
 """TripTheme planner tests for graph-bounded ``requiredExperiences`` selection.
 
-Scope (MICRO-TASK 5.5):
+Scope (MICRO-TASK 5.7):
 - The TripTheme LLM is constrained to pick ``requiredExperiences`` IDs from the
   bounded ``graphCandidateCatalog`` delivered with the trip theme payload.
 - Each of the three ``selectionPolicy`` values is exercised end-to-end.
 - Invalid IDs (Place, Activity, claim) are rejected by the repair loop and the
   LLM is asked to repair.
 - The repair loop stops after three failed attempts.
+- Graph research replaces the legacy research LLM call, so the happy path uses
+  exactly one LLM call.
 
 The fake LLM, fake graph orchestrator, and fake statistics provider keep the
 tests deterministic and isolated from the production wiring, which is not
@@ -38,6 +40,7 @@ from app.modules.knowledge_graph.research.schema import (
 )
 from app.modules.plans.domain.entities import TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
+from app.modules.plans.dto.agent_contracts import SelectedPlaceContext, TripPlanningSpec
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 
 
@@ -252,31 +255,6 @@ def _intent() -> TravelIntent:
 # ---------------------------------------------------------------------------
 
 
-def _research_payload() -> str:
-    return json.dumps(
-        {
-            "journeyStyle": "local_base",
-            "varietyStrategy": "Vary the coffee tour with the cooking class.",
-            "themeQueries": [
-                {
-                    "theme": "Coffee",
-                    "capabilities": ["coffee"],
-                    "rationale": "Verify coffee tour support.",
-                },
-                {
-                    "theme": "Cooking",
-                    "capabilities": ["food"],
-                    "rationale": "Verify cooking class support.",
-                },
-            ],
-            "expandBeyondRoot": False,
-            "nearbyCapabilities": [],
-            "maxDistanceKm": 100,
-        },
-        ensure_ascii=False,
-    )
-
-
 class _GraphThemeScriptedLLM:
     """Fake LLM that returns a trip theme draft with the supplied
     ``requiredExperiences`` payload and remembers every macro call."""
@@ -297,8 +275,6 @@ class _GraphThemeScriptedLLM:
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
-        if envelope["stage"] == "research":
-            return _research_payload()
         self.macro_calls += 1
         self.system_prompts.append(system_prompt)
         self.macro_payloads.append(user_payload)
@@ -332,8 +308,6 @@ class _InvalidIdRepairingLLM(_GraphThemeScriptedLLM):
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
-        if envelope["stage"] == "research":
-            return _research_payload()
         self.macro_calls += 1
         self.system_prompts.append(system_prompt)
         self.macro_payloads.append(user_payload)
@@ -371,8 +345,6 @@ class _AlwaysInvalidLLM(_GraphThemeScriptedLLM):
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
-        if envelope["stage"] == "research":
-            return _research_payload()
         self.macro_calls += 1
         self.system_prompts.append(system_prompt)
         self.macro_payloads.append(user_payload)
@@ -731,3 +703,68 @@ class TestGraphCatalogInPayload:
             for candidate in repair_payload["graphCandidateCatalog"]["candidates"]
             for claim in candidate["claimIds"]
         }
+
+
+class TestGraphCutoverEvaluations:
+    def test_empty_coverage_sends_empty_catalog_with_one_llm_call(self) -> None:
+        llm = _GraphThemeScriptedLLM(
+            trip_themes=_trip_themes(),
+            required_experiences=[],
+        )
+        empty_bundle = TripResearchBundle(
+            scope=ScopeResolveOutput(),
+            eligibleExperiences=[],
+            warnings=["GRAPH_EXPERIENCE_COVERAGE_EMPTY"],
+            graphSnapshot=GraphSnapshot(timestamp="2026-08-05T00:00:00Z"),
+        )
+        orchestrator = _RecordingGraphOrchestrator(empty_bundle)
+        service = TripThemePlannerService(
+            statistics_provider=_FakeStatisticsProvider(),
+            llm=llm,
+            graph_research_orchestrator=orchestrator,
+        )
+
+        output = asyncio.run(
+            service.create_trip_themes(
+                _intent(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[],
+            )
+        )
+
+        assert output.required_experiences == []
+        assert llm.macro_calls == 1
+        assert orchestrator.calls == 1
+        assert json.loads(llm.macro_payloads[0])["graphCandidateCatalog"] == {
+            "candidates": []
+        }
+
+    def test_private_notes_never_enter_llm_payload(self) -> None:
+        llm = _GraphThemeScriptedLLM(
+            trip_themes=_trip_themes(),
+            required_experiences=[],
+        )
+        service, _ = _build_service(llm)
+        secret = "PRIVATE-NOTE-MUST-NOT-CROSS"
+
+        asyncio.run(
+            service.create_trip_themes(
+                _intent(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[
+                    SelectedPlaceContext(
+                        name="Văn Miếu",
+                        placeId="place-van-mieu",
+                        personalNotes=secret,
+                        notes=secret,
+                    )
+                ],
+            )
+        )
+
+        assert secret not in llm.macro_payloads[0]
+        selected = json.loads(llm.macro_payloads[0])["plannerInput"]["selectedPlaces"]
+        assert "personalNotes" not in selected[0]
+        assert "notes" not in selected[0]

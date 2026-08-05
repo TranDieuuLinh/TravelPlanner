@@ -89,6 +89,21 @@ Output là `TripThemePlanningOutput`:
       "targetRegionKeys": ["vn,ha-noi"]
     }
   ],
+  "requiredExperiences": [
+    {
+      "requirementId": "req-walk-hoan-kiem",
+      "theme": "Dạo Hồ Gươm",
+      "activityId": "activity-walk-hoan-kiem",
+      "selectionPolicy": "required_anchor",
+      "anchorPlaceIds": ["place-hoan-kiem"],
+      "candidatePlaceIds": [],
+      "minimumRequired": 1,
+      "priority": "must",
+      "reason": "Trải nghiệm đặc trưng có graph evidence.",
+      "evidenceClaimIds": ["claim-hoan-kiem-walk"],
+      "sourceRefs": ["https://example.com/hoan-kiem"]
+    }
+  ],
   "assumptions": [],
   "warnings": [],
   "trace": {
@@ -101,15 +116,21 @@ Output là `TripThemePlanningOutput`:
 ```
 
 Output không được có ngày, route bucket, journey phase hoặc selected-place
-allocation. LLM chạy một lượt research đã kiểm chứng bằng Place database, rồi
-một lượt tạo `TripThemeDraft`. Backend sửa contract lỗi tối đa ba lần. Tổng
+allocation. Backend chạy graph research deterministic, tạo bounded
+`graphCandidateCatalog`, rồi gọi LLM một lượt để tạo `TripThemeDraft`; CLI
+`research-context` hiển thị cùng catalog mà không gọi LLM. Backend sửa contract
+lỗi tối đa ba lần. Tổng
 `minimumActivities` được chuẩn hóa theo capacity hai activity mỗi ngày; theme
 chỉ nói về bữa ăn bị loại vì meal là trách nhiệm riêng của PlaceSelector.
 
 Khi catalog trống nhưng có selected Place, TripThemePlanner vẫn có thể tạo
-theme. Khi cả hai nguồn trống, `tripThemesReady=false`.
+theme nhưng `requiredExperiences` phải rỗng. Khi cả hai nguồn trống,
+`tripThemesReady=false`.
 
 ## PlaceSelector
+
+`PlaceSelectionInput` hiện chưa chứa `requiredExperiences`; cutover này chưa
+tích hợp các yêu cầu graph vào PlaceSelector.
 
 Input là `PlaceSelectionInput`:
 

@@ -18,9 +18,17 @@ from app.modules.plans.dto.agent_contracts import (
     RequiredExperience,
     RequiredExperiencePriority,
     RequiredExperienceSelectionPolicy,
+    PlaceSelectionInput,
     TripPlanningSpec,
     TripThemePlanningOutput,
 )
+
+
+def test_place_selector_contract_does_not_accept_required_experiences() -> None:
+    assert "required_experiences" not in PlaceSelectionInput.model_fields
+    assert "requiredExperiences" not in {
+        field.alias for field in PlaceSelectionInput.model_fields.values()
+    }
 
 
 def _base_requirement(**overrides: object) -> dict[str, object]:

@@ -92,6 +92,13 @@ def populated_db(db_session: Session):
             entity_type="Activity",
             status="inferred",
         ),
+        KnowledgeEntity(
+            id="activity_old_quarter_walk",
+            canonical_name="Old Quarter Walk",
+            normalized_name="old quarter walk",
+            entity_type="Activity",
+            status="source_backed",
+        ),
     ]
     for entity in entities:
         db_session.add(entity)
@@ -111,20 +118,31 @@ def populated_db(db_session: Session):
             to_entity_id="area_hanoi",
             source=None,
         ),
-        # Area → SPECIAL_EXPERIENCE → Place (verified)
+        # Schema v7: Area → SPECIAL_EXPERIENCE → Activity → TARGETS_PLACE → Place
         KnowledgeRelationship(
             from_entity_id="area_hoan_kiem",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_cafe_giang",
+            to_entity_id="activity_coffee_tour",
             recommendations={"priority": "must", "reason": "Historic egg coffee"},
             source="https://example.com/giang",
         ),
-        # Area → SPECIAL_EXPERIENCE → Place (source backed)
+        KnowledgeRelationship(
+            from_entity_id="activity_coffee_tour",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_cafe_giang",
+            source="https://example.com/giang",
+        ),
         KnowledgeRelationship(
             from_entity_id="area_hoan_kiem",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_old_quarter",
+            to_entity_id="activity_old_quarter_walk",
             recommendations={"priority": "recommended", "reason": "Historic district"},
+            source="https://wikitravel.org/hanoi",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_old_quarter_walk",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_old_quarter",
             source="https://wikitravel.org/hanoi",
         ),
         # Area → SPECIAL_EXPERIENCE → Activity (inferred)
@@ -132,7 +150,7 @@ def populated_db(db_session: Session):
             from_entity_id="area_hanoi",
             relationship_type="SPECIAL_EXPERIENCE",
             to_entity_id="activity_cooking",
-            recommendations={"priority": "recommended", "reason": "Local cuisine"},
+            recommendations={"priority": "must", "reason": "Local cuisine"},
             source="inference:taxonomy",
         ),
         # Place → OFFERS_ACTIVITY
@@ -144,6 +162,12 @@ def populated_db(db_session: Session):
             source="https://cafegiang.com/workshop",
         ),
         # LOCATED_IN
+        KnowledgeRelationship(
+            from_entity_id="place_cafe_giang",
+            relationship_type="LOCATED_IN",
+            to_entity_id="area_hoan_kiem",
+            source="https://example.com/giang",
+        ),
         KnowledgeRelationship(
             from_entity_id="place_temple",
             relationship_type="LOCATED_IN",
@@ -193,13 +217,13 @@ class TestClaimIdGeneration:
         assert id1 != id2
 
 
-class TestSpecialExperienceToPlace:
-    """Tests for Area → SPECIAL_EXPERIENCE → Place path."""
+class TestSpecialExperienceDirectAnchor:
+    """Tests the schema-v7 Activity → TARGETS_PLACE direct anchor path."""
 
     def test_discover_special_experience_place(
         self, populated_repo: ScopeResolutionRepository
     ) -> None:
-        """Test discovering special experiences pointing to places."""
+        """Discover special Activities with direct Place anchors."""
         input_data = ExperienceDiscoveryInput(
             rootAreaId="area_hoan_kiem",
             limit=20,
@@ -208,12 +232,13 @@ class TestSpecialExperienceToPlace:
 
         assert len(result.claims) >= 2
 
-        se_place_claims = [
+        direct_anchor_claims = [
             c for c in result.claims
             if c.predicate == "SPECIAL_EXPERIENCE"
-            and c.object.type in ("Cafe", "TravelPlace")
+            and c.object.type == "Activity"
+            and c.anchorPlace is not None
         ]
-        assert len(se_place_claims) >= 2
+        assert len(direct_anchor_claims) >= 2
 
     def test_special_experience_verified_trust(
         self, populated_repo: ScopeResolutionRepository
@@ -226,7 +251,11 @@ class TestSpecialExperienceToPlace:
         result = kg_discover_experiences(populated_repo, input_data)
 
         cafe_claim = next(
-            (c for c in result.claims if c.object.name == "Cafe Giảng"),
+            (
+                c for c in result.claims
+                if c.anchorPlace is not None
+                and c.anchorPlace.name == "Cafe Giảng"
+            ),
             None
         )
         assert cafe_claim is not None
@@ -333,7 +362,12 @@ class TestProvenance:
         result = kg_discover_experiences(populated_repo, input_data)
 
         cafe_claim = next(
-            (c for c in result.claims if c.object.name == "Cafe Giảng"),
+            (
+                c for c in result.claims
+                if c.predicate == "SPECIAL_EXPERIENCE"
+                and c.anchorPlace is not None
+                and c.anchorPlace.name == "Cafe Giảng"
+            ),
             None
         )
         assert cafe_claim is not None
@@ -371,7 +405,11 @@ class TestExternalSourceTrust:
         result = kg_discover_experiences(populated_repo, input_data)
 
         old_quarter_claim = next(
-            (c for c in result.claims if c.object.name == "Old Quarter"),
+            (
+                c for c in result.claims
+                if c.anchorPlace is not None
+                and c.anchorPlace.name == "Old Quarter"
+            ),
             None
         )
         assert old_quarter_claim is not None
@@ -391,9 +429,9 @@ class TestInferenceDowngrade:
         )
         result = kg_discover_experiences(populated_repo, input_data)
 
-        # The OFFERS_ACTIVITY edge for cafe_giang has inference source
+        # The SPECIAL_EXPERIENCE edge for Cooking Class is inferred.
         cafe_claim = next(
-            (c for c in result.claims if c.object.name == "Cafe Giảng"),
+            (c for c in result.claims if c.object.name == "Cooking Class"),
             None
         )
         assert cafe_claim is not None

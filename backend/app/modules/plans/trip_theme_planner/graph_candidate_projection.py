@@ -46,9 +46,13 @@ class GraphCandidateCatalog(BaseModel):
 
 
 _PLACE_TYPES = frozenset({
-    "Place",
-    "Restaurant",
+    # Schema v7 concrete Place descendants.
     "TravelPlace",
+    "Restaurant",
+    "DrinkDessert",
+    "Accommodation",
+    # Read compatibility for graph rows created before the v7 migration.
+    "Place",
     "Cafe",
     "Hotel",
     "Shop",
@@ -104,8 +108,6 @@ def _claim_shape(claim: GraphEvidenceClaim) -> str | None:
         return None
     if claim.object.type in _ACTIVITY_TYPES:
         return "special_experience_activity"
-    if claim.object.type in _PLACE_TYPES:
-        return "special_experience_place"
     return None
 
 

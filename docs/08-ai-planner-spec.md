@@ -31,8 +31,9 @@ yêu cầu của user.
 ## Luồng xử lý hiện tại
 
 1. `ExplorerService` chuẩn hóa ý định và tạo câu hỏi làm rõ.
-2. `TripThemePlannerService` gọi LLM bằng structured output để tạo các yêu cầu
-   trải nghiệm ở cấp toàn chuyến từ Explorer context và snapshot khu vực.
+2. `TripThemePlannerService` chạy graph research deterministic, chiếu kết quả
+   thành catalog hữu hạn rồi gọi LLM structured-output một lần để tạo yêu cầu
+   trải nghiệm ở cấp toàn chuyến.
 3. `PlaceSelectorService` tự tạo đủ số ngày, chọn địa điểm và tối ưu tuyến.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
@@ -59,10 +60,11 @@ duration để xếp hết; nếu user đã khóa, phần dư được giữ tro
 PlaceSelector đề xuất không được làm URL place rơi vào `UnscheduledPlace`; PlaceSelector chỉ
 bổ sung khi còn capacity sau khi phân bổ source places.
 
-TripThemePlanner dùng hai lượt LLM. Lượt research đề xuất capability cần kiểm
-chứng; backend query Place active và vùng lân cận, sau đó lượt theme tạo
-`TripThemeDraft` từ evidence đã xác minh. Contract này chỉ có `tripThemes`,
-assumption và warning; không có ngày hoặc phân bổ `selectedPlace`. Backend yêu
+TripThemePlanner không còn dùng research LLM hoặc Place-database research tool.
+Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
+evidence theo ontology v7 thành `graphCandidateCatalog`; sau đó LLM tạo
+`TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
+assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
 cầu model sửa output lỗi tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
 phân bổ Place, capacity và `UnscheduledPlace` bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
@@ -289,17 +291,25 @@ TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
-- theme chỉ dùng capability/region đã được tool kiểm chứng;
-- theme sáng tạo như biển, hải sản, hiking hoặc camping phải có capability
-  evidence từ Place active trước khi được mô tả như một khả năng có thật;
+- `requiredExperiences` chỉ dùng claim, Activity và Place ID có trong bounded
+  graph catalog, theo `required_anchor`, `choose_one` hoặc `open_candidate`;
+- ontology v7 dùng `LocationEntity -> SPECIAL_EXPERIENCE -> Activity`, và
+  `Activity -> TARGETS_PLACE -> Place` khi trải nghiệm có anchor trực tiếp;
+- evidence inferred vẫn được đánh dấu và không được nâng thành verified;
 - không tạo ngày, khung giờ, journey phase, route bucket hoặc place allocation.
+
+CLI `trip_theme_cli.py research-context` chỉ chạy graph research và hiển thị cả
+research bundle lẫn bounded `graphCandidateCatalog`; lệnh này không gọi LLM.
 
 ### Giai đoạn 6: PlaceSelector
 
 TripThemePlanner runtime mang tên `TripThemePlannerService`. Nó tạo
-`tripThemes` ở cấp toàn chuyến (theme, focus tags và số activity tối thiểu phải phủ),
+`tripThemes` và `requiredExperiences` ở cấp toàn chuyến,
 không tạo nội dung theo Ngày 1/Ngày 2. PlaceSelector tạo đúng số day slot từ
 `tripSpec.days`; route optimizer quyết định activity thuộc ngày nào.
+
+Tại cutover này, `PlaceSelectionInput` chưa có `requiredExperiences`; vì vậy
+PlaceSelector chưa áp các yêu cầu graph này khi chọn hoặc phân bổ Place.
 
 PlaceSelector điền item cụ thể:
 
