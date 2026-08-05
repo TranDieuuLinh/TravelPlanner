@@ -1783,12 +1783,6 @@ function Planner() {
   const awaitingInitialPlan =
     !displayedPlan && (backgroundPlanning || loading);
 
-  useEffect(() => {
-    if (awaitingInitialPlan && window.innerWidth > 900) {
-      setChatCollapsed(true);
-    }
-  }, [awaitingInitialPlan]);
-
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
     return (
@@ -2880,22 +2874,21 @@ function Planner() {
       ...guidedIntakeAnswers,
       [guidedIntakeStep]: answer === "Bỏ qua" ? "" : answer,
     };
-    const currentIndex = guidedIntakeOrder.indexOf(guidedIntakeStep);
-    const isLastStep = currentIndex === guidedIntakeOrder.length - 1;
-    const nextStep: GuidedIntakeStep = isLastStep
-      ? "complete"
-      : guidedIntakeOrder[currentIndex + 1];
     setGuidedIntakeAnswers(nextAnswers);
-    setGuidedIntakeStep(nextStep);
+    setGuidedDraft(nextAnswers[guidedIntakeStep] ?? "");
     setError("");
+    setGuidedIntakeOpen(false);
+    showPlannerToast(
+      `Đã cập nhật ${
+        guidedIntakeQuestions[guidedIntakeStep].replace(/[?？]$/, "")
+      }`
+    );
 
-    if (isLastStep) {
+    if (guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]) {
+      setGuidedIntakeStep("complete");
       setGuidedIntakeOpen(false);
       setGuidedDraft("");
       void sendMessage(buildGuidedIntakeRequest(nextAnswers), false);
-    } else {
-      const pendingStep = nextStep as Exclude<GuidedIntakeStep, "complete">;
-      setGuidedDraft(nextAnswers[pendingStep]?.trim() ?? "");
     }
   }
 
@@ -3691,12 +3684,7 @@ function Planner() {
                                 value={guidedStartDate}
                               />
                             </label>
-                            <span
-                              aria-hidden="true"
-                              className="guidedDateArrow"
-                            >
-                              →
-                            </span>
+                            <span className="guidedDateArrow">đến</span>
                             <label>
                               <span>Ngày kết thúc</span>
                               <input
@@ -3709,6 +3697,11 @@ function Planner() {
                                 value={guidedEndDate}
                               />
                             </label>
+                          </div>
+                          <div className="guidedIntakeActions">
+                            <button className="guidedIntakeUpdate" type="submit">
+                              Cập nhật
+                            </button>
                           </div>
                         </form>
                       ) : guidedIntakeStep === "travelers" ? (
@@ -3777,6 +3770,11 @@ function Planner() {
                               );
                             })}
                           </div>
+                          <div className="guidedIntakeActions">
+                            <button className="guidedIntakeUpdate" type="submit">
+                              Cập nhật
+                            </button>
+                          </div>
                         </form>
                       ) : (
                         <form
@@ -3802,20 +3800,15 @@ function Planner() {
                               value={guidedDraft}
                             />
                             <button
-                              aria-label={
-                                guidedDraft.trim() ? "Tiếp tục" : "Bỏ qua"
-                              }
-                              className="guidedIntakeAnswerNext"
+                              aria-label="Cập nhật thông tin"
+                              className="guidedIntakeUpdate"
                               disabled={
                                 guidedIntakeStep === "destination" &&
                                 !guidedDraft.trim()
                               }
-                              title={guidedDraft.trim() ? "Tiếp tục" : "Bỏ qua"}
                               type="submit"
                             >
-                              <svg aria-hidden="true" viewBox="0 0 24 24">
-                                <path d="m9 5 7 7-7 7" />
-                              </svg>
+                              Cập nhật
                             </button>
                           </div>
                         </form>

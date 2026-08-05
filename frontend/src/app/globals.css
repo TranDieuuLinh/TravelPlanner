@@ -7229,8 +7229,25 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   align-items: center;
   justify-content: center;
   padding: 20px clamp(24px, 5vw, 58px) 12px;
-  background: #fff;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(224, 243, 237, .72), transparent 42%),
+    linear-gradient(180deg, #fbfdfc 0%, #f4faf7 100%);
   text-align: center;
+}
+
+.plannerBackgroundStage::before {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, .28);
+  content: "";
+  pointer-events: none;
+}
+
+.plannerBackgroundStage > * {
+  z-index: 1;
 }
 
 .plannerLoadingJourney {
@@ -7991,7 +8008,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   min-height: 54px;
   border: 1px solid #cedbd7;
   border-radius: 14px;
-  padding: 0 16px;
+  padding: 0 122px 0 16px;
   outline: 0;
   background: #fbfdfc;
   color: #1c312d;
@@ -8005,32 +8022,51 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   box-shadow: 0 0 0 4px rgba(49, 95, 88, .1);
 }
 
-.guidedIntakeAnswerNext {
+.guidedIntakeAnswer .guidedIntakeUpdate {
   position: absolute;
   top: 7px;
   right: 7px;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
+}
+
+.guidedIntakeActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.guidedIntakeUpdate {
+  display: inline-flex;
+  min-width: 104px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  border-radius: 50%;
+  border-radius: 999px;
+  padding: 0 18px;
   background: #263c37;
   color: #fff;
   cursor: pointer;
-  transition: opacity .16s ease, transform .16s ease;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 800;
+  transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 
-.guidedIntakeAnswerNext:hover:not(:disabled),
-.guidedIntakeAnswerNext:focus-visible { transform: translateX(2px); }
-.guidedIntakeAnswerNext:disabled { opacity: .22; cursor: default; }
-.guidedIntakeAnswerNext svg {
-  width: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
+.guidedIntakeUpdate:hover:not(:disabled),
+.guidedIntakeUpdate:focus-visible {
+  background: #315f58;
+  box-shadow: 0 6px 16px rgba(38, 60, 55, .18);
+  transform: translateY(-1px);
+}
+
+.guidedIntakeUpdate:focus-visible {
+  outline: 3px solid rgba(49, 95, 88, .2);
+  outline-offset: 3px;
+}
+
+.guidedIntakeUpdate:disabled {
+  cursor: default;
+  opacity: .42;
 }
 
 .guidedIntakeDialog.isDestination {
@@ -8069,7 +8105,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .guidedIntakeDialog.isDestination form { gap: 0; }
 .guidedIntakeDialog.isDestination .guidedIntakeAnswer input {
   min-height: 56px;
-  padding: 0 58px 0 18px;
+  padding: 0 122px 0 18px;
   border-color: #d8dddb;
   border-radius: 28px;
   background: #fff;
@@ -8135,6 +8171,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .guidedDateArrow {
   padding-bottom: 17px;
   color: #81908c;
+  font-size: .65rem;
+  font-weight: 700;
   text-align: center;
 }
 
