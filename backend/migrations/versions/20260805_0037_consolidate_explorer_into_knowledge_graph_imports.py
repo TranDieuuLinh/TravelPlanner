@@ -219,7 +219,8 @@ def _backfill_source_documents(bind) -> dict[str, str]:
 
     target = sa.table(
         "source_documents", sa.column("id"), sa.column("canonical_url"),
-        sa.column("platform"), sa.column("artifacts"), sa.column("extracted_context"),
+        sa.column("platform"), sa.column("artifacts", sa.JSON()),
+        sa.column("extracted_context", sa.JSON()),
         sa.column("extractor_version"), sa.column("fetched_at"),
         sa.column("created_at"), sa.column("updated_at"),
     )
@@ -242,14 +243,7 @@ def _backfill_explorer_intakes(bind) -> None:
         sa.column("destination"), sa.column("candidate_reviews"), sa.column("created_at"),
     )
     target = _imports_table()
-    node_target = sa.table("knowledge_graph_import_nodes", *[sa.column(name) for name in (
-        "import_id", "temp_id", "entity_id", "type", "canonical_name", "aliases",
-        "properties", "evidence", "confidence", "match_status", "match_candidates",
-        "selected_entity_id", "decision", "validation_issues", "required_properties",
-        "optional_properties", "candidate_key", "candidate_name", "search_region",
-        "source_evidence", "provider_snapshot", "preference_level", "attributes",
-        "identity_status", "created_at", "updated_at",
-    )])
+    node_target = _import_nodes_table()
     for row in bind.execute(sa.select(legacy)).mappings():
         numeric_user = int(row["user_id"]) if str(row["user_id"] or "").isdigit() else None
         bind.execute(target.insert().values(
@@ -289,21 +283,17 @@ def _backfill_explorer_nodes(bind, document_ids: dict[str, str]) -> None:
     links = sa.table(
         "user_must_place_users", sa.column("user_must_place_id"), sa.column("intake_id")
     )
-    target = sa.table("knowledge_graph_import_nodes", *[sa.column(name) for name in (
-        "import_id", "temp_id", "entity_id", "type", "canonical_name", "aliases",
-        "properties", "evidence", "confidence", "match_status", "match_candidates",
-        "selected_entity_id", "decision", "validation_issues", "required_properties",
-        "optional_properties", "source_document_id", "candidate_key", "candidate_name",
-        "search_region", "source_evidence", "provider", "provider_external_id",
-        "provider_snapshot", "source_note", "source_order", "source_day",
-        "source_time_hint", "source_activity", "source_duration_minutes",
-        "preference_level", "attributes", "identity_status", "created_at", "updated_at",
-    )])
-    edge_target = sa.table("knowledge_graph_import_edges", *[sa.column(name) for name in (
-        "import_id", "temp_id", "from_ref", "relationship_type", "to_ref",
-        "recommendations", "source", "evidence", "confidence", "match_status",
-        "decision", "validation_issues", "created_at", "updated_at",
-    )])
+    target = _import_nodes_table()
+    edge_target = sa.table(
+        "knowledge_graph_import_edges",
+        sa.column("import_id"), sa.column("temp_id"), sa.column("from_ref"),
+        sa.column("relationship_type"), sa.column("to_ref"),
+        sa.column("recommendations", sa.JSON()), sa.column("source"),
+        sa.column("evidence", sa.JSON()), sa.column("confidence"),
+        sa.column("match_status"), sa.column("decision"),
+        sa.column("validation_issues", sa.JSON()), sa.column("created_at"),
+        sa.column("updated_at"),
+    )
     rows = bind.execute(
         sa.select(places, links.c.intake_id).join(
             links, links.c.user_must_place_id == places.c.id
@@ -394,15 +384,51 @@ def _backfill_url_jobs(bind, document_ids: dict[str, str]) -> None:
 
 
 def _imports_table():
-    return sa.table("knowledge_graph_imports", *[sa.column(name) for name in (
-        "id", "import_kind", "batch_id", "source_label", "source_url", "source_document_id",
-        "source_content", "status", "processing_status", "review_status", "schema_version",
-        "ontology_version", "dataset_hash", "warnings", "node_count", "edge_count",
-        "issue_count", "created_by", "chat_id", "destination", "candidate_reviews",
-        "source_type", "source_name", "image_mime_type", "image_data", "force_refresh",
-        "batch_position", "attempt_count", "result_revision", "error_code", "error_message",
-        "explorer_timing", "planner_timing", "created_at", "started_at", "finished_at", "updated_at",
-    )])
+    return sa.table(
+        "knowledge_graph_imports",
+        sa.column("id"), sa.column("import_kind"), sa.column("batch_id"),
+        sa.column("source_label"), sa.column("source_url"),
+        sa.column("source_document_id"), sa.column("source_content"),
+        sa.column("status"), sa.column("processing_status"),
+        sa.column("review_status"), sa.column("schema_version"),
+        sa.column("ontology_version"), sa.column("dataset_hash"),
+        sa.column("warnings", sa.JSON()), sa.column("node_count"),
+        sa.column("edge_count"), sa.column("issue_count"),
+        sa.column("created_by"), sa.column("chat_id"), sa.column("destination"),
+        sa.column("candidate_reviews", sa.JSON()), sa.column("source_type"),
+        sa.column("source_name"), sa.column("image_mime_type"),
+        sa.column("image_data", sa.LargeBinary()), sa.column("force_refresh"),
+        sa.column("batch_position"), sa.column("attempt_count"),
+        sa.column("result_revision"), sa.column("error_code"),
+        sa.column("error_message"), sa.column("explorer_timing", sa.JSON()),
+        sa.column("planner_timing", sa.JSON()), sa.column("created_at"),
+        sa.column("started_at"), sa.column("finished_at"), sa.column("updated_at"),
+    )
+
+
+def _import_nodes_table():
+    return sa.table(
+        "knowledge_graph_import_nodes",
+        sa.column("import_id"), sa.column("temp_id"), sa.column("entity_id"),
+        sa.column("type"), sa.column("canonical_name"),
+        sa.column("aliases", sa.JSON()), sa.column("properties", sa.JSON()),
+        sa.column("evidence", sa.JSON()), sa.column("confidence"),
+        sa.column("match_status"), sa.column("match_candidates", sa.JSON()),
+        sa.column("selected_entity_id"), sa.column("decision"),
+        sa.column("validation_issues", sa.JSON()),
+        sa.column("required_properties", sa.JSON()),
+        sa.column("optional_properties", sa.JSON()),
+        sa.column("source_document_id"), sa.column("candidate_key"),
+        sa.column("candidate_name"), sa.column("search_region"),
+        sa.column("source_evidence", sa.JSON()), sa.column("provider"),
+        sa.column("provider_external_id"),
+        sa.column("provider_snapshot", sa.JSON()), sa.column("source_note"),
+        sa.column("source_order"), sa.column("source_day"),
+        sa.column("source_time_hint"), sa.column("source_activity"),
+        sa.column("source_duration_minutes"), sa.column("preference_level"),
+        sa.column("attributes", sa.JSON()), sa.column("identity_status"),
+        sa.column("created_at"), sa.column("updated_at"),
+    )
 
 
 def _drop_legacy_explorer_tables() -> None:

@@ -346,6 +346,57 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     ]
 
 
+def test_url_amendment_keeps_canonical_vietnamese_destination_name(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+    first = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+    fake_plans.forced_destination = "Hanoi"
+
+    amended = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Thêm các địa điểm từ URL này",
+            expected_revision=first.revision,
+            initial_destination="ignored",
+            urls=["https://example.com/hanoi"],
+            images=[],
+        )
+    )
+
+    assert amended.destination == "Hà Nội"
+    assert amended.current_trip_intent is not None
+    assert amended.current_trip_intent.destination == "Hà Nội"
+    assert amended.current_plan is not None
+    assert amended.current_plan.destination == "Hà Nội"
+    assert fake_plans.plan_payloads[1].intent.destination == "Hà Nội"
+    revisions = list(
+        db_session.scalars(
+            select(TripRevision).where(TripRevision.chat_id == chat.id)
+        )
+    )
+    assert revisions[-1].trip_intent_payload["destination"] == "Hà Nội"
+
+
 def test_chat_loads_long_term_preferences_from_database(
     db_session,
     registered_client,

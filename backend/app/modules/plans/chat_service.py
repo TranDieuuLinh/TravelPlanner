@@ -26,6 +26,9 @@ from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.schema import MainPlanFromTripIntentCreate, SelectedPlaceCreate
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
+from app.modules.plans.trip_theme_planner.region_context import (
+    canonical_destination_name,
+)
 from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.users.model import User
 from app.shared.errors import AppError
@@ -182,6 +185,7 @@ class TripChatService:
             user_state=user_state,
             force_url_refresh=force_url_refresh,
         )
+        self._canonicalize_explorer_destination(explore)
         if current_context is not None:
             explore.explorer.candidate_reviews = _merge_candidate_reviews(
                 current_context.candidate_reviews,
@@ -284,6 +288,22 @@ class TripChatService:
             saved,
             latest_timing=explore.timing_report,
             latest_planner_timing=planner_timing,
+        )
+
+    @staticmethod
+    def _canonicalize_explorer_destination(
+        explore: ExploreIntakeResponse,
+    ) -> None:
+        destination = explore.explorer.trip_intent.destination
+        if not _is_confirmed_destination(destination):
+            return
+        canonical = canonical_destination_name(destination)
+        if canonical == destination:
+            return
+        explore.explorer.trip_intent = (
+            explore.explorer.trip_intent.model_copy(
+                update={"destination": canonical}
+            )
         )
 
     def _contextual_request(

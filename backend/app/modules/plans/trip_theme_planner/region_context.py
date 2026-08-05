@@ -37,6 +37,18 @@ _ROOT_REGION_ALIASES = {
     "sa-pa": "sa-pa",
     "sapa": "sa-pa",
 }
+_CANONICAL_VIETNAMESE_DESTINATIONS = {
+    "ha-noi": "Hà Nội",
+    "hai-phong": "Hải Phòng",
+    "hung-yen": "Hưng Yên",
+    "ho-chi-minh": "TP. Hồ Chí Minh",
+    "da-nang": "Đà Nẵng",
+    "ninh-binh": "Ninh Bình",
+    "hoi-an": "Hội An",
+    "hue": "Huế",
+    "da-lat": "Đà Lạt",
+    "sa-pa": "Sa Pa",
+}
 _VIETNAM_QUALIFIERS = (
     "viet-nam",
     "vietnam",
@@ -70,6 +82,22 @@ def normalize_region_key(destination: str, explicit_region_key: str | None = Non
     if not slug:
         raise ValueError("destination cannot be normalized to a region_key")
     return f"vn,{_canonical_root_slug(slug) or slug}"
+
+
+def canonical_destination_name(destination: str) -> str:
+    """Return the Vietnamese display name for a recognized destination.
+
+    Region keys remain the identity used for matching. This function only
+    stabilizes the user-facing label so aliases such as ``Hanoi`` do not
+    replace ``Hà Nội`` in a later URL-backed revision.
+    """
+
+    cleaned = destination.strip()
+    if not cleaned:
+        return cleaned
+    region_key = normalize_region_key(cleaned)
+    root_slug = region_key.split(",", maxsplit=2)[1]
+    return _CANONICAL_VIETNAMESE_DESTINATIONS.get(root_slug, cleaned)
 
 
 def normalize_search_region_key(search_region: str, destination: str) -> str:
