@@ -5836,6 +5836,33 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   font-weight: 800;
 }
 
+.tripProjectSectionTitle > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tripProjectDeleteAll {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: #a43b3b;
+  font-size: .52rem;
+  font-weight: 800;
+}
+
+.tripProjectDeleteAll:hover,
+.tripProjectDeleteAll:focus-visible {
+  background: #f8e5e5;
+  color: #7d2424;
+}
+
+.tripProjectDeleteAll:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
 .tripProjectList nav {
   display: grid;
   gap: 2px;
@@ -15317,37 +15344,96 @@ svg {
 }
 
 .plannerInlineProcessing {
-  display: inline-flex;
-  width: max-content;
+  display: grid;
+  width: calc(100% - 28px);
   max-width: calc(100% - 28px);
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
   margin: 0 14px 10px;
   border: 1px solid rgba(54, 95, 90, .1);
-  border-radius: 999px;
-  padding: 8px 11px;
+  border-radius: 18px;
+  padding: 8px 12px 9px;
   background: #f2f7f5;
   color: #496b64;
-  font-size: .62rem;
-  font-weight: 780;
+  overflow: hidden;
 }
 
-.plannerInlineSpinner {
-  width: 11px;
-  height: 11px;
-  flex: 0 0 auto;
-  border: 2px solid rgba(54, 95, 90, .2);
-  border-top-color: var(--brand);
-  border-radius: 50%;
-  animation: plannerInlineSpin .8s linear infinite;
+.plannerPenguinTrack {
+  position: relative;
+  display: block;
+  height: 45px;
+  min-width: 110px;
+  border-bottom: 2px solid rgba(54, 95, 90, .17);
 }
 
-@keyframes plannerInlineSpin {
-  to { transform: rotate(360deg); }
+.plannerPenguinTrack::after {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 12px,
+    rgba(54, 95, 90, .28) 12px 18px
+  );
+  content: "";
+}
+
+.plannerRunningPenguin {
+  position: absolute;
+  z-index: 1;
+  bottom: 1px;
+  left: 0;
+  width: 42px;
+  height: 42px;
+  animation: plannerPenguinCross 3.2s linear infinite;
+}
+
+.plannerRunningPenguinImage {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  animation: plannerPenguinStride .3s ease-in-out infinite alternate;
+}
+
+.plannerProcessingTimer {
+  display: grid;
+  gap: 1px;
+  padding-bottom: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.plannerProcessingTimer span {
+  color: #6f8882;
+  font-size: .55rem;
+  font-weight: 760;
+  letter-spacing: .02em;
+}
+
+.plannerProcessingTimer strong {
+  color: #315f58;
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+
+@keyframes plannerPenguinCross {
+  from { left: 0; }
+  to { left: calc(100% - 42px); }
+}
+
+@keyframes plannerPenguinStride {
+  from { transform: translateY(0) rotate(-4deg); }
+  to { transform: translateY(-3px) rotate(5deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .plannerInlineSpinner { animation: none; }
+  .plannerRunningPenguin,
+  .plannerRunningPenguinImage { animation: none; }
 }
 
 .plannerChat:not(.is-collapsed) .urlImportDock {

@@ -124,6 +124,8 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 
 - `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
 - `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
+- `DELETE /api/trip-chats`: xóa toàn bộ chat thuộc user hiện tại cùng message và
+  snapshot revision; không ảnh hưởng chat của user khác và trả `204 No Content`.
 - `GET /api/trip-chats/{chatId}`: lấy message history, TripIntent hiện hành,
   candidate review và plan hiện tại.
 - `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
