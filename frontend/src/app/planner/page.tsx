@@ -396,6 +396,7 @@ export default function PlannerPage() {
 function Planner() {
   const params = useSearchParams();
   const { user, loading: authLoading } = useAuth();
+  const initialChatId = params.get("chatId")?.trim() || null;
   const initialDestination = params.get("destination") ?? "";
   const initialPrompt = params.get("prompt")?.trim() ?? "";
   const hasPrefilledRequest = Boolean(initialPrompt || initialDestination);
@@ -1648,6 +1649,7 @@ function Planner() {
       if (authLoading) {
         setPlannerEntryResolved(false);
       } else {
+        syncPlannerChatUrl(null);
         setTripChats([]);
         activeChatIdRef.current = null;
         setActiveChatId(null);
@@ -1720,6 +1722,11 @@ function Planner() {
       .then((chats) => {
         if (cancelled) return;
         setTripChats(chats);
+        if (initialChatId && chats.some((chat) => chat.id === initialChatId)) {
+          void openTripChat(initialChatId);
+        } else if (initialChatId) {
+          syncPlannerChatUrl(null);
+        }
       })
       .catch((caught) => {
         if (!cancelled) {
@@ -1734,7 +1741,7 @@ function Planner() {
       cancelled = true;
       controller.abort();
     };
-  }, [authLoading, hasPrefilledRequest, user?.id]);
+  }, [authLoading, hasPrefilledRequest, initialChatId, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -3148,6 +3155,7 @@ function Planner() {
     setGuidedStartDate("");
     setGuidedEndDate("");
     setTravelerCounts({ adults: 1, children: 0, infants: 0, pets: 0 });
+    syncPlannerChatUrl(null);
     setMessages([
       {
         id: Date.now(),
@@ -3178,6 +3186,7 @@ function Planner() {
   }
 
   async function openTripChat(chatId: string) {
+    syncPlannerChatUrl(chatId);
     if (chatId === activeChatIdRef.current) return;
     activeRequestIdRef.current += 1;
     activeChatIdRef.current = chatId;
@@ -3197,6 +3206,14 @@ function Planner() {
         );
       }
     }
+  }
+
+  function syncPlannerChatUrl(chatId: string | null) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (chatId) url.searchParams.set("chatId", chatId);
+    else url.searchParams.delete("chatId");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
   async function handleDeleteTripChat(chat: TripChatSummary) {
