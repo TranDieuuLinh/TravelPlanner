@@ -5,7 +5,7 @@ import logging
 from uuid import uuid4
 
 from app.core.config import settings
-from app.modules.plans.chat_model import TripChat, TripChatTurn
+from app.modules.plans.chat_model import TripChat, TripChatMessage
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_service import TripChatService
 from app.integrations.llm.factory import get_llm_client
@@ -57,7 +57,7 @@ class ConversationTurnService:
         self.turn_timeout_seconds = settings.conversation_turn_timeout_seconds
         self.turn_stale_after_seconds = settings.conversation_turn_stale_after_seconds
 
-    def get_turn(self, chat_id: str, user: User, turn_id: str) -> TripChatTurn:
+    def get_turn(self, chat_id: str, user: User, turn_id: str) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
         return self.repository.get_turn(chat_id, user.id, turn_id)
 
@@ -82,7 +82,7 @@ class ConversationTurnService:
         expected_revision: int,
         client_turn_id: str | None = None,
         attachment_names: list[str] = [],
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         if not content.strip():
             raise AppError(
                 422,
@@ -105,7 +105,7 @@ class ConversationTurnService:
         user: User,
         turn_id: str,
         images: list[ImageUploadPayload] | None = None,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
         turn = self.repository.get_turn(chat_id, user.id, turn_id)
         if turn.status in {"completed", "awaiting_confirmation", "cancelled"}:
@@ -130,14 +130,16 @@ class ConversationTurnService:
                 self.supervisor.decide(
                     turn.content,
                     plan,
-                    conversation_context=_conversation_context(chat),
+                    conversation_context=_conversation_context(
+                        chat, exclude_turn_id=_turn_lifecycle_id(turn)
+                    ),
                 ),
                 timeout=self.turn_timeout_seconds,
             )
         except asyncio.TimeoutError:
             logger.exception(
                 "Conversation turn timed out",
-                extra={"chat_id": chat.id, "turn_id": turn.id},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn)},
             )
             return self._save_failed_turn(
                 chat,
@@ -148,14 +150,14 @@ class ConversationTurnService:
         except ConversationSupervisorError:
             logger.exception(
                 "Conversation supervisor failed",
-                extra={"chat_id": chat.id, "turn_id": turn.id},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn)},
             )
             message = "Mình chưa thể hiểu yêu cầu một cách an toàn. Hãy diễn đạt lại hoặc thử lại sau; lịch trình chưa thay đổi."
             return self._save_failed_turn(chat, turn, "SUPERVISOR_DECISION_FAILED", message)
         except AppError as error:
             logger.exception(
                 "Conversation turn rejected by application policy",
-                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error.code},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error.code},
             )
             return self._save_failed_turn(chat, turn, error.code, error.message)
 
@@ -203,7 +205,7 @@ class ConversationTurnService:
         except AppError as error:
             logger.exception(
                 "Conversation turn failed during execution",
-                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error.code},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error.code},
             )
             return self._save_failed_turn(chat, turn, error.code, error.message)
 
@@ -212,7 +214,7 @@ class ConversationTurnService:
         chat_id: str,
         user: User,
         turn_id: str,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
         turn = self.repository.get_turn(chat_id, user.id, turn_id)
         if turn.status != "awaiting_confirmation":
@@ -259,7 +261,7 @@ class ConversationTurnService:
         except AppError as error:
             logger.exception(
                 "Confirmed conversation turn failed during execution",
-                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error.code},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error.code},
             )
             return self._save_failed_turn(chat, turn, error.code, error.message)
 
@@ -268,7 +270,7 @@ class ConversationTurnService:
         chat_id: str,
         user: User,
         turn_id: str,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
         turn = self.repository.get_turn(chat_id, user.id, turn_id)
         if turn.status == "completed":
@@ -288,13 +290,13 @@ class ConversationTurnService:
     async def _run_decision(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         decision: ConversationDecision,
         plan: Plan | None,
         images: list[ImageUploadPayload],
         *,
         confirmed: bool = False,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         self.repository.update_turn(turn, status="executing")
         if decision.intent in {"create_plan", "regenerate_plan"}:
             return await self._create_plan(chat, turn, images)
@@ -406,9 +408,9 @@ class ConversationTurnService:
     async def _create_plan(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         images: list[ImageUploadPayload],
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         urls = list(
             dict.fromkeys(
                 _normalize_urls([]) + _extract_urls(turn.content)
@@ -434,6 +436,7 @@ class ConversationTurnService:
                 initial_destination=initial_destination,
                 urls=urls,
                 images=images,
+                turn_id=_turn_lifecycle_id(turn),
             )
         except ValueError as exc:
             if "region_key" in str(exc):
@@ -446,6 +449,18 @@ class ConversationTurnService:
                     ),
                 ) from exc
             raise
+        if (
+            result.current_plan is None
+            and result.current_trip_intent is not None
+            and not result.current_trip_intent.destination.strip()
+        ):
+            blocks = [{"type": "text", "text": "Bạn muốn đi du lịch ở đâu?"}]
+            return self.repository.update_turn(
+                turn,
+                status="completed",
+                assistant_blocks=blocks,
+                result_summary={"planRevision": result.revision},
+            )
         return self.repository.update_turn(
             turn,
             status="completed",
@@ -468,12 +483,12 @@ class ConversationTurnService:
     async def _mutate(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         plan: Plan,
         decision: ConversationDecision,
         *,
         allow_locked_change: bool = False,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         operation = decision.operation or {}
         day = int(operation.get("day") or 1)
         item_id = str(operation.get("itemId") or "")
@@ -572,7 +587,7 @@ class ConversationTurnService:
             },
         )
 
-    def _undo(self, chat: TripChat, turn: TripChatTurn) -> TripChatTurn:
+    def _undo(self, chat: TripChat, turn: TripChatMessage) -> TripChatMessage:
         if chat.revision < 2:
             raise AppError(
                 409,
@@ -614,16 +629,16 @@ class ConversationTurnService:
     def _save_failed_turn(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         error_code: str,
         message: str,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         try:
             self.repository.db.rollback()
         except Exception:
             logger.exception(
                 "Failed to rollback database after conversation turn failure",
-                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error_code},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error_code},
             )
         blocks = [{"type": "errorRecovery", "message": message}]
         try:
@@ -640,17 +655,17 @@ class ConversationTurnService:
         except Exception:
             logger.exception(
                 "Failed to persist failed conversation turn",
-                extra={"chat_id": chat.id, "turn_id": turn.id, "error_code": error_code},
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error_code},
             )
             raise
 
     def _save_response(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         content: str,
         blocks: list[dict],
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         self.repository.save_conversation_response(
             chat, turn, assistant_content=content, assistant_blocks=blocks
         )
@@ -684,7 +699,11 @@ def _clarification_blocks(
     return blocks
 
 
-def _conversation_context(chat: TripChat) -> dict:
+def _conversation_context(
+    chat: TripChat,
+    *,
+    exclude_turn_id: str | None = None,
+) -> dict:
     """Build a small, bounded context instead of sending the whole chat/plan.
 
     The current message is supplied separately. Only recent text turns and
@@ -694,14 +713,30 @@ def _conversation_context(chat: TripChat) -> dict:
     recent_messages = [
         {"role": message.role, "content": message.content[:1000]}
         for message in list(chat.messages)[-8:]
-        if message.role in {"assistant", "user"} and message.content.strip()
+        if message.role in {"assistant", "user"}
+        and message.content.strip()
+        and (
+            exclude_turn_id is None
+            or getattr(message, "turn_id", None) != exclude_turn_id
+        )
     ]
     stored_context = chat.conversation_context or {}
     requirements = stored_context.get("requirements")
+    lifecycle_messages = getattr(chat, "turns", None)
+    if lifecycle_messages is None:
+        lifecycle_messages = [
+            message
+            for message in chat.messages
+            if getattr(message, "client_turn_id", None)
+        ]
     action_history = [
         _turn_action_summary(turn)
-        for turn in list(getattr(chat, "turns", ()))[-8:]
+        for turn in list(lifecycle_messages)[-8:]
         if turn.status != "queued"
+        and (
+            exclude_turn_id is None
+            or _turn_lifecycle_id(turn) != exclude_turn_id
+        )
     ]
     return {
         "phase": chat.conversation_phase,
@@ -713,7 +748,15 @@ def _conversation_context(chat: TripChat) -> dict:
     }
 
 
-def _turn_action_summary(turn: TripChatTurn) -> dict:
+def _turn_lifecycle_id(turn: TripChatMessage) -> str:
+    return str(
+        getattr(turn, "lifecycle_id", None)
+        or getattr(turn, "turn_id", None)
+        or turn.id
+    )
+
+
+def _turn_action_summary(turn: TripChatMessage) -> dict:
     status = turn.status
     outcome = {
         "completed": "success",
@@ -732,7 +775,7 @@ def _turn_action_summary(turn: TripChatTurn) -> dict:
         if key in operation and operation[key] is not None
     }
     result = {
-        "turnId": turn.id,
+        "turnId": _turn_lifecycle_id(turn),
         "status": status,
         "outcome": outcome,
         # Keep the bounded user request available even for turns created by

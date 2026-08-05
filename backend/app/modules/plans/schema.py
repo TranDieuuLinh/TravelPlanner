@@ -57,6 +57,21 @@ class SelectedPlaceCreate(BaseModel):
         str | None,
         Field(default=None, alias="sourceProvider"),
     ]
+    source_import_node_id: Annotated[
+        int | None, Field(default=None, alias="sourceImportNodeId")
+    ]
+    candidate_entity_ids: Annotated[
+        list[str], Field(default_factory=list, alias="candidateEntityIds")
+    ]
+    selection_method: Annotated[
+        str | None, Field(default=None, alias="selectionMethod")
+    ]
+    identity_confidence: Annotated[
+        str | None, Field(default=None, alias="identityConfidence")
+    ]
+    route_score: Annotated[
+        float | None, Field(default=None, alias="routeScore")
+    ]
     notes: str | None = None
     personal_notes: Annotated[
         str | None,

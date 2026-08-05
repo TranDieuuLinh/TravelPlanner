@@ -33,8 +33,12 @@ class GraphImportRepository:
         search: str | None = None,
     ) -> tuple[list[dict], int]:
         """List import jobs with pagination and filtering."""
-        query = select(KnowledgeGraphImport)
-        count_query = select(func.count(KnowledgeGraphImport.id))
+        query = select(KnowledgeGraphImport).where(
+            KnowledgeGraphImport.import_kind == "knowledge_graph"
+        )
+        count_query = select(func.count(KnowledgeGraphImport.id)).where(
+            KnowledgeGraphImport.import_kind == "knowledge_graph"
+        )
 
         if status:
             query = query.where(KnowledgeGraphImport.status == status)
@@ -55,14 +59,23 @@ class GraphImportRepository:
 
     def count(self) -> int:
         """Count total import jobs."""
-        return self.db.scalar(select(func.count(KnowledgeGraphImport.id))) or 0
+        return self.db.scalar(
+            select(func.count(KnowledgeGraphImport.id)).where(
+                KnowledgeGraphImport.import_kind == "knowledge_graph"
+            )
+        ) or 0
 
     def get(self, import_id: str) -> dict | None:
         """Get full import job with nodes and edges."""
         job = self.db.scalars(
-            select(KnowledgeGraphImport).where(KnowledgeGraphImport.id == import_id)
+            select(KnowledgeGraphImport).where(
+                KnowledgeGraphImport.id == import_id,
+                KnowledgeGraphImport.import_kind == "knowledge_graph",
+            )
         ).first()
         if job is None:
+            return None
+        if job.import_kind != "knowledge_graph":
             return None
         return self._job_dict(job)
 
@@ -84,13 +97,22 @@ class GraphImportRepository:
                     if key in {"created_at", "applied_at"}:
                         value = self._as_datetime(value)
                     setattr(existing, key, value)
+            if "status" in job:
+                (
+                    existing.processing_status,
+                    existing.review_status,
+                ) = _split_admin_status(job["status"])
         else:
+            processing_status, review_status = _split_admin_status(job["status"])
             db_job = KnowledgeGraphImport(
                 id=job["id"],
+                import_kind="knowledge_graph",
                 source_label=job["source_label"],
                 source_url=job.get("source_url"),
                 source_content=job.get("source_content", ""),
                 status=job["status"],
+                processing_status=processing_status,
+                review_status=review_status,
                 schema_version=job["schema_version"],
                 ontology_version=job["ontology_version"],
                 dataset_hash=job["dataset_hash"],
@@ -421,3 +443,15 @@ class GraphImportRepository:
             "decision": edge.decision,
             "validation_issues": edge.validation_issues or [],
         }
+
+
+def _split_admin_status(status: str) -> tuple[str, str]:
+    if status == "extracting":
+        return "running", "not_required"
+    if status == "needs_review":
+        return "succeeded", "pending"
+    if status == "applied":
+        return "succeeded", "approved"
+    if status == "failed":
+        return "failed", "not_required"
+    return "succeeded", "not_required"

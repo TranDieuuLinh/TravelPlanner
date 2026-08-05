@@ -1,6 +1,6 @@
 # ADR-018: TripIntent quan hệ có version là nguồn sự thật duy nhất
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Đã thay thế bởi ADR-021
 - Ngày: 2026-08-05
 
 ## Bối cảnh

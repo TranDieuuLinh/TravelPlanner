@@ -106,11 +106,23 @@ class TestKnowledgeGraphRepositoryEntities:
 class TestKnowledgeGraphRepositoryAliases:
     def test_upsert_alias(self, repo: KnowledgeGraphRepository) -> None:
         repo.upsert_entity("place_001", "Hoan Kiem Lake", "Place")
-        alias = repo.upsert_alias("place_001", "Hồ Hoàn Kiếm", language="vi")
+        alias = repo.upsert_alias(
+            "place_001",
+            "Hồ Hoàn Kiếm",
+            language="vi",
+            alias_type="short_name",
+            source="curation:test",
+            status="curated",
+            confidence=1.0,
+        )
         assert alias.entity_id == "place_001"
         assert alias.alias == "Hồ Hoàn Kiếm"
         assert alias.normalized_alias == "ho hoan kiem"
         assert alias.language == "vi"
+        assert alias.alias_type == "short_name"
+        assert alias.source == "curation:test"
+        assert alias.status == "curated"
+        assert alias.confidence == 1.0
 
     def test_get_aliases_for_entity(self, repo: KnowledgeGraphRepository) -> None:
         repo.upsert_entity("place_001", "Hoan Kiem Lake", "Place")
@@ -220,6 +232,14 @@ class TestKnowledgeGraphRepositoryMatching:
             repo.upsert_entity(f"place_{i:03d}", f"Hoan Kiem Location {i}", "Place")
         candidates = repo.find_fuzzy_entity_candidates("hoan kiem", limit=3)
         assert len(candidates) == 3
+
+    def test_fuzzy_candidates_include_alias_prefix(self, repo: KnowledgeGraphRepository) -> None:
+        repo.upsert_entity("area_hanoi", "Hà Nội", "Area")
+        repo.upsert_alias("area_hanoi", "Hanoi", language="en")
+        candidates = repo.find_fuzzy_entity_candidates(
+            "hanoi", limit=5, entity_types={"Area"}
+        )
+        assert [candidate.id for candidate in candidates] == ["area_hanoi"]
 
 
 class TestKnowledgeGraphRepositoryEntityDetail:

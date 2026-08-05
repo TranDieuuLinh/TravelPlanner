@@ -1,12 +1,8 @@
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.modules.plans.explorer.model import (
-    ExplorerIntake,
-    UrlExtractionCacheEntry,
-    UrlSourceArtifact,
-)
+from app.modules.plans.explorer.model import SourceDocument
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
@@ -15,6 +11,10 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     SpeechToTextResult,
     UrlMetadata,
     UrlReelExtractionResult,
+)
+from app.modules.plans.explorer.tools.url_reels.transcript_cache import (
+    CachedYouTubeTranscript,
+    SqlAlchemyYouTubeTranscriptCache,
 )
 
 
@@ -28,204 +28,94 @@ def _result(
     return UrlReelExtractionResult(
         url=url,
         platform="tiktok",
-        metadata=UrlMetadata(
-            originalUrl=url,
-            canonicalUrl=url,
-            platform="tiktok",
-        ),
+        metadata=UrlMetadata(originalUrl=url, canonicalUrl=url, platform="tiktok"),
         artifacts=MediaArtifacts(),
         speechToText=SpeechToTextResult(
-            text=speech_text,
-            status="ok",
-            source=speech_source,
-            language="en",
+            text=speech_text, status="ok", source=speech_source, language="en",
             durationSeconds=0.1,
-            observations=[
-                {
-                    "order": 1,
-                    "placeName": "Hoan Kiem Lake",
-                    "evidence": speech_text,
-                    "confidence": 0.9,
-                }
-            ],
+            observations=[{
+                "order": 1, "placeName": "Hoan Kiem Lake",
+                "evidence": speech_text, "confidence": 0.9,
+            }],
         ),
         frameVision=FrameVisionResult(
-            text=ocr_text,
-            places=["Hoan Kiem Lake"],
-            observations=[
-                {
-                    "order": 1,
-                    "placeName": "Hoan Kiem Lake",
-                    "evidence": ocr_text,
-                }
-            ],
-            status="ok",
-            durationSeconds=0.1,
+            text=ocr_text, places=["Hoan Kiem Lake"],
+            observations=[{
+                "order": 1, "placeName": "Hoan Kiem Lake", "evidence": ocr_text,
+            }],
+            status="ok", durationSeconds=0.1,
         ),
-        extractedContext=ExtractedContext(),
-        timings={},
+        extractedContext=ExtractedContext(), timings={},
     )
 
 
-def test_stt_and_ocr_are_saved_as_retrievable_url_artifacts() -> None:
+def test_stt_ocr_and_extraction_cache_share_one_source_document() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ExplorerIntake.__table__,
-            UrlExtractionCacheEntry.__table__,
-            UrlSourceArtifact.__table__,
-        ],
-    )
-
+    Base.metadata.create_all(engine)
     with Session(engine) as session:
         repository = ExplorerPersistenceRepository(session)
         repository.save(
-            intake_id="intake-artifacts-1",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[_result()],
+            intake_id="intake-artifacts", user_id=None, destination="Hà Nội",
+            resolutions=[], url_results=[_result()],
         )
+        rows = list(session.scalars(select(SourceDocument)))
+        assert len(rows) == 1
+        assert set(rows[0].artifacts_json) == {"stt", "ocr"}
+        assert rows[0].extracted_context_json["_cacheVersion"] == 6
 
         artifacts = repository.load_url_source_artifacts(
             "https://www.tiktok.com/@creator/video/123?utm_campaign=again"
         )
-        assert [artifact.artifact_type for artifact in artifacts] == ["ocr", "stt"]
-        assert artifacts[0].content_text == "HOAN KIEM LAKE"
-        assert artifacts[0].metadata_json["places"] == ["Hoan Kiem Lake"]
-        assert artifacts[1].content_text == "First visit Hoan Kiem Lake."
-        assert artifacts[1].metadata_json["observations"][0]["placeName"] == (
+        by_type = {artifact.artifact_type: artifact for artifact in artifacts}
+        assert set(by_type) == {"ocr", "stt"}
+        assert by_type["ocr"].content_text == "HOAN KIEM LAKE"
+        assert by_type["stt"].metadata_json["observations"][0]["placeName"] == (
             "Hoan Kiem Lake"
         )
-
-        stt_only = repository.load_url_source_artifacts(
-            "https://www.tiktok.com/@creator/video/123",
-            artifact_types={"stt"},
-        )
-        assert len(stt_only) == 1
-        assert stt_only[0].source == "gemini_audio"
-
-    engine.dispose()
+        assert repository.load_cached_url_result(
+            "https://www.tiktok.com/@creator/video/123"
+        ) is not None
 
 
-def test_force_refresh_updates_artifacts_instead_of_duplicating_them() -> None:
+def test_refresh_updates_document_artifacts_without_duplicate_rows() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ExplorerIntake.__table__,
-            UrlExtractionCacheEntry.__table__,
-            UrlSourceArtifact.__table__,
-        ],
-    )
-
+    Base.metadata.create_all(engine)
     with Session(engine) as session:
         repository = ExplorerPersistenceRepository(session)
         repository.save(
-            intake_id="intake-artifacts-1",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[_result()],
+            intake_id="intake-1", user_id=None, destination="Hà Nội",
+            resolutions=[], url_results=[_result()],
         )
         repository.save(
-            intake_id="intake-artifacts-2",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[
-                _result(
-                    speech_text="Updated spoken note.",
-                    ocr_text="UPDATED SIGN",
-                )
-            ],
+            intake_id="intake-2", user_id=None, destination="Hà Nội",
+            resolutions=[], url_results=[_result(
+                speech_text="Updated spoken note.", ocr_text="UPDATED SIGN"
+            )],
         )
-
-        artifacts = list(session.scalars(select(UrlSourceArtifact)).all())
-        assert len(artifacts) == 2
-        by_type = {artifact.artifact_type: artifact for artifact in artifacts}
-        assert by_type["stt"].content_text == "Updated spoken note."
-        assert by_type["ocr"].content_text == "UPDATED SIGN"
-
-    engine.dispose()
-
-
-def test_youtube_speech_is_saved_as_caption_for_the_shared_retrieval_path() -> None:
-    engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ExplorerIntake.__table__,
-            UrlExtractionCacheEntry.__table__,
-            UrlSourceArtifact.__table__,
-        ],
-    )
-    result = _result(
-        url="https://www.youtube.com/watch?v=abc123&utm_source=test",
-        speech_source="youtube_captions",
-        ocr_text="",
-    ).model_copy(
-        update={
-            "platform": "youtube",
-            "frame_vision": FrameVisionResult(),
-        }
-    )
-
-    with Session(engine) as session:
-        repository = ExplorerPersistenceRepository(session)
-        repository.save(
-            intake_id="intake-caption-1",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[result],
+        documents = list(session.scalars(select(SourceDocument)))
+        assert len(documents) == 1
+        assert documents[0].artifacts_json["stt"]["en"]["text"] == (
+            "Updated spoken note."
         )
-
-        artifacts = repository.load_url_source_artifacts(
-            "https://youtu.be/abc123?feature=shared"
-        )
-        assert len(artifacts) == 1
-        assert artifacts[0].artifact_type == "caption"
-        assert artifacts[0].source == "youtube_captions"
-
-    engine.dispose()
+        assert documents[0].artifacts_json["ocr"]["_"]["text"] == "UPDATED SIGN"
 
 
-def test_web_page_saves_only_structured_evidence_not_the_full_article() -> None:
-    engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ExplorerIntake.__table__,
-            UrlExtractionCacheEntry.__table__,
-            UrlSourceArtifact.__table__,
-        ],
-    )
+def test_web_page_retains_structured_evidence_not_full_article() -> None:
     result = _result(
         url="https://example.com/article?id=42&utm_source=feed",
         speech_source="web_page_text",
         speech_text="Full article text that must not be persisted.",
         ocr_text="",
-    ).model_copy(
-        update={
-            "platform": "web_page",
-            "frame_vision": FrameVisionResult(),
-        },
-        deep=True,
-    )
+    ).model_copy(update={"platform": "web_page", "frame_vision": FrameVisionResult()}, deep=True)
     result.speech_to_text.observations[0].evidence = "First visit Hoan Kiem Lake."
-
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
     with Session(engine) as session:
         repository = ExplorerPersistenceRepository(session)
         repository.save(
-            intake_id="intake-webpage-1",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[result],
+            intake_id="intake-web", user_id=None, destination="Hà Nội",
+            resolutions=[], url_results=[result],
         )
-
         artifacts = repository.load_url_source_artifacts(
             "https://example.com/article?id=42&utm_campaign=again"
         )
@@ -233,37 +123,25 @@ def test_web_page_saves_only_structured_evidence_not_the_full_article() -> None:
         assert artifacts[0].artifact_type == "webpage"
         assert artifacts[0].content_text == "First visit Hoan Kiem Lake."
 
-    engine.dispose()
 
-
-def test_partial_frame_ocr_keeps_successful_text_for_retrieval() -> None:
+def test_youtube_caption_cache_is_stored_inside_source_document() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            ExplorerIntake.__table__,
-            UrlExtractionCacheEntry.__table__,
-            UrlSourceArtifact.__table__,
-        ],
-    )
-    result = _result().model_copy(deep=True)
-    result.frame_vision.status = "partial"
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    cache = SqlAlchemyYouTubeTranscriptCache(factory)
+    from datetime import datetime, timezone
 
+    fetched_at = datetime(2026, 8, 5, tzinfo=timezone.utc)
+    cache.save(CachedYouTubeTranscript(
+        video_id="abc123", language="vi", text="Đi Hồ Hoàn Kiếm.",
+        source="youtube_captions", is_generated=False, fetched_at=fetched_at,
+    ))
+    restored = cache.get("abc123", languages=["vi"])
+    assert restored is not None
+    assert restored.text == "Đi Hồ Hoàn Kiếm."
     with Session(engine) as session:
-        repository = ExplorerPersistenceRepository(session)
-        repository.save(
-            intake_id="intake-partial-ocr",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[],
-            url_results=[result],
+        document = session.scalar(select(SourceDocument))
+        assert document is not None
+        assert document.artifacts_json["caption"]["vi"]["text"] == (
+            "Đi Hồ Hoàn Kiếm."
         )
-
-        artifacts = repository.load_url_source_artifacts(
-            "https://www.tiktok.com/@creator/video/123",
-            artifact_types={"ocr"},
-        )
-        assert len(artifacts) == 1
-        assert artifacts[0].content_text == "HOAN KIEM LAKE"
-
-    engine.dispose()

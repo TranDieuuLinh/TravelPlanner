@@ -28,6 +28,38 @@ def test_meals_are_selected_after_activities_using_route_anchors() -> None:
     assert len({place.place_id for place in selected.values() if place}) == 3
 
 
+def test_meal_relevance_is_decided_before_route_distance() -> None:
+    selector = MealStopSelector(_PlaceTool([]))
+    first = _activity("activity-1", 21.03, 105.80)
+    second = _activity("activity-2", 21.03, 105.82)
+    far_relevant = _food(
+        "far-local-lunch",
+        "Local lunch specialist",
+        21.07,
+        105.88,
+        "restaurant",
+    ).model_copy(update={"tags": ["lunch", "local food"]})
+    near_generic = _food(
+        "near-generic",
+        "Generic restaurant",
+        21.03,
+        105.81,
+        "restaurant",
+    )
+
+    chosen = selector._choose(
+        [far_relevant, near_generic],
+        role="lunch_meal",
+        first=first,
+        second=second,
+        region_key="vn,ha-noi",
+        target_tags=["lunch", "local food", "restaurant"],
+    )
+
+    assert chosen is not None
+    assert chosen.place_id == "far-local-lunch"
+
+
 def _activity(place_id: str, latitude: float, longitude: float) -> PlanItem:
     return PlanItem(
         placeId=place_id,

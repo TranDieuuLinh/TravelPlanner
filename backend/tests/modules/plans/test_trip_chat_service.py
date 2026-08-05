@@ -5,16 +5,19 @@ import asyncio
 import pytest
 from sqlalchemy import select
 
+from app.modules.knowledge_graph.model import KnowledgeGraphImport
 from app.modules.plans.chat_repository import TripChatRepository
-from app.modules.plans.chat_model import TripChat, TripChatPlanRevision
+from app.modules.plans.chat_model import TripChat, TripRevision
 from app.modules.plans.chat_service import TripChatService, _merge_candidate_reviews
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
     PlaceCandidateReview,
 )
-from app.modules.plans.explorer.model import ExplorerIntake
-from app.modules.plans.schema import MainPlanFromExplorerCreate
+from app.modules.plans.schema import (
+    MainPlanFromExplorerCreate,
+    MainPlanFromTripIntentCreate,
+)
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.users.repository import UserRepository
@@ -142,12 +145,13 @@ class _FakePlanService:
         self.explore_kwargs: list[dict] = []
         self.plan_payloads: list[MainPlanFromExplorerCreate] = []
         self.candidate_reviews: list[PlaceCandidateReview] = []
+        self.forced_destination: str | None = None
         self._count = 0
 
     async def explore_from_intake(self, **kwargs) -> ExploreIntakeResponse:
         self.raw_requests.append(kwargs["raw_request"])
         self.explore_kwargs.append(kwargs)
-        destination = (
+        destination = self.forced_destination if self.forced_destination is not None else (
             "Hà Nội"
             if kwargs["destination"] == "unspecified"
             else kwargs["destination"]
@@ -180,13 +184,17 @@ class _FakePlanService:
             for review in reviews
         ]
 
-    async def create_main_plan_from_explorer_with_timing(
+    async def create_main_plan_from_trip_intent_with_timing(
         self,
-        payload: MainPlanFromExplorerCreate,
+        payload: MainPlanFromTripIntentCreate,
     ) -> tuple[Plan, PlanTimingReport]:
-        self.plan_payloads.append(payload)
+        planner_payload = payload.to_planner_input()
+        self.plan_payloads.append(planner_payload)
         self._count += 1
-        plan = _plan(payload.intent.destination, plan_id=f"generated-{self._count}")
+        plan = _plan(
+            planner_payload.intent.destination,
+            plan_id=f"generated-{self._count}",
+        )
         self.repository.save(plan)
         return plan, PlanTimingReport(
             status="completed",
@@ -198,6 +206,38 @@ class _FakePlanService:
             unscheduledCount=0,
             warningCount=0,
         )
+
+
+def test_missing_destination_saves_draft_and_does_not_run_planner(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    repository = TripChatRepository(db_session)
+    chat = repository.create(user.id, "Chuyến đi mới")
+    fake_plans = _FakePlanService()
+    fake_plans.forced_destination = ""
+    service = TripChatService(repository, fake_plans)  # type: ignore[arg-type]
+
+    result = asyncio.run(
+        service.generate_plan_revision(
+            chat_id=chat.id,
+            user=user,
+            content="Tôi muốn đi du lịch",
+            expected_revision=0,
+            initial_destination="unspecified",
+            urls=[],
+            images=[],
+        )
+    )
+
+    assert result.revision == 0
+    assert result.current_plan is None
+    assert result.current_trip_intent is not None
+    assert result.current_trip_intent.destination == ""
+    assert fake_plans.plan_payloads == []
+    assert result.messages[-1].content == "Bạn muốn đi du lịch ở đâu?"
 
 
 def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() -> None:
@@ -295,8 +335,8 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert fake_plans.plan_payloads[1].selected_places[0].source_day == 1
     revisions = list(
         db_session.scalars(
-            select(TripChatPlanRevision).order_by(
-                TripChatPlanRevision.revision
+            select(TripRevision).order_by(
+                TripRevision.revision
             )
         )
     )
@@ -716,7 +756,7 @@ def test_chat_read_uses_candidate_reviews_from_persisted_intake(
             }
         )
     ]
-    intake = db_session.get(ExplorerIntake, stored.current_intake_id)
+    intake = db_session.get(KnowledgeGraphImport, stored.current_intake_id)
     assert intake is not None
     intake.candidate_reviews = [
         review.model_dump(mode="json", by_alias=True)

@@ -37,6 +37,12 @@ Sử dụng pytest cho domain và service:
 - bảo toàn item đã khóa và tính độc lập của plan dự phòng;
 - trip chat giữ nguyên plan ID qua nhiều revision, nhớ user request trước và
   từ chối optimistic revision đã cũ;
+- raw request chỉ thiếu destination lưu TripIntent nháp và không gọi planning
+  workflow; thiếu duration/party/budget dùng default;
+- required experience được PlaceSelector resolve thành required Place hoặc giữ
+  trong `UnscheduledPlace`, không bị bỏ âm thầm;
+- lifecycle turn nằm trên user message và revision chứa cùng TripIntent snapshot
+  đã dùng để tạo plan;
 - quy tắc thời gian, mật độ và validation;
 - bất biến của order, entitlement, review và payment;
 - chuyển đổi lỗi từ provider.
@@ -60,6 +66,14 @@ Chạy test FastAPI với database cô lập:
   `forceRefresh=true` và không ghi đè lịch sử job cũ; ảnh giữ đúng MIME/file gốc
   cho retry/reprocess và từ chối định dạng không hỗ trợ;
 - source connector, place resolution và provenance persistence;
+- Explorer persistence phải chứng minh caption/STT/OCR/context cùng nằm trong
+  một `source_documents`, evidence bám đúng import node và provider snapshot chỉ
+  giữ một ảnh;
+- Top-K Knowledge Graph phải test cả alias đã review, auto-resolve có margin và
+  hai chi nhánh cùng tên. Case chi nhánh phải giữ `branch_ambiguous`, không gọi
+  Google, rồi chuyển lựa chọn `route_proximity` vào plan item mà không sửa node;
+- URL job test cả `processing_status` độc lập với `review_status`; migration
+  graph phải chỉ có một head sau cutover `20260805_0037`;
 - web-page connector tách main text/metadata, giữ functional query, chặn DNS
   private sau redirect, giới hạn response và trả cùng contract URL extraction;
 - rollback transaction và xung đột dữ liệu.

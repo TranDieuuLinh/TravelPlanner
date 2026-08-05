@@ -4,10 +4,8 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.modules.plans.domain.entities import (
-    CheckReport,
     DestinationStay,
     PlaceSelectionStatus,
-    PlaceSelectionBlueprint,
     PlanDay,
     RegionSnapshotReference,
     TripThemeRequirement,
@@ -153,6 +151,21 @@ class SelectedPlaceContext(BaseModel):
     source_provider: Annotated[
         str | None,
         Field(default=None, alias="sourceProvider"),
+    ]
+    source_import_node_id: Annotated[
+        int | None, Field(default=None, alias="sourceImportNodeId")
+    ]
+    candidate_entity_ids: Annotated[
+        list[str], Field(default_factory=list, alias="candidateEntityIds")
+    ]
+    selection_method: Annotated[
+        str | None, Field(default=None, alias="selectionMethod")
+    ]
+    route_score: Annotated[
+        float | None, Field(default=None, alias="routeScore")
+    ]
+    identity_confidence: Annotated[
+        str | None, Field(default=None, alias="identityConfidence")
     ]
     notes: str | None = None
     personal_notes: Annotated[
@@ -740,6 +753,9 @@ class PlaceSelectionInput(BaseModel):
     region_key: Annotated[str, Field(alias="regionKey")]
     trip_themes: Annotated[
         list[TripThemeRequirement], Field(alias="tripThemes")
+    ] = Field(default_factory=list)
+    required_experiences: Annotated[
+        list[RequiredExperience], Field(alias="requiredExperiences")
     ] = Field(default_factory=list)
     selected_places: Annotated[
         list[SelectedPlaceContext], Field(alias="selectedPlaces")

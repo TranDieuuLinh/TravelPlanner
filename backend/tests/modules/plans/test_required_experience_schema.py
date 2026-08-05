@@ -18,9 +18,53 @@ from app.modules.plans.dto.agent_contracts import (
     RequiredExperience,
     RequiredExperiencePriority,
     RequiredExperienceSelectionPolicy,
+    PlaceSelectionInput,
     TripPlanningSpec,
     TripThemePlanningOutput,
 )
+from app.modules.plans.place_selector.place_tool import SelectablePlace
+from app.modules.plans.place_selector.service import PlaceSelectorService
+
+
+def test_place_selector_contract_accepts_required_experiences() -> None:
+    assert "required_experiences" in PlaceSelectionInput.model_fields
+    assert "requiredExperiences" in {
+        field.alias for field in PlaceSelectionInput.model_fields.values()
+    }
+
+
+class _RequiredPlaceTool:
+    def get(self, place_id: str) -> SelectablePlace | None:
+        if place_id != "place-bun-cha":
+            return None
+        return SelectablePlace(
+            placeId=place_id,
+            name="Bún chả Hà Nội",
+            placeType="restaurant",
+            regionKey="vn:hanoi",
+        )
+
+    def search(self, **kwargs):
+        return []
+
+
+def test_place_selector_resolves_required_anchor_into_selected_place() -> None:
+    selection_input = PlaceSelectionInput.model_validate(
+        {
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 1},
+            "regionKey": "vn:hanoi",
+            "requiredExperiences": [_base_requirement()],
+        }
+    )
+
+    resolved, unresolved = PlaceSelectorService(
+        _RequiredPlaceTool()
+    )._required_experience_places(selection_input)
+
+    assert [place.place_id for place in resolved] == ["place-bun-cha"]
+    assert resolved[0].must_visit is True
+    assert unresolved == []
 
 
 def _base_requirement(**overrides: object) -> dict[str, object]:

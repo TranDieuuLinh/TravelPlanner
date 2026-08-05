@@ -24,10 +24,20 @@ class GraphExperienceCandidate(BaseModel):
     claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
     place_ids: list[str] = Field(default_factory=list, alias="placeIds")
     activity_id: str | None = Field(default=None, alias="activityId")
+    activity_name: str | None = Field(default=None, alias="activityName")
     anchor_place_ids: list[str] = Field(
         default_factory=list,
         alias="anchorPlaceIds",
     )
+    anchor_place_names: dict[str, str] = Field(
+        default_factory=dict,
+        alias="anchorPlaceNames",
+    )
+    is_special_experience: bool = Field(
+        default=False,
+        alias="isSpecialExperience",
+    )
+    rank_reasons: list[str] = Field(default_factory=list, alias="rankReasons")
     rank: int = Field(ge=1)
     fit: FitResult
     trust: TrustLevel
@@ -46,9 +56,13 @@ class GraphCandidateCatalog(BaseModel):
 
 
 _PLACE_TYPES = frozenset({
-    "Place",
-    "Restaurant",
+    # Schema v7 concrete Place descendants.
     "TravelPlace",
+    "Restaurant",
+    "DrinkDessert",
+    "Accommodation",
+    # Read compatibility for graph rows created before the v7 migration.
+    "Place",
     "Cafe",
     "Hotel",
     "Shop",
@@ -104,8 +118,6 @@ def _claim_shape(claim: GraphEvidenceClaim) -> str | None:
         return None
     if claim.object.type in _ACTIVITY_TYPES:
         return "special_experience_activity"
-    if claim.object.type in _PLACE_TYPES:
-        return "special_experience_place"
     return None
 
 
@@ -152,11 +164,22 @@ def _project_group(
             for place_id in _place_ids(ranked.claim)
         ),
         activityId=_activity_id(primary.claim),
+        activityName=_activity_name(primary.claim),
         anchorPlaceIds=_ordered_ids(
             (ranked.rank, anchor_id)
             for ranked in ordered
             if (anchor_id := _anchor_place_id(ranked.claim)) is not None
         ),
+        anchorPlaceNames=_anchor_place_names(ordered),
+        isSpecialExperience=any(
+            ranked.claim.predicate == "SPECIAL_EXPERIENCE"
+            for ranked in ordered
+        ),
+        rankReasons=list(dict.fromkeys(
+            reason
+            for ranked in ordered
+            for reason in ranked.rankReasons
+        )),
         rank=primary.rank,
         fit=primary.fit,
         trust=primary.claim.trust,
@@ -168,6 +191,30 @@ def _project_group(
             if evidence.source
         }),
     )
+
+
+def _activity_name(claim: GraphEvidenceClaim) -> str | None:
+    if claim.activity is not None:
+        return claim.activity.name
+    if claim.object.type in _ACTIVITY_TYPES:
+        return claim.object.name
+    return None
+
+
+def _anchor_place_names(
+    experiences: Sequence[RankedExperience],
+) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for ranked in sorted(experiences, key=_ranked_sort_key):
+        anchor = ranked.claim.anchorPlace
+        if anchor is not None:
+            names.setdefault(anchor.id, anchor.name)
+        elif (
+            ranked.claim.predicate == "OFFERS_ACTIVITY"
+            and ranked.claim.subject.type in _PLACE_TYPES
+        ):
+            names.setdefault(ranked.claim.subject.id, ranked.claim.subject.name)
+    return dict(sorted(names.items()))
 
 
 def _place_ids(claim: GraphEvidenceClaim) -> set[str]:

@@ -12,13 +12,14 @@ model/migration với schema mục tiêu chưa triển khai.
 | `auth_sessions` | Implemented | `backend/app/modules/auth/model.py`, migration `20260727_0002_add_auth_and_profile.py` |
 | `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
-| `explorer_intakes` | Implemented | Identity của từng lần Explorer xử lý input, migration `20260730_0012` |
-| `user_must_place` | Implemented | Snapshot URL/place dùng chung, place-shaped + `source_url` + `notes` |
-| `user_must_place_users` | Implemented | Junction nhiều-nhiều giữa snapshot, user và Explorer intake |
-| `url_extraction_cache` | Implemented | `ExtractedContext` chuẩn hóa dùng chung theo canonical URL |
-| `url_source_artifacts` | Implemented | Caption/STT/OCR chuẩn hóa theo canonical URL cho retrieval/RAG và note về sau |
-| `trip_chat_plan_revisions` | Implemented | Snapshot plan/Explorer bất biến và `intake_id` tạo revision, migrations `20260730_0011` và `20260730_0012` |
-| `url_import_jobs.explorer_timing`, `url_import_jobs.planner_timing` | Implemented | Snapshot timing riêng cho từng URL job, migration `20260801_0024` |
+| `source_documents` | Implemented | Canonical URL + caption/STT/OCR + extracted context, migration `20260805_0037` |
+| `knowledge_graph_imports` | Implemented | Job/intake/admin import envelope; processing và review status tách biệt |
+| `knowledge_graph_import_nodes` | Implemented | Area/Venue proposal, evidence, note, Top K identity và provider snapshot |
+| `knowledge_graph_import_edges` | Implemented | Quan hệ graph đề xuất, chỉ promote sau review |
+| `trip_chats` | Implemented | Trạng thái hiện hành, gồm TripIntent draft/current JSON đã validate |
+| `trip_chat_messages` | Implemented | Message và lifecycle turn dùng chung một row user request |
+| `trip_revisions` | Implemented | Snapshot bất biến `trip_intent_payload + plan_payload + intake_id`, migration `20260805_0036` |
+| `knowledge_graph_imports.explorer_timing`, `planner_timing` | Implemented | Snapshot timing riêng cho Explorer job |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
 | `place_region_catalog_state` | Implemented | Trạng thái hiện tại theo khu vực, migration `20260727_0003` |
 | `place_region_snapshots` | Implemented | Snapshot thống kê bất biến cho Planner, migration `20260727_0003` |
@@ -79,7 +80,7 @@ Hồ sơ cá nhân hóa dài hạn, một bản ghi cho mỗi user.
 | `score`, `confidence`, `observations` | numeric | Aggregate learning |
 | `origin`, `status` | varchar | `explicit/inferred`, `active/rejected` |
 | `scope`, `destination` | varchar | Global hoặc theo destination |
-| `last_evidence_intake_id` | string FK nullable | Provenance tới Explorer intake |
+| `last_evidence_intake_id` | string nullable | Provenance tới Explorer import ID |
 | `first_observed_at`, `last_observed_at` | timestamptz | Audit quan sát |
 
 `traveler_preference_signal_sources` lưu các source type theo từng signal,
@@ -117,86 +118,30 @@ Lưu địa điểm có thể xuất hiện trong lịch trình.
 không dùng làm khóa gom nhóm. Planner sử dụng `region_key`. Giờ mở cửa được đưa
 ra khỏi `metadata`; ID của provider được lưu riêng trong `place_external_refs`.
 
-### `explorer_intakes`
+### `source_documents`
 
-Lưu identity bền vững của mỗi lần Explorer xử lý input, không lưu raw
-prompt/OCR/transcript. Intake vẫn tồn tại khi không có candidate nào đủ điều
-kiện ghi vào `user_must_place`.
+Một record cho mỗi canonical URL. `artifacts` chứa caption/STT/OCR/webpage theo
+language; `extracted_context` chứa observation chuẩn hóa. Hash, extractor
+version và timestamps giữ provenance/freshness. Không lưu raw HTML hoặc raw
+provider response.
 
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid/string PK | Giá trị `intakeId` trả trong Explorer response |
-| `user_id` | varchar, nullable | Owner hiện hành; nullable cho flow không đăng nhập |
-| `destination` | varchar | Điểm đến chuẩn hóa của intake |
-| `created_at` | timestamptz | Tạo lúc |
+### `knowledge_graph_imports`
 
-### `user_must_place`
+Envelope dùng chung cho `explorer_job`, `explorer_intake` và admin
+`knowledge_graph` import. `processing_status` độc lập với `review_status`; record
+còn giữ source/chat/document reference, timing, retry và lỗi an toàn.
 
-Lưu snapshot dùng chung của candidate đã resolve tới địa điểm cụ thể có đủ
-latitude/longitude. Candidate provisional/unresolved, thiếu tọa độ hoặc match
-rộng không được ghi. Snapshot có các field tương ứng `places`, thêm
-`source_url`, `notes` và `place_id` nullable. Các field provenance/itinerary cũ
-được giữ để tương thích. Ownership nằm ở `user_must_place_users`, không còn phụ
-thuộc vòng đời intake đầu tiên.
+### `knowledge_graph_import_nodes`
 
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid/string PK | Opaque ID |
-| `intake_id`, `user_id` | varchar, nullable | Legacy compatibility; ownership mới nằm ở junction table |
-| `destination` | varchar | Điểm đến của intake |
-| `candidate_key` | varchar | Khóa gộp trùng trong intake |
-| `candidate_name` | varchar | Tên được trích xuất |
-| `category` | varchar | Taxonomy mở rộng: food, cafe, attraction, nature, culture, shopping, nightlife, wellness, adventure, beach, family, hotel, transport, free_time, other |
-| `attributes` | json | Tag chuẩn hóa như local, hidden_gem, photogenic, budget |
-| `preference_level` | varchar | mentioned, preferred hoặc must_visit |
-| `address_hint` | text, nullable | Gợi ý từ prompt/OCR/URL |
-| `resolved_name` | varchar | Tên sau resolve |
-| `address`, `city`, `country`, `country_code` | text/varchar, nullable | Địa chỉ chuẩn hóa khi tìm được |
-| `primary_area` | varchar, nullable | Khu vực con |
-| `latitude`, `longitude` | decimal, nullable ở schema lịch sử | Runtime mới chỉ ghi record khi có đủ cặp tọa độ |
-| `description` | text, nullable | Mô tả khi provider trả về |
-| `provider`, `external_id` | varchar, nullable | Provenance của kết quả search |
-| `sources` | json | Danh sách `{type, url?}` giữ provenance |
-| `confidence` | decimal | 0 đến 1 |
-| `notes` | text, nullable | Bằng chứng ngắn |
-| `data_confidence` | varchar | low, medium, high |
-| `fetched_at` | timestamptz, nullable | Độ mới dữ liệu |
-| `attribution` | text, nullable | Attribution của provider |
-| `resolution_status` | varchar | Schema giữ giá trị lịch sử; runtime mới chỉ ghi `resolved` |
-| `place_id` | FK `places.id`, nullable | Catalog identity khi resolver match DB nội bộ |
-| `name`, `place_type`, `region_key`, `status` | varchar, nullable | Các field identity tương ứng `places` |
-| `opening_hours` | json | Giờ mở cửa đã chuẩn hóa, mặc định `[]` |
-| `typical_duration_minutes` | integer, nullable | Thời lượng từ catalog/provider/source |
-| `source_platform`, `source_link`, `source_url` | varchar/text, nullable | Provider và canonical URL nguồn |
-| `plus_code`, `rating`, `review_count` | nullable | Snapshot field tương ứng `places` |
-| `source_fetched_at`, `revision`, `metadata`, `deleted_at` | mixed | Freshness, version, metadata chuẩn hóa và soft delete |
-| `created_at` | timestamptz | Tạo lúc |
-| `updated_at` | timestamptz | Cập nhật lúc |
+Area/Venue proposal giữ alias quan sát, evidence, source note, Top-K candidates,
+nullable `selected_entity_id`, `identity_status` và provider snapshot tối giản.
+`branch_ambiguous` được Planner chọn theo route trong plan snapshot, không bind
+toàn cục vào import node.
 
-### `user_must_place_users`
+### `knowledge_graph_import_edges`
 
-Junction table gồm `user_must_place_id`, `user_id`, `intake_id` và
-`created_at`. Unique theo `(intake_id, user_must_place_id)`.
-
-### `url_extraction_cache`
-
-Khóa chính `source_url` là canonical URL. Bảng giữ `platform`, JSON
-`extracted_context`, `fetched_at`, `updated_at`; không giữ media, frame, raw
-payload hoặc toàn bộ transcript.
-
-### `url_source_artifacts`
-
-Lưu text extractor được phép giữ lại ở một retrieval boundary chung. Mỗi record
-unique theo `(source_url, artifact_type, language)`; `artifact_type` là
-`caption`, `stt` hoặc `ocr`. `content_text` là caption/transcript/OCR đã chuẩn
-hóa, còn `metadata` chỉ giữ observation/place/chunk metadata cần thiết, không
-giữ prompt hay payload provider thô. `platform`, `source`, `fetched_at` và
-`updated_at` giữ provenance/freshness. Cache YouTube cũ được backfill thành
-artifact `caption`; các dạng YouTube long-form `watch`/`youtu.be`/`embed`/`live`
-dùng chung source URL `watch?v={videoId}`. Bảng `youtube_transcript_cache` vẫn
-tồn tại để phục vụ connector cache. Chưa có embedding index trong runtime hiện
-tại; consumer RAG
-sau này đọc cả ba loại từ repository boundary này rồi chunk/embed theo version.
+Giữ quan hệ đề xuất như `Venue LOCATED_IN Area`. Edge chỉ được promote sang
+`knowledge_relationships` sau admin approval.
 
 ### `place_external_refs`
 

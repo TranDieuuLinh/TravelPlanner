@@ -43,8 +43,9 @@ xuất không tự động trở thành yêu cầu của user.
 
 Explorer bàn giao `intakeId + userId + explorer.tripIntent`; các Place được
 resolve và lưu theo provenance trước khi planning workflow sử dụng. Trong trip
-chat, lần sửa tiếp theo chỉ đọc TripIntent hiện hành từ PostgreSQL, không đọc
-Explorer JSON snapshot.
+chat, cùng request truyền TripIntent trực tiếp trong memory. PostgreSQL chỉ giữ
+snapshot hiện hành cho lượt tiếp theo và snapshot bất biến theo revision.
+Destination là trường duy nhất chặn planning; các trường còn lại dùng default.
 
 ## TripThemePlanner
 
@@ -89,6 +90,21 @@ Output là `TripThemePlanningOutput`:
       "targetRegionKeys": ["vn,ha-noi"]
     }
   ],
+  "requiredExperiences": [
+    {
+      "requirementId": "req-walk-hoan-kiem",
+      "theme": "Dạo Hồ Gươm",
+      "activityId": "activity-walk-hoan-kiem",
+      "selectionPolicy": "required_anchor",
+      "anchorPlaceIds": ["place-hoan-kiem"],
+      "candidatePlaceIds": [],
+      "minimumRequired": 1,
+      "priority": "must",
+      "reason": "Trải nghiệm đặc trưng có graph evidence.",
+      "evidenceClaimIds": ["claim-hoan-kiem-walk"],
+      "sourceRefs": ["https://example.com/hoan-kiem"]
+    }
+  ],
   "assumptions": [],
   "warnings": [],
   "trace": {
@@ -101,15 +117,28 @@ Output là `TripThemePlanningOutput`:
 ```
 
 Output không được có ngày, route bucket, journey phase hoặc selected-place
-allocation. LLM chạy một lượt research đã kiểm chứng bằng Place database, rồi
-một lượt tạo `TripThemeDraft`. Backend sửa contract lỗi tối đa ba lần. Tổng
+allocation. Backend chạy graph research deterministic, tạo bounded
+`graphCandidateCatalog`, rồi gọi LLM một lượt để tạo `TripThemeDraft`; CLI
+`research-context` hiển thị cùng catalog mà không gọi LLM. Backend sửa contract
+lỗi tối đa ba lần. Tổng
 `minimumActivities` được chuẩn hóa theo capacity hai activity mỗi ngày; theme
 chỉ nói về bữa ăn bị loại vì meal là trách nhiệm riêng của PlaceSelector.
 
+Theme selection dùng thứ tự `current trip intent > confirmed selected Places >
+effective long-term profile > destination special experiences`. Khi ba nguồn
+đầu đều rỗng, backend yêu cầu output chọn ít nhất một trusted special experience
+nếu catalog có candidate phù hợp. Priority `must` của graph không override intent
+hoặc hard constraint của user.
+
 Khi catalog trống nhưng có selected Place, TripThemePlanner vẫn có thể tạo
-theme. Khi cả hai nguồn trống, `tripThemesReady=false`.
+theme nhưng `requiredExperiences` phải rỗng. Khi cả hai nguồn trống,
+`tripThemesReady=false`.
 
 ## PlaceSelector
+
+`PlaceSelectionInput` chứa `requiredExperiences`. PlaceSelector ưu tiên Place ID
+của `required_anchor`/`choose_one`; requirement chưa resolve thành venue cụ thể
+được giữ trong `unscheduledPlaces`, không biến mất.
 
 Input là `PlaceSelectionInput`:
 
@@ -120,6 +149,7 @@ Input là `PlaceSelectionInput`:
   "tripSpec": {"days": 3},
   "regionKey": "vn,ha-noi",
   "tripThemes": [],
+  "requiredExperiences": [],
   "selectedPlaces": [],
   "placeSelectionStatus": {},
   "allowPlaceSuggestions": true

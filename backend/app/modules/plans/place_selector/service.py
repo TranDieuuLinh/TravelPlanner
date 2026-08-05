@@ -161,10 +161,22 @@ class PlaceSelectorService:
     ) -> PlaceSelectionOutput:
         # Day creation belongs to PlaceSelector. TripThemePlanner supplies only
         # trip-wide requirements and never returns calendar structure.
-        selection_blueprint = self._build_selection_blueprint(selection_input)
+        required_places, unresolved_requirements = self._required_experience_places(
+            selection_input
+        )
+        selected_places = list(selection_input.selected_places)
+        known_refs = {place.stable_ref for place in selected_places}
+        for place in required_places:
+            if place.stable_ref not in known_refs:
+                selected_places.append(place)
+                known_refs.add(place.stable_ref)
+        effective_input = selection_input.model_copy(
+            update={"selected_places": selected_places}
+        )
+        selection_blueprint = self._build_selection_blueprint(effective_input)
         result = self._fill_days(
             selection_blueprint,
-            selection_input.selected_places,
+            selected_places,
             mode=selection_input.mode.value,
             user_status=selection_input.user_status,
             plan_status=selection_input.place_selection_status,
@@ -191,14 +203,23 @@ class PlaceSelectorService:
             for day in result.days
             for item in day.items
         )
+        warnings = list(result.warnings)
+        if unresolved_requirements:
+            warnings.append(
+                "Một số special experience bắt buộc chưa resolve được thành "
+                "địa điểm cụ thể và được giữ ở danh sách chưa xếp."
+            )
         return PlaceSelectionOutput(
             mode=selection_input.mode,
             finalDays=result.days,
             tripCostEstimate=None,
-            unscheduledPlaces=result.unscheduled_places,
+            unscheduledPlaces=[
+                *result.unscheduled_places,
+                *unresolved_requirements,
+            ],
             finalUserStatus=result.final_user_status,
             finalPlanStatus=result.final_plan_status,
-            warnings=result.warnings,
+            warnings=warnings,
             trace=AgentTrace(
                 agent=PlanningAgentName.place_selector,
                 status=(
@@ -213,10 +234,78 @@ class PlaceSelectorService:
                 ),
                 notes=[
                     f"committedPlaceCount={committed_place_count}",
-                    f"unscheduledPlaceCount={len(result.unscheduled_places)}",
+                    "requiredExperienceCount="
+                    f"{len(selection_input.required_experiences)}",
+                    "unscheduledPlaceCount="
+                    f"{len(result.unscheduled_places) + len(unresolved_requirements)}",
                 ],
             ),
         )
+
+    def _required_experience_places(
+        self,
+        selection_input: PlaceSelectionInput,
+    ) -> tuple[list[SelectedPlaceContext], list[UnscheduledPlace]]:
+        existing = {
+            place.place_id: place
+            for place in selection_input.selected_places
+            if place.place_id is not None
+        }
+        resolved: list[SelectedPlaceContext] = []
+        unresolved: list[UnscheduledPlace] = []
+        for requirement in selection_input.required_experiences:
+            candidate_ids = (
+                requirement.anchor_place_ids
+                if requirement.selection_policy.value == "required_anchor"
+                else requirement.candidate_place_ids
+            )
+            matched = 0
+            attempted_ids: list[str] = []
+            for place_id in candidate_ids:
+                if matched >= requirement.minimum_required:
+                    break
+                attempted_ids.append(place_id)
+                selected = existing.get(place_id)
+                if selected is None:
+                    candidate = self.place_tool.get(place_id)
+                    if candidate is not None:
+                        selected = SelectedPlaceContext(
+                            placeId=candidate.place_id,
+                            name=candidate.name,
+                            address=candidate.address,
+                            mustVisit=True,
+                            regionKey=candidate.region_key,
+                            latitude=candidate.latitude,
+                            longitude=candidate.longitude,
+                            tags=candidate.tags,
+                            sourceRefs=[
+                                *requirement.source_refs,
+                                f"required_experience:{requirement.requirement_id}",
+                            ],
+                            sourceProvider=candidate.source_provider,
+                            notes=requirement.reason,
+                            imageUrls=candidate.image_urls,
+                            rating=candidate.rating,
+                            reviewCount=candidate.review_count,
+                            sourceActivity=requirement.theme,
+                        )
+                if selected is not None:
+                    resolved.append(selected)
+                    matched += 1
+            if matched < requirement.minimum_required:
+                unresolved.append(
+                    UnscheduledPlace(
+                        placeId=(
+                            attempted_ids[-1] if attempted_ids else None
+                        ),
+                        name=requirement.theme,
+                        reasonCode="required_experience_unresolved",
+                        reason=requirement.reason,
+                        sourceRefs=requirement.source_refs,
+                        sourceActivity=(requirement.activity_id or requirement.theme),
+                    )
+                )
+        return resolved, unresolved
 
     @staticmethod
     def _build_selection_blueprint(
@@ -1522,6 +1611,11 @@ class PlaceSelectorService:
             activityIntensity=candidate.activity_intensity,
             sourceRefs=candidate.source_refs,
             sourceProvider=candidate.source_provider,
+            sourceImportNodeId=candidate.source_import_node_id,
+            candidateEntityIds=candidate.candidate_entity_ids,
+            selectionMethod=candidate.selection_method,
+            routeScore=candidate.route_score,
+            identityConfidence=candidate.identity_confidence,
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,

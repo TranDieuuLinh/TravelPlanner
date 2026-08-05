@@ -81,6 +81,7 @@ def _profile() -> LongTermPreferenceProfile:
             "category:food": PreferenceAggregate(
                 score=0.9,
                 confidence=0.8,
+                observations=2,
             ),
         },
     )

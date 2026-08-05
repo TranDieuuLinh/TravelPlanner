@@ -501,6 +501,17 @@ class SelectablePlace(BaseModel):
         default=None,
         alias="sourceProvider",
     )
+    source_import_node_id: int | None = Field(
+        default=None, alias="sourceImportNodeId"
+    )
+    candidate_entity_ids: list[str] = Field(
+        default_factory=list, alias="candidateEntityIds"
+    )
+    selection_method: str | None = Field(default=None, alias="selectionMethod")
+    route_score: float | None = Field(default=None, alias="routeScore")
+    identity_confidence: str | None = Field(
+        default=None, alias="identityConfidence"
+    )
     accessibility_features: list[str] = Field(
         default_factory=list,
         alias="accessibilityFeatures",
@@ -887,6 +898,29 @@ def _structured_rerank_score(
         + popularity_score
         + rating_score
         + name_quality_penalty
+    )
+
+
+def selection_relevance_score(
+    place: SelectablePlace,
+    *,
+    region_key: str,
+    target_tags: list[str],
+) -> int:
+    """Return the semantic/quality score used before route proximity.
+
+    Candidate discovery and route optimization are deliberately separate
+    concerns.  Callers may use distance to break equal relevance scores, but
+    a shorter route must not promote a less relevant Place above a stronger
+    match for the user's requested experience.
+    """
+
+    query_terms = _normalized_terms(target_tags)
+    return _structured_rerank_score(
+        place,
+        region_key=region_key,
+        query_terms=query_terms,
+        query_categories=semantic_categories(query_terms),
     )
 
 

@@ -8,20 +8,17 @@ from app.modules.plans.chat_model import (
     PROCESSING_TURN_STATUSES,
     TripChat,
     TripChatMessage,
-    TripChatPlanRevision,
-    TripChatTurn,
+    TripRevision,
 )
-from app.modules.plans.explorer.model import ExplorerIntake
+from app.modules.knowledge_graph.model import KnowledgeGraphImport
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.plans.trip_intent import TripIntent
-from app.modules.plans.trip_intent_repository import TripIntentRepository
 from app.shared.errors import AppError
 
 
 class TripChatRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.trip_intents = TripIntentRepository(db)
 
     def create(self, user_id: int, title: str) -> TripChat:
         chat = TripChat(id=str(uuid4()), user_id=user_id, title=title)
@@ -43,7 +40,6 @@ class TripChatRepository:
             .options(
                 selectinload(TripChat.messages),
                 selectinload(TripChat.plan_revisions),
-                selectinload(TripChat.turns),
             )
             .where(TripChat.id == chat_id, TripChat.user_id == user_id)
         )
@@ -73,17 +69,25 @@ class TripChatRepository:
         destination: str,
         title: str,
         revision: int,
+        turn_id: str | None = None,
     ) -> TripChat:
         now = datetime.now(UTC)
         next_sequence = max(
             (msg.sequence for msg in chat.messages),
             default=0,
         ) + 1
-        intake = self.db.get(ExplorerIntake, intake_id)
+        intake = self.db.get(KnowledgeGraphImport, intake_id)
         if intake is None:
-            intake = ExplorerIntake(
+            intake = KnowledgeGraphImport(
                 id=intake_id,
-                user_id=str(chat.user_id),
+                import_kind="explorer_intake",
+                created_by=chat.user_id,
+                source_label=destination,
+                source_content="",
+                status="needs_review",
+                schema_version="explorer-place-proposal-v1",
+                ontology_version="knowledge-graph-v2",
+                dataset_hash="",
                 destination=destination,
                 candidate_reviews=[],
             )
@@ -93,12 +97,7 @@ class TripChatRepository:
             review.model_dump(mode="json", by_alias=True)
             for review in candidate_reviews
         ]
-        intent_row = self.trip_intents.add_version(
-            chat_id=chat.id,
-            intake_id=intake_id,
-            revision=revision,
-            intent=trip_intent,
-        )
+        trip_intent_payload = trip_intent.model_dump(mode="json", by_alias=True)
         result = self.db.execute(
             update(TripChat)
             .where(
@@ -113,7 +112,7 @@ class TripChatRepository:
                 latest_explorer_timing=explorer_timing_payload,
                 latest_planner_timing=planner_timing_payload,
                 current_intake_id=intake_id,
-                current_trip_intent_id=intent_row.id,
+                current_trip_intent=trip_intent_payload,
                 revision=revision,
                 updated_at=now,
             )
@@ -126,8 +125,9 @@ class TripChatRepository:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
             )
-        self.db.add_all(
-            [
+        records: list[TripChatMessage | TripRevision] = []
+        if turn_id is None:
+            records.append(
                 TripChatMessage(
                     id=str(uuid4()),
                     chat_id=chat.id,
@@ -137,28 +137,130 @@ class TripChatRepository:
                     attachment_names=attachment_names,
                     plan_revision=revision,
                     created_at=now,
-                ),
+                )
+            )
+        records.extend(
+            [
                 TripChatMessage(
                     id=str(uuid4()),
                     chat_id=chat.id,
                     role="assistant",
                     content=assistant_content,
-                    sequence=next_sequence + 1,
+                    sequence=next_sequence + (0 if turn_id is not None else 1),
                     attachment_names=[],
                     plan_revision=revision,
+                    turn_id=turn_id,
+                    message_kind=("turn_response" if turn_id else "text"),
                     created_at=now,
                 ),
-                TripChatPlanRevision(
+                TripRevision(
                     id=str(uuid4()),
                     chat_id=chat.id,
                     revision=revision,
                     intake_id=intake_id,
                     plan_payload=plan_payload,
-                    trip_intent_id=intent_row.id,
+                    trip_intent_payload=trip_intent_payload,
                     created_at=now,
                 ),
             ]
         )
+        self.db.add_all(records)
+        self.db.commit()
+        return self.get(chat.id, chat.user_id)
+
+    def save_intent_draft(
+        self,
+        chat: TripChat,
+        *,
+        user_content: str,
+        attachment_names: list[str],
+        assistant_content: str,
+        trip_intent: TripIntent,
+        candidate_reviews: list[PlaceCandidateReview],
+        explorer_timing_payload: dict | None,
+        intake_id: str,
+        turn_id: str | None = None,
+    ) -> TripChat:
+        """Persist a destination-less Explorer draft without creating a plan revision."""
+        now = datetime.now(UTC)
+        next_sequence = max(
+            (message.sequence for message in chat.messages), default=0
+        ) + 1
+        intake = self.db.get(KnowledgeGraphImport, intake_id)
+        if intake is None:
+            intake = KnowledgeGraphImport(
+                id=intake_id,
+                import_kind="explorer_intake",
+                created_by=chat.user_id,
+                source_label="Trip intent draft",
+                source_content="",
+                status="needs_review",
+                schema_version="explorer-place-proposal-v1",
+                ontology_version="knowledge-graph-v2",
+                dataset_hash="",
+                destination="",
+                candidate_reviews=[],
+            )
+            self.db.add(intake)
+            self.db.flush()
+        intake.candidate_reviews = [
+            review.model_dump(mode="json", by_alias=True)
+            for review in candidate_reviews
+        ]
+        result = self.db.execute(
+            update(TripChat)
+            .where(
+                TripChat.id == chat.id,
+                TripChat.user_id == chat.user_id,
+                TripChat.revision == chat.revision,
+            )
+            .values(
+                current_trip_intent=trip_intent.model_dump(
+                    mode="json", by_alias=True
+                ),
+                current_intake_id=intake_id,
+                latest_explorer_timing=explorer_timing_payload,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
+            )
+        records: list[TripChatMessage] = []
+        if turn_id is None:
+            records.append(
+                TripChatMessage(
+                    id=str(uuid4()),
+                    chat_id=chat.id,
+                    role="user",
+                    content=user_content,
+                    sequence=next_sequence,
+                    attachment_names=attachment_names,
+                    plan_revision=chat.revision,
+                    created_at=now,
+                )
+            )
+        records.append(
+            TripChatMessage(
+                id=str(uuid4()),
+                chat_id=chat.id,
+                role="assistant",
+                content=assistant_content,
+                sequence=next_sequence + (0 if turn_id else 1),
+                attachment_names=[],
+                plan_revision=chat.revision,
+                turn_id=turn_id,
+                message_kind="turn_response" if turn_id else "text",
+                content_blocks=[{"type": "text", "text": assistant_content}],
+                created_at=now,
+            )
+        )
+        self.db.add_all(records)
         self.db.commit()
         return self.get(chat.id, chat.user_id)
 
@@ -200,14 +302,14 @@ class TripChatRepository:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi chỉnh sửa.",
             )
-        records: list[TripChatMessage | TripChatPlanRevision] = [
-            TripChatPlanRevision(
+        records: list[TripChatMessage | TripRevision] = [
+            TripRevision(
                 id=str(uuid4()),
                 chat_id=chat.id,
                 revision=revision,
                 intake_id=chat.current_intake_id,
                 plan_payload=plan_payload,
-                trip_intent_id=chat.current_trip_intent_id,
+                trip_intent_payload=chat.current_trip_intent,
                 created_at=now,
             ),
         ]
@@ -241,7 +343,7 @@ class TripChatRepository:
         content: str,
         attachment_names: list[str],
         expected_revision: int,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         """Create a queued turn. The HTTP handler decides if execution starts
         immediately or returns the turn for client-driven polling."""
         if not content.strip():
@@ -252,18 +354,26 @@ class TripChatRepository:
             )
         # De-duplicate the same client_turn_id (idempotency for retries).
         existing = self.db.scalar(
-            select(TripChatTurn).where(
-                TripChatTurn.chat_id == chat.id,
-                TripChatTurn.client_turn_id == client_turn_id,
+            select(TripChatMessage).where(
+                TripChatMessage.chat_id == chat.id,
+                TripChatMessage.client_turn_id == client_turn_id,
             )
         )
         if existing is not None:
             return existing
         now = datetime.now(UTC)
-        turn = TripChatTurn(
-            id=str(uuid4()),
+        next_sequence = max(
+            (message.sequence for message in chat.messages), default=0
+        ) + 1
+        turn_id = str(uuid4())
+        turn = TripChatMessage(
+            id=turn_id,
             chat_id=chat.id,
-            user_id=chat.user_id,
+            role="user",
+            sequence=next_sequence,
+            turn_id=turn_id,
+            message_kind="turn_request",
+            content_blocks=[],
             client_turn_id=client_turn_id,
             content=content.strip(),
             attachment_names=list(attachment_names or []),
@@ -279,12 +389,15 @@ class TripChatRepository:
 
     def get_turn(
         self, chat_id: str, user_id: int, turn_id: str
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         turn = self.db.scalar(
-            select(TripChatTurn).where(
-                TripChatTurn.id == turn_id,
-                TripChatTurn.chat_id == chat_id,
-                TripChatTurn.user_id == user_id,
+            select(TripChatMessage)
+            .join(TripChat, TripChat.id == TripChatMessage.chat_id)
+            .where(
+                (TripChatMessage.id == turn_id) | (TripChatMessage.turn_id == turn_id),
+                TripChatMessage.chat_id == chat_id,
+                TripChat.user_id == user_id,
+                TripChatMessage.client_turn_id.is_not(None),
             )
         )
         if turn is None:
@@ -303,11 +416,11 @@ class TripChatRepository:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
         stuck = list(
             self.db.scalars(
-                select(TripChatTurn).where(
-                    TripChatTurn.chat_id == chat_id,
-                    TripChatTurn.status.in_(PROCESSING_TURN_STATUSES),
-                    TripChatTurn.processing_started_at.is_not(None),
-                    TripChatTurn.processing_started_at < cutoff,
+                select(TripChatMessage).where(
+                    TripChatMessage.chat_id == chat_id,
+                    TripChatMessage.status.in_(PROCESSING_TURN_STATUSES),
+                    TripChatMessage.processing_started_at.is_not(None),
+                    TripChatMessage.processing_started_at < cutoff,
                 )
             )
         )
@@ -322,11 +435,11 @@ class TripChatRepository:
             )
             turn.updated_at = now
         self.db.commit()
-        return [turn.id for turn in stuck]
+        return [turn.lifecycle_id for turn in stuck]
 
     def update_turn(
         self,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         *,
         status: str | None = None,
         intent: str | None = None,
@@ -338,7 +451,7 @@ class TripChatRepository:
         error_code: str | None = None,
         error_message: str | None = None,
         processing_started_at: datetime | None = None,
-    ) -> TripChatTurn:
+    ) -> TripChatMessage:
         now = datetime.now(UTC)
         if status is not None:
             turn.status = status
@@ -356,6 +469,9 @@ class TripChatRepository:
             turn.assistant_blocks = list(assistant_blocks)
         if result_summary is not None:
             turn.result_summary = dict(result_summary)
+            plan_revision = result_summary.get("planRevision")
+            if isinstance(plan_revision, int):
+                turn.plan_revision = plan_revision
         if error_code is not None:
             turn.error_code = error_code
         if error_message is not None:
@@ -370,7 +486,7 @@ class TripChatRepository:
     def save_conversation_response(
         self,
         chat: TripChat,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         *,
         assistant_content: str,
         assistant_blocks: list[dict],
@@ -396,30 +512,13 @@ class TripChatRepository:
                 sequence=next_sequence,
                 attachment_names=[],
                 plan_revision=chat.revision,
-                turn_id=turn.id,
+                turn_id=turn.lifecycle_id,
                 message_kind="turn_response",
                 content_blocks=list(assistant_blocks),
                 created_at=now,
             ),
         ]
-        if include_request:
-            messages.insert(
-                0,
-                TripChatMessage(
-                    id=str(uuid4()),
-                    chat_id=chat.id,
-                    role="user",
-                    content=turn.content,
-                    sequence=next_sequence,
-                    attachment_names=list(turn.attachment_names or []),
-                    plan_revision=chat.revision,
-                    turn_id=turn.id,
-                    message_kind="turn_request",
-                    content_blocks=[],
-                    created_at=now,
-                ),
-            )
-            messages[1].sequence = next_sequence + 1
+        del include_request  # the request row is created when the turn starts
         self.db.add_all(messages)
         self.db.commit()
 
@@ -427,7 +526,7 @@ class TripChatRepository:
         self,
         chat: TripChat,
         *,
-        turn: TripChatTurn,
+        turn: TripChatMessage,
         user_content: str,
         assistant_content: str,
         assistant_blocks: list[dict],
@@ -467,36 +566,23 @@ class TripChatRepository:
                 TripChatMessage(
                     id=str(uuid4()),
                     chat_id=chat.id,
-                    role="user",
-                    content=user_content,
-                    sequence=next_sequence,
-                    attachment_names=list(turn.attachment_names or []),
-                    plan_revision=revision,
-                    turn_id=turn.id,
-                    message_kind="turn_request",
-                    content_blocks=[],
-                    created_at=now,
-                ),
-                TripChatMessage(
-                    id=str(uuid4()),
-                    chat_id=chat.id,
                     role="assistant",
                     content=assistant_content,
-                    sequence=next_sequence + 1,
+                    sequence=next_sequence,
                     attachment_names=[],
                     plan_revision=revision,
-                    turn_id=turn.id,
+                    turn_id=turn.lifecycle_id,
                     message_kind="turn_response",
                     content_blocks=list(assistant_blocks),
                     created_at=now,
                 ),
-                TripChatPlanRevision(
+                TripRevision(
                     id=str(uuid4()),
                     chat_id=chat.id,
                     revision=revision,
                     intake_id=chat.current_intake_id,
                     plan_payload=plan_payload,
-                    trip_intent_id=chat.current_trip_intent_id,
+                    trip_intent_payload=chat.current_trip_intent,
                     created_at=now,
                 ),
             ]
@@ -505,7 +591,9 @@ class TripChatRepository:
         return self.get(chat.id, chat.user_id)
 
     def load_trip_intent(self, chat: TripChat) -> TripIntent | None:
-        return self.trip_intents.get(chat.current_trip_intent_id)
+        if chat.current_trip_intent is None:
+            return None
+        return TripIntent.model_validate(chat.current_trip_intent)
 
     def load_candidate_reviews(self, chat: TripChat) -> list[PlaceCandidateReview]:
         intake_ids = list(
@@ -520,8 +608,8 @@ class TripChatRepository:
         )
         reviews: list[PlaceCandidateReview] = []
         for intake_id in intake_ids:
-            intake = self.db.get(ExplorerIntake, intake_id)
-            if intake is None:
+            intake = self.db.get(KnowledgeGraphImport, intake_id)
+            if intake is None or intake.import_kind != "explorer_intake":
                 continue
             reviews.extend(
                 PlaceCandidateReview.model_validate(value)
@@ -536,8 +624,8 @@ class TripChatRepository:
     ) -> None:
         if chat.current_intake_id is None:
             return
-        intake = self.db.get(ExplorerIntake, chat.current_intake_id)
-        if intake is None:
+        intake = self.db.get(KnowledgeGraphImport, chat.current_intake_id)
+        if intake is None or intake.import_kind != "explorer_intake":
             return
         intake.candidate_reviews = [
             review.model_dump(mode="json", by_alias=True) for review in reviews
@@ -545,24 +633,26 @@ class TripChatRepository:
 
     def get_revision(
         self, chat_id: str, revision: int
-    ) -> TripChatPlanRevision | None:
+    ) -> TripRevision | None:
         return self.db.scalar(
-            select(TripChatPlanRevision).where(
-                TripChatPlanRevision.chat_id == chat_id,
-                TripChatPlanRevision.revision == revision,
+            select(TripRevision).where(
+                TripRevision.chat_id == chat_id,
+                TripRevision.revision == revision,
             )
         )
 
     def list_recent_turns(
         self, chat_id: str, user_id: int, limit: int = 5
-    ) -> list[TripChatTurn]:
+    ) -> list[TripChatMessage]:
         statement = (
-            select(TripChatTurn)
+            select(TripChatMessage)
+            .join(TripChat, TripChat.id == TripChatMessage.chat_id)
             .where(
-                TripChatTurn.chat_id == chat_id,
-                TripChatTurn.user_id == user_id,
+                TripChatMessage.chat_id == chat_id,
+                TripChat.user_id == user_id,
+                TripChatMessage.client_turn_id.is_not(None),
             )
-            .order_by(TripChatTurn.created_at.desc(), TripChatTurn.id.desc())
+            .order_by(TripChatMessage.created_at.desc(), TripChatMessage.id.desc())
             .limit(limit)
         )
         return list(self.db.scalars(statement))

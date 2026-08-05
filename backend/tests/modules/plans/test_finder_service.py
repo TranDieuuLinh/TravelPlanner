@@ -318,6 +318,70 @@ def test_finder_uses_proximity_to_break_relevance_ties() -> None:
     assert support.place_id == "near-culture"
 
 
+def test_finder_keeps_relevance_ahead_of_proximity() -> None:
+    places = {
+        "selected-main": _place(
+            "selected-main",
+            "Văn Miếu",
+            tags=["culture"],
+            intensity="light",
+            latitude=21.0300,
+            longitude=105.8500,
+        ),
+        "far-relevant": _place(
+            "far-relevant",
+            "Không gian văn hóa phù hợp",
+            tags=["culture"],
+            intensity="light",
+            latitude=21.0350,
+            longitude=105.8550,
+        ),
+        "near-generic": _place(
+            "near-generic",
+            "Điểm tham quan chung",
+            tags=[],
+            intensity="light",
+            latitude=21.0301,
+            longitude=105.8501,
+        ),
+        "mid-relevant": _place(
+            "mid-relevant",
+            "Bảo tàng văn hóa phù hợp",
+            tags=["culture"],
+            intensity="light",
+            latitude=21.0330,
+            longitude=105.8530,
+        ),
+    }
+    finder = PlaceSelectorService(
+        FakeFinderPlaceTool(
+            places,
+            search_order=["far-relevant", "near-generic", "mid-relevant"],
+        )
+    )
+
+    result = finder.fill_main_plan(
+        _macro_plan(),
+        _intent(),
+        [
+            SelectedPlaceContext(
+                placeId="selected-main",
+                name="Văn Miếu",
+                mustVisit=True,
+                tags=["culture"],
+            )
+        ],
+    )
+
+    suggestion_ids = {
+        item.place_id
+        for item in result.days[0].items
+        if item.source == "finder_suggestion"
+    }
+    assert suggestion_ids == {"far-relevant", "mid-relevant"}
+    assert "near-generic" not in suggestion_ids
+
+
 def test_reference_only_mode_never_adds_catalog_places() -> None:
     places = {
         "selected-main": _place(

@@ -96,6 +96,8 @@ def _claim(
         )
 
     path = [subject_id, predicate, object_id]
+    if predicate == "SPECIAL_EXPERIENCE" and anchor_place is not None:
+        path.extend(["TARGETS_PLACE", anchor_place.id])
     if predicate in ("OFFERS_ACTIVITY", "LOCATED_IN"):
         path = [subject_id, predicate, object_id, "OFFERS_ACTIVITY", activity_id or object_id]
         if anchor_place:
@@ -233,8 +235,9 @@ class TestConflictedExcluded:
             "c_eligible",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_eligible",
-            object_type="TravelPlace",
+            object_id="activity_eligible",
+            object_type="Activity",
+            activity_id="activity_eligible",
         )
         catalog = project_graph_candidate_catalog(
             _bundle(eligible=[eligible], conflicted=[conflicted])
@@ -281,14 +284,17 @@ class TestUnsupportedShapesExcluded:
 class TestSupportedShapeInclusion:
     """All three explicitly supported graph shapes are admitted."""
 
-    def test_special_experience_place_included(self) -> None:
+    def test_special_experience_direct_anchor_included(self) -> None:
         ranked = _ranked(
-            "c_se_place",
+            "c_se_anchor",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_cafe",
-            object_type="Cafe",
-            object_name="Cafe Giảng",
+            object_id="activity_walk",
+            object_type="Activity",
+            object_name="Đi dạo Hồ Gươm",
+            activity_id="activity_walk",
+            activity_name="Đi dạo Hồ Gươm",
+            anchor_place_id="place_hoan_kiem",
             trust=TrustLevel.SOURCE_BACKED,
             priority=RecommendationPriority.MUST,
             source="https://example.com/cafe",
@@ -296,10 +302,15 @@ class TestSupportedShapeInclusion:
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
         assert len(catalog.candidates) == 1
         candidate = catalog.candidates[0]
-        assert candidate.place_ids == ["place_cafe"]
-        assert candidate.activity_id is None
-        assert candidate.anchor_place_ids == []
-        assert candidate.claim_ids == ["c_se_place"]
+        assert candidate.place_ids == ["place_hoan_kiem"]
+        assert candidate.activity_id == "activity_walk"
+        assert candidate.activity_name == "Đi dạo Hồ Gươm"
+        assert candidate.anchor_place_ids == ["place_hoan_kiem"]
+        assert candidate.anchor_place_names == {
+            "place_hoan_kiem": "Anchor Place"
+        }
+        assert candidate.is_special_experience is True
+        assert candidate.claim_ids == ["c_se_anchor"]
         assert candidate.trust is TrustLevel.SOURCE_BACKED
         assert candidate.recommendation is not None
         assert candidate.recommendation.priority is RecommendationPriority.MUST
@@ -457,20 +468,22 @@ class TestActivityGrouping:
 
 
 # ---------------------------------------------------------------------------
-# Grouping by Place (SPECIAL_EXPERIENCE -> Place)
+# Grouping direct Activity anchors (SPECIAL_EXPERIENCE -> Activity -> TARGETS_PLACE)
 # ---------------------------------------------------------------------------
 
 
-class TestPlaceGrouping:
-    """Claims with the same Place ID (no Activity) are merged."""
+class TestDirectAnchorGrouping:
+    """Claims for the same Activity merge their direct Place anchors."""
 
-    def test_same_place_merged(self) -> None:
+    def test_same_activity_anchors_merged(self) -> None:
         p1 = _ranked(
             "c_p1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_museum",
-            object_type="TravelPlace",
+            object_id="activity_museum_visit",
+            object_type="Activity",
+            activity_id="activity_museum_visit",
+            anchor_place_id="place_museum_a",
             priority=RecommendationPriority.MUST,
             source="https://wiki.org",
         )
@@ -478,15 +491,17 @@ class TestPlaceGrouping:
             "c_p2",
             rank=3,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_museum",
-            object_type="TravelPlace",
+            object_id="activity_museum_visit",
+            object_type="Activity",
+            activity_id="activity_museum_visit",
+            anchor_place_id="place_museum_b",
             priority=RecommendationPriority.OPTIONAL,
             source="https://blog.com",
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[p1, p2]))
         assert len(catalog.candidates) == 1
         candidate = catalog.candidates[0]
-        assert candidate.place_ids == ["place_museum"]
+        assert candidate.place_ids == ["place_museum_a", "place_museum_b"]
         assert set(candidate.claim_ids) == {"c_p1", "c_p2"}
         assert candidate.recommendation is not None
         assert candidate.recommendation.priority is RecommendationPriority.MUST
@@ -505,8 +520,9 @@ class TestDeterministicOutput:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_a",
-            object_type="Cafe",
+            object_id="activity_a",
+            object_type="Activity",
+            activity_id="activity_a",
         )
         bundle = _bundle(eligible=[ranked])
         result1 = project_graph_candidate_catalog(bundle)
@@ -553,8 +569,9 @@ class TestFieldsPreserved:
             "c1",
             rank=5,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="Attraction",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
         assert catalog.candidates[0].rank == 5
@@ -564,8 +581,9 @@ class TestFieldsPreserved:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="TravelPlace",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
         assert catalog.candidates[0].fit.status is CheckStatus.SUPPORTED
@@ -576,20 +594,37 @@ class TestFieldsPreserved:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="TravelPlace",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
             trust=TrustLevel.VERIFIED,
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
         assert catalog.candidates[0].trust is TrustLevel.VERIFIED
+
+    def test_inferred_evidence_remains_explicit(self) -> None:
+        ranked = _ranked(
+            "c_inferred",
+            rank=1,
+            predicate="SPECIAL_EXPERIENCE",
+            object_id="activity_inferred",
+            object_type="Activity",
+            activity_id="activity_inferred",
+            trust=TrustLevel.INFERRED,
+            source="inference:taxonomy",
+        )
+        catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
+        assert catalog.candidates[0].trust is TrustLevel.INFERRED
+        assert catalog.candidates[0].source_refs == ["inference:taxonomy"]
 
     def test_recommendation_preserved(self) -> None:
         ranked = _ranked(
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="TravelPlace",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
             priority=RecommendationPriority.RECOMMENDED,
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
@@ -601,8 +636,9 @@ class TestFieldsPreserved:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="TravelPlace",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
             source="https://wiki.org",
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
@@ -635,16 +671,17 @@ class TestCatalogModel:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_a",
-            object_type="Cafe",
-            object_name="Cafe A",
+            object_id="activity_a",
+            object_type="Activity",
+            object_name="Activity A",
+            activity_id="activity_a",
             priority=RecommendationPriority.MUST,
             source="https://example.com",
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
         serialized = catalog.model_dump(mode="json", by_alias=True)
         assert serialized["candidates"][0]["claimIds"] == ["c1"]
-        assert serialized["candidates"][0]["placeIds"] == ["place_a"]
+        assert serialized["candidates"][0]["placeIds"] == []
         assert serialized["candidates"][0]["rank"] == 1
 
     def test_extra_field_rejected(self) -> None:
@@ -662,7 +699,7 @@ class TestCatalogModel:
 class TestClaimShapeHelper:
     """``_claim_shape`` classifies claim paths correctly."""
 
-    def test_special_experience_place(self) -> None:
+    def test_special_experience_place_is_rejected_by_v7(self) -> None:
         from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
             _claim_shape,
         )
@@ -673,7 +710,7 @@ class TestClaimShapeHelper:
             object_id="place_cafe",
             object_type="Cafe",
         )
-        assert _claim_shape(claim) == "special_experience_place"
+        assert _claim_shape(claim) is None
 
     def test_special_experience_activity(self) -> None:
         from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
@@ -717,8 +754,9 @@ class TestSelectableHelper:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_x",
-            object_type="TravelPlace",
+            object_id="activity_x",
+            object_type="Activity",
+            activity_id="activity_x",
         )
         assert _is_selectable(ranked) is True
 
@@ -760,12 +798,14 @@ class TestMultipleShapes:
     """A bundle with mixed shapes produces separate candidates."""
 
     def test_mixed_shapes_all_included(self) -> None:
-        place_se = _ranked(
-            "c_place",
+        direct_anchor = _ranked(
+            "c_anchor",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_cafe",
-            object_type="Cafe",
+            object_id="activity_walk",
+            object_type="Activity",
+            activity_id="activity_walk",
+            anchor_place_id="place_lake",
         )
         activity_se = _ranked(
             "c_activity",
@@ -786,6 +826,6 @@ class TestMultipleShapes:
             anchor_place_id="place_cafe",
         )
         catalog = project_graph_candidate_catalog(
-            _bundle(eligible=[place_se, activity_se, offers])
+            _bundle(eligible=[direct_anchor, activity_se, offers])
         )
         assert len(catalog.candidates) == 3

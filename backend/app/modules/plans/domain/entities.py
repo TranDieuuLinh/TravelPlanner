@@ -142,6 +142,17 @@ class PlanItem(BaseModel):
         default=None,
         alias="sourceProvider",
     )
+    source_import_node_id: int | None = Field(
+        default=None, alias="sourceImportNodeId"
+    )
+    candidate_entity_ids: list[str] = Field(
+        default_factory=list, alias="candidateEntityIds"
+    )
+    selection_method: str | None = Field(default=None, alias="selectionMethod")
+    route_score: float | None = Field(default=None, alias="routeScore")
+    identity_confidence: str | None = Field(
+        default=None, alias="identityConfidence"
+    )
     tags: list[str] = Field(default_factory=list)
     latitude: float | None = None
     longitude: float | None = None

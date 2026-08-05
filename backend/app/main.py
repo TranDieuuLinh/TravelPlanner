@@ -17,7 +17,7 @@ from app.core.security_headers import (
     rate_limit_middleware,
     security_headers_middleware,
 )
-from app.db.models import Place, User, UserMustPlace  # noqa: F401
+from app.db.models import Place, SourceDocument, User  # noqa: F401
 from app.db import models as db_models  # noqa: F401
 from app.db.session import SessionLocal, engine
 from app.db.seed import seed_demo_marketplace

@@ -6,6 +6,7 @@ from app.modules.plans.explorer.schema import (
     FullExploreRequest,
     IntakeInputCompleteness,
 )
+from app.modules.plans.trip_intent import TripIntent
 
 
 def _explorer(
@@ -41,11 +42,7 @@ def test_vague_raw_prompt_records_missing_fields_without_questions() -> None:
 
     assert result.mode == "vague"
     assert result.input_completeness is IntakeInputCompleteness.vague
-    assert [item.field for item in result.missing_fields] == [
-        "destination",
-        "days",
-        "budget",
-    ]
+    assert [item.field for item in result.missing_fields] == ["destination"]
     assert all(not item.was_provided for item in result.missing_fields)
     assert all(item.inferred_source is None for item in result.missing_fields)
     assert result.missing_info_questions == []
@@ -55,7 +52,7 @@ def test_vague_raw_prompt_records_missing_fields_without_questions() -> None:
     assert result.trace == {"inputSource": "raw_prompt"}
 
 
-def test_destination_only_raw_prompt_is_partial() -> None:
+def test_destination_only_raw_prompt_is_complete_with_defaults() -> None:
     result = apply_raw_prompt_completeness(
         FullExploreRequest(
             rawRequest="Tôi muốn khám phá Hội An",
@@ -64,25 +61,28 @@ def test_destination_only_raw_prompt_is_partial() -> None:
         _explorer(destination="Hội An"),
     )
 
-    assert result.mode == "partial"
-    assert result.input_completeness is IntakeInputCompleteness.partial
-    assert [item.field for item in result.missing_fields] == [
-        "days",
-        "budget",
-    ]
+    assert result.mode == "confirmed"
+    assert result.input_completeness is IntakeInputCompleteness.complete
+    assert result.missing_fields == []
 
 
-def test_destination_normalized_from_raw_prompt_is_partial() -> None:
+def test_trip_intent_defaults_all_non_destination_fields() -> None:
+    intent = TripIntent(destination="Huế")
+
+    assert intent.timing.days == 3
+    assert intent.travel_party.party_size == 1
+    assert intent.budget.level.value == "medium"
+    assert intent.notes == []
+
+
+def test_destination_normalized_from_raw_prompt_is_complete_with_defaults() -> None:
     result = apply_raw_prompt_completeness(
         FullExploreRequest(rawRequest="Khám phá Paris"),
         _explorer(destination="Paris"),
     )
 
-    assert result.mode == "partial"
-    assert [item.field for item in result.missing_fields] == [
-        "days",
-        "budget",
-    ]
+    assert result.mode == "confirmed"
+    assert result.missing_fields == []
 
 
 def test_raw_prompt_with_core_fields_is_complete() -> None:

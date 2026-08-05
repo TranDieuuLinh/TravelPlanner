@@ -7,9 +7,8 @@ from pydantic import ValidationError
 from app.integrations.llm.base import LLMClient
 from app.modules.knowledge_graph.research import (
     GraphScopeError,
-    GraphSnapshot,
-    ScopeResolveOutput,
     TripResearchBundle,
+    TrustLevel,
 )
 from app.modules.plans.domain.entities import (
     TravelIntent,
@@ -20,9 +19,7 @@ from app.modules.plans.dto.agent_contracts import (
     AgentTrace,
     TripThemePlanningInput,
     TripThemePlanningOutput,
-    PlannerResearchDraft,
     TripThemeDraft,
-    PlannerVerifiedResearch,
     PlanningAgentName,
     PlanningAgentStatus,
     PlanningIntent,
@@ -33,11 +30,9 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.trip_theme_planner.prompt import (
     TRIP_THEME_PROMPT_VERSION,
-    TRIP_THEME_RESEARCH_PROMPT_VERSION,
-    TRIP_THEME_RESEARCH_SYSTEM_PROMPT,
     TRIP_THEME_SYSTEM_PROMPT,
+    build_theme_selection_policy,
     build_trip_theme_repair_payload,
-    build_trip_theme_research_payload,
     build_trip_theme_payload,
 )
 from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
@@ -51,10 +46,6 @@ from app.modules.plans.trip_theme_planner.graph_research import (
 from app.modules.plans.trip_theme_planner.required_experience_validator import (
     RequiredExperienceGraphValidationError,
     validate_required_experience,
-)
-from app.modules.plans.trip_theme_planner.research_tool import (
-    EmptyPlannerResearchTool,
-    PlannerResearchTool,
 )
 from app.modules.plans.trip_theme_planner.region_context import (
     PlannerStatisticsProvider,
@@ -73,14 +64,11 @@ class TripThemePlannerService:
         self,
         statistics_provider: PlannerStatisticsProvider,
         llm: LLMClient,
-        research_tool: PlannerResearchTool | None = None,
         graph_research_service: TripThemeGraphResearchService | None = None,
         graph_research_orchestrator: TripResearchOrchestrator | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
-        self.research_tool = research_tool or EmptyPlannerResearchTool()
-        self.graph_research_orchestrator = graph_research_orchestrator
         self.graph_research_service = (
             graph_research_service
             if graph_research_service is not None
@@ -180,11 +168,11 @@ class TripThemePlannerService:
             or bool(planner_input.selected_places)
         )
         statistics_warnings = self._statistics_warnings(planner_input)
-        graph_catalog: GraphCandidateCatalog | None = None
-        graph_catalog_payload: dict | None = None
+        graph_catalog = GraphCandidateCatalog()
+        graph_catalog_payload = graph_catalog.model_dump(mode="json", by_alias=True)
         graph_catalog_notes: list[str] = []
-        graph_scope_blocked = False
-        graph_scope_error_code: str | None = None
+        graph_warnings: list[str] = []
+        graph_research_blocked = False
 
         if self.graph_research_service is not None:
             try:
@@ -192,7 +180,7 @@ class TripThemePlannerService:
                     planner_input.intent,
                     planner_input.trip_spec,
                     planner_input.selected_places,
-                    preference_profile,
+                    preference_profile or planner_input.preference_profile,
                 )
             except GraphScopeError as exc:
                 # Scope resolution failed — block the planner.
@@ -201,13 +189,15 @@ class TripThemePlannerService:
                     "TripThemePlanner graph scope error: %s",
                     exc.CODE,
                 )
-                graph_scope_blocked = True
-                graph_scope_error_code = exc.CODE
+                graph_research_blocked = True
                 bundle = None
             except Exception:
                 # Non-scope graph errors are caught generically.
                 # Log only the error code to avoid recording full evidence/prompts.
-                logger.exception("TripThemePlanner graph research failed")
+                logger.warning(
+                    "TripThemePlanner graph research failed: INTERNAL_ERROR"
+                )
+                graph_research_blocked = True
                 bundle = None
 
             if bundle is not None and not isinstance(bundle, TripResearchBundle):
@@ -217,12 +207,18 @@ class TripThemePlannerService:
                 try:
                     graph_catalog = project_graph_candidate_catalog(bundle)
                 except Exception:
-                    logger.exception(
-                        "TripThemePlanner graph candidate projection failed"
+                    logger.warning(
+                        "TripThemePlanner graph candidate projection failed: "
+                        "INTERNAL_ERROR"
                     )
-                    graph_catalog = None
+                    graph_catalog = GraphCandidateCatalog()
+                    graph_catalog_payload = graph_catalog.model_dump(
+                        mode="json",
+                        by_alias=True,
+                    )
+                    graph_research_blocked = True
 
-                if graph_catalog is not None and graph_catalog.candidates:
+                if graph_catalog.candidates:
                     graph_catalog_payload = graph_catalog.model_dump(
                         mode="json",
                         by_alias=True,
@@ -236,12 +232,13 @@ class TripThemePlannerService:
                     )
                 else:
                     graph_catalog_notes.append("graphCandidateCount=0")
+                graph_warnings.extend(bundle.warnings)
             else:
                 graph_catalog_notes.append("graphCandidateCount=0")
         else:
             graph_catalog_notes.append("graphCatalog=disabled")
 
-        if graph_scope_blocked:
+        if graph_research_blocked:
             return TripThemePlanningOutput(
                 mode=planner_input.mode,
                 tripSpec=planner_input.trip_spec,
@@ -291,29 +288,10 @@ class TripThemePlannerService:
                 ),
             )
 
-        try:
-            research_raw = await self.llm.generate_json(
-                system_prompt=TRIP_THEME_RESEARCH_SYSTEM_PROMPT,
-                user_payload=build_trip_theme_research_payload(planner_input),
-            )
-            research_draft = PlannerResearchDraft.model_validate_json(
-                research_raw
-            )
-            verified_research = self.research_tool.verify(
-                research_draft,
-                root_region_key=planner_input.region_context.region_key,
-            )
-        except ValidationError as exc:
-            raise RuntimeError(
-                "LLM TripThemePlanner returned an invalid research contract."
-            ) from exc
-
         raw = await self.llm.generate_json(
             system_prompt=TRIP_THEME_SYSTEM_PROMPT,
             user_payload=build_trip_theme_payload(
                 planner_input,
-                research_draft,
-                verified_research,
                 graph_candidate_catalog=graph_catalog_payload,
             ),
         )
@@ -323,8 +301,6 @@ class TripThemePlannerService:
                 draft = self._parse_and_validate_theme_draft(
                     planner_input,
                     raw,
-                    research_draft,
-                    verified_research,
                     graph_catalog=graph_catalog,
                 )
                 break
@@ -347,8 +323,6 @@ class TripThemePlannerService:
                     system_prompt=TRIP_THEME_SYSTEM_PROMPT,
                     user_payload=build_trip_theme_repair_payload(
                         planner_input,
-                        research_draft,
-                        verified_research,
                         previous_output=raw,
                         validation_feedback=feedback,
                         graph_candidate_catalog=graph_catalog_payload,
@@ -359,7 +333,7 @@ class TripThemePlannerService:
             dict.fromkeys(
                 [
                     *draft.warnings,
-                    *verified_research.warnings,
+                    *graph_warnings,
                     *statistics_warnings,
                 ]
             )
@@ -377,23 +351,14 @@ class TripThemePlannerService:
                 status=PlanningAgentStatus.completed,
                 summary=(
                     "TripThemePlanner đã tạo yêu cầu trải nghiệm "
-                    "toàn chuyến từ context và thống kê khu vực."
+                    "toàn chuyến từ context và graph evidence."
                 ),
                 notes=[
                     "generator=llm",
                     f"repairAttempts={repair_attempts}",
-                    f"researchPromptVersion={TRIP_THEME_RESEARCH_PROMPT_VERSION}",
                     f"promptVersion={TRIP_THEME_PROMPT_VERSION}",
                     f"statisticsStatus={statistics_status}",
                     *graph_catalog_notes,
-                    (
-                        "capabilityEvidenceCount="
-                        f"{len(verified_research.capability_evidence)}"
-                    ),
-                    (
-                        "nearbyRegionCount="
-                        f"{len(verified_research.nearby_regions)}"
-                    ),
                     (
                         "requiredExperienceCount="
                         f"{len(draft.required_experiences)}"
@@ -410,10 +375,8 @@ class TripThemePlannerService:
         self,
         planner_input: TripThemePlanningInput,
         raw: str,
-        research_draft: PlannerResearchDraft,
-        verified_research: PlannerVerifiedResearch,
         *,
-        graph_catalog: GraphCandidateCatalog | None = None,
+        graph_catalog: GraphCandidateCatalog,
     ) -> TripThemeDraft:
         draft = TripThemeDraft.model_validate_json(raw)
         themes, normalized = self._normalize_trip_themes(
@@ -422,12 +385,6 @@ class TripThemePlannerService:
         )
         allowed_regions = {
             planner_input.region_context.region_key,
-            *(region.region_key for region in verified_research.nearby_regions),
-            *(
-                region_key
-                for evidence in verified_research.capability_evidence
-                for region_key in evidence.region_keys
-            ),
             *(
                 place.region_key
                 for place in planner_input.selected_places
@@ -443,11 +400,6 @@ class TripThemePlannerService:
                 )
 
         required_experiences = list(draft.required_experiences)
-        if required_experiences and graph_catalog is None:
-            raise RequiredExperienceGraphValidationError(
-                "graphCandidateCatalog is empty; requiredExperiences cannot be "
-                "validated without bounded graph evidence"
-            )
         if required_experiences:
             try:
                 required_experiences = [
@@ -459,6 +411,25 @@ class TripThemePlannerService:
                     "requiredExperiences references unsupported graph evidence: "
                     f"{exc}"
                 ) from exc
+
+        selection_policy = build_theme_selection_policy(planner_input)
+        trusted_special_candidates = [
+            candidate
+            for candidate in graph_catalog.candidates
+            if candidate.is_special_experience
+            and candidate.trust is not TrustLevel.INFERRED
+        ]
+        if (
+            selection_policy["selectionMode"]
+            == "destination_special_experiences"
+            and trusted_special_candidates
+            and not required_experiences
+        ):
+            raise ValueError(
+                "No trip intent, confirmed Place, or effective long-term "
+                "profile was supplied; choose at least one trusted destination "
+                "special experience from graphCandidateCatalog."
+            )
 
         warnings = list(draft.warnings)
         if normalized:
