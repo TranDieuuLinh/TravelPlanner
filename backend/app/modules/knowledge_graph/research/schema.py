@@ -19,14 +19,17 @@ class AreaType(str, Enum):
 AREA_TYPES: frozenset[str] = frozenset({t.value for t in AreaType})
 
 PLACE_TYPES: frozenset[str] = frozenset({
+    # Schema v7 concrete Place descendants.
     "Restaurant",
     "TravelPlace",
+    "DrinkDessert",
+    "Accommodation",
+    # Read compatibility for pre-v7 graph rows.
     "Cafe",
     "Hotel",
     "Shop",
     "Attraction",
     "Entertainment",
-    "Activity",
 })
 
 ActivityTypes: frozenset[str] = frozenset({

@@ -82,16 +82,24 @@ def _rank_claim(claim: GraphEvidenceClaim) -> tuple:
     )
 
 
+def _least_trusted(*levels: TrustLevel) -> TrustLevel:
+    order = {
+        TrustLevel.VERIFIED: 0,
+        TrustLevel.SOURCE_BACKED: 1,
+        TrustLevel.INFERRED: 2,
+    }
+    return max(levels, key=order.__getitem__)
+
+
 def kg_discover_experiences(
     repo: KnowledgeGraphResearchRepository,
     input_data: ExperienceDiscoveryInput,
 ) -> GraphEvidenceBundle:
     """Discover special experiences from the knowledge graph.
 
-    This tool traverses multiple paths to discover experiences:
-    - Area → SPECIAL_EXPERIENCE → Place
-    - Area → SPECIAL_EXPERIENCE → Activity
-    - Area → SPECIAL_EXPERIENCE → Place → OFFERS_ACTIVITY → Activity
+    This tool traverses schema-v7 paths to discover experiences:
+    - LocationEntity → SPECIAL_EXPERIENCE → Activity
+    - LocationEntity → SPECIAL_EXPERIENCE → Activity → TARGETS_PLACE → Place
     - Area ← LOCATED_IN ← Place → OFFERS_ACTIVITY → Activity
 
     Args:
@@ -154,21 +162,25 @@ def kg_discover_experiences(
     all_place_ids: set[str] = set()
     all_activity_ids: set[str] = set()
 
-    # Path 1: Area → SPECIAL_EXPERIENCE → Place
-    se_to_place_rels = repo.query_special_experiences_in_scope(area_ids)
-    for rel in se_to_place_rels:
-        all_place_ids.add(rel.to_entity_id)
-
-    # Path 2: Area → SPECIAL_EXPERIENCE → Activity
-    se_to_activity_rels = repo.query_activities_in_scope(area_ids)
+    # Path 1: LocationEntity → SPECIAL_EXPERIENCE → Activity. Selected Places
+    # are valid LocationEntity sources, but private notes never cross this API.
+    location_ids = list(dict.fromkeys([
+        *area_ids,
+        *(input_data.selectedPlaceIds or []),
+    ]))
+    se_to_activity_rels = repo.query_special_experiences_in_scope(location_ids)
     for rel in se_to_activity_rels:
         all_activity_ids.add(rel.to_entity_id)
 
-    # Path 3: Area → SPECIAL_EXPERIENCE → Place → OFFERS_ACTIVITY → Activity
-    chained_se_offers = repo.query_special_experience_to_place_offers_activity(area_ids)
-    for se_rel, offers_rel in chained_se_offers:
-        all_place_ids.add(se_rel.to_entity_id)
-        all_activity_ids.add(offers_rel.to_entity_id)
+    # Optional direct anchors: Activity → TARGETS_PLACE → Place.
+    target_rels = repo.query_activity_targets_place(list(all_activity_ids))
+    if input_data.selectedPlaceIds:
+        selected_ids = set(input_data.selectedPlaceIds)
+        target_rels = [
+            rel for rel in target_rels if rel.to_entity_id in selected_ids
+        ]
+    for rel in target_rels:
+        all_place_ids.add(rel.to_entity_id)
 
     # Path 4: Area ← LOCATED_IN ← Place → OFFERS_ACTIVITY → Activity
     chained_li_offers = repo.query_located_in_place_offers_activity(area_ids)
@@ -186,58 +198,11 @@ def kg_discover_experiences(
 
     # Build claims from each path
 
-    # Path 1: Area → SPECIAL_EXPERIENCE → Place
-    for rel in se_to_place_rels:
-        subject = entities_by_id.get(rel.from_entity_id)
-        obj = entities_by_id.get(rel.to_entity_id)
-        if not subject or not obj:
-            continue
+    targets_by_activity: dict[str, list] = {}
+    for target_rel in target_rels:
+        targets_by_activity.setdefault(target_rel.from_entity_id, []).append(target_rel)
 
-        # Filter by selected places if specified
-        if input_data.selectedPlaceIds and obj.id not in input_data.selectedPlaceIds:
-            continue
-
-        trust, inference_source = repo._determine_trust(subject, rel.source)
-        recs, rec_trust, rec_warnings = repo._parse_recommendations(
-            rel.recommendations, rel.source
-        )
-
-        # Filter inferred if requested
-        if not input_data.includeInferred and trust == TrustLevel.INFERRED:
-            continue
-
-        # Build evidence
-        evidence = [EdgeEvidence(
-            edgeId=rel.id,
-            source=rel.source,
-            recommendations=recs,
-            propertyProvenance=rel.source if rel.source and rel.source.startswith("inference:") else None,
-        )]
-
-        claim_warnings = list(rec_warnings)
-        if trust == TrustLevel.INFERRED and inference_source:
-            claim_warnings.append(f"Trust based on: {inference_source}")
-
-        claim = GraphEvidenceClaim(
-            claimId=_generate_claim_id(subject.id, rel.relationship_type, obj.id),
-            subject=repo.get_entity_summary(subject),
-            predicate=rel.relationship_type,
-            object=repo.get_entity_summary(obj),
-            path=[subject.id, rel.relationship_type, obj.id],
-            recommendations=recs,
-            evidence=evidence,
-            trust=trust,
-            inferenceSource=inference_source,
-            warnings=claim_warnings,
-        )
-
-        # Dedupe: same target + recommendation
-        dedupe_key = f"{obj.id}|{rel.relationship_type}"
-        if dedupe_key not in seen_claim_keys:
-            seen_claim_keys.add(dedupe_key)
-            all_claims.append(claim)
-
-    # Path 2: Area → SPECIAL_EXPERIENCE → Activity
+    # Paths 1-2: direct special Activity, optionally anchored by TARGETS_PLACE.
     for rel in se_to_activity_rels:
         subject = entities_by_id.get(rel.from_entity_id)
         obj = entities_by_id.get(rel.to_entity_id)
@@ -252,107 +217,76 @@ def kg_discover_experiences(
         if not input_data.includeInferred and trust == TrustLevel.INFERRED:
             continue
 
-        evidence = [EdgeEvidence(
+        base_evidence = EdgeEvidence(
             edgeId=rel.id,
             source=rel.source,
             recommendations=recs,
-            propertyProvenance=rel.source if rel.source and rel.source.startswith("inference:") else None,
-        )]
-
-        claim_warnings = list(rec_warnings)
-
-        claim = GraphEvidenceClaim(
-            claimId=_generate_claim_id(subject.id, rel.relationship_type, obj.id),
-            subject=repo.get_entity_summary(subject),
-            predicate=rel.relationship_type,
-            object=repo.get_entity_summary(obj),
-            path=[subject.id, rel.relationship_type, obj.id],
-            activity=repo.get_entity_summary(obj),
-            recommendations=recs,
-            evidence=evidence,
-            trust=trust,
-            inferenceSource=inference_source,
-            warnings=claim_warnings,
+            propertyProvenance=(
+                rel.source
+                if rel.source and rel.source.startswith("inference:")
+                else None
+            ),
         )
-
-        dedupe_key = f"{obj.id}|{rel.relationship_type}"
-        if dedupe_key not in seen_claim_keys:
-            seen_claim_keys.add(dedupe_key)
-            all_claims.append(claim)
-
-    # Path 3: Area → SPECIAL_EXPERIENCE → Place → OFFERS_ACTIVITY → Activity
-    for se_rel, offers_rel in chained_se_offers:
-        area = entities_by_id.get(se_rel.from_entity_id)
-        place = entities_by_id.get(se_rel.to_entity_id)
-        activity = entities_by_id.get(offers_rel.to_entity_id)
-        if not area or not place or not activity:
-            continue
-
-        if input_data.selectedPlaceIds and place.id not in input_data.selectedPlaceIds:
-            continue
-
-        # Combine recommendations from both edges
-        all_recs: list[Recommendation] = []
-        all_evidence: list[EdgeEvidence] = []
-        claim_warnings: list[str] = []
-
-        se_recs, _, se_warnings = repo._parse_recommendations(
-            se_rel.recommendations, se_rel.source
-        )
-        all_recs.extend(se_recs)
-        claim_warnings.extend(se_warnings)
-
-        offers_recs, _, offers_warnings = repo._parse_recommendations(
-            offers_rel.recommendations, offers_rel.source
-        )
-        all_recs.extend(offers_recs)
-        claim_warnings.extend(offers_warnings)
-
-        all_evidence.append(EdgeEvidence(
-            edgeId=se_rel.id,
-            source=se_rel.source,
-            recommendations=se_recs,
-            propertyProvenance=se_rel.source if se_rel.source and se_rel.source.startswith("inference:") else None,
-        ))
-        all_evidence.append(EdgeEvidence(
-            edgeId=offers_rel.id,
-            source=offers_rel.source,
-            recommendations=offers_recs,
-            propertyProvenance=offers_rel.source if offers_rel.source and offers_rel.source.startswith("inference:") else None,
-        ))
-
-        # Trust: take the lowest trust between the two edges
-        se_trust, _ = repo._determine_trust(area, se_rel.source)
-        offers_trust, offers_inference = repo._determine_trust(place, offers_rel.source)
-        combined_trust = TrustLevel.INFERRED if (
-            se_trust == TrustLevel.INFERRED or offers_trust == TrustLevel.INFERRED
-        ) else (TrustLevel.SOURCE_BACKED if (
-            se_trust == TrustLevel.SOURCE_BACKED or offers_trust == TrustLevel.SOURCE_BACKED
-        ) else TrustLevel.VERIFIED)
-        inference_source = offers_inference if offers_trust == TrustLevel.INFERRED else None
-
-        if not input_data.includeInferred and combined_trust == TrustLevel.INFERRED:
-            continue
-
-        claim = GraphEvidenceClaim(
-            claimId=_generate_claim_id(area.id, "SPECIAL_EXPERIENCE", place.id, activity.id),
-            subject=repo.get_entity_summary(area),
-            predicate="SPECIAL_EXPERIENCE",
-            object=repo.get_entity_summary(place),
-            path=[area.id, "SPECIAL_EXPERIENCE", place.id, "OFFERS_ACTIVITY", activity.id],
-            anchorPlace=repo.get_entity_summary(place),
-            activity=repo.get_entity_summary(activity),
-            recommendations=all_recs,
-            evidence=all_evidence,
-            trust=combined_trust,
-            inferenceSource=inference_source,
-            warnings=claim_warnings,
-        )
-
-        dedupe_key = f"{place.id}|SPECIAL_EXPERIENCE|{activity.id}|OFFERS_ACTIVITY"
-        if dedupe_key not in seen_claim_keys:
-            seen_claim_keys.add(dedupe_key)
-            all_claims.append(claim)
+        anchors = targets_by_activity.get(obj.id) or [None]
+        for target_rel in anchors:
+            claim_trust = trust
+            claim_inference_source = inference_source
+            place = (
+                entities_by_id.get(target_rel.to_entity_id)
+                if target_rel is not None
+                else None
+            )
+            if target_rel is not None and place is None:
+                continue
+            evidence = [base_evidence]
+            path = [subject.id, rel.relationship_type, obj.id]
+            if target_rel is not None and place is not None:
+                target_trust, target_inference_source = repo._determine_trust(
+                    obj,
+                    target_rel.source,
+                )
+                claim_trust = _least_trusted(trust, target_trust)
+                if target_trust is TrustLevel.INFERRED:
+                    claim_inference_source = target_inference_source
+                evidence.append(
+                    EdgeEvidence(
+                        edgeId=target_rel.id,
+                        source=target_rel.source,
+                        recommendations=[],
+                        propertyProvenance=(
+                            target_rel.source
+                            if target_rel.source
+                            and target_rel.source.startswith("inference:")
+                            else None
+                        ),
+                    )
+                )
+                path.extend(["TARGETS_PLACE", place.id])
+            claim = GraphEvidenceClaim(
+                claimId=_generate_claim_id(
+                    subject.id,
+                    rel.relationship_type,
+                    obj.id,
+                    place.id if place is not None else None,
+                ),
+                subject=repo.get_entity_summary(subject),
+                predicate=rel.relationship_type,
+                object=repo.get_entity_summary(obj),
+                path=path,
+                anchorPlace=(
+                    repo.get_entity_summary(place) if place is not None else None
+                ),
+                activity=repo.get_entity_summary(obj),
+                recommendations=recs,
+                evidence=evidence,
+                trust=claim_trust,
+                inferenceSource=claim_inference_source,
+                warnings=list(rec_warnings),
+            )
+            dedupe_key = f"{subject.id}|{obj.id}|{place.id if place else '-'}"
+            if dedupe_key not in seen_claim_keys:
+                seen_claim_keys.add(dedupe_key)
+                all_claims.append(claim)
 
     # Path 4: Area ← LOCATED_IN ← Place → OFFERS_ACTIVITY → Activity
     for li_rel, offers_rel in chained_li_offers:

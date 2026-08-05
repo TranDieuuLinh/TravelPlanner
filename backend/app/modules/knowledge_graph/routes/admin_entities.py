@@ -51,6 +51,12 @@ class AliasDetail(KnowledgeGraphResponse):
     id: int
     alias: str
     language: str
+    alias_type: str
+    source: str | None
+    provider: str | None
+    status: str
+    confidence: float | None
+    verified_at: str | None
     created_at: str
 
 
@@ -98,6 +104,11 @@ class EntityUpdateRequest(KnowledgeGraphResponse):
 class AliasUpsertRequest(KnowledgeGraphResponse):
     alias: str
     language: str = "en"
+    alias_type: str = Field(default="alternate_name", alias="aliasType")
+    source: str | None = None
+    provider: str | None = None
+    status: str = "imported"
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class PropertyUpsertRequest(KnowledgeGraphResponse):
@@ -162,6 +173,12 @@ def _entity_detail_response(
                 id=a.id,
                 alias=a.alias,
                 language=a.language,
+                alias_type=a.alias_type,
+                source=a.source,
+                provider=a.provider,
+                status=a.status,
+                confidence=a.confidence,
+                verified_at=a.verified_at.isoformat() if a.verified_at else None,
                 created_at=a.created_at.isoformat() if a.created_at else "",
             )
             for a in detail["aliases"]
@@ -307,7 +324,16 @@ def create_alias(
 
     if not repo.entity_exists(entity_id):
         raise AppError(404, "ENTITY_NOT_FOUND", "Entity not found.")
-    repo.upsert_alias(entity_id, payload.alias, payload.language)
+    repo.upsert_alias(
+        entity_id,
+        payload.alias,
+        payload.language,
+        alias_type=payload.alias_type,
+        source=payload.source,
+        provider=payload.provider,
+        status=payload.status,
+        confidence=payload.confidence,
+    )
     try:
         repo.db.commit()
     except IntegrityError as exc:

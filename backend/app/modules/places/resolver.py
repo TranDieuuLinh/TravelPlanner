@@ -1019,7 +1019,8 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         self.executable = executable
         self.work_dir = work_dir
         self.timeout_seconds = timeout_seconds
-        self.max_alias_queries = max_alias_queries
+        # Explorer may try one observed name and one contextual fallback only.
+        self.max_alias_queries = max(1, min(2, max_alias_queries))
         self.max_concurrency = max(1, max_concurrency)
         if not 0.0 <= minimum_score <= 1.0:
             raise ValueError("minimum_score must be between 0 and 1")
@@ -1274,8 +1275,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 placeMetadata=_compact_metadata(
                     {
                         "category": result.get("category"),
-                        "website": result.get("website"),
-                        "phone": result.get("phone"),
+                        "imageUrl": result.get("image_url"),
                     }
                 ),
                 dataConfidence="medium" if status == "resolved" else "low",

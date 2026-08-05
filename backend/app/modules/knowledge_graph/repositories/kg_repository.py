@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -19,6 +17,7 @@ from app.modules.knowledge_graph.model import (
     KnowledgeProperty,
     KnowledgeRelationship,
 )
+from app.modules.knowledge_graph.text import normalize_knowledge_text
 
 if TYPE_CHECKING:
     pass
@@ -26,9 +25,7 @@ if TYPE_CHECKING:
 
 def _normalized(value: str) -> str:
     """Normalize text for fuzzy matching."""
-    decomposed = unicodedata.normalize("NFKD", value.casefold())
-    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", without_marks).split())
+    return normalize_knowledge_text(value)
 
 
 class KnowledgeGraphRepository:
@@ -184,7 +181,19 @@ class KnowledgeGraphRepository:
             )
         ).first()
 
-    def upsert_alias(self, entity_id: str, alias: str, language: str = "en") -> KnowledgeAlias:
+    def upsert_alias(
+        self,
+        entity_id: str,
+        alias: str,
+        language: str = "en",
+        *,
+        alias_type: str = "alternate_name",
+        source: str | None = None,
+        provider: str | None = None,
+        status: str = "imported",
+        confidence: float | None = None,
+        verified_at: datetime | None = None,
+    ) -> KnowledgeAlias:
         """Create or update an alias for an entity."""
         normalized = _normalized(alias)
         existing = self.db.scalars(
@@ -196,12 +205,24 @@ class KnowledgeGraphRepository:
         if existing:
             existing.normalized_alias = normalized
             existing.language = language
+            existing.alias_type = alias_type
+            existing.source = source
+            existing.provider = provider
+            existing.status = status
+            existing.confidence = confidence
+            existing.verified_at = verified_at
             return existing
         alias_record = KnowledgeAlias(
             entity_id=entity_id,
             alias=alias,
             normalized_alias=normalized,
             language=language,
+            alias_type=alias_type,
+            source=source,
+            provider=provider,
+            status=status,
+            confidence=confidence,
+            verified_at=verified_at,
         )
         self.db.add(alias_record)
         self.db.flush()
@@ -513,16 +534,67 @@ class KnowledgeGraphRepository:
         self,
         normalized_name: str,
         limit: int = 5,
+        entity_types: set[str] | None = None,
     ) -> list[KnowledgeEntity]:
-        """Find fuzzy matching entities (exact prefix match)."""
-        pattern = f"{normalized_name}%"
-        return list(
-            self.db.scalars(
-                select(KnowledgeEntity)
-                .where(KnowledgeEntity.normalized_name.ilike(pattern))
-                .limit(limit)
+        """Return top-k name/alias matches, with trigram ranking on PostgreSQL."""
+        normalized = _normalized(normalized_name)
+        if not normalized or limit < 1:
+            return []
+
+        query = select(KnowledgeEntity)
+        if entity_types:
+            query = query.where(KnowledgeEntity.entity_type.in_(entity_types))
+
+        if self.db.get_bind().dialect.name != "postgresql":
+            pattern = f"{normalized}%"
+            query = query.where(
+                or_(
+                    KnowledgeEntity.normalized_name.ilike(pattern),
+                    KnowledgeEntity.aliases.any(
+                        KnowledgeAlias.normalized_alias.ilike(pattern)
+                    ),
+                )
             )
+            return list(self.db.scalars(query.limit(limit)))
+
+        alias_score = (
+            select(
+                func.max(
+                    func.greatest(
+                        case(
+                            (KnowledgeAlias.normalized_alias == normalized, 2.0),
+                            else_=0.0,
+                        ),
+                        func.similarity(KnowledgeAlias.normalized_alias, normalized),
+                        func.word_similarity(
+                            KnowledgeAlias.normalized_alias, normalized
+                        ),
+                    )
+                )
+            )
+            .where(KnowledgeAlias.entity_id == KnowledgeEntity.id)
+            .correlate(KnowledgeEntity)
+            .scalar_subquery()
         )
+        score = func.greatest(
+            func.greatest(
+                case(
+                    (KnowledgeEntity.normalized_name == normalized, 2.0),
+                    else_=0.0,
+                ),
+                func.similarity(KnowledgeEntity.normalized_name, normalized),
+                func.word_similarity(KnowledgeEntity.normalized_name, normalized),
+            ),
+            func.coalesce(alias_score, 0.0),
+        )
+        ranked = query.add_columns(score.label("match_score")).where(
+            score >= 0.3
+        ).order_by(
+            score.desc(),
+            KnowledgeEntity.canonical_name,
+            KnowledgeEntity.id,
+        ).limit(limit)
+        return [row[0] for row in self.db.execute(ranked)]
 
     def entity_exists(self, entity_id: str) -> bool:
         """Check if entity exists."""

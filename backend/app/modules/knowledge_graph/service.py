@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from uuid import uuid4
@@ -21,6 +20,7 @@ from app.modules.knowledge_graph.schema import (
     ProposedEdgeUpdate,
     ProposedNodeUpdate,
 )
+from app.modules.knowledge_graph.text import normalize_knowledge_text
 from app.shared.errors import AppError
 
 
@@ -29,9 +29,7 @@ def _now() -> str:
 
 
 def _normalized(value: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", value.casefold())
-    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", without_marks).split())
+    return normalize_knowledge_text(value)
 
 
 class KnowledgeGraphImportService:

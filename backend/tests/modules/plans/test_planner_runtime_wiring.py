@@ -12,13 +12,14 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.main import app
 from app.modules.places.model import Place
+from app.modules.knowledge_graph.model import KnowledgeEntity
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
-from app.modules.plans.trip_theme_planner.research_tool import (
-    RepositoryPlannerResearchTool,
+from app.modules.plans.trip_theme_planner.graph_research import (
+    TripThemeGraphResearchService,
 )
 from app.modules.plans.schema import MainPlanCreate
 from tests.modules.plans.test_planner_service import FakePlannerLLM
@@ -60,6 +61,13 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
         with Session(engine) as session:
             session.add_all(
                 [
+                    KnowledgeEntity(
+                        id="area-hanoi",
+                        canonical_name="Hà Nội",
+                        normalized_name="ha noi",
+                        entity_type="Area",
+                        status="verified",
+                    ),
                     _place(
                         "place-museum",
                         "City Museum",
@@ -72,18 +80,18 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                         "art_gallery",
                         ["culture", "art"],
                     ),
-                        _place(
-                            "place-restaurant",
-                            "Local Restaurant",
-                            "restaurant",
-                            ["food"],
-                        ),
-                        _place(
-                            "place-dinner",
-                            "Local Dinner Restaurant",
-                            "restaurant",
-                            ["food", "dinner"],
-                        ),
+                    _place(
+                        "place-restaurant",
+                        "Local Restaurant",
+                        "restaurant",
+                        ["food"],
+                    ),
+                    _place(
+                        "place-dinner",
+                        "Local Dinner Restaurant",
+                        "restaurant",
+                        ["food", "dinner"],
+                    ),
                     _place(
                         "place-coffee",
                         "Old Quarter Coffee",
@@ -106,8 +114,12 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                 RepositoryPlaceSelectionTool,
             )
             assert isinstance(
-                service.main_workflow.trip_theme_planner.research_tool,
-                RepositoryPlannerResearchTool,
+                service.main_workflow.trip_theme_planner.graph_research_service,
+                TripThemeGraphResearchService,
+            )
+            assert not hasattr(
+                service.main_workflow.trip_theme_planner,
+                "research_tool",
             )
             assert isinstance(
                 service.main_workflow.place_selector.route_optimizer,
@@ -171,6 +183,13 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     )
     db_session.add_all(
         [
+            KnowledgeEntity(
+                id="area-hanoi-context",
+                canonical_name="Hà Nội",
+                normalized_name="ha noi",
+                entity_type="Area",
+                status="verified",
+            ),
             _place("context-museum", "Context Museum", "museum", ["culture"]),
             _place("context-gallery", "Context Gallery", "art_gallery", ["culture"]),
             _place("context-food", "Context Food", "restaurant", ["food"]),

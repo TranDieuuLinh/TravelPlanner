@@ -7,6 +7,7 @@ from app.modules.plans.place_selector.place_tool import (
     SelectablePlace,
     PlaceSelectionTool,
     place_category,
+    selection_relevance_score,
 )
 
 
@@ -50,6 +51,8 @@ class MealStopSelector:
                 role=role,
                 first=first,
                 second=second,
+                region_key=region_key,
+                target_tags=terms,
             )
             selected[role] = chosen
             if chosen is not None:
@@ -93,6 +96,8 @@ class MealStopSelector:
         role: str,
         first: PlanItem,
         second: PlanItem,
+        region_key: str,
+        target_tags: list[str],
     ) -> SelectablePlace | None:
         located = [
             (rank, candidate)
@@ -104,24 +109,26 @@ class MealStopSelector:
 
         scored = [
             (
+                -selection_relevance_score(
+                    candidate,
+                    region_key=region_key,
+                    target_tags=target_tags,
+                ),
                 self._route_cost(candidate, role=role, first=first, second=second),
                 rank,
                 candidate,
             )
             for rank, candidate in located
         ]
-        for radius in self.radius_steps_meters:
-            eligible = [entry for entry in scored if entry[0] <= radius]
-            if eligible:
-                return min(
-                    eligible,
-                    key=lambda entry: (
-                        entry[0] + entry[1] * 20,
-                        entry[1],
-                        entry[2].name.casefold(),
-                    ),
-                )[2]
-        return None
+        return min(
+            scored,
+            key=lambda entry: (
+                entry[0],
+                entry[1],
+                entry[2],
+                entry[3].name.casefold(),
+            ),
+        )[3]
 
     def _route_cost(
         self,

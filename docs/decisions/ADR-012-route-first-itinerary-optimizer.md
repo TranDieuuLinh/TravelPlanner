@@ -33,6 +33,9 @@ Thêm module `app/modules/plans/itinerary_optimizer` sau bước Finder chọn P
 - dùng `TravelTimeMatrixProvider` để giảm tổng thời gian di chuyển của toàn chuyến;
 - PlaceSelector không gọi pedestrian/auto/transit leg trong lúc chọn Place; route
   enrichment chi tiết chỉ chạy sau khi allocation và thứ tự cuối cùng đã chốt;
+- candidate được xếp theo semantic relevance/category/chất lượng trước; khoảng
+  cách chỉ phá hòa giữa candidate cùng điểm. Quy tắc này áp dụng cho cả activity
+  và meal để route optimization không thay thế quyết định relevance;
 - khi matrix không khả dụng, dùng khoảng cách địa lý; lỗi optimizer giữ nguyên thứ tự
   Finder và route enrichment vẫn chạy qua `GeographicRouteOptimizer` cũ;
 - `ITINERARY_OPTIMIZER_MODE=legacy` cho phép quay lại hoàn toàn luồng cũ.

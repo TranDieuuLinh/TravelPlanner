@@ -109,26 +109,32 @@ def _synthetic_claims_from_catalog(
             for source in candidate.source_refs
             if source
         ]
-        anchors = list(candidate.anchor_place_ids) or list(candidate.place_ids)
-        if not anchors:
-            continue
+        anchors: list[str | None] = (
+            list(candidate.anchor_place_ids)
+            or list(candidate.place_ids)
+            or [None]
+        )
         activity_id = candidate.activity_id
         activity_entity = (
             _synthetic_entity(activity_id, "Activity") if activity_id else None
         )
         claim_ids = list(candidate.claim_ids)
         if not claim_ids:
-            claim_ids = list(anchors)
-        for claim_id, anchor_id in zip(claim_ids, anchors, strict=False):
-            subject = _synthetic_entity(anchor_id, "TravelPlace")
+            claim_ids = [anchor for anchor in anchors if anchor is not None]
+        for index, claim_id in enumerate(claim_ids):
+            anchor_id = anchors[min(index, len(anchors) - 1)]
+            subject = _synthetic_entity(
+                anchor_id or "graph-scope",
+                "TravelPlace" if anchor_id else "Area",
+            )
             object_entity = (
                 activity_entity
                 if activity_entity is not None
-                else _synthetic_entity(anchor_id, "TravelPlace")
+                else _synthetic_entity(anchor_id or "graph-scope", "Area")
             )
             predicate = (
                 "OFFERS_ACTIVITY"
-                if activity_id is not None
+                if activity_id is not None and anchor_id is not None
                 else "SPECIAL_EXPERIENCE"
             )
             claims.append(
@@ -138,7 +144,7 @@ def _synthetic_claims_from_catalog(
                     predicate=predicate,
                     object=object_entity,
                     path=[],
-                    anchorPlace=subject,
+                    anchorPlace=subject if anchor_id is not None else None,
                     activity=activity_entity,
                     recommendations=[],
                     evidence=candidate_evidence,

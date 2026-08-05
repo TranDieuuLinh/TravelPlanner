@@ -140,9 +140,7 @@ async def create_main_plan_from_explorer(
 ) -> PlanGenerationRead:
     try:
         plan, timing_report = (
-            await service.create_main_plan_from_explorer_with_timing(
-                payload.to_planner_input()
-            )
+            await service.create_main_plan_from_trip_intent_with_timing(payload)
         )
         return PlanGenerationRead(plan=plan, timingReport=timing_report)
     except RuntimeError as exc:

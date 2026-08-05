@@ -257,9 +257,22 @@ async function scrapeListViewItems(page) {
 }
 
 async function lookup(page, query) {
-  const searchUrl =
-    `https://www.google.com/maps/search/${encodeURIComponent(query)}` +
-    "?hl=vi";
+  let directPlaceUrl = null;
+  try {
+    const parsed = new URL(query);
+    if (
+      ["www.google.com", "google.com"].includes(parsed.hostname) &&
+      parsed.pathname.includes("/maps/place/")
+    ) {
+      parsed.searchParams.set("hl", "vi");
+      directPlaceUrl = parsed.toString();
+    }
+  } catch {
+    // A normal place-name query is expected in the common path.
+  }
+  const searchUrl = directPlaceUrl ||
+    (`https://www.google.com/maps/search/${encodeURIComponent(query)}` +
+      "?hl=vi");
   await page.goto(searchUrl, {
     waitUntil: "domcontentloaded",
     timeout: 15000,
@@ -414,6 +427,22 @@ async function lookup(page, query) {
     ".PYvSYb",
     ".WeS02d",
   ]);
+  // Keep one representative place photo only. Avatars, icons and data URLs
+  // are excluded so downstream persistence remains a compact provider snapshot.
+  const imageUrl = await page.locator([
+    'button[jsaction*="heroHeaderImage"] img',
+    'button[jsaction*="pane.heroHeaderImage"] img',
+    'img[src*="googleusercontent.com"]',
+    'img[src*="ggpht.com"]',
+  ].join(", ")).evaluateAll((images) => {
+    const candidate = images.find((image) => {
+      const src = image.currentSrc || image.src || "";
+      const width = Number(image.naturalWidth || image.width || 0);
+      const height = Number(image.naturalHeight || image.height || 0);
+      return src.startsWith("https://") && width >= 200 && height >= 120;
+    });
+    return candidate ? (candidate.currentSrc || candidate.src) : null;
+  }).catch(() => null);
   const identity = googleIdentityFromUrl(link);
 
   // If we have list items, enrich them with detail data
@@ -437,6 +466,7 @@ async function lookup(page, query) {
         phone: index === 0 ? (phoneItemId?.replace(/^phone:tel:/, "") || phoneText) : null,
         website: index === 0 ? website : null,
         descriptions: index === 0 && description ? [description] : [],
+        image_url: index === 0 ? imageUrl : null,
         price_level: item.priceLevel,
       };
     });
@@ -461,6 +491,7 @@ async function lookup(page, query) {
     phone: phoneItemId?.replace(/^phone:tel:/, "") || phoneText,
     website,
     descriptions: description ? [description] : [],
+    image_url: imageUrl,
   }];
 }
 

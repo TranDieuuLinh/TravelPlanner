@@ -554,11 +554,7 @@ results_path.write_text(json.dumps([{
     assert result.plus_code == "2VJ2+P2 Hoàn Kiếm, Hà Nội"
     assert result.description == "Điểm tham quan lịch sử."
     assert result.opening_hours[0]["dayOfWeek"] == 1
-    assert result.place_metadata == {
-        "category": "Tourist attraction",
-        "website": "https://example.com/place",
-        "phone": "+84 24 1234 5678",
-    }
+    assert result.place_metadata == {"category": "Tourist attraction"}
 
 
 def test_google_maps_scraper_uses_shared_worker_without_api_key(

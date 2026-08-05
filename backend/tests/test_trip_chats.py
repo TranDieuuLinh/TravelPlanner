@@ -1,4 +1,7 @@
-from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripRevision
+from app.modules.plans.chat_repository import TripChatRepository
+from app.modules.plans.chat_schema import TripChatTurnRead
+from app.modules.users.repository import UserRepository
 from tests.helpers import csrf_headers
 
 
@@ -77,13 +80,13 @@ def test_user_can_delete_own_trip_chat_and_its_history(
                 attachment_names=[],
                 plan_revision=1,
             ),
-            TripChatPlanRevision(
+            TripRevision(
                 id="revision-to-delete",
                 chat_id=chat_id,
                 revision=1,
                 intake_id=None,
                 plan_payload={},
-                trip_intent_id=None,
+                trip_intent_payload=None,
             ),
         ]
     )
@@ -97,7 +100,7 @@ def test_user_can_delete_own_trip_chat_and_its_history(
     assert response.status_code == 204
     assert registered_client.get(f"/api/trip-chats/{chat_id}").status_code == 404
     assert db_session.get(TripChatMessage, "message-to-delete") is None
-    assert db_session.get(TripChatPlanRevision, "revision-to-delete") is None
+    assert db_session.get(TripRevision, "revision-to-delete") is None
 
 
 def test_delete_trip_chat_requires_csrf(registered_client) -> None:
@@ -111,6 +114,38 @@ def test_delete_trip_chat_requires_csrf(registered_client) -> None:
 
     assert response.status_code == 403
     assert response.json()["code"] == "CSRF_VALIDATION_FAILED"
+
+
+def test_turn_lifecycle_reuses_user_message_row(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    repository = TripChatRepository(db_session)
+    chat = repository.create(user.id, "Hà Nội")
+
+    turn = repository.create_turn(
+        chat,
+        client_turn_id="client-turn-1",
+        content="Tạo chuyến Hà Nội",
+        attachment_names=[],
+        expected_revision=0,
+    )
+    repository.save_conversation_response(
+        repository.get(chat.id, user.id),
+        turn,
+        assistant_content="Đã hiểu.",
+        assistant_blocks=[{"type": "text", "text": "Đã hiểu."}],
+    )
+    repository.update_turn(turn, status="completed")
+
+    stored = repository.get(chat.id, user.id)
+    assert [message.role for message in stored.messages] == ["user", "assistant"]
+    assert stored.messages[0].client_turn_id == "client-turn-1"
+    assert stored.messages[0].status == "completed"
+    assert stored.messages[1].turn_id == turn.id
+    assert TripChatTurnRead.model_validate(stored.messages[0]).id == turn.id
 
 
 def test_user_cannot_delete_another_users_trip_chat(registered_client) -> None:

@@ -1,28 +1,40 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
+from difflib import SequenceMatcher
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.places.model import Place
+from app.modules.knowledge_graph.model import (
+    KnowledgeAlias,
+    KnowledgeEntity,
+    KnowledgeGraphImport,
+    KnowledgeGraphImportEdge,
+    KnowledgeGraphImportNode,
+    KnowledgeProperty,
+)
+from app.modules.knowledge_graph.repositories.kg_repository import KnowledgeGraphRepository
 from app.modules.places.category import canonical_place_category
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import (
-    ExplorerIntake,
-    UrlExtractionCacheEntry,
-    UrlSourceArtifact,
-    UserMustPlace,
-    UserMustPlaceUser,
+from app.modules.plans.explorer.model import SourceDocument
+from app.modules.plans.explorer.place_policy import (
+    concise_source_activity,
+    is_schedulable_place,
 )
-from app.modules.plans.explorer.schema import PlaceCandidateReview, UnifiedPlaceCandidate
+from app.modules.plans.explorer.schema import (
+    PlaceCandidateReview,
+    PlaceMatchOption,
+    UnifiedPlaceCandidate,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
-    ExtractedPlace,
     MediaArtifacts,
     SpeechToTextResult,
     UrlMetadata,
@@ -33,15 +45,23 @@ from app.modules.plans.explorer.tools.url_reels.utils import (
     detect_platform,
     extract_youtube_video_id,
 )
-from app.modules.plans.explorer.place_policy import (
-    concise_source_activity,
-    is_schedulable_place,
-)
-from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import SelectedPlaceCreate
+from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 
 
-URL_EXTRACTION_CACHE_VERSION = 5
+URL_EXTRACTION_CACHE_VERSION = 6
+
+
+@dataclass(frozen=True)
+class SourceArtifactView:
+    source_url: str
+    platform: str
+    artifact_type: str
+    content_text: str
+    language: str
+    source: str
+    metadata_json: dict
+    fetched_at: datetime
 
 
 def _artifact_source_url(url: str, platform: str | None = None) -> str:
@@ -52,34 +72,9 @@ def _artifact_source_url(url: str, platform: str | None = None) -> str:
     return canonicalize_url(url)
 
 
-def _image_urls_from_metadata(metadata: object) -> list[str]:
-    if not isinstance(metadata, dict):
-        return []
-    values: list[object] = []
-    for key in ("imageUrls", "images"):
-        value = metadata.get(key)
-        if isinstance(value, list):
-            values.extend(value)
-    for key in ("imageUrl", "photoUrl", "thumbnailUrl"):
-        value = metadata.get(key)
-        if value:
-            values.append(value)
-
-    urls: list[str] = []
-    for value in values:
-        candidate = value
-        if isinstance(value, dict):
-            candidate = value.get("url") or value.get("imageUrl")
-        if (
-            isinstance(candidate, str)
-            and candidate.startswith(("https://", "http://"))
-            and candidate not in urls
-        ):
-            urls.append(candidate)
-    return urls[:5]
-
-
 class ExplorerPersistenceRepository:
+    """Persist Explorer output as source documents and reviewable KG proposals."""
+
     def __init__(self, session: Session) -> None:
         self.session = session
 
@@ -93,136 +88,160 @@ class ExplorerPersistenceRepository:
         candidate_reviews: list[PlaceCandidateReview] | None = None,
         url_results: list[UrlReelExtractionResult] | None = None,
     ) -> None:
-        self.session.add(
-            ExplorerIntake(
-                id=intake_id,
-                user_id=user_id,
-                destination=destination,
-                candidate_reviews=[
-                    review.model_dump(mode="json", by_alias=True)
-                    for review in (candidate_reviews or [])
-                ],
-            )
+        documents = self._save_source_documents(url_results or [])
+        numeric_user_id = _numeric_user_id(user_id)
+        import_job = KnowledgeGraphImport(
+            id=intake_id,
+            import_kind="explorer_intake",
+            source_label=destination,
+            source_url=next(iter(documents), None),
+            source_document_id=(
+                next(iter(documents.values())).id if documents else None
+            ),
+            source_content="",
+            processing_status="succeeded",
+            review_status="not_required",
+            status="succeeded",
+            schema_version="explorer-place-proposal-v1",
+            ontology_version="knowledge-graph-v2",
+            dataset_hash="",
+            created_by=numeric_user_id,
+            destination=destination,
+            candidate_reviews=[
+                review.model_dump(mode="json", by_alias=True)
+                for review in (candidate_reviews or [])
+            ],
         )
-        self._save_url_cache(url_results or [])
-        self._save_url_source_artifacts(url_results or [])
+        self.session.add(import_job)
+        self.session.flush()
+
+        area_matches, area_entity, area_identity_status = self._match_knowledge_entities(
+            destination,
+            aliases=[destination],
+            expected_type="Area",
+            region=destination,
+        )
+        area_temp_id = "area-root"
+        area_node = KnowledgeGraphImportNode(
+            import_id=intake_id,
+            temp_id=area_temp_id,
+            entity_id=(
+                area_entity.id if area_entity is not None
+                else f"area_{hashlib.sha1(_normalized(destination).encode()).hexdigest()[:20]}"
+            ),
+            type=area_entity.entity_type if area_entity is not None else "Area",
+            canonical_name=destination,
+            aliases=[destination],
+            properties={},
+            evidence=[],
+            confidence=1.0,
+            match_status="existing" if area_entity is not None else "new",
+            match_candidates=area_matches,
+            selected_entity_id=area_entity.id if area_entity is not None else None,
+            identity_status=area_identity_status,
+            selection_method="knowledge_top_k" if area_entity is not None else None,
+            candidate_key=f"area:{_slug(destination)}",
+            candidate_name=destination,
+            search_region=destination,
+            source_evidence={},
+            provider="knowledge_graph" if area_entity is not None else None,
+            provider_snapshot={},
+            preference_level="mentioned",
+            decision="pending",
+            validation_issues=[], required_properties=[], optional_properties=[],
+        )
+        self.session.add(area_node)
+        persisted_count = 1
+        persisted_edges = 0
         for resolution in resolutions:
-            if not _is_persistable_resolution(
-                resolution,
-                destination=destination,
-            ):
+            if not _is_persistable_resolution(resolution, destination=destination):
                 continue
             candidate = resolution.candidate
-            resolved_category = canonical_place_category(
-                resolution.place_type
-            )
             source_url = _candidate_source_url(candidate)
+            document = documents.get(_artifact_source_url(source_url)) if source_url else None
+            matches, matched_entity, identity_status = self._match_knowledge_entities(
+                resolution.name,
+                aliases=[candidate.name, *candidate.search_names],
+                expected_type=_knowledge_entity_type(resolution.place_type),
+                region=candidate.search_region or destination,
+            )
+            provider_snapshot = _provider_snapshot(resolution)
             candidate_key = _shared_candidate_key(candidate, destination)
-            must_place = self._find_shared_place(
-                source_url=source_url,
+            venue_temp_id = f"place-{uuid4().hex[:20]}"
+            node = KnowledgeGraphImportNode(
+                import_id=intake_id,
+                temp_id=venue_temp_id,
+                entity_id=(
+                    matched_entity.id
+                    if matched_entity is not None
+                    else f"place_{hashlib.sha1(candidate_key.encode()).hexdigest()[:20]}"
+                ),
+                type=_knowledge_entity_type(resolution.place_type),
+                canonical_name=resolution.name,
+                aliases=list(dict.fromkeys([candidate.name, *candidate.search_names])),
+                properties={},
+                evidence=list(dict.fromkeys(candidate.source_evidence.values())),
+                confidence=float(candidate.confidence),
+                match_status="existing" if matched_entity is not None else "new",
+                match_candidates=matches,
+                selected_entity_id=(matched_entity.id if matched_entity is not None else None),
+                identity_status=identity_status,
+                selection_method=("knowledge_top_k" if matched_entity is not None else None),
                 candidate_key=candidate_key,
                 candidate_name=candidate.name,
+                search_region=candidate.search_region or destination,
+                source_evidence=dict(candidate.source_evidence),
+                provider=resolution.provider,
+                provider_external_id=resolution.external_id,
+                provider_snapshot=provider_snapshot,
+                source_note=_place_notes(candidate),
+                source_order=candidate.source_order,
+                source_day=candidate.source_day,
+                source_time_hint=candidate.source_time_hint,
+                source_activity=concise_source_activity(candidate.source_activity),
+                source_duration_minutes=candidate.source_duration_minutes,
+                preference_level=candidate.preference_level.value,
+                attributes=list(candidate.attributes),
+                decision="pending",
+                validation_issues=[],
+                required_properties=[],
+                optional_properties=[],
+                source_document_id=document.id if document is not None else None,
             )
-            if must_place is None:
-                catalog_place_id = self._catalog_place_id(resolution.place_id)
-                must_place = UserMustPlace(
-                    id=str(uuid4()),
-                    intake_id=intake_id,
-                    user_id=user_id,
-                    destination=destination,
-                    candidate_key=candidate_key,
-                    candidate_name=candidate.name,
-                    category=resolved_category,
-                    address_hint=candidate.address_hint,
-                    search_region=candidate.search_region,
-                    sources_json=[
-                        source.model_dump(mode="json")
-                        for source in candidate.sources
-                    ],
-                    attributes_json=list(candidate.attributes),
-                    source_evidence_json=dict(candidate.source_evidence),
-                    confidence=Decimal(str(candidate.confidence)),
-                    notes=_place_notes(candidate),
-                    resolved_name=resolution.name,
-                    address=resolution.address,
-                    city=resolution.city,
-                    country=resolution.country,
-                    country_code=resolution.country_code,
-                    primary_area=resolution.primary_area,
-                    latitude=resolution.latitude,
-                    longitude=resolution.longitude,
-                    description=resolution.description,
-                    provider=resolution.provider,
-                    external_id=resolution.external_id,
-                    data_confidence=resolution.data_confidence,
-                    fetched_at=resolution.fetched_at,
-                    attribution=resolution.attribution,
-                    resolution_status=resolution.status,
-                    resolution_reason=resolution.resolution_reason,
-                    preference_level=candidate.preference_level.value,
-                    source_order=candidate.source_order,
-                    source_day=candidate.source_day,
-                    source_time_hint=candidate.source_time_hint,
-                    source_activity=candidate.source_activity,
-                    source_duration_minutes=candidate.source_duration_minutes,
-                    # Provider identities belong in external_id. place_id is
-                    # an internal FK and must never contain a stale/external
-                    # provider identifier.
-                    place_id=catalog_place_id,
-                    name=resolution.name,
-                    place_type=resolution.place_type or "other",
-                    region_key=(
-                        resolution.region_key
-                        or normalize_region_key(resolution.city or destination)
-                    ),
-                    status=resolution.place_status or "active",
-                    opening_hours=list(resolution.opening_hours),
-                    typical_duration_minutes=(
-                        resolution.typical_duration_minutes
-                        or candidate.source_duration_minutes
-                    ),
-                    source_platform=(
-                        resolution.source_platform or resolution.provider
-                    ),
-                    source_link=resolution.source_link or source_url,
-                    source_url=source_url,
-                    plus_code=resolution.plus_code,
-                    rating=resolution.rating,
-                    review_count=resolution.review_count,
-                    source_fetched_at=(
-                        resolution.fetched_at
-                    ),
-                    revision=resolution.place_revision,
-                    metadata_json={
-                        **resolution.place_metadata,
-                        "candidateName": candidate.name,
-                        "sourceEvidence": dict(candidate.source_evidence),
-                    },
-                )
-                self.session.add(must_place)
-                self.session.flush()
-            else:
-                # Repair cached rows created before provider/database category
-                # became authoritative.
-                must_place.category = resolved_category
-                if resolution.place_type:
-                    must_place.place_type = resolution.place_type
-            self._link_user(
-                must_place=must_place,
-                intake_id=intake_id,
-                user_id=user_id,
-            )
+            self.session.add(node)
+            self.session.add(KnowledgeGraphImportEdge(
+                import_id=intake_id,
+                temp_id=f"located-in-{uuid4().hex[:16]}",
+                from_ref=venue_temp_id,
+                relationship_type="LOCATED_IN",
+                to_ref=area_temp_id,
+                recommendations=[],
+                source=source_url or f"explorer:{intake_id}",
+                evidence=list(dict.fromkeys(candidate.source_evidence.values())),
+                confidence=float(candidate.confidence),
+                match_status="new",
+                decision="pending",
+                validation_issues=[],
+            ))
+            persisted_count += 1
+            persisted_edges += 1
+        import_job.node_count = persisted_count
+        import_job.edge_count = persisted_edges
+        if persisted_count:
+            import_job.review_status = "pending" if any(
+                node.selected_entity_id is None for node in import_job.nodes
+            ) else "not_required"
         self.session.commit()
 
     def load_candidate_reviews(self, intake_id: str | None) -> list[PlaceCandidateReview]:
         if intake_id is None:
             return []
-        row = self.session.get(ExplorerIntake, intake_id)
-        if row is None:
+        row = self.session.get(KnowledgeGraphImport, intake_id)
+        if row is None or row.import_kind != "explorer_intake":
             return []
         return [
             PlaceCandidateReview.model_validate(value)
-            for value in row.candidate_reviews
+            for value in (row.candidate_reviews or [])
         ]
 
     def replace_candidate_reviews(
@@ -230,146 +249,148 @@ class ExplorerPersistenceRepository:
         intake_id: str,
         reviews: list[PlaceCandidateReview],
     ) -> None:
-        row = self.session.get(ExplorerIntake, intake_id)
-        if row is None:
+        row = self.session.get(KnowledgeGraphImport, intake_id)
+        if row is None or row.import_kind != "explorer_intake":
             return
         row.candidate_reviews = [
             review.model_dump(mode="json", by_alias=True) for review in reviews
         ]
-
-    def _catalog_place_id(self, place_id: str | None) -> str | None:
-        if place_id is None:
-            return None
-        return self.session.scalar(
-            select(Place.id).where(Place.id == place_id)
-        )
 
     def load_must_places(
         self,
         intake_id: str,
         user_id: str | None,
     ) -> list[SelectedPlaceCreate]:
-        rows = list(self.session.scalars(
-            select(UserMustPlace)
-            .join(
-                UserMustPlaceUser,
-                UserMustPlaceUser.user_must_place_id == UserMustPlace.id,
+        import_job = self.session.get(KnowledgeGraphImport, intake_id)
+        if (
+            import_job is None
+            or import_job.import_kind != "explorer_intake"
+            or import_job.created_by != _numeric_user_id(user_id)
+        ):
+            return []
+        nodes = list(self.session.scalars(
+            select(KnowledgeGraphImportNode)
+            .where(KnowledgeGraphImportNode.import_id == intake_id)
+            .order_by(KnowledgeGraphImportNode.source_order, KnowledgeGraphImportNode.id)
+        ))
+        anchor_coordinates = [
+            (
+                _optional_float((item.provider_snapshot or {}).get("latitude")),
+                _optional_float((item.provider_snapshot or {}).get("longitude")),
             )
-            .where(
-                UserMustPlaceUser.intake_id == intake_id,
-                (
-                    UserMustPlaceUser.user_id == _numeric_user_id(user_id)
-                    if user_id is not None
-                    else UserMustPlaceUser.user_id.is_(None)
-                ),
-            )
-            .order_by(UserMustPlace.created_at, UserMustPlace.id)
-        ).all())
-        rows.sort(
-            key=lambda row: (
-                row.source_order is None,
-                row.source_order or 10_000,
-                row.created_at,
-                row.id,
-            )
-        )
-        return [
-            SelectedPlaceCreate(
-                # Display the verified provider label in plans. The original
-                # caption/OCR spelling remains in candidate_name and evidence
-                # on UserMustPlace for provenance and debugging.
-                name=must_place.resolved_name,
-                address=must_place.address,
-                priority=_priority_from_confidence(must_place.confidence),
-                mustVisit=must_place.preference_level == "must_visit",
-                preferenceLevel=must_place.preference_level,
-                regionKey=normalize_region_key(
-                    must_place.city or must_place.destination
-                ),
-                tags=list(
-                    dict.fromkeys(
-                        [
-                            canonical_place_category(must_place.place_type),
-                            *(must_place.attributes_json or []),
-                        ]
-                    )
-                ),
-                latitude=(
-                    float(must_place.latitude)
-                    if must_place.latitude is not None
-                    else None
-                ),
-                longitude=(
-                    float(must_place.longitude)
-                    if must_place.longitude is not None
-                    else None
-                ),
-                sourceRefs=[
-                    source.get("url") or source.get("type", "unknown")
-                    for source in (must_place.sources_json or [])
-                ],
-                sourceProvider=must_place.provider,
-                # Extraction evidence is retained on UserMustPlace for
-                # provenance, but raw captions are not user-facing plan notes.
-                notes=must_place.description,
-                imageUrls=_image_urls_from_metadata(must_place.metadata_json),
-                rating=(
-                    float(must_place.rating)
-                    if must_place.rating is not None
-                    else None
-                ),
-                reviewCount=must_place.review_count,
-                sourceOrder=must_place.source_order,
-                sourceDay=must_place.source_day,
-                sourceTimeHint=must_place.source_time_hint,
-                sourceActivity=concise_source_activity(
-                    must_place.source_activity
-                ),
-                sourceDurationMinutes=must_place.source_duration_minutes,
-            )
-            for must_place in rows
-            if _is_schedulable_must_place(must_place)
+            for item in nodes
+            if item.identity_status != "branch_ambiguous"
+            and _optional_float((item.provider_snapshot or {}).get("latitude")) is not None
+            and _optional_float((item.provider_snapshot or {}).get("longitude")) is not None
         ]
-
-    def load_cached_url_result(
-        self,
-        url: str,
-    ) -> UrlReelExtractionResult | None:
-        source_url = canonicalize_url(url)
-        cached = self.session.get(UrlExtractionCacheEntry, source_url)
-        if cached is None:
-            # Resolved snapshots do not contain the current extraction schema,
-            # entity types or coverage. Reusing them as an extraction cache
-            # would bypass schema-version invalidation and preserve old parser
-            # mistakes indefinitely.
-            return None
-        else:
-            if (
-                cached.extracted_context_json.get("_cacheVersion")
-                != URL_EXTRACTION_CACHE_VERSION
-            ):
-                return None
-            context = ExtractedContext.model_validate(
-                cached.extracted_context_json
+        output: list[SelectedPlaceCreate] = []
+        for node in nodes:
+            snapshot = dict(node.provider_snapshot or {})
+            route_selection = _select_branch_near_route(
+                node.match_candidates or [],
+                anchors=anchor_coordinates,
+            ) if node.identity_status == "branch_ambiguous" else None
+            if route_selection is not None:
+                snapshot.update({
+                    "name": route_selection.get("canonicalName") or snapshot.get("name"),
+                    "address": route_selection.get("address") or snapshot.get("address"),
+                    "latitude": route_selection.get("latitude"),
+                    "longitude": route_selection.get("longitude"),
+                })
+            if not _is_schedulable_snapshot(node, snapshot, import_job.destination or ""):
+                continue
+            output.append(
+                SelectedPlaceCreate(
+                    name=str(snapshot.get("name") or node.canonical_name),
+                    placeId=(
+                        route_selection.get("entityId") if route_selection is not None
+                        else node.selected_entity_id
+                    ),
+                    address=snapshot.get("address"),
+                    priority=_priority_from_confidence(node.confidence),
+                    mustVisit=node.preference_level == "must_visit",
+                    preferenceLevel=node.preference_level,
+                    regionKey=(
+                        snapshot.get("regionKey")
+                        or normalize_region_key(
+                            str(snapshot.get("city") or import_job.destination or "")
+                        )
+                    ),
+                    tags=list(dict.fromkeys([
+                        canonical_place_category(snapshot.get("placeType")),
+                        *(node.attributes or []),
+                    ])),
+                    latitude=snapshot.get("latitude"),
+                    longitude=snapshot.get("longitude"),
+                    sourceRefs=[
+                        document.canonical_url
+                        for document in [
+                            self.session.get(SourceDocument, node.source_document_id)
+                            if node.source_document_id else None
+                        ]
+                        if document is not None
+                    ],
+                    sourceProvider=node.provider,
+                    sourceImportNodeId=node.id,
+                    candidateEntityIds=[
+                        str(candidate_match["entityId"])
+                        for candidate_match in (node.match_candidates or [])
+                        if candidate_match.get("entityId")
+                    ],
+                    selectionMethod=(
+                        "route_proximity" if route_selection is not None
+                        else node.selection_method
+                    ),
+                    routeScore=(
+                        route_selection.get("routeScore")
+                        if route_selection is not None else None
+                    ),
+                    identityConfidence=(
+                        "high" if node.identity_status == "resolved"
+                        else "low" if node.identity_status == "branch_ambiguous"
+                        else "medium"
+                    ),
+                    notes=node.source_note,
+                    imageUrls=_image_urls_from_snapshot(snapshot),
+                    rating=snapshot.get("rating"),
+                    reviewCount=snapshot.get("reviewCount"),
+                    sourceOrder=node.source_order,
+                    sourceDay=node.source_day,
+                    sourceTimeHint=node.source_time_hint,
+                    sourceActivity=node.source_activity,
+                    sourceDurationMinutes=node.source_duration_minutes,
+                )
             )
-            platform = cached.platform
+        return output
+
+    def load_cached_url_result(self, url: str) -> UrlReelExtractionResult | None:
+        source_url = _artifact_source_url(url)
+        document = self.session.scalar(
+            select(SourceDocument).where(SourceDocument.canonical_url == source_url)
+        )
+        if document is None:
+            return None
+        payload = dict(document.extracted_context_json or {})
+        if payload.get("_cacheVersion") != URL_EXTRACTION_CACHE_VERSION:
+            return None
+        context = ExtractedContext.model_validate(payload)
         return UrlReelExtractionResult(
             url=source_url,
-            platform=platform,
+            platform=document.platform,
             metadata=UrlMetadata(
                 originalUrl=url,
                 canonicalUrl=source_url,
-                platform=platform,
+                platform=document.platform,
             ),
             artifacts=MediaArtifacts(),
             speechToText=SpeechToTextResult(
                 text="",
                 status="cached",
-                source="shared_url_cache",
+                source="shared_source_document",
                 durationSeconds=0,
             ),
             extractedContext=context,
-            timings={"sharedUrlCache": 0.0},
+            timings={"sharedSourceDocument": 0.0},
         )
 
     def load_url_source_artifacts(
@@ -377,39 +398,29 @@ class ExplorerPersistenceRepository:
         url: str,
         *,
         artifact_types: set[str] | None = None,
-    ) -> list[UrlSourceArtifact]:
-        """Return normalized source text for future RAG and note consumers."""
-
+    ) -> list[SourceArtifactView]:
         source_url = _artifact_source_url(url)
-        statement = select(UrlSourceArtifact).where(
-            UrlSourceArtifact.source_url == source_url
+        document = self.session.scalar(
+            select(SourceDocument).where(SourceDocument.canonical_url == source_url)
         )
-        if artifact_types:
-            statement = statement.where(
-                UrlSourceArtifact.artifact_type.in_(artifact_types)
-            )
-        return list(
-            self.session.scalars(
-                statement.order_by(
-                    UrlSourceArtifact.artifact_type,
-                    UrlSourceArtifact.language,
-                )
-            ).all()
-        )
-
-    def _rows_for_source_url(self, source_url: str) -> list[UserMustPlace]:
-        exact = list(self.session.scalars(
-            select(UserMustPlace).where(UserMustPlace.source_url == source_url)
-        ))
-        if exact:
-            return exact
-        return [
-            row
-            for row in self.session.scalars(
-                select(UserMustPlace).where(UserMustPlace.source_url.is_not(None))
-            )
-            if row.source_url and canonicalize_url(row.source_url) == source_url
-        ]
+        if document is None:
+            return []
+        output: list[SourceArtifactView] = []
+        for artifact_type, by_language in (document.artifacts_json or {}).items():
+            if artifact_types and artifact_type not in artifact_types:
+                continue
+            for language, artifact in (by_language or {}).items():
+                output.append(SourceArtifactView(
+                    source_url=source_url,
+                    platform=document.platform,
+                    artifact_type=artifact_type,
+                    content_text=str(artifact.get("text") or ""),
+                    language="" if language == "_" else language,
+                    source=str(artifact.get("source") or artifact_type),
+                    metadata_json=dict(artifact.get("metadata") or {}),
+                    fetched_at=document.fetched_at,
+                ))
+        return output
 
     def find_cached_resolution(
         self,
@@ -420,343 +431,305 @@ class ExplorerPersistenceRepository:
         source_url = _candidate_source_url(candidate)
         if source_url is None:
             return None
-        row = self._find_shared_place(
-            source_url=source_url,
-            candidate_key=_shared_candidate_key(candidate, destination),
-            candidate_name=candidate.name,
+        document = self.session.scalar(
+            select(SourceDocument).where(
+                SourceDocument.canonical_url == _artifact_source_url(source_url)
+            )
         )
-        if row is None or row.deleted_at is not None:
+        if document is None:
             return None
-        verified_aliases, verified_vietnamese_aliases = _cached_verified_aliases(row)
+        rows = list(self.session.scalars(
+            select(KnowledgeGraphImportNode).where(
+                KnowledgeGraphImportNode.source_document_id == document.id
+            )
+        ))
+        candidate_key = _shared_candidate_key(candidate, destination)
+        normalized_name = _slug(candidate.name)
+        row = next((
+            item for item in rows
+            if item.candidate_key == candidate_key
+            or _slug(item.candidate_name or "") == normalized_name
+        ), None)
+        if row is None or not row.provider_snapshot:
+            return None
+        payload = dict(row.provider_snapshot)
+        payload["candidate"] = candidate.model_dump(mode="json", by_alias=True)
+        return PlaceResolution.model_validate(payload)
+
+    def resolve_from_knowledge_graph(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution | None:
+        """Resolve from canonical entities/aliases before any provider lookup."""
+        matches, selected, identity_status = self._match_knowledge_entities(
+            candidate.name,
+            aliases=[candidate.name, *candidate.search_names],
+            expected_type=_knowledge_entity_type(candidate.category.value),
+            region=candidate.search_region or destination,
+        )
+        if not matches or identity_status not in {"resolved", "branch_ambiguous"}:
+            return None
+        chosen = matches[0]
+        if identity_status == "branch_ambiguous":
+            coordinates = [
+                (item.get("latitude"), item.get("longitude"))
+                for item in matches
+                if item.get("latitude") is not None and item.get("longitude") is not None
+            ]
+            if not coordinates:
+                return None
+            latitude = sum(item[0] for item in coordinates) / len(coordinates)
+            longitude = sum(item[1] for item in coordinates) / len(coordinates)
+        else:
+            latitude = chosen.get("latitude")
+            longitude = chosen.get("longitude")
+            if latitude is None or longitude is None:
+                return None
         return PlaceResolution(
             candidate=candidate,
             status="resolved",
-            provider=row.provider or row.source_platform or "shared_url_cache",
-            externalId=row.external_id,
-            placeId=row.place_id,
-            name=row.name or row.resolved_name,
-            verifiedAliases=verified_aliases,
-            verifiedVietnameseAliases=verified_vietnamese_aliases,
-            placeType=row.place_type or row.category,
-            address=row.address,
-            city=row.city,
-            country=row.country,
-            countryCode=row.country_code,
-            regionKey=row.region_key,
-            primaryArea=row.primary_area,
-            latitude=row.latitude,
-            longitude=row.longitude,
-            description=row.description,
-            placeStatus=row.status,
-            openingHours=list(row.opening_hours or []),
-            typicalDurationMinutes=row.typical_duration_minutes,
-            sourcePlatform=row.source_platform,
-            sourceLink=row.source_link,
-            plusCode=row.plus_code,
-            rating=row.rating,
-            reviewCount=row.review_count,
-            dataConfidence=row.data_confidence,
-            fetchedAt=row.source_fetched_at or row.fetched_at,
-            placeRevision=row.revision,
-            placeMetadata=dict(row.metadata_json or {}),
-            attribution=row.attribution,
+            resolutionReason=(
+                "branch_ambiguous" if identity_status == "branch_ambiguous" else None
+            ),
+            provider="knowledge_graph",
+            placeId=selected.id if selected is not None else None,
+            name=selected.canonical_name if selected is not None else candidate.name,
+            placeType=chosen.get("type"),
+            address=chosen.get("address"),
+            city=candidate.search_region or destination,
+            latitude=latitude,
+            longitude=longitude,
+            matchOptions=[
+                PlaceMatchOption(
+                    rank=index,
+                    matchSource="knowledge_graph",
+                    provider="knowledge_graph",
+                    placeId=item.get("entityId"),
+                    name=str(item.get("canonicalName") or candidate.name),
+                    selected=(
+                        selected is not None and item.get("entityId") == selected.id
+                    ),
+                    address=item.get("address"),
+                    latitude=item.get("latitude"),
+                    longitude=item.get("longitude"),
+                    score=float(item.get("score") or 0),
+                    scoreComponents={"knowledgeGraph": float(item.get("score") or 0)},
+                )
+                for index, item in enumerate(matches, start=1)
+            ],
+            dataConfidence="high" if selected is not None else "medium",
+            fetchedAt=datetime.now(timezone.utc),
         )
 
-    def _save_url_cache(self, results: list[UrlReelExtractionResult]) -> None:
-        for result in results:
-            source_url = canonicalize_url(result.metadata.canonical_url or result.url)
-            row = self.session.get(UrlExtractionCacheEntry, source_url)
-            payload = result.extracted_context.model_dump(
-                mode="json", by_alias=True
-            )
-            payload["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
-            if row is None:
-                self.session.add(
-                    UrlExtractionCacheEntry(
-                        source_url=source_url,
-                        platform=result.platform,
-                        extracted_context_json=payload,
-                    )
-                )
-            else:
-                row.platform = result.platform
-                row.extracted_context_json = payload
-
-    def _save_url_source_artifacts(
+    def _save_source_documents(
         self,
         results: list[UrlReelExtractionResult],
-    ) -> None:
+    ) -> dict[str, SourceDocument]:
+        documents: dict[str, SourceDocument] = {}
         for result in results:
             source_url = _artifact_source_url(
                 result.metadata.canonical_url or result.url,
                 result.platform,
             )
+            row = self.session.scalar(
+                select(SourceDocument).where(SourceDocument.canonical_url == source_url)
+            )
+            if row is None:
+                row = SourceDocument(
+                    id=str(uuid4()),
+                    canonical_url=source_url,
+                    platform=result.platform,
+                    artifacts_json={},
+                    extracted_context_json={},
+                )
+                self.session.add(row)
+            artifacts = dict(row.artifacts_json or {})
             speech = result.speech_to_text
             if speech.status == "ok" and speech.text.strip():
-                is_web_page = speech.source == "web_page_text"
                 artifact_type = (
-                    "webpage"
-                    if is_web_page
-                    else "caption"
-                    if speech.source.startswith("youtube_captions")
+                    "webpage" if speech.source == "web_page_text"
+                    else "caption" if speech.source.startswith("youtube_captions")
                     else "stt"
                 )
-                content_text = (
+                text = (
                     "\n".join(
                         observation.evidence.strip()
                         for observation in speech.observations
                         if observation.evidence.strip()
                     )
-                    if is_web_page
-                    else speech.text
+                    if artifact_type == "webpage" else speech.text.strip()
                 )
-                if not content_text:
-                    continue
-                self._upsert_url_source_artifact(
-                    source_url=source_url,
-                    platform=result.platform,
-                    artifact_type=artifact_type,
-                    content_text=content_text,
-                    language=speech.language or "",
-                    source=speech.source or artifact_type,
-                    metadata={
-                        "observations": [
-                            observation.model_dump(mode="json", by_alias=True)
-                            for observation in speech.observations
-                        ],
-                        "audioDurationSeconds": speech.audio_duration_seconds,
-                        "chunkCount": speech.chunk_count,
-                    },
-                )
-
+                if text:
+                    by_language = dict(artifacts.get(artifact_type) or {})
+                    by_language[speech.language or "_"] = {
+                        "text": text,
+                        "source": speech.source or artifact_type,
+                        "metadata": {
+                            "observations": [
+                                item.model_dump(mode="json", by_alias=True)
+                                for item in speech.observations
+                            ],
+                            "audioDurationSeconds": speech.audio_duration_seconds,
+                            "chunkCount": speech.chunk_count,
+                        },
+                    }
+                    artifacts[artifact_type] = by_language
             vision = result.frame_vision
             if vision.status in {"ok", "partial"} and vision.text.strip():
-                self._upsert_url_source_artifact(
-                    source_url=source_url,
-                    platform=result.platform,
-                    artifact_type="ocr",
-                    content_text=vision.text,
-                    language="",
-                    source="frame_vision",
-                    metadata={
-                        "places": list(vision.places),
-                        "observations": [
-                            observation.model_dump(mode="json", by_alias=True)
-                            for observation in vision.observations
-                        ],
-                    },
-                )
-
-    def _upsert_url_source_artifact(
-        self,
-        *,
-        source_url: str,
-        platform: str,
-        artifact_type: str,
-        content_text: str,
-        language: str,
-        source: str,
-        metadata: dict,
-    ) -> None:
-        row = self.session.scalar(
-            select(UrlSourceArtifact).where(
-                UrlSourceArtifact.source_url == source_url,
-                UrlSourceArtifact.artifact_type == artifact_type,
-                UrlSourceArtifact.language == language,
+                artifacts["ocr"] = {
+                    "_": {
+                        "text": vision.text.strip(),
+                        "source": "frame_vision",
+                        "metadata": {
+                            "places": list(vision.places),
+                            "observations": [
+                                item.model_dump(mode="json", by_alias=True)
+                                for item in vision.observations
+                            ],
+                        },
+                    }
+                }
+            extracted_context = result.extracted_context.model_dump(
+                mode="json", by_alias=True
             )
-        )
-        fetched_at = datetime.now(timezone.utc)
-        if row is None:
-            self.session.add(
-                UrlSourceArtifact(
-                    id=str(uuid4()),
-                    source_url=source_url,
-                    platform=platform,
-                    artifact_type=artifact_type,
-                    content_text=content_text.strip(),
-                    language=language,
-                    source=source,
-                    metadata_json=metadata,
-                    fetched_at=fetched_at,
-                )
-            )
-            return
-        row.platform = platform
-        row.content_text = content_text.strip()
-        row.source = source
-        row.metadata_json = metadata
-        row.fetched_at = fetched_at
+            extracted_context["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
+            row.platform = result.platform
+            row.artifacts_json = artifacts
+            row.extracted_context_json = extracted_context
+            row.extractor_version = str(URL_EXTRACTION_CACHE_VERSION)
+            row.artifact_hash = _artifact_hash(artifacts)
+            row.fetched_at = datetime.now(timezone.utc)
+            self.session.flush()
+            documents[source_url] = row
+        return documents
 
-    def _find_shared_place(
+    def _match_knowledge_entities(
         self,
+        name: str,
         *,
-        source_url: str | None,
-        candidate_key: str,
-        candidate_name: str,
-    ) -> UserMustPlace | None:
-        if source_url is None:
-            return None
-        rows = list(self.session.scalars(
-            select(UserMustPlace).where(UserMustPlace.source_url == source_url)
+        aliases: list[str],
+        expected_type: str,
+        region: str,
+        top_k: int = 5,
+    ) -> tuple[list[dict], KnowledgeEntity | None, str]:
+        """Rank canonical names and reviewed aliases without requiring exact text.
+
+        Same-name branches deliberately remain unresolved here. Their candidate
+        entity IDs travel with the plan input so route selection can pick a
+        branch without another Google lookup.
+        """
+        observed = list(dict.fromkeys(
+            value.strip() for value in [name, *aliases] if value and value.strip()
         ))
-        normalized_name = _slug(candidate_name)
-        return next(
-            (
-                row for row in rows
-                if row.candidate_key == candidate_key
-                or _slug(row.candidate_name) == normalized_name
-            ),
-            None,
-        )
+        repository = KnowledgeGraphRepository(self.session)
+        candidate_by_id: dict[str, KnowledgeEntity] = {}
+        for observed_name in observed:
+            exact = repository.find_exact_name_match(observed_name)
+            if exact is not None:
+                candidate_by_id[exact.id] = exact
+            exact_alias = repository.find_exact_alias_match(observed_name)
+            if exact_alias is not None:
+                alias_entity = self.session.get(KnowledgeEntity, exact_alias.entity_id)
+                if alias_entity is not None:
+                    candidate_by_id[alias_entity.id] = alias_entity
+            for entity in repository.find_fuzzy_entity_candidates(
+                observed_name,
+                limit=top_k,
+                entity_types=_compatible_entity_types(expected_type),
+            ):
+                candidate_by_id[entity.id] = entity
 
-    def _link_user(
-        self,
-        *,
-        must_place: UserMustPlace,
-        intake_id: str,
-        user_id: str | None,
-    ) -> None:
-        existing = self.session.scalar(
-            select(UserMustPlaceUser).where(
-                UserMustPlaceUser.intake_id == intake_id,
-                UserMustPlaceUser.user_must_place_id == must_place.id,
+        ranked: list[tuple[float, float, KnowledgeEntity, list[str], dict[str, str]]] = []
+        normalized_region = _normalized(region)
+        for entity in candidate_by_id.values():
+            if entity.status not in {"verified", "active"}:
+                continue
+            approved_aliases = [
+                alias.alias for alias in entity.aliases
+                if alias.status in {"imported", "verified", "active", "approved"}
+            ]
+            entity_names = [entity.canonical_name, *approved_aliases]
+            name_score = max(
+                SequenceMatcher(None, _normalized(source_name), _normalized(entity_name)).ratio()
+                for source_name in observed
+                for entity_name in entity_names
+            )
+            type_score = 1.0 if entity.entity_type in _compatible_entity_types(expected_type) else 0.0
+            properties = {
+                prop.key: prop.value for prop in self.session.scalars(
+                    select(KnowledgeProperty).where(KnowledgeProperty.entity_id == entity.id)
+                )
+            }
+            location_text = " ".join(
+                str(properties.get(key) or "")
+                for key in ("address", "city", "area", "primary_area", "region_key")
+            )
+            region_score = (
+                1.0 if normalized_region and normalized_region in _normalized(location_text)
+                else 0.0
+            )
+            score = 0.85 * name_score + 0.10 * type_score + 0.05 * region_score
+            rules = ["name_or_alias"]
+            if type_score:
+                rules.append("entity_type")
+            if region_score:
+                rules.append("region")
+            ranked.append((score, name_score, entity, rules, properties))
+        ranked.sort(key=lambda item: (-item[0], item[2].canonical_name, item[2].id))
+        ranked = ranked[:top_k]
+        matches = [
+            {
+                "entityId": entity.id,
+                "canonicalName": entity.canonical_name,
+                "type": entity.entity_type,
+                "score": round(score, 4),
+                "matchedRules": rules,
+                "latitude": _optional_float(properties.get("latitude")),
+                "longitude": _optional_float(properties.get("longitude")),
+                "address": properties.get("address"),
+            }
+            for score, _name_score, entity, rules, properties in ranked
+        ]
+        if not ranked or ranked[0][0] < 0.82:
+            return matches, None, "unresolved"
+
+        top_score, top_name_score, top_entity, _rules, _properties = ranked[0]
+        runner_up = ranked[1] if len(ranked) > 1 else None
+        same_name_branches = bool(
+            runner_up
+            and top_name_score >= 0.9
+            and runner_up[1] >= 0.9
+            and (
+                _normalized(top_entity.canonical_name)
+                == _normalized(runner_up[2].canonical_name)
+                or top_score - runner_up[0] < 0.08
             )
         )
-        if existing is not None:
-            return
-        numeric_user_id = (
-            int(user_id) if user_id is not None and user_id.isdigit() else None
-        )
-        self.session.add(
-            UserMustPlaceUser(
-                id=str(uuid4()),
-                user_must_place_id=must_place.id,
-                user_id=numeric_user_id,
-                intake_id=intake_id,
-            )
-        )
-
-
-def _candidate_key(name: str, destination: str) -> str:
-    return f"{_slug(destination)}:{_slug(name)}"
+        if same_name_branches:
+            return matches, None, "branch_ambiguous"
+        if runner_up is not None and top_score - runner_up[0] < 0.08:
+            return matches, None, "ambiguous"
+        return matches, top_entity, "resolved"
 
 
 def _candidate_source_url(candidate: UnifiedPlaceCandidate) -> str | None:
-    source_url = next(
-        (source.url for source in candidate.sources if source.url),
-        None,
-    )
+    source_url = next((source.url for source in candidate.sources if source.url), None)
     return canonicalize_url(source_url) if source_url else None
 
 
-def _shared_candidate_key(
-    candidate: UnifiedPlaceCandidate,
-    destination: str,
-) -> str:
-    return (
-        _slug(candidate.name)
-        if _candidate_source_url(candidate)
-        else _candidate_key(candidate.name, destination)
+def _shared_candidate_key(candidate: UnifiedPlaceCandidate, destination: str) -> str:
+    return _slug(candidate.name) if _candidate_source_url(candidate) else (
+        f"{_slug(destination)}:{_slug(candidate.name)}"
     )
 
 
 def _place_notes(candidate: UnifiedPlaceCandidate) -> str | None:
-    parts = [
-        value.strip()
-        for value in [candidate.notes, *candidate.source_evidence.values()]
-        if value and value.strip()
-    ]
-    unique = list(dict.fromkeys(parts))
-    return "\n".join(unique) or None
-
-
-def _cached_verified_aliases(row: UserMustPlace) -> tuple[list[str], list[str]]:
-    metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
-    aliases = [row.name or row.resolved_name]
-    vietnamese: list[str] = []
-    for value in metadata.get("verifiedAliases", []):
-        if isinstance(value, dict):
-            name = str(value.get("name") or "").strip()
-            language = str(value.get("language") or "")
-        else:
-            name = str(value or "").strip()
-            language = ""
-        if not name:
-            continue
-        aliases.append(name)
-        if language == "vi" or _looks_vietnamese(name):
-            vietnamese.append(name)
-    aliases = [value for value in aliases if value]
-    for name in aliases:
-        if _looks_vietnamese(name):
-            vietnamese.append(name)
-    return list(dict.fromkeys(aliases)), list(dict.fromkeys(vietnamese))
-
-
-def _looks_vietnamese(value: str) -> bool:
-    decomposed = unicodedata.normalize("NFD", value)
-    return "đ" in value.casefold() or any(
-        unicodedata.combining(character) for character in decomposed
-    )
-
-
-def _context_from_shared_places(
-    rows: list[UserMustPlace],
-) -> ExtractedContext:
-    details = [
-        ExtractedPlace(
-            name=row.candidate_name,
-            category=row.category,
-            address=row.address_hint or row.address,
-            searchRegion=row.search_region or row.city,
-            evidence=row.notes,
-            sourceEvidence=dict(row.source_evidence_json or {}),
-            attributes=list(row.attributes_json or []),
-            sourceOrder=row.source_order,
-            sourceDay=row.source_day,
-            sourceTimeHint=row.source_time_hint,
-            sourceActivity=row.source_activity,
-            sourceDurationMinutes=row.source_duration_minutes,
-        )
-        for row in sorted(
-            rows,
-            key=lambda item: (
-                item.source_order is None,
-                item.source_order or 10_000,
-                item.created_at,
-                item.id,
-            ),
-        )
-    ]
-    return ExtractedContext(
-        extractedPlaces=[place.name for place in details],
-        extractedPlaceDetails=details,
-        confidence=max((float(row.confidence) for row in rows), default=0.0),
-    )
-
-
-def _numeric_user_id(user_id: str | None) -> int | None:
-    if user_id is None:
-        return None
-    return int(user_id) if user_id.isdigit() else -1
-
-
-def _is_schedulable_must_place(must_place: UserMustPlace) -> bool:
-    is_url_source = any(
-        source.get("type") == "url" and source.get("url")
-        for source in (must_place.sources_json or [])
-    )
-    return is_schedulable_place(
-        is_url_source=is_url_source,
-        resolution_status=must_place.resolution_status,
-        latitude=must_place.latitude,
-        longitude=must_place.longitude,
-        candidate_name=must_place.candidate_name,
-        resolved_name=must_place.resolved_name,
-        city=must_place.city,
-        destination=must_place.destination,
-        country=must_place.country,
-    )
+    values = [candidate.notes, *candidate.source_evidence.values()]
+    return "\n".join(dict.fromkeys(
+        value.strip() for value in values if value and value.strip()
+    )) or None
 
 
 def _is_persistable_resolution(
@@ -782,22 +755,165 @@ def _is_persistable_resolution(
     )
 
 
-def _priority_from_confidence(confidence: Decimal) -> int:
-    value = float(confidence)
-    if value >= 0.85:
+def _is_schedulable_snapshot(
+    node: KnowledgeGraphImportNode,
+    snapshot: dict,
+    destination: str,
+) -> bool:
+    return is_schedulable_place(
+        is_url_source=bool(node.source_document_id),
+        resolution_status=str(snapshot.get("status") or "resolved"),
+        latitude=snapshot.get("latitude"),
+        longitude=snapshot.get("longitude"),
+        candidate_name=node.candidate_name or node.canonical_name,
+        resolved_name=str(snapshot.get("name") or node.canonical_name),
+        city=snapshot.get("city"),
+        destination=destination,
+        country=snapshot.get("country"),
+    )
+
+
+def _knowledge_entity_type(place_type: str | None) -> str:
+    category = canonical_place_category(place_type)
+    if category in {"food", "restaurant"}:
+        return "Restaurant"
+    if category in {"cafe", "drink_dessert"}:
+        return "DrinkDessert"
+    if category in {"hotel", "accommodation"}:
+        return "Accommodation"
+    return "TravelPlace"
+
+
+def _compatible_entity_types(expected_type: str) -> set[str]:
+    aliases = {
+        "Area": {"Area", "AreaAdm0", "AreaAdm1", "AreaAdm2"},
+        "Restaurant": {"Restaurant", "TravelPlace", "Place"},
+        "DrinkDessert": {"DrinkDessert", "Cafe", "TravelPlace", "Place"},
+        "Accommodation": {"Accommodation", "Hotel", "TravelPlace", "Place"},
+        "TravelPlace": {
+            "TravelPlace", "Place", "Attraction", "Shop", "Entertainment",
+            "Restaurant", "DrinkDessert", "Accommodation",
+        },
+    }
+    return aliases.get(expected_type, {expected_type})
+
+
+def _provider_snapshot(resolution: PlaceResolution) -> dict:
+    image_urls = _image_urls_from_snapshot(
+        {"placeMetadata": resolution.place_metadata}
+    )
+    return {
+        "status": resolution.status,
+        "externalId": resolution.external_id,
+        "name": resolution.name,
+        "placeType": resolution.place_type,
+        "address": resolution.address,
+        "city": resolution.city,
+        "latitude": float(resolution.latitude) if resolution.latitude is not None else None,
+        "longitude": float(resolution.longitude) if resolution.longitude is not None else None,
+        "googleMapsUrl": resolution.source_link,
+        "imageUrl": image_urls[0] if image_urls else None,
+        "openingHours": resolution.opening_hours,
+        "rating": float(resolution.rating) if resolution.rating is not None else None,
+        "reviewCount": resolution.review_count,
+        "fetchedAt": resolution.fetched_at.isoformat() if resolution.fetched_at else None,
+    }
+
+
+def _image_urls_from_snapshot(snapshot: object) -> list[str]:
+    if not isinstance(snapshot, dict):
+        return []
+    metadata = snapshot.get("placeMetadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    values: list[object] = []
+    if snapshot.get("imageUrl"):
+        values.append(snapshot["imageUrl"])
+    for key in ("imageUrl", "photoUrl", "thumbnailUrl"):
+        if metadata.get(key):
+            values.append(metadata[key])
+    for key in ("imageUrls", "images"):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+    urls: list[str] = []
+    for value in values:
+        candidate = value.get("url") if isinstance(value, dict) else value
+        if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
+            if candidate not in urls:
+                urls.append(candidate)
+    return urls[:1]
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _select_branch_near_route(
+    candidates: list[dict],
+    *,
+    anchors: list[tuple[float, float]],
+) -> dict | None:
+    with_coordinates = [
+        item for item in candidates
+        if _optional_float(item.get("latitude")) is not None
+        and _optional_float(item.get("longitude")) is not None
+    ]
+    if not with_coordinates:
+        return None
+
+    def route_cost(item: dict) -> float:
+        if not anchors:
+            return 0.0
+        latitude = float(item["latitude"])
+        longitude = float(item["longitude"])
+        return sum(
+            (latitude - anchor_latitude) ** 2
+            + (longitude - anchor_longitude) ** 2
+            for anchor_latitude, anchor_longitude in anchors
+        ) / len(anchors)
+
+    chosen = min(
+        with_coordinates,
+        key=lambda item: (
+            route_cost(item),
+            -float(item.get("score") or 0),
+            str(item.get("entityId") or ""),
+        ),
+    )
+    return {**chosen, "routeScore": round(route_cost(chosen), 8)}
+
+
+def _artifact_hash(artifacts: dict) -> str:
+    payload = json.dumps(artifacts, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _numeric_user_id(user_id: str | None) -> int | None:
+    return int(user_id) if user_id is not None and user_id.isdigit() else None
+
+
+def _priority_from_confidence(confidence: float) -> int:
+    if confidence >= 0.85:
         return 1
-    if value >= 0.7:
+    if confidence >= 0.7:
         return 2
-    if value >= 0.5:
+    if confidence >= 0.5:
         return 3
     return 4
 
 
-def _slug(value: str) -> str:
+def _normalized(value: str) -> str:
     decomposed = unicodedata.normalize("NFD", value.strip().casefold())
     without_marks = "".join(
-        character
-        for character in decomposed
+        character for character in decomposed
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
-    return re.sub(r"[^a-z0-9]+", "-", without_marks).strip("-") or "unknown"
+    return " ".join(re.findall(r"[a-z0-9]+", without_marks))
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", _normalized(value)).strip("-") or "unknown"

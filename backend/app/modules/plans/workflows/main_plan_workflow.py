@@ -332,6 +332,7 @@ class MainPlanWorkflow:
             tripSpec=theme_output.trip_spec,
             regionKey=region_key,
             tripThemes=theme_output.trip_themes,
+            requiredExperiences=theme_output.required_experiences,
             selectedPlaces=selection_candidates,
             userStatus=user_status,
             allowPlaceSuggestions=allow_place_suggestions,

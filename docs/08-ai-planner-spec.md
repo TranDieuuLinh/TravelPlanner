@@ -31,15 +31,16 @@ yêu cầu của user.
 ## Luồng xử lý hiện tại
 
 1. `ExplorerService` chuẩn hóa ý định và tạo câu hỏi làm rõ.
-2. `TripThemePlannerService` gọi LLM bằng structured output để tạo các yêu cầu
-   trải nghiệm ở cấp toàn chuyến từ Explorer context và snapshot khu vực.
+2. `TripThemePlannerService` chạy graph research deterministic, chiếu kết quả
+   thành catalog hữu hạn rồi gọi LLM structured-output một lần để tạo yêu cầu
+   trải nghiệm ở cấp toàn chuyến.
 3. `PlaceSelectorService` tự tạo đủ số ngày, chọn địa điểm và tối ưu tuyến.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ một TripIntent quan
-hệ có version và plan hiện tại. Message đầu tạo plan; follow-up đọc TripIntent
-hiện tại từ PostgreSQL rồi gửi cùng tối
+UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ TripIntent hiện hành
+dạng snapshot đã validate và plan hiện tại. Message đầu tạo plan; follow-up đọc
+TripIntent hiện tại từ PostgreSQL rồi gửi cùng tối
 đa tám user request gần nhất vào Explorer, sau đó TripThemePlanner/PlaceSelector tạo revision
 hoàn chỉnh. Backend giữ nguyên plan ID, tăng revision và lưu snapshot cũ thay vì
 trả một plan identity mới. Các địa điểm của plan hiện tại được chuyển thành
@@ -58,11 +59,22 @@ duration để xếp hết; nếu user đã khóa, phần dư được giữ tro
 `UnscheduledPlace` để UI cho thêm thủ công hoặc yêu cầu AI xếp lại. Địa điểm
 PlaceSelector đề xuất không được làm URL place rơi vào `UnscheduledPlace`; PlaceSelector chỉ
 bổ sung khi còn capacity sau khi phân bổ source places.
+Sau mỗi lần tạo plan, backend hậu kiểm bất biến coverage: từng URL place đã
+resolve phải có đúng một đại diện trong item đã xếp với `sourceRefs`, hoặc trong
+`UnscheduledPlace` với `reasonCode` và provenance. Nếu downstream vô tình bỏ
+sót, backend phục hồi nó vào `UnscheduledPlace` thay vì trả kết quả mất dữ liệu.
 
-TripThemePlanner dùng hai lượt LLM. Lượt research đề xuất capability cần kiểm
-chứng; backend query Place active và vùng lân cận, sau đó lượt theme tạo
-`TripThemeDraft` từ evidence đã xác minh. Contract này chỉ có `tripThemes`,
-assumption và warning; không có ngày hoặc phân bổ `selectedPlace`. Backend yêu
+Candidate selection xếp hạng semantic relevance, category và chất lượng dữ liệu
+trước khi xét route. Khoảng cách chỉ phá hòa giữa các candidate có cùng điểm
+relevance; nguyên tắc này áp dụng cho activity và meal. Route optimizer chỉ phân
+bổ/thứ tự các Place đã qua bước chọn, không được biến một Place kém phù hợp hơn
+thành lựa chọn chính chỉ vì nó gần hơn.
+
+TripThemePlanner không còn dùng research LLM hoặc Place-database research tool.
+Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
+evidence theo ontology v7 thành `graphCandidateCatalog`; sau đó LLM tạo
+`TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
+assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
 cầu model sửa output lỗi tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
 phân bổ Place, capacity và `UnscheduledPlace` bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
@@ -221,13 +233,11 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
   hai có cùng trách nhiệm;
 - resolver giữ top-K option và chỉ auto-resolve top-1 khi vượt cả ngưỡng tuyệt
   đối, margin với top-2 và hard identity policy;
-- chỉ lưu kết quả `resolved` có đủ latitude/longitude và danh tính cụ thể;
-- bỏ qua persistence đối với kết quả `provisional`, `unresolved`, thiếu tọa độ
-  hoặc match rộng tới thành phố/quốc gia;
+- stage mọi candidate có evidence; chỉ chuyển candidate có representative
+  coordinates sang đầu vào PlaceSelector;
 - không chặn intake để hỏi user;
-- lưu snapshot riêng của intake chỉ vào `UserMustPlace`; ngoại lệ ADR-013 cho
-  phép upsert catalog `Place` tối thiểu/verified alias từ Google result có
-  stable external ID và tọa độ hợp lệ, không sao chép raw evidence;
+- lưu proposal/evidence/note trong `knowledge_graph_import_nodes`; không tự
+  upsert `places` hoặc graph canonical;
 - Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
 - Explorer vẫn giữ mọi candidate sau aggregation trong
   `explorer.candidateReviews`; item chưa xác minh có status `needs_review` và
@@ -244,8 +254,8 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
   Google trả cùng canonical provider name; resolver giữ các spelling/OCR variant
   làm alias và gộp provenance trước persistence. Nếu provider name khác nhau,
   cả nhóm bị trả về `duplicate_provider_identity`, không được persist.
-- Planner downstream dùng context và chuyển tiếp hai khóa; PlaceSelector downstream
-  đọc `UserMustPlace` theo cả `intakeId + userId`.
+- Planner downstream dùng TripIntent hiện tại và đọc import nodes theo
+  `intakeId`. Chi nhánh cùng tên được chọn theo route proximity, không gọi Google.
 
 ### Giai đoạn 4: Explorer
 
@@ -265,12 +275,12 @@ sát. Các trait nhạy cảm không được tự suy luận hoặc lưu. Plann
 hơn profile dài hạn.
 
 Với intake chỉ có `rawRequest` (không URL, ảnh OCR hoặc `placeCandidates`),
-Explorer không hỏi lại user. Explorer đánh dấu `mode=vague` khi chưa có điểm đến
-cụ thể, `mode=partial` khi đã có điểm đến nhưng thiếu trường cốt lõi, và
-`mode=confirmed` khi đã có destination, days và budget. Contract trả thêm
-`inputCompleteness`, `missingFields`, `assumptions` và `trace`; mỗi trường thiếu
-giữ `wasProvided=false` và không gán `inferredSource` tại Explorer. Luồng URL và
-OCR giữ hành vi hiện tại, không áp dụng phép phân loại raw-prompt-only này.
+Explorer chỉ chặn khi chưa có điểm đến cụ thể. Khi thiếu destination, TripChat
+lưu `TripIntent` nháp và hỏi đúng một câu về điểm đến, không chạy planning
+workflow. Khi đã có destination, duration, nhóm đi, ngân sách và các trường còn
+lại dùng default domain nếu user không cung cấp; Explorer đánh dấu
+`mode=confirmed`. Contract vẫn trả `inputCompleteness`, `missingFields`,
+`assumptions` và `trace`.
 
 Với intake có URL, source adapter tạo candidate đúng một lần. Code ứng dụng bổ
 sung source, priority và preference mặc định, gộp trùng rồi gửi thẳng sang
@@ -285,21 +295,40 @@ của Extractor.
 
 TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
 
+- chọn nguồn định hướng theo thứ tự: interest/ràng buộc chuyến hiện tại,
+  selected Place đã xác nhận, long-term profile có hiệu lực, rồi mới đến
+  special experience đặc trưng của điểm đến;
+- nếu không có interest, selected Place và profile, phải chọn ít nhất một
+  special experience trusted khi graph có coverage; `must` trên graph là độ
+  quan trọng với điểm đến, không tự động bắt buộc cho mọi user;
+- không chọn trải nghiệm lệch intent, ví dụ không bắt leo núi khi user chỉ muốn
+  văn hóa và đời sống địa phương;
 - mỗi theme có focus tags, số activity tối thiểu và region mục tiêu khi có;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
-- theme chỉ dùng capability/region đã được tool kiểm chứng;
-- theme sáng tạo như biển, hải sản, hiking hoặc camping phải có capability
-  evidence từ Place active trước khi được mô tả như một khả năng có thật;
+- `requiredExperiences` chỉ dùng claim, Activity và Place ID có trong bounded
+  graph catalog, theo `required_anchor`, `choose_one` hoặc `open_candidate`;
+- ontology v7 dùng `LocationEntity -> SPECIAL_EXPERIENCE -> Activity`, và
+  `Activity -> TARGETS_PLACE -> Place` khi trải nghiệm có anchor trực tiếp;
+- evidence inferred vẫn được đánh dấu và không được nâng thành verified;
 - không tạo ngày, khung giờ, journey phase, route bucket hoặc place allocation.
+
+CLI `trip_theme_cli.py research-context` chỉ chạy graph research và hiển thị cả
+research bundle lẫn bounded `graphCandidateCatalog`; lệnh này không gọi LLM.
 
 ### Giai đoạn 6: PlaceSelector
 
 TripThemePlanner runtime mang tên `TripThemePlannerService`. Nó tạo
-`tripThemes` ở cấp toàn chuyến (theme, focus tags và số activity tối thiểu phải phủ),
+`tripThemes` và `requiredExperiences` ở cấp toàn chuyến,
 không tạo nội dung theo Ngày 1/Ngày 2. PlaceSelector tạo đúng số day slot từ
 `tripSpec.days`; route optimizer quyết định activity thuộc ngày nào.
+
+`PlaceSelectionInput` nhận `requiredExperiences`. PlaceSelector resolve
+`required_anchor` và `choose_one` thành selected Place bắt buộc trước khi tạo
+day slot. `open_candidate` hoặc ID chưa resolve được phải xuất hiện trong
+`UnscheduledPlace` với `reasonCode=required_experience_unresolved`; không được
+âm thầm bỏ trải nghiệm.
 
 PlaceSelector điền item cụ thể:
 
@@ -440,8 +469,8 @@ tuyến đường hoặc danh tính địa điểm.
 - Candidate được tự động resolve theo lựa chọn sản phẩm no-interruption, nhưng
   chỉ kết quả resolved có danh tính cụ thể và đủ tọa độ được lưu để PlaceSelector dùng.
 - Không chuyển caption/câu quảng bá/danh sách nhiều venue thành một PlanItem.
-  URL place chưa resolve được danh tính cụ thể và tọa độ không được lưu vào
-  `UserMustPlace` hay xuất hiện trong plan; phần thiếu được PlaceSelector điền bằng
+  URL place chưa có representative coordinates không xuất hiện trong plan;
+  proposal/evidence vẫn ở import node và phần thiếu được PlaceSelector điền bằng
   Place đã chuẩn hóa khi policy cho phép.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.

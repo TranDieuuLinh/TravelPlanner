@@ -23,7 +23,7 @@ from app.modules.plans.plan_mutation_schema import (
     UpdateItemRequest,
 )
 from app.modules.plans.plan_mutation_service import PlanMutationService
-from app.modules.plans.schema import MainPlanFromExplorerCreate, SelectedPlaceCreate
+from app.modules.plans.schema import MainPlanFromTripIntentCreate, SelectedPlaceCreate
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
 from app.modules.preferences.repository import TravelerProfileRepository
@@ -37,6 +37,10 @@ class _AddressedPlace(Protocol):
 
 class _PlaceAddressRepository(Protocol):
     def get(self, place_id: str) -> _AddressedPlace | None: ...
+
+
+def _is_confirmed_destination(value: str) -> bool:
+    return value.strip().casefold() not in {"", "unspecified"}
 
 
 class TripChatService:
@@ -111,6 +115,7 @@ class TripChatService:
         urls: list[str],
         images: list[ImageUploadPayload],
         force_url_refresh: bool = False,
+        turn_id: str | None = None,
     ) -> TripChatRead:
         """Core entrypoint that the supervisor (and the legacy ``amend`` flow)
         both invoke to produce a new plan revision.
@@ -182,6 +187,24 @@ class TripChatService:
                 current_context.candidate_reviews,
                 explore.explorer.candidate_reviews,
             )
+        if not _is_confirmed_destination(explore.explorer.trip_intent.destination):
+            question = "Bạn muốn đi du lịch ở đâu?"
+            saved = self.repository.save_intent_draft(
+                chat,
+                user_content=content,
+                attachment_names=[image.file_name for image in images],
+                assistant_content=question,
+                trip_intent=explore.explorer.trip_intent,
+                candidate_reviews=explore.explorer.candidate_reviews,
+                explorer_timing_payload=(
+                    explore.timing_report.model_dump(mode="json", by_alias=True)
+                    if explore.timing_report is not None
+                    else None
+                ),
+                intake_id=explore.intake_id,
+                turn_id=turn_id,
+            )
+            return self._read(saved, latest_timing=explore.timing_report)
         duration_is_fixed = (
             not requests_more_days
             and (
@@ -195,10 +218,9 @@ class TripChatService:
             )
         )
         next_plan, planner_timing = await (
-            self.plan_service.create_main_plan_from_explorer_with_timing(
-                MainPlanFromExplorerCreate(
-                    intent=explore.explorer.intent,
-                    tripSpec=explore.explorer.trip_spec,
+            self.plan_service.create_main_plan_from_trip_intent_with_timing(
+                MainPlanFromTripIntentCreate(
+                    tripIntent=explore.explorer.trip_intent,
                     intakeId=explore.intake_id,
                     userId=str(user.id),
                     selectedPlaces=self._selected_places_from(
@@ -256,6 +278,7 @@ class TripChatService:
             destination=explore.explorer.intent.destination,
             title=title,
             revision=revision,
+            turn_id=turn_id,
         )
         return self._read(
             saved,
@@ -483,7 +506,7 @@ class TripChatService:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại trước khi thử lại địa điểm.",
             )
-        if chat.current_trip_intent_id is None or chat.current_plan is None:
+        if chat.current_trip_intent is None or chat.current_plan is None:
             raise AppError(
                 400,
                 "NO_ACTIVE_EXPLORER",
@@ -529,10 +552,9 @@ class TripChatService:
                 *[_selected_place_from_review(review) for review in newly_resolved],
             ]
             next_plan, planner_timing = await (
-                self.plan_service.create_main_plan_from_explorer_with_timing(
-                    MainPlanFromExplorerCreate(
-                        intent=updated_explorer.intent,
-                        tripSpec=updated_explorer.trip_spec,
+                self.plan_service.create_main_plan_from_trip_intent_with_timing(
+                    MainPlanFromTripIntentCreate(
+                        tripIntent=updated_explorer.trip_intent,
                         intakeId=chat.current_intake_id,
                         userId=str(user.id),
                         selectedPlaces=selected_places,
