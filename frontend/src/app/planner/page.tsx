@@ -3365,50 +3365,61 @@ function Planner() {
 
   function renderEntryTopbar() {
     return (
-      <div className="plannerEntryTopbar">
+      <header className="panelHeading itineraryHeading">
+        <span className="planHeaderIcon" aria-hidden="true">
+          <Image
+            alt=""
+            height={54}
+            src="/images/penguin-plan.png"
+            width={54}
+          />
+        </span>
+        <div className="itineraryHeadingCopy">
+          <strong>Kế hoạch chi tiết</strong>
+          <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
+            <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+              {(
+                [
+                  ["destination", "Điểm đến"],
+                  ["dates", "Thời gian"],
+                  ["travelers", "Nhóm đi"],
+                  ["budget", "Ngân sách"],
+                  ["note", "Lưu ý"],
+                ] as const
+              ).map(([step, label]) => {
+                const value = guidedIntakeAnswers[step];
+                return (
+                  <button
+                    aria-label={value ? `${label}: ${value}` : label}
+                    aria-current={
+                      guidedIntakeOpen && guidedIntakeStep === step
+                        ? "step"
+                        : undefined
+                    }
+                    className={value ? "is-filled" : ""}
+                    disabled={backgroundPlanning || loading}
+                    key={step}
+                    onClick={() => openGuidedStep(step)}
+                    title={value || label}
+                    type="button"
+                  >
+                    <span className="plannerIntakeCopy">{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <span aria-hidden="true" className="plannerIntakePenguin">
+              <PenguinMascot size={36} variant="intakePeek" />
+            </span>
+          </div>
+        </div>
         {user ? (
           <HistoryMenuButton
             className="plannerHistoryMenu--intake"
             onClick={() => setHistoryCollapsed(false)}
           />
         ) : null}
-        <div className="plannerIntakePeekaboo">
-          <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
-            {(
-              [
-                ["destination", "Điểm đến"],
-                ["dates", "Thời gian"],
-                ["travelers", "Nhóm đi"],
-                ["budget", "Ngân sách"],
-                ["note", "Lưu ý"],
-              ] as const
-            ).map(([step, label]) => {
-              const value = guidedIntakeAnswers[step];
-              return (
-                <button
-                  aria-label={value ? `${label}: ${value}` : label}
-                  aria-current={
-                    guidedIntakeOpen && guidedIntakeStep === step
-                      ? "step"
-                      : undefined
-                  }
-                  className={value ? "is-filled" : ""}
-                  disabled={backgroundPlanning || loading}
-                  key={step}
-                  onClick={() => openGuidedStep(step)}
-                  title={value || label}
-                  type="button"
-                >
-                  <span className="plannerIntakeCopy">{label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          <span aria-hidden="true" className="plannerIntakePenguin">
-            <PenguinMascot size={50} variant="intakePeek" />
-          </span>
-        </div>
-      </div>
+      </header>
     );
   }
 
@@ -3963,25 +3974,52 @@ function Planner() {
                   </span>
                   <div className="itineraryHeadingCopy">
                     <strong>Kế hoạch chi tiết</strong>
-                    {loading || displayedPlan ? (
-                      <small>
-                        {loading
-                          ? "Đang chuẩn bị lịch trình của bạn…"
-                          : displayedExploreResult
-                          ? `${displayedExploreResult.explorer.tripIntent.destination} · ${displayedPlan?.days.length} ngày`
-                          : `${displayedPlan?.days.length} ngày · Lịch trình theo từng điểm đến`}
-                      </small>
-                    ) : null}
+                    <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
+                      <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+                        {(
+                          [
+                            ["destination", "Điểm đến"],
+                            ["dates", "Thời gian"],
+                            ["travelers", "Nhóm đi"],
+                            ["budget", "Ngân sách"],
+                            ["note", "Lưu ý"],
+                          ] as const
+                        ).map(([step, label]) => {
+                          const value = guidedIntakeAnswers[step];
+                          return (
+                            <button
+                              aria-label={value ? `${label}: ${value}` : label}
+                              aria-current={
+                                guidedIntakeOpen && guidedIntakeStep === step
+                                  ? "step"
+                                  : undefined
+                              }
+                              className={value ? "is-filled" : ""}
+                              disabled={backgroundPlanning || loading}
+                              key={step}
+                              onClick={() => openGuidedStep(step)}
+                              title={value || label}
+                              type="button"
+                            >
+                              <span className="plannerIntakeCopy">{label}</span>
+                            </button>
+                          );
+                        })}
+                      </nav>
+                      <span aria-hidden="true" className="plannerIntakePenguin">
+                        <PenguinMascot size={36} variant="intakePeek" />
+                      </span>
+                    </div>
                   </div>
+                  {user ? (
+                    <HistoryMenuButton
+                      className="plannerHistoryMenu--itinerary"
+                      onClick={() => setHistoryCollapsed(false)}
+                    />
+                  ) : null}
                 </header>
                 {displayedPlan && displayedExploreResult ? (
                   <div className="itineraryTripFactsBar">
-                    {user ? (
-                      <HistoryMenuButton
-                        className="plannerHistoryMenu--facts"
-                        onClick={() => setHistoryCollapsed(false)}
-                      />
-                    ) : null}
                     <dl
                       aria-label="Tóm tắt thông tin chuyến đi"
                       className="itineraryTripFacts"

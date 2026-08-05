@@ -6217,6 +6217,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .itineraryHeading {
   min-height: 76px;
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
   gap: 0;
   margin: 0;
   padding: 10px 22px;
@@ -6450,6 +6452,15 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   transform: translateY(-50%);
 }
 
+.plannerHistoryMenu--itinerary {
+  margin-left: auto;
+  margin-right: 8px;
+  flex: 0 0 38px;
+  border-color: #e3e9e7;
+  background: #fff;
+  color: #51615d;
+}
+
 .itineraryTripFacts > div {
   min-width: 0;
   border-right: 1px solid #edf1ef;
@@ -6480,13 +6491,13 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .itinerary .planHeaderIcon {
-  width: 52px;
-  height: 52px;
+  width: 58px;
+  height: 58px;
 }
 
 .itinerary .planHeaderIcon img {
-  width: 52px;
-  height: 52px;
+  width: 54px;
+  height: 54px;
 }
 
 .itinerary .itineraryHeading > div {
@@ -6957,7 +6968,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   padding: 10px clamp(14px, 2vw, 24px);
   background: #fff;
 }
@@ -7698,6 +7709,23 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   width: fit-content;
   max-width: calc(100% - 112px);
   justify-content: center;
+}
+
+.itineraryIntakePeekaboo {
+  margin-top: 8px;
+  margin-right: auto;
+}
+
+.itineraryIntakePeekaboo .plannerIntakeNav {
+  gap: 0;
+  overflow-x: auto;
+  border-radius: 999px;
+}
+
+.itineraryIntakePeekaboo .plannerIntakeNav button {
+  min-width: auto;
+  padding: 5px 10px;
+  font-size: 0.75rem;
 }
 
 .plannerIntakeNav {
@@ -11542,6 +11570,10 @@ svg {
     padding-inline: 14px;
   }
 
+  .itinerary .plannerHistoryMenu--itinerary {
+    display: none;
+  }
+
   .itinerary .planHeaderIcon {
     width: 50px;
     height: 50px;
@@ -15344,17 +15376,11 @@ svg {
   }
 }
 
-/* Keep chat history immediately before the trip-intake fields throughout the
-   entry, loading and finished Planner stages. */
+/* Keep chat history on the right side (second column) of the entry topbar. */
 .plannerHistoryMenu--intake {
-  position: absolute;
-  z-index: 12;
-  top: 50%;
-  left: 8px;
   flex: 0 0 38px;
+  margin-right: 0px;
   border-color: #e3e9e7;
-  background: rgba(255, 255, 255, .94);
+  background: #fff;
   color: #51615d;
-  box-shadow: 0 5px 16px rgba(31, 50, 45, .06);
-  transform: translateY(-50%);
 }
