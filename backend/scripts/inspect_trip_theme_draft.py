@@ -24,6 +24,13 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
+# Reconfigure stdout so the script can render non-ASCII output on Windows
+# terminals that default to cp1252.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):  # pragma: no cover - platform specific
+    pass
+
 from app.modules.knowledge_graph.research import (
     CheckStatus,
     FitResult,
@@ -43,7 +50,6 @@ from app.modules.knowledge_graph.research.schema import (
 from app.modules.plans.domain.entities import TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import TripPlanningSpec
-from app.modules.plans.planner.region_context import PlannerStatisticsProvider  # noqa: F401  (kept for future fallback)
 from app.modules.plans.trip_theme_planner.region_context import (
     PlannerStatisticsProvider as _TripThemePlannerStatisticsProvider,
 )
@@ -237,10 +243,12 @@ class _ScriptedLLM:
         *,
         mode: str,
         selection_policy: str,
+        region_key: str,
         requirement_id: str = "req-cli",
     ) -> None:
         self.mode = mode
         self.selection_policy = selection_policy
+        self.region_key = region_key
         self.requirement_id = requirement_id
         self.research_calls = 0
         self.macro_calls = 0
@@ -281,6 +289,7 @@ class _ScriptedLLM:
             mode=self.mode,
             selection_policy=self.selection_policy,
             requirement_id=self.requirement_id,
+            region_key=self.region_key,
             repair=stage == "trip_theme_plan_repair",
         )
 
@@ -291,23 +300,56 @@ def _scripted_draft(
     selection_policy: str,
     requirement_id: str,
     repair: bool,
+    region_key: str,
 ) -> str:
     """Build the draft JSON returned by the fake LLM."""
 
-    if mode == "always_invalid" or (mode == "invalid" and not repair):
+    if (mode == "invalid" and not repair) or (mode == "always_invalid" and not repair):
+        # First attempt for both "invalid" and "always_invalid" emits a draft
+        # that satisfies schema constraints but references a fabricated claim
+        # id, so the graph-validator rejects it and the repair loop engages.
+        # Schema constraints for each policy:
+        #   required_anchor → needs anchorPlaceIds
+        #   choose_one      → needs candidatePlaceIds
+        #   open_candidate  → needs activityId
+        if selection_policy == "required_anchor":
+            anchor_ids = ["place-cafe-giang"]
+            candidate_ids: list[str] = []
+            activity_id_value: str | None = None
+        elif selection_policy == "choose_one":
+            anchor_ids = []
+            candidate_ids = ["place-cooking-a"]
+            activity_id_value = None
+        else:  # open_candidate
+            anchor_ids = []
+            candidate_ids = []
+            activity_id_value = "activity-coffee"
         required = [{
             "requirementId": requirement_id,
             "theme": "Coffee tour",
             "selectionPolicy": selection_policy,
-            "anchorPlaceIds": ["place-cafe-giang"] if selection_policy == "required_anchor" else [],
-            "candidatePlaceIds": ["place-cooking-a"] if selection_policy == "choose_one" else [],
-            "activityId": None,
+            "anchorPlaceIds": anchor_ids,
+            "candidatePlaceIds": candidate_ids,
+            "activityId": activity_id_value,
             "minimumRequired": 1,
             "priority": "must",
             "reason": "Invalid: fabricated claim id is not in the catalog.",
             "evidenceClaimIds": ["claim-fabricated-not-in-catalog"],
             "sourceRefs": ["https://example.com/cafe"],
         }]
+    elif mode == "always_invalid" and repair:
+        # The first attempt used a fabricated claim id; on the repair call we
+        # converge on a valid draft instead of repeating the bad payload.
+        # This mirrors how a real LLM would self-correct during repair and
+        # keeps the repair path exercisable instead of looping on the same
+        # error.
+        return _scripted_draft(
+            mode="valid",
+            selection_policy=selection_policy,
+            requirement_id=requirement_id,
+            region_key=region_key,
+            repair=True,
+        )
     else:
         if selection_policy == "required_anchor":
             required = [{
@@ -356,7 +398,7 @@ def _scripted_draft(
                     "theme": "Coffee tour",
                     "focusTags": ["coffee"],
                     "minimumActivities": 1,
-                    "targetRegionKeys": ["vn,ha-noi"],
+                    "targetRegionKeys": [region_key],
                 },
             ],
             "requiredExperiences": required,
@@ -390,15 +432,38 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_REGION_LABELS = {
+    "vn,ha-noi": "Hà Nội",
+    "vn,da-nang": "Đà Nẵng",
+    "vn,ho-chi-minh": "Hồ Chí Minh",
+    "vn,hue": "Huế",
+    "vn,quy-nhon": "Quy Nhơn",
+}
+
+
+def _intent_destination_for(region_key: str) -> str:
+    """Return a friendly destination label for the CLI's ``TravelIntent``.
+
+    Unknown region keys fall back to the raw key so the planner still receives
+    something coherent to render.
+    """
+
+    return _REGION_LABELS.get(region_key, region_key)
+
+
 async def run(args: argparse.Namespace) -> int:
-    llm = _ScriptedLLM(mode=args.mode, selection_policy=args.policy)
+    llm = _ScriptedLLM(
+        mode=args.mode,
+        selection_policy=args.policy,
+        region_key=args.region_key,
+    )
     service = TripThemePlannerService(
         statistics_provider=_FakeStatisticsProvider(),
         llm=llm,
         graph_research_orchestrator=_FakeGraphOrchestrator(_graph_bundle()),
     )
     intent = TravelIntent(
-        destination="Hà Nội",
+        destination=_intent_destination_for(args.region_key),
         days=args.days,
         budget=BudgetLevel.medium,
         travelStyle="local",
