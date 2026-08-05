@@ -12043,12 +12043,33 @@ svg {
 }
 
 .itinerary .itineraryPlaceQuickActions {
-  display: inline-grid;
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  flex-direction: column;
   min-width: max-content;
   justify-items: center;
   align-items: start;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.itinerary .itineraryPlaceQuickActions > .itineraryPlaceQuickActionMenu {
+  order: -1;
+}
+
+.itinerary .itineraryPlaceCard {
+  position: relative;
+  overflow: visible;
+}
+
+.itinerary .itineraryPlaceCard > .itineraryTypeIcon {
+  position: absolute;
+  z-index: 2;
+  top: 54px;
+  right: 12px;
 }
 
 .itinerary .itineraryPlaceQuickActionMenu {
