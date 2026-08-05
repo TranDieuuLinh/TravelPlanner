@@ -307,13 +307,6 @@ function formatTripTiming(
   return `${timing.days} ngày`;
 }
 
-function formatTripTimingForIntake(
-  timing: ExplorerContext["tripIntent"]["timing"]
-): string | undefined {
-  if (!timing.startDate && !timing.endDate) return undefined;
-  return formatTripTiming(timing);
-}
-
 function formatTripParty(
   party: ExplorerContext["tripIntent"]["travelParty"]
 ): string {
@@ -339,25 +332,6 @@ function finishedTripFacts(context: ExplorerContext) {
       value: intent.notes.length ? intent.notes.join(" · ") : "Không có lưu ý",
     },
   ];
-}
-
-function intakeAnswersFromContext(
-  context: ExplorerContext
-): GuidedIntakeAnswers {
-  const intent = context.tripIntent;
-  const budget =
-    intent.budget.targetAmount != null
-      ? formatBudget(context)
-      : `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase(
-          "vi-VN"
-        )}`;
-  return {
-    destination: intent.destination || undefined,
-    dates: formatTripTimingForIntake(intent.timing),
-    travelers: formatTripParty(intent.travelParty),
-    budget,
-    note: intent.notes.filter(Boolean).join(" · ") || undefined,
-  };
 }
 
 function extractMessageUrls(value: string): string[] {
@@ -1873,9 +1847,6 @@ function Planner() {
   const displayedExploreResult = exploreResult;
   const displayedStartDate =
     displayedExploreResult?.explorer.tripIntent.timing.startDate;
-  const displayedIntakeAnswers = displayedExploreResult
-    ? intakeAnswersFromContext(displayedExploreResult.explorer)
-    : guidedIntakeAnswers;
   const displayedPlan = useMemo(
     () =>
       plan
@@ -3002,9 +2973,6 @@ function Planner() {
     }
 
     const nextAnswers = {
-      ...(displayedExploreResult
-        ? intakeAnswersFromContext(displayedExploreResult.explorer)
-        : {}),
       ...guidedIntakeAnswers,
       [guidedIntakeStep]: answer === "Bỏ qua" ? "" : answer,
     };
@@ -3018,11 +2986,7 @@ function Planner() {
       }`
     );
 
-    const shouldPersistImmediately = Boolean(user && activeChatId);
-    if (
-      shouldPersistImmediately ||
-      guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]
-    ) {
+    if (guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]) {
       setGuidedIntakeStep("complete");
       setGuidedIntakeOpen(false);
       setGuidedDraft("");
@@ -3055,9 +3019,7 @@ function Planner() {
 
   function openGuidedStep(step: Exclude<GuidedIntakeStep, "complete">) {
     setGuidedIntakeStep(step);
-    setGuidedDraft(
-      (displayedIntakeAnswers[step] ?? guidedIntakeAnswers[step]) || ""
-    );
+    setGuidedDraft(guidedIntakeAnswers[step] ?? "");
     setGuidedIntakeOpen(true);
     setError("");
   }
@@ -3555,7 +3517,7 @@ function Planner() {
                       ["note", "Lưu ý"],
                     ] as const
                   ).map(([step, label]) => {
-                    const value = displayedIntakeAnswers[step];
+                    const value = guidedIntakeAnswers[step];
                     return (
                       <button
                         aria-label={value ? `${label}: ${value}` : label}
@@ -4208,7 +4170,7 @@ function Planner() {
                               ["note", "Lưu ý"],
                             ] as const
                           ).map(([step, label]) => {
-                            const value = displayedIntakeAnswers[step];
+                            const value = guidedIntakeAnswers[step];
                             return (
                               <button
                                 aria-label={value ? `${label}: ${value}` : label}
