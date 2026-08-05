@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
+from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.modules.plans.explorer.model import YouTubeTranscriptCacheEntry
+from app.modules.plans.explorer.model import SourceDocument
 
 
 @dataclass(frozen=True)
@@ -45,66 +45,72 @@ class SqlAlchemyYouTubeTranscriptCache:
         languages: list[str],
     ) -> CachedYouTubeTranscript | None:
         with self.session_factory() as session:
-            rows = list(
-                session.scalars(
-                    select(YouTubeTranscriptCacheEntry)
-                    .where(YouTubeTranscriptCacheEntry.video_id == video_id)
-                    .order_by(YouTubeTranscriptCacheEntry.fetched_at.desc())
-                ).all()
+            canonical_url = _youtube_url(video_id)
+            document = session.scalar(
+                select(SourceDocument).where(
+                    SourceDocument.canonical_url == canonical_url
+                )
             )
-        if not rows:
+            if document is None:
+                return None
+            caption_artifacts = dict(
+                (document.artifacts_json or {}).get("caption") or {}
+            )
+            if not caption_artifacts:
+                return None
+            language = next(
+                (value for value in languages if value in caption_artifacts),
+                next(iter(caption_artifacts)),
+            )
+            artifact = dict(caption_artifacts[language] or {})
+            fetched_at = document.fetched_at
+        if not artifact.get("text"):
             return None
-        by_language = {row.language: row for row in rows}
-        row = next(
-            (by_language[language] for language in languages if language in by_language),
-            rows[0],
+        if fetched_at.tzinfo is None:
+            fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+        metadata = dict(artifact.get("metadata") or {})
+        return CachedYouTubeTranscript(
+            video_id=video_id,
+            language="" if language == "_" else language,
+            text=str(artifact["text"]),
+            source=str(artifact.get("source") or "youtube_captions"),
+            is_generated=metadata.get("isGenerated"),
+            fetched_at=fetched_at,
         )
-        return _cached(row)
 
     def save(self, transcript: CachedYouTubeTranscript) -> None:
-        values = {
-            "video_id": transcript.video_id,
-            "language": transcript.language,
-            "transcript_text": transcript.text,
-            "source": transcript.source,
-            "is_generated": transcript.is_generated,
-            "fetched_at": transcript.fetched_at,
-            "updated_at": datetime.now(timezone.utc),
-        }
         with self.session_factory() as session:
-            if session.bind is not None and session.bind.dialect.name == "postgresql":
-                statement = postgresql_insert(YouTubeTranscriptCacheEntry).values(**values)
-                statement = statement.on_conflict_do_update(
-                    index_elements=["video_id", "language"],
-                    set_={
-                        key: value
-                        for key, value in values.items()
-                        if key not in {"video_id", "language"}
-                    },
+            canonical_url = _youtube_url(transcript.video_id)
+            document = session.scalar(
+                select(SourceDocument).where(
+                    SourceDocument.canonical_url == canonical_url
                 )
-                session.execute(statement)
-            else:
-                row = session.get(
-                    YouTubeTranscriptCacheEntry,
-                    (transcript.video_id, transcript.language),
+            )
+            if document is None:
+                document = SourceDocument(
+                    id=str(uuid4()),
+                    canonical_url=canonical_url,
+                    platform="youtube",
+                    artifacts_json={},
+                    extracted_context_json={},
                 )
-                if row is None:
-                    session.add(YouTubeTranscriptCacheEntry(**values))
-                else:
-                    for key, value in values.items():
-                        setattr(row, key, value)
+                session.add(document)
+            artifacts = dict(document.artifacts_json or {})
+            captions = dict(artifacts.get("caption") or {})
+            captions[transcript.language or "_"] = {
+                "text": transcript.text,
+                "source": transcript.source,
+                "metadata": {
+                    "videoId": transcript.video_id,
+                    "isGenerated": transcript.is_generated,
+                },
+            }
+            artifacts["caption"] = captions
+            document.artifacts_json = artifacts
+            document.fetched_at = transcript.fetched_at
+            document.updated_at = datetime.now(timezone.utc)
             session.commit()
 
 
-def _cached(row: YouTubeTranscriptCacheEntry) -> CachedYouTubeTranscript:
-    fetched_at = row.fetched_at
-    if fetched_at.tzinfo is None:
-        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
-    return CachedYouTubeTranscript(
-        video_id=row.video_id,
-        language=row.language,
-        text=row.transcript_text,
-        source=row.source,
-        is_generated=row.is_generated,
-        fetched_at=fetched_at,
-    )
+def _youtube_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"

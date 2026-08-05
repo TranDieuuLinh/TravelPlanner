@@ -17,7 +17,7 @@ from app.modules.plans.dto.agent_contracts import (
 
 
 class TripTiming(BaseModel):
-    days: int = Field(ge=1, le=30)
+    days: int = Field(default=3, ge=1, le=30)
     start_date: Annotated[str | None, Field(default=None, alias="startDate")]
     end_date: Annotated[str | None, Field(default=None, alias="endDate")]
     flexibility: Literal["unknown", "fixed", "flexible"] = "unknown"
@@ -91,8 +91,11 @@ class TripIntent(BaseModel):
     """
 
     destination: str
-    timing: TripTiming
-    travel_party: Annotated[TravelParty, Field(alias="travelParty")]
+    timing: TripTiming = Field(default_factory=TripTiming)
+    travel_party: Annotated[
+        TravelParty,
+        Field(default_factory=TravelParty, alias="travelParty"),
+    ]
     budget: BudgetEnvelope = Field(default_factory=BudgetEnvelope)
     notes: list[str] = Field(default_factory=list)
     preferences: TripPreferences = Field(default_factory=TripPreferences)

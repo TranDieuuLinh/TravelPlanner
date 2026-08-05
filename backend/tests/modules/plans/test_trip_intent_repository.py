@@ -1,47 +1,20 @@
 from sqlalchemy import inspect, select
 
+from app.modules.plans.chat_model import TripChat, TripRevision
 from app.modules.plans.chat_repository import TripChatRepository
-from app.modules.plans.explorer.model import ExplorerIntake
 from app.modules.plans.trip_intent import TripIntent
-from app.modules.plans.trip_intent_model import (
-    TripIntentValue,
-    TripIntentVersion,
-)
-from app.modules.plans.trip_intent_repository import TripIntentRepository
 from app.modules.users.repository import UserRepository
 
 
-def test_trip_intent_round_trips_through_normalized_tables(
-    db_session,
-    registered_client,
-) -> None:
-    user = UserRepository(db_session).get_by_email("traveler@example.com")
-    assert user is not None
-    chat = TripChatRepository(db_session).create(user.id, "Đà Lạt")
-    db_session.add(
-        ExplorerIntake(
-            id="intake-normalized-intent",
-            user_id=str(user.id),
-            destination="Đà Lạt",
-            candidate_reviews=[],
-        )
-    )
-    db_session.flush()
-    expected = TripIntent.model_validate(
+def _trip_intent() -> TripIntent:
+    return TripIntent.model_validate(
         {
             "destination": "Đà Lạt",
-            "timing": {
-                "days": 4,
-                "startDate": "2026-09-10",
-                "endDate": "2026-09-13",
-                "flexibility": "fixed",
-            },
+            "timing": {"days": 4},
             "travelParty": {
                 "type": "family",
                 "adults": 2,
                 "children": 1,
-                "infants": 0,
-                "pets": 1,
                 "rooms": 1,
             },
             "budget": {
@@ -51,47 +24,48 @@ def test_trip_intent_round_trips_through_normalized_tables(
             },
             "notes": ["Có người lớn tuổi"],
             "preferences": {
-                "travelStyle": "local",
-                "pace": "relaxed",
                 "interests": ["coffee", "nature"],
-                "transport": {
-                    "preferredModes": ["walk", "private_car"],
-                },
+                "transport": {"preferredModes": ["walk", "private_car"]},
             },
-            "constraints": {
-                "items": ["Không đi bộ quá 20 phút"],
-                "policy": {"excludedPlaceTypes": ["cemetery"]},
-            },
+            "constraints": {"items": ["Không đi bộ quá 20 phút"]},
         }
     )
 
-    repository = TripIntentRepository(db_session)
-    row = repository.add_version(
-        chat_id=chat.id,
-        intake_id="intake-normalized-intent",
-        revision=1,
-        intent=expected,
+
+def test_trip_intent_round_trips_as_chat_and_revision_snapshots(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    repository = TripChatRepository(db_session)
+    chat = repository.create(user.id, "Đà Lạt")
+    expected = _trip_intent()
+    payload = expected.model_dump(mode="json", by_alias=True)
+    chat.current_trip_intent = payload
+    db_session.add(
+        TripRevision(
+            id="revision-intent-json",
+            chat_id=chat.id,
+            revision=1,
+            plan_payload={"id": "plan-1"},
+            trip_intent_payload=payload,
+        )
     )
-    chat.current_trip_intent_id = row.id
     db_session.commit()
 
-    loaded = repository.get(row.id)
+    loaded = repository.load_trip_intent(repository.get(chat.id, user.id))
+    revision = db_session.scalar(
+        select(TripRevision).where(TripRevision.id == "revision-intent-json")
+    )
 
     assert loaded == expected
-    assert db_session.scalar(
-        select(TripIntentVersion).where(TripIntentVersion.id == row.id)
-    ) is not None
-    assert set(
-        db_session.scalars(
-            select(TripIntentValue.kind).where(
-                TripIntentValue.trip_intent_id == row.id
-            )
-        )
-    ) >= {"note", "interest", "constraint", "preferred_transport"}
+    assert revision is not None
+    assert TripIntent.model_validate(revision.trip_intent_payload) == expected
 
 
-def test_old_trip_intent_json_columns_are_not_mapped() -> None:
-    from app.modules.plans.chat_model import TripChat, TripChatPlanRevision
-
-    assert "current_explorer" not in inspect(TripChat).columns
-    assert "explorer_payload" not in inspect(TripChatPlanRevision).columns
+def test_trip_persistence_uses_three_tables_without_legacy_intent_tables() -> None:
+    assert TripChat.__tablename__ == "trip_chats"
+    assert TripRevision.__tablename__ == "trip_revisions"
+    assert "current_trip_intent" in inspect(TripChat).columns
+    assert "trip_intent_payload" in inspect(TripRevision).columns

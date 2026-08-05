@@ -293,6 +293,7 @@ class TestSupportedShapeInclusion:
             object_type="Activity",
             object_name="Đi dạo Hồ Gươm",
             activity_id="activity_walk",
+            activity_name="Đi dạo Hồ Gươm",
             anchor_place_id="place_hoan_kiem",
             trust=TrustLevel.SOURCE_BACKED,
             priority=RecommendationPriority.MUST,
@@ -303,7 +304,12 @@ class TestSupportedShapeInclusion:
         candidate = catalog.candidates[0]
         assert candidate.place_ids == ["place_hoan_kiem"]
         assert candidate.activity_id == "activity_walk"
+        assert candidate.activity_name == "Đi dạo Hồ Gươm"
         assert candidate.anchor_place_ids == ["place_hoan_kiem"]
+        assert candidate.anchor_place_names == {
+            "place_hoan_kiem": "Anchor Place"
+        }
+        assert candidate.is_special_experience is True
         assert candidate.claim_ids == ["c_se_anchor"]
         assert candidate.trust is TrustLevel.SOURCE_BACKED
         assert candidate.recommendation is not None

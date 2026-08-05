@@ -23,13 +23,6 @@ _VAGUE_REQUEST_PATTERNS = (
     r"^surprise me$",
 )
 
-_BUDGET_PATTERN = re.compile(
-    r"\b(?:budget|ngan sach|chi phi|gia re|tiet kiem|trung binh|cao cap|"
-    r"low|medium|high|premium|million|trieu|vnd|usd|eur|đ|dong)\b|"
-    r"\b\d+(?:[.,]\d+)?\s*(?:k|m)\b",
-)
-
-
 class ExplorerService:
     def __init__(
         self,
@@ -87,21 +80,10 @@ def apply_raw_prompt_completeness(
             )
         )
     )
-    days_were_provided = (
-        payload.trip_spec.days is not None
-        or bool(re.search(r"\b\d+\s*(?:ngay|day|days)\b", normalized_request))
-    )
-    budget_was_provided = (
-        payload.trip_spec.budget.target_amount is not None
-        or "level" in payload.trip_spec.budget.model_fields_set
-        or bool(_BUDGET_PATTERN.search(normalized_request))
-    )
-
-    provided = {
-        "destination": destination_was_provided,
-        "days": days_were_provided,
-        "budget": budget_was_provided,
-    }
+    # Destination is the only blocking field. Duration, party, budget and the
+    # remaining TripIntent fields already have domain defaults and must not
+    # force another conversational round-trip.
+    provided = {"destination": destination_was_provided}
     missing_fields = [
         MissingFieldInfo(field=field)
         for field, was_provided in provided.items()

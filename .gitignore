@@ -27,6 +27,7 @@ backend/var/knowledge-graph-imports.json
 backend/.runlogs/
 
 database/backups/
+backups/*.sql
 *.dump
 
 auto-crawl/

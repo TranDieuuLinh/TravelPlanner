@@ -136,7 +136,10 @@ class PlaceMatchOption(BaseModel):
 
     rank: int = Field(ge=1)
     match_source: Annotated[
-        Literal["url_snapshot", "verified_alias", "places_db", "external_provider"],
+        Literal[
+            "url_snapshot", "verified_alias", "places_db",
+            "knowledge_graph", "external_provider",
+        ],
         Field(alias="matchSource"),
     ]
     provider: str

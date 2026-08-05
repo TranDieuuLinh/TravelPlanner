@@ -8,6 +8,7 @@ from app.integrations.llm.base import LLMClient
 from app.modules.knowledge_graph.research import (
     GraphScopeError,
     TripResearchBundle,
+    TrustLevel,
 )
 from app.modules.plans.domain.entities import (
     TravelIntent,
@@ -30,6 +31,7 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.trip_theme_planner.prompt import (
     TRIP_THEME_PROMPT_VERSION,
     TRIP_THEME_SYSTEM_PROMPT,
+    build_theme_selection_policy,
     build_trip_theme_repair_payload,
     build_trip_theme_payload,
 )
@@ -409,6 +411,25 @@ class TripThemePlannerService:
                     "requiredExperiences references unsupported graph evidence: "
                     f"{exc}"
                 ) from exc
+
+        selection_policy = build_theme_selection_policy(planner_input)
+        trusted_special_candidates = [
+            candidate
+            for candidate in graph_catalog.candidates
+            if candidate.is_special_experience
+            and candidate.trust is not TrustLevel.INFERRED
+        ]
+        if (
+            selection_policy["selectionMode"]
+            == "destination_special_experiences"
+            and trusted_special_candidates
+            and not required_experiences
+        ):
+            raise ValueError(
+                "No trip intent, confirmed Place, or effective long-term "
+                "profile was supplied; choose at least one trusted destination "
+                "special experience from graphCandidateCatalog."
+            )
 
         warnings = list(draft.warnings)
         if normalized:

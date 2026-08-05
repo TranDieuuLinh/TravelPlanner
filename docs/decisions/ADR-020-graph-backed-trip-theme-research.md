@@ -22,9 +22,15 @@ nên research cũ tạo hai nguồn authority và không biểu diễn đúng di
   Activity.
 - Output chỉ ở cấp toàn chuyến: `tripThemes`, `requiredExperiences`, assumptions,
   warnings và trace. Không có day, route hoặc allocation.
+- Chọn theme theo thứ tự current-trip intent, confirmed Places, effective
+  long-term profile, rồi destination special experiences. Graph `must` không
+  được override intent hoặc hard constraint; khi không có tín hiệu cá nhân,
+  planner phải lấy ít nhất một trusted special experience nếu catalog có.
 - `research-context` là CLI chỉ đọc, hiển thị research bundle và bounded catalog,
   không gọi LLM.
-- PlaceSelector chưa nhận `requiredExperiences` trong quyết định này.
+- Cutover ban đầu chưa truyền `requiredExperiences`; runtime hiện đã mở rộng
+  `PlaceSelectionInput` để resolve required Place hoặc giữ requirement chưa
+  resolve trong `UnscheduledPlace`.
 
 ## Hệ quả
 

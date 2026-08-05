@@ -154,6 +154,8 @@ class UrlImportJobWorker:
         job = db.get(UrlImportJob, job_id)
         if job is None:
             raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
+        if job.import_kind != "explorer_job":
+            raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
         user = db.get(User, job.user_id)
         if user is None:
             raise AppError(404, "USER_NOT_FOUND", "Không tìm thấy người dùng của tác vụ.")

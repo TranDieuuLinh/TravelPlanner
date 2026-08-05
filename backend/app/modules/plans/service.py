@@ -64,6 +64,7 @@ from app.modules.plans.schema import (
     FeatureMapItem,
     MainPlanCreate,
     MainPlanFromExplorerCreate,
+    MainPlanFromTripIntentCreate,
     PlanBundleRead,
     PlanningContextCreate,
     SelectedPlaceCreate,
@@ -376,8 +377,22 @@ class PlanService:
                     )
                 )
             else:
-                missing_indexes.append(index)
-                missing_candidates.append(candidate)
+                graph_resolver = getattr(
+                    self.explorer_persistence,
+                    "resolve_from_knowledge_graph",
+                    None,
+                )
+                graph_resolution = (
+                    graph_resolver(candidate, destination=destination)
+                    if callable(graph_resolver) else None
+                )
+                if graph_resolution is not None:
+                    resolutions[index] = _with_authoritative_place_category(
+                        graph_resolution
+                    )
+                else:
+                    missing_indexes.append(index)
+                    missing_candidates.append(candidate)
         if missing_candidates:
             fresh = await self.place_resolver.resolve_many(
                 missing_candidates,
@@ -998,6 +1013,15 @@ class PlanService:
         plan, _ = await self.create_main_plan_from_explorer_with_timing(payload)
         return plan
 
+    async def create_main_plan_from_trip_intent_with_timing(
+        self,
+        payload: MainPlanFromTripIntentCreate,
+    ) -> tuple[Plan, PlanTimingReport]:
+        """Canonical Explorer hand-off; projection happens at this boundary."""
+        return await self.create_main_plan_from_explorer_with_timing(
+            payload.to_planner_input()
+        )
+
     async def create_main_plan_from_explorer_with_timing(
         self,
         payload: MainPlanFromExplorerCreate,
@@ -1045,6 +1069,7 @@ class PlanService:
         plan, timing_report = await (
             self.main_workflow.run_from_explorer_with_timing(workflow_payload)
         )
+        plan = _ensure_url_place_coverage(plan, selected_places)
         # Count-based capacity handles normal overflow. A route-aware timeline
         # can still push a URL stop past midnight; retry with extra days rather
         # than returning that source place as optional/unscheduled. Hard policy
@@ -1080,6 +1105,7 @@ class PlanService:
                     workflow_payload
                 )
             )
+            plan = _ensure_url_place_coverage(plan, selected_places)
         self.repository.save(plan)
         return plan, timing_report
 
@@ -1515,6 +1541,125 @@ def _retryable_url_unscheduled_places(
             or "".join(_selected_place_tokens(item.name)) in url_place_names
         )
     ]
+
+
+def _ensure_url_place_coverage(
+    plan: Plan,
+    selected_places: list[SelectedPlaceCreate],
+) -> Plan:
+    """Make the resolved URL-place coverage invariant explicit in the Plan.
+
+    Every resolved URL-backed SelectedPlace must be represented by one
+    scheduled PlanItem carrying its provenance, or by one UnscheduledPlace
+    carrying a machine-readable reason.  This guards against a downstream
+    selector/optimizer accidentally dropping a source requirement.
+    """
+
+    days = [day.model_copy(deep=True) for day in plan.days]
+    unscheduled = [item.model_copy(deep=True) for item in plan.unscheduled_places]
+    for place in selected_places:
+        if not _has_url_source_ref(place.source_refs):
+            continue
+
+        scheduled_match = next(
+            (
+                (day_index, item_index, item)
+                for day_index, day in enumerate(days)
+                for item_index, item in enumerate(day.items)
+                if _plan_place_matches_selected(item, place)
+            ),
+            None,
+        )
+        if scheduled_match is not None:
+            day_index, item_index, item = scheduled_match
+            days[day_index].items[item_index] = item.model_copy(
+                update={
+                    "source": (
+                        "selected_place"
+                        if item.source == "finder_suggestion"
+                        else item.source
+                    ),
+                    "source_refs": list(
+                        dict.fromkeys([*item.source_refs, *place.source_refs])
+                    ),
+                    "source_provider": (
+                        item.source_provider or place.source_provider
+                    ),
+                    "source_activity": item.source_activity or place.source_activity,
+                }
+            )
+            continue
+
+        unscheduled_index = next(
+            (
+                index
+                for index, item in enumerate(unscheduled)
+                if _plan_place_matches_selected(item, place)
+            ),
+            None,
+        )
+        update = {
+            "place_id": place.place_id,
+            "name": place.name,
+            "address": place.address,
+            "latitude": place.latitude,
+            "longitude": place.longitude,
+            "tags": list(place.tags),
+            "source_refs": list(place.source_refs),
+            "source_provider": place.source_provider,
+            "source_activity": place.source_activity,
+            "rating": place.rating,
+            "review_count": place.review_count,
+        }
+        if unscheduled_index is not None:
+            current = unscheduled[unscheduled_index]
+            update["source_refs"] = list(
+                dict.fromkeys([*current.source_refs, *place.source_refs])
+            )
+            unscheduled[unscheduled_index] = current.model_copy(update=update)
+            continue
+
+        unscheduled.append(
+            UnscheduledPlace(
+                **update,
+                reasonCode="planner_omitted_selected_place",
+                reason=(
+                    "Planner did not allocate this resolved URL Place; it was "
+                    "retained for review instead of being dropped."
+                ),
+            )
+        )
+
+    return plan.model_copy(
+        update={"days": days, "unscheduled_places": unscheduled}
+    )
+
+
+def _plan_place_matches_selected(
+    item: object,
+    selected: SelectedPlaceCreate,
+) -> bool:
+    item_place_id = getattr(item, "place_id", None)
+    if item_place_id and selected.place_id and item_place_id == selected.place_id:
+        return True
+    item_tokens = _selected_place_tokens(str(getattr(item, "name", "")))
+    selected_tokens = _selected_place_tokens(selected.name)
+    if item_tokens != selected_tokens or not item_tokens:
+        return False
+    coordinates = (
+        getattr(item, "latitude", None),
+        getattr(item, "longitude", None),
+        selected.latitude,
+        selected.longitude,
+    )
+    if any(value is None for value in coordinates):
+        return True
+    proxy = SelectedPlaceCreate(
+        name=str(getattr(item, "name", "")),
+        latitude=float(coordinates[0]),
+        longitude=float(coordinates[1]),
+    )
+    return _coordinate_distance_meters(proxy, selected) <= 250
 
 
 def _place_candidate_review(

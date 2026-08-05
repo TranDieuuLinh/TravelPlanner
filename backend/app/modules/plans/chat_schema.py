@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import (
@@ -101,7 +101,7 @@ class TripChatTurnCreate(BaseModel):
 
 
 class TripChatTurnRead(BaseModel):
-    id: str
+    id: str = Field(validation_alias=AliasChoices("lifecycle_id", "id"))
     chat_id: Annotated[str, Field(alias="chatId")]
     client_turn_id: Annotated[str, Field(alias="clientTurnId")]
     status: TurnStatus

@@ -41,15 +41,24 @@ class UrlImportJobRepository:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
             )
+        batch_id = str(uuid4())
         jobs = [
             UrlImportJob(
                 id=str(uuid4()),
+                import_kind="explorer_job",
+                batch_id=batch_id,
                 user_id=user_id,
                 chat_id=chat_id,
                 url=url,
+                source_label=url,
                 request_content=request_content,
+                schema_version="explorer-place-proposal-v1",
+                ontology_version="knowledge-graph-v2",
+                dataset_hash="",
                 force_refresh=force_refresh,
                 batch_position=batch_position,
+                processing_status="queued",
+                review_status="not_required",
                 status="queued",
             )
             for batch_position, url in enumerate(urls)
@@ -83,19 +92,28 @@ class UrlImportJobRepository:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại chat trước khi gửi.",
             )
+        batch_id = str(uuid4())
         jobs = [
             UrlImportJob(
                 id=str(uuid4()),
+                import_kind="explorer_job",
+                batch_id=batch_id,
                 user_id=user_id,
                 chat_id=chat_id,
                 source_type="image",
                 url="",
                 source_name=file_name,
+                source_label=file_name,
                 image_mime_type=mime_type,
                 image_data=data,
                 request_content=request_content,
+                schema_version="explorer-place-proposal-v1",
+                ontology_version="knowledge-graph-v2",
+                dataset_hash="",
                 force_refresh=False,
                 batch_position=batch_position,
+                processing_status="queued",
+                review_status="not_required",
                 status="queued",
             )
             for batch_position, (file_name, mime_type, data) in enumerate(images)
@@ -108,13 +126,16 @@ class UrlImportJobRepository:
 
     def list_for_user(self, user_id: int, *, limit: int = 40) -> list[UrlImportJob]:
         active_first = case(
-            (UrlImportJob.status == "running", 0),
-            (UrlImportJob.status == "queued", 1),
+            (UrlImportJob.processing_status == "running", 0),
+            (UrlImportJob.processing_status == "queued", 1),
             else_=2,
         )
         statement = (
             select(UrlImportJob)
-            .where(UrlImportJob.user_id == user_id)
+            .where(
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.user_id == user_id,
+            )
             .order_by(active_first, UrlImportJob.created_at.desc())
             .limit(limit)
         )
@@ -124,6 +145,7 @@ class UrlImportJobRepository:
         job = self.db.scalar(
             select(UrlImportJob).where(
                 UrlImportJob.id == job_id,
+                UrlImportJob.import_kind == "explorer_job",
                 UrlImportJob.user_id == user_id,
             )
         )
@@ -134,8 +156,14 @@ class UrlImportJobRepository:
     def recover_interrupted(self) -> int:
         result = self.db.execute(
             update(UrlImportJob)
-            .where(UrlImportJob.status == "running")
-            .values(status="queued", started_at=None, updated_at=datetime.now(UTC))
+            .where(
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.processing_status == "running",
+            )
+            .values(
+                processing_status="queued", status="queued", started_at=None,
+                updated_at=datetime.now(UTC),
+            )
             .execution_options(synchronize_session=False)
         )
         self.db.commit()
@@ -146,11 +174,13 @@ class UrlImportJobRepository:
         result = self.db.execute(
             update(UrlImportJob)
             .where(
-                UrlImportJob.status == "running",
+                UrlImportJob.processing_status == "running",
+                UrlImportJob.import_kind == "explorer_job",
                 (UrlImportJob.started_at.is_(None))
                 | (UrlImportJob.started_at <= cutoff),
             )
             .values(
+                processing_status="failed",
                 status="failed",
                 error_code="URL_IMPORT_TIMEOUT",
                 error_message=(
@@ -168,14 +198,18 @@ class UrlImportJobRepository:
     def claim_next(self) -> UrlImportJob | None:
         running_count = self.db.scalar(
             select(func.count()).select_from(UrlImportJob).where(
-                UrlImportJob.status == "running"
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.processing_status == "running"
             )
         )
         if running_count:
             return None
         statement = (
             select(UrlImportJob)
-            .where(UrlImportJob.status == "queued")
+            .where(
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.processing_status == "queued",
+            )
             .order_by(
                 UrlImportJob.created_at.asc(),
                 UrlImportJob.batch_position.asc(),
@@ -188,6 +222,7 @@ class UrlImportJobRepository:
         job = self.db.scalar(statement)
         if job is None:
             return None
+        job.processing_status = "running"
         job.status = "running"
         job.started_at = datetime.now(UTC)
         job.finished_at = None
@@ -203,6 +238,7 @@ class UrlImportJobRepository:
         if job is None:
             return
         chat = self.db.get(TripChat, job.chat_id)
+        job.processing_status = "succeeded"
         job.status = "succeeded"
         job.result_revision = revision
         job.explorer_timing = (
@@ -218,6 +254,7 @@ class UrlImportJobRepository:
         job = self.db.get(UrlImportJob, job_id)
         if job is None:
             return
+        job.processing_status = "failed"
         job.status = "failed"
         job.error_code = code[:64]
         job.error_message = message[:1000]
@@ -230,6 +267,7 @@ class UrlImportJobRepository:
             raise AppError(409, "URL_IMPORT_JOB_NOT_FAILED", "Chỉ có thể thử lại tác vụ đã thất bại.")
         # A failed run restarts from its original URL or persisted image bytes.
         job.force_refresh = True
+        job.processing_status = "queued"
         job.status = "queued"
         job.started_at = None
         job.finished_at = None
@@ -252,18 +290,26 @@ class UrlImportJobRepository:
             )
         job = UrlImportJob(
             id=str(uuid4()),
+            import_kind="explorer_job",
+            batch_id=str(uuid4()),
             user_id=source_job.user_id,
             chat_id=source_job.chat_id,
             source_type=source_job.source_type,
             url=source_job.url,
             source_name=source_job.source_name,
+            source_label=source_job.source_label,
             image_mime_type=source_job.image_mime_type,
             image_data=source_job.image_data,
             request_content=source_job.request_content,
+            schema_version="explorer-place-proposal-v1",
+            ontology_version="knowledge-graph-v2",
+            dataset_hash="",
             # "Run again" is a full replay: URL jobs bypass extraction cache
             # and image jobs retain their original bytes so OCR runs again.
             force_refresh=True,
             batch_position=0,
+            processing_status="queued",
+            review_status="not_required",
             status="queued",
         )
         self.db.add(job)
@@ -275,8 +321,9 @@ class UrlImportJobRepository:
         result = self.db.execute(
             delete(UrlImportJob).where(
                 UrlImportJob.id == job_id,
+                UrlImportJob.import_kind == "explorer_job",
                 UrlImportJob.user_id == user_id,
-                UrlImportJob.status == "queued",
+                UrlImportJob.processing_status == "queued",
             )
         )
         if result.rowcount:
@@ -296,7 +343,8 @@ class UrlImportJobRepository:
         result = self.db.execute(
             delete(UrlImportJob).where(
                 UrlImportJob.id == job_id,
-                UrlImportJob.status == "running",
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.processing_status == "running",
             )
         )
         self.db.commit()
@@ -306,8 +354,9 @@ class UrlImportJobRepository:
         result = self.db.execute(
             delete(UrlImportJob).where(
                 UrlImportJob.id == job_id,
+                UrlImportJob.import_kind == "explorer_job",
                 UrlImportJob.user_id == user_id,
-                UrlImportJob.status.in_(("succeeded", "failed")),
+                UrlImportJob.processing_status.in_(("succeeded", "failed")),
             )
         )
         if result.rowcount:
@@ -328,7 +377,10 @@ class UrlImportJobRepository:
             queued_ids = list(
                 self.db.scalars(
                     select(UrlImportJob.id)
-                    .where(UrlImportJob.status == "queued")
+                    .where(
+                        UrlImportJob.import_kind == "explorer_job",
+                        UrlImportJob.processing_status == "queued",
+                    )
                     .order_by(
                         UrlImportJob.created_at.asc(),
                         UrlImportJob.batch_position.asc(),

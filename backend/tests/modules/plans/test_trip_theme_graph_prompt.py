@@ -42,6 +42,7 @@ from app.modules.plans.domain.entities import TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext, TripPlanningSpec
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
+from app.modules.preferences.schema import LongTermPreferenceProfile
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +124,7 @@ def _graph_bundle() -> TripResearchBundle:
 
     coffee_claim = _claim(
         claim_id="claim-coffee-tour",
+        predicate="SPECIAL_EXPERIENCE",
         object_id="activity-coffee-tour",
         object_type="Activity",
         object_name="Coffee Tour",
@@ -247,6 +249,17 @@ def _intent() -> TravelIntent:
         travelStyle="local",
         pace=TravelPace.balanced,
         interests=["culture", "food"],
+    )
+
+
+def _intent_without_interests() -> TravelIntent:
+    return TravelIntent(
+        destination="Hà Nội",
+        days=2,
+        budget=BudgetLevel.medium,
+        travelStyle="local",
+        pace=TravelPace.balanced,
+        interests=[],
     )
 
 
@@ -680,6 +693,9 @@ class TestGraphCatalogInPayload:
         )
 
         macro_payload = json.loads(llm.macro_payloads[0])
+        assert macro_payload["themeSelectionPolicy"]["selectionMode"] == (
+            "current_trip_intent"
+        )
         catalog = macro_payload["graphCandidateCatalog"]["candidates"]
         activity_ids = {candidate["activityId"] for candidate in catalog}
         place_ids = {
@@ -706,6 +722,91 @@ class TestGraphCatalogInPayload:
 
 
 class TestGraphCutoverEvaluations:
+    def test_destination_defaults_require_trusted_special_experience(self) -> None:
+        valid_fallback = [
+            {
+                "requirementId": "req-default-coffee",
+                "theme": "Trải nghiệm cà phê đặc trưng",
+                "selectionPolicy": "required_anchor",
+                "anchorPlaceIds": ["place-cafe-giang"],
+                "candidatePlaceIds": [],
+                "minimumRequired": 1,
+                "priority": "must",
+                "reason": "Không có sở thích cá nhân nên dùng special experience.",
+                "evidenceClaimIds": ["claim-coffee-tour"],
+                "sourceRefs": ["https://example.com/cafe-source"],
+            }
+        ]
+        llm = _InvalidIdRepairingLLM(
+            valid_required_experiences=valid_fallback,
+            invalid_required_experiences=[],
+            trip_themes=_trip_themes(),
+        )
+        service, _ = _build_service(llm)
+
+        output = asyncio.run(
+            service.create_trip_themes(
+                _intent_without_interests(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[],
+            )
+        )
+
+        policy = json.loads(llm.macro_payloads[0])["themeSelectionPolicy"]
+        assert policy["selectionMode"] == "destination_special_experiences"
+        assert llm.macro_calls == 2
+        assert output.required_experiences[0].requirement_id == "req-default-coffee"
+
+    def test_confirmed_places_take_priority_over_long_term_profile(self) -> None:
+        llm = _GraphThemeScriptedLLM(
+            trip_themes=_trip_themes(),
+            required_experiences=[],
+        )
+        service, _ = _build_service(llm)
+
+        asyncio.run(
+            service.create_trip_themes(
+                _intent_without_interests(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[
+                    SelectedPlaceContext(
+                        name="Văn Miếu",
+                        placeId="place-van-mieu",
+                    )
+                ],
+                preference_profile=LongTermPreferenceProfile(
+                    explicit=["coffee"]
+                ),
+            )
+        )
+
+        policy = json.loads(llm.macro_payloads[0])["themeSelectionPolicy"]
+        assert policy["selectionMode"] == "confirmed_places"
+
+    def test_long_term_profile_is_used_before_destination_defaults(self) -> None:
+        llm = _GraphThemeScriptedLLM(
+            trip_themes=_trip_themes(),
+            required_experiences=[],
+        )
+        service, _ = _build_service(llm)
+
+        asyncio.run(
+            service.create_trip_themes(
+                _intent_without_interests(),
+                trip_spec=TripPlanningSpec(days=2),
+                region_key="vn,ha-noi",
+                selected_places=[],
+                preference_profile=LongTermPreferenceProfile(
+                    explicit=["coffee"]
+                ),
+            )
+        )
+
+        policy = json.loads(llm.macro_payloads[0])["themeSelectionPolicy"]
+        assert policy["selectionMode"] == "long_term_profile"
+
     def test_empty_coverage_sends_empty_catalog_with_one_llm_call(self) -> None:
         llm = _GraphThemeScriptedLLM(
             trip_themes=_trip_themes(),

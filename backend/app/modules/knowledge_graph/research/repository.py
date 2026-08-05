@@ -6,8 +6,6 @@ Does not modify data.
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, or_, select
@@ -19,6 +17,7 @@ from app.modules.knowledge_graph.model import (
     KnowledgeProperty,
     KnowledgeRelationship,
 )
+from app.modules.knowledge_graph.text import normalize_knowledge_text
 from app.modules.knowledge_graph.research.schema import (
     AREA_TYPES,
     ActivityTypes,
@@ -44,11 +43,7 @@ def _normalized(value: str) -> str:
     NFKD decomposition strips combining marks (diacritics), then removes
     non-alphanumeric characters and normalizes whitespace.
     """
-    decomposed = unicodedata.normalize("NFKD", value.casefold())
-    without_marks = "".join(
-        char for char in decomposed if not unicodedata.combining(char)
-    )
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", without_marks).split())
+    return normalize_knowledge_text(value)
 
 
 class ScopeResolutionRepository:
@@ -111,15 +106,16 @@ class ScopeResolutionRepository:
         if entity is not None:
             return entity
 
-        alias_record = self.db.scalars(
-            select(KnowledgeAlias).where(
+        entity = self.db.scalars(
+            select(KnowledgeEntity)
+            .join(KnowledgeAlias, KnowledgeAlias.entity_id == KnowledgeEntity.id)
+            .where(
                 KnowledgeAlias.normalized_alias == normalized,
+                KnowledgeEntity.entity_type.in_(AREA_TYPES),
             )
         ).first()
-        if alias_record is not None:
-            entity = self.db.get(KnowledgeEntity, alias_record.entity_id)
-            if entity is not None and entity.entity_type in AREA_TYPES:
-                return entity
+        if entity is not None:
+            return entity
 
         return None
 

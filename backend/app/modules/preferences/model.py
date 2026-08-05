@@ -98,7 +98,7 @@ class TravelerPreferenceSignal(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_evidence_intake_id: Mapped[str | None] = mapped_column(
-        ForeignKey("explorer_intakes.id", ondelete="SET NULL"), nullable=True
+        String(64), nullable=True
     )
 
     sources: Mapped[list["TravelerPreferenceSignalSource"]] = relationship(

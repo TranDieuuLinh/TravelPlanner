@@ -15,6 +15,32 @@ sát viên, tổng cộng 195 nhóm. Việc là thành viên không cấp thêm 
 
 ## Mô hình đã triển khai
 
+### Alias trong Knowledge Graph
+
+`KnowledgeAlias` áp dụng cho `Area`, `TravelPlace`, `Restaurant`,
+`DrinkDessert` và `Accommodation`. Mỗi alias giữ `aliasType`, `language`,
+`source`, `provider`, `status`, `confidence` và `verifiedAt`. Các loại được hỗ
+trợ gồm `english_name`, `transliteration`, `abbreviation`, `former_name`,
+`short_name` và `alternate_name`.
+
+Alias lấy trực tiếp từ provider có stable identity được đánh dấu `verified`;
+alias không dấu sinh bằng quy tắc được đánh dấu `generated`; alias nhập từ dump
+cũ giữ trạng thái `imported`. Không tạo tổ hợp `place + city + country` hoặc lỗi
+chính tả thành alias. PostgreSQL dùng `pg_trgm` để fuzzy top-k trên
+`normalized_name` và `normalized_alias`; region, entity type và provider
+identity vẫn phải phân xử kết quả nhập nhằng.
+
+Batch enrichment chạy bằng `scripts/enrich_knowledge_graph_aliases.py`, mặc
+định dry-run và chỉ ghi khi có `--apply`. Script ưu tiên tên Unicode từ catalog
+`places`, sửa mojibake của dump cũ, có batch/checkpoint và idempotent.
+
+Enrichment từ Google Maps locale Việt chạy riêng bằng
+`scripts/enrich_knowledge_graph_aliases_google.py`. Script mở URL của chính
+Google identity đã lưu, chỉ nhận localized title khi `place_id` hoặc `data_id`
+khớp tuyệt đối, lưu cache JSONL để resume và không nhận fuzzy result, category,
+địa chỉ hoặc description làm alias. Tên Việt từ identity khớp được đánh dấu
+`verified`; bản không dấu tương ứng được đánh dấu `generated`.
+
 ### Người dùng
 
 Entity SQLAlchemy được lưu bền vững, gồm danh tính, password hash, role, trạng
@@ -27,9 +53,9 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 
 - `TripIntent`: aggregate bền vững có version cho một trip chat, gồm
   `destination`, `timing`, `travelParty`, `budget`, `notes`, `preferences` và
-  `constraints`. Dữ liệu được lưu bằng cột typed cùng bảng con
-  `trip_intent_values`/`trip_intent_destination_stays`; JSON Explorer không còn
-  là nguồn sự thật.
+  `constraints`. Runtime truyền aggregate trực tiếp từ Explorer sang planning
+  workflow. PostgreSQL chỉ lưu snapshot đã validate trong
+  `trip_chats.current_trip_intent` và `trip_revisions.trip_intent_payload`.
 - `BudgetEnvelope`: ngân sách đơn giản chỉ gồm số tiền gần đúng `targetAmount`,
   `currency` và mức `low`, `medium` hoặc `high`. Budget chỉ xuất hiện tại
   `tripSpec.budget`, không lặp lại trong `TravelIntent`.
@@ -63,27 +89,27 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 
 Plan từ các endpoint độc lập hiện vẫn là object Pydantic được giữ trong bộ nhớ.
 Plan tạo qua trip chat vẫn được lưu dưới dạng snapshot JSON có version trong
-`trip_chat_plan_revisions`; mỗi revision tham chiếu đúng
-`trip_intent_versions` đã dùng. `trip_chats.current_plan` trỏ tới plan snapshot
-mới nhất và `current_trip_intent_id` trỏ tới TripIntent hiện hành.
+`trip_revisions`; mỗi revision chứa cả plan và đúng TripIntent snapshot đã dùng.
+`trip_chats.current_plan` và `current_trip_intent` giữ trạng thái hiện hành.
 
 ### Lịch sử hội thoại chuyến đi đã triển khai
 
 - `TripChat`: thuộc đúng một user, đại diện cho một chuyến đi/điểm đến, giữ khóa
   TripIntent hiện tại, plan hiện tại và số revision. Không còn cột
   `current_explorer`.
-- `TripChatMessage`: tin nhắn user/assistant theo thứ tự, attachment chỉ lưu tên
-  file; không lưu bytes ảnh.
-- `TripChatPlanRevision`: snapshot plan bất biến sau mỗi lần tạo hoặc sửa thành
-  công, kèm `intakeId` và `tripIntentId` đã sinh ra snapshot đó. Không còn
-  `explorer_payload` JSON.
-- `ExplorerIntake`: identity bền vững cho mỗi lần Explorer xử lý input; là
-  parent của junction `UserMustPlaceUser`, kể cả khi intake không resolve được
-  địa điểm nào. Snapshot `UserMustPlace` có thể được nhiều intake/user dùng.
-- `UrlImportJob`: một URL thuộc trip chat và user, giữ thứ tự trong batch,
-  trạng thái `queued/running/succeeded/failed`, số lần chạy, lỗi an toàn và
-  revision kết quả. Job được lưu trước khi worker xử lý nên không phụ thuộc tab
-  Planner còn mở.
+- `TripChatMessage`: tin nhắn user/assistant theo thứ tự; user message đồng thời
+  giữ lifecycle của turn (`queued/executing/completed/failed`), decision và lỗi
+  an toàn. Không còn bảng `trip_chat_turns` sao chép lại content/attachment.
+- `TripRevision`: snapshot bất biến gồm `planPayload`, `tripIntentPayload` và
+  `intakeId` sau mỗi lần tạo hoặc sửa plan thành công.
+- `KnowledgeGraphImport`: envelope dùng chung cho URL/image job, Explorer intake
+  và admin import. `processingStatus` (`queued/running/succeeded/failed`) tách
+  khỏi `reviewStatus` (`not_required/pending/approved/rejected`).
+- `SourceDocument`: canonical URL cùng caption/STT/OCR, extracted context,
+  version/hash và freshness. Raw provider payload không đi qua boundary này.
+- `KnowledgeGraphImportNode/Edge`: Area/Venue observation, evidence, source note,
+  Top-K identity và quan hệ graph đề xuất. Admin review chỉ quyết định promotion
+  vào graph chung; Planner vẫn được dùng snapshot provisional.
 
 Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-up trong
 cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;
@@ -125,16 +151,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   connector, thời điểm lấy và chính sách lưu.
 - `SourceArtifact`: metadata, caption, transcript, frame reference hoặc văn bản
   được phép lưu; không đồng nhất artifact với instruction cho model.
-- `UrlSourceArtifact`: phần `SourceArtifact` đã triển khai cho URL, lưu nội dung
-  text theo canonical URL và loại `webpage`/`caption`/`stt`/`ocr`, cùng language, provider
-  source, freshness và metadata observation đã chuẩn hóa. Artifact `webpage`
-  chỉ giữ evidence span đã cấu trúc, không sao chép toàn bộ bài viết. Bốn loại dùng chung
-  một retrieval boundary cho RAG/tạo note sau này; không phải note hiển thị cho
-  user và không chứa prompt hoặc payload provider thô.
-- `YouTubeTranscriptCacheEntry`: cache caption đã lấy thành công theo
-  `videoId + language`, gồm transcript, nguồn, cờ auto-generated và
-  `fetchedAt/updatedAt`. Cache này phục vụ tái sử dụng connector và tách khỏi
-  preference profile; request lỗi không được ghi vào cache.
+- `SourceDocument`: phần `SourceArtifact` đã triển khai, lưu theo canonical URL.
+  JSON `artifacts` chứa `webpage`/`caption`/`stt`/`ocr` theo language; JSON
+  `extractedContext` giữ observation đã chuẩn hóa. YouTube caption dùng cùng
+  document này thay vì một transcript cache riêng.
 - `SourceClaim`: một thông tin được trích xuất như địa điểm, hoạt động, thời điểm,
   giá hoặc mẹo, kèm evidence span, confidence và trạng thái xác nhận.
 - Observation từ URL phân loại `entityType` thành venue, sub-place, address,
@@ -154,20 +174,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   `generatedLookupAliases` do normalizer/LLM tạo. Metadata có authority cao làm
   anchor khi nhiều observation nói về cùng place; alias sinh ra chỉ phục vụ
   lookup và không được trình bày như evidence của URL.
-- `UserMustPlace`: snapshot URL/place dùng chung đã được provider resolve tới
-  một địa điểm cụ thể có đủ latitude/longitude. Snapshot có shape tương ứng
-  `Place`, thêm `sourceUrl` và `notes`, giữ provenance và có `placeId` nullable
-  khi match catalog. `UserMustPlaceUser` liên kết nhiều-nhiều snapshot với user
-  và intake. Record giữ `sourceEvidence` tách theo `stt`/`ocr`/`caption` và độ
-  mới. Candidate
-  provisional/unresolved, thiếu tọa độ hoặc chỉ match rộng tới thành phố/quốc
-  gia không được lưu vào bảng này. `candidateName` luôn giữ nhãn từ nguồn;
-  `resolvedName` là nhãn provider đã xác minh, ưu tiên tiếng Việt khi alias có
-  sẵn. Plan/UI dùng `resolvedName`; provenance vẫn dùng `candidateName`. Flow
-  Explorer không ghi snapshot riêng tư vào `Place`. Ngoại lệ catalog dùng chung:
-  Google result `resolved` có stable external ID và tọa độ hợp lệ được phép
-  upsert record `Place` tối thiểu hoặc bổ sung verified alias vào metadata theo
-  ADR-013; raw evidence và source URL của user không được sao chép sang catalog.
+- `KnowledgeGraphImportNode`: thay `UserMustPlace`. Node giữ candidate name,
+  alias quan sát, evidence, source note, Top K entity, provider snapshot tối
+  giản và `selectedEntityId` nullable. Node mới không tự ghi vào `places` hay
+  graph canonical; promotion cần admin review.
 - `PlaceMatch`: lựa chọn giữa candidate và `Place`, do hệ thống đề xuất hoặc user
   xác nhận. Catalog resolver chỉ tự nhận record top-1 khi điểm tổng hợp vượt
   ngưỡng tuyệt đối và cách top-2 đủ xa; điểm thấp hoặc sát nhau giữ trạng thái
@@ -178,6 +188,10 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   Alias chỉ trở thành `verifiedAliases` sau khi cùng stable provider identity đã
   vượt policy. `verifiedVietnameseAliases` là tập con tiếng Việt an toàn để UI
   ưu tiên làm nhãn hiển thị.
+  Nếu Top K là các chi nhánh cùng tên, node giữ
+  `identityStatus=branch_ambiguous`; Planner chọn chi nhánh gần route anchor và
+  lưu lựa chọn theo plan revision, không gọi Google và không sửa identity toàn
+  cục của node.
 - `SelectedPlace`: place đã được user chọn cho trip, mức ưu tiên, source claim và
   ghi chú; đây là đầu vào chính thức của Planner. Với place lấy từ một itinerary
   URL, context còn giữ thứ tự, ngày, timing cue, hoạt động và duration được nguồn
@@ -185,7 +199,7 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   hành đã xác minh. `sourceProvider` giữ provider đã resolve candidate để UI có
   thể phân biệt provenance URL với Google Maps Playwright mà không suy đoán từ tên. Stop URL
   hiển thị nhãn Việt đã resolve; tên candidate gốc vẫn được giữ trên
-  `UserMustPlace` cùng evidence.
+  `KnowledgeGraphImportNode` cùng evidence.
 - `DestinationStay`: phân bổ một khoảng ngày cho thành phố/khu vực từ heading
   của nguồn (ví dụ `Hanoi - 2 days`). Đây là context cấp hành trình, không phải
   `Place` hay `SelectedPlace`; PlaceSelector dùng stay hai ngày làm target area
@@ -272,10 +286,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Follow-up yêu cầu tăng số ngày được phép suy ra duration tối thiểu từ toàn bộ
   địa điểm cũ và mới sau khi merge. Follow-up không yêu cầu tăng ngày phải giữ
   duration hiện tại và đưa phần vượt sức chứa vào `UnscheduledPlace`.
-- Intake hiện chạy ở chế độ không hỏi lại user. Candidate chỉ được commit vào
-  `UserMustPlace` khi đã resolve tới danh tính cụ thể và có đủ latitude,
-  longitude. Candidate provisional/unresolved hoặc thiếu tọa độ bị loại trước
-  persistence và không được chuyển thành `SelectedPlace`.
+- Intake hiện chạy ở chế độ không hỏi lại user. Mọi candidate có evidence được
+  stage trong import node; chỉ candidate có representative coordinates mới
+  được chuyển thành `SelectedPlace`. Graph canonical vẫn chờ admin review.
 - Mọi `SelectedPlace` đã resolve có provenance URL là input bắt buộc của plan.
   Khi user chưa khóa số ngày hoặc khoảng ngày đi, Planner tự tăng số ngày, tối
   đa giới hạn schema, để tạo đủ capacity. Khi duration/date đã được user nêu rõ,
@@ -291,10 +304,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 - Heading dạng `thành phố - N ngày` được giữ thành `DestinationStay`, không
   resolve thành stop. Khi URL chỉ có stay và chưa có venue cụ thể, PlaceSelector không
   tự thêm place; plan giữ các ngày trống trong đúng thành phố.
-- Planner downstream nhận trực tiếp Explorer context và không đọc
-  `UserMustPlace`. PlaceSelector downstream dùng `intakeId + userId` qua junction
-  `UserMustPlaceUser` để đọc đúng snapshot dùng chung; Explorer không điều phối
-  hai module này.
+- Planner downstream nhận TripIntent hiện tại và đọc proposal theo `intakeId`
+  từ `knowledge_graph_import_nodes`. Lựa chọn chi nhánh theo route chỉ tồn tại
+  trong plan revision.
 - Địa điểm đã xác nhận phải được xếp hoặc xuất hiện trong `UnscheduledPlace` kèm
   lý do, không được âm thầm bỏ.
 - Source claim luôn trỏ tới import và evidence; dữ liệu provider bổ sung phải có
@@ -309,8 +321,9 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 ## Vòng đời khái quát
 
 ```text
-Import:   queued -> fetching -> extracting -> resolving -> needs_review -> ready
-             \-------------------------------------------------------> failed
+Processing: queued -> running -> succeeded
+                   \------------> failed
+Review:     not_required | pending -> approved | rejected
 TripPlan: draft -> generating -> editable -> checking -> ready -> archived
 Listing:  draft -> review -> published -> paused -> retired
 Order:    pending -> paid -> fulfilled

@@ -22,7 +22,6 @@ from app.modules.places.resolver import (
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
-from app.modules.places.alias_enricher import LLMPlaceAliasEnricher
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
@@ -202,8 +201,12 @@ def get_plan_service(
             youtube_transcript=youtube_transcript,
             caption_structurer=GeminiCaptionStructurer(),
         ),
-        place_resolver=_get_place_resolver(place_repository),
-        place_alias_enricher=LLMPlaceAliasEnricher(llm_client),
+        # Explorer never promotes Playwright output into the legacy places
+        # catalog. Results are staged as Knowledge Graph import nodes instead.
+        place_resolver=_get_place_resolver(None),
+        # Explorer aliases must come from observed source text or from the
+        # reviewed knowledge_aliases table, never from generated alias guesses.
+        place_alias_enricher=None,
         explorer_persistence=ExplorerPersistenceRepository(db),
         preference_learning=PreferenceLearningService(),
         traveler_profile_repository=TravelerProfileRepository(db),

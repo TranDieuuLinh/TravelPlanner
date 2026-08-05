@@ -8,17 +8,13 @@ by integration tests / manual testing.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from app.core.config import settings
-from app.modules.plans.chat_model import TripChat, TripChatTurn
-from app.modules.plans.chat_repository import TripChatRepository
-from app.modules.plans.chat_service import TripChatService
+from app.modules.plans.chat_model import TripChatMessage
 from app.modules.plans.conversation_service import (
     ConversationTurnService,
     _clarification_blocks,
@@ -31,7 +27,6 @@ from app.modules.plans.conversation_service import (
 )
 from app.modules.plans.conversation_supervisor import (
     ConversationDecision,
-    SupervisorOption,
 )
 from app.modules.plans.domain.entities import (
     CheckIssue,
@@ -45,7 +40,6 @@ from app.modules.plans.domain.entities import (
     BudgetLevel,
     TravelPace,
 )
-from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.shared.errors import AppError
 
 
@@ -241,10 +235,11 @@ class TestConfirmationPreview:
 
 
 class TestTurnActionSummary:
-    def _turn(self, **kwargs) -> TripChatTurn:
-        return TripChatTurn(
-            id="t1", chat_id="c1", user_id=1,
-            client_turn_id="ct-1", content="hi",
+    def _turn(self, **kwargs) -> TripChatMessage:
+        return TripChatMessage(
+            id="t1", chat_id="c1", role="user", sequence=1,
+            turn_id="t1", message_kind="turn_request",
+            client_turn_id="ct-1", content="hi", attachment_names=[],
             base_revision=0, **kwargs,
         )
 
@@ -462,7 +457,7 @@ class TestCancel:
     def test_pending_turn_cancels_with_message(self):
         turn = SimpleNamespace(id="t1", status="awaiting_confirmation")
         service, repo = self._service_with(turn)
-        result = service.cancel("chat-1", SimpleNamespace(id=1), "t1")
+        service.cancel("chat-1", SimpleNamespace(id=1), "t1")
         # service returns whatever update_turn returns
         assert repo.cancel_calls and repo.cancel_calls[0][1]["status"] == "cancelled"
         assert repo.cancel_calls[0][1]["assistant_blocks"] == [

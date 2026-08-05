@@ -21,6 +21,7 @@ from app.modules.plans.place_selector.place_tool import (
     _normalize_text,
     place_category,
     place_matches_categories,
+    selection_relevance_score,
     semantic_categories,
 )
 from app.modules.plans.place_selector.skeleton_builder import DayBlock
@@ -276,6 +277,8 @@ class CandidateSelector:
                 self._rerank_for_proximity(
                     catalog_candidates,
                     context.user_status,
+                    region_key=region_key,
+                    target_tags=catalog_search_terms,
                 )
             )
 
@@ -401,6 +404,9 @@ class CandidateSelector:
         self,
         candidates: list[SelectablePlace],
         user_status: UserStatus,
+        *,
+        region_key: str,
+        target_tags: list[str],
     ) -> list[SelectablePlace]:
         location = user_status.location
         if (
@@ -410,29 +416,32 @@ class CandidateSelector:
         ):
             return candidates
         origin = (location.latitude, location.longitude)
-        ranked: list[tuple[float, float, SelectablePlace]] = []
+        ranked: list[tuple[int, float, int, SelectablePlace]] = []
         for relevance_rank, candidate in enumerate(candidates):
+            relevance_score = selection_relevance_score(
+                candidate,
+                region_key=region_key,
+                target_tags=target_tags,
+            )
             if candidate.latitude is None or candidate.longitude is None:
                 distance = float("inf")
-                combined_rank = relevance_rank + 4
             else:
                 distance = self._haversine_meters(
                     origin,
                     (candidate.latitude, candidate.longitude),
                 )
-                # Repository order already represents semantic/quality rank.
-                # Compress that rank so a strong nearby candidate can beat a
-                # marginally higher-ranked place on the other side of a city.
-                combined_rank = relevance_rank * 0.02 + distance / 2_000
-            ranked.append((combined_rank, distance, candidate))
+            ranked.append(
+                (-relevance_score, distance, relevance_rank, candidate)
+            )
         return [
             candidate
-            for _, _, candidate in sorted(
+            for _, _, _, candidate in sorted(
                 ranked,
                 key=lambda entry: (
                     entry[0],
                     entry[1],
-                    entry[2].name.casefold(),
+                    entry[2],
+                    entry[3].name.casefold(),
                 ),
             )
         ]
@@ -609,6 +618,11 @@ class CandidateSelector:
                         "must_visit": selected.must_visit,
                         "source_refs": list(selected.source_refs),
                         "source_provider": selected.source_provider,
+                        "source_import_node_id": selected.source_import_node_id,
+                        "candidate_entity_ids": list(selected.candidate_entity_ids),
+                        "selection_method": selected.selection_method,
+                        "route_score": selected.route_score,
+                        "identity_confidence": selected.identity_confidence,
                         "tags": list(dict.fromkeys([*selected.tags, *stored_place.tags])),
                         "source_order": selected.source_order,
                         "source_day": selected.source_day,
@@ -644,6 +658,11 @@ class CandidateSelector:
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
             sourceProvider=selected.source_provider,
+            sourceImportNodeId=selected.source_import_node_id,
+            candidateEntityIds=selected.candidate_entity_ids,
+            selectionMethod=selected.selection_method,
+            routeScore=selected.route_score,
+            identityConfidence=selected.identity_confidence,
             openingHours=[],
             dataConfidence="user_confirmed",
             sourceLink=selected.source_refs[0] if selected.source_refs else None,

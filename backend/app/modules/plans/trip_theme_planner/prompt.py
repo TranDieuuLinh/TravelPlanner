@@ -6,9 +6,17 @@ from app.modules.plans.dto.agent_contracts import (
     TripThemePlanningInput,
     TripThemeDraft,
 )
+from app.modules.preferences.schema import PreferenceDimension
 
 
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v1"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v2"
+
+_THEME_PROFILE_DIMENSIONS = {
+    PreferenceDimension.category,
+    PreferenceDimension.attribute,
+    PreferenceDimension.cuisine,
+    PreferenceDimension.setting,
+}
 
 TRIP_THEME_SYSTEM_PROMPT = """
 You are the Trip Theme Planner for a Vietnamese travel-planning backend.
@@ -35,10 +43,23 @@ Available bounded context:
   - anchorPlaceIds: Place identifiers that may serve as the must-visit anchor.
   - activityId: the Activity identifier when the candidate represents an activity
     that one of several places offers.
+  - activityName and anchorPlaceNames: display labels used only to understand
+    and compare candidates; selection still uses IDs.
+  - isSpecialExperience, recommendation, trust, rank and rankReasons: bounded
+    signals for deciding whether an experience is a destination default.
   - sourceRefs: source URLs that back the claims.
   Use ONLY the IDs exposed here. Do NOT invent Place, Activity, or claim IDs.
 
 Planning rules:
+0. Follow themeSelectionPolicy.selectionMode and this strict priority order:
+   current-trip interests and hard constraints > confirmed selected Places >
+   effective long-term profile > destination special experiences. Current-trip
+   input always overrides the long-term profile. A graph recommendation with
+   priority="must" means important for the destination, not mandatory for every
+   traveler. Do not require a mismatched activity such as hiking for a traveler
+   asking only for culture/local life. If selectionMode is
+   "destination_special_experiences", choose at least one highest-ranked,
+   non-inferred candidate with isSpecialExperience=true when one exists.
 1. Plan requirements at whole-trip scope. Return tripThemes describing the
    experiences that the trip must cover, with minimumActivities and focusTags.
    Do not return calendar days, day briefs, route buckets, journey phases, or
@@ -109,6 +130,7 @@ def build_trip_theme_payload(
         "promptVersion": TRIP_THEME_PROMPT_VERSION,
         "requiredOutputShape": TripThemeDraft.model_json_schema(),
         "plannerInput": _bounded_planner_input(planner_input),
+        "themeSelectionPolicy": build_theme_selection_policy(planner_input),
         "graphCandidateCatalog": graph_candidate_catalog,
     }
     return json.dumps(payload, ensure_ascii=False)
@@ -126,6 +148,7 @@ def build_trip_theme_repair_payload(
         "promptVersion": TRIP_THEME_PROMPT_VERSION,
         "requiredOutputShape": TripThemeDraft.model_json_schema(),
         "plannerInput": _bounded_planner_input(planner_input),
+        "themeSelectionPolicy": build_theme_selection_policy(planner_input),
         "graphCandidateCatalog": graph_candidate_catalog,
         "previousOutput": previous_output,
         "validationFeedback": validation_feedback,
@@ -154,3 +177,33 @@ def _bounded_planner_input(planner_input: TripThemePlanningInput) -> dict:
         for place in payload.get("selectedPlaces", [])
     ]
     return payload
+
+
+def build_theme_selection_policy(planner_input: TripThemePlanningInput) -> dict:
+    has_current_trip_interests = bool(planner_input.intent.interests)
+    confirmed_place_count = sum(
+        1 for place in planner_input.selected_places if place.place_id
+    )
+    effective_profile_values = planner_input.preference_profile.top_values(
+        dimensions=_THEME_PROFILE_DIMENSIONS,
+    )
+    if has_current_trip_interests:
+        selection_mode = "current_trip_intent"
+    elif confirmed_place_count:
+        selection_mode = "confirmed_places"
+    elif effective_profile_values:
+        selection_mode = "long_term_profile"
+    else:
+        selection_mode = "destination_special_experiences"
+    return {
+        "priorityOrder": [
+            "current_trip_intent",
+            "confirmed_places",
+            "long_term_profile",
+            "destination_special_experiences",
+        ],
+        "selectionMode": selection_mode,
+        "hasCurrentTripInterests": has_current_trip_interests,
+        "confirmedPlaceCount": confirmed_place_count,
+        "effectiveLongTermProfileValues": effective_profile_values,
+    }

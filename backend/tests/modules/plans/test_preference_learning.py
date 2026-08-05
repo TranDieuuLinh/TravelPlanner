@@ -1,7 +1,6 @@
 import pytest
 from sqlalchemy import select
 
-from app.modules.plans.explorer.model import ExplorerIntake
 from app.modules.preferences.model import TravelerPreferenceSignal
 from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.preferences.schema import (
@@ -108,14 +107,6 @@ def test_traveler_profile_repository_persists_signal_provenance(
 ) -> None:
     user = UserRepository(db_session).get_by_email("traveler@example.com")
     assert user is not None
-    db_session.add(
-        ExplorerIntake(
-            id="intake-preference",
-            user_id=str(user.id),
-            destination="Hà Nội",
-            candidate_reviews=[],
-        )
-    )
     repository = TravelerProfileRepository(db_session)
 
     repository.save(

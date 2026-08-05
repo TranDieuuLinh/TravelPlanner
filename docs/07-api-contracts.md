@@ -206,7 +206,7 @@ Lần gửi đầu tạo plan revision 1. Các lần sau cung cấp lịch sử 
 TripIntent hiện tại đọc từ PostgreSQL cho Explorer, giữ các yêu cầu cũ trừ khi message mới
 thay đổi chúng, và dùng item của plan hiện tại làm đầu vào cho revision. Kết quả
 ghi đè con trỏ `currentPlan` nhưng giữ nguyên `currentPlan.id`; snapshot cũ vẫn
-ở `trip_chat_plan_revisions`.
+ở `trip_revisions` cùng TripIntent snapshot đã dùng.
 
 Response detail:
 
@@ -358,14 +358,11 @@ Explorer.
 `candidateReviews` an toàn để hiển thị, và timing. Raw payload vẫn chỉ lưu hành
 nội bộ giữa extractor, aggregator, resolver và repository; không trả cho client.
 
-Không công khai raw OCR, transcript, URL result hoặc debug. Backend tự động gộp
-candidate trùng, giữ source URL, resolve place và upsert snapshot dùng chung vào
-`user_must_place`; `user_must_place_users` giữ quan hệ user/intake. Flow không
-ghi đè `places`. `url_extraction_cache` chỉ giữ `ExtractedContext` chuẩn hóa để
-URL đã xử lý không phải chạy lại media/STT/OCR. Nội dung text caption, STT và
-frame OCR thành công được upsert nội bộ vào `url_source_artifacts` theo canonical
-URL để retrieval/RAG và tính năng note dùng về sau. Bảng này không phải contract
-response công khai; Explorer vẫn không trả raw content cho client.
+Không công khai raw OCR, transcript, URL result hoặc debug. Caption/STT/OCR và
+`ExtractedContext` dùng chung một `source_documents` theo canonical URL.
+Area/Venue candidate, evidence và note được stage trong
+`knowledge_graph_import_nodes`; flow không ghi vào `places` hay graph canonical
+trước admin review. Review không chặn TripIntent/itinerary provisional.
 
 `explorer.candidateReviews[]` giữ candidate có evidence sau aggregation kể cả
 khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
@@ -569,8 +566,8 @@ không tự động đổi trip base theo một day trip.
 Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và
 `sourceDurationMinutes`; khi resolve được còn có `address`, `latitude` và
-`longitude`. Khi dữ liệu đã tồn tại trong Places DB hoặc snapshot
-`UserMustPlace`, `selectedPlaces` và `PlanItem` còn có thể trả `imageUrls`,
+`longitude`. Khi dữ liệu đã tồn tại trong Knowledge Graph hoặc import snapshot,
+`selectedPlaces` và `PlanItem` còn có thể trả `imageUrls`,
 `rating` và `reviewCount`. Field thiếu được để rỗng/null; API không tạo ảnh hoặc
 rating giả. `PlanItem.notes` giữ context bổ sung từ nguồn/provider;
 `PlanItem.personalNotes` là lời nhắc user chỉnh sửa qua mutation endpoint. Hai

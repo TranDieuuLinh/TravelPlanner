@@ -23,19 +23,9 @@ from app.modules.places.model import (
     PlaceReview,
 )
 from app.modules.plans.explorer.model import (
-    ExplorerIntake,
-    UrlExtractionCacheEntry,
-    UrlSourceArtifact,
-    UserMustPlace,
-    UserMustPlaceUser,
-    YouTubeTranscriptCacheEntry,
+    SourceDocument,
 )
-from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
-from app.modules.plans.trip_intent_model import (
-    TripIntentDestinationStay,
-    TripIntentValue,
-    TripIntentVersion,
-)
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripRevision
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.planning_runs.model import PlanningRun, PlanningRunStage
 from app.modules.profiles.model import UserPost, UserVisitedPlace
@@ -86,23 +76,15 @@ __all__ = [
     "PlanningRunStage",
     "Report",
     "Review",
-    "ExplorerIntake",
+    "SourceDocument",
     "TripChat",
     "TripChatMessage",
-    "TripChatPlanRevision",
-    "TripIntentDestinationStay",
-    "TripIntentValue",
-    "TripIntentVersion",
+    "TripRevision",
     "TravelerPreferenceSignal",
     "TravelerPreferenceSignalSource",
     "TravelerProfile",
     "UrlImportJob",
     "User",
-    "UserMustPlace",
-    "UserMustPlaceUser",
-    "UrlExtractionCacheEntry",
-    "UrlSourceArtifact",
-    "YouTubeTranscriptCacheEntry",
     "UserPost",
     "UserVisitedPlace",
     "TravelGroup",
