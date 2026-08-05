@@ -1052,8 +1052,7 @@ function Planner() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [openQuickActionKey]);
-  const [pendingTurn, setPendingTurn] = useState<TripChatTurn | null>(null);
-  const [confirmBusy, setConfirmBusy] = useState(false);
+  const conversationTurnRef = useRef<ReturnType<typeof useConversationTurn> | null>(null);
 
   const handleTurnTerminal = useCallback(
     async (result: { turn: TripChatTurn; outcome: string }) => {
@@ -1064,7 +1063,17 @@ function Planner() {
             result.turn.chatId
           )
         ) {
-          setPendingTurn(result.turn);
+          const confirmation = conversationTurnRef.current?.confirm({
+            chatId: result.turn.chatId,
+            turnId: result.turn.id,
+          });
+          if (confirmation) {
+            void confirmation.catch((caught) => {
+              const message =
+                caught instanceof Error ? caught.message : String(caught);
+              setError(message);
+            });
+          }
         }
         return;
       }
@@ -1112,40 +1121,7 @@ function Planner() {
   );
 
   const conversationTurn = useConversationTurn(handleTurnTerminal);
-
-  const confirmPendingTurn = useCallback(async () => {
-    if (!pendingTurn) return;
-    setConfirmBusy(true);
-    try {
-      await conversationTurn.confirm({
-        chatId: pendingTurn.chatId,
-        turnId: pendingTurn.id,
-      });
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setError(message);
-    } finally {
-      setConfirmBusy(false);
-      setPendingTurn(null);
-    }
-  }, [pendingTurn, conversationTurn]);
-
-  const cancelPendingTurn = useCallback(async () => {
-    if (!pendingTurn) return;
-    setConfirmBusy(true);
-    try {
-      await conversationTurn.cancel({
-        chatId: pendingTurn.chatId,
-        turnId: pendingTurn.id,
-      });
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setError(message);
-    } finally {
-      setConfirmBusy(false);
-      setPendingTurn(null);
-    }
-  }, [pendingTurn, conversationTurn]);
+  conversationTurnRef.current = conversationTurn;
 
   function openItemEditor(
     day: number,
@@ -3206,7 +3182,6 @@ function Planner() {
     setLoading(false);
     setBackgroundPlanning(false);
     setActivePlanningJobs([]);
-    setPendingTurn(null);
     setError("");
     try {
       const chat = await getTripChat(chatId);
@@ -6141,65 +6116,6 @@ function Planner() {
                 </button>
               </div>
             </form>
-          </div>
-        ) : null}
-        {pendingTurn ? (
-          <div
-            className="confirm-modal-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="confirm-turn-title"
-            data-testid="confirm-turn-modal"
-          >
-            <div className="confirm-modal">
-              <div className="confirm-modal-icon">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <h2 id="confirm-turn-title">Xác nhận thay đổi</h2>
-              <p className="confirm-modal-hint">
-                Lịch trình sẽ được cập nhật theo đề xuất. Bạn có thể hoàn tác
-                sau nếu cần.
-              </p>
-              <ul className="confirm-modal-blocks">
-                {pendingTurn.assistantBlocks.map((block, index) => {
-                  const summary =
-                    typeof block?.summary === "string" ? block.summary : null;
-                  const text =
-                    typeof block?.text === "string" ? block.text : null;
-                  const content = summary ?? text ?? JSON.stringify(block);
-                  return <li key={`${pendingTurn.id}-${index}`}>{content}</li>;
-                })}
-              </ul>
-              <div className="confirm-modal-actions">
-                <button
-                  type="button"
-                  onClick={cancelPendingTurn}
-                  disabled={confirmBusy}
-                  className="ghost"
-                >
-                  Để sau
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmPendingTurn}
-                  disabled={confirmBusy}
-                  className="submit"
-                >
-                  {confirmBusy ? "Đang áp dụng..." : "Xác nhận"}
-                </button>
-              </div>
-            </div>
           </div>
         ) : null}
       </main>
