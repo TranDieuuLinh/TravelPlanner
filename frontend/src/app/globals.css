@@ -11566,15 +11566,6 @@ svg {
   transform: translateY(-1px);
 }
 
-.itinerary .itineraryPlaceCard--mapInteractive {
-  cursor: pointer;
-}
-
-.itinerary .itineraryPlaceCard--mapInteractive:focus-visible {
-  outline: 3px solid rgba(54, 95, 90, .2);
-  outline-offset: 3px;
-}
-
 .itinerary .itineraryPlaceCard.is-map-place-selected,
 .itinerary .itineraryStop--food .itineraryPlaceCard.is-map-place-selected {
   border-color: rgba(54, 95, 90, .5);
@@ -12139,12 +12130,33 @@ svg {
 }
 
 .itinerary .itineraryPlaceQuickActions {
-  display: inline-grid;
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  flex-direction: column;
   min-width: max-content;
   justify-items: center;
   align-items: start;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.itinerary .itineraryPlaceQuickActions > .itineraryPlaceQuickActionMenu {
+  order: -1;
+}
+
+.itinerary .itineraryPlaceCard {
+  position: relative;
+  overflow: visible;
+}
+
+.itinerary .itineraryPlaceCard > .itineraryTypeIcon {
+  position: absolute;
+  z-index: 2;
+  top: 54px;
+  right: 12px;
 }
 
 .itinerary .itineraryPlaceQuickActionMenu {
@@ -12199,9 +12211,16 @@ svg {
   border: 0;
   border-radius: 0;
   background: transparent;
+  color: #315a54;
   margin: 0;
   pointer-events: auto;
   box-shadow: none;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup .itineraryActionButton:hover,
+.itinerary .itineraryPlaceQuickActionPopup .itineraryActionButton:focus-visible {
+  color: #173f39;
+  outline: none;
 }
 
 .itinerary .itineraryPlaceQuickActionPopup > :nth-child(1) {

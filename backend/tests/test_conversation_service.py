@@ -20,6 +20,7 @@ from app.modules.plans.conversation_service import (
     _clarification_blocks,
     _confirmation_preview,
     _conversation_context,
+    _draft_has_no_destination,
     _error_codes,
     _find_item,
     _plan_diff,
@@ -114,6 +115,7 @@ class TestFindItem:
         plan = _make_plan()
         assert _find_item(plan, "x") is None
 
+
     def test_finds_item(self):
         plan = _make_plan(item_specs=[("a", False), ("b", True)])
         item = _find_item(plan, "b")
@@ -124,6 +126,20 @@ class TestFindItem:
     def test_returns_none_when_missing(self):
         plan = _make_plan(item_specs=[("a", False)])
         assert _find_item(plan, "ghost") is None
+
+
+class TestConversationIntakeGuards:
+    def test_affirmative_start_without_destination_stays_in_intake(self):
+        chat = SimpleNamespace(
+            current_trip_intent={"destination": "unspecified"},
+        )
+        assert _draft_has_no_destination(chat) is True
+
+    def test_confirmed_destination_does_not_trigger_missing_destination_guard(self):
+        chat = SimpleNamespace(
+            current_trip_intent={"destination": "Hà Nội"},
+        )
+        assert _draft_has_no_destination(chat) is False
 
 
 class TestErrorCodes:

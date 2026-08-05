@@ -411,6 +411,22 @@ class ConversationTurnService:
         turn: TripChatMessage,
         images: list[ImageUploadPayload],
     ) -> TripChatMessage:
+        if (
+            not chat.current_plan
+            and _is_affirmative_start(turn.content)
+            and _draft_has_no_destination(chat)
+        ):
+            message = (
+                "Được, mình bắt đầu nhé. Bạn muốn đi tỉnh hoặc thành phố nào? "
+                "Ví dụ: Hà Nội, Đà Nẵng hoặc Hội An."
+            )
+            return self._save_response(
+                chat,
+                turn,
+                message,
+                [{"type": "text", "text": message}],
+            )
+
         urls = list(
             dict.fromkeys(
                 _normalize_urls([]) + _extract_urls(turn.content)
@@ -449,6 +465,28 @@ class ConversationTurnService:
                     ),
                 ) from exc
             raise
+        except AppError as exc:
+            if exc.code == "TRIP_THEME_INPUT_INSUFFICIENT":
+                raise AppError(
+                    422,
+                    "DESTINATION_OR_PLACE_REQUIRED",
+                    (
+                        "Mình chưa đủ dữ liệu để lập lịch trình. "
+                        "Bạn hãy cho mình biết thành phố/tỉnh muốn đi "
+                        "hoặc ít nhất một địa điểm cụ thể."
+                    ),
+                    {"nextStep": "Cung cấp điểm đến hoặc địa điểm bắt buộc."},
+                ) from exc
+            raise
+        except RuntimeError as exc:
+            raise AppError(
+                502,
+                "PLAN_GENERATION_FAILED",
+                (
+                    "Mình chưa thể tạo lịch trình lúc này. "
+                    "Bạn hãy thử lại sau ít phút; lịch trình hiện tại chưa bị thay đổi."
+                ),
+            ) from exc
         if (
             result.current_plan is None
             and result.current_trip_intent is not None
@@ -742,6 +780,7 @@ def _conversation_context(
         "phase": chat.conversation_phase,
         "destination": chat.destination,
         "planRevision": chat.revision,
+        "currentTripIntent": getattr(chat, "current_trip_intent", None) or {},
         "requirements": requirements if isinstance(requirements, dict) else {},
         "recentMessages": recent_messages,
         "recentActionHistory": action_history,
@@ -830,6 +869,30 @@ def _is_context_only_plan_request(content: str) -> bool:
             "có lên plan",
         )
     )
+
+
+def _is_affirmative_start(content: str) -> bool:
+    normalized = " ".join(content.casefold().split()).strip()
+    return normalized in {
+        "có",
+        "ok",
+        "được",
+        "được chứ",
+        "ừ",
+        "uh",
+        "yes",
+        "bắt đầu",
+        "lên đi",
+    }
+
+
+def _draft_has_no_destination(chat: TripChat) -> bool:
+    intent = getattr(chat, "current_trip_intent", None) or {}
+    destination = intent.get("destination") if isinstance(intent, dict) else None
+    return not destination or str(destination).strip().casefold() in {
+        "unspecified",
+        "chưa xác định",
+    }
 
 
 def _error_codes(report) -> set[str]:

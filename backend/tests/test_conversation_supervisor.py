@@ -458,6 +458,47 @@ class _FakeLLM:
 
 
 class TestSupervisorDecide:
+    async def test_high_signal_capability_question_does_not_call_llm(self):
+        llm = _FakeLLM([])
+        supervisor = ConstrainedConversationSupervisor(llm=llm)
+
+        decision = await supervisor.decide("bạn code được không?", None)
+
+        assert decision.intent == "travel_advice"
+        assert "code" in (decision.message or "")
+        assert llm.calls == 0
+
+    async def test_clear_plan_request_enters_intake_instead_of_repeated_clarify(self):
+        llm = _FakeLLM([])
+        supervisor = ConstrainedConversationSupervisor(llm=llm)
+
+        decision = await supervisor.decide(
+            "lên kế hoạch du lịch 2 ngày giúp tôi",
+            None,
+        )
+
+        assert decision.intent == "create_plan"
+        assert decision.confidence == 1.0
+        assert llm.calls == 0
+
+    async def test_follow_up_place_requirement_enters_existing_intake(self):
+        llm = _FakeLLM([])
+        supervisor = ConstrainedConversationSupervisor(llm=llm)
+
+        decision = await supervisor.decide(
+            "tôi muốn ít nhất phải thăm làng Bắc",
+            None,
+            conversation_context={
+                "currentTripIntent": {
+                    "destination": "unspecified",
+                    "timing": {"days": 2},
+                }
+            },
+        )
+
+        assert decision.intent == "create_plan"
+        assert llm.calls == 0
+
     async def test_disabled_raises(self, monkeypatch):
         monkeypatch.setattr(settings, "conversation_supervisor_llm_enabled", False)
         supervisor = ConstrainedConversationSupervisor(llm=_FakeLLM([]))
