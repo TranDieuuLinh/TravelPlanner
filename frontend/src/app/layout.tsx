@@ -24,7 +24,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="vi">
+    <html data-scroll-behavior="smooth" lang="vi">
       <body>
         <AuthProvider>
           <AppShell>{children}</AppShell>

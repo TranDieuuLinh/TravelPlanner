@@ -307,6 +307,13 @@ function formatTripTiming(
   return `${timing.days} ngày`;
 }
 
+function formatTripTimingForIntake(
+  timing: ExplorerContext["tripIntent"]["timing"]
+): string | undefined {
+  if (!timing.startDate && !timing.endDate) return undefined;
+  return formatTripTiming(timing);
+}
+
 function formatTripParty(
   party: ExplorerContext["tripIntent"]["travelParty"]
 ): string {
@@ -332,6 +339,25 @@ function finishedTripFacts(context: ExplorerContext) {
       value: intent.notes.length ? intent.notes.join(" · ") : "Không có lưu ý",
     },
   ];
+}
+
+function intakeAnswersFromContext(
+  context: ExplorerContext
+): GuidedIntakeAnswers {
+  const intent = context.tripIntent;
+  const budget =
+    intent.budget.targetAmount != null
+      ? formatBudget(context)
+      : `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase(
+          "vi-VN"
+        )}`;
+  return {
+    destination: intent.destination || undefined,
+    dates: formatTripTimingForIntake(intent.timing),
+    travelers: formatTripParty(intent.travelParty),
+    budget,
+    note: intent.notes.filter(Boolean).join(" · ") || undefined,
+  };
 }
 
 function extractMessageUrls(value: string): string[] {
@@ -1847,6 +1873,9 @@ function Planner() {
   const displayedExploreResult = exploreResult;
   const displayedStartDate =
     displayedExploreResult?.explorer.tripIntent.timing.startDate;
+  const displayedIntakeAnswers = displayedExploreResult
+    ? intakeAnswersFromContext(displayedExploreResult.explorer)
+    : guidedIntakeAnswers;
   const displayedPlan = useMemo(
     () =>
       plan
@@ -2973,6 +3002,9 @@ function Planner() {
     }
 
     const nextAnswers = {
+      ...(displayedExploreResult
+        ? intakeAnswersFromContext(displayedExploreResult.explorer)
+        : {}),
       ...guidedIntakeAnswers,
       [guidedIntakeStep]: answer === "Bỏ qua" ? "" : answer,
     };
@@ -2986,7 +3018,11 @@ function Planner() {
       }`
     );
 
-    if (guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]) {
+    const shouldPersistImmediately = Boolean(user && activeChatId);
+    if (
+      shouldPersistImmediately ||
+      guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]
+    ) {
       setGuidedIntakeStep("complete");
       setGuidedIntakeOpen(false);
       setGuidedDraft("");
@@ -3019,7 +3055,9 @@ function Planner() {
 
   function openGuidedStep(step: Exclude<GuidedIntakeStep, "complete">) {
     setGuidedIntakeStep(step);
-    setGuidedDraft(guidedIntakeAnswers[step] ?? "");
+    setGuidedDraft(
+      (displayedIntakeAnswers[step] ?? guidedIntakeAnswers[step]) || ""
+    );
     setGuidedIntakeOpen(true);
     setError("");
   }
@@ -3493,58 +3531,65 @@ function Planner() {
 
   function renderEntryTopbar() {
     return (
-      <header className="panelHeading itineraryHeading">
-        <span className="planHeaderIcon" aria-hidden="true">
-          <Image
-            alt=""
-            height={54}
-            src="/images/penguin-plan.png"
-            width={54}
-          />
-        </span>
-        <div className="itineraryHeadingCopy">
-          <strong>Kế hoạch chi tiết</strong>
-          <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
-            <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
-              {(
-                [
-                  ["destination", "Điểm đến"],
-                  ["dates", "Thời gian"],
-                  ["travelers", "Nhóm đi"],
-                  ["budget", "Ngân sách"],
-                  ["note", "Lưu ý"],
-                ] as const
-              ).map(([step, label]) => {
-                const value = guidedIntakeAnswers[step];
-                return (
-                  <button
-                    aria-label={value ? `${label}: ${value}` : label}
-                    aria-current={
-                      guidedIntakeOpen && guidedIntakeStep === step
-                        ? "step"
-                        : undefined
-                    }
-                    className={value ? "is-filled" : ""}
-                    disabled={backgroundPlanning || loading}
-                    key={step}
-                    onClick={() => openGuidedStep(step)}
-                    title={value || label}
-                    type="button"
-                  >
-                    <span className="plannerIntakeCopy">{label}</span>
-                  </button>
-                );
-              })}
-            </nav>
+      <div className="plannerEntryTopbar">
+        <header className="panelHeading itineraryHeading">
+          <span className="planHeaderIcon" aria-hidden="true">
+            <Image
+              alt=""
+              height={54}
+              src="/images/penguin-plan.png"
+              width={54}
+            />
+          </span>
+          <div className="itineraryHeadingCopy">
+            <strong>Kế hoạch chi tiết</strong>
+            <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
+              <small>
+                <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+                  {(
+                    [
+                      ["destination", "Điểm đến"],
+                      ["dates", "Thời gian"],
+                      ["travelers", "Nhóm đi"],
+                      ["budget", "Ngân sách"],
+                      ["note", "Lưu ý"],
+                    ] as const
+                  ).map(([step, label]) => {
+                    const value = displayedIntakeAnswers[step];
+                    return (
+                      <button
+                        aria-label={value ? `${label}: ${value}` : label}
+                        aria-current={
+                          guidedIntakeOpen && guidedIntakeStep === step
+                            ? "step"
+                            : undefined
+                        }
+                        className={value ? "is-filled" : ""}
+                        disabled={backgroundPlanning || loading}
+                        key={step}
+                        onClick={() => openGuidedStep(step)}
+                        title={value || label}
+                        type="button"
+                      >
+                        <span className="plannerIntakeCopy">{label}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </small>
+            </div>
           </div>
-        </div>
-        {user ? (
-          <HistoryMenuButton
-            className="plannerHistoryMenu--intake"
-            onClick={() => setHistoryCollapsed(false)}
-          />
-        ) : null}
-      </header>
+          <span aria-hidden="true" className="plannerIntakePenguin">
+            <PenguinMascot size={36} variant="intakePeek" />
+          </span>
+          {user ? (
+            <HistoryMenuButton
+              className="plannerHistoryMenu--intake"
+              onClick={() => setHistoryCollapsed(false)}
+            />
+          ) : null}
+        </header>
+      </div>
     );
   }
 
@@ -3788,8 +3833,7 @@ function Planner() {
               }
             >
               {!displayedPlan ? renderEntryTopbar() : null}
-              {!displayedPlan &&
-              guidedIntakeOpen &&
+              {guidedIntakeOpen &&
               guidedIntakeStep !== "complete" ? (
                 <div
                   className="guidedIntakeOverlay"
@@ -4153,39 +4197,44 @@ function Planner() {
                   <div className="itineraryHeadingCopy">
                     <strong>Kế hoạch chi tiết</strong>
                     <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
-                      <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
-                        {(
-                          [
-                            ["destination", "Điểm đến"],
-                            ["dates", "Thời gian"],
-                            ["travelers", "Nhóm đi"],
-                            ["budget", "Ngân sách"],
-                            ["note", "Lưu ý"],
-                          ] as const
-                        ).map(([step, label]) => {
-                          const value = guidedIntakeAnswers[step];
-                          return (
-                            <button
-                              aria-label={value ? `${label}: ${value}` : label}
-                              aria-current={
-                                guidedIntakeOpen && guidedIntakeStep === step
-                                  ? "step"
-                                  : undefined
-                              }
-                              className={value ? "is-filled" : ""}
-                              disabled={backgroundPlanning || loading}
-                              key={step}
-                              onClick={() => openGuidedStep(step)}
-                              title={value || label}
-                              type="button"
-                            >
-                              <span className="plannerIntakeCopy">{label}</span>
-                            </button>
-                          );
-                        })}
-                      </nav>
+                      <small>
+                        <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+                          {(
+                            [
+                              ["destination", "Điểm đến"],
+                              ["dates", "Thời gian"],
+                              ["travelers", "Nhóm đi"],
+                              ["budget", "Ngân sách"],
+                              ["note", "Lưu ý"],
+                            ] as const
+                          ).map(([step, label]) => {
+                            const value = displayedIntakeAnswers[step];
+                            return (
+                              <button
+                                aria-label={value ? `${label}: ${value}` : label}
+                                aria-current={
+                                  guidedIntakeOpen && guidedIntakeStep === step
+                                    ? "step"
+                                    : undefined
+                                }
+                                className={value ? "is-filled" : ""}
+                                disabled={backgroundPlanning || loading}
+                                key={step}
+                                onClick={() => openGuidedStep(step)}
+                                title={value || label}
+                                type="button"
+                              >
+                                <span className="plannerIntakeCopy">{label}</span>
+                              </button>
+                            );
+                          })}
+                        </nav>
+                      </small>
                     </div>
                   </div>
+                  <span aria-hidden="true" className="plannerIntakePenguin">
+                    <PenguinMascot size={36} variant="intakePeek" />
+                  </span>
                   {user ? (
                     <HistoryMenuButton
                       className="plannerHistoryMenu--itinerary"
@@ -4193,26 +4242,6 @@ function Planner() {
                     />
                   ) : null}
                 </header>
-                {displayedPlan && displayedExploreResult ? (
-                  <div className="itineraryTripFactsBar">
-                    <dl
-                      aria-label="Tóm tắt thông tin chuyến đi"
-                      className="itineraryTripFacts"
-                    >
-                      {finishedTripFacts(
-                        displayedExploreResult.explorer
-                      ).map((fact) => (
-                        <div
-                          key={fact.label}
-                          title={`${fact.label}: ${fact.value}`}
-                        >
-                          <dt>{fact.label}</dt>
-                          <dd>{fact.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-                ) : null}
                 {displayedPlan ? (
                   <div className="exploreResult" ref={itineraryScrollRef}>
                     {displayedExploreResult ? (
@@ -5123,6 +5152,10 @@ function Planner() {
                                                 ? "itineraryPlaceCard--withDrag"
                                                 : ""
                                             } ${
+                                              mapKey
+                                                ? "itineraryPlaceCard--mapInteractive"
+                                                : ""
+                                            } ${
                                               mapKey &&
                                               selectedMapPlaceKey === mapKey
                                                 ? "is-map-place-selected"
@@ -5398,49 +5431,45 @@ function Planner() {
                                                       ) : null}
                                                     </div>
                                                   ) : null}
+                                                <span
+                                                  aria-label={
+                                                    isFoodStop
+                                                      ? "Ăn uống"
+                                                      : "Hoạt động tham quan"
+                                                  }
+                                                  className="itineraryTypeIcon"
+                                                  role="img"
+                                                  title={
+                                                    isFoodStop
+                                                      ? "Ăn uống"
+                                                      : "Hoạt động tham quan"
+                                                  }
+                                                >
+                                                  {isFoodStop ? (
+                                                    <svg viewBox="0 0 24 24">
+                                                      <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                                      <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                                                    </svg>
+                                                  ) : (
+                                                    <svg viewBox="0 0 24 24">
+                                                      <circle cx="6" cy="6" r="2.5" />
+                                                      <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7-.7" />
+                                                      <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                                      <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                                                    </svg>
+                                                  )}
+                                                </span>
                                                 </div>
                                               </header>
                                               {openingHoursText ? (
                                                 <div className="itineraryPlaceHours">
                                                   <span>Giờ mở cửa</span>
                                                   <strong>
-                                                    {openingHoursText}
+                                              {openingHoursText}
                                                   </strong>
                                                 </div>
                                               ) : null}
                                             </div>
-                                            <span
-                                              aria-label={
-                                                isFoodStop
-                                                  ? "Ăn uống"
-                                                  : "Hoạt động tham quan"
-                                              }
-                                              className="itineraryTypeIcon"
-                                              role="img"
-                                              title={
-                                                isFoodStop
-                                                  ? "Ăn uống"
-                                                  : "Hoạt động tham quan"
-                                              }
-                                            >
-                                              {isFoodStop ? (
-                                                <svg viewBox="0 0 24 24">
-                                                  <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                                                  <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                                                </svg>
-                                              ) : (
-                                                <svg viewBox="0 0 24 24">
-                                                  <circle
-                                                    cx="6"
-                                                    cy="6"
-                                                    r="2.5"
-                                                  />
-                                                  <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
-                                                  <path d="m2 21 6-9 4 5 2-3 8 7" />
-                                                  <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                                                </svg>
-                                              )}
-                                            </span>
                                             {itemNotePanel}
                                           </div>
                                         </article>
@@ -7253,7 +7282,26 @@ function isDevelopmentTransitFixture(option: TransportOption): boolean {
 
 function isDrawableTransportRoute(option: TransportOption): boolean {
   return (
-    option.geometryCoordinates.length >= 2 && isAvailableTransportOption(option)
+    hasValidGeometryCoordinates(option.geometryCoordinates) &&
+    option.geometryCoordinates.length >= 2 &&
+    isAvailableTransportOption(option)
+  );
+}
+
+function hasValidGeometryCoordinates(
+  coordinates: unknown
+): coordinates is [number, number][] {
+  return (
+    Array.isArray(coordinates) &&
+    coordinates.every(
+      (coordinate) =>
+        Array.isArray(coordinate) &&
+        coordinate.length >= 2 &&
+        typeof coordinate[0] === "number" &&
+        Number.isFinite(coordinate[0]) &&
+        typeof coordinate[1] === "number" &&
+        Number.isFinite(coordinate[1])
+    )
   );
 }
 

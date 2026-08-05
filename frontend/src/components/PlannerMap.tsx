@@ -173,6 +173,23 @@ function hasCoordinates(
   );
 }
 
+function hasRouteCoordinates(
+  coordinates: unknown
+): coordinates is [number, number][] {
+  return (
+    Array.isArray(coordinates) &&
+    coordinates.every(
+      (coordinate) =>
+        Array.isArray(coordinate) &&
+        coordinate.length >= 2 &&
+        typeof coordinate[0] === "number" &&
+        Number.isFinite(coordinate[0]) &&
+        typeof coordinate[1] === "number" &&
+        Number.isFinite(coordinate[1])
+    )
+  );
+}
+
 function browserSupportsWebGL(): boolean {
   try {
     const canvas = document.createElement("canvas");
@@ -1097,7 +1114,9 @@ export function PlannerMap({
       const transitSegments =
         route.source === "opentripplanner_transit"
           ? (route.segments ?? []).filter(
-              (segment) => segment.geometryCoordinates.length >= 2
+              (segment) =>
+                hasRouteCoordinates(segment.geometryCoordinates) &&
+                segment.geometryCoordinates.length >= 2
             )
           : [];
       const paths =
@@ -1122,7 +1141,11 @@ export function PlannerMap({
             }];
 
       return paths
-        .filter((path) => path.coordinates.length >= 2)
+        .filter(
+          (path) =>
+            hasRouteCoordinates(path.coordinates) &&
+            path.coordinates.length >= 2
+        )
         .map((path, routePathIndex) => ({
           ...path,
           key: `${route.key}:${routePathIndex}`,
