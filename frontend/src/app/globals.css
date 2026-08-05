@@ -12051,18 +12051,76 @@ svg {
   gap: 6px;
 }
 
-.itinerary .itineraryPlaceQuickActionGroup {
-  display: flex;
-  flex-direction: column;
+.itinerary .itineraryPlaceQuickActionMenu {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
 }
 
-.itinerary .itineraryActions--column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+.itinerary .itineraryQuickActionMenuButton {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #d7e3df;
+  border-radius: 50%;
+  padding: 0;
+  background: #fff;
+  color: #55736d;
+  cursor: pointer;
+}
+
+.itinerary .itineraryQuickActionMenuButton:hover,
+.itinerary .itineraryQuickActionMenuButton:focus-visible {
+  border-color: #9fc4ba;
+  background: #f1f8f5;
+  outline: none;
+}
+
+.itinerary .itineraryQuickActionMenuButton svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  right: 50%;
+  width: 76px;
+  height: 76px;
+  transform: translate(10%, -10%);
+  pointer-events: none;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup .itineraryActionButton {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  margin: 0;
+  pointer-events: auto;
+  box-shadow: none;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup > :nth-child(1) {
+  right: 0;
+  bottom: 0;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup > :nth-child(2) {
+  bottom: 8px;
+  left: 0;
+}
+
+.itinerary .itineraryPlaceQuickActionPopup > :nth-child(3) {
+  top: 0;
+  left: 12px;
 }
 
 .itinerary .itineraryPlaceQuickActions .itineraryActions {
@@ -13550,6 +13608,10 @@ svg {
 
 .itinerary .activityNotesTrigger .activityNotesIcon {
   display: contents;
+}
+
+.itinerary .itineraryNoteActionButton {
+  position: relative;
 }
 
 .itinerary .activityNotesButtonCount {

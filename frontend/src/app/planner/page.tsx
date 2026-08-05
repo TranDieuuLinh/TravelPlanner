@@ -1017,6 +1017,9 @@ function Planner() {
     additionalContext: string | null;
     personalNotes: string;
   } | null>(null);
+  const [openQuickActionKey, setOpenQuickActionKey] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const modalIsClosed =
@@ -1039,6 +1042,15 @@ function Planner() {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [mutatingItem, noteEditor]);
+
+  useEffect(() => {
+    if (!openQuickActionKey) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpenQuickActionKey(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [openQuickActionKey]);
   const [pendingTurn, setPendingTurn] = useState<TripChatTurn | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
@@ -4477,7 +4489,8 @@ function Planner() {
                                   additionalContextNote,
                                   personalNotes,
                                 ].filter(Boolean).length;
-                                const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
+                                 const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
+                                 const quickActionKey = `${displayedPlanDay.day}:${item.itemId ?? itemIndex}`;
                                 const displayItemName = itineraryDisplayName(
                                   item.name
                                 );
@@ -4621,7 +4634,8 @@ function Planner() {
                                           : `Thêm ghi chú cho ${displayItemName}`
                                       }
                                       className="itineraryActionButton itineraryNoteActionButton"
-                                      onClick={() =>
+                                      onClick={() => {
+                                        setOpenQuickActionKey(null);
                                         setNoteEditor(
                                           isNoteEditorOpen
                                             ? null
@@ -4635,13 +4649,14 @@ function Planner() {
                                                 personalNotes:
                                                   personalNotes ?? "",
                                               }
-                                        )
-                                      }
+                                        );
+                                      }}
                                       title={
                                         activityNoteCount
                                           ? "Ghi chú hoạt động"
                                           : "Thêm ghi chú"
                                       }
+                                      role="menuitem"
                                       type="button"
                                     >
                                       <svg viewBox="0 0 24 24">
@@ -5070,46 +5085,87 @@ function Planner() {
                                                       <span>URL</span>
                                                     </a>
                                                   ) : null}
-                                                  <div className="itineraryPlaceQuickActionGroup">
-                                                    {itemNoteAction}
-                                                    {item.itemId && activeChatId ? (
-                                                      <div className="itineraryActions itineraryActions--column">
-                                                        <button
-                                                          aria-label={`Sửa ${displayItemName}`}
-                                                          className="itineraryActionButton"
-                                                          onClick={() => {
-                                                            openItemEditor(
-                                                              displayedPlanDay.day,
-                                                              item,
-                                                              personalNotes
-                                                            );
-                                                          }}
-                                                          title="Sửa địa điểm"
-                                                          type="button"
+                                                  {(itemNoteAction ||
+                                                    (item.itemId && activeChatId)) ? (
+                                                    <div className="itineraryPlaceQuickActionMenu">
+                                                      <button
+                                                        aria-expanded={
+                                                          openQuickActionKey ===
+                                                          quickActionKey
+                                                        }
+                                                        aria-haspopup="menu"
+                                                        aria-label={`Mở thao tác cho ${displayItemName}`}
+                                                        className="itineraryQuickActionMenuButton"
+                                                        onClick={(event) => {
+                                                          event.stopPropagation();
+                                                          setOpenQuickActionKey(
+                                                            openQuickActionKey ===
+                                                              quickActionKey
+                                                              ? null
+                                                              : quickActionKey
+                                                          );
+                                                        }}
+                                                        title="Thao tác"
+                                                        type="button"
+                                                      >
+                                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                          <circle cx="5" cy="12" r="1.5" />
+                                                          <circle cx="12" cy="12" r="1.5" />
+                                                          <circle cx="19" cy="12" r="1.5" />
+                                                        </svg>
+                                                      </button>
+                                                      {openQuickActionKey ===
+                                                      quickActionKey ? (
+                                                        <div
+                                                          className="itineraryPlaceQuickActionPopup"
+                                                          role="menu"
                                                         >
-                                                          <svg viewBox="0 0 24 24">
-                                                            <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
-                                                          </svg>
-                                                        </button>
-                                                        <button
-                                                          aria-label={`Xóa ${displayItemName}`}
-                                                          className="itineraryActionButton danger"
-                                                          onClick={() =>
-                                                            handleDeleteItem(
-                                                              displayedPlanDay.day,
-                                                              item.itemId!
-                                                            )
-                                                          }
-                                                          title="Xóa địa điểm"
-                                                          type="button"
-                                                        >
-                                                          <svg viewBox="0 0 24 24">
-                                                            <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
-                                                          </svg>
-                                                        </button>
-                                                      </div>
-                                                    ) : null}
-                                                  </div>
+                                                          {itemNoteAction}
+                                                          {item.itemId && activeChatId ? (
+                                                            <>
+                                                              <button
+                                                                aria-label={`Sửa ${displayItemName}`}
+                                                                className="itineraryActionButton"
+                                                                onClick={() => {
+                                                                  setOpenQuickActionKey(null);
+                                                                  openItemEditor(
+                                                                    displayedPlanDay.day,
+                                                                    item,
+                                                                    personalNotes
+                                                                  );
+                                                                }}
+                                                                role="menuitem"
+                                                                title="Sửa địa điểm"
+                                                                type="button"
+                                                              >
+                                                                <svg viewBox="0 0 24 24">
+                                                                  <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                                                                </svg>
+                                                              </button>
+                                                              <button
+                                                                aria-label={`Xóa ${displayItemName}`}
+                                                                className="itineraryActionButton danger"
+                                                                onClick={() => {
+                                                                  setOpenQuickActionKey(null);
+                                                                  handleDeleteItem(
+                                                                    displayedPlanDay.day,
+                                                                    item.itemId!
+                                                                  );
+                                                                }}
+                                                                role="menuitem"
+                                                                title="Xóa địa điểm"
+                                                                type="button"
+                                                              >
+                                                                <svg viewBox="0 0 24 24">
+                                                                  <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                                                                </svg>
+                                                              </button>
+                                                            </>
+                                                          ) : null}
+                                                        </div>
+                                                      ) : null}
+                                                    </div>
+                                                  ) : null}
                                                 </div>
                                               </header>
                                               {openingHoursText ? (
