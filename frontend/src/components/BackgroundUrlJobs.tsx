@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteUrlImportJob,
@@ -370,12 +371,24 @@ export function BackgroundUrlJobs({
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ jobId: string; message: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [readyJobIds, setReadyJobIds] = useState<Set<string>>(() => new Set());
   const statusesRef = useRef<Map<string, string>>(new Map());
+  const guestStatusesRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     const handleGuestJobs = (event: Event) => {
       const nextJobs = (event as CustomEvent<GuestUrlImportJob[]>).detail;
-      setGuestJobs(Array.isArray(nextJobs) ? nextJobs : listGuestUrlJobs());
+      const resolvedJobs = Array.isArray(nextJobs) ? nextJobs : listGuestUrlJobs();
+      for (const job of resolvedJobs) {
+        const oldStatus = guestStatusesRef.current.get(job.id);
+        if (oldStatus && oldStatus !== job.status && job.status === "succeeded") {
+          setReadyJobIds((current) => new Set(current).add(job.id));
+        }
+      }
+      guestStatusesRef.current = new Map(
+        resolvedJobs.map((job) => [job.id, job.status])
+      );
+      setGuestJobs(resolvedJobs);
     };
     window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
     setGuestJobs(listGuestUrlJobs());
@@ -414,6 +427,9 @@ export function BackgroundUrlJobs({
           const oldStatus = previous.get(job.id);
           if (oldStatus && oldStatus !== job.status && TERMINAL.has(job.status)) {
             window.dispatchEvent(new CustomEvent("vsf:url-job-update", { detail: job }));
+            if (job.status === "succeeded") {
+              setReadyJobIds((current) => new Set(current).add(job.id));
+            }
           }
         }
         statusesRef.current = new Map(response.jobs.map((job) => [job.id, job.status]));
@@ -442,19 +458,33 @@ export function BackgroundUrlJobs({
   }, [authenticated, enabled]);
 
   const visibleJobs = jobs
-    .filter((job) => job.status !== "succeeded")
+    .filter((job) => job.status !== "succeeded" || readyJobIds.has(job.id))
     .slice(0, 12);
   const runningJobs = visibleJobs.filter((job) => job.status === "running");
   const running = runningJobs.length;
   const queued = visibleJobs.filter((job) => job.status === "queued").length;
   const failed = visibleJobs.filter((job) => job.status === "failed").length;
+  const ready = visibleJobs.filter((job) => job.status === "succeeded").length;
   if (!enabled || visibleJobs.length === 0) return null;
 
   const summary = running || queued
     ? running
       ? `${running > 1 ? `${running} đang xử lý` : "Đang xử lý"} · ${elapsedLabel(elapsedSeconds(runningJobs[0], now))}${queued ? ` · ${queued} đang chờ` : ""}`
       : `${queued} đang chờ`
-    : `${failed} tác vụ thất bại`;
+    : ready
+      ? ready > 1
+        ? `${ready} plan đã sẵn sàng`
+        : "Plan đã sẵn sàng"
+      : `${failed} tác vụ thất bại`;
+
+  function dismissReady(jobId: string) {
+    setReadyJobIds((current) => {
+      const next = new Set(current);
+      next.delete(jobId);
+      return next;
+    });
+    setPanelOpen(false);
+  }
 
   async function runAgain(job: DisplayJob) {
     setRetryingId(job.id);
@@ -514,7 +544,13 @@ export function BackgroundUrlJobs({
         </summary>
         <div className="backgroundJobsList">
           <div className="backgroundJobsListHeader">
-            <strong>{running || queued ? "Nguồn đang được xử lý" : "Nguồn xử lý thất bại"}</strong>
+            <strong>
+              {running || queued
+                ? "Nguồn đang được xử lý"
+                : ready
+                  ? "Lịch trình đã sẵn sàng"
+                  : "Nguồn xử lý thất bại"}
+            </strong>
           </div>
           {visibleJobs.map((job) => {
             return (
@@ -563,6 +599,21 @@ export function BackgroundUrlJobs({
                     <p className="backgroundJobError">{actionError.message}</p>
                   ) : null}
                   <div className="backgroundJobActions">
+                    <Link
+                      className="backgroundJobOpenChat"
+                      href={
+                        isGuestJob(job)
+                          ? "/planner"
+                          : `/planner?chatId=${encodeURIComponent(job.chatId)}`
+                      }
+                      onClick={() => {
+                        if (job.status === "succeeded") dismissReady(job.id);
+                      }}
+                    >
+                      {job.status === "succeeded"
+                        ? "Xem lịch trình"
+                        : "Quay lại chuyến đi"}
+                    </Link>
                     {TERMINAL.has(job.status) ? (
                       <button
                         disabled={retryingId === job.id}

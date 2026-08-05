@@ -334,6 +334,14 @@ day slot. `open_candidate` hoặc ID chưa resolve được phải xuất hiện
 `UnscheduledPlace` với `reasonCode=required_experience_unresolved`; không được
 âm thầm bỏ trải nghiệm.
 
+Sau khi validate claim/Place/Activity ID, backend hydrate
+`preferredTimeWindows` và `recommendedVisitMinutes` từ recommendation của graph
+candidate tương ứng; mọi timing do LLM echo bị ghi đè. PlaceSelector dùng các
+window này làm preference mềm: ưu tiên một activity block chứa trọn duration,
+nhưng được fallback ngoài window khi không còn window khả thi và phải phát
+warning. `openingHours` vẫn là dữ liệu vận hành riêng dùng để kiểm tra tính khả
+thi, không được suy ra từ recommendation.
+
 PlaceSelector điền item cụ thể:
 
 - theme và day-part goal được dùng để tạo shortlist rộng, không còn là ràng buộc
