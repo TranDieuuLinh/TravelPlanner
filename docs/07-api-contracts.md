@@ -49,8 +49,9 @@ Group detail trả `group`, `posts` và `totalPosts`. Mỗi post trả `id`, `co
   file và tự sinh `mediaUrl`; client không gửi URL media.
 - `GET /api/posts?limit=30&offset=0`: feed bài công khai mới nhất; không yêu cầu
   đăng nhập và trả thêm `authorName`, `authorAvatarUrl`.
-- `POST /api/me/visited-places`: đánh dấu hoặc cập nhật một `placeId` đã đi; yêu
-  cầu CSRF header và Place phải có tọa độ hợp lệ.
+- `POST /api/me/visited-places`: đánh dấu hoặc cập nhật một `placeId` đã đi; tên
+  field được giữ tương thích nhưng giá trị là `knowledge_entities.id`. Yêu cầu
+  CSRF header và KG entity phải có tọa độ hợp lệ.
 - `POST /api/me/creator-application`: gửi yêu cầu creator; yêu cầu CSRF header.
 
 Response showcase:
@@ -112,7 +113,7 @@ client không được tự chọn role.
 - `POST /api/plans/current-location-route`
 - `POST /api/plans/day-directions`
 - `GET /api/plans/places/search?query={text}&destination={destination}&topK={k}`:
-  trả tối đa `topK` gợi ý có tọa độ từ toàn bộ catalog `places` đang active trong
+  trả tối đa `topK` gợi ý có tọa độ từ Knowledge Graph canonical trong
   vùng đích; mặc định `K=5`, nhận giá trị từ 1 đến 10. Search không phân biệt dấu
   và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
   geocoding bên ngoài và không bị giới hạn bởi batch preload của Planner.
@@ -156,7 +157,9 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `POST /api/trip-chats/{chatId}/turns/{turnId}/cancel`: hủy turn đang
   xử lý hoặc chờ xác nhận; turn đã `completed` trả `409 TURN_ALREADY_COMPLETED`.
 - `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job
-  FIFO và trả `202 Accepted` ngay. Field
+  FIFO, lưu `content` thành một user turn `queued` trong cùng transaction và trả
+  `202 Accepted` ngay. Các job trong batch dùng chung turn này; worker chỉ nối
+  assistant response/plan khi hoàn tất. Field
   form `forceRefresh=true` tạo job phân tích lại, bỏ qua extraction cache.
 - `POST /api/trip-chats/{chatId}/image-jobs`: lưu mỗi ảnh JPEG/PNG/WebP/HEIC/HEIF
   tối đa 15 MB thành một OCR background job và trả `202 Accepted`. Ảnh dùng chung
@@ -177,7 +180,7 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
   cũng có thể được xóa khỏi lịch sử; revision plan đã tạo không bị ảnh hưởng.
 - `POST /api/trip-chats/{chatId}/plan/items`: thêm item thủ công.
   Form Planner tra `GET /api/plans/places/search?query=...&destination=...` trên
-  catalog `places` đang active và chỉ cho gửi item sau khi user chọn một kết quả
+  catalog Knowledge Graph và chỉ cho gửi item sau khi user chọn một kết quả
   có identity cùng tọa độ; nội dung gõ tự do không được xem là một địa điểm đã
   chọn.
 - `PATCH /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: sửa item.

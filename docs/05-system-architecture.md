@@ -208,6 +208,10 @@ khác. Tiến độ không được chèn vào transcript Planner; trạng thái
 header và mặc định không che nội dung. User có thể mở dropdown để xem timer,
 timing Explorer/Planner chi tiết hoặc xóa các job đã kết thúc.
 Composer không bị khóa bởi URL job nên user vẫn gửi prompt chat bình thường.
+Router đồng thời tạo một `TripChatMessage` user ở trạng thái `queued` trước khi
+commit batch. `batchId` của các job trỏ tới lifecycle ID của message này; worker
+truyền lại ID khi lưu revision để chỉ nối assistant response, không ghi trùng user
+message. Vì vậy lịch sử hiển thị request ngay cả khi Explorer chưa hoàn tất.
 
 Guest dùng hàng chờ FIFO trong memory của AppShell và gọi cùng endpoint Explorer
 -> TripThemePlanner/PlaceSelector mà không tạo trip chat hay `url_import_jobs`. Vì queue nằm ở
@@ -304,7 +308,11 @@ Ranh giới trách nhiệm:
   provenance.
 - `extraction`: chuyển nội dung nguồn không đáng tin thành claim/place candidate
   có schema; không gọi trực tiếp domain Planner.
-- `places`: chuẩn hóa danh tính, gộp trùng và lưu ánh xạ provider.
+- `knowledge_entities` + `knowledge_aliases` + `knowledge_properties`: catalog
+  canonical cho PlaceSelector, Resolver, autocomplete, Profile và plan mutation.
+  `placeId` trong API là tên tương thích cho `knowledge_entities.id`.
+- `knowledge_entity_images`: gallery nhiều ảnh theo `entity_id`; `reviews` và
+  `user_visited_places` cũng tham chiếu trực tiếp `knowledge_entities`.
 - `planning`: chỉ nhận source/claim/place đã chuẩn hóa cùng ràng buộc của trip.
 - `checks`: kết hợp rule engine với dữ liệu place/route/weather có thời điểm lấy.
 - `marketplace`: chỉ publish version đã kiểm tra; buyer clone version vào trip

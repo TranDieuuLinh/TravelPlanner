@@ -25,9 +25,13 @@
 5. Hệ thống kiểm tra từng URL/ảnh và tạo một import job nền cho mỗi nguồn. Job
    ảnh dùng cùng hàng đợi FIFO, timeout, retry, reprocess, stop/delete và timing
    như job URL; dữ liệu ảnh không được ghi vào log.
+   Ngay khi batch được chấp nhận, chat và user message đã được lưu; các job nguồn
+   là tác vụ con của cùng turn nên rời màn hình không làm URL biến mất khỏi lịch sử.
 6. Khi job URL chạy, chat hiển thị timer, tiến độ và nhóm mascot; feed Khám phá
    vẫn dùng được. Job tiếp tục chạy khi user rời màn hình. User có thể hủy job
    hiện tại để mở chat mới; lịch sử luôn mở được từ thanh trên hoặc itinerary.
+   Dock tác vụ toàn cục mở lại đúng `/planner?chatId=...` và giữ thông báo kết
+   quả cho tới khi user chọn xem.
 7. UI giữ nguyên từng URL hoặc tên ảnh cùng trạng thái `đang chờ`, `đang xử lý`, `cần xác
    nhận`, `hoàn thành` hoặc `thất bại`.
 8. Người dùng có thể tiếp tục bổ sung yêu cầu trong khi job chạy. Khi plan sẵn

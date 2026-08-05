@@ -36,6 +36,7 @@ import {
   exploreFullIntake,
   getTripChat,
   listTripChats,
+  listUrlImportJobs,
   removeTripChatItem,
   reorderTripChatItem,
   searchPlaces,
@@ -530,6 +531,7 @@ function Planner() {
   const [error, setError] = useState("");
   const [intakeKind, setIntakeKind] = useState<IntakeKind>("prompt");
   const [tripChats, setTripChats] = useState<TripChatSummary[]>([]);
+  const [urlJobSnapshot, setUrlJobSnapshot] = useState<UrlImportJob[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const activeChatIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef(0);
@@ -973,6 +975,48 @@ function Planner() {
     return () =>
       window.removeEventListener("vsf:url-job-update", handleUrlJobUpdate);
   }, [activeChatId, chatRevision]);
+
+  useEffect(() => {
+    if (!user) {
+      setUrlJobSnapshot([]);
+      return;
+    }
+
+    const applySnapshot = (jobs: UrlImportJob[]) => {
+      setUrlJobSnapshot(jobs);
+      const chatId = activeChatIdRef.current;
+      if (!chatId) return;
+      const active = jobs.filter(
+        (job) =>
+          job.chatId === chatId &&
+          (job.status === "queued" || job.status === "running")
+      );
+      setActivePlanningJobs(
+        active.map((job) => ({ id: job.id, guest: false }))
+      );
+      setBackgroundPlanning(active.length > 0);
+      if (active.length > 0) {
+        setIntakeKind("url");
+        setInitialPlanningActive(true);
+        setWorkflowStage(
+          active.some((job) => Boolean(job.explorerTiming))
+            ? "planning"
+            : "exploring"
+        );
+      }
+    };
+    const handleSnapshot = (event: Event) => {
+      const jobs = (event as CustomEvent<UrlImportJob[]>).detail;
+      if (Array.isArray(jobs)) applySnapshot(jobs);
+    };
+
+    window.addEventListener("vsf:url-jobs-snapshot", handleSnapshot);
+    void listUrlImportJobs()
+      .then((response) => applySnapshot(response.jobs))
+      .catch(() => undefined);
+    return () =>
+      window.removeEventListener("vsf:url-jobs-snapshot", handleSnapshot);
+  }, [user?.id]);
 
   useEffect(() => {
     const applyGuestResult = (job: GuestUrlImportJob) => {
@@ -3086,6 +3130,7 @@ function Planner() {
           activeChatIdRef.current = chatId;
           setActiveChatId(chatId);
           setChatRevision(created.revision);
+          syncPlannerChatUrl(chatId);
         }
         let queued = false;
         let queuedJobs: UrlImportJob[] = [];
@@ -3119,6 +3164,12 @@ function Planner() {
         setActivePlanningJobs(
           queuedJobs.map((job) => ({ id: job.id, guest: false }))
         );
+        setUrlJobSnapshot((current) => [
+          ...queuedJobs,
+          ...current.filter(
+            (job) => !queuedJobs.some((queued) => queued.id === job.id)
+          ),
+        ]);
         setTripChats(await listTripChats());
         window.dispatchEvent(new Event("vsf:url-job-enqueued"));
         setMessages((current) => [
@@ -3161,6 +3212,7 @@ function Planner() {
           activeChatIdRef.current = chatId;
           setActiveChatId(chatId);
           setChatRevision(created.revision);
+          syncPlannerChatUrl(chatId);
         }
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
@@ -3301,8 +3353,32 @@ function Planner() {
     setActivePlanningJobs([]);
     setError("");
     try {
-      const chat = await getTripChat(chatId);
-      if (activeChatIdRef.current === chatId) applyTripChat(chat);
+      const [chat, jobsResponse] = await Promise.all([
+        getTripChat(chatId),
+        listUrlImportJobs().catch(() => ({ jobs: [] })),
+      ]);
+      if (activeChatIdRef.current === chatId) {
+        applyTripChat(chat);
+        setUrlJobSnapshot(jobsResponse.jobs);
+        const active = jobsResponse.jobs.filter(
+          (job) =>
+            job.chatId === chatId &&
+            (job.status === "queued" || job.status === "running")
+        );
+        if (active.length) {
+          setActivePlanningJobs(
+            active.map((job) => ({ id: job.id, guest: false }))
+          );
+          setBackgroundPlanning(true);
+          setInitialPlanningActive(!chat.currentPlan);
+          setIntakeKind("url");
+          setWorkflowStage(
+            active.some((job) => Boolean(job.explorerTiming))
+              ? "planning"
+              : "exploring"
+          );
+        }
+      }
     } catch (caught) {
       if (activeChatIdRef.current === chatId) {
         setError(
@@ -3416,6 +3492,27 @@ function Planner() {
     }
     setSelectedMapPlaceKey(null);
   }
+
+  const activeJobChatIds = useMemo(
+    () =>
+      new Set(
+        urlJobSnapshot
+          .filter(
+            (job) => job.status === "queued" || job.status === "running"
+          )
+          .map((job) => job.chatId)
+      ),
+    [urlJobSnapshot]
+  );
+  const orderedTripChats = useMemo(
+    () =>
+      [...tripChats].sort(
+        (left, right) =>
+          Number(activeJobChatIds.has(right.id)) -
+          Number(activeJobChatIds.has(left.id))
+      ),
+    [activeJobChatIds, tripChats]
+  );
 
   function handleComposerKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -3722,7 +3819,7 @@ function Planner() {
                   </div>
                   {tripChats.length ? (
                     <nav aria-label="Lịch sử dự án chuyến đi">
-                      {tripChats.map((chat) => (
+                      {orderedTripChats.map((chat) => (
                         <div
                           className={`tripProjectItem ${
                             chat.id === activeChatId ? "active" : ""
@@ -3747,6 +3844,9 @@ function Planner() {
                               <small>
                                 {chat.destination || "Chưa chọn điểm đến"}
                                 {chat.revision ? ` · Bản ${chat.revision}` : ""}
+                                {activeJobChatIds.has(chat.id)
+                                  ? " · Đang xử lý"
+                                  : ""}
                               </small>
                             </span>
                           </button>
