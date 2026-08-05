@@ -17,6 +17,7 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.region_context import (
+    canonical_destination_name,
     normalize_region_key,
     normalize_search_region_key,
 )
@@ -72,6 +73,23 @@ def test_normalize_region_key_canonicalizes_explicit_hanoi_alias() -> None:
         == "vn,ha-noi,hoan-kiem"
     )
     assert normalize_region_key("ignored", "vn,hai-phong") == "vn,hai-phong"
+
+
+@pytest.mark.parametrize(
+    ("destination", "expected"),
+    [
+        ("Hanoi", "Hà Nội"),
+        ("Hanoi, Vietnam", "Hà Nội"),
+        ("Saigon", "TP. Hồ Chí Minh"),
+        ("Danang", "Đà Nẵng"),
+        ("Paris", "Paris"),
+    ],
+)
+def test_canonical_destination_name_prefers_vietnamese_display_name(
+    destination: str,
+    expected: str,
+) -> None:
+    assert canonical_destination_name(destination) == expected
 
 
 @pytest.mark.parametrize(

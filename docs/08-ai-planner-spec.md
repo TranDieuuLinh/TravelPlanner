@@ -63,6 +63,10 @@ Sau mỗi lần tạo plan, backend hậu kiểm bất biến coverage: từng U
 resolve phải có đúng một đại diện trong item đã xếp với `sourceRefs`, hoặc trong
 `UnscheduledPlace` với `reasonCode` và provenance. Nếu downstream vô tình bỏ
 sót, backend phục hồi nó vào `UnscheduledPlace` thay vì trả kết quả mất dữ liệu.
+Destination dùng region key để so khớp identity nhưng dùng tên canonical tiếng
+Việt để hiển thị và lưu revision. Vì vậy alias nguồn như `Hanoi`, `Danang` hoặc
+`Saigon` không được thay label `Hà Nội`, `Đà Nẵng` hoặc `TP. Hồ Chí Minh` của
+plan sau khi thêm URL.
 
 Candidate selection xếp hạng semantic relevance, category và chất lượng dữ liệu
 trước khi xét route. Khoảng cách chỉ phá hòa giữa các candidate có cùng điểm

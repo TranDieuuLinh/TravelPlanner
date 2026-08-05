@@ -163,11 +163,11 @@ def upgrade() -> None:
     payloads = _intent_payloads(bind)
     chats = sa.table(
         "trip_chats", sa.column("id"), sa.column("current_trip_intent_id"),
-        sa.column("current_trip_intent"),
+        sa.column("current_trip_intent", sa.JSON()),
     )
     revisions = sa.table(
         "trip_chat_plan_revisions", sa.column("id"), sa.column("trip_intent_id"),
-        sa.column("trip_intent_payload"),
+        sa.column("trip_intent_payload", sa.JSON()),
     )
     for row in bind.execute(sa.select(chats.c.id, chats.c.current_trip_intent_id)).mappings():
         payload = payloads.get(row["current_trip_intent_id"])
@@ -185,13 +185,16 @@ def upgrade() -> None:
     messages = sa.table(
         "trip_chat_messages", sa.column("id"), sa.column("chat_id"),
         sa.column("role"), sa.column("content"), sa.column("sequence"),
-        sa.column("attachment_names"), sa.column("plan_revision"),
-        sa.column("turn_id"), sa.column("message_kind"), sa.column("content_blocks"),
+        sa.column("attachment_names", sa.JSON()), sa.column("plan_revision"),
+        sa.column("turn_id"), sa.column("message_kind"),
+        sa.column("content_blocks", sa.JSON()),
         sa.column("created_at"), sa.column("updated_at"),
         sa.column("client_turn_id"), sa.column("base_revision"),
         sa.column("status"), sa.column("intent"), sa.column("confidence"),
-        sa.column("requires_confirmation"), sa.column("proposed_operations"),
-        sa.column("assistant_blocks"), sa.column("result_summary"),
+        sa.column("requires_confirmation"),
+        sa.column("proposed_operations", sa.JSON()),
+        sa.column("assistant_blocks", sa.JSON()),
+        sa.column("result_summary", sa.JSON()),
         sa.column("error_code"), sa.column("error_message"),
         sa.column("processing_started_at"),
     )
