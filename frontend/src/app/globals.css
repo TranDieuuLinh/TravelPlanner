@@ -11470,15 +11470,6 @@ svg {
   transform: translateY(-1px);
 }
 
-.itinerary .itineraryPlaceCard--mapInteractive {
-  cursor: pointer;
-}
-
-.itinerary .itineraryPlaceCard--mapInteractive:focus-visible {
-  outline: 3px solid rgba(54, 95, 90, .2);
-  outline-offset: 3px;
-}
-
 .itinerary .itineraryPlaceCard.is-map-place-selected,
 .itinerary .itineraryStop--food .itineraryPlaceCard.is-map-place-selected {
   border-color: rgba(54, 95, 90, .5);

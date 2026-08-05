@@ -3418,9 +3418,6 @@ function Planner() {
                 );
               })}
             </nav>
-            <span aria-hidden="true" className="plannerIntakePenguin">
-              <PenguinMascot size={36} variant="intakePeek" />
-            </span>
           </div>
         </div>
         {user ? (
@@ -4020,9 +4017,6 @@ function Planner() {
                           );
                         })}
                       </nav>
-                      <span aria-hidden="true" className="plannerIntakePenguin">
-                        <PenguinMascot size={36} variant="intakePeek" />
-                      </span>
                     </div>
                   </div>
                   {user ? (
@@ -4918,10 +4912,6 @@ function Planner() {
                                             className={`itineraryPlaceCard itineraryPlaceCard--withImage ${
                                               itemSideRail
                                                 ? "itineraryPlaceCard--withDrag"
-                                                : ""
-                                            } ${
-                                              mapKey
-                                                ? "itineraryPlaceCard--mapInteractive"
                                                 : ""
                                             } ${
                                               mapKey &&
