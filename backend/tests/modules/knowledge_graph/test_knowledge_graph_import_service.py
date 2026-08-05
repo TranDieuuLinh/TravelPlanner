@@ -207,6 +207,7 @@ def test_import_matches_existing_node_and_applies_approved_graph(tmp_path: Path)
         "key": "special_experience",
         "value": '[{"intent":"visit","priority":"must"}]',
         "source": "Test source",
+        "note": "",
     }]
 
 

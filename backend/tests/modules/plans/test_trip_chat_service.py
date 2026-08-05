@@ -13,8 +13,10 @@ from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
     PlaceCandidateReview,
 )
+from app.modules.plans.explorer.model import ExplorerIntake
 from app.modules.plans.schema import MainPlanFromExplorerCreate
 from app.modules.plans.timing import PlanTimingReport
+from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.users.repository import UserRepository
 from app.shared.errors import AppError
 
@@ -25,17 +27,16 @@ def _explore(destination: str, *, days: int = 2) -> ExploreIntakeResponse:
             "intakeId": f"intake-{destination}",
             "userId": "1",
             "explorer": {
-                "intent": {
+                "tripIntent": {
                     "destination": destination,
-                    "travelStyle": "local",
-                    "pace": "balanced",
-                    "interests": ["food"],
-                    "mustVisitPlaces": [],
-                    "avoidPlaces": [],
-                    "constraints": [],
-                    "clarifyingQuestions": [],
+                    "timing": {"days": days},
+                    "travelParty": {"type": "solo", "adults": 1},
+                    "preferences": {
+                        "travelStyle": "local",
+                        "pace": "balanced",
+                        "interests": ["food"],
+                    },
                 },
-                "tripSpec": {"days": days},
                 "assumptions": [],
                 "missingInfoQuestions": [],
                 "preferenceSnapshot": {},
@@ -302,6 +303,42 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert [item.intake_id for item in revisions] == [
         "intake-Hà Nội",
         "intake-Hà Nội",
+    ]
+
+
+def test_chat_loads_long_term_preferences_from_database(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    profiles = TravelerProfileRepository(db_session)
+    profiles.replace_explicit(user.id, ["ẩm thực địa phương", "đi chậm"])
+    profiles.commit()
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+
+    asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+
+    state = fake_plans.explore_kwargs[0]["user_state"]
+    assert state.travel_preferences == ["ẩm thực địa phương", "đi chậm"]
+    assert state.preference_profile.explicit == [
+        "ẩm thực địa phương",
+        "đi chậm",
     ]
 
 
@@ -613,8 +650,8 @@ def test_sequential_url_imports_preserve_all_candidate_sources(
         )
     )
 
-    assert second.current_explorer is not None
-    reviews = second.current_explorer.candidate_reviews
+    assert second.current_trip_intent is not None
+    reviews = second.candidate_reviews
     assert len(reviews) == 2
     assert reviews[0].candidate_id == "tiktok-hoan-kiem"
     assert reviews[0].source_urls == [tiktok_url, youtube_url]
@@ -627,7 +664,7 @@ def test_sequential_url_imports_preserve_all_candidate_sources(
     )
 
 
-def test_chat_read_recovers_candidate_sources_from_revision_history(
+def test_chat_read_uses_candidate_reviews_from_persisted_intake(
     db_session,
     registered_client,
 ) -> None:
@@ -667,12 +704,11 @@ def test_chat_read_recovers_candidate_sources_from_revision_history(
             images=[],
         )
     )
-    assert saved.current_explorer is not None
+    assert saved.current_trip_intent is not None
 
     stored = db_session.get(TripChat, chat.id)
     assert stored is not None
-    overwritten = saved.current_explorer.model_copy(deep=True)
-    overwritten.candidate_reviews = [
+    overwritten_reviews = [
         tiktok_review.model_copy(
             update={
                 "candidate_id": "youtube-hoan-kiem",
@@ -680,16 +716,18 @@ def test_chat_read_recovers_candidate_sources_from_revision_history(
             }
         )
     ]
-    stored.current_explorer = overwritten.model_dump(mode="json", by_alias=True)
+    intake = db_session.get(ExplorerIntake, stored.current_intake_id)
+    assert intake is not None
+    intake.candidate_reviews = [
+        review.model_dump(mode="json", by_alias=True)
+        for review in overwritten_reviews
+    ]
     db_session.commit()
 
     recovered = service.get(chat.id, user)
 
-    assert recovered.current_explorer is not None
-    assert recovered.current_explorer.candidate_reviews[0].source_urls == [
-        tiktok_url,
-        youtube_url,
-    ]
+    assert recovered.current_trip_intent is not None
+    assert recovered.candidate_reviews[0].source_urls == [youtube_url]
 
 
 def test_chat_amendment_rejects_stale_revision(
@@ -768,8 +806,8 @@ def test_chat_retries_only_unresolved_candidates_and_updates_plan(
 
     assert retried.revision == 2
     assert retried.current_intake_id == "intake-Hà Nội"
-    assert retried.current_explorer is not None
-    assert retried.current_explorer.candidate_reviews[0].status == "resolved"
+    assert retried.current_trip_intent is not None
+    assert retried.candidate_reviews[0].status == "resolved"
     assert fake_plans.plan_payloads[-1].selected_places[-1].name == (
         "Verified Train Street"
     )

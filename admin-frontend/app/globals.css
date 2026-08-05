@@ -1992,7 +1992,7 @@ select {
   align-items: center;
 }
 
-.kgPropertyEditRow { grid-template-columns: minmax(100px, 0.7fr) minmax(130px, 1fr) minmax(150px, 1fr) 30px; }
+.kgPropertyEditRow { grid-template-columns: minmax(100px, 0.7fr) minmax(130px, 1fr) minmax(150px, 1fr) minmax(130px, 0.8fr) 30px; }
 .kgAliasEditRow { grid-template-columns: minmax(0, 1fr) 30px; }
 .kgRelationshipEditRow { grid-template-columns: repeat(3, minmax(105px, 1fr)) repeat(2, minmax(150px, 1.2fr)) 30px; }
 .kgMiniDanger { width: 30px; height: 30px; padding: 0; font-size: 0.9rem; }

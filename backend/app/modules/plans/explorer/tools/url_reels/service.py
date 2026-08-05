@@ -37,6 +37,9 @@ from app.modules.plans.explorer.tools.url_reels.utils import (
 from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
+from app.modules.plans.explorer.tools.web_page.service import (
+    WebPageExtractionService,
+)
 
 
 class UrlReelExtractionService:
@@ -49,6 +52,7 @@ class UrlReelExtractionService:
         frame_vision: GeminiReelFrameVision | None = None,
         youtube_transcript: YouTubeTranscriptExtractor | None = None,
         caption_structurer: CaptionStructurer | None = None,
+        web_page: WebPageExtractionService | None = None,
     ) -> None:
         self.loader = loader or UrlReelLoader()
         self.media = media or UrlReelMediaExtractor()
@@ -59,8 +63,15 @@ class UrlReelExtractionService:
             youtube_transcript or YouTubeTranscriptExtractor()
         )
         self.caption_structurer = caption_structurer
+        self.web_page = web_page or (
+            WebPageExtractionService(text_structurer=caption_structurer)
+            if caption_structurer is not None
+            else None
+        )
 
     def extract(self, payload: UrlReelInput) -> UrlReelExtractionResult:
+        if detect_platform(payload.url) == "unknown" and self.web_page is not None:
+            return self.web_page.extract(payload)
         temporary_parent = payload.work_dir
         if temporary_parent is not None:
             temporary_parent.mkdir(parents=True, exist_ok=True)

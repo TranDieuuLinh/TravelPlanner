@@ -370,7 +370,13 @@ def canonical_city(row: dict[str, str]) -> str:
     return city
 
 
-def property_row(entity_id: str, key: str, value: object, source: str) -> dict[str, str] | None:
+def property_row(
+    entity_id: str,
+    key: str,
+    value: object,
+    source: str,
+    note: str = "",
+) -> dict[str, str] | None:
     text = (
         json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         if isinstance(value, (list, dict))
@@ -378,7 +384,13 @@ def property_row(entity_id: str, key: str, value: object, source: str) -> dict[s
     )
     if not text:
         return None
-    return {"entity_id": entity_id, "key": key, "value": text, "source": source}
+    return {
+        "entity_id": entity_id,
+        "key": key,
+        "value": text,
+        "source": source,
+        "note": note,
+    }
 
 
 def write_csv(path: Path, fields: list[str], rows: list[dict[str, str]]) -> None:
@@ -741,7 +753,11 @@ def main() -> int:
     stage = Path(mkdtemp(prefix="hanoi-graph-", dir=graph_dir.parent))
     try:
         write_csv(stage / "entities.csv", ["id", "name", "type", "status"], rows["entities"])
-        write_csv(stage / "properties.csv", ["entity_id", "key", "value", "source"], rows["properties"])
+        write_csv(
+            stage / "properties.csv",
+            ["entity_id", "key", "value", "source", "note"],
+            rows["properties"],
+        )
         write_csv(stage / "aliases.csv", ["entity_id", "alias"], rows["aliases"])
         write_csv(stage / "relationships.csv", ["id", "from_entity_id", "relationship", "to_entity_id", "recommendations", "source"], rows["relationships"])
         shutil.copy2(schema_path, stage / "schema.yaml")

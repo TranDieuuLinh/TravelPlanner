@@ -4,6 +4,12 @@ from fastapi import status
 
 from app.modules.profiles.model import UserPost, UserVisitedPlace
 from app.modules.profiles.repository import ProfileRepository
+from app.modules.preferences.repository import TravelerProfileRepository
+from app.modules.preferences.schema import (
+    TravelerPreferenceSignalRead,
+    TravelerProfileRead,
+    TravelerProfileUpdate,
+)
 from app.modules.profiles.schema import (
     ProfileShowcaseRead,
     ExplorePostRead,
@@ -19,9 +25,15 @@ from app.shared.errors import AppError
 
 
 class ProfileService:
-    def __init__(self, users: UserRepository, profiles: ProfileRepository) -> None:
+    def __init__(
+        self,
+        users: UserRepository,
+        profiles: ProfileRepository,
+        traveler_profiles: TravelerProfileRepository,
+    ) -> None:
         self.users = users
         self.profiles = profiles
+        self.traveler_profiles = traveler_profiles
 
     def get_showcase(self, user: User) -> ProfileShowcaseRead:
         visited_places = [
@@ -129,9 +141,57 @@ class ProfileService:
 
     def update_profile(self, user: User, payload: ProfileUpdate) -> User:
         updated = self.users.update_profile(user, payload)
+        if "travel_preferences" in payload.model_fields_set:
+            self.traveler_profiles.replace_explicit(
+                user.id, payload.travel_preferences or []
+            )
         self.users.commit()
         self.users.refresh(updated)
         return updated
+
+    def get_traveler_profile(self, user: User) -> TravelerProfileRead:
+        profile = self.traveler_profiles.get(user.id)
+        record = self.traveler_profiles.get_record(user.id)
+        return TravelerProfileRead(
+            userId=user.id,
+            explicitPreferences=profile.explicit,
+            topPreferences=profile.top_values(),
+            observationCount=profile.observation_count,
+            updatedAt=profile.updated_at,
+            signals=[
+                TravelerPreferenceSignalRead(
+                    id=signal.id,
+                    dimension=signal.dimension,
+                    value=signal.value,
+                    label=signal.label,
+                    score=signal.score,
+                    confidence=signal.confidence,
+                    observations=signal.observations,
+                    scope=signal.scope,
+                    destination=signal.destination or None,
+                    origin=signal.origin,
+                    status=signal.status,
+                    sourceTypes=[source.source_type for source in signal.sources],
+                    firstObservedAt=signal.first_observed_at,
+                    lastObservedAt=signal.last_observed_at,
+                    lastEvidenceIntakeId=signal.last_evidence_intake_id,
+                )
+                for signal in (record.signals if record is not None else [])
+            ],
+        )
+
+    def update_traveler_profile(
+        self, user: User, payload: TravelerProfileUpdate
+    ) -> TravelerProfileRead:
+        self.traveler_profiles.replace_explicit(
+            user.id, payload.explicit_preferences
+        )
+        self.traveler_profiles.commit()
+        return self.get_traveler_profile(user)
+
+    def delete_traveler_profile(self, user: User) -> None:
+        self.traveler_profiles.delete(user.id)
+        self.traveler_profiles.commit()
 
     def submit_creator_application(self, user: User, payload: CreatorApplicationCreate) -> User:
         if user.role == "admin":

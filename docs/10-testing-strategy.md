@@ -60,6 +60,8 @@ Chạy test FastAPI với database cô lập:
   `forceRefresh=true` và không ghi đè lịch sử job cũ; ảnh giữ đúng MIME/file gốc
   cho retry/reprocess và từ chối định dạng không hỗ trợ;
 - source connector, place resolution và provenance persistence;
+- web-page connector tách main text/metadata, giữ functional query, chặn DNS
+  private sau redirect, giới hạn response và trả cùng contract URL extraction;
 - rollback transaction và xung đột dữ liệu.
 
 Thay provider bên ngoài bằng fake tuân thủ đúng contract. Tạo một bộ test sandbox

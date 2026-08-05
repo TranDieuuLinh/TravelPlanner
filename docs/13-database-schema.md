@@ -55,9 +55,35 @@ Lưu người dùng hệ thống.
 | `full_name` | varchar(255) | Tên hiển thị |
 | `role` | varchar(32) | `traveler`, `host`, `creator`, `admin` |
 | `avatar_url` | varchar(500), nullable | Ảnh đại diện |
-| `travel_preferences` | json | Profile có version: explicit preferences, aggregate scores, confidence, observation count và updatedAt |
 | `created_at` | timestamptz | Tạo lúc |
 | `updated_at` | timestamptz | Cập nhật lúc |
+
+### `traveler_profiles`
+
+Hồ sơ cá nhân hóa dài hạn, một bản ghi cho mỗi user.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `user_id` | integer PK/FK | FK `users.id`, cascade delete |
+| `version` | integer | Version contract profile |
+| `observation_count` | integer | Tổng signal đủ điều kiện đã quan sát |
+| `created_at`, `updated_at` | timestamptz | Audit thời gian |
+
+### `traveler_preference_signals`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | string PK | Opaque signal ID |
+| `user_id` | integer FK | Owner của profile |
+| `dimension`, `value`, `label` | varchar | Preference chuẩn hóa và nhãn hiển thị |
+| `score`, `confidence`, `observations` | numeric | Aggregate learning |
+| `origin`, `status` | varchar | `explicit/inferred`, `active/rejected` |
+| `scope`, `destination` | varchar | Global hoặc theo destination |
+| `last_evidence_intake_id` | string FK nullable | Provenance tới Explorer intake |
+| `first_observed_at`, `last_observed_at` | timestamptz | Audit quan sát |
+
+`traveler_preference_signal_sources` lưu các source type theo từng signal,
+không dùng mảng JSON trong signal.
 
 ### `places`
 

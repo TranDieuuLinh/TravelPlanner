@@ -138,6 +138,7 @@ const VALHALLA_ROUTING_ATTRIBUTION =
 const OTP_ROUTING_ATTRIBUTION =
   'Transit by <a href="https://www.opentripplanner.org/">OpenTripPlanner</a>';
 const MAP_MAX_MOUSE_PITCH = 60;
+const MAP_DOUBLE_CLICK_ZOOM = 18;
 const MAP_CONTROL_PAN_PIXELS = 160;
 const MAP_CONTROL_ROTATE_DEGREES = 30;
 const MAP_KEYBOARD_ROTATE_DEGREES = 8;
@@ -206,6 +207,18 @@ function panMapBy(map: MapLibreMap, x: number, y: number) {
   map.panBy([x, y], {
     duration: 240,
     essential: true
+  });
+}
+
+function zoomMapClose(
+  map: MapLibreMap,
+  center: [number, number]
+) {
+  map.easeTo({
+    center,
+    duration: 650,
+    essential: true,
+    zoom: Math.max(map.getZoom(), MAP_DOUBLE_CLICK_ZOOM)
   });
 }
 
@@ -432,6 +445,11 @@ export function PlannerMap({
   const lastPlacesSignatureRef = useRef("");
   const lastCurrentRouteSignatureRef = useRef("");
   const handledLocationFocusRequestRef = useRef(0);
+  const lastMarkerClickRef = useRef<{
+    at: number;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
   const panDragRef = useRef<{
     pointerId: number;
     buttonMask: number;
@@ -490,6 +508,7 @@ export function PlannerMap({
         attributionControl: false,
         center: VIETNAM_CENTER,
         container: containerRef.current,
+        doubleClickZoom: false,
         dragPan: true,
         dragRotate: false,
         keyboard: false,
@@ -554,7 +573,7 @@ export function PlannerMap({
     mapContainer.tabIndex = 0;
     mapContainer.setAttribute(
       "aria-label",
-      "Bản đồ. Nhấp vào bản đồ rồi dùng A hoặc D để xoay 360, W hoặc S để nghiêng, phím mũi tên để di chuyển."
+      "Bản đồ. Nhấp đúp để phóng to gần. Dùng A hoặc D để xoay 360, W hoặc S để nghiêng, phím mũi tên để di chuyển."
     );
     map.dragPan.enable();
 
@@ -612,6 +631,10 @@ export function PlannerMap({
     };
     const focusMapForKeyboard = () => {
       mapContainer.focus({ preventScroll: true });
+    };
+    const zoomCloseOnDoubleClick = (event: MapLayerMouseEvent) => {
+      event.preventDefault();
+      zoomMapClose(map, [event.lngLat.lng, event.lngLat.lat]);
     };
     const moveWithKeyboard = (event: KeyboardEvent) => {
       if (
@@ -677,6 +700,7 @@ export function PlannerMap({
     canvas.addEventListener("contextmenu", preventContextMenu);
     mapContainer.addEventListener("keydown", moveWithKeyboard);
     document.addEventListener("pointerup", stopMousePanByButton);
+    map.on("dblclick", zoomCloseOnDoubleClick);
 
     return () => {
       canvas.removeEventListener("pointerdown", startMousePan, { capture: true });
@@ -688,6 +712,7 @@ export function PlannerMap({
       canvas.removeEventListener("contextmenu", preventContextMenu);
       mapContainer.removeEventListener("keydown", moveWithKeyboard);
       document.removeEventListener("pointerup", stopMousePanByButton);
+      map.off("dblclick", zoomCloseOnDoubleClick);
       stopMousePan();
       map.dragPan.enable();
     };
@@ -794,7 +819,7 @@ export function PlannerMap({
         .filter(Boolean)
         .join(" ");
       element.type = "button";
-      element.title = place.name;
+      element.title = `${place.name}. Nhấp để xem, nhấp đúp để phóng to`;
       element.setAttribute("aria-label", `${place.mapOrder}. ${place.name}`);
       const pin = document.createElement("span");
       pin.style.setProperty("--marker-color", markerColor);
@@ -862,7 +887,30 @@ export function PlannerMap({
         .setLngLat([place.longitude, place.latitude])
         .setPopup(popup)
         .addTo(map);
-      element.addEventListener("click", () => onSelect(place.mapKey));
+      element.addEventListener("click", (event) => {
+        const previousClick = lastMarkerClickRef.current;
+        const isDoubleClick = Boolean(
+          previousClick &&
+          event.timeStamp - previousClick.at <= 400 &&
+          Math.hypot(
+            event.clientX - previousClick.clientX,
+            event.clientY - previousClick.clientY
+          ) <= 8
+        );
+        lastMarkerClickRef.current = isDoubleClick
+          ? null
+          : {
+              at: event.timeStamp,
+              clientX: event.clientX,
+              clientY: event.clientY
+            };
+        onSelect(place.mapKey);
+        if (isDoubleClick) {
+          event.preventDefault();
+          event.stopPropagation();
+          zoomMapClose(map, [place.longitude, place.latitude]);
+        }
+      });
       markersRef.current.set(place.mapKey, marker);
       dynamicMarkersRef.current.push(marker);
     });

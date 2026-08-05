@@ -261,37 +261,54 @@ export type PlaceCandidateReview = {
   authority?: "high" | "medium" | "low";
 };
 
-export type ExplorerContext = {
-  intent: {
-    destination: string;
-    travelStyle: string;
-    pace: string;
-    interests: string[];
-    mustVisitPlaces: string[];
-    avoidPlaces: string[];
-    constraints: string[];
-    destinationStays?: Array<{
+export type TripIntent = {
+  destination: string;
+  timing: {
+    days: number;
+    startDate?: string | null;
+    endDate?: string | null;
+    flexibility: "unknown" | "fixed" | "flexible";
+    destinationStays: Array<{
       name: string;
       durationDays: number;
       startDay: number;
       endDay: number;
       sourceRefs: string[];
     }>;
-    clarifyingQuestions: string[];
   };
-  tripSpec: {
-    days: number;
-    partySize: number;
-    startDate?: string | null;
-    endDate?: string | null;
+  travelParty: {
+    type: "solo" | "couple" | "family" | "friends" | "group" | "other";
+    adults: number;
+    children: number;
+    infants: number;
+    pets: number;
+    rooms: number;
+  };
+  budget: BudgetEnvelope;
+  notes: string[];
+  preferences: {
+    travelStyle: string;
+    pace: string;
+    interests: string[];
+    mustVisitPlaces: string[];
+    avoidPlaces: string[];
+    accommodation?: Record<string, unknown>;
     transport?: {
       preferredModes: string[];
       avoidModes: string[];
       includeBetweenPlaces: boolean;
       includeArrivalDeparture: boolean;
     };
-    budget: BudgetEnvelope;
   };
+  constraints: {
+    items: string[];
+    policy: Record<string, unknown>;
+  };
+  clarifyingQuestions: string[];
+};
+
+export type ExplorerContext = {
+  tripIntent: TripIntent;
   assumptions: string[];
   missingInfoQuestions: string[];
   preferenceSnapshot: PreferenceSnapshot;
@@ -451,7 +468,8 @@ export type TripChatSummary = {
 export type TripChat = TripChatSummary & {
   currentIntakeId?: string | null;
   currentPlan: TravelPlan | null;
-  currentExplorer: ExplorerContext | null;
+  currentTripIntent: TripIntent | null;
+  candidateReviews: PlaceCandidateReview[];
   latestExplorerTiming?: ExplorerTimingReport | null;
   latestPlannerTiming?: PlanTimingReport | null;
   messages: TripChatMessage[];
@@ -666,8 +684,7 @@ export async function createPlanFromExplorer(input: {
     method: "POST",
     signal: input.signal,
     body: JSON.stringify({
-      intent: input.context.intent,
-      tripSpec: input.context.tripSpec,
+      tripIntent: input.context.tripIntent,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
       allowPlaceSuggestions: input.allowPlaceSuggestions ?? true,
@@ -952,8 +969,14 @@ export type PlaceSuggestion = {
   placeId?: string | null;
 };
 
-export async function searchPlaces(query: string, destination?: string): Promise<PlaceSuggestion[]> {
-  const params = new URLSearchParams({ query });
+export const PLACE_SEARCH_TOP_K = 5;
+
+export async function searchPlaces(
+  query: string,
+  destination?: string,
+  topK = PLACE_SEARCH_TOP_K
+): Promise<PlaceSuggestion[]> {
+  const params = new URLSearchParams({ query, topK: String(topK) });
   if (destination) params.append("destination", destination);
   return apiFetch<PlaceSuggestion[]>(`/plans/places/search?${params.toString()}`);
 }

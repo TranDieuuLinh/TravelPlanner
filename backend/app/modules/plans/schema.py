@@ -15,6 +15,7 @@ from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.timing import PlanTimingReport
+from app.modules.plans.trip_intent import TripIntent
 
 
 class FeatureMapItem(BaseModel):
@@ -129,6 +130,50 @@ class MainPlanFromExplorerCreate(BaseModel):
     ]
 
     model_config = {"populate_by_name": True}
+
+
+class MainPlanFromTripIntentCreate(BaseModel):
+    trip_intent: Annotated[TripIntent, Field(alias="tripIntent")]
+    intake_id: Annotated[str | None, Field(default=None, alias="intakeId")]
+    user_id: Annotated[str | None, Field(default=None, alias="userId")]
+    selected_places: Annotated[
+        list[SelectedPlaceCreate], Field(default_factory=list, alias="selectedPlaces")
+    ]
+    candidate_reviews: Annotated[
+        list[PlaceCandidateReview],
+        Field(default_factory=list, alias="candidateReviews"),
+    ]
+    region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
+    user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
+        default_factory=UserStatus
+    )
+    preference_profile: Annotated[
+        LongTermPreferenceProfile,
+        Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
+    ]
+    allow_place_suggestions: Annotated[
+        bool, Field(default=True, alias="allowPlaceSuggestions")
+    ]
+    expand_days_to_fit_selected_places: Annotated[
+        bool, Field(default=False, alias="expandDaysToFitSelectedPlaces")
+    ]
+
+    model_config = {"populate_by_name": True}
+
+    def to_planner_input(self) -> MainPlanFromExplorerCreate:
+        return MainPlanFromExplorerCreate(
+            intent=self.trip_intent.to_planning_intent(),
+            tripSpec=self.trip_intent.to_trip_spec(),
+            intakeId=self.intake_id,
+            userId=self.user_id,
+            selectedPlaces=self.selected_places,
+            candidateReviews=self.candidate_reviews,
+            regionKey=self.region_key,
+            userStatus=self.user_status,
+            preferenceProfile=self.preference_profile,
+            allowPlaceSuggestions=self.allow_place_suggestions,
+            expandDaysToFitSelectedPlaces=self.expand_days_to_fit_selected_places,
+        )
 
 
 class PlanningContextCreate(BaseModel):

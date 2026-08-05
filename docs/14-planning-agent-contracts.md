@@ -26,7 +26,9 @@ hữu việc tạo đủ số ngày, chọn Place, phân bổ capacity và tối
 
 - Agent chỉ nhận/trả dữ liệu qua schema của chính nó.
 - Payload thô của nguồn hoặc provider không đi thẳng vào planning domain.
-- `Explorer` trả intent, trip spec và Place đã chuẩn hóa có provenance.
+- `Explorer` trả một `TripIntent` canonical và Place đã chuẩn hóa có provenance.
+  Application chiếu aggregate này thành intent/trip spec nội bộ cho các agent
+  downstream; hai projection đó không được lưu riêng.
 - `TripThemePlanner` chỉ trả yêu cầu trải nghiệm ở cấp toàn chuyến.
 - `PlaceSelector` tạo `PlanDay[]` và `UnscheduledPlace[]`.
 - `Checker` kiểm tra plan đã hoàn chỉnh; warning giữ plan ở trạng thái `draft`.
@@ -39,8 +41,10 @@ Explorer chuẩn hóa request, URL signals, destination, duration, pace, interes
 constraints và selected Places. `Confirm` vẫn là ranh giới: claim do AI trích
 xuất không tự động trở thành yêu cầu của user.
 
-Explorer bàn giao `intakeId + userId + explorer`; các Place được resolve và lưu
-theo provenance trước khi planning workflow sử dụng.
+Explorer bàn giao `intakeId + userId + explorer.tripIntent`; các Place được
+resolve và lưu theo provenance trước khi planning workflow sử dụng. Trong trip
+chat, lần sửa tiếp theo chỉ đọc TripIntent hiện hành từ PostgreSQL, không đọc
+Explorer JSON snapshot.
 
 ## TripThemePlanner
 

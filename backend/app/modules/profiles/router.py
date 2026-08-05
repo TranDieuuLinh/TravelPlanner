@@ -18,6 +18,11 @@ from app.modules.profiles.schema import (
     VisitedPlaceRead,
 )
 from app.modules.profiles.service import ProfileService
+from app.modules.preferences.repository import TravelerProfileRepository
+from app.modules.preferences.schema import (
+    TravelerProfileRead,
+    TravelerProfileUpdate,
+)
 from app.modules.users.model import User
 from app.modules.users.repository import UserRepository
 from app.modules.users.schema import CreatorApplicationCreate, ProfileUpdate, UserRead
@@ -41,7 +46,11 @@ async def planner_preview(destination: str, days: int = 3, budget: str = "medium
     return {"draft": draft}
 
 def get_profile_service(db: Annotated[Session, Depends(get_db)]) -> ProfileService:
-    return ProfileService(UserRepository(db), ProfileRepository(db))
+    return ProfileService(
+        UserRepository(db),
+        ProfileRepository(db),
+        TravelerProfileRepository(db),
+    )
 
 
 @router.get("", response_model=UserRead)
@@ -113,6 +122,31 @@ def update_profile(
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ) -> User:
     return service.update_profile(user, payload)
+
+
+@router.get("/traveler-profile", response_model=TravelerProfileRead)
+def get_traveler_profile(
+    user: Annotated[User, Depends(get_current_user)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> TravelerProfileRead:
+    return service.get_traveler_profile(user)
+
+
+@router.patch("/traveler-profile", response_model=TravelerProfileRead)
+def update_traveler_profile(
+    payload: TravelerProfileUpdate,
+    user: Annotated[User, Depends(require_csrf)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> TravelerProfileRead:
+    return service.update_traveler_profile(user, payload)
+
+
+@router.delete("/traveler-profile", status_code=status.HTTP_204_NO_CONTENT)
+def delete_traveler_profile(
+    user: Annotated[User, Depends(require_csrf)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> None:
+    service.delete_traveler_profile(user)
 
 
 @router.post("/creator-application", response_model=UserRead)

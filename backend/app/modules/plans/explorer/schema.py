@@ -12,6 +12,7 @@ from app.modules.plans.dto.agent_contracts import (
     UserPlanningState,
 )
 from app.modules.plans.domain.enums import BudgetLevel
+from app.modules.plans.trip_intent import TripIntent
 from app.modules.preferences.schema import PreferenceSnapshot
 
 
@@ -328,8 +329,7 @@ class PlaceCandidateReview(BaseModel):
 
 class ExplorerContextResponse(BaseModel):
     mode: Literal["confirmed", "vague", "partial", "anchor"] = "confirmed"
-    intent: PlanningIntent
-    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    trip_intent: Annotated[TripIntent, Field(alias="tripIntent")]
     input_completeness: Annotated[
         IntakeInputCompleteness,
         Field(
@@ -354,6 +354,16 @@ class ExplorerContextResponse(BaseModel):
     trace: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
+
+    @property
+    def intent(self) -> PlanningIntent:
+        """Planner projection; never persisted independently."""
+        return self.trip_intent.to_planning_intent()
+
+    @property
+    def trip_spec(self) -> TripPlanningSpec:
+        """Planner projection; never persisted independently."""
+        return self.trip_intent.to_trip_spec()
 
 
 class PlaceCandidatesResponse(BaseModel):

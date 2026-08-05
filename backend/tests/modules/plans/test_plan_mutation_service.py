@@ -319,6 +319,48 @@ def test_search_place_suggestions_ranks_popular_exact_matches_first():
     ]
 
 
+def test_search_place_suggestions_returns_requested_top_k():
+    places = [
+        SimpleNamespace(
+            id=f"coffee-{index}",
+            name=f"Coffee {index}",
+            address=f"{index} Coffee Street, Hà Nội",
+            latitude=Decimal("21.0285"),
+            longitude=Decimal("105.8542"),
+            review_count=10 - index,
+            rating=Decimal("4.0"),
+            metadata_json={},
+        )
+        for index in range(7)
+    ]
+
+    class FakePlaceRepository:
+        def search_active_for_autocomplete(
+            self,
+            query,
+            region_key=None,
+            *,
+            limit=200,
+        ):
+            return places
+
+    service = PlanMutationService(place_repository=FakePlaceRepository())
+
+    suggestions = asyncio.run(
+        service.search_place_suggestions(
+            "Coffee",
+            destination="Hà Nội",
+            top_k=3,
+        )
+    )
+
+    assert [suggestion.place_id for suggestion in suggestions] == [
+        "coffee-0",
+        "coffee-1",
+        "coffee-2",
+    ]
+
+
 def test_update_item_keeps_selected_catalog_identity_and_coordinates():
     service = PlanMutationService()
     plan = make_sample_plan()

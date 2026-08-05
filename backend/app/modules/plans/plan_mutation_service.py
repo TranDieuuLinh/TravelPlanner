@@ -47,14 +47,18 @@ class PlanMutationService:
         self,
         query: str,
         destination: str | None = None,
+        *,
+        top_k: int = 5,
     ) -> list[PlaceSuggestion]:
+        if not 1 <= top_k <= 10:
+            raise ValueError("top_k must be between 1 and 10")
         cleaned = query.strip()
         if not cleaned:
             return []
         dest = (destination or "").strip()
 
         if self.place_repository is not None:
-            return self._search_catalog(cleaned, dest)
+            return self._search_catalog(cleaned, dest, limit=top_k)
 
         candidate = UnifiedPlaceCandidate(
             name=cleaned,
@@ -82,7 +86,7 @@ class PlanMutationService:
         query: str,
         destination: str,
         *,
-        limit: int = 8,
+        limit: int,
     ) -> list[PlaceSuggestion]:
         from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 

@@ -91,14 +91,29 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .topbarInner {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   width: min(1440px, 100%);
   height: 64px;
   margin: auto;
   padding: 0 28px;
 }
-.brand { display: flex; align-items: center; gap: 9px; width: fit-content; font-size: 1.05rem; }
+.brand { display: flex; align-items: center; width: fit-content; font-size: 1.02rem; }
+.brandCluster { display: flex; align-items: center; justify-self: start; gap: 10px; }
+.plannerHistoryMenu {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.plannerHistoryMenu svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.plannerHistoryMenu:hover,
+.plannerHistoryMenu:focus-visible { border-color: var(--line); background: var(--surface-soft); color: var(--brand-dark); outline: 0; }
 .brandMascot {
   width: 48px;
   height: 48px;
@@ -106,32 +121,118 @@ h1, h2, h3, p { margin-top: 0; }
   object-fit: contain;
 }
 .brand strong {
-  background: linear-gradient(120deg, #294b47, var(--brand) 58%, #6e9189);
-  background-clip: text;
-  color: transparent;
+  color: #172c29;
   font-weight: 900;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
 }
-.desktopNav { display: flex; align-items: center; gap: 5px; }
-.navItem { border-radius: 12px; padding: 10px 17px; color: var(--muted); font-size: 0.82rem; font-weight: 750; transition: background .18s ease, color .18s ease, transform .18s ease; }
-.navItem:hover { background: rgba(54, 95, 90, .07); color: var(--brand-dark); }
-.navItem.active { background: var(--brand-soft); color: var(--brand-dark); box-shadow: inset 0 0 0 1px rgba(54, 95, 90, .08); }
+.brand strong span { color: var(--brand); }
+.desktopNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.navItem {
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  border-radius: 10px;
+  padding: 8px 13px;
+  color: #65716d;
+  font-size: .76rem;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: -.01em;
+  transition: background .18s ease, color .18s ease;
+}
+.navItem::after {
+  position: absolute;
+  right: 13px;
+  bottom: 2px;
+  left: 13px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--brand);
+  content: "";
+  opacity: 0;
+  transform: scaleX(.45);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.navItem:hover { background: #f5f7f6; color: var(--brand-dark); }
+.navItem.active {
+  background: transparent;
+  color: var(--brand-dark);
+}
+.navItem.active::after { opacity: 1; transform: scaleX(1); }
+.navItem.active:hover { background: #f5f7f6; color: var(--brand-dark); }
 .newTrip { justify-self: end; display: flex; min-height: 42px; align-items: center; gap: 8px; border: 1px solid var(--ink); border-radius: 13px; padding: 9px 14px; background: var(--ink); color: white; box-shadow: 0 8px 20px rgba(54, 95, 90, .13); font-size: .74rem; font-weight: 850; letter-spacing: -.01em; }
 .newTrip svg { width: 17px; height: 17px; flex: 0 0 auto; fill: #365f5a; }
 .newTrip:hover { border-color: #365f5a; background: #365f5a; box-shadow: 0 11px 25px rgba(54, 95, 90, .18); }
 .shellActions { justify-self: end; display: flex; align-items: center; gap: 10px; }
-.accountMenu { display: flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 13px; padding: 2px; background: rgba(255, 255, 255, .86); box-shadow: 0 5px 16px rgba(54, 95, 90, .045); }
+.topbar.is-planner .topbarInner {
+  width: min(1440px, 100%);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 24px;
+  padding-right: 28px;
+  padding-left: 14px;
+}
+
+.topbar.is-planner {
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.topbar.is-planner .backgroundJobsDock { width: min(360px, calc(100vw - 48px)); }
+.accountMenu { position: relative; }
+.accountMenu > summary { list-style: none; }
+.accountMenu > summary::-webkit-details-marker { display: none; }
+.accountMenuTrigger {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 3px;
+  border-radius: 12px;
+  padding: 4px 6px 4px 4px;
+  color: #71807b;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.accountMenuTrigger:hover,
+.accountMenuTrigger:focus-visible,
+.accountMenu[open] .accountMenuTrigger { background: #f3f6f5; color: var(--brand-dark); outline: 0; }
+.accountMenuChevron { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; transition: transform .18s ease; }
+.accountMenu[open] .accountMenuChevron { transform: rotate(180deg); }
+.accountMenuPopover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: 220px;
+  gap: 3px;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 14px;
+  padding: 6px;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 16px 42px rgba(23, 32, 51, .13);
+  backdrop-filter: blur(18px);
+}
+.accountMenuIdentity { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; border-bottom: 1px solid var(--line); margin-bottom: 3px; padding: 8px 7px 11px; }
+.accountMenuIdentity strong { overflow: hidden; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.accountMenuItem { display: flex; width: 100%; min-height: 38px; align-items: center; justify-content: space-between; border: 0; border-radius: 9px; padding: 9px 10px; background: transparent; color: #4e5d59; font-size: .72rem; font-weight: 750; text-align: left; }
+.accountMenuItem:hover,
+.accountMenuItem:focus-visible { background: #f3f6f5; color: var(--brand-dark); outline: 0; }
+.accountMenuLogout svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .accountLink { display: flex; min-height: 38px; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 11px; padding: 7px 11px; background: white; font-size: .74rem; font-weight: 800; transition: border-color .18s ease, background .18s ease; }
 .accountLink.signedIn { min-width: 0; max-width: 168px; border: 0; padding: 4px 7px 4px 4px; background: transparent; }
 .accountLink.signedIn:hover, .accountLink.signedIn:focus-visible { background: var(--brand-soft); }
-.shellAccountAvatar { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .7rem; font-weight: 900; }
+.shellAccountAvatar { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--brand); color: white; font-size: .72rem; font-weight: 850; }
 .accountCopy { min-width: 0; }
 .accountCopy strong { display: block; max-width: 118px; overflow: hidden; font-size: .7rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.logoutButton { display: grid; width: 34px; height: 34px; min-height: 0; place-items: center; border: 0; border-left: 1px solid #f6f7fb; border-radius: 0 10px 10px 0; padding: 0; background: transparent; color: #172033; }
+.logoutButton { display: grid; width: 34px; height: 34px; min-height: 0; place-items: center; border: 0; border-left: 1px solid rgba(54, 95, 90, .1); border-radius: 0 10px 10px 0; padding: 0; background: transparent; color: #63706c; }
 .logoutButton svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .logoutButton:hover, .logoutButton:focus-visible { background: #f6f7fb; color: #365f5a; transform: none !important; }
-.newTrip:focus-visible, .accountLink:focus-visible, .logoutButton:focus-visible { outline: 3px solid rgba(54, 95, 90, .2); outline-offset: 2px; }
-.backgroundJobsDock { position: relative; z-index: 1; width: min(230px, 26vw); flex: 0 1 auto; }
+.navItem:focus-visible, .newTrip:focus-visible, .accountLink:focus-visible, .logoutButton:focus-visible, .accountMenuTrigger:focus-visible { outline: 3px solid rgba(54, 95, 90, .2); outline-offset: 2px; }
+.backgroundJobsDock { position: fixed; z-index: 1900; top: 76px; right: 24px; width: min(360px, calc(100vw - 48px)); animation: backgroundJobsDockIn .2s ease-out both; }
 .backgroundJobsPanel { position: relative; }
 .backgroundJobsPanel > summary { display: grid; grid-template-columns: 12px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 40px; border: 1px solid rgba(54, 95, 90, .11); border-radius: 12px; padding: 9px 11px; background: rgba(255, 255, 255, .9); cursor: pointer; list-style: none; }
 .backgroundJobsPanel > summary::-webkit-details-marker { display: none; }
@@ -207,19 +308,426 @@ h1, h2, h3, p { margin-top: 0; }
 @keyframes backgroundJobPulse { 70% { box-shadow: 0 0 0 7px rgba(54, 95, 90, 0); } 100% { box-shadow: 0 0 0 0 rgba(54, 95, 90, 0); } }
 @keyframes backgroundJobQueued { 50% { border-color: var(--brand); background: var(--brand-soft); } }
 @keyframes backgroundJobSpin { to { transform: rotate(360deg); } }
+@keyframes backgroundJobsDockIn { from { opacity: 0; transform: translateY(-8px); } }
 @media (prefers-reduced-motion: reduce) {
-  .backgroundJobPulse, .backgroundJobRow.queued .backgroundJobState, .backgroundJobRow.running .backgroundJobState { animation: none; }
+  .backgroundJobsDock, .backgroundJobPulse, .backgroundJobRow.queued .backgroundJobState, .backgroundJobRow.running .backgroundJobState { animation: none; }
 }
 @media (max-width: 560px) {
-  .backgroundJobsDock { width: 42px; }
-  .backgroundJobsPanel > summary { grid-template-columns: 12px auto; width: 42px; padding-inline: 10px; }
-  .backgroundJobsPanel > summary strong { display: none; }
+  .backgroundJobsDock { top: 70px; right: 12px; width: min(320px, calc(100vw - 24px)); }
+  .backgroundJobsPanel > summary { width: 100%; }
   .backgroundJobsList { width: calc(100vw - 24px); max-height: calc(100dvh - 136px); }
   .backgroundJobProviders { grid-template-columns: 1fr; }
   .backgroundJobProviderAttemptList > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 .appBody { min-height: calc(100vh - 64px); }
 .mobileNav { display: none; }
+
+.globalPlannerAssistant {
+  position: fixed;
+  z-index: 1800;
+  right: 24px;
+  bottom: 24px;
+}
+.globalPlannerLauncher {
+  position: relative;
+  display: grid;
+  width: 108px;
+  min-height: 108px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  filter: drop-shadow(0 12px 22px rgba(32, 69, 63, .2));
+}
+.globalPlannerLauncherArtwork {
+  position: relative;
+  display: block;
+  width: 92px;
+  height: 92px;
+  border: 1px solid rgba(49, 95, 88, .14);
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.globalPlannerLauncher:hover .globalPlannerLauncherArtwork,
+.globalPlannerLauncher:focus-visible .globalPlannerLauncherArtwork {
+  box-shadow: 0 12px 28px rgba(32, 69, 63, .2);
+  transform: translateY(-3px);
+}
+.globalPlannerLauncher:focus-visible { outline: 0; }
+.globalPlannerPenguin {
+  position: absolute;
+  left: 5px;
+  bottom: 3px;
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+}
+.globalPlannerBubble {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 34px;
+  height: 34px;
+  overflow: visible;
+  filter: drop-shadow(0 2px 4px rgba(32, 69, 63, .2));
+}
+.globalPlannerBubble > path { fill: #315f58; stroke: #315f58; }
+.globalPlannerBubble > circle { fill: #fff; stroke: none; }
+.globalPlannerLauncherLabel {
+  position: absolute;
+  right: 50%;
+  bottom: 0;
+  min-width: max-content;
+  border: 1px solid rgba(49, 95, 88, .12);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, .96);
+  color: var(--brand-dark);
+  box-shadow: 0 5px 14px rgba(32, 69, 63, .1);
+  font-size: .64rem;
+  font-weight: 850;
+  transform: translateX(50%);
+  white-space: nowrap;
+}
+.globalPlannerPanel {
+  display: grid;
+  width: min(370px, calc(100vw - 40px));
+  overflow: hidden;
+  border: 1px solid rgba(49, 95, 88, .14);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 24px 64px rgba(32, 69, 63, .22);
+  backdrop-filter: blur(18px);
+  animation: globalPlannerPanelIn .2s ease-out both;
+}
+.globalPlannerPanel > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  border-bottom: 1px solid #eaedef;
+  padding: 10px 12px;
+  background: #fff;
+}
+.globalPlannerAvatar {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #f1f6f4;
+}
+.globalPlannerAvatar .penguinMascot { width: 48px; height: 48px; object-fit: contain; }
+.globalPlannerPanel header > div { display: grid; gap: 3px; min-width: 0; }
+.globalPlannerPanel header strong { color: #18312b; font-size: .84rem; }
+.globalPlannerPanel header small { overflow: hidden; color: #71817d; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.globalPlannerClose {
+  display: grid;
+  width: 38px;
+  min-height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f4f6f5;
+  color: #315f58;
+}
+.globalPlannerClose:hover,
+.globalPlannerClose:focus-visible { background: #e8f0ed; }
+.globalPlannerClose svg { width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.globalPlannerWelcome {
+  margin: 14px 14px 10px;
+  border: 1px solid #dbe8e4;
+  border-radius: 16px 16px 16px 6px;
+  padding: 12px 14px;
+  background: #f8faf9;
+  color: #29413c;
+  font-size: .75rem;
+  line-height: 1.55;
+}
+.globalPlannerPrompts {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0 14px 12px;
+  scrollbar-width: none;
+}
+.globalPlannerPrompts::-webkit-scrollbar { display: none; }
+.globalPlannerPrompts button {
+  flex: 0 0 auto;
+  border: 1px solid #dbe8e4;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #315f58;
+  font-size: .62rem;
+  font-weight: 800;
+}
+.globalPlannerPrompts button:hover,
+.globalPlannerPrompts button:focus-visible { border-color: #8eaaa3; background: #f4f8f6; }
+.globalPlannerPanel form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  margin: 0 12px;
+  border: 1px solid #d7e3df;
+  border-radius: 18px;
+  padding: 7px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(32, 69, 63, .07);
+}
+.globalPlannerPanel form:focus-within { border-color: #75978f; box-shadow: 0 0 0 3px rgba(49, 95, 88, .1); }
+.globalPlannerPanel textarea {
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 7px 8px;
+  background: transparent;
+  color: #18312b;
+  font-size: .76rem;
+  line-height: 1.45;
+}
+.globalPlannerPanel textarea::placeholder { color: #899692; }
+.globalPlannerPanel form button {
+  display: grid;
+  width: 42px;
+  min-height: 42px;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  background: #315f58;
+  color: #fff;
+}
+.globalPlannerPanel form button:disabled { opacity: .42; }
+.globalPlannerPanel form button svg { width: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.globalPlannerHandoff { padding: 9px 14px 14px; color: #71817d; font-size: .58rem; line-height: 1.45; }
+
+/* Match the Explore assistant to the completed AI Planner chat. */
+.globalPlannerPanel.globalPlannerChat {
+  width: min(410px, calc(100vw - 28px));
+  height: min(610px, calc(100dvh - 92px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-radius: 26px;
+  background: #fff;
+}
+
+.globalPlannerPanel.globalPlannerChat > header {
+  grid-template-columns: 42px minmax(0, 1fr) 46px;
+  min-height: 76px;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.globalPlannerMoveHandle {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #78918b;
+}
+
+.globalPlannerMoveHandle svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.globalPlannerPanel.globalPlannerChat header strong {
+  color: #1c312d;
+  font-size: .94rem;
+}
+
+.globalPlannerPanel.globalPlannerChat header small {
+  color: #71817d;
+  font-size: .68rem;
+  font-weight: 650;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerClose {
+  width: 46px;
+  min-height: 46px;
+  border: 1px solid #dce6e3;
+  border-radius: 15px;
+  background: #fff;
+}
+
+.globalPlannerConversation {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 18px;
+  background: #fff;
+}
+
+.globalPlannerMessageRow {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.globalPlannerMessageAvatar {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerWelcome {
+  margin: 0;
+  border-color: #dbe3e1;
+  border-radius: 18px 18px 18px 6px;
+  padding: 14px 16px;
+  background: #fbfcfc;
+  box-shadow: 0 8px 24px rgba(42, 82, 75, .06);
+  color: #31564f;
+  font-size: .78rem;
+}
+
+.globalPlannerPanel form.globalPlannerComposer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  margin: 0 14px 14px;
+  overflow: hidden;
+  border: 1px solid #cdd9d5;
+  border-radius: 24px;
+  padding: 0;
+  box-shadow: 0 10px 30px rgba(31, 50, 45, .06);
+}
+
+.globalPlannerPanel form.globalPlannerComposer:focus-within {
+  border-color: #8a918e;
+  box-shadow: 0 0 0 3px rgba(49, 95, 88, .08), 0 12px 34px rgba(17, 24, 22, .09);
+}
+
+.globalPlannerUrlRow {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid #e5ebe8;
+  padding: 9px 11px;
+}
+
+.globalPlannerUrlRow > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: #6f8d86;
+}
+
+.globalPlannerUrlRow > span svg,
+.globalPlannerUrlRow > button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerUrlRow textarea {
+  min-height: 42px;
+  padding: 10px 6px;
+}
+
+.globalPlannerPanel form.globalPlannerComposer .globalPlannerUrlRow button {
+  width: 44px;
+  min-height: 44px;
+  border-radius: 17px;
+  background: #315f58;
+}
+
+.globalPlannerPromptRow {
+  position: relative;
+  min-height: 160px;
+  padding: 3px 8px 58px;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerPromptRow textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 14px;
+}
+
+.globalPlannerPanel form.globalPlannerComposer .globalPlannerPromptRow button {
+  position: absolute;
+  right: 15px;
+  bottom: 12px;
+  width: 48px;
+  min-height: 48px;
+  border-radius: 50%;
+  background: #315f58;
+}
+
+.globalPlannerPanel form.globalPlannerComposer button:disabled {
+  background: #e5ebe9;
+  color: #aebbb7;
+  opacity: 1;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerUrlRow {
+  grid-template-columns: 38px minmax(0, 1fr) 40px;
+  padding: 5px 8px;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerUrlRow > span {
+  width: 38px;
+  height: 38px;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerUrlRow textarea {
+  min-height: 38px;
+  padding-block: 6px;
+}
+
+.globalPlannerPanel form.globalPlannerComposer .globalPlannerUrlRow button {
+  width: 40px;
+  min-height: 40px;
+  border-radius: 15px;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerPromptRow {
+  min-height: 112px;
+  padding-bottom: 50px;
+}
+
+.globalPlannerPanel.globalPlannerChat .globalPlannerPromptRow textarea {
+  min-height: 58px;
+  padding-top: 10px;
+}
+
+.globalPlannerPanel form.globalPlannerComposer .globalPlannerPromptRow button {
+  right: 12px;
+  bottom: 9px;
+  width: 42px;
+  min-height: 42px;
+}
+
+@media (max-width: 520px) {
+  .globalPlannerAssistant { right: 12px; bottom: 12px; }
+  .globalPlannerPanel.globalPlannerChat {
+    width: calc(100vw - 24px);
+    height: min(610px, calc(100dvh - 24px));
+    border-radius: 22px;
+  }
+}
+
+@keyframes globalPlannerPanelIn {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .globalPlannerPanel { animation: none; }
+  .globalPlannerLauncherArtwork { transition: none; }
+}
 
 .eyebrow { display: block; margin-bottom: 8px; color: var(--brand); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; }
 .eyebrow.light { color: #365f5a; }
@@ -2199,6 +2707,7 @@ h1, h2, h3, p { margin-top: 0; }
 .editPlaceNotesPaper .itinerarySearchStatus,
 .editPlaceNotesPaper .itinerarySearchHint { color: var(--edit-place-color-dark); }
 .editPlaceNotesPaper .itinerarySuggestionsDropdown {
+  max-height: 270px;
   border-color: var(--line);
   background: rgba(255, 255, 255, .98);
   box-shadow: var(--shadow);
@@ -2273,6 +2782,14 @@ h1, h2, h3, p { margin-top: 0; }
   background: var(--edit-place-color);
 }
 
+/* The edit dialog is one uninterrupted white surface. */
+.editPlaceWindow > .editPlaceNotesHeader,
+.editPlaceWindow > .editPlaceNotesPaper,
+.editPlaceWindow > .itineraryMutationActions {
+  border-color: transparent;
+  background: #ffffff;
+}
+
 /* Add-place keeps the shared mutation behavior, with a clearer form hierarchy. */
 .addPlaceWindow {
   max-width: 680px;
@@ -2282,9 +2799,8 @@ h1, h2, h3, p { margin-top: 0; }
 .addPlaceHeader {
   min-height: 88px;
   padding: 18px 24px;
-  background:
-    radial-gradient(circle at 88% 10%, rgba(85, 125, 118, .12), transparent 170px),
-    linear-gradient(135deg, #f8fbfa, #f2f7f6);
+  border-bottom: 0;
+  background: #fff;
 }
 .addPlaceHeader .itineraryMutationEyebrow {
   min-height: 32px;
@@ -2341,13 +2857,12 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .addPlaceDetails {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 18px;
-  border-top: 1px solid var(--line);
-  padding-top: 22px;
+  padding-top: 2px;
 }
 .addPlaceNotesField {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 .addPlaceSelectWrap {
   position: relative;
@@ -2417,7 +2932,9 @@ h1, h2, h3, p { margin-top: 0; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
+  border-top: 0;
   padding: 16px 24px;
+  background: #fff;
 }
 .addPlaceActionHint {
   align-self: center;
@@ -2777,10 +3294,11 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .mapLocationButton:disabled { color: var(--muted); cursor: not-allowed; opacity: .68; }
 .mapLocationButton svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .mapDirectionsControl { display: grid; min-width: 0; flex: 1; grid-template-columns: minmax(180px,1.35fr) minmax(130px,1fr); gap: 8px; }
-.mapDirectionsControl--navigateOnly { width: min(180px, 100%); flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); }
+.mapDirectionsControl--navigateOnly { width: min(140px, 100%); flex: 0 0 auto; grid-template-columns: minmax(0, 1fr); }
 .mapDirectionsButton:focus-visible { outline: 3px solid rgba(54,95,90,.24); outline-offset: 1px; }
 .mapDirectionsButton:disabled { cursor: not-allowed; opacity: .58; }
 .mapDirectionsButton { display: flex; min-height: 56px; min-width: 0; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 17px; padding: 0 16px; background: #365f5a; color: white; cursor: pointer; font-size: .62rem; font-weight: 900; white-space: nowrap; }
+.mapDirectionsButton--navigate { min-height: 44px; border-radius: 14px; padding: 0 12px; }
 .mapDirectionsButton:hover:not(:disabled) { background: #294b47; }
 .mapDirectionsButton svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .mapDirectionsButton--overview { border: 1px solid rgba(54,95,90,.2); background: rgba(255,255,255,.96); color: #294b47; box-shadow: 0 8px 24px rgba(42,65,61,.12); }
@@ -2805,7 +3323,7 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .mapDirectionsSearchField > button { width: 38px; height: 38px; border: 1px solid #d8e3e0; border-radius: 9px; background: #f5f9f8; color: #365f5a; cursor: pointer; font-size: .78rem; }
 .mapDirectionsSearchSpinner { position: absolute; right: 10px; width: 13px; height: 13px; border: 2px solid #d2dfdc; border-top-color: #365f5a; border-radius: 50%; animation: spin .8s linear infinite; }
 .mapDirectionsSearchField:has(> button) .mapDirectionsSearchSpinner { right: 48px; }
-.mapDirectionsSearchSuggestions { grid-column: 1/-1; display: grid; max-height: 142px; overflow-y: auto; border: 1px solid #d8e3e0; border-radius: 9px; background: #fff; box-shadow: 0 8px 20px rgba(42,65,61,.12); }
+.mapDirectionsSearchSuggestions { grid-column: 1/-1; display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #d8e3e0; border-radius: 9px; background: #fff; box-shadow: 0 8px 20px rgba(42,65,61,.12); }
 .mapDirectionsSearchSuggestions button { display: grid; gap: 2px; border: 0; border-bottom: 1px solid #edf1f0; padding: 8px 10px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; }
 .mapDirectionsSearchSuggestions button:last-child { border-bottom: 0; }
 .mapDirectionsSearchSuggestions button:hover { background: #f2f8f6; }
@@ -2831,8 +3349,9 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
   .mapDirectionsToolbar { gap: 5px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .mapDirectionsToolbar::-webkit-scrollbar { display: none; }
   .mapDirectionsControl { min-width: 290px; grid-template-columns: minmax(165px,1.3fr) minmax(120px,1fr); gap: 5px; }
-  .mapDirectionsControl--navigateOnly { min-width: 0; width: min(150px, 100%); grid-template-columns: minmax(0, 1fr); }
+  .mapDirectionsControl--navigateOnly { min-width: 0; width: min(124px, 100%); grid-template-columns: minmax(0, 1fr); }
   .mapDirectionsButton { min-height: 48px; border-radius: 15px; padding: 0 10px; font-size: .56rem; }
+  .mapDirectionsButton--navigate { min-height: 42px; border-radius: 13px; padding: 0 9px; }
   .mapDirectionsButton--overview strong { font-size: .56rem; }
 }
 .mapLocationStatusRow { display: flex; width: 100%; max-width: min(610px,100%); align-items: stretch; gap: 8px; }
@@ -3066,6 +3585,14 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
   .plannerMap { position: static; grid-column: 1/-1; height: 520px; min-height: 520px; }
 }
 
+@media (max-width: 1050px) and (min-width: 781px) {
+  .topbarInner,
+  .topbar.is-planner .topbarInner { padding-inline: 14px; column-gap: 14px; }
+  .navItem { padding-inline: 10px; }
+  .accountCopy { display: none; }
+  .accountLink.signedIn { padding-right: 4px; }
+}
+
 @media (max-width: 1120px) {
   .planGrid { grid-template-columns: repeat(2,1fr); }
   .heroGrid { grid-template-columns: minmax(0,1.1fr) minmax(310px,.9fr); gap: 44px; }
@@ -3077,15 +3604,47 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
 @media (max-width: 780px) {
   .pageWidth { padding-inline: 18px; }
   .topbarInner { position: relative; display: flex; justify-content: center; height: 62px; padding: 0 18px; }
+  .brandCluster { width: 100%; justify-content: center; }
+  .topbar .plannerHistoryMenu { position: absolute; left: 18px; }
   .topbarInner .brand { margin-inline: auto; }
   .shellActions { position: absolute; top: 50%; right: 18px; display: flex; transform: translateY(-50%); }
   .shellActions > .accountLink, .shellActions > .accountMenu { display: none; }
   .desktopNav, .newTrip { display: none; }
   .appBody { min-height: calc(100vh - 62px); padding-bottom: 66px; }
-  .mobileNav { position: fixed; z-index: 50; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3,1fr); border-top: 1px solid var(--line); padding: 5px 8px; background: rgba(255, 255, 255, .95); backdrop-filter: blur(14px); }
-  .mobileItem { display: grid; place-items: center; gap: 2px; padding: 6px; color: var(--muted); font-size: .58rem; font-weight: 800; }
-  .mobileItem span { font-size: 1.1rem; }
-  .mobileItem.active { color: var(--brand); }
+  .mobileNav { position: fixed; z-index: 50; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3,1fr); border-top: 1px solid rgba(54, 95, 90, .1); padding: 5px 8px; background: rgba(255, 255, 255, .96); box-shadow: 0 -8px 24px rgba(23, 32, 51, .04); backdrop-filter: blur(14px); }
+  .mobileItem { display: grid; place-items: center; padding: 6px; color: var(--muted); font-size: .58rem; font-weight: 800; }
+  .mobileItem.active { color: var(--brand-dark); }
+  .globalPlannerAssistant {
+    right: 12px;
+    bottom: calc(var(--mobile-shell-bottom, 66px) + 10px);
+  }
+  .globalPlannerLauncher {
+    width: 84px;
+    min-height: 84px;
+  }
+  .globalPlannerLauncherArtwork {
+    width: 76px;
+    height: 76px;
+  }
+  .globalPlannerPenguin {
+    left: 4px;
+    bottom: 2px;
+    width: 66px;
+    height: 66px;
+  }
+  .globalPlannerBubble {
+    top: -5px;
+    right: -5px;
+    width: 30px;
+    height: 30px;
+  }
+  .globalPlannerLauncherLabel { display: none; }
+  .globalPlannerPanel {
+    width: min(370px, calc(100vw - 24px));
+    max-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px) - 20px);
+    overflow-y: auto;
+    border-radius: 22px;
+  }
   .exploreHero { min-height: auto; padding: 52px 0 68px; }
   .heroGrid { grid-template-columns: 1fr; gap: 42px; }
   .heroGrid h1 { font-size: clamp(3.1rem,12vw,4.7rem); }
@@ -5004,11 +5563,12 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   min-height: 680px;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(54, 95, 90, .09);
-  border-radius: 0 0 22px 22px;
-  padding: 14px 11px;
-  background: rgba(255, 255, 255, .92);
-  box-shadow: 0 18px 46px rgba(54, 95, 90, .07);
+  border: 0;
+  border-right: 1px solid #ececec;
+  border-radius: 0;
+  padding: 12px 8px;
+  background: #f9f9f9;
+  box-shadow: 8px 0 24px rgba(0, 0, 0, .04);
   transition: padding .2s ease;
 }
 
@@ -5028,7 +5588,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 3px 10px;
+  padding: 0 4px 12px;
 }
 
 .tripProjectBrand {
@@ -5057,7 +5617,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .tripProjectBrand small {
-  color: var(--muted);
+  color: #6b6b6b;
   font-size: .52rem;
   font-weight: 700;
 }
@@ -5076,13 +5636,12 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .tripSidebarToggle:hover,
 .tripSidebarToggle:focus-visible {
-  background: #f6f7fb;
+  background: #ececec;
   color: var(--ink);
 }
 
 .tripSidebarToggle svg,
 .sidebarNewChat svg,
-.tripProjectOpen > svg,
 .tripProjectDelete svg {
   width: 20px;
   height: 20px;
@@ -5099,8 +5658,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   align-items: center;
   gap: 11px;
   border: 1px solid transparent;
-  border-radius: 12px;
-  padding: 10px 11px;
+  border-radius: 9px;
+  padding: 10px 10px;
   background: transparent;
   color: var(--ink);
   font-size: .68rem;
@@ -5111,8 +5670,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .sidebarNewChat:hover,
 .sidebarNewChat.active {
-  border-color: #e4e7f0;
-  background: #f6f7fb;
+  border-color: transparent;
+  background: #ececec;
   color: var(--brand-dark);
 }
 
@@ -5121,38 +5680,37 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  margin-top: 18px;
+  margin-top: 22px;
 }
 
 .tripProjectSectionTitle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px 8px;
+  padding: 0 10px 7px;
   color: #172033;
 }
 
 .tripProjectSectionTitle strong {
-  color: var(--ink);
-  font-size: .62rem;
-  letter-spacing: .02em;
-  text-transform: uppercase;
+  color: #6b6b6b;
+  font-size: .56rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .tripProjectSectionTitle small {
-  display: grid;
-  min-width: 20px;
-  height: 20px;
-  place-items: center;
-  border-radius: 999px;
-  background: #f6f7fb;
+  display: block;
+  min-width: 0;
+  height: auto;
+  background: transparent;
+  color: #8f8f8f;
   font-size: .52rem;
   font-weight: 800;
 }
 
 .tripProjectList nav {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   overflow-y: auto;
   scrollbar-color: #667085 transparent;
   scrollbar-width: thin;
@@ -5160,34 +5718,31 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .tripProjectItem {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 30px;
   align-items: center;
-  border-radius: 12px;
+  border-radius: 9px;
   background: transparent;
-  color: #365f5a;
+  color: #2f2f2f;
 }
 
 .tripProjectOpen {
-  display: grid;
+  display: block;
   min-width: 0;
-  grid-template-columns: 21px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
   border: 0;
-  border-radius: 12px;
-  padding: 10px 4px 10px 10px;
+  border-radius: 9px;
+  padding: 9px 4px 9px 10px;
   background: transparent;
   color: inherit;
   text-align: left;
 }
 
 .tripProjectItem:hover {
-  background: #f6f7fb;
+  background: #ececec;
 }
 
 .tripProjectItem.active {
-  background: #f6f7fb;
-  color: var(--ink);
+  background: #e7e7e7;
+  color: #171717;
 }
 
 .tripProjectOpen > span {
@@ -5204,12 +5759,14 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .tripProjectOpen strong {
-  font-size: .66rem;
+  color: inherit;
+  font-size: .63rem;
+  font-weight: 650;
 }
 
 .tripProjectOpen small {
-  color: var(--muted);
-  font-size: .52rem;
+  color: #6b6b6b;
+  font-size: .49rem;
 }
 
 .tripProjectDelete {
@@ -5218,10 +5775,12 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   height: 30px;
   place-items: center;
   border: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   padding: 0;
   background: transparent;
-  color: #172033;
+  color: #6b6b6b;
+  opacity: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
 }
 
 .tripProjectDelete svg {
@@ -5231,8 +5790,15 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .tripProjectDelete:hover,
 .tripProjectDelete:focus-visible {
-  background: #f6f7fb;
-  color: #365f5a;
+  background: #dedede;
+  color: #171717;
+  opacity: 1;
+}
+
+.tripProjectItem:hover .tripProjectDelete,
+.tripProjectItem.active .tripProjectDelete,
+.tripProjectItem:focus-within .tripProjectDelete {
+  opacity: 1;
 }
 
 .tripProjectEmpty {
@@ -5797,6 +6363,71 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   background: linear-gradient(180deg, #eef9f5 0%, #edf7f4 100%);
 }
 
+.itineraryTripFacts {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  grid-auto-columns: minmax(108px, 1fr);
+  grid-auto-flow: column;
+  gap: 0;
+  overflow-x: auto;
+  margin: 0;
+  padding: 7px 10px;
+  background: #fff;
+  scrollbar-width: thin;
+}
+
+.itineraryTripFactsBar {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-left: 66px;
+  border-bottom: 1px solid #e5efeb;
+  background: #fff;
+}
+
+.plannerHistoryMenu--facts {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  flex: 0 0 38px;
+  border-color: #e3e9e7;
+  background: #fff;
+  color: #51615d;
+  transform: translateY(-50%);
+}
+
+.itineraryTripFacts > div {
+  min-width: 0;
+  border-right: 1px solid #edf1ef;
+  padding: 4px 10px;
+}
+
+.itineraryTripFacts > div:last-child { border-right: 0; }
+
+.itineraryTripFacts dt {
+  margin: 0 0 3px;
+  color: #74827e;
+  font-size: .57rem;
+  font-weight: 800;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.itineraryTripFacts dd {
+  overflow: hidden;
+  margin: 0;
+  color: #25433e;
+  font-size: .66rem;
+  font-weight: 750;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .itinerary .planHeaderIcon {
   width: 52px;
   height: 52px;
@@ -6256,6 +6887,393 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   }
 }
 
+/* Mindtrip-inspired Planner entry: compact trip facts above a modern chat and
+   a non-commerce inspiration feed. Once a plan exists, the established
+   itinerary + map workspace takes over again. */
+.plannerLayout.is-new-chat {
+  min-height: calc(100dvh - 64px);
+  height: calc(100dvh - 64px);
+  grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+  grid-template-rows: minmax(0, 1fr);
+  place-items: stretch;
+  overflow: hidden;
+  padding: 0;
+  background: #fff;
+}
+
+.plannerEntryTopbar {
+  z-index: 10;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 10px clamp(14px, 2vw, 24px);
+  background: #fff;
+}
+
+.plannerNewChatMenu {
+  display: inline-grid;
+  width: max-content;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 7px;
+  border: 0;
+  padding: 7px 8px;
+  background: transparent;
+  color: #151918;
+  text-align: left;
+}
+
+.plannerNewChatMenu strong { grid-row: 1 / 3; font-size: .82rem; }
+.plannerNewChatMenu span { align-self: end; color: #7b8582; font-size: .52rem; }
+.plannerNewChatMenu svg { align-self: start; width: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.plannerNewChatMenu:hover,
+.plannerNewChatMenu:focus-visible { border-radius: 12px; background: #f3f5f4; }
+
+.plannerIntakeNav {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 790px;
+  overflow-x: auto;
+  border: 1px solid #e2e5e4;
+  border-radius: 999px;
+  padding: 3px;
+  background: #fafbfa;
+  box-shadow: 0 3px 12px rgba(27, 42, 38, .04);
+  scrollbar-width: none;
+}
+
+.plannerIntakeNav::-webkit-scrollbar { display: none; }
+
+.plannerIntakeNav button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  flex: 1 1 0;
+  gap: 1px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #77817e;
+  text-align: left;
+}
+
+.plannerIntakeNav button + button::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 1px;
+  background: #e5e8e7;
+  content: "";
+}
+
+.plannerIntakeNav button[aria-current="step"] { background: #fff; color: #1d2926; box-shadow: 0 2px 10px rgba(27, 42, 38, .09); }
+.plannerIntakeNav button[aria-current="step"]::before,
+.plannerIntakeNav button[aria-current="step"] + button::before { display: none; }
+.plannerIntakeNav button.is-filled { color: #315f58; }
+.plannerIntakeNav small { font-size: .58rem; font-weight: 780; white-space: nowrap; }
+.plannerIntakeNav strong { overflow: hidden; font-size: .51rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.plannerTopUrlButton {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 17px;
+  background: #17211f;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.plannerTopUrlButton svg { width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.plannerTopUrlButton:hover,
+.plannerTopUrlButton:focus-visible { background: #315f58; transform: translateY(-1px); }
+
+.plannerLayout.is-new-chat .plannerChat,
+.plannerLayout.is-new-chat .plannerChat[style] {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerChat > .panelHeading { display: none; }
+.plannerLayout.is-new-chat .plannerChatContent { height: 100%; background: #fff; }
+.plannerLayout.is-new-chat .chatMessages { padding: clamp(28px, 6vh, 72px) clamp(24px, 6vw, 76px) 22px; }
+.plannerLayout.is-new-chat .chatBubble { font-size: .82rem; }
+.plannerLayout.is-new-chat .chatBubble.assistant { border: 0; background: #f2f4f3; box-shadow: none; }
+.plannerLayout.is-new-chat .chatBubble.user { background: #17211f; }
+.plannerLayout.is-new-chat:not(.is-awaiting-plan) .chatMessageAvatar {
+  width: 52px;
+  height: 52px;
+  flex-basis: 52px;
+  margin-left: -8px;
+}
+.plannerLayout.is-new-chat:not(.is-awaiting-plan) .chatMessageAvatar .penguinMascot {
+  width: 52px;
+  height: 52px;
+}
+.plannerLayout.is-new-chat .chatComposer { border-top: 0; padding: 10px clamp(20px, 4vw, 52px) 18px; background: #fff; }
+
+.plannerLayout.is-new-chat .composerBox {
+  border: 1px solid #d8dddb;
+  border-radius: 23px;
+  background: #fff;
+  box-shadow: 0 7px 26px rgba(31, 50, 45, .09);
+}
+
+.plannerLayout.is-new-chat .composerBox:focus-within { border-color: #7d9b94; box-shadow: 0 0 0 3px rgba(49, 95, 88, .09), 0 10px 32px rgba(31, 50, 45, .1); }
+.plannerLayout.is-new-chat .composerBox textarea { min-height: 58px; padding: 14px 17px 4px; font-size: .78rem; }
+.plannerLayout.is-new-chat .composerToolbar { min-height: 44px; padding: 3px 8px 7px; }
+.plannerLayout.is-new-chat .sourceActionButton { border-radius: 999px; }
+.plannerLayout.is-new-chat .sendButton { width: 38px; height: 38px; border-radius: 50%; background: #17211f; }
+
+.plannerDiscovery {
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  border-radius: 28px;
+  padding: 30px clamp(20px, 3vw, 42px) 48px;
+  background: #fafafa;
+  scrollbar-color: #c6ccca transparent;
+}
+
+.plannerDiscoveryHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.plannerDiscoveryHeader > div { display: grid; gap: 2px; }
+.plannerDiscoveryHeader span { color: #78817f; font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.plannerDiscoveryHeader h2 { margin: 0; color: #161b1a; font-size: clamp(1.35rem, 2vw, 1.85rem); letter-spacing: -.04em; }
+.plannerDiscoveryHeader button { border: 0; padding: 7px 0; background: transparent; color: #27332f; font-size: .64rem; font-weight: 850; }
+
+.plannerDiscoveryNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  border: 1px solid #dbe7e3;
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: #edf7f3;
+  color: #49625c;
+  font-size: .59rem;
+  line-height: 1.4;
+}
+
+.plannerDiscoveryNoticeDot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #3e776b; box-shadow: 0 0 0 4px rgba(62, 119, 107, .12); animation: plannerDiscoveryPulse 1.4s ease-in-out infinite; }
+@keyframes plannerDiscoveryPulse { 50% { opacity: .45; transform: scale(.8); } }
+
+.plannerDiscoveryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.plannerDiscoveryCard { position: relative; min-height: 245px; overflow: hidden; border-radius: 20px; background: #dce3e0; color: #fff; box-shadow: 0 7px 20px rgba(26, 39, 35, .09); isolation: isolate; }
+.plannerDiscoveryCard.featured { grid-column: span 2; min-height: 300px; }
+.plannerDiscoveryCard img { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
+.plannerDiscoveryCard:hover img { transform: scale(1.035); }
+.plannerDiscoveryShade { position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.05) 35%, rgba(8,15,13,.78) 100%); }
+.plannerDiscoveryCardTop { display: flex; align-items: center; justify-content: space-between; padding: 13px; }
+.plannerDiscoveryKind { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 6px 9px; background: rgba(19, 27, 25, .58); backdrop-filter: blur(8px); font-size: .55rem; font-weight: 800; }
+.plannerDiscoveryKind i { font-style: normal; font-size: .52rem; }
+.plannerDiscoveryCardTop button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: rgba(19, 27, 25, .42); color: #fff; font-size: 1rem; backdrop-filter: blur(8px); }
+.plannerDiscoveryCopy { position: absolute; right: 0; bottom: 0; left: 0; padding: 18px; }
+.plannerDiscoveryCopy h3 { max-width: 28rem; margin-bottom: 6px; color: #fff; font-size: clamp(.82rem, 1.25vw, 1.05rem); line-height: 1.18; letter-spacing: -.025em; }
+.plannerDiscoveryCopy p { display: flex; gap: 5px; margin: 0; color: rgba(255,255,255,.78); font-size: .58rem; }
+
+.plannerBackgroundStage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px clamp(24px, 5vw, 58px) 12px;
+  background: #fff;
+  text-align: center;
+}
+
+.plannerLoadingJourney {
+  position: relative;
+  width: min(520px, 100%);
+  height: 292px;
+  margin-bottom: 22px;
+}
+.plannerLoadingThoughts {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(470px, 94%);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 9px 16px rgba(42, 82, 75, .08));
+  transform: translateX(-50%);
+  animation: plannerLoadingThoughts 4.8s ease-in-out infinite;
+}
+.plannerLoadingRoute {
+  position: absolute;
+  top: 145px;
+  left: 0;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+  fill: none;
+  stroke: #b8d3cc;
+  stroke-dasharray: 7 9;
+  stroke-linecap: round;
+  stroke-width: 3;
+  animation: plannerLoadingRoute 1.5s linear infinite;
+}
+.plannerLoadingStop {
+  position: absolute;
+  top: 137px;
+  display: grid;
+  width: 126px;
+  justify-items: center;
+  gap: 8px;
+}
+.plannerLoadingStop--search { left: 0; animation: plannerLoadingStop 3.6s ease-in-out infinite; }
+.plannerLoadingStop--plan { top: 181px; left: 50%; animation: plannerLoadingStop 3.6s .6s ease-in-out infinite; transform: translateX(-50%); }
+.plannerLoadingStop--ready { right: 0; animation: plannerLoadingStop 3.6s 1.2s ease-in-out infinite; }
+.plannerLoadingMascot {
+  display: grid;
+  width: 104px;
+  height: 104px;
+  place-items: center;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff 30%, #edf7f3);
+  box-shadow: 0 15px 34px rgba(42, 82, 75, .13), inset 0 0 0 7px rgba(255, 255, 255, .72);
+}
+.plannerLoadingMascot .penguinMascot { width: 88px; height: 88px; }
+.plannerLoadingStop--plan .plannerLoadingMascot {
+  width: 112px;
+  height: 112px;
+  background: linear-gradient(145deg, #fff7e8 15%, #edf7f3 88%);
+}
+.plannerLoadingStop--plan .penguinMascot { width: 98px; height: 98px; }
+.plannerLoadingStop small {
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, .92);
+  color: #527069;
+  box-shadow: 0 5px 14px rgba(42, 82, 75, .07);
+  font-size: .58rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.plannerLoadingSpark {
+  position: absolute;
+  color: #e5a94d;
+  font-size: 1rem;
+  animation: plannerLoadingSpark 1.8s ease-in-out infinite;
+}
+.plannerLoadingSpark--one { top: 18px; left: 30%; }
+.plannerLoadingSpark--two { right: 28%; bottom: 30px; animation-delay: .7s; }
+.plannerBackgroundCopy h2 { margin: 0; color: #16221f; font-size: clamp(1.05rem, 1.8vw, 1.35rem); line-height: 1.2; letter-spacing: -.025em; }
+.plannerBackgroundCopy p { max-width: 390px; margin: 9px auto 0; color: #74817d; font-size: .68rem; line-height: 1.55; }
+.plannerLoadingDots { display: inline-flex; width: 1.15em; justify-content: flex-start; }
+.plannerLoadingDots i { opacity: .18; font-style: normal; animation: plannerLoadingDot 1.4s ease-in-out infinite; }
+.plannerLoadingDots i:nth-child(2) { animation-delay: .18s; }
+.plannerLoadingDots i:nth-child(3) { animation-delay: .36s; }
+@keyframes plannerLoadingDot { 0%, 65%, 100% { opacity: .18; } 30% { opacity: 1; } }
+@keyframes plannerLoadingRoute { to { stroke-dashoffset: -32; } }
+@keyframes plannerLoadingStop {
+  0%, 100% { filter: saturate(.84); }
+  18% { filter: saturate(1.12); }
+  24% { transform: translateY(-7px) rotate(-1deg); }
+  34% { transform: translateY(0); }
+}
+@keyframes plannerLoadingSpark {
+  0%, 100% { opacity: .25; transform: scale(.7) rotate(0); }
+  50% { opacity: 1; transform: scale(1.2) rotate(45deg); }
+}
+@keyframes plannerLoadingThoughts {
+  0%, 100% { opacity: .86; transform: translateX(-50%) translateY(2px); }
+  50% { opacity: 1; transform: translateX(-50%) translateY(-3px); }
+}
+.plannerLoadingStop--plan { transform: translateX(-50%); }
+@keyframes plannerLoadingStopCenter {
+  0%, 100% { filter: saturate(.84); transform: translateX(-50%); }
+  18% { filter: saturate(1.12); }
+  24% { transform: translateX(-50%) translateY(-7px) rotate(1deg); }
+  34% { transform: translateX(-50%) translateY(0); }
+}
+.plannerLoadingStop--plan { animation-name: plannerLoadingStopCenter; }
+.plannerCancelJob { position: absolute; top: 18px; right: 18px; display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; padding: 0; background: transparent; color: #89938f; }
+.plannerCancelJob svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.plannerCancelJob:hover,
+.plannerCancelJob:focus-visible { background: #f4f6f5; color: #263a35; outline: none; }
+
+.plannerLayout.is-planning .chatComposer { padding-top: 7px; }
+.plannerLayout.is-planning .composerHint::before { content: "Hỏi thêm · "; color: #315f58; font-weight: 850; }
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .plannerLayout.is-new-chat { grid-template-columns: minmax(340px, 46%) minmax(0, 54%); }
+  .plannerIntakeNav button { min-width: 66px; padding-inline: 9px; }
+  .plannerDiscoveryCard { min-height: 210px; }
+}
+
+@media (max-width: 1500px) and (min-width: 901px) {
+  .topbar.is-planner .accountCopy { display: none; }
+  .topbar.is-planner .accountLink.signedIn { padding-right: 4px; }
+  .topbar.is-planner .backgroundJobsDock { width: min(360px, calc(100vw - 48px)); }
+}
+
+@media (max-width: 1250px) and (min-width: 901px) {
+  .topbar.is-planner .topbarInner {
+    grid-template-columns: 1fr auto 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    height: auto;
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+    overflow: visible;
+  }
+
+  .plannerEntryTopbar { position: sticky; top: var(--mobile-shell-top, 62px); padding: 7px 10px; }
+  .plannerNewChatMenu span { display: none; }
+  .plannerNewChatMenu strong { grid-row: auto; }
+  .plannerIntakeNav button { min-width: 66px; padding: 7px 9px; }
+  .plannerTopUrlButton { width: 42px; min-height: 42px; justify-content: center; padding: 0; font-size: 0; }
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] { height: 100%; min-height: 560px; border-right: 0; border-bottom: 1px solid #e8eae9; }
+  .plannerLayout.is-new-chat .chatMessages { padding: 28px 18px 18px; }
+  .plannerLayout.is-new-chat .chatComposer { padding-inline: 12px; }
+  .plannerDiscovery { height: auto; max-height: none; padding: 24px 14px 100px; }
+  .plannerDiscoveryGrid { gap: 10px; }
+  .plannerDiscoveryCard,
+  .plannerDiscoveryCard.featured { min-height: 230px; border-radius: 16px; }
+  .plannerBackgroundStage { padding-inline: 18px; }
+}
+
+@media (max-width: 540px) {
+  .plannerIntakeNav { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+  .plannerIntakeNav button { min-width: 61px; border-radius: 10px; padding: 6px 8px; }
+  .plannerIntakeNav button + button::before { display: none; }
+  .plannerDiscoveryGrid { grid-template-columns: minmax(0, 1fr); }
+  .plannerDiscoveryCard.featured { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerLoadingDots i,
+  .plannerDiscoveryNoticeDot { animation: none; opacity: 1; }
+  .plannerDiscoveryCard img { transition: none; }
+}
+
 @media (max-width: 780px) {
   .plannerPage {
     min-height: calc(100vh - 128px);
@@ -6290,6 +7308,825 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
     height: 500px;
     min-height: 500px;
   }
+}
+
+/* Final cascade for the two-column Planner entry; kept after legacy Planner
+   responsive rules so the entry state cannot fall back to the old centered card. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: calc(100dvh - 64px);
+    min-height: calc(100dvh - 64px);
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: hidden;
+    padding: 0;
+    background: #fff;
+  }
+
+  .plannerLayout.is-new-chat .plannerEntryTopbar--mobile { display: none; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 2; grid-row: 1; }
+
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .plannerLayout.is-new-chat { grid-template-columns: minmax(340px, 46%) minmax(0, 54%); }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: auto;
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: visible;
+    padding: 0;
+    background: #fff;
+  }
+
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 560px;
+    border: 0;
+    border-bottom: 1px solid #e8eae9;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .plannerLayout.is-new-chat .plannerEntryTopbar { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 2; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 1; grid-row: 3; }
+}
+
+/* Initial planning state: keep the same chat-left and discovery-right entry
+   layout while the itinerary is prepared in the background. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    height: calc(100dvh - 64px);
+    min-height: calc(100dvh - 64px);
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: 68px minmax(0, 1fr);
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+    border-bottom: 1px solid #edf0ef;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat > .panelHeading {
+  display: flex;
+  min-height: 58px;
+  padding: 12px 14px;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChatMoveHandle,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChatResizeHandles {
+  display: none;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChatContent {
+  min-height: 0;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatMessages {
+  padding: 18px 14px 12px;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatBubble {
+  font-size: .7rem;
+  line-height: 1.5;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatBubble.assistant {
+  max-width: min(78%, 420px);
+  padding: 9px 12px;
+  font-size: .66rem;
+  line-height: 1.48;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatMessageAvatar {
+  width: 32px;
+  height: 32px;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatMessageAvatar .penguinMascot {
+  width: 32px;
+  height: 32px;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryComposer {
+  display: block;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid #edf0ef;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .chatComposer {
+  padding: 10px 12px 14px;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .composerBox textarea {
+  min-height: 50px;
+  padding: 11px 12px 3px;
+  font-size: .68rem;
+}
+
+.plannerLayout.is-new-chat.is-awaiting-plan .composerToolbar {
+  min-height: 38px;
+  padding: 2px 5px 5px;
+}
+
+.plannerPlanningCanvas {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: clamp(24px, 5vh, 56px) clamp(24px, 6vw, 88px);
+  background: #fff;
+}
+
+.plannerPlanningCanvas .plannerBackgroundCopy h2 {
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    grid-column: 1;
+    grid-row: 2;
+    height: 100%;
+    min-height: 560px;
+    border-top: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .plannerPlanningCanvas {
+    padding: 24px 16px;
+  }
+
+  .plannerLoadingJourney { width: min(440px, 100%); height: 260px; }
+  .plannerLoadingThoughts { width: min(410px, 96%); }
+  .plannerLoadingStop { width: 104px; }
+  .plannerLoadingMascot { width: 88px; height: 88px; }
+  .plannerLoadingMascot .penguinMascot { width: 76px; height: 76px; }
+  .plannerLoadingRoute { top: 128px; }
+  .plannerLoadingStop { top: 120px; }
+  .plannerLoadingStop--plan { top: 158px; }
+  .plannerLoadingStop--plan .plannerLoadingMascot { width: 96px; height: 96px; }
+  .plannerLoadingStop--plan .penguinMascot { width: 84px; height: 84px; }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerLoadingRoute,
+  .plannerLoadingSpark,
+  .plannerLoadingStop,
+  .plannerLoadingThoughts,
+  .plannerLoadingDots i { animation: none; }
+}
+
+/* Compact source entry keeps URL import visible without competing with chat. */
+.plannerLayout.is-new-chat .urlImportDock {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 5px;
+  margin: 0 clamp(20px, 4vw, 52px);
+  padding: 0;
+}
+
+.urlImportControlIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #66817b;
+}
+
+.urlImportControlIcon svg,
+.urlImportControl button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.urlImportControl {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #cfdcd8;
+  border-radius: 13px;
+  padding: 3px;
+  background: #fff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.urlImportControl:focus-within {
+  border-color: #668d84;
+  box-shadow: 0 0 0 3px rgba(49, 95, 88, .09);
+}
+
+.urlImportControl.has-error {
+  border-color: #d66a6d;
+  box-shadow: 0 0 0 3px rgba(214, 106, 109, .08);
+}
+
+.urlImportControl textarea {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 8px 4px;
+  background: transparent;
+  color: #1c2926;
+  font-size: .68rem;
+  line-height: 1.45;
+  resize: none;
+}
+
+.urlImportControl textarea::placeholder { color: #9aa6a2; }
+
+.urlImportControl button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  background: #244d45;
+  color: #fff;
+  justify-content: center;
+}
+
+.urlImportControl button:hover:not(:disabled),
+.urlImportControl button:focus-visible { background: #173c35; }
+.urlImportControl button:disabled { cursor: not-allowed; opacity: .45; }
+.urlImportError {
+  padding-inline: 4px;
+  color: #b2484d;
+  font-size: .54rem;
+  line-height: 1.35;
+}
+
+.plannerLayout.is-new-chat .chatComposer { padding-top: 10px; }
+
+@media (max-width: 540px) {
+  .plannerLayout.is-new-chat .urlImportDock { margin-inline: 12px; }
+}
+
+/* Planner intake — focused one-question flow. */
+.plannerEntryTopbar {
+  position: relative;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, .94);
+}
+
+.plannerIntakePeekaboo {
+  position: relative;
+  display: flex;
+  width: fit-content;
+  max-width: calc(100% - 112px);
+  justify-content: center;
+}
+
+.plannerIntakeNav {
+  position: relative;
+  z-index: 2;
+  width: max-content;
+  max-width: 100%;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #e2e4e3;
+  border-radius: 999px;
+  padding: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+.plannerIntakeNav button {
+  display: block;
+  min-width: auto;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: #818483;
+  text-align: center;
+  transition: background .18s ease, color .18s ease;
+}
+
+.plannerIntakeNav button + button::before {
+  display: block;
+  top: 7px;
+  bottom: 7px;
+  background: #e5e7e6;
+}
+
+.plannerIntakeNav button[aria-current="step"]::before,
+.plannerIntakeNav button[aria-current="step"] + button::before {
+  display: block;
+}
+
+.plannerIntakeNav button:hover:not(:disabled),
+.plannerIntakeNav button:focus-visible {
+  background: #f3f6f5;
+  color: #244c46;
+}
+
+.plannerIntakeNav button[aria-current="step"] {
+  background: #eef4f2;
+  color: #173e38;
+  box-shadow: none;
+}
+
+.plannerIntakeNav button.is-filled { color: #2f6d62; }
+
+.plannerIntakeCopy {
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.plannerIntakePenguin {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: -24px;
+  width: 41px;
+  height: 50px;
+  margin-top: -25px;
+  pointer-events: none;
+}
+
+.plannerIntakePenguin .penguinMascot {
+  display: block;
+  width: 41px;
+  height: 50px;
+  object-fit: contain;
+}
+
+.guidedIntakeOverlay {
+  position: fixed;
+  z-index: 2500;
+  inset: 64px 0 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(20, 38, 34, .35);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: guidedOverlayIn .18s ease-out;
+}
+
+.guidedIntakeDialog {
+  position: relative;
+  display: grid;
+  width: min(760px, 100%);
+  min-height: 430px;
+  grid-template-columns: 238px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(17, 39, 34, .25);
+  animation: guidedDialogIn .24s cubic-bezier(.2, .8, .2, 1);
+}
+
+.guidedIntakeMascot {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(255,255,255,.92) 0 4.5rem, transparent 4.6rem),
+    linear-gradient(155deg, #dcefe9 0%, #b8dcd2 100%);
+}
+
+.guidedIntakeMascot::before,
+.guidedIntakeMascot::after {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  border: 1px solid rgba(49, 95, 88, .13);
+  border-radius: 50%;
+  content: "";
+}
+
+.guidedIntakeMascot::before { top: -75px; left: -80px; }
+.guidedIntakeMascot::after { right: -95px; bottom: -60px; width: 210px; height: 210px; }
+.guidedIntakeMascot img { position: relative; z-index: 2; width: 142px; height: 142px; object-fit: contain; filter: drop-shadow(0 15px 15px rgba(33, 73, 65, .15)); }
+
+.guidedIntakeSpark {
+  position: absolute;
+  z-index: 3;
+  color: #315f58;
+  font-weight: 900;
+}
+
+.guidedIntakeSparkOne { top: 27%; right: 20%; font-size: 1.25rem; }
+.guidedIntakeSparkTwo { bottom: 28%; left: 18%; font-size: 2rem; }
+
+.guidedIntakeDialogBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 46px 44px 38px;
+}
+
+.guidedIntakeClose {
+  position: absolute;
+  z-index: 4;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f5f3;
+  color: #54706a;
+}
+
+.guidedIntakeClose:hover,
+.guidedIntakeClose:focus-visible { background: #e7efec; color: #244c46; }
+.guidedIntakeClose svg { width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+
+.guidedIntakeDialog h2 {
+  max-width: 440px;
+  margin: 0;
+  color: #172b27;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.14;
+  letter-spacing: -.045em;
+}
+
+.guidedIntakeDialogBody > p {
+  margin: 10px 0 22px;
+  color: #788783;
+  font-size: .69rem;
+  line-height: 1.5;
+}
+
+.guidedIntakeDialog form { display: grid; gap: 13px; }
+.guidedIntakeAnswer {
+  position: relative;
+}
+
+.guidedIntakeAnswer input {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #cedbd7;
+  border-radius: 14px;
+  padding: 0 16px;
+  outline: 0;
+  background: #fbfdfc;
+  color: #1c312d;
+  font: inherit;
+  font-size: .76rem;
+  box-shadow: none;
+}
+
+.guidedIntakeAnswer input:focus {
+  border-color: #5f8b81;
+  box-shadow: 0 0 0 4px rgba(49, 95, 88, .1);
+}
+
+.guidedIntakeAnswerNext {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #263c37;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.guidedIntakeAnswerNext:hover:not(:disabled),
+.guidedIntakeAnswerNext:focus-visible { transform: translateX(2px); }
+.guidedIntakeAnswerNext:disabled { opacity: .22; cursor: default; }
+.guidedIntakeAnswerNext svg {
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.guidedIntakeDialog.isDestination {
+  width: min(650px, 100%);
+  min-height: 270px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  border-color: #e6e9e8;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(17, 39, 34, .18);
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot {
+  overflow: visible;
+  background: #fff;
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot::before,
+.guidedIntakeDialog.isDestination .guidedIntakeMascot::after { display: none; }
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot img {
+  width: 150px;
+  height: 150px;
+  filter: drop-shadow(0 12px 12px rgba(33, 73, 65, .12));
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeDialogBody {
+  padding: 48px 48px 42px 10px;
+}
+
+.guidedIntakeDialog.isDestination h2 {
+  margin-bottom: 18px;
+  color: #202725;
+  font-size: clamp(1.55rem, 3vw, 1.9rem);
+}
+
+.guidedIntakeDialog.isDestination form { gap: 0; }
+.guidedIntakeDialog.isDestination .guidedIntakeAnswer input {
+  min-height: 56px;
+  padding: 0 58px 0 18px;
+  border-color: #d8dddb;
+  border-radius: 28px;
+  background: #fff;
+  font-size: .82rem;
+}
+
+.guidedIntakeDialog.isDates,
+.guidedIntakeDialog.isTravelers {
+  width: min(780px, 100%);
+  min-height: 390px;
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+.guidedIntakeDialog.isTravelers .guidedIntakeDialogBody {
+  padding: 44px 42px 34px 22px;
+}
+
+.guidedDatePicker,
+.guidedTravelerPicker {
+  margin-top: 20px;
+}
+
+.guidedDateFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.guidedDateFields label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.guidedDateFields label > span {
+  color: #667773;
+  font-size: .66rem;
+  font-weight: 780;
+}
+
+.guidedDateFields input {
+  width: 100%;
+  min-width: 0;
+  height: 54px;
+  border: 1px solid #cedbd7;
+  border-radius: 14px;
+  padding: 0 12px;
+  outline: 0;
+  background: #fbfdfc;
+  color: #1c312d;
+  color-scheme: light;
+  font: inherit;
+  font-size: .72rem;
+}
+
+.guidedDateFields input:focus {
+  border-color: #5f8b81;
+  box-shadow: 0 0 0 4px rgba(49, 95, 88, .1);
+}
+
+.guidedDateArrow {
+  padding-bottom: 17px;
+  color: #81908c;
+  text-align: center;
+}
+
+.guidedTravelerRows {
+  display: grid;
+}
+
+.guidedTravelerRow {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #e5e9e7;
+}
+
+.guidedTravelerRow:first-child { border-top: 1px solid #e5e9e7; }
+.guidedTravelerRow > span { display: grid; gap: 3px; }
+.guidedTravelerRow strong { color: #202725; font-size: .78rem; }
+.guidedTravelerRow small { color: #858e8b; font-size: .63rem; }
+
+.guidedCounter {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 38px 34px 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+.guidedCounter button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #d8dddb;
+  border-radius: 50%;
+  background: #fff;
+  color: #1f2927;
+}
+
+.guidedCounter button:hover:not(:disabled),
+.guidedCounter button:focus-visible {
+  border-color: #6f978e;
+  background: #f2f7f5;
+}
+
+.guidedCounter button:disabled { color: #b6bdbb; cursor: default; opacity: .55; }
+.guidedCounter button svg { width: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.guidedCounter output { color: #17211f; font-size: .9rem; text-align: center; }
+
+.guidedIntakeUrlHandoff {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: #315f58;
+  font-size: .61rem;
+  font-weight: 820;
+}
+
+.guidedIntakeUrlHandoff svg { width: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.guidedIntakeUrlHandoff:hover { color: #173e38; text-decoration: underline; text-underline-offset: 3px; }
+
+@keyframes guidedOverlayIn { from { opacity: 0; } }
+@keyframes guidedDialogIn { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+
+@media (max-width: 640px) {
+  .plannerEntryTopbar { padding: 8px 10px; }
+  .plannerIntakePeekaboo { width: calc(100% - 32px); }
+  .plannerIntakeNav { border-radius: 999px; }
+  .plannerIntakeNav button { min-width: auto; padding: 7px 10px; }
+  .plannerIntakePenguin {
+    right: -29px;
+    width: 36px;
+    height: 44px;
+    margin-top: -22px;
+  }
+  .plannerIntakePenguin .penguinMascot { width: 36px; height: 44px; }
+  .guidedIntakeOverlay { inset: var(--mobile-shell-top, 62px) 0 var(--mobile-shell-bottom, 66px); padding: 12px; align-items: end; }
+  .guidedIntakeDialog { width: 100%; min-height: 0; max-height: 88dvh; grid-template-columns: 1fr; grid-template-rows: 116px auto; overflow-y: auto; border-radius: 24px; }
+  .guidedIntakeMascot img { width: 104px; height: 104px; }
+  .guidedIntakeMascot::before { top: -115px; }
+  .guidedIntakeMascot::after { bottom: -150px; }
+  .guidedIntakeDialogBody { padding: 25px 22px 22px; }
+  .guidedIntakeDialog h2 { font-size: 1.45rem; }
+  .guidedIntakeDialogBody > p { margin-bottom: 17px; }
+  .guidedIntakeDialog.isDestination {
+    min-height: 230px;
+    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    border-radius: 24px;
+  }
+  .guidedIntakeDialog.isDestination .guidedIntakeMascot img { width: 112px; height: 112px; }
+  .guidedIntakeDialog.isDestination .guidedIntakeDialogBody { padding: 52px 24px 38px 0; }
+  .guidedIntakeDialog.isDestination h2 { margin-bottom: 14px; font-size: 1.35rem; }
+  .guidedIntakeDialog.isDates,
+  .guidedIntakeDialog.isTravelers {
+    grid-template-columns: 1fr;
+    grid-template-rows: 82px auto;
+    max-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px) - 24px);
+    overflow-y: auto;
+  }
+  .guidedIntakeDialog.isDates .guidedIntakeMascot,
+  .guidedIntakeDialog.isTravelers .guidedIntakeMascot { display: none; }
+  .guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+  .guidedIntakeDialog.isTravelers .guidedIntakeDialogBody { padding: 28px 22px 22px; }
+  .guidedDatePicker,
+  .guidedTravelerPicker { margin-top: 16px; }
+}
+
+@media (max-width: 390px) {
+  .guidedIntakeDialog.isDestination {
+    min-height: 290px;
+    grid-template-columns: 1fr;
+    grid-template-rows: 112px auto;
+  }
+  .guidedIntakeDialog.isDestination .guidedIntakeDialogBody { padding: 0 22px 28px; }
+  .guidedIntakeDialog.isDestination h2 { text-align: center; }
+  .guidedIntakeDialog.isDates,
+  .guidedIntakeDialog.isTravelers {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+  .guidedIntakeDialog.isTravelers .guidedIntakeDialogBody { padding: 26px 18px 20px; }
+  .guidedIntakeDialog.isDates h2,
+  .guidedIntakeDialog.isTravelers h2 { padding-right: 34px; text-align: left; }
+  .guidedDateFields { grid-template-columns: 1fr; }
+  .guidedDateArrow { padding: 0; transform: rotate(90deg); }
+  .guidedTravelerRow { min-height: 64px; }
+  .guidedCounter { grid-template-columns: 36px 28px 36px; gap: 4px; }
+  .guidedCounter button { width: 36px; height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guidedIntakeOverlay,
+  .guidedIntakeDialog { animation: none; }
 }
 
 @media (min-width: 1241px) {
@@ -7046,17 +8883,17 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   flex: 0 0 270px;
   overflow: hidden;
   border-radius: 18px;
-  background: #365f5a;
+  background: #2eb8f0;
   color: white;
   scroll-snap-align: start;
-  box-shadow: 0 9px 25px rgba(54, 95, 90, .11);
+  box-shadow: 0 9px 25px rgba(21, 151, 214, .18);
   transition: transform .22s ease, box-shadow .22s ease;
 }
 
 .travelGroupCard:hover,
 .travelGroupCard:focus-within {
   transform: translateY(-3px);
-  box-shadow: 0 16px 34px rgba(54, 95, 90, .18);
+  box-shadow: 0 16px 34px rgba(21, 151, 214, .27);
 }
 
 .travelGroupArt {
@@ -7065,8 +8902,8 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at 72% 18%, rgba(54, 95, 90, .36), transparent 27%),
-    linear-gradient(145deg, #365f5a, #365f5a 72%);
+    radial-gradient(circle at 72% 18%, rgba(220, 248, 255, .72), transparent 29%),
+    linear-gradient(145deg, #78d9ff, #25afea 72%);
 }
 
 .travelGroupArt::before,
@@ -7097,7 +8934,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .travelGroupShade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(54, 95, 90, .12), rgba(54, 95, 90, .86));
+  background: linear-gradient(180deg, rgba(4, 141, 203, .02), rgba(12, 79, 130, .84));
 }
 
 .travelGroupPublic {
@@ -7108,7 +8945,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   border: 1px solid rgba(255, 255, 255, .35);
   border-radius: 999px;
   padding: 6px 9px;
-  background: rgba(54, 95, 90, .55);
+  background: rgba(9, 104, 160, .46);
   font-size: .57rem;
   font-weight: 850;
   backdrop-filter: blur(10px);
@@ -7122,7 +8959,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .travelGroupOpen:focus-visible {
-  outline: 3px solid #365f5a;
+  outline: 3px solid #008fd1;
   outline-offset: -4px;
 }
 
@@ -7628,6 +9465,16 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   overflow: hidden;
 }
 
+.communityExploreOpen {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 .communityExploreMedia > img,
 .communityExploreMedia > video {
   width: 100%;
@@ -8085,12 +9932,19 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .promotionViewer {
   position: fixed;
-  z-index: 100;
+  /* The reel is the app's top visual mode. Keep chat, navigation, job docks,
+     carts, and planner dialogs below it while the viewer is open. */
+  z-index: 2147483000;
   inset: 0;
+  isolation: isolate;
   display: grid;
   place-items: center;
   background: rgba(54, 95, 90, .94);
   color: white;
+}
+
+body:has(.promotionViewer) .globalPlannerAssistant {
+  display: none;
 }
 
 .promotionViewerStage {
@@ -8144,6 +9998,10 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   top: calc(50% - 52px);
 }
 
+.promotionViewerNav.next {
+  top: calc(50% + 10px);
+}
+
 .promotionViewerNav:disabled {
   opacity: .3;
 }
@@ -8153,11 +10011,40 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
   left: 18px;
 }
 
+.promotionViewerCount {
+  position: absolute;
+  z-index: 4;
+  top: 22px;
+  left: 50%;
+  color: rgba(255, 255, 255, .82);
+  font-size: .7rem;
+  font-weight: 850;
+  transform: translateX(-50%);
+}
+
+.promotionViewerStage:not(:has(.promotionViewerCommerce)) .promotionViewerCopy {
+  bottom: 28px;
+}
+
+.plannerDiscoveryCard[role="button"] {
+  cursor: pointer;
+}
+
+.plannerDiscoveryCard[role="button"]:focus-visible {
+  outline: 3px solid rgba(54, 95, 90, .32);
+  outline-offset: 3px;
+}
+
+.plannerDiscoveryCardTop button.saved {
+  background: var(--brand);
+  color: white;
+}
+
 .promotionViewerCopy {
   position: absolute;
   z-index: 3;
   right: 18px;
-  bottom: 138px;
+  bottom: 66px;
   left: 18px;
 }
 
@@ -8186,61 +10073,73 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .promotionViewerCommerce {
   position: absolute;
   z-index: 4;
-  right: 14px;
-  bottom: 14px;
-  left: 14px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 9px 12px;
+  bottom: 10px;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  gap: 8px;
   align-items: center;
   border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 18px;
-  padding: 12px;
-  background: rgba(255, 255, 255, .9);
-  color: var(--ink);
-  backdrop-filter: blur(18px);
+  border-radius: 999px;
+  padding: 7px 8px 7px 12px;
+  background: rgba(23, 32, 51, .68);
+  color: white;
+  backdrop-filter: blur(14px);
+  transform: translateX(-50%);
 }
 
 .promotionViewerCommerce div {
   display: grid;
-  gap: 3px;
+  min-width: 0;
+  gap: 1px;
+  white-space: nowrap;
 }
 
 .promotionViewerCommerce small {
-  color: var(--muted);
-  font-size: .63rem;
+  color: rgba(255, 255, 255, .7);
+  font-size: .53rem;
   font-weight: 800;
 }
 
 .promotionViewerCommerce strong {
-  color: #365f5a;
-  font-size: 1rem;
+  color: white;
+  font-size: .82rem;
 }
 
 .promotionViewerCommerce button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 0;
   border-radius: 999px;
-  padding: 10px 13px;
-  background: linear-gradient(135deg, #365f5a, #365f5a);
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, .16);
   color: white;
-  font-size: .7rem;
+  font-size: .58rem;
   font-weight: 900;
+}
+
+.promotionViewerCommerce .promotionViewerBuy {
+  background: #ffffff;
+  color: var(--brand-dark);
+}
+
+.promotionViewerCommerce button:disabled {
+  cursor: wait;
+  opacity: .62;
 }
 
 .promotionViewerCommerce button svg {
-  width: 15px;
-  height: 15px;
+  width: 12px;
+  height: 12px;
 }
 
 .promotionViewerCommerce > a {
-  grid-column: 1 / -1;
-  color: var(--brand-dark);
-  font-size: .7rem;
+  color: white;
+  font-size: .58rem;
   font-weight: 900;
-  text-align: center;
+  white-space: nowrap;
 }
 
 .promotionViewerHint {
@@ -8529,6 +10428,9 @@ svg {
     height: var(--mobile-shell-top);
     padding-top: env(safe-area-inset-top);
   }
+
+  .brandCluster { grid-column: 1; }
+  .shellActions { grid-column: 3; }
 
   .appBody {
     min-height: calc(100dvh - var(--mobile-shell-top));
@@ -8877,6 +10779,8 @@ svg {
     padding-inline: 14px;
   }
 
+  .topbar .plannerHistoryMenu { left: 14px; }
+
   .brand {
     font-size: .98rem;
   }
@@ -9218,7 +11122,7 @@ svg {
 }
 
 .itinerary .exploreResult {
-  padding: 0 16px 32px;
+  padding: 0 16px 32px 6px;
   background: #f7faf9;
 }
 
@@ -9227,9 +11131,9 @@ svg {
   z-index: 12;
   top: 0;
   gap: 5px;
-  width: calc(100% + 32px);
-  margin: 0 -16px;
-  padding: 8px 16px;
+  width: calc(100% + 22px);
+  margin: 0 -16px 0 -6px;
+  padding: 8px 16px 8px 6px;
   border-bottom: 1px solid var(--itinerary-edge);
   background: rgba(247, 250, 249, .94);
   backdrop-filter: blur(14px);
@@ -9333,13 +11237,13 @@ svg {
 }
 
 .itinerary .itineraryStops {
-  padding: 18px 16px 20px;
+  padding: 18px 16px 20px 4px;
 }
 
 .itinerary .itineraryStops::before {
   top: 31px;
   bottom: 42px;
-  left: 28px;
+  left: 16px;
   border-left: 2px dashed #c6ddd7;
 }
 
@@ -9549,13 +11453,13 @@ svg {
 
 @media (min-width: 901px) {
   .plannerLayout {
-    grid-template-columns: minmax(460px, 2.15fr) minmax(500px, 2.85fr);
+    grid-template-columns: minmax(380px, 1.85fr) minmax(0, 3.15fr);
   }
 }
 
 @media (max-width: 1100px) and (min-width: 901px) {
   .plannerLayout {
-    grid-template-columns: minmax(390px, 2.05fr) minmax(0, 2.95fr);
+    grid-template-columns: minmax(360px, 1.8fr) minmax(0, 3.2fr);
   }
 
   .itinerary .itineraryPlaceCard--withImage,
@@ -9617,11 +11521,11 @@ svg {
   }
 
   .itinerary .itineraryStops {
-    padding-inline: 10px;
+    padding-inline: 6px;
   }
 
   .itinerary .itineraryStops::before {
-    left: 22px;
+    left: 18px;
   }
 
   .itinerary .itineraryStop {
@@ -10968,6 +12872,8 @@ svg {
   --itinerary-edge: #e6e9ec;
   --itinerary-muted: #717980;
   --itinerary-route-line: #8fc8ba;
+  container-name: itinerary-panel;
+  container-type: inline-size;
 }
 
 .itinerary .itineraryHeading {
@@ -11516,6 +13422,78 @@ svg {
   }
 }
 
+/* The Planner explorer is resizable, so cards must respond to the panel rather
+   than only to the browser viewport. At narrow panel widths, keep text readable
+   by moving actions above a full-width image and content block. */
+@container itinerary-panel (max-width: 480px) {
+  .itinerary .itineraryPlaceCard--withDrag,
+  .itinerary .itineraryPlaceCard--withImage,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage,
+  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .itinerary .itineraryPlaceDragRail {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    min-height: 32px;
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .itinerary .itineraryActions--rail {
+    width: auto;
+    height: 32px;
+    max-height: none;
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag .itineraryPlaceMedia {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) .itineraryPlaceMedia {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag .itineraryPlaceImage,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag .itineraryPlaceImage {
+    height: clamp(132px, 34cqw, 180px);
+    min-height: 132px;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag .itineraryPlaceContent {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .itinerary .itineraryPlaceCard--withDrag:not(.itineraryPlaceCard--withImage) .itineraryPlaceContent,
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) .itineraryPlaceContent {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag > .activityNotesInlinePanel {
+    grid-column: 1;
+    grid-row: 4;
+  }
+
+  .itinerary .itineraryPlaceCard--withDrag:not(.itineraryPlaceCard--withImage) > .activityNotesInlinePanel,
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .activityNotesInlinePanel {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+}
+
 .plannerMapCanvasWrap {
   background: #fcfdfc;
 }
@@ -11546,12 +13524,14 @@ svg {
 }
 
 .topbar .navItem:hover,
-.topbar .navItem.active,
 .topbar .accountLink.signedIn:hover,
-.topbar .accountLink.signedIn:focus-visible,
-.topbar .shellAccountAvatar {
+.topbar .accountLink.signedIn:focus-visible {
   background: #f7f8f9;
 }
+
+.topbar .navItem.active { background: transparent; color: var(--brand-dark); }
+.topbar .navItem.active:hover { background: #f5f7f6; color: var(--brand-dark); }
+.topbar .shellAccountAvatar { background: var(--brand); color: #fff; }
 
 /* Keep each map route connected to its itinerary leg and endpoint cards. */
 .mapRouteModeBadge.is-selected {
@@ -11745,6 +13725,16 @@ svg {
   }
 }
 
+@container itinerary-panel (max-width: 480px) {
+  .itinerary .itineraryRouteToolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .itinerary .itineraryRouteLink {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Chat composer: one primary message flow, with optional sources on demand. */
 .plannerToast {
   position: fixed;
@@ -11796,31 +13786,91 @@ svg {
 
 .plannerChat .urlImporter {
   position: relative;
-  gap: 9px;
+  gap: 12px;
   margin: 0;
-  border-color: #dfe9e6;
-  border-radius: 14px;
-  padding: 11px 45px 11px 11px;
-  background: #f7faf9;
-  box-shadow: none;
+  overflow: hidden;
+  border-color: rgba(75, 116, 106, .18);
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(107, 166, 151, .13), transparent 42%),
+    linear-gradient(145deg, #fbfdfc 0%, #f3f8f6 100%);
+  box-shadow: 0 12px 30px rgba(30, 65, 58, .08);
+}
+
+.plannerChat .urlImporterHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding-right: 38px;
+}
+
+.plannerChat .urlImporterIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(49, 95, 88, .12);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .82);
+  color: #315f58;
+  box-shadow: 0 5px 14px rgba(32, 69, 63, .07);
+}
+
+.plannerChat .urlImporterIcon svg {
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plannerChat .urlImporterTitle {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.plannerChat .urlImporterTitle strong {
+  color: #1d3832;
+  font-size: .72rem;
+  line-height: 1.25;
+}
+
+.plannerChat .urlImporterTitle small {
+  overflow: hidden;
+  color: #71847f;
+  font-size: .56rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plannerChat .urlImporterClose {
   position: absolute;
-  top: 17px;
-  right: 9px;
+  top: 13px;
+  right: 13px;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0;
   background: transparent;
-  color: #667a75;
-  font-size: 1.05rem;
-  line-height: 1;
+  color: #70817d;
+}
+
+.plannerChat .urlImporterClose svg {
+  width: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.9;
 }
 
 .plannerChat .urlImporterClose:hover,
@@ -11829,15 +13879,97 @@ svg {
   color: #294b47;
 }
 
-.plannerChat .urlImporterRow input {
-  min-height: 40px;
-  border-radius: 10px;
+.plannerChat .urlImporterRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.plannerChat .urlImporterField {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid #d7e3df;
+  border-radius: 13px;
+  padding-left: 12px;
+  background: rgba(255, 255, 255, .94);
+  color: #75908a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.plannerChat .urlImporterField:focus-within {
+  border-color: #709d92;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(49, 95, 88, .11), 0 7px 18px rgba(32, 69, 63, .07);
+}
+
+.plannerChat .urlImporterField > svg {
+  width: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plannerChat .urlImporterRow .urlImporterField input {
+  min-height: 44px;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 11px 10px 9px;
+  background: transparent;
+  box-shadow: none;
   font-size: .68rem;
 }
 
+.plannerChat .urlImporterRow .urlImporterField input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
 .plannerChat .urlImportButton {
-  min-height: 40px;
-  border-radius: 10px;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 13px;
+  padding: 9px 14px;
+  box-shadow: 0 7px 16px rgba(49, 95, 88, .18);
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.plannerChat .urlImportButton svg {
+  width: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.plannerChat .urlImportButton:hover:not(:disabled),
+.plannerChat .urlImportButton:focus-visible:not(:disabled) {
+  box-shadow: 0 9px 20px rgba(49, 95, 88, .24);
+  transform: translateY(-1px);
+}
+
+.plannerChat .urlImportButton:disabled {
+  box-shadow: none;
+  transform: none;
+}
+
+.plannerChat .urlImportSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, .45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: urlImportSpin .75s linear infinite;
+}
+
+@keyframes urlImportSpin {
+  to { transform: rotate(360deg); }
 }
 
 .plannerChat .composerBox textarea {
@@ -11906,7 +14038,11 @@ svg {
   }
 
   .plannerChat .urlImporterRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plannerChat .urlImportButton {
+    width: 100%;
   }
 }
 
@@ -11915,8 +14051,143 @@ svg {
     display: none;
   }
 
-  .plannerChat .urlImporterRow {
-    grid-template-columns: minmax(0, 1fr);
+  .plannerChat .urlImporter {
+    padding: 12px;
+  }
+
+  .plannerChat .urlImporterTitle small {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerChat .urlImporterField,
+  .plannerChat .urlImportButton { transition: none; }
+}
+
+/* One calm, rounded entry surface for the trip request or pasted URL. */
+.plannerEntryComposer { display: contents; }
+
+.plannerLayout.is-new-chat .plannerEntryComposer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0;
+  margin: 0 clamp(20px, 4vw, 52px) 20px;
+  overflow: hidden;
+  border: 1px solid #cdd9d5;
+  border-radius: 30px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(31, 50, 45, .08);
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer:focus-within {
+  border-color: #8b9391;
+  box-shadow: 0 16px 38px rgba(31, 50, 45, .11);
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportDock {
+  margin: 0;
+  border-bottom: 1px solid #e5ebe8;
+  padding: 9px 11px;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl {
+  border: 0;
+  border-radius: 20px;
+  padding: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl:focus-within {
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl.has-error {
+  background: #fff5f5;
+  box-shadow: inset 0 0 0 1px #d66a6d;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControlIcon {
+  width: 42px;
+  height: 42px;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl textarea {
+  max-height: 92px;
+  overflow-y: auto;
+  padding: 10px 6px;
+  font-size: .74rem;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl button {
+  width: 44px;
+  height: 44px;
+  border-radius: 18px;
+  background: #9fb1ac;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl button:hover:not(:disabled),
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportControl button:focus-visible {
+  background: #315f58;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .urlImportError {
+  padding: 0 10px 3px;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .chatComposer {
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .composerBox {
+  border: 0;
+  border-radius: 0;
+  padding: 3px 8px 7px;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .composerBox:focus-within {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .composerBox textarea {
+  min-height: 88px;
+  padding: 14px 16px 6px;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .composerToolbar {
+  min-height: 50px;
+  justify-content: flex-end;
+  padding: 4px 7px 7px 9px;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .sendButton {
+  background: #e2e5e4;
+  color: #a7adab;
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .sendButton:not(:disabled) {
+  background: #111;
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(17, 17, 17, .2);
+}
+
+.plannerLayout.is-new-chat .plannerEntryComposer .sendButton:hover:not(:disabled),
+.plannerLayout.is-new-chat .plannerEntryComposer .sendButton:focus-visible:not(:disabled) {
+  background: #000;
+  box-shadow: 0 9px 20px rgba(17, 17, 17, .26);
+}
+
+@media (max-width: 540px) {
+  .plannerLayout.is-new-chat .plannerEntryComposer {
+    margin-inline: 19px;
+    border-radius: 26px;
+    box-shadow: 0 12px 28px rgba(31, 50, 45, .08);
   }
 }
 
@@ -11991,6 +14262,270 @@ svg {
 .plannerChat.is-collapsed .plannerChatToggle .speechBubbleIcon > circle {
   fill: #fff;
   stroke: none;
+}
+
+.plannerChat.is-collapsed .plannerChatLauncherLabel {
+  position: absolute;
+  z-index: 2;
+  right: 50%;
+  bottom: -8px;
+  min-width: max-content;
+  border: 1px solid rgba(49, 95, 88, .12);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, .98);
+  color: var(--brand-dark);
+  box-shadow: 0 5px 14px rgba(32, 69, 63, .12);
+  font-size: .68rem;
+  font-weight: 850;
+  line-height: 1;
+  transform: translateX(50%);
+  white-space: nowrap;
+}
+
+.plannerChat.is-collapsed .plannerChatToggle:hover .plannerChatLauncherLabel,
+.plannerChat.is-collapsed .plannerChatToggle:focus-visible .plannerChatLauncherLabel {
+  border-color: rgba(49, 95, 88, .24);
+  box-shadow: 0 7px 18px rgba(32, 69, 63, .18);
+}
+
+/* Adjustable Planner workspace panels. Desktop uses pointer/keyboard handles;
+   compact screens retain the stacked layout and native scrolling. */
+@media (min-width: 901px) {
+  .plannerLayout {
+    position: relative;
+    grid-template-areas: "explorer divider map";
+    grid-template-columns: minmax(0, var(--itinerary-panel-width, 40%)) 10px minmax(0, 1fr);
+  }
+
+  .plannerLayout > .itinerary {
+    grid-area: explorer;
+  }
+
+  .plannerLayout > .plannerMap {
+    grid-area: map;
+  }
+
+  .itineraryResizeDivider {
+    position: relative;
+    z-index: 30;
+    display: grid;
+    width: 10px;
+    min-width: 10px;
+    height: 100%;
+    min-height: 0;
+    grid-area: divider;
+    place-items: center;
+    border: 0;
+    padding: 0;
+    background: #eef3f1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .itineraryResizeDivider::before {
+    position: absolute;
+    inset: 0 -5px;
+    content: "";
+  }
+
+  .itineraryResizeDivider > span {
+    position: relative;
+    z-index: 1;
+    width: 3px;
+    height: 42px;
+    border-radius: 999px;
+    background: #a9bdb8;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .75);
+    transition: height .16s ease, background .16s ease, box-shadow .16s ease;
+  }
+
+  .itineraryResizeDivider:hover > span,
+  .itineraryResizeDivider:focus-visible > span {
+    height: 58px;
+    background: #365f5a;
+    box-shadow: 0 0 0 4px rgba(54, 95, 90, .12);
+  }
+
+  .itineraryResizeDivider:focus-visible {
+    outline: 0;
+  }
+
+  .plannerChat {
+    left: var(--floating-chat-x, auto);
+    top: var(--floating-chat-y, auto);
+    right: var(--floating-chat-right, 20px);
+    bottom: var(--floating-chat-bottom, 20px);
+    width: var(--floating-chat-width, min(410px, calc(100vw - 40px)));
+    height: var(--floating-chat-height, min(610px, calc(100dvh - 104px)));
+    transition: none;
+  }
+
+  .plannerChat[style] {
+    right: auto;
+    bottom: auto;
+  }
+
+  .plannerChat.is-collapsed {
+    width: 116px;
+    min-width: 116px;
+    height: 116px;
+    min-height: 116px;
+  }
+
+  .plannerChatMoveHandle {
+    display: grid;
+    width: 32px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 10px;
+    padding: 0;
+    background: transparent;
+    color: #78908a;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .plannerChatMoveHandle:active {
+    cursor: grabbing;
+  }
+
+  .plannerChatMoveHandle:hover,
+  .plannerChatMoveHandle:focus-visible {
+    outline: 0;
+    background: #eaf3f0;
+    color: #294b47;
+  }
+
+  .plannerChatMoveHandle svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  .plannerChatResizeHandles {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .plannerChatResizeHandle {
+    position: absolute;
+    display: block;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: #78908a;
+    pointer-events: auto;
+    touch-action: none;
+  }
+
+  .plannerChatResizeHandle:focus-visible {
+    outline: 2px solid rgba(49, 95, 88, .58);
+    outline-offset: -2px;
+  }
+
+  .plannerChatResizeHandle--n,
+  .plannerChatResizeHandle--s {
+    right: 16px;
+    left: 16px;
+    height: 12px;
+    cursor: ns-resize;
+  }
+
+  .plannerChatResizeHandle--n { top: -4px; }
+  .plannerChatResizeHandle--s { bottom: -4px; }
+
+  .plannerChatResizeHandle--e,
+  .plannerChatResizeHandle--w {
+    top: 16px;
+    bottom: 16px;
+    width: 12px;
+    cursor: ew-resize;
+  }
+
+  .plannerChatResizeHandle--e { right: -4px; }
+  .plannerChatResizeHandle--w { left: -4px; }
+
+  .plannerChatResizeHandle--ne,
+  .plannerChatResizeHandle--nw,
+  .plannerChatResizeHandle--se,
+  .plannerChatResizeHandle--sw {
+    z-index: 2;
+    width: 20px;
+    height: 20px;
+  }
+
+  .plannerChatResizeHandle--ne {
+    top: -4px;
+    right: -4px;
+    cursor: nesw-resize;
+  }
+
+  .plannerChatResizeHandle--nw {
+    top: -4px;
+    left: -4px;
+    cursor: nwse-resize;
+  }
+
+  .plannerChatResizeHandle--sw {
+    bottom: -4px;
+    left: -4px;
+    cursor: nesw-resize;
+  }
+
+  .plannerChatResizeHandle--se {
+    right: 3px;
+    bottom: 3px;
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .88);
+    cursor: nwse-resize;
+  }
+
+  .plannerChatResizeHandle--se:hover,
+  .plannerChatResizeHandle--se:focus-visible {
+    background: #eaf3f0;
+    color: #294b47;
+  }
+
+  .plannerChatResizeHandle svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+
+  .plannerChat.is-collapsed .plannerChatMoveHandle {
+    position: absolute;
+    z-index: 3;
+    top: -9px;
+    left: -9px;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(49, 95, 88, .14);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 5px 14px rgba(32, 69, 63, .14);
+  }
+}
+
+@media (max-width: 900px) {
+  .itineraryResizeDivider,
+  .plannerChatMoveHandle,
+  .plannerChatResizeHandles,
+  .plannerChatResizeHandle {
+    display: none;
+  }
 }
 
 .itinerary .dayNavigationChoices--firstLeg {
@@ -12080,4 +14615,625 @@ svg {
   border: none;
   padding: 8px 14px;
   border-radius: 10px;
+}
+
+/* New Planner visits start as a conversation. Saved chats remain available
+   from the history drawer and never replace this entry screen automatically. */
+.plannerLayout.is-new-chat {
+  display: grid;
+  min-height: calc(100dvh - 64px);
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  padding: clamp(18px, 4vw, 44px);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(116, 169, 157, .18), transparent 25rem),
+    radial-gradient(circle at 84% 88%, rgba(116, 169, 157, .11), transparent 24rem),
+    #f6faf8;
+}
+
+.plannerLayout.is-new-chat > .itinerary,
+.plannerLayout.is-new-chat > .plannerMap,
+.plannerLayout.is-new-chat > .itineraryResizeDivider {
+  display: none;
+}
+
+.plannerLayout.is-new-chat .plannerChat,
+.plannerLayout.is-new-chat .plannerChat[style] {
+  position: relative;
+  inset: auto;
+  width: min(640px, 100%);
+  height: min(760px, calc(100dvh - 108px));
+  min-height: min(620px, calc(100dvh - 108px));
+  border: 1px solid rgba(49, 95, 88, .14);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(37, 75, 69, .16);
+}
+
+.plannerLayout.is-new-chat .plannerChatMoveHandle,
+.plannerLayout.is-new-chat .plannerChatResizeHandles,
+.plannerLayout.is-new-chat .plannerChatToggle {
+  display: none;
+}
+
+.plannerLayout.is-new-chat .plannerChat .panelHeading {
+  border-radius: 24px 24px 0 0;
+}
+
+.guidedQuestionRow .chatBubble {
+  display: grid;
+  gap: 5px;
+}
+
+.guidedQuestionProgress {
+  color: #6d837e;
+  font-size: .56rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.guidedSourceCount {
+  color: #416b62;
+  font-size: .59rem;
+  font-weight: 750;
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    width: 100%;
+    height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    min-height: 560px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* Two-column entry override (must remain the final Planner rule). */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: calc(100dvh - 64px);
+    min-height: calc(100dvh - 64px);
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: 68px minmax(0, 1fr);
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: hidden;
+    padding: 0;
+    background: #fff;
+  }
+  .plannerLayout.is-new-chat .plannerEntryTopbar { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 2; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 2; grid-row: 1 / span 2; }
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .plannerLayout.is-new-chat { grid-template-columns: minmax(340px, 46%) minmax(0, 54%); }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: auto;
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: visible;
+    padding: 0;
+    background: #fff;
+  }
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 560px;
+    border: 0;
+    border-bottom: 1px solid #e8eae9;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .plannerLayout.is-new-chat .plannerEntryTopbar { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 2; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 1; grid-row: 3; }
+}
+
+/* During initial planning, the explorer crew owns the left stage and the
+   conversation stays available in the compact floating assistant. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    position: relative;
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    position: fixed;
+    z-index: 1900;
+    left: var(--floating-chat-x, auto);
+    top: var(--floating-chat-y, auto);
+    right: var(--floating-chat-right, clamp(20px, 2.5vw, 42px));
+    bottom: var(--floating-chat-bottom, clamp(20px, 3vh, 34px));
+    width: var(--floating-chat-width, min(390px, calc(56vw - 40px)));
+    height: var(--floating-chat-height, min(510px, calc(100dvh - 118px)));
+    min-width: 340px;
+    min-height: 360px;
+    overflow: hidden;
+    border: 1px solid rgba(49, 95, 88, .14);
+    border-radius: 24px;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 24px 64px rgba(37, 75, 69, .2);
+    backdrop-filter: blur(18px);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat > .panelHeading {
+    display: flex;
+    min-height: 68px;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatMoveHandle {
+    display: grid;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatResizeHandles {
+    display: block;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
+    display: grid;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
+    width: 116px;
+    min-width: 116px;
+    height: 116px;
+    min-height: 116px;
+    overflow: visible;
+    border-radius: 50%;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed > .panelHeading {
+    width: 116px;
+    height: 116px;
+    min-height: 116px;
+    border-radius: 50%;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    grid-template-rows: auto minmax(360px, 48dvh) auto auto;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 360px;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    grid-column: 1;
+    grid-row: 3;
+    width: calc(100% - 28px);
+    height: min(480px, calc(100dvh - 160px));
+    min-height: 400px;
+    margin: 14px;
+    border: 1px solid rgba(49, 95, 88, .14);
+    border-radius: 22px;
+    box-shadow: 0 18px 42px rgba(37, 75, 69, .14);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat > .panelHeading {
+    display: flex;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
+    display: none;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 1;
+    grid-row: 4;
+  }
+}
+
+/* Keep the VSF assistant visually continuous and keep source import available
+   after a plan has been created. This final override intentionally follows all
+   Planner layouts so the header, conversation, and composer share one surface. */
+.plannerChat:not(.is-collapsed) {
+  --planner-chat-pastel: #fff;
+  background: var(--planner-chat-pastel);
+}
+
+.plannerChat:not(.is-collapsed) > .panelHeading,
+.plannerChat:not(.is-collapsed) .plannerChatContent,
+.plannerChat:not(.is-collapsed) .chatMessages,
+.plannerChat:not(.is-collapsed) .plannerEntryComposer,
+.plannerChat:not(.is-collapsed) .chatComposer {
+  border-top: 0;
+  border-bottom: 0;
+  background: var(--planner-chat-pastel);
+  box-shadow: none;
+}
+
+.plannerChat:not(.is-collapsed) > .panelHeading {
+  background-image: none;
+}
+
+.plannerChat:not(.is-collapsed) .urlImportDock {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 5px;
+  margin: 0;
+  padding: 10px 14px 0;
+  background: transparent;
+}
+
+.plannerChat:not(.is-collapsed) .urlImportControl {
+  background: #fff;
+}
+
+.plannerChat:not(.is-collapsed) .chatComposer {
+  padding-top: 8px;
+}
+
+.plannerLayout.is-new-chat .plannerChat:not(.is-collapsed) .plannerEntryComposer {
+  border: 1px solid #c7cbc9;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgba(17, 24, 22, .04),
+    0 10px 30px rgba(17, 24, 22, .06);
+}
+
+.plannerLayout.is-new-chat .plannerChat:not(.is-collapsed) .plannerEntryComposer:focus-within {
+  border-color: #8a918e;
+  box-shadow:
+    0 0 0 3px rgba(49, 95, 88, .08),
+    0 12px 34px rgba(17, 24, 22, .09);
+}
+
+.plannerLayout.is-new-chat .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
+  border-bottom: 1px solid #e5ebe8;
+}
+
+/* Use the same two-part composer in every Planner chat state. */
+.plannerChat:not(.is-collapsed) .plannerEntryComposer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0;
+  margin: 0 14px 14px;
+  overflow: hidden;
+  border: 1px solid #e2e9e7;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(31, 50, 45, .06);
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer:focus-within {
+  border-color: #8a918e;
+  box-shadow:
+    0 0 0 3px rgba(49, 95, 88, .08),
+    0 12px 34px rgba(17, 24, 22, .09);
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
+  margin: 0;
+  border-bottom: 1px solid #edf2f0;
+  padding: 9px 11px;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl {
+  border: 0;
+  border-radius: 18px;
+  padding: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl:focus-within {
+  box-shadow: none;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea {
+  max-height: 78px;
+  padding: 10px 6px;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button {
+  width: 44px;
+  height: 44px;
+  border-radius: 17px;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .chatComposer {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox {
+  border: 0;
+  border-radius: 0;
+  padding: 3px 8px 7px;
+  box-shadow: none;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox:focus-within {
+  box-shadow: none;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea {
+  min-height: 112px;
+  padding: 14px 14px 6px;
+}
+
+.plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar {
+  min-height: 50px;
+  justify-content: flex-end;
+  padding: 4px 7px 7px 9px;
+}
+
+.plannerLayout.is-new-chat .plannerChat:not(.is-collapsed) .plannerEntryComposer {
+  margin: 0 clamp(20px, 4vw, 52px) 20px;
+  border-radius: 30px;
+}
+
+/* The loading chat is a compact floating panel, so keep the combined URL and
+   prompt surface close to its edges instead of inheriting the page-wide inset. */
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer {
+  margin-inline: 14px;
+}
+
+/* Keep the generous composer only on the untouched new-chat screen. */
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
+  padding: 5px 8px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControlIcon,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControlIcon {
+  width: 38px;
+  height: 38px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea {
+  max-height: 62px;
+  padding-block: 6px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button {
+  width: 40px;
+  height: 40px;
+  border-radius: 15px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea {
+  min-height: 62px;
+  padding-top: 10px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar {
+  min-height: 44px;
+  padding-bottom: 5px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .sendButton,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .sendButton {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+}
+
+/* The illustrated loading canvas belongs only to initial trip setup. Keep it
+   on the left while inspiration remains available on the right. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
+    grid-column: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    display: block;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
+    left: var(--floating-chat-x, clamp(24px, 3vw, 42px));
+    right: auto;
+    bottom: var(--floating-chat-bottom, clamp(24px, 3vh, 36px));
+  }
+}
+
+/* A collapsed Planner is only the white circular launcher: its surrounding
+   chat panel and heading must not leave a tinted square behind it. */
+.plannerChat.is-collapsed,
+.plannerLayout .plannerChat.is-collapsed,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.plannerChat.is-collapsed > .panelHeading,
+.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed > .panelHeading {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.plannerChat.is-collapsed .plannerChatToggle {
+  inset: auto;
+  display: grid;
+  place-items: center;
+}
+
+.plannerChat.is-collapsed .plannerChatToggle .chatTogglePenguin {
+  left: 50%;
+  bottom: 5px;
+  transform: translateX(-50%);
+}
+
+.plannerChat.is-collapsed .plannerChatLauncherLabel {
+  right: 50%;
+  bottom: -9px;
+  transform: translateX(50%);
+}
+
+/* Finished, loading, and Explore chats share one compact component treatment. */
+.plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
+  padding: 5px 8px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControlIcon {
+  width: 38px;
+  height: 38px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControl textarea {
+  max-height: 62px;
+  padding-block: 6px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControl button {
+  width: 40px;
+  height: 40px;
+  border-radius: 15px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .composerBox textarea {
+  min-height: 62px;
+  padding-top: 10px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .composerToolbar {
+  min-height: 44px;
+  padding-bottom: 5px;
+}
+
+.plannerChat.plannerChat--compact:not(.is-collapsed) .sendButton {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+}
+
+/* Explore only owns placement and resizing; all visible UI comes from Planner. */
+.globalPlannerAssistant .explorePlannerChat {
+  position: relative;
+  inset: auto;
+  display: flex;
+  width: min(410px, calc(100vw - 40px));
+  min-width: 340px;
+  max-width: calc(100vw - 40px);
+  height: min(610px, calc(100dvh - 104px));
+  min-height: 420px;
+  max-height: calc(100dvh - 40px);
+  flex-direction: column;
+  resize: both;
+}
+
+.globalPlannerAssistant .explorePlannerChat .plannerChatContent {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.globalPlannerAssistant .explorePlannerResizeHint {
+  pointer-events: none;
+}
+
+@media (max-width: 520px) {
+  .globalPlannerAssistant .explorePlannerChat {
+    width: calc(100vw - 24px);
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+    height: min(610px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+    resize: none;
+  }
+}
+
+/* Keep chat history immediately before the trip-intake fields throughout the
+   entry, loading and finished Planner stages. */
+.plannerHistoryMenu--intake {
+  position: absolute;
+  z-index: 12;
+  top: 50%;
+  left: 8px;
+  flex: 0 0 38px;
+  border-color: #e3e9e7;
+  background: rgba(255, 255, 255, .94);
+  color: #51615d;
+  box-shadow: 0 5px 16px rgba(31, 50, 45, .06);
+  transform: translateY(-50%);
 }

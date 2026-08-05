@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -65,7 +65,10 @@ from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.preferences.service import PreferenceLearningService
-from app.modules.users.repository import UserRepository
+from app.modules.preferences.repository import TravelerProfileRepository
+
+if TYPE_CHECKING:
+    from app.modules.plans.conversation_service import ConversationTurnService
 
 
 def get_plan_mutation_service(
@@ -184,7 +187,7 @@ def get_plan_service(
         place_alias_enricher=LLMPlaceAliasEnricher(llm_client),
         explorer_persistence=ExplorerPersistenceRepository(db),
         preference_learning=PreferenceLearningService(),
-        user_repository=UserRepository(db),
+        traveler_profile_repository=TravelerProfileRepository(db),
         explorer_timing_logger=ExplorerTimingLogger(
             settings.explorer_timing_log_path
         ),

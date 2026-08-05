@@ -427,7 +427,6 @@ class ConversationTurnService:
             chat_id=chat.id,
             user=_User(
                 id=chat.user_id,
-                travel_preferences={},
             ),
             content=turn.content,
             expected_revision=turn.base_revision,

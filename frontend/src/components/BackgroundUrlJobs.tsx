@@ -370,7 +370,6 @@ export function BackgroundUrlJobs({
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ jobId: string; message: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [clearingFinished, setClearingFinished] = useState(false);
   const statusesRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -442,15 +441,20 @@ export function BackgroundUrlJobs({
     };
   }, [authenticated, enabled]);
 
-  const visibleJobs = jobs.slice(0, 12);
-  const running = jobs.filter((job) => job.status === "running").length;
-  const queued = jobs.filter((job) => job.status === "queued").length;
-  const finished = jobs.filter((job) => TERMINAL.has(job.status));
+  const visibleJobs = jobs
+    .filter((job) => job.status !== "succeeded")
+    .slice(0, 12);
+  const runningJobs = visibleJobs.filter((job) => job.status === "running");
+  const running = runningJobs.length;
+  const queued = visibleJobs.filter((job) => job.status === "queued").length;
+  const failed = visibleJobs.filter((job) => job.status === "failed").length;
   if (!enabled || visibleJobs.length === 0) return null;
 
   const summary = running || queued
-    ? `${running ? `${running} đang xử lý` : ""}${running && queued ? " · " : ""}${queued ? `${queued} đang chờ` : ""}`
-    : `${jobs.length} tác vụ nguồn`;
+    ? running
+      ? `${running > 1 ? `${running} đang xử lý` : "Đang xử lý"} · ${elapsedLabel(elapsedSeconds(runningJobs[0], now))}${queued ? ` · ${queued} đang chờ` : ""}`
+      : `${queued} đang chờ`
+    : `${failed} tác vụ thất bại`;
 
   async function runAgain(job: DisplayJob) {
     setRetryingId(job.id);
@@ -496,32 +500,8 @@ export function BackgroundUrlJobs({
     }
   }
 
-  async function clearFinishedJobs() {
-    setClearingFinished(true);
-    try {
-      const serverFinished = finished.filter((job): job is UrlImportJob => !isGuestJob(job));
-      finished.filter(isGuestJob).forEach((job) => deleteGuestUrlJob(job.id));
-
-      const results = await Promise.allSettled(
-        serverFinished.map((job) => deleteUrlImportJob(job.id))
-      );
-      const deletedIds = new Set(
-        serverFinished
-          .filter((_, index) => results[index]?.status === "fulfilled")
-          .map((job) => job.id)
-      );
-      if (deletedIds.size > 0) {
-        setServerJobs((current) => current.filter((job) => !deletedIds.has(job.id)));
-        deletedIds.forEach((id) => statusesRef.current.delete(id));
-        window.dispatchEvent(new Event("vsf:url-job-enqueued"));
-      }
-    } finally {
-      setClearingFinished(false);
-    }
-  }
-
   return (
-    <div className="backgroundJobsDock">
+    <div aria-live="polite" className="backgroundJobsDock">
       <details
         className="backgroundJobsPanel"
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
@@ -532,18 +512,9 @@ export function BackgroundUrlJobs({
           <strong>{summary}</strong>
           <span className="backgroundJobsChevron" aria-hidden="true">⌄</span>
         </summary>
-        <div className="backgroundJobsList" aria-live="polite">
+        <div className="backgroundJobsList">
           <div className="backgroundJobsListHeader">
-            <strong>Tác vụ URL / ảnh OCR gần đây</strong>
-            {finished.length > 0 ? (
-              <button
-                disabled={clearingFinished}
-                onClick={() => void clearFinishedJobs()}
-                type="button"
-              >
-                {clearingFinished ? "Đang xóa…" : `Xóa đã xong (${finished.length})`}
-              </button>
-            ) : null}
+            <strong>{running || queued ? "Nguồn đang được xử lý" : "Nguồn xử lý thất bại"}</strong>
           </div>
           {visibleJobs.map((job) => {
             return (

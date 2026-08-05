@@ -31,9 +31,19 @@ from app.modules.plans.explorer.model import (
     YouTubeTranscriptCacheEntry,
 )
 from app.modules.plans.chat_model import TripChat, TripChatMessage, TripChatPlanRevision
+from app.modules.plans.trip_intent_model import (
+    TripIntentDestinationStay,
+    TripIntentValue,
+    TripIntentVersion,
+)
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.planning_runs.model import PlanningRun, PlanningRunStage
 from app.modules.profiles.model import UserPost, UserVisitedPlace
+from app.modules.preferences.model import (
+    TravelerPreferenceSignal,
+    TravelerPreferenceSignalSource,
+    TravelerProfile,
+)
 from app.modules.users.model import User
 from app.modules.travel_groups.model import TravelGroup, TravelGroupMembership, TravelGroupPost
 
@@ -64,6 +74,12 @@ __all__ = [
     "TripChat",
     "TripChatMessage",
     "TripChatPlanRevision",
+    "TripIntentDestinationStay",
+    "TripIntentValue",
+    "TripIntentVersion",
+    "TravelerPreferenceSignal",
+    "TravelerPreferenceSignalSource",
+    "TravelerProfile",
     "UrlImportJob",
     "User",
     "UserMustPlace",

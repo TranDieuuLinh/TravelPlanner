@@ -6,15 +6,33 @@
 
 ### 1. Nhập nguồn cảm hứng
 
-1. Người dùng tạo một trip mới.
-2. Dán một hoặc nhiều URL video/nội dung tham khảo, tải ảnh để OCR hoặc nhập địa
+1. Mỗi lần người dùng mở Planner, UI bắt đầu ở một chat mới và không tự mở lại
+   nội dung chat gần nhất. Lịch sử vẫn nằm trong sidebar để người dùng chủ động
+   chọn khi muốn tiếp tục một trip cũ.
+2. Chat mới chỉ mở bằng một lời mời ngắn để người dùng kể về chuyến đi hoặc nhập
+   URL, không bắt đầu bằng bộ câu hỏi tuần tự. Người dùng trả lời tự nhiên trong
+   ô chat; Explorer chỉ hỏi làm rõ những khoảng trống có giá trị cao khi cần.
+   Thông tin đã hiểu xuất hiện ở thanh tóm tắt phía trên để user quay lại sửa
+   nhanh.
+3. Màn hình đầu giữ chat ở bên trái và feed **Khám phá** gồm reel/bài viết không
+   có giá ở bên phải. Đây là nội dung cảm hứng, không mặc định là listing
+   Marketplace. Composer của màn hình này chỉ hiển thị nhập URL; upload ảnh OCR
+   không được đưa vào entry UI hiện tại.
+4. Người dùng dán một hoặc nhiều URL video/nội dung tham khảo hoặc nhập địa
    điểm thủ công.
-3. Hệ thống kiểm tra từng URL/ảnh và tạo một import job nền cho mỗi nguồn. Job
+   Trong chat mới, URL được giữ cùng các câu trả lời intake rồi gửi vào cùng
+   draft để hệ thống có cả nguồn địa điểm lẫn ràng buộc chuyến đi.
+5. Hệ thống kiểm tra từng URL/ảnh và tạo một import job nền cho mỗi nguồn. Job
    ảnh dùng cùng hàng đợi FIFO, timeout, retry, reprocess, stop/delete và timing
    như job URL; dữ liệu ảnh không được ghi vào log.
-4. UI giữ nguyên từng URL hoặc tên ảnh cùng trạng thái `đang chờ`, `đang xử lý`, `cần xác
+6. Khi job URL chạy, chat hiển thị timer, tiến độ và nhóm mascot; feed Khám phá
+   vẫn dùng được. Job tiếp tục chạy khi user rời màn hình. User có thể hủy job
+   hiện tại để mở chat mới; lịch sử luôn mở được từ thanh trên hoặc itinerary.
+7. UI giữ nguyên từng URL hoặc tên ảnh cùng trạng thái `đang chờ`, `đang xử lý`, `cần xác
    nhận`, `hoàn thành` hoặc `thất bại`.
-5. Người dùng có thể tiếp tục bổ sung yêu cầu trong khi job chạy.
+8. Người dùng có thể tiếp tục bổ sung yêu cầu trong khi job chạy. Khi plan sẵn
+   sàng, feed Khám phá được thay bằng itinerary và map; chatbot chuyển thành cửa
+   sổ nhỏ để chỉnh sửa plan.
 
 ### 2. Trích xuất và xác minh nội dung
 

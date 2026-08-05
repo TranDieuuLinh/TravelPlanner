@@ -43,7 +43,7 @@ TABLES = {
         "box": (80, 185, 395, 385),
         "color": IMPLEMENTED,
         "status": "implemented",
-        "fields": ["id PK", "email unique", "full_name", "role", "travel_preferences"],
+        "fields": ["id PK", "email unique", "full_name", "role"],
     },
     "places": {
         "box": (500, 185, 815, 385),

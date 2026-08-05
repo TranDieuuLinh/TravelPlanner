@@ -35,6 +35,9 @@ class ExplorerIntake(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     destination: Mapped[str] = mapped_column(String(255), nullable=False)
+    candidate_reviews: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -76,7 +79,7 @@ class UrlSourceArtifact(Base):
     __tablename__ = "url_source_artifacts"
     __table_args__ = (
         CheckConstraint(
-            "artifact_type IN ('caption', 'stt', 'ocr')",
+            "artifact_type IN ('webpage', 'caption', 'stt', 'ocr')",
             name="ck_url_source_artifacts_type",
         ),
         UniqueConstraint(

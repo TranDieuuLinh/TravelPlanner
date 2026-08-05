@@ -39,11 +39,14 @@ def main() -> None:
             if any(day.transport_legs for day in plan.days):
                 continue
 
-            trip_spec = (chat.current_explorer or {}).get("tripSpec") or {}
-            transport = trip_spec.get("transport") or {}
-            start_date = trip_spec.get("startDate")
-            preferred_modes = set(transport.get("preferredModes") or [])
-            avoid_modes = set(transport.get("avoidModes") or [])
+            trip_intent = repository.load_trip_intent(chat)
+            if trip_intent is None:
+                print(f"{chat.id}: skipped because no persisted TripIntent exists")
+                continue
+            transport = trip_intent.preferences.transport
+            start_date = trip_intent.timing.start_date
+            preferred_modes = {mode.value for mode in transport.preferred_modes}
+            avoid_modes = {mode.value for mode in transport.avoid_modes}
 
             refreshed_days = []
             for day in plan.days:

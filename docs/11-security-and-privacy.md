@@ -38,6 +38,8 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 ## Nhập URL và AI
 
 - Chống SSRF bằng cách chặn địa chỉ local, private, metadata và non-HTTP.
+- Web-page connector resolve DNS và kiểm tra toàn bộ địa chỉ là public trước
+  request đầu tiên và trước từng redirect; URL có userinfo bị từ chối.
 - Giới hạn redirect, content type, response size và thời gian fetch.
 - Chỉ dùng connector đã cho phép; không vượt qua đăng nhập, nội dung riêng tư
   hoặc cơ chế kiểm soát truy cập của nền tảng nguồn.
@@ -92,6 +94,10 @@ Trường role hiện tại không đủ để làm hệ thống phân quyền h
 - Điểm bắt đầu user tìm trong Places tuân theo cùng phạm vi tạm thời: tên và tọa
   độ chỉ dùng để tính/hiển thị tuyến trong phiên trang, không được thêm vào plan.
 - Loại bỏ dữ liệu cá nhân khỏi log và analytics.
+- Traveler Profile chỉ lưu preference du lịch đã chuẩn hóa, confidence, nguồn
+  và intake reference; không lưu raw prompt/OCR/transcript trong signal. Trait
+  nhạy cảm không được tự suy luận. User có API xem, sửa preference explicit và
+  xóa toàn bộ profile dài hạn.
 - Planning Control chỉ dành cho role `admin`. Snapshot planning run không lưu
   raw media, toàn bộ prompt/transcript, secret hay query string URL; raw request
   chỉ được biểu diễn bằng số ký tự và trạng thái có/không.

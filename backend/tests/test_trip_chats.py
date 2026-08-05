@@ -83,7 +83,7 @@ def test_user_can_delete_own_trip_chat_and_its_history(
                 revision=1,
                 intake_id=None,
                 plan_payload={},
-                explorer_payload={},
+                trip_intent_id=None,
             ),
         ]
     )

@@ -28,8 +28,11 @@ class RecordingLLM:
         return json.dumps(
             {
                 "explorer": {
-                    "intent": {"destination": "Hà Nội"},
-                    "tripSpec": {"days": 1},
+                    "tripIntent": {
+                        "destination": "Hà Nội",
+                        "timing": {"days": 1},
+                        "travelParty": {"type": "solo", "adults": 1},
+                    },
                 },
                 "places": {
                     "placeCandidates": [
@@ -65,11 +68,12 @@ class RecordingLLM:
         self.response_schema = response_schema
         return json.dumps(
             {
-                "intent": {
+                "tripIntent": {
                     "destination": "Hà Nội",
-                    "interests": ["food", "culture"],
+                    "timing": {"days": 3},
+                    "travelParty": {"type": "solo", "adults": 1},
+                    "preferences": {"interests": ["food", "culture"]},
                 },
-                "tripSpec": {"days": 3},
                 "assumptions": [],
                 "missingInfoQuestions": [],
                 "preferenceSnapshot": {"signals": []},

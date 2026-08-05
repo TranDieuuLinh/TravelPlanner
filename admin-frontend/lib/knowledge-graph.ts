@@ -30,6 +30,7 @@ export type KnowledgeProperty = {
   key: string;
   value: string;
   source: string;
+  note: string;
 };
 
 export type KnowledgeRelationship = {
@@ -103,45 +104,60 @@ export const ontologyNodes: OntologyNode[] = [
   { type: "DrinkDessert", description: "Quán nước, quán cà phê, tiệm trà sữa, tiệm chè, bánh ngọt và đồ ăn vặt tráng miệng" },
   { type: "Accommodation", description: "Cơ sở lưu trú du lịch (khách sạn, resort, homestay, villa, nhà nghỉ)" },
   { type: "Area", description: "Khu vực địa lý ở bất kỳ cấp nào" },
-  { type: "Activity", description: "Hoạt động hoặc trải nghiệm du lịch như săn mây hoặc thưởng thức cà phê trứng" }
+  { type: "Activity", description: "Hoạt động hoặc trải nghiệm du lịch như săn mây hoặc thưởng thức cà phê trứng" },
+  { type: "FoodItem", description: "Món ăn cụ thể như phở hoặc bún chả" },
+  { type: "DrinkItem", description: "Đồ uống cụ thể như cà phê trứng hoặc trà sen" },
+  { type: "ProductItem", description: "Sản phẩm có thể mua hoặc trải nghiệm" }
 ];
 
 export const ontologyRelationships: OntologyRelationship[] = [
   {
     type: "LOCATED_IN",
     from: "Place",
-    to: "Area",
-    description: "Một địa điểm hoặc khu vực nằm trong một khu vực hành chính khác"
+    to: "LocationEntity",
+    description: "Địa điểm nằm trong một địa điểm hoặc khu vực khác"
   },
   {
-    type: "NEAR",
-    from: "Place",
-    to: "Place",
-    description: "Khoảng cách lân cận gần kề giữa hai địa điểm du lịch / cơ sở dịch vụ"
+    type: "ADJACENT_TO",
+    from: "Area",
+    to: "Area",
+    description: "Hai khu vực có chung ranh giới"
   },
   {
     type: "PART_OF",
-    from: "LocationEntity",
-    to: "LocationEntity",
-    description: "Địa điểm thành phần thuộc một quần thể danh thắng hoặc cụm du lịch lớn hơn"
-  },
-  {
-    type: "CONNECTS_TO",
-    from: "Place",
-    to: "Place",
-    description: "Có tuyến hoặc chặng di chuyển trực tiếp giữa hai địa điểm"
-  },
-  {
-    type: "RECOMMENDS",
     from: "Area",
-    to: "Place|Activity",
-    description: "Khu vực hành chính đề xuất địa điểm hoặc cơ sở dịch vụ theo ngữ cảnh có nguồn"
+    to: "Area",
+    description: "Khu vực con thuộc khu vực cha"
   },
   {
     type: "OFFERS_ACTIVITY",
     from: "Place",
     to: "Activity",
     description: "Địa điểm cung cấp hoặc là nơi thực hiện một hoạt động du lịch"
+  },
+  {
+    type: "SPECIAL_EXPERIENCE",
+    from: "LocationEntity",
+    to: "Activity",
+    description: "Hoạt động được đề xuất, với priority từ optional đến must"
+  },
+  {
+    type: "INVOLVES_ITEM",
+    from: "Activity",
+    to: "Item",
+    description: "Hoạt động liên quan đến món ăn, đồ uống hoặc sản phẩm"
+  },
+  {
+    type: "OFFERS_ITEM",
+    from: "Place",
+    to: "Item",
+    description: "Địa điểm cung cấp món ăn, đồ uống hoặc sản phẩm"
+  },
+  {
+    type: "TARGETS_PLACE",
+    from: "Activity",
+    to: "Place",
+    description: "Hoạt động lấy một địa điểm làm đối tượng"
   }
 ];
 
@@ -149,7 +165,7 @@ export const rawDataset = {
   "aliases.csv": "entity_id,alias\nplace_001,Hồ Hoàn Kiếm\nplace_001,Hoan Kiem Lake\nrestaurant_001,Bún Chả Obama",
   "entities.csv": "id,name,type,status\n",
   "ontology.yaml": "TravelPlace:\n  description: Điểm tham quan\n\nArea:\n  description: Khu vực địa lý\n\nLOCATED_IN:\n  from: Place\n  to: Area",
-  "properties.csv": "entity_id,key,value,source\n",
+  "properties.csv": "entity_id,key,value,source,note\n",
   "relationships.csv": "id,from_entity_id,relationship,to_entity_id,recommendations,source\n",
   "schema.yaml": "nodes:\n  - TravelPlace\n  - Area\n\nrelationships:\n  - LOCATED_IN\n\nnode_type_definitions:\n  Entity:\n    abstract: true\n  LocationEntity:\n    abstract: true\n    extends: Entity\n  Place:\n    abstract: true\n    extends: LocationEntity\n  TravelPlace:\n    extends: Place\n  Area:\n    extends: LocationEntity"
 };
@@ -212,22 +228,29 @@ export function serializeAliases(items: KnowledgeAlias[]): string {
 }
 
 export function parseProperties(content: string): KnowledgeProperty[] {
-  return parseCsvRows(content)
+  const rows = parseCsvRows(content);
+  const header = rows[0] ?? [];
+  const column = (name: string, fallback: number) => {
+    const index = header.indexOf(name);
+    return index >= 0 ? index : fallback;
+  };
+  return rows
     .slice(1)
-    .filter((row) => row[0]?.trim() && row[1]?.trim())
+    .filter((row) => row[column("entity_id", 0)]?.trim() && row[column("key", 1)]?.trim())
     .map((row) => ({
-      entityId: row[0].trim(),
-      key: row[1].trim(),
-      value: row[2]?.trim() ?? "",
-      source: row[3]?.trim() ?? ""
+      entityId: row[column("entity_id", 0)].trim(),
+      key: row[column("key", 1)].trim(),
+      value: row[column("value", 2)]?.trim() ?? "",
+      source: row[column("source", 3)]?.trim() ?? "",
+      note: row[column("note", 4)]?.trim() ?? ""
     }));
 }
 
 export function serializeProperties(items: KnowledgeProperty[]): string {
   return [
-    "entity_id,key,value,source",
+    "entity_id,key,value,source,note",
     ...items.map((item) =>
-      [item.entityId, item.key, item.value, item.source].map(csvCell).join(",")
+      [item.entityId, item.key, item.value, item.source, item.note].map(csvCell).join(",")
     )
   ].join("\r\n");
 }

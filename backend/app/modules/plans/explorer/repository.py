@@ -19,7 +19,7 @@ from app.modules.plans.explorer.model import (
     UserMustPlace,
     UserMustPlaceUser,
 )
-from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
+from app.modules.plans.explorer.schema import PlaceCandidateReview, UnifiedPlaceCandidate
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
     ExtractedPlace,
@@ -41,7 +41,7 @@ from app.modules.plans.trip_theme_planner.region_context import normalize_region
 from app.modules.plans.schema import SelectedPlaceCreate
 
 
-URL_EXTRACTION_CACHE_VERSION = 4
+URL_EXTRACTION_CACHE_VERSION = 5
 
 
 def _artifact_source_url(url: str, platform: str | None = None) -> str:
@@ -90,6 +90,7 @@ class ExplorerPersistenceRepository:
         user_id: str | None,
         destination: str,
         resolutions: list[PlaceResolution],
+        candidate_reviews: list[PlaceCandidateReview] | None = None,
         url_results: list[UrlReelExtractionResult] | None = None,
     ) -> None:
         self.session.add(
@@ -97,6 +98,10 @@ class ExplorerPersistenceRepository:
                 id=intake_id,
                 user_id=user_id,
                 destination=destination,
+                candidate_reviews=[
+                    review.model_dump(mode="json", by_alias=True)
+                    for review in (candidate_reviews or [])
+                ],
             )
         )
         self._save_url_cache(url_results or [])
@@ -208,6 +213,29 @@ class ExplorerPersistenceRepository:
                 user_id=user_id,
             )
         self.session.commit()
+
+    def load_candidate_reviews(self, intake_id: str | None) -> list[PlaceCandidateReview]:
+        if intake_id is None:
+            return []
+        row = self.session.get(ExplorerIntake, intake_id)
+        if row is None:
+            return []
+        return [
+            PlaceCandidateReview.model_validate(value)
+            for value in row.candidate_reviews
+        ]
+
+    def replace_candidate_reviews(
+        self,
+        intake_id: str,
+        reviews: list[PlaceCandidateReview],
+    ) -> None:
+        row = self.session.get(ExplorerIntake, intake_id)
+        if row is None:
+            return
+        row.candidate_reviews = [
+            review.model_dump(mode="json", by_alias=True) for review in reviews
+        ]
 
     def _catalog_place_id(self, place_id: str | None) -> str | None:
         if place_id is None:
@@ -465,16 +493,30 @@ class ExplorerPersistenceRepository:
             )
             speech = result.speech_to_text
             if speech.status == "ok" and speech.text.strip():
+                is_web_page = speech.source == "web_page_text"
                 artifact_type = (
-                    "caption"
+                    "webpage"
+                    if is_web_page
+                    else "caption"
                     if speech.source.startswith("youtube_captions")
                     else "stt"
                 )
+                content_text = (
+                    "\n".join(
+                        observation.evidence.strip()
+                        for observation in speech.observations
+                        if observation.evidence.strip()
+                    )
+                    if is_web_page
+                    else speech.text
+                )
+                if not content_text:
+                    continue
                 self._upsert_url_source_artifact(
                     source_url=source_url,
                     platform=result.platform,
                     artifact_type=artifact_type,
-                    content_text=speech.text,
+                    content_text=content_text,
                     language=speech.language or "",
                     source=speech.source or artifact_type,
                     metadata={

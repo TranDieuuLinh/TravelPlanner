@@ -37,6 +37,11 @@ Group detail trả `group`, `posts` và `totalPosts`. Mỗi post trả `id`, `co
 - `POST /api/auth/logout`: thu hồi refresh session và xóa cookie.
 - `GET /api/me`: lấy user hiện tại.
 - `PATCH /api/me/profile`: sửa hồ sơ; yêu cầu CSRF header.
+- `GET /api/me/traveler-profile`: xem preference dài hạn và provenance signals.
+- `PATCH /api/me/traveler-profile`: thay danh sách preference do user xác nhận;
+  yêu cầu CSRF header.
+- `DELETE /api/me/traveler-profile`: xóa toàn bộ hồ sơ cá nhân hóa dài hạn;
+  yêu cầu CSRF header.
 - `GET /api/me/showcase`: lấy các địa điểm đã đi và bài viết của user hiện tại.
 - `POST /api/me/posts`: multipart tạo `post` hoặc `reel`; yêu cầu CSRF và các
   field `contentType`, `caption`, `locationName`, `media`. `post` nhận JPEG/PNG/WebP
@@ -106,11 +111,11 @@ client không được tự chọn role.
 - `POST /api/plans/main/from-context`
 - `POST /api/plans/current-location-route`
 - `POST /api/plans/day-directions`
-- `GET /api/plans/places/search?query={text}&destination={destination}`: trả tối
-  đa 8 gợi ý có tọa độ từ toàn bộ catalog `places` đang active trong vùng đích.
-  Search không phân biệt dấu và đọc cả alias có cấu trúc; endpoint autocomplete
-  này không gọi provider geocoding bên ngoài và không bị giới hạn bởi batch
-  preload của Planner.
+- `GET /api/plans/places/search?query={text}&destination={destination}&topK={k}`:
+  trả tối đa `topK` gợi ý có tọa độ từ toàn bộ catalog `places` đang active trong
+  vùng đích; mặc định `K=5`, nhận giá trị từ 1 đến 10. Search không phân biệt dấu
+  và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
+  geocoding bên ngoài và không bị giới hạn bởi batch preload của Planner.
 - `POST /api/plans/{planId}/backup`
 
 ### Trip chat và lịch sử chỉnh sửa
@@ -119,8 +124,8 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 
 - `POST /api/trip-chats`: tạo một chat riêng cho một chuyến đi.
 - `GET /api/trip-chats`: liệt kê chat của user hiện tại, mới cập nhật trước.
-- `GET /api/trip-chats/{chatId}`: lấy message history, Explorer context và plan
-  hiện tại.
+- `GET /api/trip-chats/{chatId}`: lấy message history, TripIntent hiện hành,
+  candidate review và plan hiện tại.
 - `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
   message và snapshot revision của chat; trả `204 No Content`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
@@ -198,7 +203,7 @@ Request gửi message dùng `multipart/form-data`:
 - `images`: ảnh tùy chọn.
 
 Lần gửi đầu tạo plan revision 1. Các lần sau cung cấp lịch sử user request và
-Explorer context hiện tại cho Planner, giữ các yêu cầu cũ trừ khi message mới
+TripIntent hiện tại đọc từ PostgreSQL cho Explorer, giữ các yêu cầu cũ trừ khi message mới
 thay đổi chúng, và dùng item của plan hiện tại làm đầu vào cho revision. Kết quả
 ghi đè con trỏ `currentPlan` nhưng giữ nguyên `currentPlan.id`; snapshot cũ vẫn
 ở `trip_chat_plan_revisions`.
@@ -218,7 +223,8 @@ ký thời gian chi tiết.
   "revision": 2,
   "hasPlan": true,
   "currentPlan": {},
-  "currentExplorer": {},
+  "currentTripIntent": {},
+  "candidateReviews": [],
   "latestExplorerTiming": {},
   "latestPlannerTiming": {},
   "messages": [
@@ -343,8 +349,10 @@ Input JSON của Explorer nhận `userState.travelStyle` để client truyền p
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
 tả khác. Giá trị mặc định hiện tại là `local`.
 
-Output công khai chứa `intakeId`, `userId` và JSON `explorer` với intent,
-tripSpec, assumptions, missingInfoQuestions và `preferenceSnapshot`.
+Output công khai chứa `intakeId`, `userId` và JSON `explorer` với một
+`tripIntent` canonical, assumptions, missingInfoQuestions và
+`preferenceSnapshot`. Không còn hai object `intent`/`tripSpec` ở contract
+Explorer.
 `preferenceSnapshot.signals` là tín hiệu ngắn hạn của intake;
 `effectiveProfile` là profile đã merge để Planner dùng. `placeCandidates` là contract
 `candidateReviews` an toàn để hiển thị, và timing. Raw payload vẫn chỉ lưu hành
@@ -447,7 +455,7 @@ Day 2 sau khi STT nói rõ đây là day trip Ninh Bình. Resolver tìm theo
 Việt; `candidateName` vẫn được giữ trong record provenance, không bị mất.
 
 Heading cấp thành phố có duration không nằm trong `placeCandidates`. Explorer
-trả nó trong `intent.destinationStays`, ví dụ:
+trả nó trong `tripIntent.timing.destinationStays`, ví dụ:
 
 ```json
 {
@@ -470,8 +478,15 @@ Response tổng quát:
   "intakeId": "uuid",
   "userId": "user-uuid",
   "explorer": {
-    "intent": {},
-    "tripSpec": {},
+    "tripIntent": {
+      "destination": "Hà Nội",
+      "timing": {"days": 3, "flexibility": "unknown"},
+      "travelParty": {"type": "couple", "adults": 2},
+      "budget": {"targetAmount": 6000000, "currency": "VND", "level": "medium"},
+      "notes": [],
+      "preferences": {},
+      "constraints": {"items": [], "policy": {}}
+    },
     "assumptions": [],
     "missingInfoQuestions": [],
     "preferenceSnapshot": {
@@ -488,7 +503,7 @@ Response tổng quát:
 }
 ```
 
-`explorer.tripSpec.budget` là vị trí duy nhất chứa ngân sách:
+`explorer.tripIntent.budget` là vị trí duy nhất chứa ngân sách:
 
 ```json
 {
@@ -502,7 +517,7 @@ Response tổng quát:
 `null`. `currency` là mã ISO 4217 gồm ba chữ cái viết hoa. `level` chỉ nhận
 `low`, `medium` hoặc `high`. Contract không có `inputMode`, khoảng min/max,
 hard-cap, confidence hay calculation
-basis, và không lặp `budgetLevel` trong `intent`.
+basis, và không có `budgetLevel` ở vị trí khác.
 
 `POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
 Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
@@ -511,7 +526,7 @@ Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
 `checkOverall`; report còn trả số ngày, item, chặng di chuyển, địa điểm chưa
 xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không chứa prompt,
 selected-place payload hay dữ liệu provider thô.
-Request gồm `intent`, `tripSpec`, `intakeId`, `userId`, `selectedPlaces`,
+Request gồm `tripIntent`, `intakeId`, `userId`, `selectedPlaces`,
 `candidateReviews`, `allowFinderSuggestions` và cờ nội bộ
 `expandDaysToFitSelectedPlaces`. `candidateReviews` cho phép bước hậu xử lý đọc
 activity URL chưa resolve sau khi Finder đã chốt route; field này không tự biến
@@ -536,7 +551,7 @@ Explorer trả `allowFinderSuggestions=false` khi intake có URL/ảnh/OCR và n
 Explorer trả `true`; Finder vẫn chỉ tìm catalog cho ngày trống, không thêm vào
 ngày đã có stop URL/OCR. Prompt thuần trả `true` cho mọi ngày.
 
-Nếu intake URL/OCR không có `tripSpec.days` explicit, Explorer suy ra số ngày từ
+Nếu intake URL/OCR không có `tripIntent.timing.days` explicit, Explorer suy ra số ngày từ
 `sourceDay`; nếu nguồn không gán ngày, dùng số ngày tối thiểu theo số stop và
 pace để không làm mất stop. Giá trị user nói rõ luôn được giữ nguyên.
 
@@ -666,11 +681,14 @@ Request tạo plan chính:
 {
   "intakeId": "uuid-từ-explorer",
   "userId": "user-uuid",
-  "explorer": {
-    "intent": {},
-    "tripSpec": {},
-    "assumptions": [],
-    "missingInfoQuestions": []
+  "tripIntent": {
+    "destination": "Hà Nội",
+    "timing": {"days": 3, "flexibility": "unknown"},
+    "travelParty": {"type": "couple", "adults": 2},
+    "budget": {"targetAmount": 6000000, "currency": "VND", "level": "medium"},
+    "notes": [],
+    "preferences": {},
+    "constraints": {"items": [], "policy": {}}
   }
 }
 ```

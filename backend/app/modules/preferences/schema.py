@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,6 +25,7 @@ class PreferenceSignal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     scope: str = Field(default="trip", pattern=r"^(trip|destination|global)$")
     destination: str | None = None
+    origin: Literal["explicit", "inferred"] = "inferred"
     source_types: Annotated[
         list[str],
         Field(default_factory=list, alias="sourceTypes"),
@@ -46,6 +47,7 @@ class PreferenceAggregate(BaseModel):
     score: float = Field(ge=-1.0, le=1.0)
     confidence: float = Field(ge=0.0, le=1.0)
     observations: int = Field(default=1, ge=1)
+    origin: Literal["explicit", "inferred"] = "inferred"
     source_types: Annotated[
         list[str],
         Field(default_factory=list, alias="sourceTypes"),
@@ -75,6 +77,8 @@ class LongTermPreferenceProfile(BaseModel):
         cls,
         value: object,
     ) -> "LongTermPreferenceProfile":
+        if isinstance(value, cls):
+            return value.model_copy(deep=True)
         if isinstance(value, list):
             explicit = [
                 str(item).strip()
@@ -106,6 +110,8 @@ class LongTermPreferenceProfile(BaseModel):
                 continue
             if aggregate.score < minimum_score:
                 continue
+            if aggregate.origin == "inferred" and aggregate.observations < 2:
+                continue
             ranked.append(
                 (
                     aggregate.score * aggregate.confidence,
@@ -127,3 +133,54 @@ class PreferenceSnapshot(BaseModel):
     ]
 
     model_config = {"populate_by_name": True}
+
+
+class TravelerPreferenceSignalRead(BaseModel):
+    id: str
+    dimension: str
+    value: str
+    label: str
+    score: float
+    confidence: float
+    observations: int
+    scope: str
+    destination: str | None = None
+    origin: str
+    status: str
+    source_types: Annotated[list[str], Field(alias="sourceTypes")]
+    first_observed_at: Annotated[datetime, Field(alias="firstObservedAt")]
+    last_observed_at: Annotated[datetime, Field(alias="lastObservedAt")]
+    last_evidence_intake_id: Annotated[
+        str | None, Field(alias="lastEvidenceIntakeId")
+    ] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class TravelerProfileRead(BaseModel):
+    user_id: Annotated[int, Field(alias="userId")]
+    explicit_preferences: Annotated[
+        list[str], Field(alias="explicitPreferences")
+    ]
+    top_preferences: Annotated[list[str], Field(alias="topPreferences")]
+    observation_count: Annotated[int, Field(alias="observationCount")]
+    signals: list[TravelerPreferenceSignalRead]
+    updated_at: Annotated[datetime | None, Field(alias="updatedAt")]
+
+    model_config = {"populate_by_name": True}
+
+
+class TravelerProfileUpdate(BaseModel):
+    explicit_preferences: Annotated[
+        list[str], Field(max_length=20, alias="explicitPreferences")
+    ]
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("explicit_preferences")
+    @classmethod
+    def normalize_explicit_preferences(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 80 for item in normalized):
+            raise ValueError("Each preference must be at most 80 characters")
+        return list(dict.fromkeys(normalized))

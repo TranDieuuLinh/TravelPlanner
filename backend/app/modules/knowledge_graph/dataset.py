@@ -231,12 +231,14 @@ class KnowledgeGraphDataset:
                         if row:
                             row["value"] = next_value
                             row["source"] = next_source
+                            row.setdefault("note", "")
                         else:
                             row = {
                                 "entity_id": target_id,
                                 "key": key[1],
                                 "value": next_value,
                                 "source": next_source,
+                                "note": "",
                             }
                             property_rows.append(row)
                             property_by_key[key] = row
@@ -270,7 +272,7 @@ class KnowledgeGraphDataset:
                 "entities.csv": _write_csv(["id", "name", "type", "status"], entity_rows),
                 "aliases.csv": _write_csv(["entity_id", "alias"], alias_rows),
                 "properties.csv": _write_csv(
-                    ["entity_id", "key", "value", "source"], property_rows
+                    ["entity_id", "key", "value", "source", "note"], property_rows
                 ),
                 "relationships.csv": _write_csv(
                     ["id", "from_entity_id", "relationship", "to_entity_id", "recommendations", "source"],

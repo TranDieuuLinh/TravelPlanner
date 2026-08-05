@@ -5,19 +5,23 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.plans.chat_model import (
-    ACTIVE_TURN_STATUSES,
     PROCESSING_TURN_STATUSES,
     TripChat,
     TripChatMessage,
     TripChatPlanRevision,
     TripChatTurn,
 )
+from app.modules.plans.explorer.model import ExplorerIntake
+from app.modules.plans.explorer.schema import PlaceCandidateReview
+from app.modules.plans.trip_intent import TripIntent
+from app.modules.plans.trip_intent_repository import TripIntentRepository
 from app.shared.errors import AppError
 
 
 class TripChatRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.trip_intents = TripIntentRepository(db)
 
     def create(self, user_id: int, title: str) -> TripChat:
         chat = TripChat(id=str(uuid4()), user_id=user_id, title=title)
@@ -61,7 +65,8 @@ class TripChatRepository:
         attachment_names: list[str],
         assistant_content: str,
         plan_payload: dict,
-        explorer_payload: dict,
+        trip_intent: TripIntent,
+        candidate_reviews: list[PlaceCandidateReview],
         explorer_timing_payload: dict | None,
         planner_timing_payload: dict | None,
         intake_id: str,
@@ -74,6 +79,26 @@ class TripChatRepository:
             (msg.sequence for msg in chat.messages),
             default=0,
         ) + 1
+        intake = self.db.get(ExplorerIntake, intake_id)
+        if intake is None:
+            intake = ExplorerIntake(
+                id=intake_id,
+                user_id=str(chat.user_id),
+                destination=destination,
+                candidate_reviews=[],
+            )
+            self.db.add(intake)
+            self.db.flush()
+        intake.candidate_reviews = [
+            review.model_dump(mode="json", by_alias=True)
+            for review in candidate_reviews
+        ]
+        intent_row = self.trip_intents.add_version(
+            chat_id=chat.id,
+            intake_id=intake_id,
+            revision=revision,
+            intent=trip_intent,
+        )
         result = self.db.execute(
             update(TripChat)
             .where(
@@ -85,10 +110,10 @@ class TripChatRepository:
                 title=title,
                 destination=destination,
                 current_plan=plan_payload,
-                current_explorer=explorer_payload,
                 latest_explorer_timing=explorer_timing_payload,
                 latest_planner_timing=planner_timing_payload,
                 current_intake_id=intake_id,
+                current_trip_intent_id=intent_row.id,
                 revision=revision,
                 updated_at=now,
             )
@@ -129,7 +154,7 @@ class TripChatRepository:
                     revision=revision,
                     intake_id=intake_id,
                     plan_payload=plan_payload,
-                    explorer_payload=explorer_payload,
+                    trip_intent_id=intent_row.id,
                     created_at=now,
                 ),
             ]
@@ -144,7 +169,6 @@ class TripChatRepository:
         action_summary: str | None,
         plan_payload: dict,
         revision: int,
-        explorer_payload: dict | None = None,
         planner_timing_payload: dict | None = None,
     ) -> TripChat:
         now = datetime.now(UTC)
@@ -157,8 +181,6 @@ class TripChatRepository:
             "revision": revision,
             "updated_at": now,
         }
-        if explorer_payload is not None:
-            updated_values["current_explorer"] = explorer_payload
         if planner_timing_payload is not None:
             updated_values["latest_planner_timing"] = planner_timing_payload
         result = self.db.execute(
@@ -185,11 +207,7 @@ class TripChatRepository:
                 revision=revision,
                 intake_id=chat.current_intake_id,
                 plan_payload=plan_payload,
-                explorer_payload=(
-                    explorer_payload
-                    if explorer_payload is not None
-                    else chat.current_explorer or {}
-                ),
+                trip_intent_id=chat.current_trip_intent_id,
                 created_at=now,
             ),
         ]
@@ -478,13 +496,52 @@ class TripChatRepository:
                     revision=revision,
                     intake_id=chat.current_intake_id,
                     plan_payload=plan_payload,
-                    explorer_payload=chat.current_explorer or {},
+                    trip_intent_id=chat.current_trip_intent_id,
                     created_at=now,
                 ),
             ]
         )
         self.db.commit()
         return self.get(chat.id, chat.user_id)
+
+    def load_trip_intent(self, chat: TripChat) -> TripIntent | None:
+        return self.trip_intents.get(chat.current_trip_intent_id)
+
+    def load_candidate_reviews(self, chat: TripChat) -> list[PlaceCandidateReview]:
+        intake_ids = list(
+            dict.fromkeys(
+                intake_id
+                for intake_id in [
+                    *(revision.intake_id for revision in chat.plan_revisions),
+                    chat.current_intake_id,
+                ]
+                if intake_id is not None
+            )
+        )
+        reviews: list[PlaceCandidateReview] = []
+        for intake_id in intake_ids:
+            intake = self.db.get(ExplorerIntake, intake_id)
+            if intake is None:
+                continue
+            reviews.extend(
+                PlaceCandidateReview.model_validate(value)
+                for value in intake.candidate_reviews
+            )
+        return reviews
+
+    def replace_candidate_reviews(
+        self,
+        chat: TripChat,
+        reviews: list[PlaceCandidateReview],
+    ) -> None:
+        if chat.current_intake_id is None:
+            return
+        intake = self.db.get(ExplorerIntake, chat.current_intake_id)
+        if intake is None:
+            return
+        intake.candidate_reviews = [
+            review.model_dump(mode="json", by_alias=True) for review in reviews
+        ]
 
     def get_revision(
         self, chat_id: str, revision: int

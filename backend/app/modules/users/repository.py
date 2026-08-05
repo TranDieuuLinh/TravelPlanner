@@ -1,7 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.users.model import User
 from app.modules.users.schema import CreatorApplicationCreate, ProfileUpdate, UserCreate
 
@@ -22,11 +21,16 @@ class UserRepository:
     def create(self, payload: UserCreate) -> User:
         data = payload.model_dump(by_alias=False)
         data["email"] = str(payload.email).strip().lower()
-        data["travel_preferences"] = LongTermPreferenceProfile(
-            explicit=payload.travel_preferences
-        ).model_dump(mode="json", by_alias=True)
+        data.pop("travel_preferences", None)
         user = User(**data)
         self.db.add(user)
+        self.db.flush()
+        if payload.travel_preferences:
+            from app.modules.preferences.repository import TravelerProfileRepository
+
+            TravelerProfileRepository(self.db).replace_explicit(
+                user.id, payload.travel_preferences
+            )
         self.db.commit()
         self.db.refresh(user)
         return user
@@ -47,13 +51,7 @@ class UserRepository:
         changes = payload.model_dump(exclude_unset=True, by_alias=False)
         if "avatar_url" in changes and changes["avatar_url"] is not None:
             changes["avatar_url"] = str(changes["avatar_url"])
-        if "travel_preferences" in changes:
-            profile = LongTermPreferenceProfile.from_storage(
-                user.travel_preferences
-            )
-            changes["travel_preferences"] = profile.model_copy(
-                update={"explicit": changes["travel_preferences"] or []}
-            ).model_dump(mode="json", by_alias=True)
+        changes.pop("travel_preferences", None)
         for field, value in changes.items():
             setattr(user, field, value)
         self.db.flush()

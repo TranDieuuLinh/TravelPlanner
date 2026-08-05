@@ -1308,21 +1308,23 @@ function EntityInspector({
                   <input aria-label="Property key" value={property.key} onChange={(event) => setPropertyDraft((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, key: event.target.value } : row))} placeholder="key" />
                   <input aria-label="Property value" value={property.value} onChange={(event) => setPropertyDraft((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, value: event.target.value } : row))} placeholder="value" />
                   <input aria-label="Property source" value={property.source} onChange={(event) => setPropertyDraft((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, source: event.target.value } : row))} placeholder="Nguồn" />
+                  <input aria-label="Property note" value={property.note} onChange={(event) => setPropertyDraft((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, note: event.target.value } : row))} placeholder="Ghi chú" />
                   <button className="kgMiniDanger" type="button" onClick={() => setPropertyDraft((current) => current.filter((_, rowIndex) => rowIndex !== index))}>×</button>
                 </div>
               ))}
-              <button className="kgAddRowButton" type="button" onClick={() => setPropertyDraft((current) => [...current, { entityId: entity.id, key: "", value: "", source: "" }])}>＋ Thêm property</button>
+              <button className="kgAddRowButton" type="button" onClick={() => setPropertyDraft((current) => [...current, { entityId: entity.id, key: "", value: "", source: "", note: "" }])}>＋ Thêm property</button>
             </div>
           ) : properties.length > 0 ? (
             <div className="kgPropertyTableWrap">
               <table className="kgPropertyTable">
-                <thead><tr><th>Key</th><th>Value</th><th>Nguồn</th></tr></thead>
+                <thead><tr><th>Key</th><th>Value</th><th>Nguồn</th><th>Ghi chú</th></tr></thead>
                 <tbody>
                   {properties.map((property, index) => (
                     <tr key={`${property.key}-${index}`}>
                       <td><code>{property.key}</code></td>
                       <td>{property.key === "special_experience" ? <RecommendationView value={property.value} /> : property.value || <span className="kgMissingText">Trống</span>}</td>
                       <td><SourceValue source={property.source} /></td>
+                      <td>{property.note || <span className="kgMissingText">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>

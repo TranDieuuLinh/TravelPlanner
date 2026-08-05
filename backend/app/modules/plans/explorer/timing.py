@@ -25,6 +25,7 @@ _DURATION_LABELS = {
     "urlCacheLookup": "Tra cache URL",
     "totalExtraction": "Tổng URL extractor",
     "loadMetadata": "Đọc metadata",
+    "webPageFetch": "Đọc nội dung website",
     "prepareSourceWall": "Chuẩn bị nguồn (wall)",
     "downloadVideo": "Tải video",
     "prepareSignalsWall": "Tách audio và frame",

@@ -33,7 +33,17 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=255, alias="fullName")
     role: UserRole = UserRole.traveler
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
-    travel_preferences: list[str] = Field(default_factory=list, alias="travelPreferences")
+    travel_preferences: list[str] = Field(
+        default_factory=list, max_length=20, alias="travelPreferences"
+    )
+
+    @field_validator("travel_preferences")
+    @classmethod
+    def normalize_create_preferences(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 80 for item in normalized):
+            raise ValueError("Each preference must be at most 80 characters")
+        return list(dict.fromkeys(normalized))
 
 
 class UserRead(ORMBase):
@@ -75,6 +85,8 @@ class ProfileUpdate(BaseModel):
         if value is None:
             return None
         normalized = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 80 for item in normalized):
+            raise ValueError("Each preference must be at most 80 characters")
         return list(dict.fromkeys(normalized))
 
     @model_validator(mode="after")

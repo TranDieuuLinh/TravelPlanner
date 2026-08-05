@@ -88,6 +88,14 @@ class Settings(BaseSettings):
         ge=10.0,
         le=600.0,
     )
+    web_page_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
+    web_page_max_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        ge=64 * 1024,
+        le=20 * 1024 * 1024,
+    )
+    web_page_max_redirects: int = Field(default=5, ge=0, le=10)
+    web_page_max_text_chars: int = Field(default=60_000, ge=1_000, le=500_000)
     url_import_job_timeout_seconds: float = Field(
         default=300.0,
         ge=30.0,

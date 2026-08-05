@@ -121,11 +121,18 @@ def apply_raw_prompt_completeness(
     if not destination_was_provided:
         # Do not turn a destination invented by the formatter into user input.
         intent_updates["destination"] = ""
-    intent = explorer.intent.model_copy(update=intent_updates)
+    trip_intent_updates: dict[str, object] = {
+        "clarifying_questions": intent_updates["clarifying_questions"]
+    }
+    if "destination" in intent_updates:
+        trip_intent_updates["destination"] = intent_updates["destination"]
+    trip_intent = explorer.trip_intent.model_copy(
+        update=trip_intent_updates
+    )
     return explorer.model_copy(
         update={
             "mode": mode,
-            "intent": intent,
+            "trip_intent": trip_intent,
             "input_completeness": completeness,
             "missing_fields": missing_fields,
             "assumptions": [],

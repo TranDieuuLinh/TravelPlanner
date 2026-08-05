@@ -13,6 +13,23 @@ from app.modules.preferences.schema import (
 
 class PreferenceLearningService:
     minimum_persist_confidence = 0.35
+    sensitive_value_tokens = {
+        "religion",
+        "religious_belief",
+        "medical_condition",
+        "health_condition",
+        "sexual_orientation",
+        "political_view",
+        "ethnicity",
+        "disability",
+        "income",
+        "tôn_giáo",
+        "sức_khỏe",
+        "khuyết_tật",
+        "thu_nhập",
+        "chính_trị",
+        "dân_tộc",
+    }
 
     def enrich_snapshot(
         self,
@@ -88,6 +105,8 @@ class PreferenceLearningService:
         for signal in snapshot.signals:
             if signal.confidence < self.minimum_persist_confidence:
                 continue
+            if self._is_sensitive(signal.value):
+                continue
             current = profile.scores.get(signal.key)
             source_types = list(
                 dict.fromkeys(
@@ -103,6 +122,7 @@ class PreferenceLearningService:
                     score=signal.score,
                     confidence=min(0.95, signal.confidence * 0.65),
                     observations=1,
+                    origin=signal.origin,
                     sourceTypes=source_types,
                     lastObservedAt=now,
                 )
@@ -124,6 +144,11 @@ class PreferenceLearningService:
                         * (1 - signal.confidence * 0.35),
                     ),
                     observations=current.observations + 1,
+                    origin=(
+                        "explicit"
+                        if current.origin == "explicit" or signal.origin == "explicit"
+                        else "inferred"
+                    ),
                     sourceTypes=source_types,
                     lastObservedAt=now,
                 )
@@ -175,3 +200,11 @@ class PreferenceLearningService:
                 }
             )
         return [merged[key] for key in order]
+
+    def _is_sensitive(self, value: str) -> bool:
+        return any(
+            value == token
+            or value.startswith(f"{token}_")
+            or value.endswith(f"_{token}")
+            for token in self.sensitive_value_tokens
+        )

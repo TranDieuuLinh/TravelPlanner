@@ -34,7 +34,7 @@ from app.modules.plans.schema import (
     DayDirectionsCreate,
     FeatureMapItem,
     MainPlanCreate,
-    MainPlanFromExplorerCreate,
+    MainPlanFromTripIntentCreate,
     PlanGenerationRead,
     PlanBundleRead,
     PlanRead,
@@ -135,12 +135,14 @@ async def create_main_plan(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_main_plan_from_explorer(
-    payload: MainPlanFromExplorerCreate,
+    payload: MainPlanFromTripIntentCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
 ) -> PlanGenerationRead:
     try:
         plan, timing_report = (
-            await service.create_main_plan_from_explorer_with_timing(payload)
+            await service.create_main_plan_from_explorer_with_timing(
+                payload.to_planner_input()
+            )
         )
         return PlanGenerationRead(plan=plan, timingReport=timing_report)
     except RuntimeError as exc:
@@ -209,9 +211,17 @@ async def create_backup_plan(
 async def search_places(
     query: Annotated[str, Query(min_length=2, max_length=100)],
     destination: Annotated[str | None, Query()] = None,
-    mutation_service: Annotated[PlanMutationService, Depends(get_plan_mutation_service)] = None,
+    top_k: Annotated[int, Query(alias="topK", ge=1, le=10)] = 5,
+    mutation_service: Annotated[
+        PlanMutationService,
+        Depends(get_plan_mutation_service),
+    ] = None,
 ) -> list[PlaceSuggestion]:
-    return await mutation_service.search_place_suggestions(query, destination)
+    return await mutation_service.search_place_suggestions(
+        query,
+        destination,
+        top_k=top_k,
+    )
 
 
 @router.post("/{plan_id}/items", response_model=MutationResponse, status_code=status.HTTP_201_CREATED)

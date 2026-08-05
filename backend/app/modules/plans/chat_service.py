@@ -26,7 +26,7 @@ from app.modules.plans.plan_mutation_service import PlanMutationService
 from app.modules.plans.schema import MainPlanFromExplorerCreate, SelectedPlaceCreate
 from app.modules.plans.timing import PlanTimingReport
 from app.modules.plans.service import PlanService
-from app.modules.preferences.schema import LongTermPreferenceProfile
+from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.users.model import User
 from app.shared.errors import AppError
 
@@ -140,12 +140,8 @@ class TripChatService:
             if chat.current_plan is not None
             else None
         )
-        current_explorer = (
-            self._explorer_with_revision_sources(chat)
-            if chat.current_explorer is not None
-            else None
-        )
-        raw_request = self._contextual_request(chat, content, current_explorer)
+        current_context = self._current_context(chat)
+        raw_request = self._contextual_request(chat, content, current_context)
         destination = (
             current_plan.destination
             if current_plan is not None
@@ -153,9 +149,9 @@ class TripChatService:
         )
         trip_spec = (
             ExploreTripSpecInput.model_validate(
-                current_explorer.trip_spec.model_dump(mode="json", by_alias=True)
+                current_context.trip_spec.model_dump(mode="json", by_alias=True)
             )
-            if current_explorer is not None
+            if current_context is not None
             else ExploreTripSpecInput()
         )
         requested_days = _explicit_day_count(content)
@@ -166,7 +162,7 @@ class TripChatService:
             # Let the new intake infer initial URL coverage. The planning service
             # expands again after old and newly imported Places are merged.
             trip_spec.days = None
-        profile = LongTermPreferenceProfile.from_storage(user.travel_preferences)
+        profile = TravelerProfileRepository(self.repository.db).get(user.id)
         user_state = UserPlanningState(
             userId=str(user.id),
             travelPreferences=profile.explicit,
@@ -181,9 +177,9 @@ class TripChatService:
             user_state=user_state,
             force_url_refresh=force_url_refresh,
         )
-        if current_explorer is not None:
+        if current_context is not None:
             explore.explorer.candidate_reviews = _merge_candidate_reviews(
-                current_explorer.candidate_reviews,
+                current_context.candidate_reviews,
                 explore.explorer.candidate_reviews,
             )
         duration_is_fixed = (
@@ -191,7 +187,7 @@ class TripChatService:
             and (
                 requested_days is not None
                 or _contains_explicit_trip_dates(content)
-                or _chat_has_fixed_trip_duration(chat, current_explorer)
+                or _chat_has_fixed_trip_duration(chat, current_context)
                 or bool(
                     explore.explorer.trip_spec.start_date
                     and explore.explorer.trip_spec.end_date
@@ -208,8 +204,8 @@ class TripChatService:
                     selectedPlaces=self._selected_places_from(
                         current_plan,
                         (
-                            current_explorer.candidate_reviews
-                            if current_explorer is not None
+                            current_context.candidate_reviews
+                            if current_context is not None
                             else []
                         ),
                     ),
@@ -245,7 +241,8 @@ class TripChatService:
             ],
             assistant_content=assistant_content,
             plan_payload=next_plan.model_dump(mode="json", by_alias=True),
-            explorer_payload=explore.explorer.model_dump(mode="json", by_alias=True),
+            trip_intent=explore.explorer.trip_intent,
+            candidate_reviews=explore.explorer.candidate_reviews,
             explorer_timing_payload=(
                 explore.timing_report.model_dump(mode="json", by_alias=True)
                 if explore.timing_report is not None
@@ -270,14 +267,14 @@ class TripChatService:
         self,
         chat: TripChat,
         content: str,
-        current_explorer: ExplorerContextResponse | None,
+        current_context: ExplorerContextResponse | None,
     ) -> str:
         previous_requests = [
             message.content
             for message in chat.messages
             if message.role == "user"
         ][-8:]
-        if current_explorer is None:
+        if current_context is None:
             if not previous_requests:
                 return content
             return (
@@ -289,11 +286,7 @@ class TripChatService:
                 f"Latest user request: {content}"
             )
         context = {
-            "currentIntent": current_explorer.intent.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-            "currentTripSpec": current_explorer.trip_spec.model_dump(
+            "currentTripIntent": current_context.trip_intent.model_dump(
                 mode="json",
                 by_alias=True,
             ),
@@ -398,11 +391,11 @@ class TripChatService:
                 chat.latest_planner_timing
             )
         summary = self._summary(chat)
-        current_explorer = self._explorer_with_revision_sources(chat)
+        current_context = self._current_context(chat)
         current_plan = (
             self._with_missing_addresses(
                 Plan.model_validate(chat.current_plan),
-                current_explorer,
+                current_context,
             )
             if chat.current_plan is not None
             else None
@@ -411,7 +404,16 @@ class TripChatService:
             **summary.model_dump(),
             currentPlan=current_plan,
             currentIntakeId=chat.current_intake_id,
-            currentExplorer=current_explorer,
+            currentTripIntent=(
+                current_context.trip_intent
+                if current_context is not None
+                else None
+            ),
+            candidateReviews=(
+                current_context.candidate_reviews
+                if current_context is not None
+                else []
+            ),
             latestExplorerTiming=latest_timing,
             latestPlannerTiming=latest_planner_timing,
             messages=chat.messages,
@@ -449,24 +451,23 @@ class TripChatService:
                     item.address = matching_review.address
         return hydrated
 
-    def _explorer_with_revision_sources(
+    def _current_context(
         self,
         chat: TripChat,
     ) -> ExplorerContextResponse | None:
-        if chat.current_explorer is None:
+        trip_intent = self.repository.load_trip_intent(chat)
+        if trip_intent is None:
             return None
-        current = ExplorerContextResponse.model_validate(chat.current_explorer)
         reviews: list[PlaceCandidateReview] = []
-        for revision in chat.plan_revisions:
-            revision_explorer = ExplorerContextResponse.model_validate(
-                revision.explorer_payload
-            )
+        for review in self.repository.load_candidate_reviews(chat):
             reviews = _merge_candidate_reviews(
                 reviews,
-                revision_explorer.candidate_reviews,
+                [review],
             )
-        reviews = _merge_candidate_reviews(reviews, current.candidate_reviews)
-        return current.model_copy(update={"candidate_reviews": reviews})
+        return ExplorerContextResponse(
+            tripIntent=trip_intent,
+            candidateReviews=reviews,
+        )
 
     async def retry_candidate_resolutions(
         self,
@@ -482,13 +483,19 @@ class TripChatService:
                 "VERSION_CONFLICT",
                 "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại trước khi thử lại địa điểm.",
             )
-        if chat.current_explorer is None or chat.current_plan is None:
+        if chat.current_trip_intent_id is None or chat.current_plan is None:
             raise AppError(
                 400,
                 "NO_ACTIVE_EXPLORER",
                 "Chưa có kết quả Explorer để thử resolve lại.",
             )
-        explorer = ExplorerContextResponse.model_validate(chat.current_explorer)
+        explorer = self._current_context(chat)
+        if explorer is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_TRIP_INTENT",
+                "Chưa có Trip Intent đã lưu cho cuộc trò chuyện này.",
+            )
         pending_before = {
             review.candidate_id
             for review in explorer.candidate_reviews
@@ -554,10 +561,6 @@ class TripChatService:
                 f"(bản sửa đổi {revision}). Video, STT và OCR không chạy lại."
             ),
             plan_payload=next_plan.model_dump(mode="json", by_alias=True),
-            explorer_payload=updated_explorer.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
             planner_timing_payload=(
                 planner_timing.model_dump(mode="json", by_alias=True)
                 if planner_timing is not None
@@ -565,6 +568,8 @@ class TripChatService:
             ),
             revision=revision,
         )
+        self.repository.replace_candidate_reviews(saved, reviews)
+        self.repository.db.commit()
         return self._read(saved)
 
     async def add_item(
@@ -810,11 +815,11 @@ def _contains_explicit_trip_dates(content: str) -> bool:
 
 def _chat_has_fixed_trip_duration(
     chat: TripChat,
-    current_explorer: ExplorerContextResponse | None,
+    current_context: ExplorerContextResponse | None,
 ) -> bool:
-    if current_explorer is not None and (
-        current_explorer.trip_spec.start_date
-        and current_explorer.trip_spec.end_date
+    if current_context is not None and (
+        current_context.trip_spec.start_date
+        and current_context.trip_spec.end_date
     ):
         return True
     return any(

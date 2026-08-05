@@ -5,22 +5,29 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { BackgroundUrlJobs } from "@/components/BackgroundUrlJobs";
+import { GlobalPlannerAssistant } from "@/components/GlobalPlannerAssistant";
 
-const nav = [
-  { href: "/reels", label: "Khám phá", icon: "▶" },
-  { href: "/planner", label: "AI Planner", icon: "✦" },
-  { href: "/profile", label: "Hồ sơ", icon: "○" },
+type NavItem = {
+  href: string;
+  label: string;
+};
+
+const nav: NavItem[] = [
+  { href: "/reels", label: "Khám phá" },
+  { href: "/planner", label: "AI Planner" },
+  { href: "/profile", label: "Hồ sơ" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { loading, logout, user } = useAuth();
+  const plannerRoute = pathname.startsWith("/planner");
 
   const dynamicNav = [...nav];
   if (user?.role === "creator") {
-    dynamicNav.splice(1, 0, { href: "/creator/listings", label: "Creator Studio", icon: "✎" });
+    dynamicNav.splice(1, 0, { href: "/creator/listings", label: "Creator Studio" });
   } else if (user?.role === "admin") {
-    dynamicNav.splice(1, 0, { href: "/admin/listings", label: "Admin Duyệt", icon: "✓" });
+    dynamicNav.splice(1, 0, { href: "/admin/listings", label: "Admin Duyệt" });
   }
 
   const mobileNav = dynamicNav.map((item) =>
@@ -29,24 +36,28 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <header className="topbar">
+      <header className={plannerRoute ? "topbar is-planner" : "topbar"}>
         <div className="topbarInner">
-          <Link aria-label="VSF Travel" className="brand" href="/reels">
-            <strong>VSF Travel</strong>
-          </Link>
-          <nav aria-label="Điều hướng chính" className="desktopNav">
-            {dynamicNav.map((item) => (
-              <Link
-                aria-current={pathname.startsWith(item.href) ? "page" : undefined}
-                className={pathname.startsWith(item.href) ? "navItem active" : "navItem"}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <div className="brandCluster">
+            <Link aria-label="VSF Travel" className="brand" href="/reels">
+              <strong>
+                <span>VSF</span> Travel
+              </strong>
+            </Link>
+          </div>
           <div className="shellActions">
+            <nav aria-label="Điều hướng chính" className="desktopNav">
+              {dynamicNav.map((item) => (
+                <Link
+                  aria-current={pathname.startsWith(item.href) ? "page" : undefined}
+                  className={pathname.startsWith(item.href) ? "navItem active" : "navItem"}
+                  href={item.href}
+                  key={item.href}
+                >
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </nav>
             <BackgroundUrlJobs authenticated={Boolean(user)} enabled={!loading} />
             {!loading && !user ? (
               <Link className="accountLink" href="/login">
@@ -54,24 +65,35 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             ) : null}
             {!loading && user ? (
-              <div className="accountMenu">
-                <Link aria-label={`Hồ sơ của ${user.fullName}`} className="accountLink signedIn" href="/profile">
+              <details className="accountMenu">
+                <summary aria-label={`Mở menu tài khoản của ${user.fullName}`} className="accountMenuTrigger">
                   <span className="shellAccountAvatar">{user.fullName.charAt(0).toUpperCase()}</span>
-                  <span className="accountCopy">
-                    <strong>{user.fullName}</strong>
-                  </span>
-                </Link>
-                <button aria-label="Đăng xuất" className="logoutButton" onClick={() => void logout()} title="Đăng xuất" type="button">
-                  <svg aria-hidden="true" viewBox="0 0 24 24">
-                    <path d="M14.25 8.25V5.5A2.5 2.5 0 0 0 11.75 3h-5.5a2.5 2.5 0 0 0-2.5 2.5v13a2.5 2.5 0 0 0 2.5 2.5h5.5a2.5 2.5 0 0 0 2.5-2.5v-2.75M10 12h10.25m0 0-3.5-3.5m3.5 3.5-3.5 3.5" />
+                  <svg aria-hidden="true" className="accountMenuChevron" viewBox="0 0 24 24">
+                    <path d="m8 10 4 4 4-4" />
                   </svg>
-                </button>
-              </div>
+                </summary>
+                <div className="accountMenuPopover">
+                  <div className="accountMenuIdentity">
+                    <span className="shellAccountAvatar">{user.fullName.charAt(0).toUpperCase()}</span>
+                    <strong>{user.fullName}</strong>
+                  </div>
+                  <Link className="accountMenuItem" href="/profile">
+                    Hồ sơ
+                  </Link>
+                  <button className="accountMenuItem accountMenuLogout" onClick={() => void logout()} type="button">
+                    <span>Đăng xuất</span>
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <path d="M14.25 8.25V5.5A2.5 2.5 0 0 0 11.75 3h-5.5a2.5 2.5 0 0 0-2.5 2.5v13a2.5 2.5 0 0 0 2.5 2.5h5.5a2.5 2.5 0 0 0 2.5-2.5v-2.75M10 12h10.25m0 0-3.5-3.5m3.5 3.5-3.5 3.5" />
+                    </svg>
+                  </button>
+                </div>
+              </details>
             ) : null}
           </div>
         </div>
       </header>
       <div className="appBody">{children}</div>
+      <GlobalPlannerAssistant />
       <nav aria-label="Điều hướng di động" className="mobileNav">
         {mobileNav.map((item) => (
           <Link
@@ -80,8 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             href={item.href}
             key={item.href}
           >
-            <span>{item.icon}</span>
-            {item.label}
+            <span className="mobileItemLabel">{item.label}</span>
           </Link>
         ))}
       </nav>

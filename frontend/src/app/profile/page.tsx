@@ -11,19 +11,34 @@ import {
 } from "@/components/ProfileVisitedMap";
 import { APIError } from "@/lib/api";
 import { getPurchasedPlans, getUserFavorites } from "@/lib/marketplace";
-import { createProfilePost, getProfileShowcase } from "@/lib/users";
+import {
+  createProfilePost,
+  deleteTravelerProfile,
+  getProfileShowcase,
+  getTravelerProfile,
+  type TravelerProfile,
+} from "@/lib/users";
 import type { BuyerPlan, ListingSummary } from "@/types/marketplace";
 import type { ProfileShowcase } from "@/types/profile";
 
 type ProfileTab = "achievements" | "posts" | "saved" | "purchased";
 
 const emptyShowcase: ProfileShowcase = { visitedPlaces: [], posts: [] };
+const emptyTravelerProfile: TravelerProfile = {
+  userId: 0,
+  explicitPreferences: [],
+  topPreferences: [],
+  observationCount: 0,
+  signals: [],
+  updatedAt: null,
+};
 
 export default function ProfilePage() {
   const router = useRouter();
   const { loading, submitCreatorApplication, updateProfile, user } = useAuth();
   const [activeTab, setActiveTab] = useState<ProfileTab>("achievements");
   const [showcase, setShowcase] = useState<ProfileShowcase>(emptyShowcase);
+  const [travelerProfile, setTravelerProfile] = useState<TravelerProfile>(emptyTravelerProfile);
   const [favorites, setFavorites] = useState<ListingSummary[]>([]);
   const [purchased, setPurchased] = useState<BuyerPlan[]>([]);
   const [contentBusy, setContentBusy] = useState(true);
@@ -79,11 +94,17 @@ export default function ProfilePage() {
       getProfileShowcase(),
       getUserFavorites(),
       getPurchasedPlans(),
-    ]).then(([showcaseResult, favoriteResult, purchasedResult]) => {
+      getTravelerProfile(),
+    ]).then(([showcaseResult, favoriteResult, purchasedResult, travelerProfileResult]) => {
       if (cancelled) return;
       setShowcase(showcaseResult.status === "fulfilled" ? showcaseResult.value : emptyShowcase);
       setFavorites(favoriteResult.status === "fulfilled" ? favoriteResult.value : []);
       setPurchased(purchasedResult.status === "fulfilled" ? purchasedResult.value : []);
+      setTravelerProfile(
+        travelerProfileResult.status === "fulfilled"
+          ? travelerProfileResult.value
+          : emptyTravelerProfile,
+      );
       setContentBusy(false);
     });
     return () => {
@@ -117,10 +138,27 @@ export default function ProfilePage() {
         bio: bio.trim() || null,
         travelPreferences: preferences.split(",").map((item) => item.trim()).filter(Boolean),
       });
+      setTravelerProfile(await getTravelerProfile());
       setProfileMessage("Đã cập nhật hồ sơ.");
       setEditing(false);
     } catch (reason) {
       setProfileMessage(reason instanceof APIError ? reason.message : "Không thể lưu hồ sơ.");
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function clearTravelerProfile() {
+    if (!window.confirm("Xóa toàn bộ sở thích du lịch dài hạn đã học?")) return;
+    setProfileBusy(true);
+    setProfileMessage("");
+    try {
+      await deleteTravelerProfile();
+      setTravelerProfile({ ...emptyTravelerProfile, userId: user?.id ?? 0 });
+      setPreferences("");
+      setProfileMessage("Đã xóa hồ sơ sở thích dài hạn.");
+    } catch (reason) {
+      setProfileMessage(reason instanceof APIError ? reason.message : "Không thể xóa hồ sơ sở thích.");
     } finally {
       setProfileBusy(false);
     }
@@ -226,6 +264,18 @@ export default function ProfilePage() {
           <div className="instagramBio">
             <strong>{user.role === "creator" ? "Travel Creator" : "Traveler"}</strong>
             <p>{user.bio || "Ghi lại những nơi đã đi và những hành trình muốn khám phá."}</p>
+            {travelerProfile.topPreferences.length ? (
+              <p>
+                <strong>Sở thích Planner ghi nhớ:</strong>{" "}
+                {travelerProfile.topPreferences.join(", ")}
+              </p>
+            ) : null}
+            {travelerProfile.signals.some((signal) => signal.origin === "inferred") ? (
+              <small>
+                Có {travelerProfile.signals.filter((signal) => signal.origin === "inferred").length}{" "}
+                tín hiệu được suy luận. Bạn có thể xem, sửa hoặc xóa hồ sơ này.
+              </small>
+            ) : null}
           </div>
         </div>
       </section>
@@ -320,6 +370,9 @@ export default function ProfilePage() {
             <input id="profile-preferences" onChange={(event) => setPreferences(event.target.value)} value={preferences} />
             {profileMessage ? <p className="profileFormMessage">{profileMessage}</p> : null}
             <div className="instagramEditActions">
+              <button className="profileEditButton" disabled={profileBusy} onClick={clearTravelerProfile} type="button">
+                Xóa sở thích đã lưu
+              </button>
               <button className="profileEditButton" onClick={() => setEditing(false)} type="button">Hủy</button>
               <button className="profileCreateButton" disabled={profileBusy} type="submit">
                 {profileBusy ? "Đang lưu..." : "Lưu thay đổi"}

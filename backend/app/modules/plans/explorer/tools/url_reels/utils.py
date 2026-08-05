@@ -23,7 +23,7 @@ def artifact_key(value: str) -> str:
 def canonicalize_url(url: str) -> str:
     parts = urlsplit(url)
     host = parts.netloc.lower().split(":", 1)[0].removeprefix("www.")
-    query = ""
+    query = parts.query
     if host in {
         "youtube.com",
         "m.youtube.com",
@@ -32,6 +32,30 @@ def canonicalize_url(url: str) -> str:
         video_ids = parse_qs(parts.query).get("v", [])
         if video_ids:
             query = urlencode({"v": video_ids[0]})
+    elif (
+        host == "tiktok.com"
+        or host.endswith(".tiktok.com")
+        or host == "instagram.com"
+        or host.endswith(".instagram.com")
+        or host in {"facebook.com", "fb.com", "fb.watch"}
+        or host.endswith(".facebook.com")
+        or host.endswith(".fb.com")
+    ):
+        query = ""
+    elif query:
+        query = urlencode(
+            [
+                (key, value)
+                for key, values in parse_qs(
+                    query,
+                    keep_blank_values=True,
+                ).items()
+                if not key.casefold().startswith("utm_")
+                and key.casefold() not in {"fbclid", "gclid"}
+                for value in values
+            ],
+            doseq=True,
+        )
     return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
 

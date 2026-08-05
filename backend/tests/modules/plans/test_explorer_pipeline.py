@@ -47,8 +47,11 @@ class RecordingFormatter:
         self.response = ExploreBundleDraft.model_validate(
             {
                 "explorer": {
-                    "intent": {"destination": "Hội An"},
-                    "tripSpec": {"days": 3},
+                    "tripIntent": {
+                        "destination": "Hội An",
+                        "timing": {"days": 3},
+                        "travelParty": {"type": "solo", "adults": 1},
+                    },
                     "assumptions": [],
                     "missingInfoQuestions": [],
                 },
@@ -613,7 +616,7 @@ def test_candidate_review_exposes_vietnamese_verified_alias_and_top_matches() ->
 
 def test_url_destination_guardrail_asks_about_conflicting_prompt() -> None:
     formatter = RecordingFormatter()
-    formatter.response.explorer.intent.destination = "Hội An"
+    formatter.response.explorer.trip_intent.destination = "Hội An"
     url_reels = RecordingUrlReels(count=3, search_region="Hà Nội")
     service = build_service(formatter, url_reels, RecordingImageOcr())
     resolver = RecordingResolver()
@@ -665,7 +668,7 @@ def test_url_destination_guardrail_accepts_hanoi_spelling_variants(
     source_destination: str,
 ) -> None:
     formatter = RecordingFormatter()
-    formatter.response.explorer.intent.destination = requested_destination
+    formatter.response.explorer.trip_intent.destination = requested_destination
     service = build_service(
         formatter,
         RecordingUrlReels(count=3, search_region=source_destination),
@@ -1023,7 +1026,7 @@ def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None
 
 def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
     formatter = RecordingFormatter()
-    formatter.response.explorer.intent.destination = "unspecified"
+    formatter.response.explorer.trip_intent.destination = "unspecified"
 
     class CityStayUrlReels:
         def extract(self, payload: Any) -> UrlReelExtractionResult:

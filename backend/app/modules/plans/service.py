@@ -75,7 +75,7 @@ from app.modules.plans.dto.agent_contracts import (
     UserPlanningState,
 )
 from app.modules.preferences.service import PreferenceLearningService
-from app.modules.users.repository import UserRepository
+from app.modules.preferences.repository import TravelerProfileRepository
 from app.shared.errors import AppError
 
 
@@ -95,7 +95,7 @@ class PlanService:
         place_resolver: PlaceResolver | None = None,
         explorer_persistence: ExplorerPersistenceRepository | None = None,
         preference_learning: PreferenceLearningService | None = None,
-        user_repository: UserRepository | None = None,
+        traveler_profile_repository: TravelerProfileRepository | None = None,
         explorer_timing_logger: ExplorerTimingLogger | None = None,
         place_alias_enricher: PlaceAliasEnricher | None = None,
         planning_runs: PlanningRunRepository | None = None,
@@ -114,7 +114,7 @@ class PlanService:
         self.preference_learning = (
             preference_learning or PreferenceLearningService()
         )
-        self.user_repository = user_repository
+        self.traveler_profile_repository = traveler_profile_repository
         self.explorer_timing_logger = explorer_timing_logger
         self.place_alias_enricher = place_alias_enricher
         self.planning_runs = planning_runs
@@ -682,13 +682,13 @@ class PlanService:
             inferred_destination = explorer.intent.destination.strip()
             if inferred_destination.casefold() in {"", "unspecified"}:
                 inferred_destination = destination_stays[0].name
+            timing = explorer.trip_intent.timing.model_copy(
+                update={"destination_stays": destination_stays}
+            )
             explorer = explorer.model_copy(
                 update={
-                    "intent": explorer.intent.model_copy(
-                        update={
-                            "destination": inferred_destination,
-                            "destination_stays": destination_stays,
-                        }
+                    "trip_intent": explorer.trip_intent.model_copy(
+                        update={"destination": inferred_destination, "timing": timing}
                     )
                 }
             )
@@ -750,7 +750,7 @@ class PlanService:
             or explorer.trip_spec.days
             or DEFAULT_TRIP_DAYS
         )
-        explorer.trip_spec.days = effective_days
+        explorer.trip_intent.timing.days = effective_days
         if explicitly_requested_days is None and destination_stays:
             explorer.assumptions = [
                 *explorer.assumptions,
@@ -787,16 +787,19 @@ class PlanService:
             interests=explorer.intent.interests,
         )
         stored_profile: object = payload.user_state.preference_profile
-        preference_user = None
-        if payload.user_state.user_id and self.user_repository is not None:
+        preference_user_id: int | None = None
+        if (
+            payload.user_state.user_id
+            and self.traveler_profile_repository is not None
+        ):
             try:
-                preference_user = self.user_repository.get_by_id(
-                    int(payload.user_state.user_id)
-                )
+                preference_user_id = int(payload.user_state.user_id)
             except ValueError:
-                preference_user = None
-            if preference_user is not None:
-                stored_profile = preference_user.travel_preferences
+                preference_user_id = None
+            if preference_user_id is not None:
+                stored_profile = self.traveler_profile_repository.get(
+                    preference_user_id
+                )
         effective_profile = self.preference_learning.merge(
             stored_profile,
             preference_snapshot,
@@ -837,15 +840,20 @@ class PlanService:
                 user_id=payload.user_state.user_id,
                 destination=explorer.intent.destination,
                 resolutions=canonical_resolutions,
+                candidate_reviews=candidate_reviews,
                 url_results=url_reel_results,
             )
             trace.persisted_count = len(schedulable_candidates)
-        if preference_user is not None and self.user_repository is not None:
-            preference_user.travel_preferences = effective_profile.model_dump(
-                mode="json",
-                by_alias=True,
+        if (
+            preference_user_id is not None
+            and self.traveler_profile_repository is not None
+        ):
+            self.traveler_profile_repository.save(
+                preference_user_id,
+                effective_profile,
+                evidence_intake_id=intake_id,
             )
-            self.user_repository.commit()
+            self.traveler_profile_repository.commit()
         trace.record_stage(
             "persistence",
             "Lưu Explorer intake",

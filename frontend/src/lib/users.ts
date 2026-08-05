@@ -2,6 +2,33 @@ import { apiFetch } from "@/lib/api";
 import type { CurrentUser } from "@/components/AuthProvider";
 import type { ExplorePost, ProfilePost, ProfileShowcase } from "@/types/profile";
 
+export type TravelerPreferenceSignal = {
+  id: string;
+  dimension: string;
+  value: string;
+  label: string;
+  score: number;
+  confidence: number;
+  observations: number;
+  scope: "global" | "destination";
+  destination: string | null;
+  origin: "explicit" | "inferred";
+  status: "active" | "rejected";
+  sourceTypes: string[];
+  firstObservedAt: string;
+  lastObservedAt: string;
+  lastEvidenceIntakeId: string | null;
+};
+
+export type TravelerProfile = {
+  userId: number;
+  explicitPreferences: string[];
+  topPreferences: string[];
+  observationCount: number;
+  signals: TravelerPreferenceSignal[];
+  updatedAt: string | null;
+};
+
 export async function listUsers(): Promise<CurrentUser[]> {
   return apiFetch<CurrentUser[]>("/users");
 }
@@ -36,6 +63,14 @@ export async function getPlannerPreview(input: {
 
 export async function getProfileShowcase(): Promise<ProfileShowcase> {
   return apiFetch<ProfileShowcase>("/me/showcase");
+}
+
+export async function getTravelerProfile(): Promise<TravelerProfile> {
+  return apiFetch<TravelerProfile>("/me/traveler-profile");
+}
+
+export async function deleteTravelerProfile(): Promise<void> {
+  return apiFetch<void>("/me/traveler-profile", { method: "DELETE" });
 }
 
 export async function createProfilePost(input: {

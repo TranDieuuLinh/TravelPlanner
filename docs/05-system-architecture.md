@@ -107,7 +107,10 @@ PlanService
     |
     +-- có ảnh? --> ImageOcrService --------+
     |                                       |
-    +-- có URL? --> UrlReelExtractionService+--> ExploreResponseFormatter
+    +-- có URL? --> URL source dispatcher ----+--> ExploreResponseFormatter
+    |                 |                        |
+    |                 +-- video connector      |
+    |                 +-- web-page connector   |
     |                                       |             |
     +-- raw prompt -------------------------+             v
     |                                            ExploreBundleDraft
@@ -131,8 +134,8 @@ PlanService
 
 `ExploreResponseFormatter` chỉ tổng hợp raw prompt và context đã được các
 extractor tạo ra; formatter không tự điều phối download URL hoặc OCR. Với URL,
-Extractor là nguồn duy nhất tạo candidate; Formatter chỉ tạo intent/trip spec/
-preference và chạy song song với Resolver. Aggregator gộp trùng nhưng giữ
+Extractor là nguồn duy nhất tạo candidate; Formatter chỉ tạo TripIntent
+canonical và chạy song song với Resolver. Aggregator gộp trùng nhưng giữ
 provenance. Resolver chạy tự động, không dừng luồng để hỏi user. Chỉ kết quả
 resolved có tọa độ hợp lệ được lưu vào `user_must_place`; Explorer intake không
 ghi vào `places`. Caption, STT và frame OCR thành công được lưu riêng theo
@@ -157,12 +160,19 @@ nhãn, không phải confidence do provider công bố.
   Facebook Reels dùng media tạm thời để chạy Gemini Audio STT song song với
   frame vision/OCR. Facebook được nhận diện explicit nhưng khả năng tải vẫn phụ
   thuộc URL công khai và connector `yt-dlp`.
+- URL HTTP/HTTPS không thuộc các platform video trên đi qua connector
+  `WebPageExtractionService`: backend fetch HTML công khai với timeout, giới hạn
+  kích thước/redirect và kiểm tra DNS public trước từng hop; Trafilatura lấy nội
+  dung chính, sau đó text structurer hiện có tạo observation có evidence. Trang
+  yêu cầu JavaScript, đăng nhập, paywall hoặc CAPTCHA chưa có browser fallback.
 
 Hai nhánh đều trả cùng `ExtractedContext`, candidate, provenance và đi qua cùng
 Aggregator -> Resolver -> TripThemePlanner/PlaceSelector. URL rút gọn `youtu.be/{videoId}` không
 chứa tín hiệu Shorts nên giữ nhánh YouTube caption-only an toàn.
 
-Response trả `intakeId`, `userId`, Explorer context và `timingReport`.
+Response trả `intakeId`, `userId`, Explorer context chứa `tripIntent` canonical
+và `timingReport`. Trong trip chat, TripIntent được version hóa bằng bảng quan
+hệ và Explorer của lần sửa sau đọc trực tiếp từ PostgreSQL.
 `timingReport` dùng cho debug latency trên UI và được append dạng JSONL vào
 `backend/var/explorer-timings.jsonl`. Log chỉ giữ duration/status/count, không
 giữ prompt, URL đầy đủ, transcript, OCR text hoặc credential. Explorer không tự
@@ -267,7 +277,7 @@ Import API -> Import Job -> Source Connector
                            |
                            v
                   Content Extraction
-             caption / transcript / frames
+       page text / caption / transcript / frames
                            |
                            v
                  Claim + PlaceCandidate

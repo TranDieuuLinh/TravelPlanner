@@ -125,7 +125,7 @@ def enforce_url_destination(
         )
     return explorer.model_copy(
         update={
-            "intent": explorer.intent.model_copy(
+            "trip_intent": explorer.trip_intent.model_copy(
                 update={"destination": source_destination}
             ),
             "assumptions": assumptions,

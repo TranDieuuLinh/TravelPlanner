@@ -3,6 +3,9 @@
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-07-29
 
+Phần persistence preference của ADR này được thay thế bởi ADR-019; quyết định
+route vẫn còn hiệu lực.
+
 ## Bối cảnh
 
 Explorer cần học từ prompt, URL, OCR và hành vi mà không buộc user trả lời thêm.

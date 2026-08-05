@@ -15,11 +15,12 @@ def _explorer(
 ) -> ExplorerContextResponse:
     return ExplorerContextResponse.model_validate(
         {
-            "intent": {
+            "tripIntent": {
                 "destination": destination,
+                "timing": {"days": 3},
+                "travelParty": {"type": "solo", "adults": 1},
                 "clarifyingQuestions": ["Model-generated question"],
             },
-            "tripSpec": {"days": 3},
             "assumptions": assumptions or [],
             "missingInfoQuestions": ["Model-generated question"],
         }

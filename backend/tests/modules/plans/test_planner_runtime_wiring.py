@@ -239,16 +239,16 @@ def test_from_explorer_provider_error_keeps_cors_headers(
         "/api/plans/main/from-explorer",
         headers={"Origin": "http://localhost:3000"},
         json={
-            "intent": {
+            "tripIntent": {
                 "destination": "Ha Noi",
-                "travelStyle": "local",
-                "pace": "balanced",
-                "interests": ["culture"],
-            },
-            "tripSpec": {
-                "days": 1,
-                "partySize": 1,
+                "timing": {"days": 1},
+                "travelParty": {"type": "solo", "adults": 1},
                 "budget": {"targetAmount": None, "level": "medium"},
+                "preferences": {
+                    "travelStyle": "local",
+                    "pace": "balanced",
+                    "interests": ["culture"],
+                },
             },
             "selectedPlaces": [],
         },
@@ -259,6 +259,21 @@ def test_from_explorer_provider_error_keeps_cors_headers(
         "http://localhost:3000"
     )
     assert response.json()["detail"] == "Planner provider failed."
+
+
+def test_from_explorer_rejects_removed_split_intent_contract(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/plans/main/from-explorer",
+        json={
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 2},
+            "selectedPlaces": [],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def _place(

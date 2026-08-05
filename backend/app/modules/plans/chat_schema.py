@@ -5,9 +5,10 @@ from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.schema import (
-    ExplorerContextResponse,
     ExplorerTimingReport,
+    PlaceCandidateReview,
 )
+from app.modules.plans.trip_intent import TripIntent
 from app.modules.plans.timing import PlanTimingReport
 
 
@@ -58,9 +59,13 @@ class TripChatRead(TripChatSummaryRead):
         Field(default=None, alias="currentIntakeId"),
     ]
     current_plan: Annotated[Plan | None, Field(alias="currentPlan")]
-    current_explorer: Annotated[
-        ExplorerContextResponse | None,
-        Field(alias="currentExplorer"),
+    current_trip_intent: Annotated[
+        TripIntent | None,
+        Field(alias="currentTripIntent"),
+    ]
+    candidate_reviews: Annotated[
+        list[PlaceCandidateReview],
+        Field(default_factory=list, alias="candidateReviews"),
     ]
     latest_explorer_timing: Annotated[
         ExplorerTimingReport | None,

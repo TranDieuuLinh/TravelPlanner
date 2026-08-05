@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1400" viewBox="0 0 1800 1400">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <style>
+      text { font-family: "DejaVu Sans", Arial, sans-serif; fill: #172033; }
+      .title { font-size: 42px; font-weight: 700; }
+      .subtitle { font-size: 21px; fill: #526076; }
+      .section { font-size: 25px; font-weight: 700; }
+      .label { font-size: 18px; font-weight: 700; }
+      .small { font-size: 15px; fill: #526076; }
+      .edge-label { font-size: 14px; font-weight: 700; fill: #334155; }
+      .panel { fill: #ffffff; stroke: #d7dee9; stroke-width: 2; }
+      .abstract { fill: #eef2ff; stroke: #64748b; stroke-width: 2; stroke-dasharray: 8 6; }
+      .place { fill: #dbeafe; stroke: #2563eb; stroke-width: 2; }
+      .area { fill: #dcfce7; stroke: #16a34a; stroke-width: 2; }
+      .activity { fill: #fef3c7; stroke: #d97706; stroke-width: 2; }
+      .item { fill: #f3e8ff; stroke: #9333ea; stroke-width: 2; }
+      .tree { fill: none; stroke: #94a3b8; stroke-width: 2; }
+      .edge { fill: none; stroke: #475569; stroke-width: 3; marker-end: url(#arrow); }
+      .edge-bi { fill: none; stroke: #475569; stroke-width: 3; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .example-edge { fill: none; stroke: #2563eb; stroke-width: 4; marker-end: url(#arrow-blue); }
+      .pill { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1400" fill="#f7f9fc"/>
+
+  <text x="60" y="62" class="title">Knowledge Graph du lịch — cách đọc nhanh</text>
+  <text x="60" y="98" class="subtitle">Node là “thứ gì”; edge là “quan hệ gì”. Sơ đồ theo schema version 7.</text>
+  <rect x="1375" y="38" width="28" height="28" rx="7" class="abstract"/>
+  <text x="1415" y="59" class="small">Abstract: chỉ để kế thừa</text>
+  <rect x="1375" y="78" width="28" height="28" rx="7" class="place"/>
+  <text x="1415" y="99" class="small">Concrete: được lưu trong DB</text>
+
+  <!-- Node hierarchy -->
+  <rect x="45" y="135" width="815" height="565" rx="20" class="panel"/>
+  <text x="75" y="180" class="section">1. Các loại node</text>
+
+  <rect x="330" y="205" width="220" height="54" rx="13" class="abstract"/>
+  <text x="440" y="239" text-anchor="middle" class="label">Entity</text>
+
+  <path d="M440 259 V282 H185 V305 M440 282 V305 M440 282 H685 V305" class="tree"/>
+
+  <rect x="75" y="305" width="220" height="54" rx="13" class="abstract"/>
+  <text x="185" y="338" text-anchor="middle" class="label">LocationEntity</text>
+
+  <rect x="350" y="305" width="180" height="54" rx="13" class="activity"/>
+  <text x="440" y="338" text-anchor="middle" class="label">Activity</text>
+
+  <rect x="590" y="305" width="190" height="54" rx="13" class="abstract"/>
+  <text x="685" y="338" text-anchor="middle" class="label">Item</text>
+
+  <path d="M185 359 V386 H150 V410 M185 386 H340 V410" class="tree"/>
+  <rect x="65" y="410" width="170" height="50" rx="12" class="abstract"/>
+  <text x="150" y="441" text-anchor="middle" class="label">Place</text>
+  <rect x="260" y="410" width="160" height="50" rx="12" class="area"/>
+  <text x="340" y="441" text-anchor="middle" class="label">Area</text>
+
+  <path d="M150 460 V486 H105 V505 M150 486 H300 V505 M150 486 V585 H105 V605 M150 585 H300 V605" class="tree"/>
+  <rect x="45" y="505" width="120" height="54" rx="11" class="place"/>
+  <text x="105" y="528" text-anchor="middle" class="label">Travel</text>
+  <text x="105" y="548" text-anchor="middle" class="small">Place</text>
+  <rect x="225" y="505" width="150" height="54" rx="11" class="place"/>
+  <text x="300" y="538" text-anchor="middle" class="label">Restaurant</text>
+  <rect x="45" y="605" width="120" height="54" rx="11" class="place"/>
+  <text x="105" y="628" text-anchor="middle" class="label">Drink</text>
+  <text x="105" y="648" text-anchor="middle" class="small">Dessert</text>
+  <rect x="225" y="605" width="150" height="54" rx="11" class="place"/>
+  <text x="300" y="638" text-anchor="middle" class="label">Accommodation</text>
+
+  <path d="M685 359 V385 M685 385 H530 V410 M685 385 V490 M685 385 H795 V570" class="tree"/>
+  <rect x="455" y="410" width="150" height="54" rx="11" class="item"/>
+  <text x="530" y="443" text-anchor="middle" class="label">FoodItem</text>
+  <rect x="610" y="490" width="150" height="54" rx="11" class="item"/>
+  <text x="685" y="523" text-anchor="middle" class="label">DrinkItem</text>
+  <rect x="715" y="570" width="130" height="54" rx="11" class="item"/>
+  <text x="780" y="593" text-anchor="middle" class="label">Product</text>
+  <text x="780" y="614" text-anchor="middle" class="small">Item</text>
+
+  <!-- Edge contract -->
+  <rect x="890" y="135" width="865" height="565" rx="20" class="panel"/>
+  <text x="920" y="180" class="section">2. Edge nào được phép?</text>
+
+  <g transform="translate(930 200)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="place"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Place</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="247" y="3" width="170" height="40" rx="18" class="pill"/>
+    <text x="332" y="28" text-anchor="middle" class="edge-label">LOCATED_IN</text>
+    <rect x="460" y="0" width="245" height="46" rx="12" class="abstract"/>
+    <text x="582" y="29" text-anchor="middle" class="label">LocationEntity</text>
+  </g>
+
+  <g transform="translate(930 255)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="area"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Area</text>
+    <path d="M220 23 H445" class="edge-bi"/>
+    <rect x="245" y="3" width="176" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">ADJACENT_TO</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="area"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Area</text>
+  </g>
+
+  <g transform="translate(930 310)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="area"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Area con</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="270" y="3" width="126" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">PART_OF</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="area"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Area cha</text>
+  </g>
+
+  <g transform="translate(930 365)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="place"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Place</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="246" y="3" width="174" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">OFFERS_ACTIVITY</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="activity"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Activity</text>
+  </g>
+
+  <g transform="translate(930 430)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="abstract"/>
+    <text x="102" y="29" text-anchor="middle" class="label">LocationEntity</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="236" y="3" width="194" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">SPECIAL_EXPERIENCE</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="activity"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Activity</text>
+  </g>
+
+  <g transform="translate(930 495)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="place"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Place</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="254" y="3" width="158" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">OFFERS_ITEM</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="item"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Item</text>
+  </g>
+
+  <g transform="translate(930 560)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="activity"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Activity</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="248" y="3" width="170" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">INVOLVES_ITEM</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="item"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Item</text>
+  </g>
+
+  <g transform="translate(930 625)">
+    <rect x="0" y="0" width="205" height="46" rx="12" class="activity"/>
+    <text x="102" y="29" text-anchor="middle" class="label">Activity</text>
+    <path d="M220 23 H445" class="edge"/>
+    <rect x="252" y="3" width="162" height="40" rx="18" class="pill"/>
+    <text x="333" y="28" text-anchor="middle" class="edge-label">TARGETS_PLACE</text>
+    <rect x="460" y="0" width="205" height="46" rx="12" class="place"/>
+    <text x="562" y="29" text-anchor="middle" class="label">Place</text>
+  </g>
+
+  <!-- Examples -->
+  <rect x="45" y="730" width="1710" height="625" rx="20" class="panel"/>
+  <text x="75" y="780" class="section">3. Đọc bằng ví dụ thực tế</text>
+
+  <text x="80" y="835" class="label">Ví dụ A — địa điểm và hoạt động</text>
+  <rect x="90" y="870" width="245" height="72" rx="16" class="place"/>
+  <text x="212" y="900" text-anchor="middle" class="label">Tháp Rùa</text>
+  <text x="212" y="925" text-anchor="middle" class="small">TravelPlace</text>
+  <path d="M335 906 H555" class="example-edge"/>
+  <rect x="352" y="875" width="185" height="34" rx="16" class="pill"/>
+  <text x="444" y="897" text-anchor="middle" class="edge-label">LOCATED_IN</text>
+  <rect x="570" y="870" width="245" height="72" rx="16" class="place"/>
+  <text x="692" y="900" text-anchor="middle" class="label">Hồ Gươm</text>
+  <text x="692" y="925" text-anchor="middle" class="small">TravelPlace</text>
+  <path d="M815 906 H1095" class="example-edge"/>
+  <rect x="837" y="875" width="235" height="34" rx="16" class="pill"/>
+  <text x="954" y="897" text-anchor="middle" class="edge-label">SPECIAL_EXPERIENCE</text>
+  <rect x="1110" y="870" width="245" height="72" rx="16" class="activity"/>
+  <text x="1232" y="900" text-anchor="middle" class="label">Đi dạo</text>
+  <text x="1232" y="925" text-anchor="middle" class="small">Activity</text>
+
+  <rect x="90" y="974" width="245" height="72" rx="16" class="area"/>
+  <text x="212" y="1004" text-anchor="middle" class="label">Đà Lạt</text>
+  <text x="212" y="1029" text-anchor="middle" class="small">Area</text>
+  <path d="M335 1010 H1095" class="example-edge"/>
+  <rect x="560" y="978" width="255" height="34" rx="16" class="pill"/>
+  <text x="687" y="1000" text-anchor="middle" class="edge-label">SPECIAL_EXPERIENCE</text>
+  <rect x="1110" y="974" width="245" height="72" rx="16" class="activity"/>
+  <text x="1232" y="1004" text-anchor="middle" class="label">Săn mây</text>
+  <text x="1232" y="1029" text-anchor="middle" class="small">Activity</text>
+  <text x="1390" y="904" class="small">Một Place có thể đề xuất</text>
+  <text x="1390" y="928" class="small">nhiều Activity khác nhau.</text>
+
+  <line x1="80" y1="1085" x2="1715" y2="1085" stroke="#d7dee9" stroke-width="2"/>
+
+  <text x="80" y="1130" class="label">Ví dụ B — phân biệt “ăn phở” và “phở”</text>
+  <rect x="90" y="1170" width="245" height="72" rx="16" class="place"/>
+  <text x="212" y="1200" text-anchor="middle" class="label">Quán Phở</text>
+  <text x="212" y="1225" text-anchor="middle" class="small">Restaurant</text>
+  <path d="M335 1206 H555" class="example-edge"/>
+  <rect x="343" y="1175" width="205" height="34" rx="16" class="pill"/>
+  <text x="445" y="1197" text-anchor="middle" class="edge-label">SPECIAL_EXPERIENCE</text>
+  <rect x="570" y="1170" width="245" height="72" rx="16" class="activity"/>
+  <text x="692" y="1200" text-anchor="middle" class="label">Ăn phở</text>
+  <text x="692" y="1225" text-anchor="middle" class="small">Activity = làm gì?</text>
+  <path d="M815 1206 H1095" class="example-edge"/>
+  <rect x="852" y="1175" width="205" height="34" rx="16" class="pill"/>
+  <text x="954" y="1197" text-anchor="middle" class="edge-label">INVOLVES_ITEM</text>
+  <rect x="1110" y="1170" width="245" height="72" rx="16" class="item"/>
+  <text x="1232" y="1200" text-anchor="middle" class="label">Phở</text>
+  <text x="1232" y="1225" text-anchor="middle" class="small">FoodItem = món gì?</text>
+
+  <path d="M212 1242 V1300 H1232 V1242" class="example-edge"/>
+  <rect x="610" y="1277" width="165" height="34" rx="16" class="pill"/>
+  <text x="692" y="1299" text-anchor="middle" class="edge-label">OFFERS_ITEM</text>
+  <text x="1390" y="1197" class="small">Activity và Item tách riêng,</text>
+  <text x="1390" y="1221" class="small">sau đó nối lại bằng edge.</text>
+
+  <text x="900" y="1382" text-anchor="middle" class="small">Nét đứt = loại abstract · Màu xanh = Place · xanh lá = Area · vàng = Activity · tím = Item</text>
+</svg>

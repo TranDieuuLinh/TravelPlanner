@@ -192,6 +192,50 @@ def test_youtube_speech_is_saved_as_caption_for_the_shared_retrieval_path() -> N
     engine.dispose()
 
 
+def test_web_page_saves_only_structured_evidence_not_the_full_article() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            ExplorerIntake.__table__,
+            UrlExtractionCacheEntry.__table__,
+            UrlSourceArtifact.__table__,
+        ],
+    )
+    result = _result(
+        url="https://example.com/article?id=42&utm_source=feed",
+        speech_source="web_page_text",
+        speech_text="Full article text that must not be persisted.",
+        ocr_text="",
+    ).model_copy(
+        update={
+            "platform": "web_page",
+            "frame_vision": FrameVisionResult(),
+        },
+        deep=True,
+    )
+    result.speech_to_text.observations[0].evidence = "First visit Hoan Kiem Lake."
+
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-webpage-1",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[],
+            url_results=[result],
+        )
+
+        artifacts = repository.load_url_source_artifacts(
+            "https://example.com/article?id=42&utm_campaign=again"
+        )
+        assert len(artifacts) == 1
+        assert artifacts[0].artifact_type == "webpage"
+        assert artifacts[0].content_text == "First visit Hoan Kiem Lake."
+
+    engine.dispose()
+
+
 def test_partial_frame_ocr_keeps_successful_text_for_retrieval() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(

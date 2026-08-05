@@ -37,8 +37,9 @@ yêu cầu của user.
 4. `OverallChecker` báo cáo các rủi ro cơ bản.
 5. `BackupPlanWorkflow` tạo và kiểm tra một phương án riêng.
 
-UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ một Explorer context
-và plan hiện tại. Message đầu tạo plan; follow-up gửi context hiện tại cùng tối
+UI Planner đã có trip chat bền vững theo user. Mỗi chat giữ một TripIntent quan
+hệ có version và plan hiện tại. Message đầu tạo plan; follow-up đọc TripIntent
+hiện tại từ PostgreSQL rồi gửi cùng tối
 đa tám user request gần nhất vào Explorer, sau đó TripThemePlanner/PlaceSelector tạo revision
 hoàn chỉnh. Backend giữ nguyên plan ID, tăng revision và lưu snapshot cũ thay vì
 trả một plan identity mới. Các địa điểm của plan hiện tại được chuyển thành
@@ -250,14 +251,18 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 
 Explorer hợp nhất `SelectedPlaces`, `UserState` và `TripConstraints`, phát hiện
 thông tin thiếu hoặc mâu thuẫn và chỉ hỏi câu có tác động cao. Kết quả gồm
-`TravelIntent` đã chuẩn hóa, hard constraints, soft preferences và unresolved
-questions.
+`TripIntent` đã chuẩn hóa với `destination`, `timing`, `travelParty`, `budget`,
+`notes`, `preferences`, `constraints` và unresolved questions. Boundary
+Explorer không còn tách hai object `intent`/`tripSpec`.
 
 Explorer còn tạo `PreferenceSnapshot` cho intake hiện tại. Nếu có authenticated
-user, signal đủ confidence được aggregate vào cột JSON
-`users.travel_preferences`; raw prompt, OCR và transcript không đi vào profile.
-Planner nhận `effectiveProfile`, nhưng explicit constraint của chuyến hiện tại
-luôn ưu tiên hơn profile dài hạn.
+user, signal đủ confidence được aggregate vào các bảng quan hệ
+`traveler_profiles`, `traveler_preference_signals` và
+`traveler_preference_signal_sources`; raw prompt, OCR và transcript không đi vào
+profile. Signal suy luận chỉ thành preference hiệu lực sau ít nhất hai lần quan
+sát. Các trait nhạy cảm không được tự suy luận hoặc lưu. Planner nhận
+`effectiveProfile`, nhưng explicit constraint của chuyến hiện tại luôn ưu tiên
+hơn profile dài hạn.
 
 Với intake chỉ có `rawRequest` (không URL, ảnh OCR hoặc `placeCandidates`),
 Explorer không hỏi lại user. Explorer đánh dấu `mode=vague` khi chưa có điểm đến
@@ -271,7 +276,7 @@ Với intake có URL, source adapter tạo candidate đúng một lần. Code �
 sung source, priority và preference mặc định, gộp trùng rồi gửi thẳng sang
 Resolver. Formatter không sinh lại URL `placeCandidates`; nó chỉ nhận summary
 ngắn gồm số stop, interest, category, attribute, activity và source day để tạo
-intent, trip spec, constraint và preference. Formatter dùng structured output
+TripIntent canonical. Formatter dùng structured output
 schema của provider thay vì nhét toàn bộ JSON Schema vào nội dung prompt.
 Formatter và Resolver chạy song song vì cả hai chỉ phụ thuộc output đã chuẩn hóa
 của Extractor.

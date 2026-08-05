@@ -16,6 +16,10 @@ dist/
 coverage/
 *.db*
 *.sqlite3
+
+# Local knowledge-graph database dumps (too large for GitHub)
+database/kg_dump.sql
+database/kg_dump_v7.sql
 backend/var/*.jsonl
 backend/var/user-post-media/
 backend/var/knowledge-graph-imports/

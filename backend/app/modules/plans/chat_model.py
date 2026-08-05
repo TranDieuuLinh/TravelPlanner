@@ -24,10 +24,18 @@ class TripChat(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
     current_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    current_explorer: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     latest_explorer_timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     latest_planner_timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_intake_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    current_trip_intent_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "trip_intent_versions.id",
+            name="fk_trip_chats_current_trip_intent",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+        nullable=True,
+    )
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     conversation_phase: Mapped[str] = mapped_column(String(32), default="discovery", nullable=False)
     conversation_context: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -110,7 +118,11 @@ class TripChatPlanRevision(Base):
         index=True,
     )
     plan_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    explorer_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trip_intent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("trip_intent_versions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

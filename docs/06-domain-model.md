@@ -25,8 +25,11 @@ tương thích nhưng chưa có luồng Marketplace riêng.
 
 ### Đối tượng giá trị của Planner
 
-- `TravelIntent`: điểm đến, số ngày, ngân sách, phong cách, nhịp độ, sở thích,
-  địa điểm bắt buộc, địa điểm tránh, ràng buộc và câu hỏi làm rõ.
+- `TripIntent`: aggregate bền vững có version cho một trip chat, gồm
+  `destination`, `timing`, `travelParty`, `budget`, `notes`, `preferences` và
+  `constraints`. Dữ liệu được lưu bằng cột typed cùng bảng con
+  `trip_intent_values`/`trip_intent_destination_stays`; JSON Explorer không còn
+  là nguồn sự thật.
 - `BudgetEnvelope`: ngân sách đơn giản chỉ gồm số tiền gần đúng `targetAmount`,
   `currency` và mức `low`, `medium` hoặc `high`. Budget chỉ xuất hiện tại
   `tripSpec.budget`, không lặp lại trong `TravelIntent`.
@@ -59,18 +62,21 @@ tương thích nhưng chưa có luồng Marketplace riêng.
   liên kết plan cha và báo cáo kiểm tra.
 
 Plan từ các endpoint độc lập hiện vẫn là object Pydantic được giữ trong bộ nhớ.
-Plan tạo qua trip chat được lưu dưới dạng snapshot JSON có version trong
-`trip_chat_plan_revisions`; `trip_chats.current_plan` luôn trỏ tới snapshot mới
-nhất và giữ nguyên plan ID khi user yêu cầu AI sửa tiếp.
+Plan tạo qua trip chat vẫn được lưu dưới dạng snapshot JSON có version trong
+`trip_chat_plan_revisions`; mỗi revision tham chiếu đúng
+`trip_intent_versions` đã dùng. `trip_chats.current_plan` trỏ tới plan snapshot
+mới nhất và `current_trip_intent_id` trỏ tới TripIntent hiện hành.
 
 ### Lịch sử hội thoại chuyến đi đã triển khai
 
-- `TripChat`: thuộc đúng một user, đại diện cho một chuyến đi/điểm đến, giữ
-  Explorer context hiện tại, plan hiện tại và số revision.
+- `TripChat`: thuộc đúng một user, đại diện cho một chuyến đi/điểm đến, giữ khóa
+  TripIntent hiện tại, plan hiện tại và số revision. Không còn cột
+  `current_explorer`.
 - `TripChatMessage`: tin nhắn user/assistant theo thứ tự, attachment chỉ lưu tên
   file; không lưu bytes ảnh.
-- `TripChatPlanRevision`: snapshot plan và Explorer context bất biến sau mỗi lần
-  tạo hoặc sửa thành công, kèm `intakeId` đã sinh ra snapshot đó.
+- `TripChatPlanRevision`: snapshot plan bất biến sau mỗi lần tạo hoặc sửa thành
+  công, kèm `intakeId` và `tripIntentId` đã sinh ra snapshot đó. Không còn
+  `explorer_payload` JSON.
 - `ExplorerIntake`: identity bền vững cho mỗi lần Explorer xử lý input; là
   parent của junction `UserMustPlaceUser`, kể cả khi intake không resolve được
   địa điểm nào. Snapshot `UserMustPlace` có thể được nhiều intake/user dùng.
@@ -120,8 +126,9 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
 - `SourceArtifact`: metadata, caption, transcript, frame reference hoặc văn bản
   được phép lưu; không đồng nhất artifact với instruction cho model.
 - `UrlSourceArtifact`: phần `SourceArtifact` đã triển khai cho URL, lưu nội dung
-  text theo canonical URL và loại `caption`/`stt`/`ocr`, cùng language, provider
-  source, freshness và metadata observation đã chuẩn hóa. Ba loại dùng chung
+  text theo canonical URL và loại `webpage`/`caption`/`stt`/`ocr`, cùng language, provider
+  source, freshness và metadata observation đã chuẩn hóa. Artifact `webpage`
+  chỉ giữ evidence span đã cấu trúc, không sao chép toàn bộ bài viết. Bốn loại dùng chung
   một retrieval boundary cho RAG/tạo note sau này; không phải note hiển thị cho
   user và không chứa prompt hoặc payload provider thô.
 - `YouTubeTranscriptCacheEntry`: cache caption đã lấy thành công theo
@@ -183,12 +190,13 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   của nguồn (ví dụ `Hanoi - 2 days`). Đây là context cấp hành trình, không phải
   `Place` hay `SelectedPlace`; PlaceSelector dùng stay hai ngày làm target area
   cho hai day slot tương ứng và có thể để trống item để người dùng bổ sung sau.
-- `PreferenceSnapshot`: JSON ngắn hạn của một Explorer intake, chỉ giữ tín hiệu
-  chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
-  `sourceTypes`), không giữ raw prompt/OCR/transcript.
-- `LongTermPreferenceProfile`: hồ sơ có version được aggregate vào duy nhất cột
-  JSON `users.travel_preferences`; gồm explicit preference, score, confidence,
-  số lần quan sát và thời điểm cập nhật.
+- `PreferenceSnapshot`: context ngắn hạn của một Explorer intake, chỉ giữ tín
+  hiệu chuẩn hóa (`dimension`, `value`, `score`, `confidence`, `scope`,
+  `origin`, `sourceTypes`), không giữ raw prompt/OCR/transcript.
+- `TravelerProfile`: hồ sơ du lịch dài hạn theo user, được lưu trong
+  `traveler_profiles` và `traveler_preference_signals`. Mỗi signal có nguồn,
+  explicit/inferred, confidence, số lần quan sát, trạng thái và intake evidence
+  gần nhất. Signal suy luận phải được quan sát lặp lại trước khi ảnh hưởng plan.
 - `ImportJob`: tiến độ, bước hiện tại, lỗi có thể retry và kết quả từng phần.
 
 Quan hệ chính:

@@ -46,14 +46,14 @@ def test_explorer_budget_input_uses_same_simple_shape() -> None:
     }
 
 
-def test_explore_bundle_keeps_budget_only_under_trip_spec() -> None:
+def test_explore_bundle_keeps_budget_only_under_trip_intent() -> None:
     response = ExploreBundleDraft.model_validate(
         {
             "explorer": {
-                "intent": {"destination": "Hà Nội"},
-                "tripSpec": {
-                    "days": 3,
-                    "partySize": 2,
+                "tripIntent": {
+                    "destination": "Hà Nội",
+                    "timing": {"days": 3},
+                    "travelParty": {"type": "couple", "adults": 2},
                     "budget": {
                         "targetAmount": 6_000_000,
                         "currency": "VND",
@@ -67,8 +67,9 @@ def test_explore_bundle_keeps_budget_only_under_trip_spec() -> None:
 
     payload = response.model_dump(mode="json", by_alias=True)
 
-    assert "budgetLevel" not in payload["explorer"]["intent"]
-    assert payload["explorer"]["tripSpec"]["budget"] == {
+    assert "intent" not in payload["explorer"]
+    assert "tripSpec" not in payload["explorer"]
+    assert payload["explorer"]["tripIntent"]["budget"] == {
         "targetAmount": 6_000_000,
         "currency": "VND",
         "level": "medium",

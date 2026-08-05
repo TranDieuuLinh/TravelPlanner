@@ -77,6 +77,10 @@ UI xem toàn tuyến ngày thêm điểm xuất phát trước chuỗi stop này
 đường nhanh là truy vấn point-to-point riêng: điểm đi có thể là vị trí thiết bị
 hoặc place đã tìm, còn điểm đến có thể là stop trong plan, place đã tìm hoặc tọa
 độ chọn trực tiếp trên bản đồ; kết quả không mutate itinerary.
+Các ô tìm địa điểm của Planner dùng chung autocomplete catalog và nhận tối đa
+`topK` kết quả đã xếp hạng để người dùng chọn, mặc định `K=5` và API chỉ chấp
+nhận từ 1 đến 10. Chọn một option giữ place ID cùng tọa độ catalog; nhập văn bản
+tự do không được coi là đã xác nhận đúng place identity.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.
@@ -171,7 +175,14 @@ instruction.
 2. Nhận diện nguồn và chọn connector theo allowlist.
 3. Fetch qua service được kiểm soát với giới hạn redirect, kích thước và timeout.
 4. Lưu metadata cùng quyền truy cập, connector version và `fetchedAt`.
-5. Với URL YouTube long-form, kiểm tra cache PostgreSQL theo
+5. Với URL website công khai không thuộc platform video đã nhận diện, fetch trực
+   tiếp bằng `httpx` sau khi kiểm tra DNS của host và từng redirect. Chỉ nhận
+   HTML/XHTML/plain text, mặc định tối đa 5 MB, 5 redirect và 15 giây. Trafilatura
+   loại navigation/footer và trả Markdown chính; text bị giới hạn 60.000 ký tự
+   trước khi đi qua structured text extractor dùng chung. Trang cần JavaScript,
+   đăng nhập, paywall hoặc CAPTCHA trả lỗi rõ ràng; MVP chưa tự bật browser để
+   vượt giới hạn truy cập.
+6. Với URL YouTube long-form, kiểm tra cache PostgreSQL theo
    `videoId + language`, rồi thử caption công khai bằng
    `youtube-transcript-api`. Request đồng thời cho cùng
    video được dedupe trong process và các fetch mới bị giới hạn nhịp. Caption
@@ -215,7 +226,7 @@ instruction.
    Heading thành phố có duration như `Hanoi - 2 days` được chuẩn hóa thành
    `destinationStay` phủ hai ngày và bị loại khỏi danh sách stop; duration không
    được hiểu thành một phần tên địa điểm.
-6. Metadata và nhánh media chạy song song; khi trip chưa có destination, nhánh
+7. Metadata và nhánh media chạy song song; khi trip chưa có destination, nhánh
    media chỉ chờ metadata đủ để tạo location hint rồi mới gọi STT/Vision. Validate
    JSON, gộp/dedupe metadata + STT + OCR + caption, giữ evidence theo từng nguồn
    rồi chuyển thành place candidate. Metadata location cụ thể làm anchor; tên
@@ -226,7 +237,7 @@ instruction.
    Address/person/city không được chuyển thành stop. Address được gắn vào venue;
    sub-place có parent rõ ràng được gộp về venue cha. Parser fallback nhận marker
    `number/no.` và `số/thứ` bằng chữ hoặc số.
-7. Canonicalization tạo alias Anh–Việt có cấu trúc ngay trong candidate fusion,
+8. Canonicalization tạo alias Anh–Việt có cấu trúc ngay trong candidate fusion,
    lưu riêng trong `generatedLookupAliases`, sau đó chuẩn hóa địa điểm theo chuỗi
    shared cache -> `places` catalog -> Google Maps Playwright
    và gộp trùng.
@@ -268,7 +279,7 @@ instruction.
    `medium`. Không học từ coordinate-only identity, mismatch, provisional hoặc
    unresolved result. Alias update idempotent và tăng `revision` đúng một lần
    khi metadata thực sự thay đổi.
-8. Tự động upsert snapshot dùng chung vào `user_must_place` và tạo junction
+9. Tự động upsert snapshot dùng chung vào `user_must_place` và tạo junction
    `user_must_place_users` chỉ khi provider trả kết quả `resolved` cho địa điểm
    cụ thể có đủ latitude/longitude; không chặn để hỏi user. Match rộng
    tới thành phố/quốc gia, caption bị hiểu nhầm thành tên, candidate
@@ -277,20 +288,20 @@ instruction.
    canonical-dedupe trước persistence; `candidateCount`, `resolvedCount` và
    `persistedCount` của Explorer phản ánh tập sau dedupe, còn danh sách attempt
    vẫn giữ toàn bộ lượt provider để debug.
-9. Cache `ExtractedContext` theo canonical URL và extraction schema version;
+10. Cache `ExtractedContext` theo canonical URL và extraction schema version;
    cache version cũ được tính lại thay vì trả kết quả parser lỗi thời. Lần dùng
    sau bỏ qua media, STT/OCR; snapshot hit cũng bỏ qua provider lookup. Bàn giao
    `intakeId + userId + explorer` cho Planner downstream; Finder đọc snapshot
    qua junction theo `intakeId + userId`. Job có `forceRefresh=true` bỏ qua cache
    để chạy lại toàn bộ extraction; cache cũ chỉ được ghi đè sau khi intake mới
    thành công, không bị xóa ngay khi enqueue.
-   Schema cache version 4 loại snapshot trước entity authority và extraction
-   coverage. Snapshot resolved cũ không thay thế extraction cache vì thiếu
-   contract mới.
-10. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
+   Schema cache version 5 loại snapshot trước web-page connector, entity
+   authority và extraction coverage. Snapshot resolved cũ không thay thế
+   extraction cache vì thiếu contract mới.
+11. Giữ attribution và chỉ lưu nội dung được license/chính sách cho phép.
 
 Với URL, Extractor là nguồn duy nhất tạo `UnifiedPlaceCandidate`. Formatter nhận
-summary gọn của extraction để tạo intent/trip spec/constraint/preference và
+summary gọn của extraction để tạo TripIntent canonical và
 không sinh lại candidate. Resolver có thể chạy song song với Formatter ngay sau
 khi candidate được chuẩn hóa và gộp trùng.
 
@@ -334,7 +345,10 @@ hướng dẫn retry hoặc upload screenshot thay vì trả itinerary `Ready` v
 
 Preference learning chỉ lưu tín hiệu chuẩn hóa và source type. Không sao chép
 raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào
-`users.travel_preferences`.
+Traveler Profile. Dữ liệu dài hạn nằm trong các bảng quan hệ
+`traveler_profiles`, `traveler_preference_signals` và
+`traveler_preference_signal_sources`; intake ID gần nhất được giữ làm
+provenance mà không lưu lại nội dung chat thô trong signal.
 
 ### Ma trận trạng thái nguồn
 
@@ -344,6 +358,8 @@ raw prompt, toàn bộ transcript, raw OCR hoặc frame bytes vào
 | YouTube long-form xác nhận không có caption | Trả `YOUTUBE_CAPTIONS_NOT_FOUND`; không tải media/STT |
 | Caption provider long-form bị chặn/unavailable | Thử worker riêng, sau đó trả lỗi retryable |
 | TikTok/Instagram/Facebook Reel hoặc URL `/shorts/` công khai | Chạy STT + frame vision/OCR rồi chuẩn hóa chung |
+| Website HTML/XHTML/plain text công khai | Fetch có giới hạn, Trafilatura lấy nội dung chính, structured text extraction rồi chuẩn hóa chung |
+| Website cần JavaScript/đăng nhập/paywall/CAPTCHA | Không vượt quyền truy cập; báo unavailable hoặc cho thêm place thủ công |
 | Riêng tư hoặc cần đăng nhập | Không vượt quyền truy cập; báo unavailable |
 | Không được hỗ trợ | Giữ URL và cho thêm place bằng flow chỉnh sửa plan |
 | Provider timeout | Giữ kết quả từng phần và retry |
