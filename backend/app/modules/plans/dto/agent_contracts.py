@@ -7,6 +7,7 @@ from app.modules.plans.domain.entities import (
     DestinationStay,
     PlaceSelectionStatus,
     PlanDay,
+    PreferredTimeWindow,
     RegionSnapshotReference,
     TripThemeRequirement,
     UnscheduledPlace,
@@ -187,6 +188,10 @@ class SelectedPlaceContext(BaseModel):
     source_duration_minutes: Annotated[
         int | None,
         Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
+    ]
+    preferred_time_windows: Annotated[
+        list[PreferredTimeWindow],
+        Field(default_factory=list, alias="preferredTimeWindows"),
     ]
 
     @property
@@ -615,6 +620,14 @@ class RequiredExperience(BaseModel):
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )
+    preferred_time_windows: Annotated[
+        list[PreferredTimeWindow],
+        Field(default_factory=list, alias="preferredTimeWindows"),
+    ]
+    recommended_visit_minutes: Annotated[
+        int | None,
+        Field(default=None, ge=15, le=720, alias="recommendedVisitMinutes"),
+    ]
 
     model_config = {
         "populate_by_name": True,

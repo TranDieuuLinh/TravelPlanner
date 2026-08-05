@@ -140,6 +140,12 @@ theme nhưng `requiredExperiences` phải rỗng. Khi cả hai nguồn trống,
 của `required_anchor`/`choose_one`; requirement chưa resolve thành venue cụ thể
 được giữ trong `unscheduledPlaces`, không biến mất.
 
+Mỗi required experience có thể mang `preferredTimeWindows` và
+`recommendedVisitMinutes` do backend hydrate deterministic từ graph candidate
+đã validate. Hai field là preference mềm; PlaceSelector ưu tiên khung chứa trọn
+duration, nhưng có thể fallback kèm warning. Chúng không thay thế
+`openingHours`, và giá trị timing do LLM tự trả không được tin cậy.
+
 Input là `PlaceSelectionInput`:
 
 ```json

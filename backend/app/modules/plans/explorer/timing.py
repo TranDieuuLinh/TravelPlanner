@@ -20,6 +20,7 @@ from app.modules.plans.explorer.tools.url_reels.utils import canonicalize_url
 from app.modules.places.resolver import PlaceResolution
 
 logger = logging.getLogger(__name__)
+terminal_logger = logging.getLogger("uvicorn.error")
 
 _DURATION_LABELS = {
     "urlCacheLookup": "Tra cache URL",
@@ -316,6 +317,27 @@ class ExplorerTimingLogger:
         self.display_path = display_path
 
     def write(self, report: ExplorerTimingReport) -> None:
+        terminal_payload = report.model_dump(mode="json", by_alias=True)
+        # Candidate names are useful in the restricted JSONL diagnostics file,
+        # but terminal logs are commonly shipped to broader log collectors.
+        # Keep provider timing and outcomes while omitting source-derived names.
+        terminal_payload["event"] = "explorer_timing"
+        terminal_payload["providerAttempts"] = [
+            {
+                key: value
+                for key, value in attempt.items()
+                if key != "candidate"
+            }
+            for attempt in terminal_payload.get("providerAttempts", [])
+        ]
+        terminal_logger.info(
+            "VSF_TIMING explorer %s",
+            json.dumps(
+                terminal_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             line = json.dumps(

@@ -49,6 +49,23 @@ class DayPartGoals(BaseModel):
     evening: str | None = None
 
 
+class PreferredTimeWindow(BaseModel):
+    """Soft, evidence-backed visit window; never an opening-hours claim."""
+
+    start: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def end_is_after_start(self) -> "PreferredTimeWindow":
+        start_hour, start_minute = (int(value) for value in self.start.split(":"))
+        end_hour, end_minute = (int(value) for value in self.end.split(":"))
+        if end_hour * 60 + end_minute <= start_hour * 60 + start_minute:
+            raise ValueError("preferred time window end must be after start")
+        return self
+
+
 class RegionSnapshotReference(BaseModel):
     region_key: str = Field(alias="regionKey")
     snapshot_id: str = Field(alias="snapshotId")
@@ -167,6 +184,10 @@ class PlanItem(BaseModel):
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
     source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
     source_activity: str | None = Field(default=None, alias="sourceActivity")
+    preferred_time_windows: list[PreferredTimeWindow] = Field(
+        default_factory=list,
+        alias="preferredTimeWindows",
+    )
     locked: bool = False
 
     model_config = {"populate_by_name": True}

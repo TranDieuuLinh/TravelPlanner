@@ -57,11 +57,14 @@ from app.modules.plans.place_selector.timeline_policy import (
     MEAL_ANCHORS,
     MINIMUM_FILLABLE_GAP_MINUTES,
     activity_allocation_cost,
+    hint_matches_activity_window,
     selected_activity_duration,
 )
 from app.modules.plans.place_selector.time_windows import (
     format_clock_window,
     parse_clock_minutes,
+    preferred_start_minutes,
+    time_window_matches_preference,
 )
 
 
@@ -308,7 +311,41 @@ class PlaceSelectorService:
                             rating=candidate.rating,
                             reviewCount=candidate.review_count,
                             sourceActivity=requirement.theme,
+                            preferredTimeWindows=requirement.preferred_time_windows,
+                            sourceDurationMinutes=(
+                                requirement.recommended_visit_minutes
+                            ),
                         )
+                else:
+                    selected = selected.model_copy(
+                        update={
+                            "must_visit": True,
+                            "source_refs": list(
+                                dict.fromkeys(
+                                    [
+                                        *selected.source_refs,
+                                        *requirement.source_refs,
+                                        "required_experience:"
+                                        f"{requirement.requirement_id}",
+                                    ]
+                                )
+                            ),
+                            "source_activity": (
+                                selected.source_activity or requirement.theme
+                            ),
+                            "source_duration_minutes": (
+                                selected.source_duration_minutes
+                                or requirement.recommended_visit_minutes
+                            ),
+                            # A current-trip timing cue has higher priority than
+                            # taxonomy-derived graph guidance.
+                            "preferred_time_windows": (
+                                []
+                                if selected.source_time_hint
+                                else requirement.preferred_time_windows
+                            ),
+                        }
+                    )
                 if selected is not None:
                     resolved.append(selected)
                     matched += 1
@@ -1023,6 +1060,11 @@ class PlaceSelectorService:
                     reason=rejection.reason,
                 )
             )
+        self._append_preferred_timing_warnings(
+            [item for day in days for item in day.items],
+            warnings=warnings,
+            plan_status=committed_plan_status,
+        )
         return PlaceSelectionResult(
             days=days,
             finalUserStatus=committed_user_status,
@@ -1109,7 +1151,7 @@ class PlaceSelectorService:
             plan_status.day_usage = PlaceSelectionUsage()
             day_items: list[PlanItem] = []
             activity_number = 0
-            for available_window in ACTIVITY_WINDOWS:
+            for available_window_index, available_window in enumerate(ACTIVITY_WINDOWS):
                 cursor = available_window.start_minutes
                 while (
                     available_window.end_minutes - cursor
@@ -1149,6 +1191,7 @@ class PlaceSelectorService:
                         *day_items,
                     ]
                     candidate = None
+                    candidate_start = cursor
                     remaining_refs = [
                         ref
                         for ref in activity_brief.allocated_selected_place_refs
@@ -1156,13 +1199,42 @@ class PlaceSelectorService:
                     ]
                     for preferred_ref in remaining_refs:
                         selected = selected_by_ref.get(preferred_ref)
-                        if (
-                            selected is None
-                            or selected_activity_duration(
-                                selected.source_duration_minutes
-                            )
-                            > remaining_minutes
+                        if selected is None or not hint_matches_activity_window(
+                            selected.source_time_hint, available_window_index
                         ):
+                            continue
+                        duration = selected_activity_duration(
+                            selected.source_duration_minutes
+                        )
+                        timing_start = cursor
+                        if selected.preferred_time_windows:
+                            matched_start = preferred_start_minutes(
+                                selected.preferred_time_windows,
+                                interval_start=cursor,
+                                interval_end=available_window.end_minutes,
+                                duration_minutes=duration,
+                            )
+                            if matched_start is not None:
+                                timing_start = matched_start
+                            else:
+                                has_future_preferred_fit = any(
+                                    preferred_start_minutes(
+                                        selected.preferred_time_windows,
+                                        interval_start=future_window.start_minutes,
+                                        interval_end=future_window.end_minutes,
+                                        duration_minutes=duration,
+                                    )
+                                    is not None
+                                    for future_window in ACTIVITY_WINDOWS[
+                                        available_window_index + 1 :
+                                    ]
+                                )
+                                if has_future_preferred_fit:
+                                    continue
+                        available_minutes = (
+                            available_window.end_minutes - timing_start
+                        )
+                        if duration > available_minutes:
                             continue
                         candidate = self.candidate_selector.select(
                             CandidateSelectionContext(
@@ -1170,8 +1242,11 @@ class PlaceSelectorService:
                                 brief=selection_brief,
                                 block=DayBlock(
                                     role=role,
-                                    time_window=block.time_window,
-                                    duration_minutes=remaining_minutes,
+                                    time_window=format_clock_window(
+                                        timing_start,
+                                        available_minutes,
+                                    ),
+                                    duration_minutes=available_minutes,
                                     activity=True,
                                     preferred_ref=preferred_ref,
                                 ),
@@ -1197,6 +1272,7 @@ class PlaceSelectorService:
                             )
                         )
                         if candidate is not None:
+                            candidate_start = timing_start
                             break
                     if candidate is None and allow_place_suggestions:
                         candidate = self.candidate_selector.select(
@@ -1229,6 +1305,7 @@ class PlaceSelectorService:
                         )
                     if candidate is None:
                         break
+                    cursor = candidate_start
                     selected_source = candidate.stable_ref in selected_by_ref
                     duration = candidate_duration(candidate, block)
                     scheduled_block = DayBlock(
@@ -1381,6 +1458,11 @@ class PlaceSelectorService:
                 )
                 meal_items.append(meal_item)
                 used_refs.add(candidate.stable_ref)
+                # Keep meal venues varied across days even when a provider
+                # exposes a venue with no stable place id.
+                used_refs.add(candidate.name)
+                if candidate.place_id is not None:
+                    used_refs.add(candidate.place_id.casefold())
                 self.status_tracker.apply_activity(
                     candidate,
                     block,
@@ -1544,6 +1626,11 @@ class PlaceSelectorService:
                     reason=rejection.reason,
                 )
             )
+        self._append_preferred_timing_warnings(
+            all_items,
+            warnings=warnings,
+            plan_status=plan_status,
+        )
         return PlaceSelectionResult(
             days=completed_days,
             finalUserStatus=user_status,
@@ -1597,6 +1684,16 @@ class PlaceSelectorService:
                 if index + 1 < len(MEAL_ANCHORS)
                 else None
             )
+            # Permit a small overrun into the flexible meal window. The meal
+            # itself is shifted after the final activity instead of being
+            # treated as a hard 12:00/18:00 wall.
+            anchor = (
+                MEAL_ANCHORS[index + 1]
+                if index + 1 < len(MEAL_ANCHORS)
+                else MEAL_ANCHORS[index]
+            )
+            flexible_end = min(anchor.latest, window.end_minutes + 60)
+            window_end = max(window.end_minutes, flexible_end)
             cursor = window.start_minutes
             for activity in window_activities:
                 inbound = (
@@ -1609,6 +1706,14 @@ class PlaceSelectorService:
                 )
                 start = cursor + inbound
                 duration = activity.duration_minutes or selected_activity_duration(None)
+                preferred_start = preferred_start_minutes(
+                    activity.preferred_time_windows,
+                    interval_start=start,
+                    interval_end=window_end,
+                    duration_minutes=duration,
+                )
+                if preferred_start is not None:
+                    start = preferred_start
                 end = start + duration
                 outbound = (
                     leg_minutes.get(
@@ -1618,7 +1723,7 @@ class PlaceSelectorService:
                     if next_meal is not None
                     else 0
                 )
-                if end + outbound > window.end_minutes:
+                if end + outbound > window_end:
                     overflow.append(activity)
                     continue
                 scheduled.append(
@@ -1628,6 +1733,28 @@ class PlaceSelectorService:
                 )
                 cursor = end
                 previous = activity
+
+            next_meal = meal_by_role.get(anchor.role)
+            if index + 1 < len(MEAL_ANCHORS) and next_meal is not None and previous is not None:
+                inbound_to_meal = leg_minutes.get(
+                    (previous.item_id, next_meal.item_id), DEFAULT_TRANSITION_MINUTES
+                )
+                meal_start = max(anchor.earliest, anchor.start_minutes, cursor + inbound_to_meal)
+                meal_start = min(meal_start, anchor.latest)
+                if meal_start != parse_clock_minutes(next_meal.time_window):
+                    meal_by_role[anchor.role] = next_meal.model_copy(
+                        update={
+                            "time_window": format_clock_window(
+                                meal_start, next_meal.duration_minutes or anchor.duration_minutes
+                            )
+                        }
+                    )
+
+        # Rebuild the scheduled list with any shifted meal anchors.
+        scheduled = [
+            *meal_by_role.values(),
+            *(item for item in scheduled if item.timeline_category == "activity"),
+        ]
 
         return (
             sorted(
@@ -1814,6 +1941,32 @@ class PlaceSelectorService:
                 return place.stable_ref
         return None
 
+    @staticmethod
+    def _append_preferred_timing_warnings(
+        items: list[PlanItem],
+        *,
+        warnings: list[str],
+        plan_status: PlaceSelectionStatus,
+    ) -> None:
+        for item in items:
+            if not item.preferred_time_windows:
+                continue
+            duration = item.duration_minutes or selected_activity_duration(None)
+            if time_window_matches_preference(
+                item.time_window,
+                duration,
+                item.preferred_time_windows,
+            ):
+                continue
+            message = (
+                f"{item.name} was scheduled outside its graph-recommended "
+                "visit windows because no preferred window remained feasible."
+            )
+            if message not in warnings:
+                warnings.append(message)
+            if message not in plan_status.warnings:
+                plan_status.warnings.append(message)
+
     def _append_constraint_warnings(
         self,
         *,
@@ -1910,6 +2063,7 @@ class PlaceSelectorService:
             sourceDay=candidate.source_day,
             sourceTimeHint=candidate.source_time_hint,
             sourceActivity=candidate.source_activity,
+            preferredTimeWindows=candidate.preferred_time_windows,
         )
 
     def _resolve_place_for_style(

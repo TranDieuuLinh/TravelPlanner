@@ -349,6 +349,7 @@ class TripChatRepository:
         content: str,
         attachment_names: list[str],
         expected_revision: int,
+        commit: bool = True,
     ) -> TripChatMessage:
         """Create a queued turn. The HTTP handler decides if execution starts
         immediately or returns the turn for client-driven polling."""
@@ -388,9 +389,13 @@ class TripChatRepository:
             created_at=now,
             updated_at=now,
         )
+        chat.updated_at = now
         self.db.add(turn)
-        self.db.commit()
-        self.db.refresh(turn)
+        if commit:
+            self.db.commit()
+            self.db.refresh(turn)
+        else:
+            self.db.flush()
         return turn
 
     def get_turn(

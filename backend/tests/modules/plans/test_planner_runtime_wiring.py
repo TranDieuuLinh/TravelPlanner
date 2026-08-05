@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 
@@ -11,8 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.main import app
-from app.modules.places.model import Place
-from app.modules.knowledge_graph.model import KnowledgeEntity
+from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
@@ -25,14 +25,14 @@ from app.modules.plans.schema import MainPlanCreate
 from tests.modules.plans.test_planner_service import FakePlannerLLM
 
 
-def test_place_repository_imports_without_statistics_cycle() -> None:
+def test_knowledge_graph_place_repository_imports_without_statistics_cycle() -> None:
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             (
-                "from app.modules.places.repository import "
-                "SqlAlchemyPlaceRepository; print(SqlAlchemyPlaceRepository.__name__)"
+                "from app.modules.knowledge_graph.place_repository import "
+                "KnowledgeGraphPlaceRepository; print(KnowledgeGraphPlaceRepository.__name__)"
             ),
         ],
         check=False,
@@ -41,7 +41,7 @@ def test_place_repository_imports_without_statistics_cycle() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "SqlAlchemyPlaceRepository"
+    assert result.stdout.strip() == "KnowledgeGraphPlaceRepository"
 
 
 def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
@@ -300,24 +300,27 @@ def _place(
     name: str,
     place_type: str,
     tags: list[str],
-) -> Place:
-    return Place(
+) -> KnowledgeEntity:
+    entity = KnowledgeEntity(
         id=place_id,
-        name=name,
-        place_type=place_type,
-        region_key="vn,ha-noi",
-        status="active",
-        typical_duration_minutes=60,
-        data_confidence="high",
-        opening_hours=[
-            {
-                "openTime": "08:00",
-                "closeTime": "22:00",
-                "is24Hours": False,
-            }
-        ],
-        metadata_json={
-            "tags": tags,
-            "activityIntensity": "light",
-        },
+        canonical_name=name,
+        normalized_name=name.casefold(),
+        entity_type="Restaurant" if place_type in {"restaurant", "bakery", "cafe"} else "TravelPlace",
+        status="verified",
     )
+    values = {
+        "place_type": place_type,
+        "region_key": "vn,ha-noi",
+        "catalog_status": "active",
+        "typical_duration_minutes": "60",
+        "data_confidence": "high",
+        "opening_hours": '[{"openTime":"08:00","closeTime":"22:00","is24Hours":false}]',
+        "metadata": json.dumps(
+            {"tags": tags, "activityIntensity": "light"}
+        ),
+    }
+    entity.properties = [
+        KnowledgeProperty(key=key, value=value)
+        for key, value in values.items()
+    ]
+    return entity

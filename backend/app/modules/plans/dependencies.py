@@ -16,6 +16,9 @@ from app.integrations.routing import (
 from app.modules.knowledge_graph.place_search import (
     KnowledgeGraphPlaceSearchRepository,
 )
+from app.modules.knowledge_graph.place_repository import (
+    KnowledgeGraphPlaceRepository,
+)
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.resolver import (
     DatabasePlaceResolver,
@@ -25,7 +28,6 @@ from app.modules.places.resolver import (
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
-from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
 from app.modules.plans.explorer.explorer_service import ExplorerService
@@ -77,7 +79,7 @@ if TYPE_CHECKING:
 def get_plan_mutation_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> PlanMutationService:
-    place_repository = SqlAlchemyPlaceRepository(db)
+    place_repository = KnowledgeGraphPlaceRepository(db)
     return PlanMutationService(
         place_resolver=_get_place_resolver(place_repository),
         graph_place_repository=KnowledgeGraphPlaceSearchRepository(db),
@@ -122,7 +124,7 @@ def get_conversation_turn_service(
         repository,
         plan_service,
         get_plan_mutation_service(db),
-        SqlAlchemyPlaceRepository(db),
+        KnowledgeGraphPlaceRepository(db),
     )
     supervisor = ConstrainedConversationSupervisor(get_llm_client())
     return ConversationTurnService(
@@ -138,7 +140,7 @@ def get_plan_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> PlanService:
     project_dir = Path(__file__).resolve().parents[4]
-    place_repository = SqlAlchemyPlaceRepository(db)
+    place_repository = KnowledgeGraphPlaceRepository(db)
     statistics = AutoPlaceStatisticsService(
         place_repository,
         project_dir / "database" / "generated" / "place_region_statistics.json",
@@ -221,7 +223,7 @@ def get_plan_service(
 
 
 def _get_place_resolver(
-    place_repository: SqlAlchemyPlaceRepository | None = None,
+    place_repository: KnowledgeGraphPlaceRepository | None = None,
 ) -> PlaceResolver:
     if settings.place_resolver_provider == "google_maps_scraper":
         external_resolver: PlaceResolver = ProvisionalPlaceResolver()
@@ -255,7 +257,6 @@ def _get_place_resolver(
                     ),
                 ),
                 external_resolver,
-                verified_alias_repository=place_repository,
             )
         return external_resolver
     return ProvisionalPlaceResolver()

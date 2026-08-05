@@ -31,8 +31,8 @@ chính tả thành alias. PostgreSQL dùng `pg_trgm` để fuzzy top-k trên
 identity vẫn phải phân xử kết quả nhập nhằng.
 
 Batch enrichment chạy bằng `scripts/enrich_knowledge_graph_aliases.py`, mặc
-định dry-run và chỉ ghi khi có `--apply`. Script ưu tiên tên Unicode từ catalog
-`places`, sửa mojibake của dump cũ, có batch/checkpoint và idempotent.
+định dry-run và chỉ ghi khi có `--apply`. Script sửa mojibake của dump cũ, có
+batch/checkpoint và idempotent. Catalog `places` legacy đã bị loại khỏi runtime.
 
 Enrichment từ Google Maps locale Việt chạy riêng bằng
 `scripts/enrich_knowledge_graph_aliases_google.py`. Script mở URL của chính
@@ -49,6 +49,19 @@ session được lưu riêng với token hash, JTI, hạn dùng và trạng thá
 role hiện tại là `traveler`, `host`, `creator` và `admin`; `host` được giữ để
 tương thích nhưng chưa có luồng Marketplace riêng.
 
+### Place runtime trên Knowledge Graph
+
+PlaceSelector, Resolver, Profile, plan mutation và autocomplete đều đọc
+`knowledge_entities.id` làm danh tính địa điểm. Tên field API `placeId` được giữ
+để tương thích client nhưng giá trị là KG entity ID. Thuộc tính vận hành gồm
+`opening_hours`, `rating`, `review_count`, `region_key`, loại địa điểm, tọa độ
+và provenance nằm trong `knowledge_properties`.
+
+Gallery được giữ riêng trong `knowledge_entity_images` để hỗ trợ nhiều ảnh;
+`reviews` giữ review text riêng. Hai bảng này cùng `user_visited_places` dùng
+FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
+`place_opening_hours` và `place_amenities` không còn tồn tại.
+
 ### Đối tượng giá trị của Planner
 
 - `TripIntent`: aggregate bền vững có version cho một trip chat, gồm
@@ -61,6 +74,10 @@ tương thích nhưng chưa có luồng Marketplace riêng.
   `tripSpec.budget`, không lặp lại trong `TravelIntent`.
 - `TripThemeRequirement`: theme, focus tags, số activity tối thiểu và region mục
   tiêu ở cấp toàn chuyến; không chứa lịch theo ngày.
+- `RequiredExperience` giữ Place/Activity/claim ID đã được graph xác thực. Backend
+  hydrate `preferredTimeWindows` và `recommendedVisitMinutes` trực tiếp từ edge
+  recommendation; đây là timing preference mềm có provenance, không phải giờ mở
+  cửa và không tin giá trị timing do LLM tự trả.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
   địa điểm, source context trong `notes`, lời nhắc user trong `personalNotes`,
@@ -99,7 +116,10 @@ Plan tạo qua trip chat vẫn được lưu dưới dạng snapshot JSON có ve
   `current_explorer`.
 - `TripChatMessage`: tin nhắn user/assistant theo thứ tự; user message đồng thời
   giữ lifecycle của turn (`queued/executing/completed/failed`), decision và lỗi
-  an toàn. Không còn bảng `trip_chat_turns` sao chép lại content/attachment.
+  an toàn. Một batch URL/ảnh dùng lifecycle ID của user message làm `batchId`
+  chung cho các source job con, nên request được lưu trước khi worker chạy và
+  assistant response không tạo lại user message. Không còn bảng
+  `trip_chat_turns` sao chép lại content/attachment.
 - `TripRevision`: snapshot bất biến gồm `planPayload`, `tripIntentPayload` và
   `intakeId` sau mỗi lần tạo hoặc sửa plan thành công.
 - `KnowledgeGraphImport`: envelope dùng chung cho URL/image job, Explorer intake
@@ -261,7 +281,8 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
 
 - `Notification`
 - `Achievement` và `UserAchievement`
-- `UserVisitedPlace`: dấu mốc riêng của user cho một `Place` đã chuẩn hóa, gồm
+- `UserVisitedPlace`: dấu mốc riêng của user cho một Knowledge Graph entity đã
+  chuẩn hóa, gồm
   ngày đi và ghi chú; một user chỉ có một dấu mốc hiện tại trên mỗi place.
 - `UserPost`: bài viết/media công khai do user đăng, gồm `contentType` (`post` hoặc
   `reel`), caption, URL media do storage adapter tạo, location tag bắt buộc và thời điểm tạo. Nội dung

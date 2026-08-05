@@ -1,10 +1,13 @@
 import asyncio
+import json
+import logging
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from sqlalchemy.orm import sessionmaker
 
-from app.modules.plans.chat_model import TripChat
+from app.modules.plans.chat_model import TripChat, TripChatMessage
 from app.modules.plans.url_job_model import UrlImportJob
 from app.modules.plans.url_job_repository import UrlImportJobRepository
 from app.modules.plans.url_job_worker import UrlImportJobWorker
@@ -22,7 +25,10 @@ def _create_chat(client) -> str:
     return response.json()["id"]
 
 
-def test_multiple_urls_are_enqueued_as_individual_jobs(registered_client) -> None:
+def test_multiple_urls_are_enqueued_as_individual_jobs(
+    registered_client,
+    db_session,
+) -> None:
     chat_id = _create_chat(registered_client)
     urls = [
         "https://www.youtube.com/watch?v=queue01",
@@ -45,6 +51,15 @@ def test_multiple_urls_are_enqueued_as_individual_jobs(registered_client) -> Non
     assert [job["url"] for job in jobs] == urls
     assert [job["status"] for job in jobs] == ["queued", "queued", "queued"]
     assert sorted(job["queuePosition"] for job in jobs) == [1, 2, 3]
+    chat = registered_client.get(f"/api/trip-chats/{chat_id}").json()
+    assert len(chat["messages"]) == 1
+    assert chat["messages"][0]["role"] == "user"
+    assert chat["messages"][0]["content"] == f"Dùng các nguồn này {' '.join(urls)}"
+    turn = db_session.get(TripChatMessage, chat["messages"][0]["id"])
+    assert turn is not None
+    assert turn.status == "queued"
+    persisted_jobs = [db_session.get(UrlImportJob, job["id"]) for job in jobs]
+    assert {job.batch_id for job in persisted_jobs if job is not None} == {turn.id}
 
 
 def test_force_refresh_job_is_persisted_and_returned(registered_client, db_session) -> None:
@@ -176,9 +191,16 @@ def test_worker_sends_persisted_image_through_trip_chat_pipeline(
     assert images[0].file_name == "street.png"
     assert images[0].mime_type == "image/png"
     assert images[0].data == b"ocr-source-bytes"
+    chat = registered_client.get(f"/api/trip-chats/{chat_id}").json()
+    assert captured["turn_id"] == chat["messages"][0]["id"]
 
 
-def test_queue_claims_only_one_job_until_it_finishes(registered_client, db_session) -> None:
+def test_queue_claims_only_one_job_until_it_finishes(
+    registered_client,
+    db_session,
+    caplog,
+) -> None:
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
     chat_id = _create_chat(registered_client)
     registered_client.post(
         f"/api/trip-chats/{chat_id}/url-jobs",
@@ -229,10 +251,34 @@ def test_queue_claims_only_one_job_until_it_finishes(registered_client, db_sessi
     assert completed.explorer_timing.total_seconds == 3.5
     assert completed.planner_timing is not None
     assert completed.planner_timing.total_seconds == 4.25
+    UrlImportJobWorker._log_terminal_timing(
+        db_session,
+        job_id=first.id,
+        processing_started_at=time.perf_counter(),
+    )
+    terminal_lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("VSF_TIMING url_job ")
+    ]
+    assert len(terminal_lines) == 1
+    timing_payload = json.loads(
+        terminal_lines[0].removeprefix("VSF_TIMING url_job ")
+    )
+    assert timing_payload["event"] == "url_job_timing"
+    assert timing_payload["status"] == "succeeded"
+    assert timing_payload["explorerSeconds"] == 3.5
+    assert timing_payload["plannerSeconds"] == 4.25
+    assert timing_payload["accountedSeconds"] == 7.75
     second = repository.claim_next()
     assert second is not None
     assert second.id != first.id
     assert second.status == "running"
+    repository.succeed(second.id, revision=2)
+    turn = db_session.get(TripChatMessage, second.batch_id)
+    assert turn is not None
+    assert turn.status == "completed"
+    assert turn.plan_revision == 2
 
 
 def test_stale_running_job_fails_and_releases_next_job(
