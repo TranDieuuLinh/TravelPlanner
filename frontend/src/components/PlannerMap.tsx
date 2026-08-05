@@ -72,14 +72,11 @@ export type PlannerMapSearchPlace = {
 type PlannerMapProps = {
   places: PlannerMapPlace[];
   routes: PlannerMapRoute[];
-  routeSummary: {
-    title: string;
-    subtitle: string;
-  } | null;
   currentLocation: PlannerMapCurrentLocation | null;
   navigationMode: string | null;
   directionsActive: boolean;
   directionsBusy: boolean;
+  directionsReady: boolean;
   directionsSearchOpen: boolean;
   directionsDay: number | null;
   directionsEnabled: boolean;
@@ -91,7 +88,6 @@ type PlannerMapProps = {
   destinationOptions: PlannerMapSearchPlace[];
   destinationSearchBusy: boolean;
   selectedDirectionDestination: PlannerMapSearchPlace | null;
-  mapDestinationPickActive: boolean;
   locationFocusRequest: number;
   routeFocusRequest: number;
   dayColorKeys?: string[];
@@ -106,8 +102,6 @@ type PlannerMapProps = {
   onUseCurrentOrigin: () => void;
   onDestinationQueryChange: (value: string) => void;
   onChooseDestination: (place: PlannerMapSearchPlace) => void;
-  onToggleMapDestinationPick: () => void;
-  onChooseMapDestination: (place: PlannerMapSearchPlace) => void;
   onCancelDirections: () => void;
   selectedKey: string | null;
   selectedRouteKey: string | null;
@@ -412,11 +406,11 @@ function createAccuracyPolygon(
 export function PlannerMap({
   places,
   routes,
-  routeSummary,
   currentLocation,
   navigationMode,
   directionsActive,
   directionsBusy,
+  directionsReady,
   directionsSearchOpen,
   directionsDay,
   directionsEnabled,
@@ -428,7 +422,6 @@ export function PlannerMap({
   destinationOptions,
   destinationSearchBusy,
   selectedDirectionDestination,
-  mapDestinationPickActive,
   locationFocusRequest,
   routeFocusRequest,
   dayColorKeys = [],
@@ -443,8 +436,6 @@ export function PlannerMap({
   onUseCurrentOrigin,
   onDestinationQueryChange,
   onChooseDestination,
-  onToggleMapDestinationPick,
-  onChooseMapDestination,
   onCancelDirections,
   selectedKey,
   selectedRouteKey,
@@ -462,6 +453,7 @@ export function PlannerMap({
   const attributionControlRef = useRef<AttributionControl | null>(null);
   const lastPlacesSignatureRef = useRef("");
   const lastCurrentRouteSignatureRef = useRef("");
+  const previousDirectionsActiveRef = useRef(directionsActive);
   const handledLocationFocusRequestRef = useRef(0);
   const lastMarkerClickRef = useRef<{
     at: number;
@@ -763,28 +755,6 @@ export function PlannerMap({
       map.dragPan.enable();
     };
   }, [mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map || !mapDestinationPickActive) return;
-
-    const choosePoint = (event: MapLayerMouseEvent) => {
-      onChooseMapDestination({
-        key: `map-${event.lngLat.lat.toFixed(6)}-${event.lngLat.lng.toFixed(6)}`,
-        name: "Điểm đã chọn trên bản đồ",
-        detail: `${event.lngLat.lat.toFixed(5)}, ${event.lngLat.lng.toFixed(5)}`,
-        latitude: event.lngLat.lat,
-        longitude: event.lngLat.lng,
-        kind: "map"
-      });
-    };
-    map.getCanvas().style.cursor = "crosshair";
-    map.on("click", choosePoint);
-    return () => {
-      map.off("click", choosePoint);
-      map.getCanvas().style.cursor = "";
-    };
-  }, [mapDestinationPickActive, mapReady, onChooseMapDestination]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1386,6 +1356,45 @@ export function PlannerMap({
   }, [mapReady, routeFocusRequest, routes, selectedRouteKey]);
 
   useEffect(() => {
+    if (!directionsSearchOpen || !directionsReady || !mapReady) return;
+    const maplibre = maplibreRef.current;
+    const map = mapRef.current;
+    const previewRoute = routes.find((route) => route.kind === "current_location");
+    if (!maplibre || !map || !previewRoute || previewRoute.coordinates.length < 2) {
+      return;
+    }
+
+    const bounds = new maplibre.LngLatBounds();
+    previewRoute.coordinates.forEach(([latitude, longitude]) => {
+      bounds.extend([longitude, latitude]);
+    });
+    if (currentLocation) {
+      bounds.extend([currentLocation.longitude, currentLocation.latitude]);
+    }
+    if (selectedDirectionDestination) {
+      bounds.extend([
+        selectedDirectionDestination.longitude,
+        selectedDirectionDestination.latitude
+      ]);
+    }
+    if (bounds.isEmpty()) return;
+    map.fitBounds(bounds, {
+      bearing: 0,
+      duration: 550,
+      maxZoom: 15,
+      padding: { bottom: 250, left: 56, right: 56, top: 76 },
+      pitch: 0
+    });
+  }, [
+    currentLocation,
+    directionsReady,
+    directionsSearchOpen,
+    mapReady,
+    routes,
+    selectedDirectionDestination
+  ]);
+
+  useEffect(() => {
     if (locationFocusRequest === 0) {
       handledLocationFocusRequestRef.current = 0;
       return;
@@ -1474,9 +1483,74 @@ export function PlannerMap({
     });
   }
 
+  useEffect(() => {
+    const wasActive = previousDirectionsActiveRef.current;
+    previousDirectionsActiveRef.current = directionsActive;
+    if (!mapReady || !wasActive || directionsActive || directionsSearchOpen) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const maplibre = maplibreRef.current;
+      const map = mapRef.current;
+      const previewRoute = routes.find((route) => route.kind === "current_location");
+      if (
+        directionsReady &&
+        maplibre &&
+        map &&
+        previewRoute &&
+        previewRoute.coordinates.length >= 2
+      ) {
+        const bounds = new maplibre.LngLatBounds();
+        previewRoute.coordinates.forEach(([latitude, longitude]) => {
+          bounds.extend([longitude, latitude]);
+        });
+        if (currentLocation) {
+          bounds.extend([currentLocation.longitude, currentLocation.latitude]);
+        }
+        if (selectedDirectionDestination) {
+          bounds.extend([
+            selectedDirectionDestination.longitude,
+            selectedDirectionDestination.latitude
+          ]);
+        }
+        map.fitBounds(bounds, {
+          bearing: 0,
+          duration: 550,
+          maxZoom: 15,
+          padding: { bottom: 250, left: 56, right: 56, top: 76 },
+          pitch: 0
+        });
+        return;
+      }
+      fitPlaces(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    currentLocation,
+    directionsActive,
+    directionsReady,
+    directionsSearchOpen,
+    locatedPlaces,
+    mapReady,
+    routes,
+    selectedDirectionDestination
+  ]);
+
   const hasDeviceLocation = currentLocation?.kind === "device";
   const showLocationControls =
     Boolean(locationMessage) || directionsActive;
+  const activeNavigationRoute = directionsActive
+    ? routes.find((route) => route.kind === "current_location") ?? null
+    : null;
+  const directionPreviewRoute = routes.find(
+    (route) => route.kind === "current_location"
+  ) ?? null;
+  const hasDirectionEndpoints = Boolean(
+    currentLocation && selectedDirectionDestination
+  );
+  const canStartDirections =
+    directionsSearchOpen && hasDirectionEndpoints && directionsReady && !directionsBusy;
 
   return (
     <section
@@ -1489,30 +1563,32 @@ export function PlannerMap({
     >
       <div className="plannerMapCanvasWrap">
         <div className="plannerMapCanvas" ref={containerRef} />
-        {!directionsActive && routeSummary ? (
-          <div className="mapRouteSummaryBadge" aria-live="polite">
-            <strong>{routeSummary.title}</strong>
-            <small>{routeSummary.subtitle}</small>
-          </div>
-        ) : null}
         <div className="mapTravelControls">
           {!directionsActive && directionsSearchOpen ? (
             <div className="mapDirectionsSearchPanel" role="dialog" aria-label="Tìm đường giữa hai địa điểm">
               <div className="mapDirectionsSearchHeader">
-                <strong>Tìm đường</strong>
-                <button aria-label="Đóng tìm đường" onClick={onCloseDirectionsSearch} type="button">×</button>
+                <div>
+                  <span className="mapDirectionsSearchEyebrow">ĐƯỜNG ĐI NHANH</span>
+                  <strong>Tìm đường</strong>
+                </div>
+                <button aria-label="Đóng tìm đường" className="mapDirectionsClose" onClick={onCloseDirectionsSearch} type="button">
+                  <CloseIcon />
+                </button>
               </div>
               <div className="mapDirectionsSearchFields">
                 <div className="mapDirectionsSearchField" data-marker="A">
+                  <label htmlFor="directions-origin">Điểm đi</label>
                   <input
-                    aria-label="Điểm đi"
+                    id="directions-origin"
                     autoComplete="off"
                     onChange={(event) => onOriginQueryChange(event.target.value)}
-                    placeholder="Vị trí hiện tại hoặc điểm đi"
+                    placeholder="Vị trí hiện tại hoặc tìm địa điểm"
                     type="search"
                     value={originQuery}
                   />
-                  <button disabled={locationBusy} onClick={onUseCurrentOrigin} title="Dùng vị trí hiện tại" type="button">⌖</button>
+                  <button aria-label="Dùng vị trí hiện tại" className="mapDirectionsUseLocation" disabled={locationBusy} onClick={onUseCurrentOrigin} title="Dùng vị trí hiện tại" type="button">
+                    <CompassIcon />
+                  </button>
                   {originSearchBusy ? <span className="mapDirectionsSearchSpinner" aria-label="Đang tìm điểm đi" /> : null}
                   {originSuggestions.length > 0 ? (
                     <div className="mapDirectionsSearchSuggestions" role="listbox">
@@ -1526,16 +1602,24 @@ export function PlannerMap({
                   ) : null}
                 </div>
                 <div className="mapDirectionsSearchField" data-marker="B">
+                  <label className="mapDirectionsDestinationLabel" htmlFor="directions-destination">
+                    <span>Điểm đến</span>
+                    {directionPreviewRoute ? (
+                      <span className="mapRouteSummaryBadge mapRouteSummaryBadge--inForm" aria-label={`Khoảng cách ${formatMapDistance(directionPreviewRoute.distanceMeters)}`}>
+                        {formatMapDistance(directionPreviewRoute.distanceMeters)}
+                      </span>
+                    ) : null}
+                  </label>
                   <input
-                    aria-label="Điểm đến"
+                    id="directions-destination"
                     autoComplete="off"
                     onChange={(event) => onDestinationQueryChange(event.target.value)}
-                    placeholder="Point 1, địa điểm khác hoặc chọn trên bản đồ"
+                    placeholder="Tìm điểm đến trong lịch trình"
                     type="search"
                     value={destinationQuery}
                   />
                   {destinationSearchBusy ? <span className="mapDirectionsSearchSpinner" aria-label="Đang tìm điểm đến" /> : null}
-                  {destinationQuery.trim().length === 0 || destinationSuggestions.length > 0 ? (
+                  {!selectedDirectionDestination && (destinationQuery.trim().length === 0 || destinationSuggestions.length > 0) ? (
                     <div className="mapDirectionsSearchSuggestions mapDirectionsSearchSuggestions--destination" role="listbox">
                       {(destinationQuery.trim().length > 0 ? destinationSuggestions : destinationOptions).map((place) => (
                         <button key={place.key} onClick={() => onChooseDestination(place)} role="option" type="button">
@@ -1547,27 +1631,18 @@ export function PlannerMap({
                   ) : null}
                 </div>
               </div>
-              <div className="mapDirectionsSearchActions">
-                <button
-                  aria-pressed={mapDestinationPickActive}
-                  className={mapDestinationPickActive ? "isActive" : ""}
-                  onClick={onToggleMapDestinationPick}
-                  type="button"
-                >
-                  {mapDestinationPickActive ? "Chạm một điểm trên bản đồ…" : "Chọn điểm trên bản đồ"}
-                </button>
-                <button
-                  className="mapDirectionsSearchSubmit"
-                  disabled={!currentLocation || !selectedDirectionDestination || directionsBusy}
-                  onClick={onSubmitDirections}
-                  type="button"
-                >
-                  {directionsBusy ? "Đang tính…" : "Xem đường đi"}
-                </button>
-              </div>
+              <button
+                className="mapDirectionsFormSubmit"
+                disabled={!canStartDirections}
+                onClick={onSubmitDirections}
+                type="button"
+              >
+                <DirectionsIcon />
+                <span>{directionsBusy ? "Đang tìm tuyến…" : "Bắt đầu"}</span>
+              </button>
             </div>
           ) : null}
-          {!directionsActive && directionsDay != null ? (
+          {!directionsActive && !directionsSearchOpen && directionsDay != null ? (
             <div className="mapDirectionsToolbar">
               <div
                 aria-label={`Chỉ đường cho ngày ${directionsDay}`}
@@ -1581,57 +1656,65 @@ export function PlannerMap({
                 >
                   <DirectionsIcon />
                   <span>
-                    {directionsBusy
-                      ? "Đang tính…"
-                      : "Tìm đường"}
+                    {directionsBusy ? "Đang tìm tuyến…" : "Tìm đường"}
                   </span>
                 </button>
               </div>
             </div>
           ) : null}
           {showLocationControls ? (
-            <div className={`mapLocationStatusRow${directionsActive ? " isDirectionsActive" : ""}`}>
-              {directionsActive && hasDeviceLocation ? (
-                <button
-                  aria-label={
-                    directionsActive
-                      ? "Căn bản đồ theo vị trí và hướng tuyến đường"
-                      : "Phóng tới vị trí hiện tại và hướng nhìn"
-                  }
-                  className="mapLocationButton"
-                  disabled={locationBusy}
-                  onClick={onLocate}
-                  title={
-                    directionsActive
-                      ? "Căn theo vị trí và hướng tuyến đường"
-                      : "Phóng tới vị trí hiện tại và hướng nhìn"
-                  }
-                  type="button"
-                >
-                  <CompassIcon />
-                  <span>{locationBusy ? "Đang định vị…" : "La bàn"}</span>
-                </button>
-              ) : null}
-              {locationMessage ? (
-                <div
-                  aria-live="polite"
-                  className={`mapLocationStatus${locationMessage.startsWith("⏱") ? " isTimer" : ""}${directionsBusy ? " isRouting" : ""}`}
-                  role="status"
-                >
-                  {directionsBusy ? <span className="mapRoutingSpinner" aria-hidden="true" /> : null}
-                  <span>{locationMessage}</span>
+            directionsActive ? (
+              <div className="mapNavigationSheet" role="region" aria-label="Điều khiển dẫn đường">
+                <span className="mapNavigationSheetHandle" aria-hidden="true" />
+                <div className="mapNavigationSheetMain">
+                  <span className="mapNavigationSheetEyebrow">ĐANG DẪN ĐƯỜNG</span>
+                  <strong aria-live="polite">
+                    {directionsBusy ? "Đang tìm tuyến…" : locationMessage ?? "Đang chuẩn bị tuyến…"}
+                  </strong>
+                  <small>
+                    {activeNavigationRoute
+                      ? `${mapNavigationModeLabel(activeNavigationRoute.mode)} · ${formatMapDistance(activeNavigationRoute.distanceMeters)}`
+                      : "Tuyến đến điểm trong lịch trình"}
+                  </small>
                 </div>
-              ) : null}
-              {directionsActive ? (
-                <button
-                  className="mapDirectionsCancelButton"
-                  onClick={onCancelDirections}
-                  type="button"
-                >
-                  Huỷ
-                </button>
-              ) : null}
-            </div>
+                <div className="mapNavigationSheetActions">
+                  {hasDeviceLocation ? (
+                    <button
+                      aria-label="Căn bản đồ theo vị trí và hướng tuyến đường"
+                      className="mapLocationButton"
+                      disabled={locationBusy}
+                      onClick={onLocate}
+                      title="Căn theo vị trí và hướng tuyến đường"
+                      type="button"
+                    >
+                      <CompassIcon />
+                      <span>{locationBusy ? "Đang định vị…" : "Căn bản đồ"}</span>
+                    </button>
+                  ) : null}
+                  <button
+                    className="mapDirectionsCancelButton"
+                    onClick={onCancelDirections}
+                    type="button"
+                  >
+                    <CloseIcon />
+                    <span>Thoát</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mapLocationStatusRow">
+                {locationMessage && !locationMessage.startsWith("⏱") ? (
+                  <div
+                    aria-live="polite"
+                    className={`mapLocationStatus${locationMessage.startsWith("⏱") ? " isTimer" : ""}${directionsBusy ? " isRouting" : ""}`}
+                    role="status"
+                  >
+                    {directionsBusy ? <span className="mapRoutingSpinner" aria-hidden="true" /> : null}
+                    <span>{locationMessage}</span>
+                  </div>
+                ) : null}
+              </div>
+            )
           ) : null}
         </div>
         {mapError ? (
@@ -1657,6 +1740,20 @@ function formatCompactCount(value: number): string {
   if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M`;
   if (value >= 1000) return `${Number((value / 1000).toFixed(1))}N`;
   return String(value);
+}
+
+function formatMapDistance(distanceMeters: number): string {
+  if (!Number.isFinite(distanceMeters) || distanceMeters <= 0) return "Khoảng cách đang cập nhật";
+  return distanceMeters >= 1000
+    ? `${(distanceMeters / 1000).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} km`
+    : `${Math.round(distanceMeters).toLocaleString("vi-VN")} m`;
+}
+
+function mapNavigationModeLabel(mode: string): string {
+  if (isWalkingMode(mode)) return "Đi bộ";
+  if (isPublicTransitMode(mode)) return "Phương tiện công cộng";
+  if (isCarMode(mode)) return "Ô tô";
+  return "Tuyến đường";
 }
 
 function formatOpeningHoursForDay(
@@ -1744,6 +1841,14 @@ function CompassIcon() {
       <circle cx="12" cy="12" r="9" />
       <path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8z" />
       <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="m7 7 10 10M17 7 7 17" />
     </svg>
   );
 }

@@ -483,14 +483,8 @@ function Planner() {
   const [searchingDirectionOrigin, setSearchingDirectionOrigin] =
     useState(false);
   const [destinationQuery, setDestinationQuery] = useState("");
-  const [destinationSuggestions, setDestinationSuggestions] = useState<
-    PlaceSuggestion[]
-  >([]);
   const [selectedNavigationDestination, setSelectedNavigationDestination] =
     useState<DirectionStop | null>(null);
-  const [searchingDestination, setSearchingDestination] = useState(false);
-  const [mapDestinationPickActive, setMapDestinationPickActive] =
-    useState(false);
   const [directionsStatus, setDirectionsStatus] =
     useState<DirectionsStatus>("idle");
   const [directionsError, setDirectionsError] = useState("");
@@ -534,6 +528,7 @@ function Planner() {
   const plannerLayoutRef = useRef<HTMLElement>(null);
   const plannerChatRef = useRef<HTMLElement>(null);
   const chatPointerInteractionRef = useRef<ChatPointerInteraction | null>(null);
+  const suppressChatToggleClickRef = useRef(false);
   const expandedChatSizeRef = useRef<Pick<
     FloatingChatRect,
     "width" | "height"
@@ -605,6 +600,10 @@ function Planner() {
   }, [clampFloatingChatRect]);
 
   function toggleChatCollapsed() {
+    if (suppressChatToggleClickRef.current) {
+      suppressChatToggleClickRef.current = false;
+      return;
+    }
     const currentRect = currentFloatingChatRect();
     if (!currentRect || window.innerWidth <= 900) {
       setChatCollapsed((collapsed) => !collapsed);
@@ -758,6 +757,10 @@ function Planner() {
     if (!interaction || interaction.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - interaction.startX;
     const deltaY = event.clientY - interaction.startY;
+
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      suppressChatToggleClickRef.current = true;
+    }
 
     if (interaction.mode === "move") {
       setFloatingChatRect(
@@ -1244,50 +1247,6 @@ function Planner() {
     directionsSearchOpen,
     plan?.destination,
     selectedDirectionOrigin,
-  ]);
-
-  useEffect(() => {
-    const query = destinationQuery.trim();
-    if (
-      !directionsSearchOpen ||
-      query.length < 2 ||
-      selectedNavigationDestination?.name === query
-    ) {
-      setDestinationSuggestions([]);
-      setSearchingDestination(false);
-      return;
-    }
-
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setSearchingDestination(true);
-      try {
-        const results = await searchPlaces(query, plan?.destination);
-        if (!cancelled) {
-          setDestinationSuggestions(
-            results.filter(
-              (suggestion) =>
-                typeof suggestion.latitude === "number" &&
-                typeof suggestion.longitude === "number"
-            )
-          );
-        }
-      } catch {
-        if (!cancelled) setDestinationSuggestions([]);
-      } finally {
-        if (!cancelled) setSearchingDestination(false);
-      }
-    }, 300);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [
-    destinationQuery,
-    directionsSearchOpen,
-    plan?.destination,
-    selectedNavigationDestination,
   ]);
 
   useEffect(() => {
@@ -1878,9 +1837,7 @@ function Planner() {
     setSelectedDirectionOrigin(null);
     setSearchingDirectionOrigin(false);
     setDestinationQuery("");
-    setDestinationSuggestions([]);
     setSelectedNavigationDestination(null);
-    setMapDestinationPickActive(false);
     setDayDirectionLegs([]);
     setSelectedDirectionOptionKeys({});
     setDirectionsStatus("idle");
@@ -2037,23 +1994,7 @@ function Planner() {
         .toLocaleLowerCase("vi")
         .includes(query)
     );
-    const searchedMatches = destinationSuggestions.flatMap(
-      (suggestion, index) =>
-        typeof suggestion.latitude === "number" &&
-        typeof suggestion.longitude === "number"
-          ? [
-              {
-                key: suggestion.placeId ?? `destination-${index}`,
-                name: suggestion.name,
-                detail: suggestion.address,
-                latitude: suggestion.latitude,
-                longitude: suggestion.longitude,
-                kind: "searched" as const,
-              },
-            ]
-          : []
-    );
-    return [...localMatches, ...searchedMatches].filter(
+    return localMatches.filter(
       (place, index, all) =>
         all.findIndex(
           (candidate) =>
@@ -2061,7 +2002,7 @@ function Planner() {
             candidate.longitude === place.longitude
         ) === index
     );
-  }, [destinationQuery, destinationSuggestions, directionDestinationOptions]);
+  }, [destinationQuery, directionDestinationOptions]);
   const activeDayItineraryRouteSummary = useMemo(() => {
     const day = displayedPlan?.days.find((item) => item.day === activePlanDay);
     if (!day) return { distanceMeters: 0, durationMinutes: 0 };
@@ -2086,11 +2027,14 @@ function Planner() {
         ? selectedDirectionOrigin
         : directionsActive
         ? selectedDirectionOrigin ?? currentLocation
+        : directionsStatus === "ready" && selectedDirectionOrigin
+        ? selectedDirectionOrigin
         : currentLocation,
     [
       currentLocation,
       directionsActive,
       directionsSearchOpen,
+      directionsStatus,
       selectedDirectionOrigin,
     ]
   );
@@ -2162,7 +2106,10 @@ function Planner() {
       );
 
     if (
-      directionsActive &&
+      (directionsActive || directionsSearchOpen ||
+        (directionsStatus === "ready" &&
+          selectedDirectionOrigin &&
+          selectedNavigationDestination)) &&
       selectedDayDirectionLegs.length > 0 &&
       activePlanDay != null
     ) {
@@ -2199,6 +2146,10 @@ function Planner() {
   }, [
     activePlanDay,
     directionsActive,
+    directionsSearchOpen,
+    directionsStatus,
+    selectedDirectionOrigin,
+    selectedNavigationDestination,
     displayedExploreResult?.explorer.tripIntent.timing.startDate,
     displayedPlan,
     selectedPlanLegOptionKeys,
@@ -2212,7 +2163,8 @@ function Planner() {
 
   async function requestDayDirections(
     origin: PlannerMapCurrentLocation,
-    destination: DirectionStop | null = directionsDestinationRef.current
+    destination: DirectionStop | null = directionsDestinationRef.current,
+    focusNavigation = false
   ) {
     const destinations = destination ? [destination] : activeDayDirectionStops;
     if (activePlanDay == null || destinations.length === 0) {
@@ -2263,7 +2215,9 @@ function Planner() {
       setDirectionsStatus("ready");
       // Enter the navigation camera as soon as route geometry is available,
       // so the first directions click also applies the compass bearing.
-      setLocationFocusRequest((current) => current + 1);
+      if (focusNavigation) {
+        setLocationFocusRequest((current) => current + 1);
+      }
     } catch (caught) {
       if (requestId !== directionsRequestIdRef.current) return;
       setDayDirectionLegs([]);
@@ -2337,7 +2291,8 @@ function Planner() {
               label: "Vị trí của tôi",
               kind: "device",
             },
-            directionsDestinationRef.current
+            directionsDestinationRef.current,
+            true
           );
         }
         setLocationStatus("ready");
@@ -2473,7 +2428,7 @@ function Planner() {
     setSelectedDirectionOptionKeys({});
     setDirectionsActive(true);
     if (origin) {
-      void requestDayDirections(origin, destination);
+      void requestDayDirections(origin, destination, true);
       return;
     }
     directionsPendingLocationRef.current = true;
@@ -2484,8 +2439,8 @@ function Planner() {
   function openDirectionsSearch() {
     const initialDestination = activeNavigationDestination;
     setDirectionsSearchOpen(true);
-    setMapDestinationPickActive(false);
     setDirectionOriginSuggestions([]);
+    let nextOrigin: PlannerMapCurrentLocation | null = selectedDirectionOrigin;
     if (selectedDirectionOrigin) {
       setDirectionOriginQuery(
         selectedDirectionOrigin.kind === "device"
@@ -2494,13 +2449,15 @@ function Planner() {
       );
     } else {
       if (currentLocation) {
-        setSelectedDirectionOrigin({
+        nextOrigin = {
           ...currentLocation,
           label: "Vị trí của tôi",
           kind: "device",
-        });
+        };
+        setSelectedDirectionOrigin(nextOrigin);
         setDirectionOriginQuery("Vị trí hiện tại");
       } else {
+        nextOrigin = null;
         setDirectionOriginQuery("");
       }
     }
@@ -2508,11 +2465,14 @@ function Planner() {
       setSelectedNavigationDestination(initialDestination);
       setDestinationQuery(initialDestination.name);
     }
+    if (nextOrigin && initialDestination) {
+      directionsDestinationRef.current = initialDestination;
+      void requestDayDirections(nextOrigin, initialDestination);
+    }
   }
 
   function closeDirectionsSearch() {
     setDirectionsSearchOpen(false);
-    setMapDestinationPickActive(false);
     setDirectionOriginSuggestions([]);
   }
 
@@ -2528,13 +2488,28 @@ function Planner() {
     });
     setDirectionOriginQuery(place.name);
     setDirectionOriginSuggestions([]);
-    setMapDestinationPickActive(false);
+    if (selectedNavigationDestination) {
+      void requestDayDirections(
+        {
+          latitude: place.latitude,
+          longitude: place.longitude,
+          accuracy: 0,
+          heading: null,
+          label: place.name,
+          detail: place.detail ?? "Điểm đi đã chọn",
+          kind: "searched",
+        },
+        selectedNavigationDestination
+      );
+    }
   }
 
   function updateDirectionOriginQuery(value: string) {
     setDirectionOriginQuery(value);
     setSelectedDirectionOrigin(null);
-    setMapDestinationPickActive(false);
+    directionsRequestIdRef.current += 1;
+    setDayDirectionLegs([]);
+    setDirectionsStatus("idle");
   }
 
   function chooseCurrentDirectionOrigin() {
@@ -2546,6 +2521,16 @@ function Planner() {
       });
       setDirectionOriginQuery("Vị trí hiện tại");
       setDirectionOriginSuggestions([]);
+      if (selectedNavigationDestination) {
+        void requestDayDirections(
+          {
+            ...currentLocation,
+            label: "Vị trí của tôi",
+            kind: "device",
+          },
+          selectedNavigationDestination
+        );
+      }
       return;
     }
     locateCurrentPosition();
@@ -2555,7 +2540,9 @@ function Planner() {
     setDestinationQuery(value);
     setSelectedNavigationDestination(null);
     setNavigationDestinationKey(null);
-    setMapDestinationPickActive(false);
+    directionsRequestIdRef.current += 1;
+    setDayDirectionLegs([]);
+    setDirectionsStatus("idle");
   }
 
   function chooseDirectionDestination(place: PlannerMapSearchPlace) {
@@ -2574,15 +2561,15 @@ function Planner() {
     setSelectedNavigationDestination(destination);
     setNavigationDestinationKey(destination.mapKey);
     setDestinationQuery(place.name);
-    setDestinationSuggestions([]);
-    setMapDestinationPickActive(false);
     directionsDestinationRef.current = destination;
+    if (selectedDirectionOrigin) {
+      void requestDayDirections(selectedDirectionOrigin, destination);
+    }
   }
 
   function submitDirectionSearch() {
     if (!selectedNavigationDestination || !selectedDirectionOrigin) return;
     setDirectionsSearchOpen(false);
-    setMapDestinationPickActive(false);
     startDayDirections(selectedNavigationDestination, selectedDirectionOrigin);
   }
 
@@ -2591,10 +2578,6 @@ function Planner() {
     directionsRequestIdRef.current += 1;
     setDirectionsActive(false);
     setDirectionsSearchOpen(false);
-    setMapDestinationPickActive(false);
-    setDayDirectionLegs([]);
-    setSelectedDirectionOptionKeys({});
-    setDirectionsStatus("idle");
     setDirectionsError("");
     setSelectedMapPlaceKey(null);
     setSelectedMapRouteKey(null);
@@ -5440,17 +5423,16 @@ function Planner() {
                 dayColorKeys={planDayColorKeys}
                 directionsActive={directionsActive}
                 directionsBusy={directionsStatus === "routing"}
+                directionsReady={directionsStatus === "ready"}
                 directionsDay={activePlanDay}
                 directionsEnabled={activeDayDirectionStops.length > 0}
                 directionsSearchOpen={directionsSearchOpen}
                 destinationOptions={directionDestinationOptions}
                 destinationQuery={destinationQuery}
-                destinationSearchBusy={searchingDestination}
+                destinationSearchBusy={false}
                 destinationSuggestions={directionDestinationSuggestions}
                 locationFocusRequest={locationFocusRequest}
-                mapDestinationPickActive={mapDestinationPickActive}
                 onChooseDestination={chooseDirectionDestination}
-                onChooseMapDestination={chooseDirectionDestination}
                 onCancelDirections={clearDayDirections}
                 onChooseOrigin={chooseDirectionOrigin}
                 onCloseDirectionsSearch={closeDirectionsSearch}
@@ -5462,9 +5444,6 @@ function Planner() {
                 onOriginQueryChange={updateDirectionOriginQuery}
                 onStartDirections={openDirectionsSearch}
                 onSubmitDirections={submitDirectionSearch}
-                onToggleMapDestinationPick={() =>
-                  setMapDestinationPickActive((current) => !current)
-                }
                 onUseCurrentOrigin={chooseCurrentDirectionOrigin}
                 originQuery={directionOriginQuery}
                 originSearchBusy={searchingDirectionOrigin}
@@ -5473,22 +5452,6 @@ function Planner() {
                 onSelectRoute={selectRouteFromMap}
                 places={mapPlaces}
                 routes={mapRoutes}
-                routeSummary={
-                  activePlanDay != null
-                    ? {
-                        title:
-                          activeDayRouteSummary.durationMinutes > 0 ||
-                          activeDayRouteSummary.distanceMeters > 0
-                            ? `${formatDuration(
-                                activeDayRouteSummary.durationMinutes
-                              )} · ${formatDistance(
-                                activeDayRouteSummary.distanceMeters
-                              )}`
-                            : "Chưa có tuyến đường",
-                        subtitle: `Tổng tuyến đường ngày ${activePlanDay}`,
-                      }
-                    : null
-                }
                 selectedDirectionDestination={
                   selectedNavigationDestination
                     ? {

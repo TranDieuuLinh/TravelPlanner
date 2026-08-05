@@ -34,6 +34,7 @@ export function GlobalPlannerAssistant() {
     startY: number;
     top: number;
   } | null>(null);
+  const suppressLauncherClickRef = useRef(false);
 
   useEffect(() => {
     const handleReelViewerChange = (event: Event) => {
@@ -66,12 +67,14 @@ export function GlobalPlannerAssistant() {
     setOpen(false);
   }
 
-  function beginMove(event: ReactPointerEvent<HTMLButtonElement>) {
-    const panel = event.currentTarget.closest<HTMLElement>(
-      ".explorePlannerChat"
+  function beginMove(event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    const target = event.currentTarget.closest<HTMLElement>(
+      ".globalPlannerAssistant"
     );
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    suppressLauncherClickRef.current = false;
     dragRef.current = {
       left: rect.left,
       pointerId: event.pointerId,
@@ -80,35 +83,47 @@ export function GlobalPlannerAssistant() {
       top: rect.top,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
-    setPosition({ left: rect.left, top: rect.top });
   }
 
-  function updateMove(event: ReactPointerEvent<HTMLButtonElement>) {
+  function updateMove(event: ReactPointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const panel = event.currentTarget.closest<HTMLElement>(
-      ".explorePlannerChat"
+    const target = event.currentTarget.closest<HTMLElement>(
+      ".globalPlannerAssistant"
     );
-    const width = panel?.offsetWidth ?? 410;
-    const height = panel?.offsetHeight ?? 610;
+    const width = target?.offsetWidth ?? 108;
+    const height = target?.offsetHeight ?? 108;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      suppressLauncherClickRef.current = true;
+    }
     setPosition({
       left: Math.min(
-        Math.max(8, drag.left + event.clientX - drag.startX),
+        Math.max(8, drag.left + deltaX),
         Math.max(8, window.innerWidth - width - 8)
       ),
       top: Math.min(
-        Math.max(8, drag.top + event.clientY - drag.startY),
+        Math.max(8, drag.top + deltaY),
         Math.max(8, window.innerHeight - height - 8)
       ),
     });
   }
 
-  function endMove(event: ReactPointerEvent<HTMLButtonElement>) {
+  function endMove(event: ReactPointerEvent<HTMLElement>) {
     if (dragRef.current?.pointerId !== event.pointerId) return;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  }
+
+  function handleLauncherClick() {
+    if (suppressLauncherClickRef.current) {
+      suppressLauncherClickRef.current = false;
+      return;
+    }
+    setOpen(true);
   }
 
   return (
@@ -182,10 +197,16 @@ export function GlobalPlannerAssistant() {
           aria-expanded="false"
           aria-label="Mở trợ lý lập kế hoạch VSF"
           className="globalPlannerLauncher"
-          onClick={() => setOpen(true)}
+          onClick={handleLauncherClick}
           type="button"
         >
-          <span className="globalPlannerLauncherArtwork">
+          <span
+            className="globalPlannerLauncherArtwork"
+            onPointerCancel={endMove}
+            onPointerDown={beginMove}
+            onPointerMove={updateMove}
+            onPointerUp={endMove}
+          >
             <PenguinMascot className="globalPlannerPenguin" size={82} variant="chatSpeaking" />
             <svg aria-hidden="true" className="globalPlannerBubble" viewBox="0 0 24 24">
               <path d="M5.25 4.75h13.5A2.25 2.25 0 0 1 21 7v8.5a2.25 2.25 0 0 1-2.25 2.25H11l-4.75 3v-3h-1A2.25 2.25 0 0 1 3 15.5V7a2.25 2.25 0 0 1 2.25-2.25Z" />
