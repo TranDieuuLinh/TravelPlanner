@@ -53,6 +53,12 @@ class TripChatRepository:
         self.db.delete(chat)
         self.db.commit()
 
+    def delete_all_for_user(self, user_id: int) -> None:
+        chats = self.list_for_user(user_id)
+        for chat in chats:
+            self.db.delete(chat)
+        self.db.commit()
+
     def save_revision(
         self,
         chat: TripChat,

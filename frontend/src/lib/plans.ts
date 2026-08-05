@@ -761,6 +761,12 @@ export async function deleteTripChat(chatId: string): Promise<void> {
   });
 }
 
+export async function deleteAllTripChats(): Promise<void> {
+  return apiFetch<void>("/trip-chats", {
+    method: "DELETE"
+  });
+}
+
 export async function amendTripChat(input: {
   chatId: string;
   content: string;
