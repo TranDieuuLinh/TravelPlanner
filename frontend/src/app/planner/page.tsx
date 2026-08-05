@@ -4623,40 +4623,7 @@ function Planner() {
                                   draggedItemKey?.itemId === item.itemId;
                                 const isDragTarget =
                                   dragOverItemId === item.itemId && !isDragging;
-                                const itemDragHandle =
-                                  item.itemId && activeChatId ? (
-                                    <button
-                                      aria-label={`Kéo ${displayItemName} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
-                                      className="itineraryDragHandle"
-                                      draggable={canReorder}
-                                      onKeyDown={(event) => {
-                                        if (
-                                          event.key !== "ArrowUp" &&
-                                          event.key !== "ArrowDown"
-                                        )
-                                          return;
-                                        event.preventDefault();
-                                        handleMoveItemOrder(
-                                          displayedPlanDay.day,
-                                          itemIndex,
-                                          event.key === "ArrowUp"
-                                            ? "up"
-                                            : "down"
-                                        );
-                                      }}
-                                      title="Kéo để đổi vị trí"
-                                      type="button"
-                                    >
-                                      <svg viewBox="0 0 24 24">
-                                        <circle cx="9" cy="7" r="1.25" />
-                                        <circle cx="15" cy="7" r="1.25" />
-                                        <circle cx="9" cy="12" r="1.25" />
-                                        <circle cx="15" cy="12" r="1.25" />
-                                        <circle cx="9" cy="17" r="1.25" />
-                                        <circle cx="15" cy="17" r="1.25" />
-                                      </svg>
-                                    </button>
-                                  ) : null;
+                                const itemDragHandle = null;
                                 const itemNoteAction =
                                   activityNoteCount ||
                                   (item.itemId && activeChatId) ? (
@@ -4706,53 +4673,11 @@ function Planner() {
                                       ) : null}
                                     </button>
                                   ) : null;
-                                const itemMutationActions =
-                                  item.itemId && activeChatId ? (
-                                    <>
-                                      <button
-                                        aria-label={`Sửa ${displayItemName}`}
-                                        className="itineraryActionButton"
-                                        onClick={() => {
-                                          openItemEditor(
-                                            displayedPlanDay.day,
-                                            item,
-                                            personalNotes
-                                          );
-                                        }}
-                                        title="Sửa địa điểm"
-                                        type="button"
-                                      >
-                                        <svg viewBox="0 0 24 24">
-                                          <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
-                                        </svg>
-                                      </button>
-                                      <button
-                                        aria-label={`Xóa ${displayItemName}`}
-                                        className="itineraryActionButton danger"
-                                        onClick={() =>
-                                          handleDeleteItem(
-                                            displayedPlanDay.day,
-                                            item.itemId!
-                                          )
-                                        }
-                                        title="Xóa địa điểm"
-                                        type="button"
-                                      >
-                                        <svg viewBox="0 0 24 24">
-                                          <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
-                                        </svg>
-                                      </button>
-                                    </>
-                                  ) : null;
-                                const itemInfoActions = itemNoteAction ? (
-                                  <div className="itineraryActions itineraryActions--rail itineraryActions--railInfo">
-                                    {itemNoteAction}
-                                  </div>
-                                ) : null;
+                                const itemMutationActions = null;
+                                const itemInfoActions = null;
                                 const itemManageActions =
-                                  itemDragHandle || itemMutationActions ? (
+                                  itemMutationActions ? (
                                     <div className="itineraryActions itineraryActions--rail itineraryActions--railManage">
-                                      {itemDragHandle}
                                       {itemMutationActions}
                                     </div>
                                   ) : null;
@@ -4948,37 +4873,7 @@ function Planner() {
                                             ) : null}
                                           </div>
                                           {canReorder ? (
-                                            <button
-                                              aria-label={`Kéo ${displayItemName} để đổi vị trí. Dùng phím mũi tên lên hoặc xuống để di chuyển.`}
-                                              className="itineraryDragHandle"
-                                              draggable
-                                              onKeyDown={(event) => {
-                                                if (
-                                                  event.key !== "ArrowUp" &&
-                                                  event.key !== "ArrowDown"
-                                                )
-                                                  return;
-                                                event.preventDefault();
-                                                handleMoveItemOrder(
-                                                  displayedPlanDay.day,
-                                                  itemIndex,
-                                                  event.key === "ArrowUp"
-                                                    ? "up"
-                                                    : "down"
-                                                );
-                                              }}
-                                              title="Kéo để đổi vị trí"
-                                              type="button"
-                                            >
-                                              <svg viewBox="0 0 24 24">
-                                                <circle cx="8" cy="7" r="1" />
-                                                <circle cx="16" cy="7" r="1" />
-                                                <circle cx="8" cy="12" r="1" />
-                                                <circle cx="16" cy="12" r="1" />
-                                                <circle cx="8" cy="17" r="1" />
-                                                <circle cx="16" cy="17" r="1" />
-                                              </svg>
-                                            </button>
+                                            null
                                           ) : null}
                                         </div>
                                       ) : (
@@ -5053,6 +4948,14 @@ function Planner() {
                                             tabIndex={mapKey ? 0 : undefined}
                                           >
                                             {itemSideRail}
+                                            {mapOrder != null ? (
+                                              <h3
+                                                aria-hidden="true"
+                                                className="itineraryPlaceOrder"
+                                              >
+                                                {mapOrder}
+                                              </h3>
+                                            ) : null}
                                             <div className="itineraryPlaceMedia">
                                               <div
                                                 className={`itineraryPlaceImage ${
@@ -5095,14 +4998,6 @@ function Planner() {
                                               <header>
                                                 <div className="itineraryPlaceMain">
                                                   <div className="itineraryPlaceTitle">
-                                                    {mapOrder != null ? (
-                                                      <span
-                                                        aria-hidden="true"
-                                                        className="itineraryPlaceOrder"
-                                                      >
-                                                        {mapOrder}.
-                                                      </span>
-                                                    ) : null}
                                                     {mapKey ? (
                                                       <button
                                                         className="placeMapButton"
@@ -5172,38 +5067,6 @@ function Planner() {
                                                   ) : null}
                                                 </div>
                                                 <div className="itineraryPlaceQuickActions">
-                                                  <span
-                                                    aria-label={
-                                                      isFoodStop
-                                                        ? "Ăn uống"
-                                                        : "Hoạt động tham quan"
-                                                    }
-                                                    className="itineraryTypeIcon"
-                                                    role="img"
-                                                    title={
-                                                      isFoodStop
-                                                        ? "Ăn uống"
-                                                        : "Hoạt động tham quan"
-                                                    }
-                                                  >
-                                                    {isFoodStop ? (
-                                                      <svg viewBox="0 0 24 24">
-                                                        <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                                                        <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                                                      </svg>
-                                                    ) : (
-                                                      <svg viewBox="0 0 24 24">
-                                                        <circle
-                                                          cx="6"
-                                                          cy="6"
-                                                          r="2.5"
-                                                        />
-                                                        <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
-                                                        <path d="m2 21 6-9 4 5 2-3 8 7" />
-                                                        <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                                                      </svg>
-                                                    )}
-                                                  </span>
                                                   {sourceLabel?.url ? (
                                                     <a
                                                       aria-label={`Mở link ${sourceLabel.text} của ${displayItemName}`}
@@ -5226,7 +5089,48 @@ function Planner() {
                                                       <span>URL</span>
                                                     </a>
                                                   ) : null}
+                                                  {itemNoteAction}
                                                 </div>
+                                                {item.itemId && activeChatId ? (
+                                                  <div
+                                                    className="itineraryActions"
+                                                    style={{ marginLeft: "auto" }}
+                                                  >
+                                                    <button
+                                                      aria-label={`Sửa ${displayItemName}`}
+                                                      className="itineraryActionButton"
+                                                      onClick={() => {
+                                                        openItemEditor(
+                                                          displayedPlanDay.day,
+                                                          item,
+                                                          personalNotes
+                                                        );
+                                                      }}
+                                                      title="Sửa địa điểm"
+                                                      type="button"
+                                                    >
+                                                      <svg viewBox="0 0 24 24">
+                                                        <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                                                      </svg>
+                                                    </button>
+                                                    <button
+                                                      aria-label={`Xóa ${displayItemName}`}
+                                                      className="itineraryActionButton danger"
+                                                      onClick={() =>
+                                                        handleDeleteItem(
+                                                          displayedPlanDay.day,
+                                                          item.itemId!
+                                                        )
+                                                      }
+                                                      title="Xóa địa điểm"
+                                                      type="button"
+                                                    >
+                                                      <svg viewBox="0 0 24 24">
+                                                        <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                                                      </svg>
+                                                    </button>
+                                                  </div>
+                                                ) : null}
                                               </header>
                                               {openingHoursText ? (
                                                 <div className="itineraryPlaceHours">
@@ -5237,6 +5141,38 @@ function Planner() {
                                                 </div>
                                               ) : null}
                                             </div>
+                                            <span
+                                              aria-label={
+                                                isFoodStop
+                                                  ? "Ăn uống"
+                                                  : "Hoạt động tham quan"
+                                              }
+                                              className="itineraryTypeIcon"
+                                              role="img"
+                                              title={
+                                                isFoodStop
+                                                  ? "Ăn uống"
+                                                  : "Hoạt động tham quan"
+                                              }
+                                            >
+                                              {isFoodStop ? (
+                                                <svg viewBox="0 0 24 24">
+                                                  <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                                  <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                                                </svg>
+                                              ) : (
+                                                <svg viewBox="0 0 24 24">
+                                                  <circle
+                                                    cx="6"
+                                                    cy="6"
+                                                    r="2.5"
+                                                  />
+                                                  <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                                                  <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                                  <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                                                </svg>
+                                              )}
+                                            </span>
                                             {itemNotePanel}
                                           </div>
                                         </article>

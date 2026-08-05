@@ -40,9 +40,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="topbarInner">
           <div className="brandCluster">
             <Link aria-label="VSF Travel" className="brand" href="/reels">
-              <strong>
+              <h2>
                 <span>VSF</span> Travel
-              </strong>
+              </h2>
             </Link>
           </div>
           <div className="shellActions">

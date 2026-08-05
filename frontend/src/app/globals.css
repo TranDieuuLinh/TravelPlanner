@@ -98,7 +98,7 @@ h1, h2, h3, p { margin-top: 0; }
   margin: auto;
   padding: 0 28px;
 }
-.brand { display: flex; align-items: center; width: fit-content; font-size: 1.02rem; }
+.brand { display: flex; align-items: center; width: fit-content; font-size: 1.02rem; margin-top: 12px; }
 .brandCluster { display: flex; align-items: center; justify-self: start; gap: 10px; }
 .plannerHistoryMenu {
   display: grid;
@@ -1182,7 +1182,7 @@ h1, h2, h3, p { margin-top: 0; }
   width: 12px;
   height: 12px;
   margin: 12px 0 0 11px;
-  place-items: center;
+  align-items: center;
   border: 3px solid #e4e7f0;
   border-radius: 50%;
   background: #69b9e8;
@@ -1202,6 +1202,7 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .itineraryPlaceCard--withImage {
   grid-template-columns: 118px minmax(0, 1fr);
+  column-gap: 2px;
 }
 .itineraryPlaceContent > .itineraryActions--cardTop {
   justify-self: start;
@@ -6529,12 +6530,13 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .itinerary .exploreResult {
   gap: 0;
   max-height: none;
-  padding: 0 10px 24px;
+  padding: 0 16px 0 32px;
   background: #ffffff;
 }
 
 .itinerary .tripPlanSection {
   gap: 0 !important;
+  margin: 0;
 }
 
 .itinerary .dayTabList {
@@ -6630,7 +6632,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .itinerary .itineraryStops {
-  padding: 4px 0 18px;
+  padding: 0;
 }
 
 .itinerary .itineraryStops::before {
@@ -6648,7 +6650,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .itinerary .itineraryStopPin {
   width: 10px;
   height: 10px;
-  margin: 13px 0 0 8px;
+  margin: auto 0;
   border: 2px solid #ffffff;
   background: #ffffff;
   box-shadow: 0 0 0 1px #70b8a8;
@@ -6668,6 +6670,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 
 .itinerary .itineraryPlaceCard--withImage {
   grid-template-columns: 144px minmax(0, 1fr);
+  column-gap: 2px;
 }
 
 .itinerary .itineraryPlaceImage {
@@ -6694,8 +6697,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .itinerary .itineraryStop:not(.itineraryStop--food) .itineraryStopPin {
   width: 12px;
   height: 12px;
-  margin-top: 15px;
-  margin-left: 7px;
+  margin: auto;
   border-color: #ffffff;
   background: #365f5a;
   box-shadow: 0 0 0 3px #d8f1ea, 0 4px 10px rgba(54, 95, 90,.24);
@@ -11201,7 +11203,7 @@ svg {
 }
 
 .itinerary .exploreResult {
-  padding: 0 16px 32px 6px;
+  padding: 0 16px 0 32px;
   background: #f7faf9;
 }
 
@@ -11316,7 +11318,7 @@ svg {
 }
 
 .itinerary .itineraryStops {
-  padding: 18px 16px 20px 4px;
+  padding: 0;
 }
 
 .itinerary .itineraryStops::before {
@@ -11335,7 +11337,7 @@ svg {
 .itinerary .itineraryStop:not(.itineraryStop--food) .itineraryStopPin {
   width: 12px;
   height: 12px;
-  margin: 21px 0 0 7px;
+  margin: auto;
   border: 3px solid #fff;
   background: #16806d;
   box-shadow: 0 0 0 2px #8fc8ba, 0 4px 10px rgba(54, 95, 90, .18);
@@ -11380,6 +11382,7 @@ svg {
 .itinerary .itineraryPlaceCard--withImage,
 .itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
   grid-template-columns: 100px minmax(0, 1fr);
+  column-gap: 2px;
 }
 
 .itinerary .itineraryPlaceImage,
@@ -11618,7 +11621,7 @@ svg {
 
   .itinerary .itineraryStopPin,
   .itinerary .itineraryStop:not(.itineraryStop--food) .itineraryStopPin {
-    margin-left: 4px;
+    margin: auto;
   }
 
   .itinerary .itineraryPlaceCard--withImage,
@@ -11826,6 +11829,7 @@ svg {
   font-size: .9rem;
   font-weight: 900;
   line-height: 1.4;
+  align-self: center;
 }
 
 .itinerary .itineraryPlaceMain {
@@ -13583,6 +13587,49 @@ svg {
 
 .plannerMapCanvasWrap::after {
   background: rgba(23, 32, 51, .1);
+}
+
+/* Direct columns: order, media, main content, and place type. */
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
+.itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+  grid-template-columns: max-content 108px minmax(0, 1fr) max-content;
+  align-items: start;
+}
+
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceOrder {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  order: 0;
+}
+
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  order: 0;
+}
+
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  order: 0;
+}
+
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryTypeIcon {
+  grid-column: 4;
+  grid-row: 1;
+  align-self: start;
+  order: 0;
+}
+
+@container itinerary-panel (max-width: 480px) {
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+    grid-template-columns: max-content clamp(72px, 24cqw, 96px) minmax(0, 1fr) max-content;
+    column-gap: 8px;
+  }
 }
 
 .plannerChat,
