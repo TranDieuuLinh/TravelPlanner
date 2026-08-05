@@ -518,6 +518,7 @@ function Planner() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const activeChatIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef(0);
+  const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
@@ -3323,15 +3324,19 @@ function Planner() {
   }
 
   function sendPlannerEntry() {
+    if (submittingEntryRef.current || loading || queueingUrls) return;
     const request = buildEntryRequest();
     if (!request) {
       setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
       return;
     }
 
+    submittingEntryRef.current = true;
     setPrompt("");
     setUrlInput("");
-    void sendMessage(request);
+    void sendMessage(request).finally(() => {
+      submittingEntryRef.current = false;
+    });
   }
 
   function submitPlannerEntry(event: React.FormEvent<HTMLFormElement>) {
@@ -3617,9 +3622,7 @@ function Planner() {
             <section
               className={`plannerLayout ${
                 !displayedPlan ? "is-new-chat" : ""
-              } ${backgroundPlanning || loading ? "is-planning" : ""} ${
-                awaitingInitialPlan ? "is-awaiting-plan" : ""
-              }`}
+              } ${backgroundPlanning || loading ? "is-planning" : ""}`}
               ref={plannerLayoutRef}
               style={
                 {
@@ -3817,18 +3820,13 @@ function Planner() {
                   </section>
                 </div>
               ) : null}
-              {awaitingInitialPlan
-                ? renderPlanningStage("plannerPlanningCanvas")
-                : null}
               <aside
                 aria-busy={loading}
                 aria-label="Trợ lý lập kế hoạch VSF"
                 className={`plannerChat panel ${
                   chatCollapsed ? "is-collapsed" : ""
                 } ${
-                  displayedPlan || awaitingInitialPlan
-                    ? "plannerChat--compact"
-                    : ""
+                  displayedPlan ? "plannerChat--compact" : ""
                 }`}
                 ref={plannerChatRef}
                 style={
@@ -3870,6 +3868,17 @@ function Planner() {
                     messages={messages}
                     ref={messageListRef}
                   />
+                  {awaitingInitialPlan ? (
+                    <div
+                      aria-live="polite"
+                      aria-label="Đang xử lý yêu cầu"
+                      className="plannerInlineProcessing"
+                      role="status"
+                    >
+                      <span aria-hidden="true" className="plannerInlineSpinner" />
+                      <span>Đang xử lý</span>
+                    </div>
+                  ) : null}
                   {error ? <p className="formError">{error}</p> : null}
                   <PlannerChatComposer
                     disabled={loading}
