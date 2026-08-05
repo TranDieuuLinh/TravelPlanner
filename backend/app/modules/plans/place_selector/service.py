@@ -11,6 +11,7 @@ from app.modules.plans.domain.entities import (
     PlaceSelectionBlueprint,
     PlanDay,
     PlanItem,
+    PlanTransportLeg,
     TravelIntent,
     UnscheduledPlace,
     UserStatus,
@@ -39,12 +40,29 @@ from app.modules.plans.place_selector.place_tool import (
     PlaceSelectionTool,
     place_category,
 )
-from app.modules.plans.place_selector.skeleton_builder import DayBlock, DaySkeletonBuilder
+from app.modules.plans.place_selector.skeleton_builder import (
+    DayBlock,
+    DaySkeletonBuilder,
+)
 from app.modules.plans.place_selector.status_tracker import PlaceSelectionStatusTracker
 from app.modules.plans.place_selector.timeline_fitter import TimelineFitter
 from app.modules.plans.place_selector.meal_selector import MealStopSelector
 from app.modules.plans.itinerary_optimizer import ItineraryOptimizer
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
+from app.modules.plans.explorer.place_policy import is_meal_place
+from app.modules.plans.place_selector.timeline_policy import (
+    ACTIVITY_WINDOWS,
+    DAILY_ACTIVITY_MINUTES,
+    DEFAULT_TRANSITION_MINUTES,
+    MEAL_ANCHORS,
+    MINIMUM_FILLABLE_GAP_MINUTES,
+    activity_allocation_cost,
+    selected_activity_duration,
+)
+from app.modules.plans.place_selector.time_windows import (
+    format_clock_window,
+    parse_clock_minutes,
+)
 
 
 class PlaceSelectorService:
@@ -79,7 +97,9 @@ class PlaceSelectorService:
             max_candidates_per_block=effective_candidate_limit,
         )
         self.timeline_fitter = timeline_fitter or TimelineFitter()
-        self.status_tracker = status_tracker or PlaceSelectionStatusTracker(self.place_tool)
+        self.status_tracker = status_tracker or PlaceSelectionStatusTracker(
+            self.place_tool
+        )
         self.meal_selector = meal_selector or MealStopSelector(self.place_tool)
         self._area_survey_cache: dict[str, AreaProfile] = {}
         self._area_survey_service: AreaSurveyService | None = None
@@ -295,9 +315,7 @@ class PlaceSelectorService:
             if matched < requirement.minimum_required:
                 unresolved.append(
                     UnscheduledPlace(
-                        placeId=(
-                            attempted_ids[-1] if attempted_ids else None
-                        ),
+                        placeId=(attempted_ids[-1] if attempted_ids else None),
                         name=requirement.theme,
                         reasonCode="required_experience_unresolved",
                         reason=requirement.reason,
@@ -322,6 +340,8 @@ class PlaceSelectorService:
         allocated_by_day: dict[int, list[str]] = {
             day: [] for day in range(1, day_count + 1)
         }
+        activity_minutes_by_day = {day: 0 for day in range(1, day_count + 1)}
+        meal_count_by_day = {day: 0 for day in range(1, day_count + 1)}
         for place in sorted(
             selection_input.selected_places,
             key=lambda value: (
@@ -330,32 +350,42 @@ class PlaceSelectorService:
                 value.name.casefold(),
             ),
         ):
-            day = (
-                place.source_day
-                if place.source_day is not None
-                and place.source_day in allocated_by_day
-                else next(
-                    (
-                        candidate_day
-                        for candidate_day, refs in allocated_by_day.items()
-                        if len(refs) < 2
-                    ),
-                    day_count,
+            meal = is_meal_place(
+                tags=place.tags,
+                source_activity=place.source_activity,
+            ) and "cafe" not in {tag.casefold() for tag in place.tags}
+            cost = activity_allocation_cost(place.source_duration_minutes)
+            if place.source_day is not None and place.source_day in allocated_by_day:
+                day = place.source_day
+            else:
+                eligible_days = [
+                    candidate_day
+                    for candidate_day in allocated_by_day
+                    if (
+                        meal_count_by_day[candidate_day] < len(MEAL_ANCHORS)
+                        if meal
+                        else activity_minutes_by_day[candidate_day] + cost
+                        <= DAILY_ACTIVITY_MINUTES
+                    )
+                ]
+                day = (
+                    min(
+                        eligible_days,
+                        key=lambda candidate_day: (
+                            meal_count_by_day[candidate_day]
+                            if meal
+                            else activity_minutes_by_day[candidate_day],
+                            candidate_day,
+                        ),
+                    )
+                    if eligible_days
+                    else day_count
                 )
-            )
-            if len(allocated_by_day[day]) >= 2:
-                available_day = next(
-                    (
-                        candidate_day
-                        for candidate_day, refs in allocated_by_day.items()
-                        if len(refs) < 2
-                    ),
-                    None,
-                )
-                if available_day is None:
-                    continue
-                day = available_day
             allocated_by_day[day].append(place.stable_ref)
+            if meal:
+                meal_count_by_day[day] += 1
+            else:
+                activity_minutes_by_day[day] += cost
 
         stay_by_day = {
             day: stay
@@ -462,9 +492,7 @@ class PlaceSelectorService:
                 if ref in selected_by_ref
             ]
             allow_suggestions_for_day = allow_place_suggestions and (
-                route_first_mode
-                or not has_reference_places
-                or not allocated_places
+                route_first_mode or not has_reference_places or not allocated_places
             )
             if not allow_place_suggestions and not allocated_places:
                 days.append(
@@ -627,9 +655,7 @@ class PlaceSelectorService:
                             *day_items,
                         ],
                         bbox_filter=(
-                            area_profile.bbox
-                            if area_profile is not None
-                            else None
+                            area_profile.bbox if area_profile is not None else None
                         ),
                     )
                 )
@@ -716,10 +742,7 @@ class PlaceSelectorService:
                     start=start_coordinate,
                     preserve_order=(
                         has_source_itinerary
-                        or any(
-                            item.role and "meal" in item.role
-                            for item in day_items
-                        )
+                        or any(item.role and "meal" in item.role for item in day_items)
                     ),
                     day=brief.day,
                     trip_start_date=trip_start_date,
@@ -879,9 +902,7 @@ class PlaceSelectorService:
                 leg.estimated_duration_minutes for leg in all_legs
             )
             trip_walking_minutes = sum(
-                leg.estimated_duration_minutes
-                for leg in all_legs
-                if leg.mode == "walk"
+                leg.estimated_duration_minutes for leg in all_legs if leg.mode == "walk"
             )
             all_items = [item for day in days for item in day.items]
             committed_plan_status.trip_usage = PlaceSelectionUsage(
@@ -909,8 +930,7 @@ class PlaceSelectorService:
                         if item.timeline_category == "activity"
                     ),
                     travelMinutes=sum(
-                        leg.estimated_duration_minutes
-                        for leg in last_day_legs
+                        leg.estimated_duration_minutes for leg in last_day_legs
                     ),
                     walkingMinutes=sum(
                         leg.estimated_duration_minutes
@@ -930,8 +950,7 @@ class PlaceSelectorService:
                     (
                         item
                         for item in reversed(days[-1].items)
-                        if item.latitude is not None
-                        and item.longitude is not None
+                        if item.latitude is not None and item.longitude is not None
                     ),
                     None,
                 )
@@ -945,8 +964,7 @@ class PlaceSelectorService:
             for day in days:
                 day_usage = PlaceSelectionUsage(
                     travelMinutes=sum(
-                        leg.estimated_duration_minutes
-                        for leg in day.transport_legs
+                        leg.estimated_duration_minutes for leg in day.transport_legs
                     ),
                     walkingMinutes=sum(
                         leg.estimated_duration_minutes
@@ -976,7 +994,10 @@ class PlaceSelectorService:
             for ref in day.allocated_selected_place_refs
         }
         for place in self._source_ordered_places(selected_places):
-            if place.stable_ref not in committed_plan_status.remaining_selected_place_ids:
+            if (
+                place.stable_ref
+                not in committed_plan_status.remaining_selected_place_ids
+            ):
                 continue
             rejection = rejected_selected_places.get(
                 place.stable_ref,
@@ -1029,7 +1050,7 @@ class PlaceSelectorService:
         intent_interests: list[str],
         travel_style: str,
     ) -> PlaceSelectionResult:
-        """Select two activities, optimize them, then add three route meals."""
+        """Fill meal-anchored daily timelines without an activity-count quota."""
 
         selected_by_ref = {place.stable_ref: place for place in selected_places}
         rejected_selected_places: dict[str, CandidateRejection] = {}
@@ -1069,7 +1090,8 @@ class PlaceSelectorService:
                 for place in allocated_places
                 if place_category(
                     self.candidate_selector._selected_to_candidate(place, brief)
-                ) == "food_drink"
+                )
+                == "food_drink"
             ]
             selected_meals_by_day[brief.day] = selected_meals
             selected_activities = [
@@ -1082,86 +1104,153 @@ class PlaceSelectorService:
                     ]
                 }
             )
-            skeleton = self.skeleton_builder.build_route_first_activities(
-                activity_brief,
-                selected_activities,
-            )
             plan_status.current_day = brief.day
-            plan_status.current_strategy = skeleton.strategy
+            plan_status.current_strategy = "meal_anchored_timeline"
             plan_status.day_usage = PlaceSelectionUsage()
             day_items: list[PlanItem] = []
-            for block in skeleton.blocks:
-                plan_status.current_slot = block.role
-                requirement = (
-                    trip_theme_slots[activity_slot_index]
-                    if activity_slot_index < len(trip_theme_slots)
-                    else None
-                )
-                activity_slot_index += 1
-                selection_brief = (
-                    activity_brief.model_copy(
-                        update={
-                            "theme": requirement.theme,
-                            "focus_tags": requirement.focus_tags,
-                        }
+            activity_number = 0
+            for available_window in ACTIVITY_WINDOWS:
+                cursor = available_window.start_minutes
+                while (
+                    available_window.end_minutes - cursor
+                    >= MINIMUM_FILLABLE_GAP_MINUTES
+                ):
+                    remaining_minutes = available_window.end_minutes - cursor
+                    activity_number += 1
+                    role = f"main_activity_{activity_number}"
+                    block = DayBlock(
+                        role=role,
+                        time_window=format_clock_window(cursor, remaining_minutes),
+                        duration_minutes=remaining_minutes,
+                        activity=True,
                     )
-                    if requirement is not None
-                    else activity_brief
-                )
-                candidate = self.candidate_selector.select(
-                    CandidateSelectionContext(
-                        selection_blueprint=selection_blueprint,
-                        brief=selection_brief,
-                        block=block,
-                        selected_by_ref=selected_by_ref,
-                        plan_status=plan_status,
-                        user_status=user_status,
-                        avoided_place_names=avoided_place_names,
-                        intent_constraints=intent_constraints,
-                        allow_place_suggestions=allow_place_suggestions,
-                        constraint_policy=constraint_policy,
-                        budget_level=budget_level,
-                        rejected_selected_places=rejected_selected_places,
-                        intent_interests=intent_interests,
-                        travel_style=travel_style,
-                        strict_day_theme=False,
-                        enforce_opening_hours=False,
-                        occupied_items=[
-                            *(
-                                item
-                                for completed_day in activity_days
-                                for item in completed_day.items
-                            ),
-                            *day_items,
-                        ],
-                        bbox_filter=(
-                            area_profile.bbox
-                            if area_profile is not None
-                            else None
+                    requirement = (
+                        trip_theme_slots[activity_slot_index]
+                        if activity_slot_index < len(trip_theme_slots)
+                        else None
+                    )
+                    activity_slot_index += 1
+                    selection_brief = (
+                        activity_brief.model_copy(
+                            update={
+                                "theme": requirement.theme,
+                                "focus_tags": requirement.focus_tags,
+                            }
+                        )
+                        if requirement is not None
+                        else activity_brief
+                    )
+                    occupied_items = [
+                        *(
+                            item
+                            for completed_day in activity_days
+                            for item in completed_day.items
                         ),
+                        *day_items,
+                    ]
+                    candidate = None
+                    remaining_refs = [
+                        ref
+                        for ref in activity_brief.allocated_selected_place_refs
+                        if ref in plan_status.remaining_selected_place_ids
+                    ]
+                    for preferred_ref in remaining_refs:
+                        selected = selected_by_ref.get(preferred_ref)
+                        if (
+                            selected is None
+                            or selected_activity_duration(
+                                selected.source_duration_minutes
+                            )
+                            > remaining_minutes
+                        ):
+                            continue
+                        candidate = self.candidate_selector.select(
+                            CandidateSelectionContext(
+                                selection_blueprint=selection_blueprint,
+                                brief=selection_brief,
+                                block=DayBlock(
+                                    role=role,
+                                    time_window=block.time_window,
+                                    duration_minutes=remaining_minutes,
+                                    activity=True,
+                                    preferred_ref=preferred_ref,
+                                ),
+                                selected_by_ref=selected_by_ref,
+                                plan_status=plan_status,
+                                user_status=user_status,
+                                avoided_place_names=avoided_place_names,
+                                intent_constraints=intent_constraints,
+                                allow_place_suggestions=False,
+                                constraint_policy=constraint_policy,
+                                budget_level=budget_level,
+                                rejected_selected_places=rejected_selected_places,
+                                intent_interests=intent_interests,
+                                travel_style=travel_style,
+                                strict_day_theme=False,
+                                enforce_opening_hours=True,
+                                occupied_items=occupied_items,
+                                bbox_filter=(
+                                    area_profile.bbox
+                                    if area_profile is not None
+                                    else None
+                                ),
+                            )
+                        )
+                        if candidate is not None:
+                            break
+                    if candidate is None and allow_place_suggestions:
+                        candidate = self.candidate_selector.select(
+                            CandidateSelectionContext(
+                                selection_blueprint=selection_blueprint,
+                                brief=selection_brief.model_copy(
+                                    update={"allocated_selected_place_refs": []}
+                                ),
+                                block=block,
+                                selected_by_ref=selected_by_ref,
+                                plan_status=plan_status,
+                                user_status=user_status,
+                                avoided_place_names=avoided_place_names,
+                                intent_constraints=intent_constraints,
+                                allow_place_suggestions=True,
+                                constraint_policy=constraint_policy,
+                                budget_level=budget_level,
+                                rejected_selected_places=rejected_selected_places,
+                                intent_interests=intent_interests,
+                                travel_style=travel_style,
+                                strict_day_theme=False,
+                                enforce_opening_hours=True,
+                                occupied_items=occupied_items,
+                                bbox_filter=(
+                                    area_profile.bbox
+                                    if area_profile is not None
+                                    else None
+                                ),
+                            )
+                        )
+                    if candidate is None:
+                        break
+                    selected_source = candidate.stable_ref in selected_by_ref
+                    duration = candidate_duration(candidate, block)
+                    scheduled_block = DayBlock(
+                        role=role,
+                        time_window=format_clock_window(cursor, duration),
+                        duration_minutes=remaining_minutes,
+                        activity=True,
                     )
-                )
-                if candidate is None:
-                    message = (
-                        f"Day {brief.day} has no valid candidate for {block.role}."
+                    item = self._build_activity_item(
+                        candidate,
+                        scheduled_block,
+                        mode=mode,
+                        selected_source=selected_source,
                     )
-                    warnings.append(message)
-                    plan_status.warnings.append(message)
-                    continue
-                selected_source = candidate.stable_ref in selected_by_ref
-                item = self._build_activity_item(
-                    candidate,
-                    block,
-                    mode=mode,
-                    selected_source=selected_source,
-                )
-                day_items.append(item)
-                self.status_tracker.apply_activity(
-                    candidate,
-                    block,
-                    user_status,
-                    plan_status,
-                )
+                    day_items.append(item)
+                    self.status_tracker.apply_activity(
+                        candidate,
+                        scheduled_block,
+                        user_status,
+                        plan_status,
+                    )
+                    cursor += duration + DEFAULT_TRANSITION_MINUTES
             plan_status.current_slot = None
             user_status.after_committed_day = brief.day
             self.status_tracker.finish_day_location(user_status)
@@ -1169,7 +1258,7 @@ class PlaceSelectorService:
                 PlanDay(
                     day=brief.day,
                     theme=brief.theme,
-                    strategy=skeleton.strategy,
+                    strategy="meal_anchored_timeline",
                     items=day_items,
                     transportLegs=[],
                 )
@@ -1186,13 +1275,16 @@ class PlaceSelectorService:
             )
 
         completed_days: list[PlanDay] = []
+        overflow_for_retry: list[PlanItem] = []
         used_refs = set(plan_status.used_place_ids)
-        briefs_by_day = {brief.day: brief for brief in selection_blueprint.selection_days}
+        briefs_by_day = {
+            brief.day: brief for brief in selection_blueprint.selection_days
+        }
         for day in activity_days:
             brief = briefs_by_day[day.day]
             activities = [
                 item for item in day.items if item.timeline_category == "activity"
-            ][:2]
+            ]
             selected_meal_refs = self._selected_meal_role_refs(
                 selected_meals_by_day.get(day.day, [])
             )
@@ -1215,29 +1307,13 @@ class PlaceSelectorService:
                 },
                 bbox_filter=(area_profile.bbox if area_profile is not None else None),
             )
-            ordered_items: list[PlanItem] = []
-            activity_index = 0
-            sequence = (
-                ("breakfast_meal", "00:00-00:01", "meal"),
-                ("main_activity_1", "00:01-00:02", "activity"),
-                ("lunch_meal", "00:02-00:03", "meal"),
-                ("main_activity_2", "00:03-00:04", "activity"),
-                ("dinner_meal", "00:04-00:05", "meal"),
-            )
-            for role, marker, kind in sequence:
-                if kind == "activity":
-                    if activity_index < len(activities):
-                        ordered_items.append(
-                            activities[activity_index].model_copy(
-                                update={"role": role, "time_window": marker}
-                            )
-                        )
-                    activity_index += 1
-                    continue
+            meal_items: list[PlanItem] = []
+            for anchor in MEAL_ANCHORS:
+                role = anchor.role
                 block = DayBlock(
                     role=role,
-                    time_window=marker,
-                    duration_minutes=60,
+                    time_window=anchor.time_window,
+                    duration_minutes=anchor.duration_minutes,
                     activity=False,
                     kind="meal",
                     candidate_category="food_drink",
@@ -1252,8 +1328,8 @@ class PlaceSelectorService:
                             brief=brief,
                             block=DayBlock(
                                 role=role,
-                                time_window=marker,
-                                duration_minutes=60,
+                                time_window=anchor.time_window,
+                                duration_minutes=anchor.duration_minutes,
                                 activity=False,
                                 preferred_ref=selected_meal_ref,
                                 kind="meal",
@@ -1278,12 +1354,11 @@ class PlaceSelectorService:
                                     for completed_day in completed_days
                                     for item in completed_day.items
                                 ),
-                                *ordered_items,
+                                *activities,
+                                *meal_items,
                             ],
                             bbox_filter=(
-                                area_profile.bbox
-                                if area_profile is not None
-                                else None
+                                area_profile.bbox if area_profile is not None else None
                             ),
                         )
                     )
@@ -1304,7 +1379,7 @@ class PlaceSelectorService:
                     mode=mode,
                     selected_source=selected_source,
                 )
-                ordered_items.append(meal_item)
+                meal_items.append(meal_item)
                 used_refs.add(candidate.stable_ref)
                 self.status_tracker.apply_activity(
                     candidate,
@@ -1312,6 +1387,14 @@ class PlaceSelectorService:
                     user_status,
                     plan_status,
                 )
+
+            ordered_items = sorted(
+                [*activities, *meal_items],
+                key=lambda item: (
+                    item.time_window.split("-", maxsplit=1)[0],
+                    item.name.casefold(),
+                ),
+            )
 
             routed_items, transport_legs = self.route_optimizer.optimize(
                 ordered_items,
@@ -1321,6 +1404,27 @@ class PlaceSelectorService:
                 preferred_modes=preferred_modes,
                 avoid_modes=avoid_modes,
             )
+            routed_items, overflow_items = self._apply_travel_aware_timeline(
+                routed_items,
+                transport_legs,
+            )
+            if overflow_items:
+                overflow_for_retry.extend(overflow_items)
+                overflow_names = ", ".join(item.name for item in overflow_items)
+                message = (
+                    f"Day {day.day} could not initially fit {overflow_names} "
+                    "between meal anchors; trying one alternate day."
+                )
+                warnings.append(message)
+                plan_status.warnings.append(message)
+                routed_items, transport_legs = self.route_optimizer.optimize(
+                    routed_items,
+                    preserve_order=True,
+                    day=day.day,
+                    trip_start_date=trip_start_date,
+                    preferred_modes=preferred_modes,
+                    avoid_modes=avoid_modes,
+                )
             completed_days.append(
                 day.model_copy(
                     update={
@@ -1334,13 +1438,26 @@ class PlaceSelectorService:
                 )
             )
 
+        completed_days, overflow_for_retry = self._retry_overflow_on_other_day(
+            completed_days,
+            overflow_for_retry,
+            trip_start_date=trip_start_date,
+            preferred_modes=preferred_modes,
+            avoid_modes=avoid_modes,
+        )
+        if overflow_for_retry:
+            message = (
+                f"{len(overflow_for_retry)} activity item(s) remain unscheduled "
+                "after one alternate-day retry."
+            )
+            warnings.append(message)
+            plan_status.warnings.append(message)
+
         scheduled_selected_refs = {
             selected_ref
             for day in completed_days
             for item in day.items
-            if (
-                selected_ref := self._selected_ref_for_item(item, selected_places)
-            )
+            if (selected_ref := self._selected_ref_for_item(item, selected_places))
             is not None
         }
         plan_status.remaining_selected_place_ids = [
@@ -1356,13 +1473,9 @@ class PlaceSelectorService:
                 for item in all_items
                 if item.timeline_category == "activity"
             ),
-            travelMinutes=sum(
-                leg.estimated_duration_minutes for leg in all_legs
-            ),
+            travelMinutes=sum(leg.estimated_duration_minutes for leg in all_legs),
             walkingMinutes=sum(
-                leg.estimated_duration_minutes
-                for leg in all_legs
-                if leg.mode == "walk"
+                leg.estimated_duration_minutes for leg in all_legs if leg.mode == "walk"
             ),
             restMinutes=sum(
                 item.duration_minutes or 0
@@ -1380,9 +1493,7 @@ class PlaceSelectorService:
                     for item in last_items
                     if item.timeline_category == "activity"
                 ),
-                travelMinutes=sum(
-                    leg.estimated_duration_minutes for leg in last_legs
-                ),
+                travelMinutes=sum(leg.estimated_duration_minutes for leg in last_legs),
                 walkingMinutes=sum(
                     leg.estimated_duration_minutes
                     for leg in last_legs
@@ -1418,8 +1529,11 @@ class PlaceSelectorService:
             rejection = rejected_selected_places.get(
                 place.stable_ref,
                 CandidateRejection(
-                    "no_day_capacity",
-                    "The fixed two-activity daily capacity is full.",
+                    "insufficient_time",
+                    (
+                        "The visit duration and calculated transitions do not "
+                        "fit between the fixed meal anchors."
+                    ),
                 ),
             )
             unscheduled.append(
@@ -1437,6 +1551,174 @@ class PlaceSelectorService:
             unscheduledPlaces=unscheduled,
             warnings=warnings,
         )
+
+    @staticmethod
+    def _apply_travel_aware_timeline(
+        items: list[PlanItem],
+        transport_legs: list[PlanTransportLeg],
+    ) -> tuple[list[PlanItem], list[PlanItem]]:
+        """Fit activities between fixed meals using calculated leg durations.
+
+        Missing provider legs use a small deterministic transition estimate. The
+        estimate is intentionally transport-mode agnostic; route mode remains a
+        presentation/enrichment concern outside timeline capacity.
+        """
+
+        leg_minutes = {
+            (leg.from_item_id, leg.to_item_id): leg.estimated_duration_minutes
+            for leg in transport_legs
+            if leg.from_item_id is not None and leg.to_item_id is not None
+        }
+        meal_by_role = {
+            item.role: item for item in items if item.timeline_category == "food"
+        }
+        activities = [item for item in items if item.timeline_category == "activity"]
+        scheduled: list[PlanItem] = list(meal_by_role.values())
+        overflow: list[PlanItem] = []
+
+        for index, window in enumerate(ACTIVITY_WINDOWS):
+            window_activities = [
+                item
+                for item in activities
+                if (
+                    (start := parse_clock_minutes(item.time_window)) is not None
+                    and window.start_minutes <= start < window.end_minutes
+                )
+            ]
+            window_activities.sort(
+                key=lambda item: (
+                    parse_clock_minutes(item.time_window) or window.start_minutes,
+                    item.name.casefold(),
+                )
+            )
+            previous = meal_by_role.get(MEAL_ANCHORS[index].role)
+            next_meal = (
+                meal_by_role.get(MEAL_ANCHORS[index + 1].role)
+                if index + 1 < len(MEAL_ANCHORS)
+                else None
+            )
+            cursor = window.start_minutes
+            for activity in window_activities:
+                inbound = (
+                    leg_minutes.get(
+                        (previous.item_id, activity.item_id),
+                        DEFAULT_TRANSITION_MINUTES,
+                    )
+                    if previous is not None
+                    else 0
+                )
+                start = cursor + inbound
+                duration = activity.duration_minutes or selected_activity_duration(None)
+                end = start + duration
+                outbound = (
+                    leg_minutes.get(
+                        (activity.item_id, next_meal.item_id),
+                        DEFAULT_TRANSITION_MINUTES,
+                    )
+                    if next_meal is not None
+                    else 0
+                )
+                if end + outbound > window.end_minutes:
+                    overflow.append(activity)
+                    continue
+                scheduled.append(
+                    activity.model_copy(
+                        update={"time_window": format_clock_window(start, duration)}
+                    )
+                )
+                cursor = end
+                previous = activity
+
+        return (
+            sorted(
+                scheduled,
+                key=lambda item: (
+                    parse_clock_minutes(item.time_window) or 0,
+                    item.name.casefold(),
+                ),
+            ),
+            overflow,
+        )
+
+    def _retry_overflow_on_other_day(
+        self,
+        days: list[PlanDay],
+        overflow_items: list[PlanItem],
+        *,
+        trip_start_date: str | None,
+        preferred_modes: set[str],
+        avoid_modes: set[str],
+    ) -> tuple[list[PlanDay], list[PlanItem]]:
+        """Try each overflow activity once in another feasible day.
+
+        A source-day or locked item never moves. A candidate day is accepted only
+        when every existing item and the new item fit after route enrichment, so
+        retrying one overflow cannot silently evict an already scheduled stop.
+        """
+
+        remaining: list[PlanItem] = []
+        working = [day.model_copy(deep=True) for day in days]
+        for overflow in overflow_items:
+            candidate_days = [
+                day
+                for day in working
+                if day.day != self._item_day(overflow, working)
+                and (overflow.source_day is None or overflow.source_day == day.day)
+                and not overflow.locked
+            ]
+            candidate_days.sort(
+                key=lambda day: (
+                    sum(
+                        item.duration_minutes or 0
+                        for item in day.items
+                        if item.timeline_category == "activity"
+                    ),
+                    day.day,
+                )
+            )
+            placed = False
+            for day in candidate_days:
+                merged = sorted(
+                    [*day.items, overflow],
+                    key=lambda item: (
+                        parse_clock_minutes(item.time_window) or 0,
+                        item.role or "",
+                    ),
+                )
+                routed, legs = self.route_optimizer.optimize(
+                    merged,
+                    preserve_order=True,
+                    day=day.day,
+                    trip_start_date=trip_start_date,
+                    preferred_modes=preferred_modes,
+                    avoid_modes=avoid_modes,
+                )
+                fitted, still_overflow = self._apply_travel_aware_timeline(
+                    routed,
+                    legs,
+                )
+                if still_overflow:
+                    continue
+                working = [
+                    candidate.model_copy(
+                        update={"items": fitted, "transport_legs": legs}
+                    )
+                    if candidate.day == day.day
+                    else candidate
+                    for candidate in working
+                ]
+                placed = True
+                break
+            if not placed:
+                remaining.append(overflow)
+        return working, remaining
+
+    @staticmethod
+    def _item_day(item: PlanItem, days: list[PlanDay]) -> int | None:
+        for day in days:
+            if any(existing.item_id == item.item_id for existing in day.items):
+                return day.day
+        return None
 
     @staticmethod
     def _source_ordered_places(
@@ -1477,10 +1759,7 @@ class PlaceSelectorService:
                 else "lunch_meal"
                 if any(value in hint for value in ("lunch", "noon"))
                 else "dinner_meal"
-                if any(
-                    value in hint
-                    for value in ("dinner", "evening", "night")
-                )
+                if any(value in hint for value in ("dinner", "evening", "night"))
                 else None
             )
             if role is None or role not in remaining_roles:
@@ -1497,11 +1776,7 @@ class PlaceSelectorService:
         selection_blueprint: PlaceSelectionBlueprint,
         activities: list[PlanItem],
     ) -> str:
-        activity_tags = {
-            tag.casefold()
-            for item in activities
-            for tag in item.tags
-        }
+        activity_tags = {tag.casefold() for item in activities for tag in item.tags}
         ranked = sorted(
             (
                 (

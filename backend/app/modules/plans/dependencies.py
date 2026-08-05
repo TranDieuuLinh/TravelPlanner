@@ -13,6 +13,9 @@ from app.integrations.routing import (
     ValhallaRouteProvider,
     ValhallaTravelTimeMatrixProvider,
 )
+from app.modules.knowledge_graph.place_search import (
+    KnowledgeGraphPlaceSearchRepository,
+)
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.resolver import (
     DatabasePlaceResolver,
@@ -77,7 +80,7 @@ def get_plan_mutation_service(
     place_repository = SqlAlchemyPlaceRepository(db)
     return PlanMutationService(
         place_resolver=_get_place_resolver(place_repository),
-        place_repository=place_repository,
+        graph_place_repository=KnowledgeGraphPlaceSearchRepository(db),
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
         gmaps_client=_get_gmaps_search_client(),

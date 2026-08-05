@@ -7,15 +7,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
-from app.modules.places.model import (
-    Place,
-    PlaceRegionCatalogState,
-    PlaceRegionSnapshot,
-)
+from app.modules.places.model import Place
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.places.service import PlaceCatalogService, PlaceCreate
 
@@ -67,23 +63,11 @@ def test_postgres_update_automatically_refreshes_region_statistics(
                     metadata={"description": "Integration test", "prices": []},
                 )
             )
-            assert (
-                session.get(PlaceRegionCatalogState, "vn,da-nang")
-                is None
-            )
-
             first_lookup = statistics_service.get_for_planner("vn,da-nang")
-            assert first_lookup.status == "refreshed"
-            assert first_lookup.catalog_version == 1
+            assert first_lookup.status == "computed"
             created_fingerprint = first_lookup.source_fingerprint
             hai_chau = _region(first_lookup.regions, "vn,da-nang,hai-chau")
             assert hai_chau["countsByType"]["cafe"] >= 1
-            snapshot_count_before_update = session.scalar(
-                select(func.count(PlaceRegionSnapshot.id)).where(
-                    PlaceRegionSnapshot.region_key == "vn,da-nang"
-                )
-            )
-
             catalog_service.update_place(
                 place_id,
                 {
@@ -91,18 +75,8 @@ def test_postgres_update_automatically_refreshes_region_statistics(
                     "region_key": "vn,da-nang,son-tra",
                 },
             )
-            assert (
-                session.scalar(
-                    select(func.count(PlaceRegionSnapshot.id)).where(
-                        PlaceRegionSnapshot.region_key == "vn,da-nang"
-                    )
-                )
-                == snapshot_count_before_update
-            )
-
             second_lookup = statistics_service.get_for_planner("vn,da-nang")
-            assert second_lookup.status == "refreshed"
-            assert second_lookup.catalog_version == 2
+            assert second_lookup.status == "computed"
             assert second_lookup.snapshot_id != first_lookup.snapshot_id
             updated_fingerprint = second_lookup.source_fingerprint
             son_tra = _region(second_lookup.regions, "vn,da-nang,son-tra")
@@ -125,22 +99,12 @@ def test_postgres_update_automatically_refreshes_region_statistics(
                 )
             )
             third_lookup = statistics_service.get_for_planner("vn,da-nang")
-            assert third_lookup.status == "cached"
+            assert third_lookup.status == "computed"
             assert third_lookup.snapshot_id == second_lookup.snapshot_id
-            assert third_lookup.catalog_version == 2
+            assert third_lookup.catalog_version == second_lookup.catalog_version
             assert third_lookup.source_fingerprint == updated_fingerprint
     finally:
         with Session(engine) as cleanup_session:
-            cleanup_session.execute(
-                delete(PlaceRegionCatalogState).where(
-                    PlaceRegionCatalogState.region_key == "vn,da-nang"
-                )
-            )
-            cleanup_session.execute(
-                delete(PlaceRegionSnapshot).where(
-                    PlaceRegionSnapshot.region_key == "vn,da-nang"
-                )
-            )
             cleanup_session.execute(
                 delete(Place).where(Place.id.in_([place_id, unrelated_place_id]))
             )

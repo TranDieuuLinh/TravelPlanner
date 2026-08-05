@@ -1,13 +1,13 @@
-import asyncio
 import logging
 import unicodedata
 from typing import Any
 from uuid import uuid4
 
+from app.modules.knowledge_graph.place_search import (
+    KnowledgeGraphPlaceSearchRepository,
+)
 from app.modules.places.resolver import (
     GoogleMapsSearchClient,
-    PlaceLookupRecord,
-    PlaceLookupRepository,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -40,13 +40,13 @@ class PlanMutationService:
     def __init__(
         self,
         place_resolver: PlaceResolver | None = None,
-        place_repository: PlaceLookupRepository | None = None,
+        graph_place_repository: KnowledgeGraphPlaceSearchRepository | None = None,
         route_optimizer: GeographicRouteOptimizer | None = None,
         checker: OverallChecker | None = None,
         gmaps_client: GoogleMapsSearchClient | None = None,
     ) -> None:
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
-        self.place_repository = place_repository
+        self.graph_place_repository = graph_place_repository
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
         self.checker = checker or OverallChecker()
         self.gmaps_client = gmaps_client
@@ -65,54 +65,34 @@ class PlanMutationService:
             return []
         dest = (destination or "").strip()
 
-        # Always try Google Maps first for rich data (rating, images)
-        gmaps_results: list[PlaceSuggestion] = []
+        graph_results = self._search_knowledge_graph(
+            cleaned,
+            dest,
+            limit=top_k,
+        )
+        if len(graph_results) >= top_k:
+            return graph_results[:top_k]
+
+        # Google Maps is an external fallback only. Its normalized response is
+        # returned as a provisional suggestion and is never promoted into the
+        # canonical Knowledge Graph by this read path.
         if self.gmaps_client is not None:
             gmaps_results = await self._search_google_maps_fallback(
                 cleaned,
                 dest,
                 limit=top_k,
             )
-
-        # If GMaps returned results, use them (enriched with catalog if available)
-        if gmaps_results:
-            enriched = await self._enrich_with_db(gmaps_results)
-            return enriched if enriched else gmaps_results
-
-        # Only search catalog if GMaps failed or returned empty
-        catalog_results: list[PlaceSuggestion] = []
-        if self.place_repository is not None:
-            catalog_results = await asyncio.to_thread(
-                self._search_catalog,
-                cleaned,
-                dest,
+            graph_results = _merge_place_suggestions(
+                graph_results,
+                gmaps_results,
                 limit=top_k,
             )
+            if graph_results:
+                return graph_results
 
-        if catalog_results:
-            return catalog_results
-
-        # Final fallback to place resolver
-        candidate = UnifiedPlaceCandidate(
-            name=cleaned,
-            search_region=dest,
-        )
-        suggestions: list[PlaceSuggestion] = []
-        try:
-            resolution = await self.place_resolver.resolve(candidate, destination=dest)
-            if resolution.name and resolution.latitude is not None and resolution.longitude is not None:
-                suggestions.append(
-                    PlaceSuggestion(
-                        name=resolution.name,
-                        address=resolution.address,
-                        latitude=float(resolution.latitude),
-                        longitude=float(resolution.longitude),
-                        placeId=resolution.external_id,
-                    )
-                )
-        except Exception:
-            pass
-        return suggestions
+        if graph_results:
+            return graph_results
+        return []
 
     async def _search_google_maps_fallback(
         self,
@@ -121,7 +101,7 @@ class PlanMutationService:
         *,
         limit: int = 8,
     ) -> list[PlaceSuggestion]:
-        """Fallback to Google Maps when catalog returns no results."""
+        """Fallback to Google Maps when the canonical graph is insufficient."""
         try:
             results = await self.gmaps_client.search(
                 query,
@@ -176,6 +156,8 @@ class PlanMutationService:
                         phone=result.get("phone"),
                         website=result.get("website"),
                         openingHours=self._format_opening_hours(result.get("opening_hours")),
+                        isVerified=False,
+                        source="google_maps_scraper",
                     )
                 )
             return suggestions
@@ -205,99 +187,39 @@ class PlanMutationService:
             return result if result else None
         return None
 
-    async def _enrich_with_db(
-        self,
-        gmaps_suggestions: list[PlaceSuggestion],
-    ) -> list[PlaceSuggestion]:
-        """Enrich Google Maps results with richer data from DB (images, ratings, etc)."""
-        if not gmaps_suggestions or self.place_repository is None:
-            return gmaps_suggestions
-
-        try:
-            # Get names from GMaps results to search in DB
-            names = [s.name for s in gmaps_suggestions[:10]]  # Limit to 10 for performance
-            db_records = self.place_repository.search_active_by_names(names, limit=10)
-
-            if not db_records:
-                return gmaps_suggestions
-
-            # Build lookup by normalized name
-            db_by_name: dict[str, PlaceLookupRecord] = {}
-            for record in db_records:
-                normalized = _search_key(record.name)
-                db_by_name[normalized] = record
-
-            # Merge DB data into GMaps suggestions
-            enriched_count = 0
-            for suggestion in gmaps_suggestions:
-                normalized = _search_key(suggestion.name)
-                db_record = db_by_name.get(normalized)
-                if db_record:
-                    # Only enrich missing fields
-                    if not suggestion.imageUrl and hasattr(db_record, 'image_url'):
-                        suggestion.imageUrl = getattr(db_record, 'image_url', None)
-                    if suggestion.rating is None and db_record.rating is not None:
-                        suggestion.rating = float(db_record.rating)
-                    if suggestion.reviewCount is None and db_record.review_count is not None:
-                        suggestion.reviewCount = db_record.review_count
-                    if not suggestion.placeType and db_record.place_type:
-                        suggestion.placeType = db_record.place_type
-                    suggestion.isVerified = db_record.data_confidence == "high"
-                    enriched_count += 1
-
-            if enriched_count > 0:
-                logger.debug(f"Enriched {enriched_count}/{len(gmaps_suggestions)} with DB data")
-        except Exception as e:
-            logger.warning(f"DB enrichment failed: {e}")
-
-        return gmaps_suggestions
-
-    def _search_catalog(
+    def _search_knowledge_graph(
         self,
         query: str,
         destination: str,
         *,
         limit: int,
     ) -> list[PlaceSuggestion]:
-        from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
-
-        region_key = normalize_region_key(destination) if destination else None
-        records = self.place_repository.search_active_for_autocomplete(
+        if self.graph_place_repository is None:
+            return []
+        records = self.graph_place_repository.search(
             query,
-            region_key,
-            limit=200,
+            destination or None,
+            limit=limit,
         )
-        query_key = _search_key(query)
-        ranked: list[tuple[int, int, float, str, PlaceLookupRecord]] = []
-        for record in records:
-            if record.latitude is None or record.longitude is None:
-                continue
-            scores = [
-                score
-                for name in _record_search_names(record)
-                if (score := _suggestion_score(query_key, _search_key(name))) is not None
-            ]
-            if scores:
-                ranked.append(
-                    (
-                        min(scores),
-                        -int(getattr(record, "review_count", 0) or 0),
-                        -float(getattr(record, "rating", 0) or 0),
-                        _search_key(record.name),
-                        record,
-                    )
-                )
-
-        ranked.sort(key=lambda item: item[:-1])
         return [
             PlaceSuggestion(
                 name=record.name,
                 address=record.address,
-                latitude=float(record.latitude),
-                longitude=float(record.longitude),
-                placeId=record.id,
+                latitude=record.latitude,
+                longitude=record.longitude,
+                placeId=record.entity_id,
+                imageUrl=record.image_url,
+                rating=record.rating,
+                reviewCount=record.review_count,
+                priceLevel=record.price_level,
+                placeType=record.entity_type,
+                phone=record.phone,
+                website=record.website,
+                openingHours=record.opening_hours,
+                isVerified=record.status == "verified",
+                source="knowledge_graph",
             )
-            for _score, _reviews, _rating, _name, record in ranked[:limit]
+            for record in records
         ]
 
     async def add_item(self, plan: Plan, request: AddItemRequest) -> MutationResponse:
@@ -818,37 +740,24 @@ def _transport_option_selection_key(option: PlanTransportOption) -> str:
     )
 
 
-def _record_search_names(record: PlaceLookupRecord) -> list[str]:
-    metadata = record.metadata_json if isinstance(record.metadata_json, dict) else {}
-    names = [record.name]
-    for key in (
-        "aliases",
-        "englishNames",
-        "vietnameseNames",
-        "alternateNames",
-        "searchNames",
-    ):
-        value = metadata.get(key)
-        if isinstance(value, str):
-            names.append(value)
-        elif isinstance(value, list):
-            names.extend(item for item in value if isinstance(item, str))
-    for key in ("originalName", "officialName", "nameEn", "nameVi"):
-        value = metadata.get(key)
-        if isinstance(value, str):
-            names.append(value)
-    return names
-
-
-def _suggestion_score(query: str, candidate: str) -> int | None:
-    if not query or not candidate:
-        return None
-    if candidate == query:
-        return 0
-    if candidate.startswith(query):
-        return 1
-    if any(word.startswith(query) for word in candidate.split()):
-        return 2
-    if query in candidate:
-        return 3
-    return None
+def _merge_place_suggestions(
+    primary: list[PlaceSuggestion],
+    fallback: list[PlaceSuggestion],
+    *,
+    limit: int,
+) -> list[PlaceSuggestion]:
+    merged: list[PlaceSuggestion] = []
+    identities: set[str] = set()
+    names: set[str] = set()
+    for suggestion in [*primary, *fallback]:
+        identity = suggestion.place_id.strip() if suggestion.place_id else ""
+        name = _search_key(suggestion.name)
+        if (identity and identity in identities) or name in names:
+            continue
+        merged.append(suggestion)
+        if identity:
+            identities.add(identity)
+        names.add(name)
+        if len(merged) >= limit:
+            break
+    return merged

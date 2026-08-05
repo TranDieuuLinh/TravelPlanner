@@ -192,7 +192,7 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
   vào ngày hoàn toàn chưa có stop nguồn; ngày đã có stop URL/OCR không bị pad
   thêm theo quota và địa điểm bổ sung phải mang source `finder_suggestion`;
 - nếu URL/OCR cần hơn 3 ngày, dùng cấu trúc `sourceDay` hoặc suy ra số ngày tối
-  thiểu theo pace để xếp hết stop;
+  thiểu theo tổng thời lượng activity và transition để xếp hết stop;
 - dedupe candidate dùng danh tính/tên địa điểm đã chuẩn hóa; `sourceOrder` chỉ
   giữ trình tự từ nguồn và không bao giờ là khóa định danh, vì STT/OCR/caption
   có thể gán cùng order cho nhiều địa điểm độc lập;
@@ -344,20 +344,23 @@ PlaceSelector điền item cụ thể:
 - PlaceSelector loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
   kể cả khi provider ID khác nhưng tên chuẩn hóa/biến thể alias cho thấy cùng
   một địa điểm;
-- số place extractor nhận từ URL không bị giới hạn theo quota của PlaceSelector. Riêng
-  `finder_suggestion` trên một ngày trống bị chặn theo pace
-  (`relaxed=2`, `balanced=3`, `packed=4`); giới hạn này không đếm hoặc loại stop
-  URL của user;
+- số place extractor nhận từ URL không bị giới hạn theo quota của PlaceSelector.
+  Selected Place và `finder_suggestion` cùng được xếp theo thời lượng còn trống
+  giữa các meal anchor; không áp quota count hoặc pace;
 - PlaceSelector dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- ở chế độ `route_first`, không chọn khung giờ và không loại candidate theo giờ mở cửa;
-  timing claim chỉ được giữ làm provenance, chưa dùng để tạo giờ hẹn;
+- ở chế độ `route_first`, PlaceSelector tạo khung giờ thật, dùng giờ mở cửa đã
+  chuẩn hóa khi có và giữ timing claim làm provenance;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
-- chốt đúng hai activity chính cho mỗi ngày, tối ưu activity ở cấp toàn chuyến,
-  rồi mới chọn đủ breakfast/lunch/dinner theo các anchor địa lý của tuyến;
+- đặt breakfast/lunch/dinner làm anchor cố định, lấp số activity động theo
+  duration và transition, rồi tối ưu tuyến và fit lại timeline bằng route leg;
+- global optimizer chỉ phân cụm và cân bằng duration theo ngày; route leg chi tiết
+  được tính riêng từng ngày, không nối các ngày thành một tuyến liên tục;
+- activity overflow được thử chuyển sang đúng một ngày khả thi khác trước khi
+  tạo `UnscheduledPlace`;
 - stop ăn uống từ URL chiếm meal slot trước và thay thế meal suggestion
   của PlaceSelector; stop URL không được âm thầm loại khi chuyển giữa activity
   pool và meal slot;
@@ -479,7 +482,7 @@ tuyến đường hoặc danh tính địa điểm.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
-- Mỗi ngày có tối đa hai activity chính và ba meal stop. Restaurant/food URL
+- Mỗi ngày có ba meal anchor và số activity phụ thuộc ngân sách thời gian. Restaurant/food URL
   thay meal suggestion và không chiếm activity slot; cafe/coffee vẫn là
   activity. Khi duration/date chưa bị user khóa hoặc user yêu cầu thêm ngày,
   duration tối thiểu được tính lại sau khi merge địa điểm của revision cũ với

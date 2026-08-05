@@ -11,6 +11,11 @@ from app.modules.plans.place_selector.time_windows import (
     format_clock_window,
     parse_clock_minutes,
 )
+from app.modules.plans.place_selector.timeline_policy import (
+    ACTIVITY_WINDOWS,
+    DEFAULT_TRANSITION_MINUTES,
+    selected_activity_duration,
+)
 
 if TYPE_CHECKING:
     from app.modules.plans.place_selector.area_survey import AreaProfile
@@ -86,12 +91,7 @@ class DaySkeletonBuilder:
         brief: PlaceSelectionDay,
         selected_places: list[SelectedPlaceContext],
     ) -> DaySkeleton:
-        """Build exactly two activity slots; meals are selected afterwards.
-
-        The compact clock values are compatibility-only ordering markers.
-        Route-first selection, meal choice and validation do not use them as
-        real appointment times.
-        """
+        """Build as many selected-place blocks as fit between meal anchors."""
 
         ordered = sorted(
             selected_places,
@@ -102,25 +102,33 @@ class DaySkeletonBuilder:
                 place.name.casefold(),
             ),
         )
-        preferred_refs = [place.stable_ref for place in ordered[:2]]
-        return DaySkeleton(
-            strategy="two_activities_route_first",
-            blocks=tuple(
+        blocks: list[DayBlock] = []
+        window_index = 0
+        cursor = ACTIVITY_WINDOWS[window_index].start_minutes
+        for place in ordered:
+            duration = selected_activity_duration(place.source_duration_minutes)
+            while (
+                window_index < len(ACTIVITY_WINDOWS)
+                and cursor + duration > ACTIVITY_WINDOWS[window_index].end_minutes
+            ):
+                window_index += 1
+                if window_index < len(ACTIVITY_WINDOWS):
+                    cursor = ACTIVITY_WINDOWS[window_index].start_minutes
+            if window_index >= len(ACTIVITY_WINDOWS):
+                break
+            blocks.append(
                 DayBlock(
-                    role=f"main_activity_{index + 1}",
-                    time_window=(
-                        "00:01-00:02" if index == 0 else "00:03-00:04"
-                    ),
-                    duration_minutes=120,
+                    role=f"main_activity_{len(blocks) + 1}",
+                    time_window=format_clock_window(cursor, duration),
+                    duration_minutes=duration,
                     activity=True,
-                    preferred_ref=(
-                        preferred_refs[index]
-                        if index < len(preferred_refs)
-                        else None
-                    ),
+                    preferred_ref=place.stable_ref,
                 )
-                for index in range(2)
-            ),
+            )
+            cursor += duration + DEFAULT_TRANSITION_MINUTES
+        return DaySkeleton(
+            strategy="meal_anchored_timeline",
+            blocks=tuple(blocks),
         )
 
     def build(
@@ -156,9 +164,13 @@ class DaySkeletonBuilder:
                 candidate_category="food_drink",
             )
             cur = lunch_start + 60
-            b3 = DayBlock("recovery_break", self._clock_window(cur, 90), 90, False, kind="break")
+            b3 = DayBlock(
+                "recovery_break", self._clock_window(cur, 90), 90, False, kind="break"
+            )
             cur += 90
-            b4 = DayBlock("light_support_activity", self._clock_window(cur, 90), 90, True)
+            b4 = DayBlock(
+                "light_support_activity", self._clock_window(cur, 90), 90, True
+            )
             cur += 90
             dinner_start = max(18 * 60, min(20 * 60, cur))
             b5 = DayBlock(
@@ -173,7 +185,14 @@ class DaySkeletonBuilder:
             blocks = [b1, b2, b3, b4, b5]
             if cur + 30 < 23 * 60:
                 blocks.append(
-                    DayBlock("group_social_activity", self._clock_window(cur + 30, 90), 90, False, optional=True, kind="social_activity")
+                    DayBlock(
+                        "group_social_activity",
+                        self._clock_window(cur + 30, 90),
+                        90,
+                        False,
+                        optional=True,
+                        kind="social_activity",
+                    )
                 )
             return DaySkeleton(strategy="recovery", blocks=tuple(blocks))
 
@@ -193,7 +212,9 @@ class DaySkeletonBuilder:
             cur = lunch_start + 60 + 15
             b3 = DayBlock("support_activity", self._clock_window(cur, 120), 120, True)
             cur += 120
-            b4 = DayBlock("indoor_break", self._clock_window(cur, 45), 45, False, kind="break")
+            b4 = DayBlock(
+                "indoor_break", self._clock_window(cur, 45), 45, False, kind="break"
+            )
             cur += 45
             dinner_start = max(18 * 60, min(20 * 60, cur))
             b5 = DayBlock(
@@ -205,12 +226,21 @@ class DaySkeletonBuilder:
                 candidate_category="food_drink",
             )
             cur = dinner_start + 60 + 15
-            b6 = DayBlock("bonus_activity", self._clock_window(cur, 75), 75, True, optional=True)
+            b6 = DayBlock(
+                "bonus_activity", self._clock_window(cur, 75), 75, True, optional=True
+            )
             cur += 75 + 15
             blocks = [b1, b2, b3, b4, b5, b6]
             if cur < 23 * 60:
                 blocks.append(
-                    DayBlock("group_social_activity", self._clock_window(cur, 75), 75, False, optional=True, kind="social_activity")
+                    DayBlock(
+                        "group_social_activity",
+                        self._clock_window(cur, 75),
+                        75,
+                        False,
+                        optional=True,
+                        kind="social_activity",
+                    )
                 )
             return DaySkeleton(strategy="indoor_safe", blocks=tuple(blocks))
 
@@ -228,7 +258,13 @@ class DaySkeletonBuilder:
                 candidate_category="food_drink",
             )
             cur = lunch_start + 60
-            b3 = DayBlock("break_main_support", self._clock_window(cur, 90), 90, False, kind="break")
+            b3 = DayBlock(
+                "break_main_support",
+                self._clock_window(cur, 90),
+                90,
+                False,
+                kind="break",
+            )
             cur += 90
             b4 = DayBlock("support_activity", self._clock_window(cur, 120), 120, True)
             cur += 120
@@ -245,7 +281,14 @@ class DaySkeletonBuilder:
             blocks = [b1, b2, b3, b4, b5]
             if cur + 30 < 23 * 60:
                 blocks.append(
-                    DayBlock("group_social_activity", self._clock_window(cur + 30, 90), 90, False, optional=True, kind="social_activity")
+                    DayBlock(
+                        "group_social_activity",
+                        self._clock_window(cur + 30, 90),
+                        90,
+                        False,
+                        optional=True,
+                        kind="social_activity",
+                    )
                 )
             return DaySkeleton(strategy="relaxed", blocks=tuple(blocks))
 
@@ -267,7 +310,9 @@ class DaySkeletonBuilder:
             cur = lunch_start + 60 + 15
             b4 = DayBlock("support_activity_2", self._clock_window(cur, 90), 90, True)
             cur += 90
-            b5 = DayBlock("break_2", self._clock_window(cur, 45), 45, False, kind="break")
+            b5 = DayBlock(
+                "break_2", self._clock_window(cur, 45), 45, False, kind="break"
+            )
             cur += 45 + 15
             b6 = DayBlock("support_activity_3", self._clock_window(cur, 90), 90, True)
             cur += 90
@@ -281,12 +326,21 @@ class DaySkeletonBuilder:
                 candidate_category="food_drink",
             )
             cur = dinner_start + 60 + 30
-            b8 = DayBlock("bonus_activity", self._clock_window(cur, 90), 90, True, optional=True)
+            b8 = DayBlock(
+                "bonus_activity", self._clock_window(cur, 90), 90, True, optional=True
+            )
             cur += 90 + 15
             blocks = [b1, b2, b3, b4, b5, b6, b7, b8]
             if cur < 23 * 60:
                 blocks.append(
-                    DayBlock("group_social_activity", self._clock_window(cur, 75), 75, False, optional=True, kind="social_activity")
+                    DayBlock(
+                        "group_social_activity",
+                        self._clock_window(cur, 75),
+                        75,
+                        False,
+                        optional=True,
+                        kind="social_activity",
+                    )
                 )
             return DaySkeleton(strategy="multi_stop", blocks=tuple(blocks))
 
@@ -305,7 +359,9 @@ class DaySkeletonBuilder:
         cur = lunch_start + 60 + 30
         b3 = DayBlock("support_activity", self._clock_window(cur, 150), 150, True)
         cur += 150
-        b4 = DayBlock("break_support_bonus", self._clock_window(cur, 60), 60, False, kind="break")
+        b4 = DayBlock(
+            "break_support_bonus", self._clock_window(cur, 60), 60, False, kind="break"
+        )
         cur += 60
         dinner_start = max(18 * 60, min(20 * 60, cur))
         b5 = DayBlock(
@@ -317,12 +373,21 @@ class DaySkeletonBuilder:
             candidate_category="food_drink",
         )
         cur = dinner_start + 60 + 15
-        b6 = DayBlock("bonus_activity", self._clock_window(cur, 120), 120, True, optional=True)
+        b6 = DayBlock(
+            "bonus_activity", self._clock_window(cur, 120), 120, True, optional=True
+        )
         cur += 120 + 15
         blocks = [b1, b2, b3, b4, b5, b6]
         if cur < 23 * 60:
             blocks.append(
-                DayBlock("group_social_activity", self._clock_window(cur, 75), 75, False, optional=True, kind="social_activity")
+                DayBlock(
+                    "group_social_activity",
+                    self._clock_window(cur, 75),
+                    75,
+                    False,
+                    optional=True,
+                    kind="social_activity",
+                )
             )
         return DaySkeleton(
             strategy="anchor_led",
@@ -431,7 +496,9 @@ class DaySkeletonBuilder:
             candidate_category="food_drink",
         )
         cur = dinner_start + 60 + 30
-        b6 = DayBlock("bonus_activity", self._clock_window(cur, 90), 90, True, optional=True)
+        b6 = DayBlock(
+            "bonus_activity", self._clock_window(cur, 90), 90, True, optional=True
+        )
         cur += 90
         blocks = [b1, b2, b3, b4, b5, b6]
         if cur + 30 < 23 * 60:
@@ -574,9 +641,8 @@ class DaySkeletonBuilder:
         cursor = 8 * 60
         blocks: list[DayBlock] = []
         for place in ordered:
-            duration = (
-                place.source_duration_minutes
-                or self._source_default_duration(place.source_time_hint)
+            duration = place.source_duration_minutes or self._source_default_duration(
+                place.source_time_hint
             )
             hinted_start = self._source_start(place.source_time_hint)
             start = max(cursor, hinted_start) if hinted_start is not None else cursor
@@ -600,8 +666,7 @@ class DaySkeletonBuilder:
         target_count = self.minimum_activity_count(brief.pace)
         missing_count = max(0, target_count - len(blocks))
         source_intervals = [
-            self._window_interval(block.time_window)
-            for block in blocks
+            self._window_interval(block.time_window) for block in blocks
         ]
         supplemental_blocks: list[DayBlock] = []
         for time_window, duration in self._SUPPLEMENTAL_WINDOWS:
@@ -727,7 +792,10 @@ class DaySkeletonBuilder:
             return TravelPace.relaxed
         # Adjust pace based on area density - sparse areas need slower pace
         if area_profile is not None:
-            if area_profile.estimated_walkability == "low" and requested_pace == TravelPace.packed:
+            if (
+                area_profile.estimated_walkability == "low"
+                and requested_pace == TravelPace.packed
+            ):
                 # Don't pack too tight in low walkability areas
                 return TravelPace.balanced
         return requested_pace

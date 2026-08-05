@@ -294,7 +294,7 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   đa giới hạn schema, để tạo đủ capacity. Khi duration/date đã được user nêu rõ,
   Planner giữ nguyên duration và đưa overflow vào `UnscheduledPlace`; UI phải
   cho thêm thủ công hoặc tạo prompt yêu cầu AI xếp lại. Stop restaurant/food
-  dùng tối đa ba meal slot mỗi ngày và không chiếm hai activity slot chính;
+  dùng tối đa ba meal anchor mỗi ngày và không chiếm ngân sách thời gian activity;
   cafe/coffee vẫn là activity. PlaceSelector suggestion chỉ dùng capacity còn trống và
   không được chiếm chỗ của URL place. Revision URL tiếp theo phải phục hồi cả
   URL place đã resolve từ Explorer history, kể cả khi revision cũ chưa xếp được.

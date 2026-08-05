@@ -8,7 +8,7 @@ importer idempotent.
 ## ⚠️ Cảnh báo
 
 Đây là thao tác **phá hủy dữ liệu**: migration `20260731_0002`
-xóa bảng `places`, `place_region_snapshots`, `place_region_catalog_state`,
+xóa và tạo lại bảng `places`,
 `user_visited_places`, và rename bảng `reviews` của marketplace thành
 `marketplace_reviews`. Dữ liệu `reviews` của Google Maps Place được ghi
 vào bảng `reviews` mới.
@@ -77,15 +77,14 @@ Script là idempotent: chạy lại sẽ bỏ qua các dòng đã tồn tại nh
 Sau khi import, mỗi `place` sẽ có `opening_hours` được populate lại từ
 bảng `place_opening_hours` đúng contract mà Planner mong đợi.
 
-## 6. Rebuild region snapshot
+## 6. Kiểm tra thống kê vùng
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\run_auto_place_statistics.py --region-key vn,ha-noi --force
 ```
 
-Lặp lại với các region_key khác mà bạn muốn cache (`vn,da-nang`,
-`vn,quang-nam,hoi-an`, …). Snapshot cũ đã bị migration xóa; chạy
-`run_auto_place_statistics.py` sẽ tạo snapshot mới với fingerprint mới.
+Lệnh này kiểm tra việc tính thống kê theo `region_key`. Kết quả runtime được
+tính trực tiếp từ `places`; không còn ghi cache vào bảng PostgreSQL.
 
 ## 7. Kiểm tra
 

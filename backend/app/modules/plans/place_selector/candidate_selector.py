@@ -25,6 +25,9 @@ from app.modules.plans.place_selector.place_tool import (
     semantic_categories,
 )
 from app.modules.plans.place_selector.skeleton_builder import DayBlock
+from app.modules.plans.place_selector.timeline_policy import (
+    DEFAULT_ACTIVITY_DURATION_MINUTES,
+)
 from app.modules.plans.place_selector.time_windows import parse_clock_minutes
 from app.modules.plans.trip_theme_planner.opening_hours_parser import (
     extract_time_intervals,
@@ -74,9 +77,16 @@ class CandidateSelectionContext:
 
 
 def candidate_duration(candidate: SelectablePlace, block: DayBlock) -> int:
-    typical = candidate.typical_duration_minutes
-    if typical is None:
+    if block.kind == "meal" and candidate.source_duration_minutes is None:
         return block.duration_minutes
+    typical = candidate.source_duration_minutes or candidate.typical_duration_minutes
+    if typical is None:
+        return (
+            DEFAULT_ACTIVITY_DURATION_MINUTES
+            if block.role.startswith("main_activity_")
+            and block.duration_minutes > DEFAULT_ACTIVITY_DURATION_MINUTES
+            else block.duration_minutes
+        )
     if typical <= block.duration_minutes:
         return typical
     minimum = candidate.minimum_duration_minutes
@@ -351,12 +361,8 @@ class CandidateSelector:
             return False
         if left_tokens == right_tokens:
             return True
-        if (
-            min(len(left_tokens), len(right_tokens)) < 2
-            or not (
-                left_tokens.issubset(right_tokens)
-                or right_tokens.issubset(left_tokens)
-            )
+        if min(len(left_tokens), len(right_tokens)) < 2 or not (
+            left_tokens.issubset(right_tokens) or right_tokens.issubset(left_tokens)
         ):
             return False
 
@@ -368,10 +374,13 @@ class CandidateSelector:
         )
         if any(value is None for value in coordinates):
             return True
-        return self._haversine_meters(
-            (coordinates[0], coordinates[1]),
-            (coordinates[2], coordinates[3]),
-        ) <= 750
+        return (
+            self._haversine_meters(
+                (coordinates[0], coordinates[1]),
+                (coordinates[2], coordinates[3]),
+            )
+            <= 750
+        )
 
     @staticmethod
     def _identity_tokens(value: str) -> set[str]:
@@ -379,7 +388,7 @@ class CandidateSelector:
         normalized: list[str] = []
         index = 0
         while index < len(tokens):
-            if tokens[index:index + 2] == ["ca", "phe"]:
+            if tokens[index : index + 2] == ["ca", "phe"]:
                 normalized.append("cafe")
                 index += 2
                 continue
@@ -409,11 +418,7 @@ class CandidateSelector:
         target_tags: list[str],
     ) -> list[SelectablePlace]:
         location = user_status.location
-        if (
-            location is None
-            or location.latitude is None
-            or location.longitude is None
-        ):
+        if location is None or location.latitude is None or location.longitude is None:
             return candidates
         origin = (location.latitude, location.longitude)
         ranked: list[tuple[int, float, int, SelectablePlace]] = []
@@ -430,9 +435,7 @@ class CandidateSelector:
                     origin,
                     (candidate.latitude, candidate.longitude),
                 )
-            ranked.append(
-                (-relevance_score, distance, relevance_rank, candidate)
-            )
+            ranked.append((-relevance_score, distance, relevance_rank, candidate))
         return [
             candidate
             for _, _, _, candidate in sorted(
@@ -457,9 +460,7 @@ class CandidateSelector:
         delta_longitude = longitude_2 - longitude_1
         value = (
             sin(delta_latitude / 2) ** 2
-            + cos(latitude_1)
-            * cos(latitude_2)
-            * sin(delta_longitude / 2) ** 2
+            + cos(latitude_1) * cos(latitude_2) * sin(delta_longitude / 2) ** 2
         )
         return 6_371_000 * 2 * asin(sqrt(value))
 
@@ -529,9 +530,7 @@ class CandidateSelector:
                 set([*compatible_focus_tags, *primary_values])
             )
             fallback_values = (
-                []
-                if route_first_categories
-                else [*intent_interests, travel_style]
+                [] if route_first_categories else [*intent_interests, travel_style]
             )
         else:
             fallback_values = []
@@ -623,7 +622,9 @@ class CandidateSelector:
                         "selection_method": selected.selection_method,
                         "route_score": selected.route_score,
                         "identity_confidence": selected.identity_confidence,
-                        "tags": list(dict.fromkeys([*selected.tags, *stored_place.tags])),
+                        "tags": list(
+                            dict.fromkeys([*selected.tags, *stored_place.tags])
+                        ),
                         "source_order": selected.source_order,
                         "source_day": selected.source_day,
                         "source_time_hint": selected.source_time_hint,
@@ -631,8 +632,7 @@ class CandidateSelector:
                         "source_duration_minutes": selected.source_duration_minutes,
                         "notes": selected.notes,
                         "image_urls": (
-                            list(selected.image_urls)
-                            or stored_place.image_urls
+                            list(selected.image_urls) or stored_place.image_urls
                         ),
                         "rating": (
                             selected.rating
@@ -651,7 +651,9 @@ class CandidateSelector:
             name=selected.name,
             address=selected.address,
             placeType="selected_place",
-            regionKey=selected.region_key or brief.target_region_key or brief.target_area,
+            regionKey=selected.region_key
+            or brief.target_region_key
+            or brief.target_area,
             tags=selected.tags,
             latitude=selected.latitude,
             longitude=selected.longitude,
@@ -678,7 +680,9 @@ class CandidateSelector:
             reviewCount=selected.review_count or 0,
         )
 
-    def _intensity_allowed(self, candidate: SelectablePlace, user_status: UserStatus) -> bool:
+    def _intensity_allowed(
+        self, candidate: SelectablePlace, user_status: UserStatus
+    ) -> bool:
         allowed = user_status.constraints.allowed_activity_intensities
         if not allowed or candidate.activity_intensity is None:
             return True
@@ -699,7 +703,9 @@ class CandidateSelector:
         enforce_opening_hours: bool = True,
     ) -> CandidateRejection | None:
         if candidate.name.casefold() in avoided_place_names:
-            return CandidateRejection("avoided_by_user", "Place is explicitly avoided by the user.")
+            return CandidateRejection(
+                "avoided_by_user", "Place is explicitly avoided by the user."
+            )
         policy_rejection = constraint_policy_rejection(
             constraint_policy,
             name=candidate.name,
@@ -713,26 +719,22 @@ class CandidateSelector:
         normalized_place_type = (
             candidate.place_type.strip().casefold().replace(" ", "_")
         )
-        if (
-            not is_selected
-            and normalized_place_type in NON_TOURISM_PLACE_TYPES
-        ):
+        if not is_selected and normalized_place_type in NON_TOURISM_PLACE_TYPES:
             return CandidateRejection(
                 "activity_category_mismatch",
                 "The catalogue type is not a visitable tourism activity.",
             )
         if (
             not is_selected
-            and block.role in {"main_activity_1", "main_activity_2"}
+            and block.role.startswith("main_activity_")
             and self._has_non_visit_name(candidate)
         ):
             return CandidateRejection(
                 "activity_category_mismatch",
                 "A service counter or ticket office is not a main activity.",
             )
-        if (
-            block.candidate_category is not None
-            and not place_matches_categories(candidate, {block.candidate_category})
+        if block.candidate_category is not None and not place_matches_categories(
+            candidate, {block.candidate_category}
         ):
             return CandidateRejection(
                 "slot_category_mismatch",
@@ -756,7 +758,7 @@ class CandidateSelector:
             and (
                 category == "food_drink"
                 or (
-                    block.role in {"main_activity_1", "main_activity_2"}
+                    block.role.startswith("main_activity_")
                     and self._has_strong_food_name(candidate)
                 )
             )
@@ -776,12 +778,9 @@ class CandidateSelector:
             constraint.strip().casefold().replace("-", "_").replace(" ", "_")
             for constraint in intent_constraints
         }
-        if (
-            normalized_constraints.intersection(
-                {"avoid_outdoor", "bad_weather", "rain", "indoor_only"}
-            )
-            and self._is_outdoor(candidate)
-        ):
+        if normalized_constraints.intersection(
+            {"avoid_outdoor", "bad_weather", "rain", "indoor_only"}
+        ) and self._is_outdoor(candidate):
             return CandidateRejection(
                 "avoid_outdoor_constraint",
                 "Place is outdoor but the plan requires avoiding outdoor activities.",
@@ -805,13 +804,10 @@ class CandidateSelector:
                 "Place price level is too high for the trip budget.",
             )
         duration = candidate_duration(candidate, block)
-        if (
-            enforce_opening_hours
-            and not self._opening_hours_cover_block(
-                candidate,
-                block.time_window,
-                duration,
-            )
+        if enforce_opening_hours and not self._opening_hours_cover_block(
+            candidate,
+            block.time_window,
+            duration,
         ):
             return CandidateRejection(
                 "opening_hours_mismatch",
@@ -840,7 +836,9 @@ class CandidateSelector:
         accessibility_features = {
             feature.casefold() for feature in candidate.accessibility_features
         }
-        if accessibility_needs and not accessibility_needs.issubset(accessibility_features):
+        if accessibility_needs and not accessibility_needs.issubset(
+            accessibility_features
+        ):
             return CandidateRejection(
                 "accessibility_unmet",
                 "Place does not satisfy the user's accessibility needs.",
@@ -948,7 +946,10 @@ class CandidateSelector:
         for open_minutes, close_minutes in intervals:
             adjusted_start = start
             adjusted_end = end
-            if adjusted_start < open_minutes and adjusted_end <= close_minutes - 24 * 60:
+            if (
+                adjusted_start < open_minutes
+                and adjusted_end <= close_minutes - 24 * 60
+            ):
                 adjusted_start += 24 * 60
                 adjusted_end += 24 * 60
             if open_minutes <= adjusted_start and adjusted_end <= close_minutes:

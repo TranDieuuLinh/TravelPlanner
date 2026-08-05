@@ -3,6 +3,7 @@ import re
 from app.modules.plans.domain.entities import CheckReport, CheckIssue, Plan
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.domain.validators import find_empty_days
+from app.modules.plans.place_selector.timeline_policy import MEAL_ANCHORS
 
 
 class OverallChecker:
@@ -19,8 +20,8 @@ class OverallChecker:
                 evidence=[place.reason_code],
                 canAutoFix=False,
                 suggestedAction=(
-                    "Increase the trip duration, relax the pace constraint, "
-                    "or remove the Place from the confirmed list."
+                    "Increase the trip duration, change a fixed time, or "
+                    "remove the Place from the confirmed list."
                 ),
             )
             for place in plan.unscheduled_places
@@ -36,7 +37,6 @@ class OverallChecker:
         )
         issues.extend(self._constraint_policy_issues(plan))
         issues.extend(self._timeline_issues(plan))
-        issues.extend(self._density_issues(plan))
         duplicate_place_ids = self._duplicate_place_ids(plan)
         if duplicate_place_ids:
             issues.append(
@@ -48,8 +48,7 @@ class OverallChecker:
                         item.item_id
                         for day in plan.days
                         for item in day.items
-                        if item.item_id
-                        and item.place_id in duplicate_place_ids
+                        if item.item_id and item.place_id in duplicate_place_ids
                     ],
                     evidence=sorted(duplicate_place_ids),
                     canAutoFix=True,
@@ -65,12 +64,8 @@ class OverallChecker:
                     canAutoFix=False,
                 )
             )
-        route_legs = [
-            leg for day in plan.days for leg in day.transport_legs
-        ]
-        unverified_route_legs = [
-            leg for leg in route_legs if not leg.verified
-        ]
+        route_legs = [leg for day in plan.days for leg in day.transport_legs]
+        unverified_route_legs = [leg for leg in route_legs if not leg.verified]
         if unverified_route_legs:
             issues.append(
                 CheckIssue(
@@ -124,75 +119,77 @@ class OverallChecker:
             for item in day.items
             if not self._is_valid_same_day_window(item.time_window)
         ]
-        if not invalid_items:
-            return []
-        return [
-            CheckIssue(
-                code="invalid_time_window",
-                severity="error",
-                message=(
-                    "Plan contains a time window outside the same local day."
-                ),
-                affectedItemIds=[
-                    item.item_id
-                    for item in invalid_items
-                    if item.item_id is not None
-                ],
-                evidence=[item.time_window for item in invalid_items],
-                canAutoFix=True,
-                suggestedAction=(
-                    "Move overflowing items to another day or leave them "
-                    "unscheduled."
-                ),
-            )
-        ]
-
-    def _density_issues(self, plan: Plan) -> list[CheckIssue]:
-        capacity = {
-            "relaxed": 2,
-            "balanced": 3,
-            "packed": 5,
-        }[plan.intent.pace.value]
         issues: list[CheckIssue] = []
-        for day in plan.days:
-            activities = [
-                item
-                for item in day.items
-                if item.timeline_category == "activity"
-                and not (
-                    item.role == "group_social_activity"
-                    and item.source == "finder_rule"
-                    and item.place_id is None
-                )
-            ]
-            if len(activities) <= capacity:
-                continue
+        if invalid_items:
             issues.append(
                 CheckIssue(
-                    code="day_activity_capacity_exceeded",
+                    code="invalid_time_window",
                     severity="error",
-                    message=(
-                        f"Day {day.day} contains {len(activities)} activities, "
-                        f"above the {capacity}-activity limit for "
-                        f"{plan.intent.pace.value} pace."
-                    ),
+                    message=("Plan contains a time window outside the same local day."),
                     affectedItemIds=[
                         item.item_id
-                        for item in activities[capacity:]
+                        for item in invalid_items
                         if item.item_id is not None
                     ],
-                    evidence=[
-                        f"activityCount={len(activities)}",
-                        f"capacity={capacity}",
-                    ],
+                    evidence=[item.time_window for item in invalid_items],
                     canAutoFix=True,
                     suggestedAction=(
-                        "Move excess activities to another day or leave them "
+                        "Move overflowing items to another day or leave them "
                         "unscheduled."
                     ),
                 )
             )
+
+        anchor_windows = {anchor.role: anchor.time_window for anchor in MEAL_ANCHORS}
+        for day in plan.days:
+            valid_items = [
+                item
+                for item in day.items
+                if self._is_valid_same_day_window(item.time_window)
+            ]
+            ordered = sorted(valid_items, key=lambda item: self._window(item)[0])
+            overlapping_ids: list[str] = []
+            for previous, current in zip(ordered, ordered[1:]):
+                if self._window(current)[0] < self._window(previous)[1]:
+                    overlapping_ids.extend(
+                        item.item_id
+                        for item in (previous, current)
+                        if item.item_id is not None
+                    )
+            if overlapping_ids:
+                issues.append(
+                    CheckIssue(
+                        code="timeline_overlap",
+                        severity="error",
+                        message=f"Day {day.day} contains overlapping timeline items.",
+                        affectedItemIds=list(dict.fromkeys(overlapping_ids)),
+                        canAutoFix=True,
+                        suggestedAction="Re-fit activities between the fixed meal anchors.",
+                    )
+                )
+            for item in day.items:
+                expected = anchor_windows.get(item.role or "")
+                if expected is None or item.time_window == expected:
+                    continue
+                issues.append(
+                    CheckIssue(
+                        code="meal_anchor_moved",
+                        severity="error",
+                        message=f"{item.role} on day {day.day} moved from {expected}.",
+                        affectedItemIds=[item.item_id] if item.item_id else [],
+                        evidence=[item.time_window, expected],
+                        canAutoFix=True,
+                        suggestedAction="Restore the fixed meal anchor and re-fit activities.",
+                    )
+                )
         return issues
+
+    @staticmethod
+    def _window(item) -> tuple[int, int]:
+        start, end = item.time_window.split("-", maxsplit=1)
+        start_hour, start_minute = (int(value) for value in start.split(":"))
+        end_hour, end_minute = (int(value) for value in end.split(":"))
+        return start_hour * 60 + start_minute, end_hour * 60 + end_minute
 
     def _is_valid_same_day_window(self, value: str) -> bool:
         match = re.fullmatch(
@@ -235,11 +232,7 @@ class OverallChecker:
                         evidence=[
                             item.place_type,
                             *item.tags,
-                            *(
-                                [item.region_key]
-                                if item.region_key is not None
-                                else []
-                            ),
+                            *([item.region_key] if item.region_key is not None else []),
                         ],
                         canAutoFix=True,
                         suggestedAction=(

@@ -93,13 +93,12 @@ def test_overall_checker_rejects_time_windows_beyond_local_day() -> None:
 
     assert report.status == "failed"
     assert any(
-        issue.code == "invalid_time_window"
-        and issue.affected_item_ids == ["overflow"]
+        issue.code == "invalid_time_window" and issue.affected_item_ids == ["overflow"]
         for issue in report.issues
     )
 
 
-def test_overall_checker_rejects_day_above_pace_capacity() -> None:
+def test_overall_checker_allows_many_non_overlapping_activities() -> None:
     plan = _plan_with_items(
         [
             PlanItem(
@@ -114,10 +113,35 @@ def test_overall_checker_rejects_day_above_pace_capacity() -> None:
 
     report = OverallChecker().check(plan)
 
+    assert not any(
+        issue.code == "day_activity_capacity_exceeded" for issue in report.issues
+    )
+
+
+def test_overall_checker_rejects_overlapping_timeline_items() -> None:
+    plan = _plan_with_items(
+        [
+            PlanItem(
+                itemId="first",
+                name="First",
+                timeWindow="09:00-10:30",
+                placeType="attraction",
+            ),
+            PlanItem(
+                itemId="second",
+                name="Second",
+                timeWindow="10:00-11:00",
+                placeType="attraction",
+            ),
+        ]
+    )
+
+    report = OverallChecker().check(plan)
+
     assert report.status == "failed"
     assert any(
-        issue.code == "day_activity_capacity_exceeded"
-        and issue.affected_item_ids == ["activity-3"]
+        issue.code == "timeline_overlap"
+        and issue.affected_item_ids == ["first", "second"]
         for issue in report.issues
     )
 

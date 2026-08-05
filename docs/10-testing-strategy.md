@@ -31,8 +31,10 @@ Sử dụng pytest cho domain và service:
   tính; URL provenance không có `sourceDay` được phép đổi ngày theo tuyến;
 - itinerary optimizer gom activity gần nhau giữa các ngày, giữ source-day anchor,
   dùng matrix khi có và bảo toàn thứ tự khi provider lỗi;
-- route-first tạo đúng hai activity và ba bữa mỗi ngày theo thứ tự cố định; meal selector
-  chọn breakfast/lunch/dinner sau activity và không dùng khung giờ;
+- route-first giữ ba meal anchor, cho phép hơn hai activity khi duration và
+  transition còn vừa, đồng thời đưa activity tràn thời gian vào danh sách chưa xếp;
+- route-first thử chuyển activity overflow sang đúng một ngày khả thi khác và
+  không làm bật khỏi lịch một item đã xếp ở ngày đích;
 - mọi selected place được xếp hoặc có lý do chưa xếp;
 - bảo toàn item đã khóa và tính độc lập của plan dự phòng;
 - trip chat giữ nguyên plan ID qua nhiều revision, nhớ user request trước và

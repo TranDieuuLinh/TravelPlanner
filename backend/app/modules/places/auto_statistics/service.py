@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -43,16 +44,12 @@ class AutoPlaceStatisticsService:
         output_path: Path,
         *,
         stale_after_days: int = 30,
-        snapshot_ttl_hours: int = 24,
     ) -> None:
         if stale_after_days < 1:
             raise ValueError("stale_after_days must be at least 1")
-        if snapshot_ttl_hours < 1:
-            raise ValueError("snapshot_ttl_hours must be at least 1")
         self.repository = repository
         self.output_path = output_path.resolve()
         self.stale_after_days = stale_after_days
-        self.snapshot_ttl_hours = snapshot_ttl_hours
 
     def refresh(self, *, force: bool = False) -> AutoStatisticsRefreshResult:
         source_signature = self.repository.source_signature()
@@ -106,27 +103,8 @@ class AutoPlaceStatisticsService:
         *,
         force: bool = False,
     ) -> PlannerRegionStatisticsResult:
+        del force
         source_signature = self.repository.source_signature(region_key)
-        current_snapshot = self.repository.get_current_snapshot(region_key)
-        if (
-            not force
-            and current_snapshot is not None
-            and current_snapshot.algorithm_version == ALGORITHM_VERSION
-            and current_snapshot.source_fingerprint
-            == source_signature["fingerprint"]
-            and _is_future(current_snapshot.expires_at, utc_now())
-        ):
-            return PlannerRegionStatisticsResult(
-                status="cached",
-                region_key=region_key,
-                regions=current_snapshot.metrics_json["regions"],
-                snapshot_id=current_snapshot.id,
-                catalog_version=current_snapshot.catalog_version,
-                algorithm_version=current_snapshot.algorithm_version,
-                generated_at=current_snapshot.generated_at.isoformat(),
-                source_fingerprint=str(source_signature["fingerprint"]),
-            )
-
         generated_at = utc_now()
         stale_before = generated_at - timedelta(days=self.stale_after_days)
         regions, row_count = build_region_statistics(
@@ -140,23 +118,19 @@ class AutoPlaceStatisticsService:
             )
 
         source_signature["rowCount"] = row_count
-        snapshot = self.repository.save_region_snapshot(
-            region_key=region_key,
-            algorithm_version=ALGORITHM_VERSION,
-            source_signature=source_signature,
-            regions=regions,
-            generated_at=generated_at,
-            expires_at=generated_at + timedelta(hours=self.snapshot_ttl_hours),
-        )
+        fingerprint = str(source_signature["fingerprint"])
         return PlannerRegionStatisticsResult(
-            status="refreshed",
+            status="computed",
             region_key=region_key,
             regions=regions,
-            snapshot_id=snapshot.id,
-            catalog_version=snapshot.catalog_version,
-            algorithm_version=snapshot.algorithm_version,
-            generated_at=snapshot.generated_at.isoformat(),
-            source_fingerprint=str(source_signature["fingerprint"]),
+            snapshot_id=f"live-{fingerprint[:24]}",
+            catalog_version=int(
+                hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:15],
+                16,
+            ),
+            algorithm_version=ALGORITHM_VERSION,
+            generated_at=generated_at.isoformat(),
+            source_fingerprint=fingerprint,
         )
 
     def _read_existing(self, path: Path) -> dict[str, Any] | None:
@@ -195,11 +169,3 @@ class AutoPlaceStatisticsService:
             os.replace(temporary_path, path)
         finally:
             temporary_path.unlink(missing_ok=True)
-
-
-def _is_future(value: datetime | None, now: datetime) -> bool:
-    if value is None:
-        return False
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value > now

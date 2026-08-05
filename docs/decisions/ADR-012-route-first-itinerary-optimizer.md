@@ -1,6 +1,6 @@
 # ADR-012: Route-first itinerary optimizer ở cấp toàn chuyến
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Được thay thế một phần bởi ADR-024
 - Ngày: 2026-08-02
 
 ## Bối cảnh
@@ -19,17 +19,13 @@ Thêm module `app/modules/plans/itinerary_optimizer` sau bước Finder chọn P
 - backend tạo `dayBriefs` trung tính chỉ để tương thích contract cũ; đây là bucket sức
   chứa, không phải quyết định nội dung ngày của Planner;
 - theme ngày là tín hiệu mềm để tìm candidate, không tham gia hàm mục tiêu route;
-- mỗi ngày route-first có đúng hai activity chính; optimizer được phép hoán đổi
-  activity thông thường giữa các ngày nhưng không đổi số slot của ngày;
+- historical implementation used two activity slots per day. This constraint is
+  superseded by ADR-024; optimizer may reassign movable activities by duration
+  and geographic cluster before per-day timeline fitting;
 - stop URL/OCR chỉ bị khóa ngày khi có `sourceDay`; `sourceOrder` giữ thứ tự nguồn,
   còn provenance URL đơn thuần vẫn được phép đổi ngày để gom cụm địa lý;
-- ba bữa ăn không tham gia bước chọn/tối ưu activity. Sau khi hai activity đã chốt,
-  `MealStopSelector` chọn breakfast gần activity đầu, lunch có độ lệch tuyến nhỏ nhất
-  giữa hai activity và dinner gần activity cuối;
-- thứ tự ngày cố định là breakfast → activity 1 → lunch → activity 2 → dinner;
-- route-first tạm thời không xếp giờ, không lọc theo giờ mở cửa và không chạy
-  `TimelineFitter`. `timeWindow` chỉ giữ marker thứ tự nội bộ để tương thích contract cũ,
-  không được hiển thị hay diễn giải thành giờ hẹn;
+- meal selection and timeline fitting are now governed by ADR-024. The old
+  two-activity marker sequence remains only as compatibility history;
 - dùng `TravelTimeMatrixProvider` để giảm tổng thời gian di chuyển của toàn chuyến;
 - PlaceSelector không gọi pedestrian/auto/transit leg trong lúc chọn Place; route
   enrichment chi tiết chỉ chạy sau khi allocation và thứ tự cuối cùng đã chốt;

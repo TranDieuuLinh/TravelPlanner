@@ -1,11 +1,10 @@
 import asyncio
 from datetime import datetime, timezone
-from decimal import Decimal
-from types import SimpleNamespace
 
 import pytest
 from uuid import uuid4
 
+from app.modules.knowledge_graph.place_search import KnowledgeGraphPlaceMatch
 from app.modules.plans.domain.entities import (
     PlaceSelectionBlueprint,
     PlaceSelectionDay,
@@ -234,117 +233,126 @@ def test_personal_notes_are_separate_from_source_context() -> None:
     )
 
 
-def test_search_place_suggestions_uses_catalog_aliases_without_accents():
-    place = SimpleNamespace(
-        id="place-coffee-9",
-        name="Coffee 9",
-        place_type="cafe",
-        address="9 Phố Cà Phê, Hà Nội",
-        city="Hà Nội",
-        country="Việt Nam",
-        country_code="vn",
-        primary_area="Hoàn Kiếm",
-        latitude=Decimal("21.0285"),
-        longitude=Decimal("105.8542"),
-        data_confidence="high",
-        source_fetched_at=None,
-        metadata_json={"vietnameseNames": ["Cà phê 9"]},
+def _graph_place(
+    place_id: str,
+    name: str,
+    *,
+    status: str = "verified",
+) -> KnowledgeGraphPlaceMatch:
+    return KnowledgeGraphPlaceMatch(
+        entity_id=place_id,
+        name=name,
+        entity_type="Restaurant",
+        status=status,
+        address="Hoàn Kiếm, Hà Nội",
+        latitude=21.0285,
+        longitude=105.8542,
+        rating=4.7,
+        review_count=120,
     )
 
-    class FakePlaceRepository:
-        def search_active_for_autocomplete(
-            self,
-            query,
-            region_key=None,
-            *,
-            limit=200,
-        ):
+
+def test_search_place_suggestions_reads_knowledge_graph_first():
+    place = _graph_place(
+        "place-coffee-9",
+        name="Coffee 9",
+    )
+
+    class FakeGraphRepository:
+        def search(self, query, destination, *, limit):
             assert query == "ca phe"
-            assert region_key == "vn,ha-noi"
-            assert limit == 200
+            assert destination == "Hà Nội"
+            assert limit == 1
             return [place]
 
-    service = PlanMutationService(place_repository=FakePlaceRepository())
+    class FailingGoogleMapsClient:
+        async def search(self, *args, **kwargs):
+            raise AssertionError("Google Maps must not run when graph fills top K")
+
+    service = PlanMutationService(
+        graph_place_repository=FakeGraphRepository(),
+        gmaps_client=FailingGoogleMapsClient(),
+    )
 
     suggestions = asyncio.run(
-        service.search_place_suggestions("ca phe", destination="Hà Nội")
+        service.search_place_suggestions("ca phe", destination="Hà Nội", top_k=1)
     )
 
     assert [suggestion.place_id for suggestion in suggestions] == ["place-coffee-9"]
     assert suggestions[0].name == "Coffee 9"
     assert suggestions[0].latitude == 21.0285
+    assert suggestions[0].source == "knowledge_graph"
+    assert suggestions[0].is_verified is True
 
 
-def test_search_place_suggestions_ranks_popular_exact_matches_first():
-    quiet_branch = SimpleNamespace(
-        id="quiet-branch",
-        name="Phở Thìn",
-        address="Tây Mỗ, Hà Nội",
-        latitude=Decimal("21.005899"),
-        longitude=Decimal("105.733861"),
-        review_count=92,
-        rating=Decimal("3.9"),
-        metadata_json={},
+def test_search_place_suggestions_uses_google_to_fill_missing_graph_results():
+    class FakeGraphRepository:
+        def search(self, query, destination, *, limit):
+            return [_graph_place("graph-pho-thin", "Phở Thìn")]
+
+    class FakeGoogleMapsClient:
+        async def search(self, query, *, region, limit):
+            assert query == "Pho"
+            assert region == "Hà Nội"
+            assert limit == 3
+            return [
+                {
+                    "place_id": "google-duplicate",
+                    "title": "Pho Thin",
+                    "address": "13 Lò Đúc, Hà Nội",
+                    "latitude": 21.018111,
+                    "longitude": 105.855301,
+                },
+                {
+                    "place_id": "google-pho-suonk",
+                    "title": "Phở Sướng",
+                    "address": "Hoàn Kiếm, Hà Nội",
+                    "latitude": 21.03,
+                    "longitude": 105.85,
+                },
+            ]
+
+    service = PlanMutationService(
+        graph_place_repository=FakeGraphRepository(),
+        gmaps_client=FakeGoogleMapsClient(),
     )
-    popular_branch = SimpleNamespace(
-        id="popular-branch",
-        name="Phở Thìn",
-        address="13 Lò Đúc, Hà Nội",
-        latitude=Decimal("21.018111"),
-        longitude=Decimal("105.855301"),
-        review_count=1506,
-        rating=Decimal("4.2"),
-        metadata_json={},
-    )
-
-    class FakePlaceRepository:
-        def search_active_for_autocomplete(
-            self,
-            query,
-            region_key=None,
-            *,
-            limit=200,
-        ):
-            return [quiet_branch, popular_branch]
-
-    service = PlanMutationService(place_repository=FakePlaceRepository())
 
     suggestions = asyncio.run(
-        service.search_place_suggestions("Pho Thin", destination="Ha Noi")
+        service.search_place_suggestions("Pho", destination="Hà Nội", top_k=3)
     )
 
     assert [suggestion.place_id for suggestion in suggestions] == [
-        "popular-branch",
-        "quiet-branch",
+        "graph-pho-thin",
+        "google-pho-suonk",
     ]
-
-
-def test_search_place_suggestions_returns_requested_top_k():
-    places = [
-        SimpleNamespace(
-            id=f"coffee-{index}",
-            name=f"Coffee {index}",
-            address=f"{index} Coffee Street, Hà Nội",
-            latitude=Decimal("21.0285"),
-            longitude=Decimal("105.8542"),
-            review_count=10 - index,
-            rating=Decimal("4.0"),
-            metadata_json={},
-        )
-        for index in range(7)
+    assert [suggestion.source for suggestion in suggestions] == [
+        "knowledge_graph",
+        "google_maps_scraper",
     ]
+    assert suggestions[1].is_verified is False
 
-    class FakePlaceRepository:
-        def search_active_for_autocomplete(
-            self,
-            query,
-            region_key=None,
-            *,
-            limit=200,
-        ):
-            return places
 
-    service = PlanMutationService(place_repository=FakePlaceRepository())
+def test_search_place_suggestions_falls_back_to_google_when_graph_misses():
+    class EmptyGraphRepository:
+        def search(self, query, destination, *, limit):
+            return []
+
+    class FakeGoogleMapsClient:
+        async def search(self, query, *, region, limit):
+            return [
+                {
+                    "place_id": f"google-{index}",
+                    "title": f"Coffee {index}",
+                    "latitude": 21.0 + index / 100,
+                    "longitude": 105.8,
+                }
+                for index in range(limit)
+            ]
+
+    service = PlanMutationService(
+        graph_place_repository=EmptyGraphRepository(),
+        gmaps_client=FakeGoogleMapsClient(),
+    )
 
     suggestions = asyncio.run(
         service.search_place_suggestions(
@@ -355,9 +363,9 @@ def test_search_place_suggestions_returns_requested_top_k():
     )
 
     assert [suggestion.place_id for suggestion in suggestions] == [
-        "coffee-0",
-        "coffee-1",
-        "coffee-2",
+        "google-0",
+        "google-1",
+        "google-2",
     ]
 
 

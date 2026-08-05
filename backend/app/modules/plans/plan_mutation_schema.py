@@ -19,6 +19,7 @@ class PlaceSuggestion(BaseModel):
     website: str | None = None
     opening_hours: list[str] | None = Field(default=None, alias="openingHours")
     is_verified: bool = Field(default=False, alias="isVerified")
+    source: str | None = None
 
     model_config = {"populate_by_name": True}
 

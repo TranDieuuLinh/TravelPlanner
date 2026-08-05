@@ -9,6 +9,12 @@ from typing import Protocol
 from app.modules.plans.domain.entities import PlanDay, PlanItem, PlanTransportLeg
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.routing.provider import TravelTimeMatrixProvider
+from app.modules.plans.place_selector.timeline_policy import DAILY_ACTIVITY_MINUTES
+from app.modules.plans.place_selector.time_windows import parse_clock_minutes
+from app.modules.plans.trip_theme_planner.opening_hours_parser import (
+    extract_time_intervals,
+    is_24_hours,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -76,8 +82,9 @@ class RouteFirstItineraryOptimizer:
 
         Day themes are deliberately absent from the objective. They remain
         presentation/planning hints, while hard source-day provenance stays
-        fixed. A deterministic pair-swap search reduces total provider travel
-        time without changing the number or shape of slots in any day.
+        fixed. A deterministic pair-swap search reduces travel and balances
+        activity minutes before each day receives its detailed meal-anchored
+        timeline.
         """
 
         if len(days) < 2:
@@ -170,9 +177,7 @@ class RouteFirstItineraryOptimizer:
                 else list(day.items)
             )
             legs = []
-        return day.model_copy(
-            update={"items": items, "transport_legs": legs}
-        )
+        return day.model_copy(update={"items": items, "transport_legs": legs})
 
     def _trip_matrix(
         self,
@@ -186,11 +191,7 @@ class RouteFirstItineraryOptimizer:
         for day in days:
             for item in day.items:
                 identity = self._item_identity(item)
-                if (
-                    item.latitude is None
-                    or item.longitude is None
-                    or identity in seen
-                ):
+                if item.latitude is None or item.longitude is None or identity in seen:
                     continue
                 seen.add(identity)
                 located.append(item)
@@ -208,7 +209,10 @@ class RouteFirstItineraryOptimizer:
                 len(coordinates),
             ):
                 matrix = [
-                    [float(value) if value is not None else float("inf") for value in row]
+                    [
+                        float(value) if value is not None else float("inf")
+                        for value in row
+                    ]
                     for row in result.travel_times_seconds
                 ]
         if matrix is None:
@@ -236,6 +240,14 @@ class RouteFirstItineraryOptimizer:
                     if left_slot[0] == right_slot[0]:
                         continue
                     candidate = [day.model_copy(deep=True) for day in working]
+                    left_item = working[left_slot[0]].items[left_slot[1]]
+                    right_item = working[right_slot[0]].items[right_slot[1]]
+                    left_window = right_item.time_window
+                    right_window = left_item.time_window
+                    if not self._item_fits_window(left_item, left_window):
+                        continue
+                    if not self._item_fits_window(right_item, right_window):
+                        continue
                     self._swap_slot_items(candidate, left_slot, right_slot)
                     candidate_day_costs = self._day_costs(
                         candidate,
@@ -262,6 +274,15 @@ class RouteFirstItineraryOptimizer:
         matrix: list[list[float]],
         matrix_index: dict[str, int],
     ) -> list[float]:
+        activity_minutes = [
+            sum(
+                item.duration_minutes or 0
+                for item in day.items
+                if item.timeline_category == "activity"
+            )
+            for day in days
+        ]
+        target_minutes = sum(activity_minutes) / len(days) if days else 0
         costs: list[float] = []
         for day in days:
             path = [
@@ -269,12 +290,25 @@ class RouteFirstItineraryOptimizer:
                 for item in day.items
                 if self._item_identity(item) in matrix_index
             ]
-            costs.append(
-                sum(
-                    matrix[origin][destination]
-                    for origin, destination in zip(path, path[1:])
-                )
+            travel_cost = sum(
+                matrix[origin][destination]
+                for origin, destination in zip(path, path[1:])
             )
+            day_minutes = sum(
+                item.duration_minutes or 0
+                for item in day.items
+                if item.timeline_category == "activity"
+            )
+            overflow_penalty = (
+                max(
+                    0,
+                    day_minutes - DAILY_ACTIVITY_MINUTES,
+                )
+                * 60
+                * 10
+            )
+            balance_penalty = abs(day_minutes - target_minutes) * 60
+            costs.append(travel_cost + overflow_penalty + balance_penalty)
         return costs
 
     @staticmethod
@@ -326,9 +360,7 @@ class RouteFirstItineraryOptimizer:
             )
 
         movable_positions = [
-            index
-            for index, item in enumerate(items)
-            if self._is_movable_activity(item)
+            index for index, item in enumerate(items) if self._is_movable_activity(item)
         ]
         if len(movable_positions) < 2:
             return self.legacy_optimizer.optimize(
@@ -427,7 +459,7 @@ class RouteFirstItineraryOptimizer:
         avoid_modes: set[str],
     ) -> tuple[list[list[float]], int]:
         coordinates = [
-            *(([start] if start is not None else [])),
+            *([start] if start is not None else []),
             *[
                 (items[index].latitude, items[index].longitude)
                 for index in located_positions
@@ -448,7 +480,10 @@ class RouteFirstItineraryOptimizer:
                 len(coordinates),
             ):
                 return [
-                    [float(value) if value is not None else float("inf") for value in row]
+                    [
+                        float(value) if value is not None else float("inf")
+                        for value in row
+                    ]
                     for row in result.travel_times_seconds
                 ], (1 if start is not None else 0)
 
@@ -495,8 +530,7 @@ class RouteFirstItineraryOptimizer:
             if matrix_position is not None:
                 path.append(matrix_position)
         return sum(
-            matrix[origin][destination]
-            for origin, destination in zip(path, path[1:])
+            matrix[origin][destination] for origin, destination in zip(path, path[1:])
         )
 
     def _candidate_orders(
@@ -517,6 +551,23 @@ class RouteFirstItineraryOptimizer:
             and item.longitude is not None
             and item.source_order is None
             and item.source_day is None
+            and not item.locked
+        )
+
+    @staticmethod
+    def _item_fits_window(item: PlanItem, time_window: str) -> bool:
+        if not item.opening_hours:
+            return True
+        if is_24_hours(item.opening_hours):
+            return True
+        start = parse_clock_minutes(time_window)
+        if start is None:
+            return True
+        duration = item.duration_minutes or 0
+        end = start + duration
+        return any(
+            opened <= start and end <= closed
+            for opened, closed in extract_time_intervals(item.opening_hours)
         )
 
     @staticmethod
@@ -562,8 +613,6 @@ def _haversine_meters(
     delta_longitude = longitude_2 - longitude_1
     value = (
         sin(delta_latitude / 2) ** 2
-        + cos(latitude_1)
-        * cos(latitude_2)
-        * sin(delta_longitude / 2) ** 2
+        + cos(latitude_1) * cos(latitude_2) * sin(delta_longitude / 2) ** 2
     )
     return 6_371_000 * 2 * asin(sqrt(value))
