@@ -70,6 +70,7 @@ export function PlannerChatHeader({
         aria-expanded={!collapsed}
         aria-label={collapsed ? "Mở trợ lý VSF" : "Thu gọn trợ lý VSF"}
         className="plannerChatToggle"
+        {...(collapsed ? moveHandleProps : {})}
         onClick={onToggle}
         title={collapsed ? "Mở trợ lý" : "Thu gọn trợ lý"}
         type="button"

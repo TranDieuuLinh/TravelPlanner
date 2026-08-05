@@ -337,21 +337,29 @@ h1, h2, h3, p { margin-top: 0; }
   border: 0;
   padding: 0;
   background: transparent;
+  cursor: grab;
   filter: drop-shadow(0 12px 22px rgba(32, 69, 63, .2));
+  touch-action: none;
 }
+.globalPlannerLauncher:active { cursor: grabbing; }
 .globalPlannerLauncherArtwork {
   position: relative;
   display: block;
   width: 92px;
   height: 92px;
-  border: 1px solid rgba(49, 95, 88, .14);
-  border-radius: 50%;
-  background: #fff;
-  transition: transform .18s ease, box-shadow .18s ease;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  transition: transform .18s ease;
+}
+.globalPlannerLauncherArtwork .globalPlannerPenguin,
+.globalPlannerLauncherArtwork .globalPlannerBubble {
+  pointer-events: none;
 }
 .globalPlannerLauncher:hover .globalPlannerLauncherArtwork,
 .globalPlannerLauncher:focus-visible .globalPlannerLauncherArtwork {
-  box-shadow: 0 12px 28px rgba(32, 69, 63, .2);
   transform: translateY(-3px);
 }
 .globalPlannerLauncher:focus-visible { outline: 0; }
@@ -3337,6 +3345,8 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .mapRouteSummaryBadge { position: absolute; z-index: 505; top: 14px; left: 14px; display: grid; max-width: min(360px, calc(100% - 92px)); gap: 3px; border: 1px solid rgba(54, 95, 90, .14); border-radius: 18px; padding: 13px 18px; background: rgba(255, 255, 255, .94); color: #18312b; box-shadow: 0 10px 28px rgba(32, 69, 63, .14); pointer-events: none; backdrop-filter: blur(12px); }
 .mapRouteSummaryBadge strong { overflow: hidden; font-size: .92rem; font-weight: 900; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .mapRouteSummaryBadge small { overflow: hidden; color: #667a74; font-size: .66rem; font-weight: 760; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.mapDirectionsSearchPanel .mapDirectionsDestinationLabel { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
+.mapDirectionsSearchPanel .mapRouteSummaryBadge--inForm { position: static; inset: auto; display: inline-flex; width: fit-content; max-width: 100%; flex: 0 0 auto; align-items: center; border: 1px solid #d4e8e2; border-radius: 999px; padding: 4px 8px; background: #eef8f5; color: #315f58; font-size: .56rem; font-weight: 850; line-height: 1.1; white-space: nowrap; }
 .mapTravelControls { position: absolute; z-index: 500; right: 64px; bottom: 12px; left: 12px; display: grid; justify-items: start; gap: 10px; }
 .mapDirectionsToolbar { display: flex; width: min(100%,520px); min-width: 0; align-items: stretch; gap: 8px; }
 .mapLocationButton { display: flex; min-height: 38px; align-items: center; gap: 7px; border: 1px solid rgba(255, 255, 255, .75); border-radius: 13px; padding: 0 12px; background: rgba(255, 255, 255, .93); color: #365f5a; box-shadow: 0 8px 24px rgba(42, 65, 61,.12); cursor: pointer; font-size: .57rem; font-weight: 850; backdrop-filter: blur(12px); }
@@ -3362,29 +3372,61 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .mapDirectionsStartPoint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mapDirectionsSearchPanel { display: grid; width: min(360px,calc(100vw - 100px)); gap: 10px; border: 1px solid rgba(54,95,90,.18); border-radius: 15px; padding: 12px; background: rgba(255,255,255,.97); box-shadow: 0 14px 34px rgba(42,65,61,.2); color: var(--ink); backdrop-filter: blur(14px); }
 .mapDirectionsSearchHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.mapDirectionsSearchHeader strong { font-size: .68rem; }
-.mapDirectionsSearchHeader > button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 50%; background: #eef4f2; color: #365f5a; cursor: pointer; font-size: 1rem; line-height: 1; }
+.mapDirectionsSearchHeader > div { display: grid; min-width: 0; gap: 3px; }
+.mapDirectionsSearchEyebrow { color: #66817a; font-size: .48rem; font-weight: 900; letter-spacing: .12em; }
+.mapDirectionsSearchHeader strong { color: #17352f; font-size: .86rem; font-weight: 900; line-height: 1.15; }
+.mapDirectionsSearchHeader small { color: #6b7e79; font-size: .62rem; font-weight: 650; line-height: 1.35; }
+.mapDirectionsClose { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border: 1px solid #e0ebe7; border-radius: 14px; background: #f1f7f5; color: #365f5a; cursor: pointer; }
+.mapDirectionsClose:hover { background: #e4f0ed; }
+.mapDirectionsClose:focus-visible { outline: 3px solid rgba(54,95,90,.22); outline-offset: 2px; }
+.mapDirectionsClose svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 2; }
 .mapDirectionsSearchFields { position: relative; display: grid; gap: 7px; }
 .mapDirectionsSearchFields::before { position: absolute; top: 18px; bottom: 18px; left: 13px; width: 1px; background: #b9c9c5; content: ""; }
-.mapDirectionsSearchField { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 4px; padding-left: 27px; }
+.mapDirectionsSearchField { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 5px 6px; padding-left: 27px; }
 .mapDirectionsSearchField::before { position: absolute; z-index: 1; left: 5px; display: grid; width: 18px; height: 18px; place-items: center; border-radius: 50%; background: #365f5a; color: #fff; content: attr(data-marker); font-size: .45rem; font-weight: 900; }
 .mapDirectionsSearchField[data-marker="B"]::before { background: #d35f4a; }
-.mapDirectionsSearchField input { width: 100%; min-width: 0; height: 38px; border: 1px solid #d8e3e0; border-radius: 9px; padding: 0 10px; background: #fff; color: var(--ink); font: inherit; font-size: .56rem; }
+.mapDirectionsSearchField label { grid-column: 1 / -1; color: #49645e; font-size: .68rem; font-weight: 850; line-height: 1; }
+.mapDirectionsSearchField input { width: 100%; min-width: 0; height: 44px; border: 1px solid #cbdcd7; border-radius: 11px; padding: 0 11px; background: #fff; color: var(--ink); font: inherit; font-size: .75rem; transition: border-color .18s ease, box-shadow .18s ease; }
 .mapDirectionsSearchField input:focus { border-color: #668e87; outline: 3px solid rgba(54,95,90,.12); }
-.mapDirectionsSearchField > button { width: 38px; height: 38px; border: 1px solid #d8e3e0; border-radius: 9px; background: #f5f9f8; color: #365f5a; cursor: pointer; font-size: .78rem; }
+.mapDirectionsSearchField > button { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #cbdcd7; border-radius: 11px; background: #f5f9f8; color: #365f5a; cursor: pointer; }
+.mapDirectionsSearchField > button:hover:not(:disabled) { border-color: #86a9a2; background: #eaf4f1; }
+.mapDirectionsSearchField > button:focus-visible { outline: 3px solid rgba(54,95,90,.2); outline-offset: 2px; }
+.mapDirectionsSearchField > button:disabled { cursor: not-allowed; opacity: .55; }
+.mapDirectionsSearchField > button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.mapDirectionsFieldHelp { grid-column: 1 / -1; color: #7a8d88; font-size: .58rem; font-weight: 650; line-height: 1.3; }
 .mapDirectionsSearchSpinner { position: absolute; right: 10px; width: 13px; height: 13px; border: 2px solid #d2dfdc; border-top-color: #365f5a; border-radius: 50%; animation: spin .8s linear infinite; }
 .mapDirectionsSearchField:has(> button) .mapDirectionsSearchSpinner { right: 48px; }
-.mapDirectionsSearchSuggestions { grid-column: 1/-1; display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #d8e3e0; border-radius: 9px; background: #fff; box-shadow: 0 8px 20px rgba(42,65,61,.12); }
-.mapDirectionsSearchSuggestions button { display: grid; gap: 2px; border: 0; border-bottom: 1px solid #edf1f0; padding: 8px 10px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; }
+.mapDirectionsSearchSuggestions { grid-column: 1/-1; display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #d8e3e0; border-radius: 11px; background: #fff; box-shadow: 0 8px 20px rgba(42,65,61,.12); }
+.mapDirectionsSearchSuggestions button { display: grid; min-height: 44px; gap: 3px; border: 0; border-bottom: 1px solid #edf1f0; padding: 9px 11px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; transition: background .18s ease; }
 .mapDirectionsSearchSuggestions button:last-child { border-bottom: 0; }
 .mapDirectionsSearchSuggestions button:hover { background: #f2f8f6; }
-.mapDirectionsSearchSuggestions strong { font-size: .54rem; }
-.mapDirectionsSearchSuggestions small { color: var(--muted); font-size: .48rem; line-height: 1.35; }
+.mapDirectionsSearchSuggestions button:focus-visible { background: #f2f8f6; outline: 3px solid rgba(54,95,90,.18); outline-offset: -3px; }
+.mapDirectionsSearchSuggestions strong { font-size: .7rem; line-height: 1.25; }
+.mapDirectionsSearchSuggestions small { color: var(--muted); font-size: .58rem; line-height: 1.35; }
 .mapDirectionsSearchActions { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; }
-.mapDirectionsSearchActions button { min-height: 36px; border: 1px solid #cbdad6; border-radius: 9px; padding: 7px 10px; background: #f7fbfa; color: #315a54; cursor: pointer; font: inherit; font-size: .52rem; font-weight: 850; }
+.mapDirectionsSearchActions button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 6px; border: 1px solid #cbdad6; border-radius: 11px; padding: 7px 11px; background: #f7fbfa; color: #315a54; cursor: pointer; font: inherit; font-size: .65rem; font-weight: 850; touch-action: manipulation; transition: background .18s ease, border-color .18s ease, transform .18s ease; }
+.mapDirectionsSearchActions button:hover:not(:disabled) { border-color: #86a9a2; background: #edf6f4; transform: translateY(-1px); }
+.mapDirectionsSearchActions button:focus-visible { outline: 3px solid rgba(54,95,90,.2); outline-offset: 2px; }
+.mapDirectionsSearchActions button svg { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .mapDirectionsSearchActions button.isActive { border-color: #d35f4a; background: #fff3ef; color: #9b3e2f; }
 .mapDirectionsSearchActions .mapDirectionsSearchSubmit { border-color: #365f5a; background: #365f5a; color: #fff; }
+.mapDirectionsSearchActions .mapDirectionsSearchSubmit:hover:not(:disabled) { border-color: #294b47; background: #294b47; }
 .mapDirectionsSearchActions button:disabled { cursor: not-allowed; opacity: .55; }
+.mapDirectionsPreviewStatus { display: flex; min-height: 32px; align-items: center; justify-content: center; border-radius: 9px; padding: 7px 10px; background: #f1f7f5; color: #54716a; font-size: .58rem; font-weight: 750; line-height: 1.35; text-align: center; }
+.mapDirectionsPreviewStatus svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.mapDirectionsPreviewSpinner { width: 15px; height: 15px; border: 2px solid #c7d9d4; border-top-color: #365f5a; border-radius: 50%; animation: spin .8s linear infinite; }
+.mapDirectionsFormSubmit { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 12px; padding: 8px 16px; background: #365f5a; color: #fff; cursor: pointer; font: inherit; font-size: .68rem; font-weight: 900; touch-action: manipulation; transition: background .18s ease, opacity .18s ease, transform .18s ease; }
+.mapDirectionsFormSubmit:hover:not(:disabled) { background: #294b47; transform: translateY(-1px); }
+.mapDirectionsFormSubmit:focus-visible { outline: 3px solid rgba(54,95,90,.24); outline-offset: 2px; }
+.mapDirectionsFormSubmit:disabled { cursor: not-allowed; opacity: .48; }
+.mapDirectionsFormSubmit svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mapDirectionsSearchActions button,
+  .mapDirectionsSearchField input,
+  .mapDirectionsClose { transition: none; }
+  .mapDirectionsSearchSpinner { animation-duration: 1.6s; }
+}
 .directionDestinationMarker { display: grid; width: 32px; height: 38px; place-items: start center; }
 .directionDestinationMarker > span { display: grid; width: 30px; height: 30px; place-items: center; border: 3px solid #fff; border-radius: 50% 50% 50% 8px; background: #d35f4a; color: #fff; box-shadow: 0 7px 16px rgba(42,65,61,.26); font-size: .58rem; font-weight: 900; transform: rotate(-45deg); }
 .directionDestinationMarker > span b { transform: rotate(45deg); }
@@ -3404,6 +3446,19 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
   .mapDirectionsButton { min-height: 48px; border-radius: 15px; padding: 0 10px; font-size: .56rem; }
   .mapDirectionsButton--navigate { min-height: 42px; border-radius: 13px; padding: 0 9px; }
   .mapDirectionsButton--overview strong { font-size: .56rem; }
+  .mapTravelControls { right: 8px; bottom: 8px; left: 8px; gap: 8px; }
+  .mapDirectionsSearchPanel { width: 100%; max-height: min(76dvh, 560px); overflow-y: auto; border-radius: 20px; padding: 16px; box-shadow: 0 18px 44px rgba(23,32,51,.22); }
+  .mapDirectionsSearchHeader strong { font-size: .96rem; }
+  .mapDirectionsSearchHeader small { font-size: .65rem; }
+  .mapDirectionsSearchField input { font-size: .8rem; }
+  .mapDirectionsSearchActions { grid-template-columns: 1fr; }
+  .mapDirectionsSearchActions .mapDirectionsSearchSubmit { order: -1; min-height: 48px; font-size: .65rem; }
+  .mapDirectionsFormSubmit { width: 100%; min-height: 50px; font-size: .7rem; }
+  .mapNavigationSheet { width: 100%; border-radius: 22px; padding: 11px 12px 12px; }
+  .mapNavigationSheetMain strong { font-size: 1rem; }
+  .mapNavigationSheetActions { gap: 6px; }
+  .mapNavigationSheetActions .mapLocationButton,
+  .mapNavigationSheetActions .mapDirectionsCancelButton { flex: 1; justify-content: center; }
 }
 .mapLocationStatusRow { display: flex; width: 100%; max-width: min(610px,100%); align-items: stretch; gap: 8px; }
 .mapLocationStatusRow .mapLocationButton { min-height: 62px; flex: 0 0 auto; border-radius: 20px; padding: 0 17px; white-space: nowrap; }
@@ -3415,6 +3470,20 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .mapDirectionsCancelButton { min-width: 70px; border: 1px solid rgba(54,95,90,.18); border-radius: 20px; padding: 0 14px; background: rgba(255,255,255,.97); color: #294b47; box-shadow: 0 10px 28px rgba(42,65,61,.18); cursor: pointer; font: inherit; font-size: .68rem; font-weight: 900; backdrop-filter: blur(12px); }
 .mapDirectionsCancelButton:hover { background: #f3f8f7; }
 .mapDirectionsCancelButton:focus-visible { outline: 3px solid rgba(7,95,167,.25); outline-offset: 2px; }
+.mapNavigationSheet { display: grid; width: min(480px, calc(100vw - 24px)); gap: 13px; border: 1px solid rgba(255,255,255,.72); border-radius: 24px; padding: 12px 14px 14px; background: rgba(20,29,38,.94); color: #fff; box-shadow: 0 18px 44px rgba(13,27,39,.28); backdrop-filter: blur(18px) saturate(135%); }
+.mapNavigationSheetHandle { width: 42px; height: 4px; margin: 0 auto 1px; border-radius: 999px; background: rgba(255,255,255,.38); }
+.mapNavigationSheetMain { display: grid; gap: 4px; min-width: 0; padding: 0 3px; }
+.mapNavigationSheetEyebrow { color: #a7bac5; font-size: .56rem; font-weight: 850; letter-spacing: .12em; }
+.mapNavigationSheetMain strong { overflow: hidden; color: #fff; font-size: 1.12rem; font-weight: 900; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.mapNavigationSheetMain small { overflow: hidden; color: #c0ced5; font-size: .66rem; font-weight: 650; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.mapNavigationSheetActions { display: flex; gap: 8px; }
+.mapNavigationSheetActions .mapLocationButton,
+.mapNavigationSheetActions .mapDirectionsCancelButton { min-height: 44px; border-radius: 13px; padding: 0 13px; font-size: .64rem; }
+.mapNavigationSheetActions .mapLocationButton { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.1); color: #fff; box-shadow: none; }
+.mapNavigationSheetActions .mapLocationButton:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+.mapNavigationSheetActions .mapDirectionsCancelButton { border-color: rgba(255,255,255,.16); background: #fff; color: #1d303b; box-shadow: none; }
+.mapNavigationSheetActions .mapDirectionsCancelButton svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 2; }
+.mapNavigationSheetActions .mapDirectionsCancelButton:hover { background: #eaf2f4; }
 @media (max-width: 560px) {
   .mapLocationStatusRow { max-width: 100%; gap: 5px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .mapLocationStatusRow::-webkit-scrollbar { display: none; }
@@ -14297,14 +14366,18 @@ svg {
   width: 104px;
   height: 104px;
   overflow: visible;
-  border: 1px solid rgba(49, 95, 88, .14);
-  border-radius: 50%;
+  border: 0;
+  border-radius: 0;
   padding: 0;
-  background: #fff;
+  background: transparent;
   color: #315f58;
-  box-shadow: 0 8px 22px rgba(32, 69, 63, .18);
+  box-shadow: none;
+  cursor: grab;
+  touch-action: none;
   transform: none;
 }
+.plannerChat.is-collapsed .plannerChatMoveHandle { display: none; }
+.plannerChat.is-collapsed .plannerChatToggle:active { cursor: grabbing; }
 
 .plannerChat.is-collapsed .plannerChatToggle .chatLauncherArtwork {
   position: relative;
@@ -15383,4 +15456,19 @@ svg {
   border-color: #e3e9e7;
   background: #fff;
   color: #51615d;
+}
+
+/* The collapsed mascot is the drag target; keep the old dots handle hidden. */
+.plannerChat.is-collapsed .plannerChatMoveHandle {
+  display: none !important;
+}
+.plannerChat.is-collapsed .plannerChatToggle {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  cursor: grab;
+  touch-action: none;
+}
+.plannerChat.is-collapsed .plannerChatToggle:active {
+  cursor: grabbing;
 }
