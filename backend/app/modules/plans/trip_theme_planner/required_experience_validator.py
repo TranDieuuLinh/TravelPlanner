@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from app.modules.knowledge_graph.research import (
     CheckStatus,
+    EdgeEvidence,
     GraphEvidenceClaim,
     TripResearchBundle,
 )
@@ -82,11 +83,87 @@ def _claims(evidence: TripResearchBundle | GraphCandidateCatalog) -> list[GraphE
         if conflicted or unknown:
             raise RequiredExperienceGraphValidationError("conflicted or unknown claims are not eligible")
         return [item.claim for item in evidence.eligibleExperiences if item.fit.status is CheckStatus.SUPPORTED and not item.fit.hasHardConflict]
-    claims = []
-    for candidate in evidence.candidates:
-        for claim_id in candidate.claim_ids:
-            claims.append(GraphEvidenceClaim.model_construct(claimId=claim_id, evidence=[]))
+    return _synthetic_claims_from_catalog(evidence)
+
+
+def _synthetic_claims_from_catalog(
+    catalog: GraphCandidateCatalog,
+) -> list[GraphEvidenceClaim]:
+    """Build synthetic ``GraphEvidenceClaim`` rows from a bounded catalog.
+
+    The catalog only carries the IDs that survived the projection step. We
+    rebuild minimal claim entities with the activity/anchor/source fields that
+    the validator helpers need, while keeping the validation graph-bounded.
+
+    Each catalog ``claim_id`` corresponds to one anchor Place in the source
+    ranking. We emit one synthetic claim per ``claim_id`` that exposes its
+    corresponding anchor. When the catalog only has anchor Places (no claim
+    IDs), the first anchor itself becomes the claim identifier so that
+    validators still receive a populated ``anchorPlace.id``.
+    """
+
+    claims: list[GraphEvidenceClaim] = []
+    for candidate in catalog.candidates:
+        candidate_evidence = [
+            EdgeEvidence(source=source, recommendations=[])
+            for source in candidate.source_refs
+            if source
+        ]
+        anchors = list(candidate.anchor_place_ids) or list(candidate.place_ids)
+        if not anchors:
+            continue
+        activity_id = candidate.activity_id
+        activity_entity = (
+            _synthetic_entity(activity_id, "Activity") if activity_id else None
+        )
+        claim_ids = list(candidate.claim_ids)
+        if not claim_ids:
+            claim_ids = list(anchors)
+        for claim_id, anchor_id in zip(claim_ids, anchors, strict=False):
+            subject = _synthetic_entity(anchor_id, "TravelPlace")
+            object_entity = (
+                activity_entity
+                if activity_entity is not None
+                else _synthetic_entity(anchor_id, "TravelPlace")
+            )
+            predicate = (
+                "OFFERS_ACTIVITY"
+                if activity_id is not None
+                else "SPECIAL_EXPERIENCE"
+            )
+            claims.append(
+                GraphEvidenceClaim.model_construct(
+                    claimId=claim_id,
+                    subject=subject,
+                    predicate=predicate,
+                    object=object_entity,
+                    path=[],
+                    anchorPlace=subject,
+                    activity=activity_entity,
+                    recommendations=[],
+                    evidence=candidate_evidence,
+                    trust="SOURCE_BACKED",
+                    inferenceSource=None,
+                    warnings=[],
+                )
+            )
     return claims
+
+
+def _synthetic_entity(entity_id: str | None, entity_type: str) -> object:
+    return _EntitySummaryStub(id=entity_id, name=entity_id or "", type=entity_type, status="verified")
+
+
+class _EntitySummaryStub:
+    """Minimal duck-typed entity matching the validator's expectations."""
+
+    __slots__ = ("id", "name", "type", "status")
+
+    def __init__(self, *, id: str, name: str, type: str, status: str) -> None:
+        self.id = id
+        self.name = name
+        self.type = type
+        self.status = status
 
 
 validate_required_experiences = validate_required_experience

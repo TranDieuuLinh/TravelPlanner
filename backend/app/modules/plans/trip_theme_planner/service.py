@@ -5,6 +5,11 @@ import logging
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
+from app.modules.knowledge_graph.research import (
+    GraphSnapshot,
+    ScopeResolveOutput,
+    TripResearchBundle,
+)
 from app.modules.plans.domain.entities import (
     TravelIntent,
     TripThemeRequirement,
@@ -33,6 +38,18 @@ from app.modules.plans.trip_theme_planner.prompt import (
     build_trip_theme_repair_payload,
     build_trip_theme_research_payload,
     build_trip_theme_payload,
+)
+from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
+    GraphCandidateCatalog,
+    project_graph_candidate_catalog,
+)
+from app.modules.plans.trip_theme_planner.graph_research import (
+    TripResearchOrchestrator,
+    TripThemeGraphResearchService,
+)
+from app.modules.plans.trip_theme_planner.required_experience_validator import (
+    RequiredExperienceGraphValidationError,
+    validate_required_experience,
 )
 from app.modules.plans.trip_theme_planner.research_tool import (
     EmptyPlannerResearchTool,
@@ -134,11 +151,23 @@ class TripThemePlannerService:
         llm: LLMClient,
         research_tool: PlannerResearchTool | None = None,
         research_tools: ResearchToolsOrchestrator | None = None,
+        graph_research_service: TripThemeGraphResearchService | None = None,
+        graph_research_orchestrator: TripResearchOrchestrator | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
         self.research_tool = research_tool or EmptyPlannerResearchTool()
         self.research_tools = research_tools
+        self.graph_research_orchestrator = graph_research_orchestrator
+        self.graph_research_service = (
+            graph_research_service
+            if graph_research_service is not None
+            else (
+                TripThemeGraphResearchService(graph_research_orchestrator)
+                if graph_research_orchestrator is not None
+                else None
+            )
+        )
 
     async def create_trip_themes(
         self,
@@ -159,7 +188,11 @@ class TripThemePlannerService:
             plan_state=plan_state,
             preference_profile=preference_profile,
         )
-        return await self._create_plan(planner_input, statistics_status)
+        return await self._create_plan(
+            planner_input,
+            statistics_status,
+            preference_profile=preference_profile,
+        )
 
     async def create_from_agent_input(
         self,
@@ -281,12 +314,61 @@ class TripThemePlannerService:
         self,
         planner_input: TripThemePlanningInput,
         statistics_status: str,
+        *,
+        preference_profile: LongTermPreferenceProfile | None = None,
     ) -> TripThemePlanningOutput:
         ready = (
             planner_input.region_context.active_place_count > 0
             or bool(planner_input.selected_places)
         )
         statistics_warnings = self._statistics_warnings(planner_input)
+        graph_catalog: GraphCandidateCatalog | None = None
+        graph_catalog_payload: dict | None = None
+        graph_catalog_notes: list[str] = []
+
+        if self.graph_research_service is not None:
+            try:
+                bundle = self.graph_research_service.research(
+                    planner_input.intent,
+                    planner_input.trip_spec,
+                    planner_input.selected_places,
+                    preference_profile,
+                )
+            except Exception:
+                logger.exception(
+                    "TripThemePlanner graph research failed; "
+                    "continuing without graph candidate catalog"
+                )
+                bundle = TripResearchBundle(
+                    scope=ScopeResolveOutput(),
+                    graphSnapshot=planner_input.region_context.snapshot_ref,
+                )
+            if not isinstance(bundle, TripResearchBundle):
+                bundle = TripResearchBundle(
+                    scope=ScopeResolveOutput(),
+                    graphSnapshot=planner_input.region_context.snapshot_ref,
+                )
+            try:
+                graph_catalog = project_graph_candidate_catalog(bundle)
+            except Exception:
+                logger.exception(
+                    "TripThemePlanner graph candidate projection failed; "
+                    "continuing without graph candidate catalog"
+                )
+                graph_catalog = None
+            if graph_catalog is not None and graph_catalog.candidates:
+                graph_catalog_payload = graph_catalog.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                graph_catalog_notes.append(
+                    f"graphCandidateCount={len(graph_catalog.candidates)}"
+                )
+            else:
+                graph_catalog_notes.append("graphCandidateCount=0")
+        else:
+            graph_catalog_notes.append("graphCatalog=disabled")
+
         if not ready:
             return TripThemePlanningOutput(
                 mode=planner_input.mode,
@@ -303,6 +385,7 @@ class TripThemePlannerService:
                     notes=[
                         "generator=llm",
                         f"promptVersion={TRIP_THEME_PROMPT_VERSION}",
+                        *graph_catalog_notes,
                         (
                             "snapshotId="
                             f"{planner_input.region_context.snapshot_ref.snapshot_id}"
@@ -337,6 +420,7 @@ class TripThemePlannerService:
                 planner_input,
                 research_draft,
                 verified_research,
+                graph_candidate_catalog=graph_catalog_payload,
             ),
         )
         repair_attempts = 0
@@ -347,6 +431,7 @@ class TripThemePlannerService:
                     raw,
                     research_draft,
                     verified_research,
+                    graph_catalog=graph_catalog,
                 )
                 break
             except (ValidationError, ValueError) as exc:
@@ -372,6 +457,7 @@ class TripThemePlannerService:
                         verified_research,
                         previous_output=raw,
                         validation_feedback=feedback,
+                        graph_candidate_catalog=graph_catalog_payload,
                     ),
                 )
 
@@ -389,6 +475,7 @@ class TripThemePlannerService:
             tripSpec=planner_input.trip_spec,
             tripThemesReady=True,
             tripThemes=draft.trip_themes,
+            requiredExperiences=draft.required_experiences,
             assumptions=draft.assumptions,
             warnings=warnings,
             trace=AgentTrace(
@@ -404,6 +491,7 @@ class TripThemePlannerService:
                     f"researchPromptVersion={TRIP_THEME_RESEARCH_PROMPT_VERSION}",
                     f"promptVersion={TRIP_THEME_PROMPT_VERSION}",
                     f"statisticsStatus={statistics_status}",
+                    *graph_catalog_notes,
                     (
                         "capabilityEvidenceCount="
                         f"{len(verified_research.capability_evidence)}"
@@ -411,6 +499,10 @@ class TripThemePlannerService:
                     (
                         "nearbyRegionCount="
                         f"{len(verified_research.nearby_regions)}"
+                    ),
+                    (
+                        "requiredExperienceCount="
+                        f"{len(draft.required_experiences)}"
                     ),
                     (
                         "snapshotId="
@@ -426,6 +518,8 @@ class TripThemePlannerService:
         raw: str,
         research_draft: PlannerResearchDraft,
         verified_research: PlannerVerifiedResearch,
+        *,
+        graph_catalog: GraphCandidateCatalog | None = None,
     ) -> TripThemeDraft:
         draft = TripThemeDraft.model_validate_json(raw)
         themes, normalized = self._normalize_trip_themes(
@@ -453,6 +547,25 @@ class TripThemePlannerService:
                     "Trip theme references an unknown targetRegionKey: "
                     f"{sorted(unknown_regions)[0]}"
                 )
+
+        required_experiences = list(draft.required_experiences)
+        if required_experiences and graph_catalog is None:
+            raise RequiredExperienceGraphValidationError(
+                "graphCandidateCatalog is empty; requiredExperiences cannot be "
+                "validated without bounded graph evidence"
+            )
+        if required_experiences:
+            try:
+                required_experiences = [
+                    validate_required_experience(requirement, graph_catalog)
+                    for requirement in required_experiences
+                ]
+            except RequiredExperienceGraphValidationError as exc:
+                raise ValueError(
+                    "requiredExperiences references unsupported graph evidence: "
+                    f"{exc}"
+                ) from exc
+
         warnings = list(draft.warnings)
         if normalized:
             warnings.append(
@@ -461,7 +574,11 @@ class TripThemePlannerService:
                 "các khung bữa ăn riêng."
             )
         return draft.model_copy(
-            update={"trip_themes": themes, "warnings": warnings}
+            update={
+                "trip_themes": themes,
+                "required_experiences": required_experiences,
+                "warnings": warnings,
+            }
         )
 
     @staticmethod

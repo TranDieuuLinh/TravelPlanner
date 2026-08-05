@@ -648,10 +648,41 @@ class TripThemeDraft(BaseModel):
     trip_themes: Annotated[
         list[TripThemeRequirement], Field(alias="tripThemes")
     ] = Field(default_factory=list)
+    required_experiences: Annotated[
+        list[RequiredExperience],
+        Field(default_factory=list, alias="requiredExperiences"),
+    ]
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_forbidden_day_route_allocation_fields(
+        cls, values: Any
+    ) -> Any:
+        if not isinstance(values, dict):
+            return values
+        forbidden = _FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS
+        for requirement in values.get("requiredExperiences") or values.get(
+            "required_experiences"
+        ) or []:
+            if not isinstance(requirement, dict):
+                continue
+            leaked = sorted(set(requirement.keys()) & forbidden)
+            if leaked:
+                raise ValueError(
+                    "requiredExperiences entries must not contain "
+                    f"day/route/allocation fields: {leaked}."
+                )
+        top_level_leaked = sorted(set(values.keys()) & forbidden)
+        if top_level_leaked:
+            raise ValueError(
+                "TripThemeDraft must not contain "
+                f"day/route/allocation fields: {top_level_leaked}."
+            )
+        return values
 
 
 class TripThemePlanningOutput(BaseModel):
