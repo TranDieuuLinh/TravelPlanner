@@ -160,10 +160,10 @@ export function PlannerChatComposer({
   const busy = disabled || queueingUrls;
   return (
     <div className="plannerEntryComposer">
-      <form
+      <div
         aria-label="Nhập URL tham khảo"
         className="urlImportDock"
-        onSubmit={onSubmit}
+        role="group"
       >
         <div className={`urlImportControl ${urlError ? "has-error" : ""}`}>
           <span className="urlImportControlIcon" aria-hidden="true">
@@ -185,22 +185,13 @@ export function PlannerChatComposer({
             rows={Math.min(4, Math.max(1, urlInput.split("\n").length))}
             value={urlInput}
           />
-          <button
-            aria-label={queueingUrls ? "Đang gửi nguồn" : "Gửi nguồn và yêu cầu"}
-            disabled={busy || !urlInput.trim()}
-            type="submit"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
-          </button>
         </div>
         {urlError ? (
           <small className="urlImportError" id="url-import-error" role="alert">
             {urlError}
           </small>
         ) : null}
-      </form>
+      </div>
       <form className="chatComposer" onSubmit={onSubmit}>
         <div className="composerBox">
           <textarea
@@ -220,7 +211,9 @@ export function PlannerChatComposer({
                   ? "Đang xử lý yêu cầu"
                   : queueingUrls
                     ? "Đang thêm URL vào hàng chờ"
-                    : "Gửi yêu cầu"
+                    : urlInput.trim()
+                      ? "Gửi yêu cầu và URL"
+                      : "Gửi yêu cầu"
               }
               className="sendButton"
               disabled={busy || (!prompt.trim() && !urlInput.trim())}
