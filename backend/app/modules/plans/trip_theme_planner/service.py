@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
 from app.modules.knowledge_graph.research import (
+    GraphScopeError,
     GraphSnapshot,
     ScopeResolveOutput,
     TripResearchBundle,
@@ -59,89 +60,12 @@ from app.modules.plans.trip_theme_planner.region_context import (
     PlannerStatisticsProvider,
     load_region_statistics_context,
 )
-from app.modules.plans.trip_theme_planner.research_tools_orchestrator import ResearchToolsOrchestrator
-from app.modules.plans.trip_theme_planner.research_tools_schema import (
-    ConstraintResearchInput,
-    FestivalDiscoveryInput,
-    RegionOverviewInput,
-)
 from app.modules.preferences.schema import (
     LongTermPreferenceProfile,
 )
 
 logger = logging.getLogger(__name__)
 TRIP_THEME_MAX_REPAIR_ATTEMPTS = 3
-
-CONSTRAINT_RADIUS_KM = 50.0
-
-
-def _build_constraint_input(
-    *,
-    planner_input: TripThemePlanningInput,
-    trip_spec: TripPlanningSpec,
-) -> ConstraintResearchInput | None:
-    """Build a ``ConstraintResearchInput`` that the schema will accept.
-
-    The research tool requires real coordinates when ``mode='coordinates'``.
-    When the planner has no geocoded location we fall back to ``mode='text'``
-    and forward the destination string. Returns ``None`` when neither
-    option can be satisfied so the caller skips the tool entirely.
-    """
-
-    interests = list(planner_input.intent.interests or [])
-    budget = getattr(trip_spec.budget, "target_amount", None) if trip_spec.budget else None
-    duration = trip_spec.days
-
-    center = _centroid_from_selected_places(planner_input.selected_places)
-    if center is not None:
-        center_lat, center_lng = center
-        return ConstraintResearchInput.model_validate(
-            {
-                "mode": "coordinates",
-                "centerLat": center_lat,
-                "centerLng": center_lng,
-                "radiusKm": CONSTRAINT_RADIUS_KM,
-                "budget": budget,
-                "duration": duration,
-                "interests": interests,
-            }
-        )
-
-    query = (planner_input.intent.destination or "").strip()
-    if not query:
-        return None
-
-    return ConstraintResearchInput.model_validate(
-        {
-            "mode": "text",
-            "query": query,
-            "budget": budget,
-            "duration": duration,
-            "interests": interests,
-        }
-    )
-
-
-def _centroid_from_selected_places(
-    selected_places: list[SelectedPlaceContext],
-) -> tuple[float, float] | None:
-    """Return the average latitude/longitude of selected places, if available."""
-
-    coords: list[tuple[float, float]] = []
-    for place in selected_places:
-        latitude = getattr(place, "latitude", None)
-        longitude = getattr(place, "longitude", None)
-        if latitude is None or longitude is None:
-            continue
-        try:
-            coords.append((float(latitude), float(longitude)))
-        except (TypeError, ValueError):
-            continue
-    if not coords:
-        return None
-    average_lat = sum(lat for lat, _ in coords) / len(coords)
-    average_lng = sum(lng for _, lng in coords) / len(coords)
-    return average_lat, average_lng
 
 
 class TripThemePlannerService:
@@ -150,14 +74,12 @@ class TripThemePlannerService:
         statistics_provider: PlannerStatisticsProvider,
         llm: LLMClient,
         research_tool: PlannerResearchTool | None = None,
-        research_tools: ResearchToolsOrchestrator | None = None,
         graph_research_service: TripThemeGraphResearchService | None = None,
         graph_research_orchestrator: TripResearchOrchestrator | None = None,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
         self.research_tool = research_tool or EmptyPlannerResearchTool()
-        self.research_tools = research_tools
         self.graph_research_orchestrator = graph_research_orchestrator
         self.graph_research_service = (
             graph_research_service
@@ -246,70 +168,6 @@ class TripThemePlannerService:
             statistics_status,
         )
 
-    def _run_research_tools(
-        self,
-        planner_input: TripThemePlanningInput,
-    ) -> TripThemePlanningInput:
-        """
-        Run research tools and populate tool results into planner_input.
-
-        This method executes:
-        1. region_overview - for overview statistics
-        2. constraint_research - if coordinates/interests provided
-        3. festival_discovery - for seasonal planning
-        """
-        if self.research_tools is None:
-            return planner_input
-
-        region_key = planner_input.region_context.region_key
-        trip_spec = planner_input.trip_spec
-
-        # 1. Always run region_overview for base statistics
-        try:
-            overview_result = self.research_tools.region_overview(
-                RegionOverviewInput(region_key=region_key)
-            )
-            planner_input.region_overview = overview_result.model_dump(by_alias=True)
-        except Exception as e:
-            logger.warning("region_overview tool failed: %s", e)
-
-        # 2. Run constraint_research if we have coordinates or interests
-        has_constraints = (
-            planner_input.intent.constraints
-            or planner_input.intent.interests
-            or trip_spec.budget
-        )
-        if has_constraints and self.research_tools:
-            try:
-                constraint_input = _build_constraint_input(
-                    planner_input=planner_input,
-                    trip_spec=trip_spec,
-                )
-                if constraint_input is not None:
-                    result = self.research_tools.constraint_research(constraint_input)
-                    planner_input.constraint_research = result.model_dump(by_alias=True)
-            except Exception:
-                logger.exception("constraint_research tool failed")
-
-        # 3. Run festival_discovery for seasonal awareness
-        try:
-            # Extract month from start_date if available
-            month = None
-            if trip_spec.start_date:
-                # Parse date like "2026-04-15"
-                parts = trip_spec.start_date.split("-")
-                if len(parts) >= 2:
-                    month = f"tháng {int(parts[1])}"
-
-            festival_result = self.research_tools.festival_discovery(
-                FestivalDiscoveryInput(month=month)
-            )
-            planner_input.festival_discovery = festival_result.model_dump(by_alias=True)
-        except Exception as e:
-            logger.warning("festival_discovery tool failed: %s", e)
-
-        return planner_input
-
     async def _create_plan(
         self,
         planner_input: TripThemePlanningInput,
@@ -325,6 +183,8 @@ class TripThemePlannerService:
         graph_catalog: GraphCandidateCatalog | None = None
         graph_catalog_payload: dict | None = None
         graph_catalog_notes: list[str] = []
+        graph_scope_blocked = False
+        graph_scope_error_code: str | None = None
 
         if self.graph_research_service is not None:
             try:
@@ -334,40 +194,77 @@ class TripThemePlannerService:
                     planner_input.selected_places,
                     preference_profile,
                 )
+            except GraphScopeError as exc:
+                # Scope resolution failed — block the planner.
+                # Redact the destination from logs per privacy rule.
+                logger.warning(
+                    "TripThemePlanner graph scope error: %s",
+                    exc.CODE,
+                )
+                graph_scope_blocked = True
+                graph_scope_error_code = exc.CODE
+                bundle = None
             except Exception:
-                logger.exception(
-                    "TripThemePlanner graph research failed; "
-                    "continuing without graph candidate catalog"
-                )
-                bundle = TripResearchBundle(
-                    scope=ScopeResolveOutput(),
-                    graphSnapshot=planner_input.region_context.snapshot_ref,
-                )
-            if not isinstance(bundle, TripResearchBundle):
-                bundle = TripResearchBundle(
-                    scope=ScopeResolveOutput(),
-                    graphSnapshot=planner_input.region_context.snapshot_ref,
-                )
-            try:
-                graph_catalog = project_graph_candidate_catalog(bundle)
-            except Exception:
-                logger.exception(
-                    "TripThemePlanner graph candidate projection failed; "
-                    "continuing without graph candidate catalog"
-                )
-                graph_catalog = None
-            if graph_catalog is not None and graph_catalog.candidates:
-                graph_catalog_payload = graph_catalog.model_dump(
-                    mode="json",
-                    by_alias=True,
-                )
-                graph_catalog_notes.append(
-                    f"graphCandidateCount={len(graph_catalog.candidates)}"
-                )
+                # Non-scope graph errors are caught generically.
+                # Log only the error code to avoid recording full evidence/prompts.
+                logger.exception("TripThemePlanner graph research failed")
+                bundle = None
+
+            if bundle is not None and not isinstance(bundle, TripResearchBundle):
+                bundle = None
+
+            if bundle is not None:
+                try:
+                    graph_catalog = project_graph_candidate_catalog(bundle)
+                except Exception:
+                    logger.exception(
+                        "TripThemePlanner graph candidate projection failed"
+                    )
+                    graph_catalog = None
+
+                if graph_catalog is not None and graph_catalog.candidates:
+                    graph_catalog_payload = graph_catalog.model_dump(
+                        mode="json",
+                        by_alias=True,
+                    )
+                    graph_catalog_notes.append(
+                        f"graphCandidateCount={len(graph_catalog.candidates)}"
+                    )
+                    graph_catalog_notes.append(
+                        f"graphScopeResultCount="
+                        f"{len(bundle.scope.includedAreas) if bundle.scope else 0}"
+                    )
+                else:
+                    graph_catalog_notes.append("graphCandidateCount=0")
             else:
                 graph_catalog_notes.append("graphCandidateCount=0")
         else:
             graph_catalog_notes.append("graphCatalog=disabled")
+
+        if graph_scope_blocked:
+            return TripThemePlanningOutput(
+                mode=planner_input.mode,
+                tripSpec=planner_input.trip_spec,
+                tripThemesReady=False,
+                warnings=statistics_warnings,
+                trace=AgentTrace(
+                    agent=PlanningAgentName.trip_theme_planner,
+                    status=PlanningAgentStatus.blocked,
+                    summary=(
+                        "TripThemePlanner bị chặn: không thể phân giải phạm vi "
+                        "địa lý từ knowledge graph cho điểm đến này."
+                    ),
+                    notes=[
+                        "generator=llm",
+                        f"promptVersion={TRIP_THEME_PROMPT_VERSION}",
+                        *graph_catalog_notes,
+                        (
+                            "snapshotId="
+                            f"{planner_input.region_context.snapshot_ref.snapshot_id}"
+                        ),
+                    ],
+                ),
+            )
 
         if not ready:
             return TripThemePlanningOutput(
@@ -393,9 +290,6 @@ class TripThemePlannerService:
                     ],
                 ),
             )
-
-        # Run research tools to populate tool results
-        planner_input = self._run_research_tools(planner_input)
 
         try:
             research_raw = await self.llm.generate_json(
