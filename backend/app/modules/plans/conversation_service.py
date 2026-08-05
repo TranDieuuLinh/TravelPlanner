@@ -423,17 +423,29 @@ class ConversationTurnService:
             initial_destination = "unspecified"
         from app.modules.users.model import User as _User
 
-        result = await self.trip_chat_service.generate_plan_revision(
-            chat_id=chat.id,
-            user=_User(
-                id=chat.user_id,
-            ),
-            content=turn.content,
-            expected_revision=turn.base_revision,
-            initial_destination=initial_destination,
-            urls=urls,
-            images=images,
-        )
+        try:
+            result = await self.trip_chat_service.generate_plan_revision(
+                chat_id=chat.id,
+                user=_User(
+                    id=chat.user_id,
+                ),
+                content=turn.content,
+                expected_revision=turn.base_revision,
+                initial_destination=initial_destination,
+                urls=urls,
+                images=images,
+            )
+        except ValueError as exc:
+            if "region_key" in str(exc):
+                raise AppError(
+                    422,
+                    "DESTINATION_UNRECOGNIZED",
+                    (
+                        "Mình chưa nhận diện được điểm đến trong yêu cầu của bạn. "
+                        "Hãy nhập tên thành phố hoặc tỉnh cụ thể hơn (ví dụ: Hà Nội, Đà Nẵng, Hội An)."
+                    ),
+                ) from exc
+            raise
         return self.repository.update_turn(
             turn,
             status="completed",

@@ -862,6 +862,9 @@ export type AddItemInput = {
   personalNotes?: string | null;
   tags?: string[];
   position?: number | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  imageUrls?: string[];
 };
 
 export type UpdateItemInput = {
@@ -967,6 +970,15 @@ export type PlaceSuggestion = {
   latitude?: number | null;
   longitude?: number | null;
   placeId?: string | null;
+  imageUrl?: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  priceLevel?: number | null;
+  placeType?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  openingHours?: string[] | null;
+  isVerified?: boolean;
 };
 
 export const PLACE_SEARCH_TOP_K = 5;

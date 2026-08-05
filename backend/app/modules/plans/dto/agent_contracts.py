@@ -550,18 +550,96 @@ class TripThemePlanningInput(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class TripThemePlanningOutput(BaseModel):
-    mode: PlanningMode
-    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
-    trip_themes_ready: Annotated[bool, Field(alias="tripThemesReady")] = True
-    trip_themes: Annotated[
-        list[TripThemeRequirement], Field(alias="tripThemes")
-    ] = Field(default_factory=list)
-    assumptions: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    trace: AgentTrace
+class RequiredExperienceSelectionPolicy(StrEnum):
+    required_anchor = "required_anchor"
+    choose_one = "choose_one"
+    open_candidate = "open_candidate"
 
-    model_config = {"populate_by_name": True}
+
+class RequiredExperiencePriority(StrEnum):
+    must = "must"
+
+
+_FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS = {
+    "day",
+    "route",
+    "allocation",
+    "dayIndex",
+    "day_index",
+    "routeId",
+    "route_id",
+    "allocationId",
+    "allocation_id",
+    "scheduledDay",
+    "scheduled_day",
+}
+
+
+class RequiredExperience(BaseModel):
+    """Trip-scoped must-cover experience, with no calendar allocation."""
+
+    requirement_id: Annotated[str, Field(alias="requirementId")]
+    theme: str = Field(min_length=1, max_length=120)
+    activity_id: Annotated[str | None, Field(default=None, alias="activityId")]
+    selection_policy: Annotated[
+        RequiredExperienceSelectionPolicy,
+        Field(alias="selectionPolicy"),
+    ]
+    anchor_place_ids: Annotated[
+        list[str], Field(alias="anchorPlaceIds")
+    ] = Field(default_factory=list)
+    candidate_place_ids: Annotated[
+        list[str], Field(alias="candidatePlaceIds")
+    ] = Field(default_factory=list)
+    minimum_required: Annotated[
+        int, Field(default=1, ge=1, alias="minimumRequired")
+    ]
+    priority: RequiredExperiencePriority = RequiredExperiencePriority.must
+    reason: str = Field(min_length=1, max_length=1000)
+    evidence_claim_ids: Annotated[
+        list[str], Field(alias="evidenceClaimIds")
+    ] = Field(default_factory=list)
+    source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
+        default_factory=list
+    )
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "forbid",
+    }
+
+    @model_validator(mode="after")
+    def _validate_internal_structure(self) -> "RequiredExperience":
+        if self.priority is not RequiredExperiencePriority.must:
+            raise ValueError(
+                "priority currently only accepts 'must'."
+            )
+
+        policy = self.selection_policy
+        if policy is RequiredExperienceSelectionPolicy.required_anchor:
+            if not self.anchor_place_ids:
+                raise ValueError(
+                    "required_anchor selectionPolicy requires anchorPlaceIds."
+                )
+        elif policy is RequiredExperienceSelectionPolicy.choose_one:
+            if not self.candidate_place_ids:
+                raise ValueError(
+                    "choose_one selectionPolicy requires candidatePlaceIds."
+                )
+            if self.minimum_required > len(self.candidate_place_ids):
+                raise ValueError(
+                    "minimumRequired must not exceed the count of candidatePlaceIds."
+                )
+        elif policy is RequiredExperienceSelectionPolicy.open_candidate:
+            if not self.activity_id:
+                raise ValueError(
+                    "open_candidate selectionPolicy requires activityId."
+                )
+
+        if not self.evidence_claim_ids:
+            raise ValueError("evidenceClaimIds must not be empty.")
+
+        return self
 
 
 class TripThemeDraft(BaseModel):
@@ -570,10 +648,89 @@ class TripThemeDraft(BaseModel):
     trip_themes: Annotated[
         list[TripThemeRequirement], Field(alias="tripThemes")
     ] = Field(default_factory=list)
+    required_experiences: Annotated[
+        list[RequiredExperience],
+        Field(default_factory=list, alias="requiredExperiences"),
+    ]
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_forbidden_day_route_allocation_fields(
+        cls, values: Any
+    ) -> Any:
+        if not isinstance(values, dict):
+            return values
+        forbidden = _FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS
+        for requirement in values.get("requiredExperiences") or values.get(
+            "required_experiences"
+        ) or []:
+            if not isinstance(requirement, dict):
+                continue
+            leaked = sorted(set(requirement.keys()) & forbidden)
+            if leaked:
+                raise ValueError(
+                    "requiredExperiences entries must not contain "
+                    f"day/route/allocation fields: {leaked}."
+                )
+        top_level_leaked = sorted(set(values.keys()) & forbidden)
+        if top_level_leaked:
+            raise ValueError(
+                "TripThemeDraft must not contain "
+                f"day/route/allocation fields: {top_level_leaked}."
+            )
+        return values
+
+
+class TripThemePlanningOutput(BaseModel):
+    mode: PlanningMode
+    trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
+    trip_themes_ready: Annotated[bool, Field(alias="tripThemesReady")] = True
+    trip_themes: Annotated[
+        list[TripThemeRequirement], Field(alias="tripThemes")
+    ] = Field(default_factory=list)
+    required_experiences: Annotated[
+        list[RequiredExperience],
+        Field(default_factory=list, alias="requiredExperiences"),
+    ]
+    assumptions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    trace: AgentTrace
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "forbid",
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_forbidden_day_route_allocation_fields(
+        cls, values: Any
+    ) -> Any:
+        if not isinstance(values, dict):
+            return values
+        forbidden = _FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS
+        for requirement in values.get("requiredExperiences") or values.get(
+            "required_experiences"
+        ) or []:
+            if not isinstance(requirement, dict):
+                continue
+            leaked = sorted(set(requirement.keys()) & forbidden)
+            if leaked:
+                raise ValueError(
+                    "requiredExperiences entries must not contain "
+                    f"day/route/allocation fields: {leaked}."
+                )
+        top_level_leaked = sorted(set(values.keys()) & forbidden)
+        if top_level_leaked:
+            raise ValueError(
+                "TripThemePlanningOutput must not contain "
+                f"day/route/allocation fields: {top_level_leaked}."
+            )
+        return values
 
 
 class PlaceSelectionInput(BaseModel):

@@ -11,7 +11,7 @@ from app.modules.plans.dto.agent_contracts import (
 
 
 TRIP_THEME_RESEARCH_PROMPT_VERSION = "journey_research_v2"
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_v4"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_v5"
 
 TRIP_THEME_RESEARCH_SYSTEM_PROMPT = """
 You are the creative journey architect for a Vietnamese travel-planning backend.
@@ -70,12 +70,35 @@ Available data in plannerInput:
   Use budget compatibility to calibrate spending expectations.
 - festivalDiscovery: Reference for timing activities around local events
   or avoiding planning during peak holiday periods.
+- graphCandidateCatalog: A bounded, evidence-backed catalog of selectable graph
+  experiences. Each candidate exposes:
+  - claimIds: identifiers of the underlying GraphEvidenceClaim rows.
+  - placeIds: anchored Place identifiers supported by those claims.
+  - anchorPlaceIds: Place identifiers that may serve as the must-visit anchor.
+  - activityId: the Activity identifier when the candidate represents an activity
+    that one of several places offers.
+  - sourceRefs: source URLs that back the claims.
+  Use ONLY the IDs exposed here. Do NOT invent Place, Activity, or claim IDs.
 
 Planning rules:
 1. Plan requirements at whole-trip scope. Return tripThemes describing the
    experiences that the trip must cover, with minimumActivities and focusTags.
    Do not return calendar days, day briefs, route buckets, journey phases, or
    Place allocations. PlaceSelector performs all day and route allocation.
+2. requiredExperiences list the must-cover experiences the trip must include.
+   Each entry MUST use only IDs from graphCandidateCatalog:
+   - selectionPolicy="required_anchor": set anchorPlaceIds to exactly one
+     placeId from a single candidate whose activity matches the experience.
+   - selectionPolicy="choose_one": set candidatePlaceIds to one or more
+     placeIds that all share the same activityId from a single candidate.
+     minimumRequired must not exceed the candidate count.
+   - selectionPolicy="open_candidate": set activityId to the activityId of a
+     candidate. PlaceSelector will pick a supporting place later.
+   Every entry MUST list at least one evidenceClaimIds value from the
+   catalog, and sourceRefs MUST come from the same candidate's sourceRefs.
+   Do NOT invent Place, Activity, or claim IDs that are not in the catalog.
+   requiredExperiences entries MUST NOT include day, route, allocation,
+   scheduledDay, dayIndex, routeId, allocationId or any calendar/bucket fields.
 3. Build a narrative arc instead of repeating the same interest every day.
    Contrast compatible themes such as coast, food, culture, nature, recovery,
    and local life when verified evidence supports them.
@@ -136,24 +159,26 @@ def build_trip_theme_payload(
     planner_input: TripThemePlanningInput,
     research_draft: PlannerResearchDraft,
     verified_research: PlannerVerifiedResearch,
+    *,
+    graph_candidate_catalog: dict | None = None,
 ) -> str:
-    return json.dumps(
-        {
-            "stage": "trip_theme_plan",
-            "promptVersion": TRIP_THEME_PROMPT_VERSION,
-            "requiredOutputShape": TripThemeDraft.model_json_schema(),
-            "plannerInput": planner_input.model_dump(mode="json", by_alias=True),
-            "researchProposal": research_draft.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-            "verifiedResearch": verified_research.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-        },
-        ensure_ascii=False,
-    )
+    payload: dict[str, object] = {
+        "stage": "trip_theme_plan",
+        "promptVersion": TRIP_THEME_PROMPT_VERSION,
+        "requiredOutputShape": TripThemeDraft.model_json_schema(),
+        "plannerInput": planner_input.model_dump(mode="json", by_alias=True),
+        "researchProposal": research_draft.model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        "verifiedResearch": verified_research.model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+    }
+    if graph_candidate_catalog is not None:
+        payload["graphCandidateCatalog"] = graph_candidate_catalog
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def build_trip_theme_repair_payload(
@@ -163,28 +188,32 @@ def build_trip_theme_repair_payload(
     *,
     previous_output: str,
     validation_feedback: str,
+    graph_candidate_catalog: dict | None = None,
 ) -> str:
-    return json.dumps(
-        {
-            "stage": "trip_theme_plan_repair",
-            "promptVersion": TRIP_THEME_PROMPT_VERSION,
-            "requiredOutputShape": TripThemeDraft.model_json_schema(),
-            "plannerInput": planner_input.model_dump(mode="json", by_alias=True),
-            "researchProposal": research_draft.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-            "verifiedResearch": verified_research.model_dump(
-                mode="json",
-                by_alias=True,
-            ),
-            "previousOutput": previous_output,
-            "validationFeedback": validation_feedback,
-            "repairInstruction": (
-                "Return a complete replacement JSON object that satisfies the "
-                "required schema and every planning rule. Do not explain the "
-                "repair and do not wrap the JSON in Markdown."
-            ),
-        },
-        ensure_ascii=False,
-    )
+    payload: dict[str, object] = {
+        "stage": "trip_theme_plan_repair",
+        "promptVersion": TRIP_THEME_PROMPT_VERSION,
+        "requiredOutputShape": TripThemeDraft.model_json_schema(),
+        "plannerInput": planner_input.model_dump(mode="json", by_alias=True),
+        "researchProposal": research_draft.model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        "verifiedResearch": verified_research.model_dump(
+            mode="json",
+            by_alias=True,
+        ),
+        "previousOutput": previous_output,
+        "validationFeedback": validation_feedback,
+        "repairInstruction": (
+            "Return a complete replacement JSON object that satisfies the "
+            "required schema and every planning rule. Use only IDs from the "
+            "supplied graphCandidateCatalog. Do not invent Place, Activity, "
+            "or claim IDs. Do not add day, route, allocation, or scheduledDay "
+            "fields to requiredExperiences entries. Do not explain the "
+            "repair and do not wrap the JSON in Markdown."
+        ),
+    }
+    if graph_candidate_catalog is not None:
+        payload["graphCandidateCatalog"] = graph_candidate_catalog
+    return json.dumps(payload, ensure_ascii=False)

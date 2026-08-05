@@ -46,6 +46,15 @@ from app.modules.preferences.model import (
 )
 from app.modules.users.model import User
 from app.modules.travel_groups.model import TravelGroup, TravelGroupMembership, TravelGroupPost
+from app.modules.knowledge_graph.model import (
+    KnowledgeAlias,
+    KnowledgeEntity,
+    KnowledgeGraphImport,
+    KnowledgeGraphImportEdge,
+    KnowledgeGraphImportNode,
+    KnowledgeProperty,
+    KnowledgeRelationship,
+)
 
 __all__ = [
     "AuditEvent",
@@ -53,6 +62,13 @@ __all__ = [
     "Entitlement",
     "Favorite",
     "Festival",
+    "KnowledgeAlias",
+    "KnowledgeEntity",
+    "KnowledgeGraphImport",
+    "KnowledgeGraphImportEdge",
+    "KnowledgeGraphImportNode",
+    "KnowledgeProperty",
+    "KnowledgeRelationship",
     "MarketplacePlan",
     "MarketplacePlanVersion",
     "Order",

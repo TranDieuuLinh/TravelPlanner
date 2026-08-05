@@ -4,13 +4,30 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.db.base import Base
 from app.integrations.llm.base import LLMClient
 from app.modules.knowledge_graph.dataset import KnowledgeGraphDataset
-from app.modules.knowledge_graph.repository import GraphImportRepository
+from app.modules.knowledge_graph.model import (
+    KnowledgeAlias,
+    KnowledgeEntity,
+    KnowledgeGraphImport,
+    KnowledgeGraphImportEdge,
+    KnowledgeGraphImportNode,
+    KnowledgeProperty,
+    KnowledgeRelationship,
+)
+from app.modules.knowledge_graph.repositories import (
+    GraphImportRepository,
+    KnowledgeGraphRepository,
+)
 from app.modules.knowledge_graph.schema import (
     GraphImportCreate,
-    ProposedNodeRead,
     ProposedEdgeUpdate,
+    ProposedNodeRead,
     ProposedNodeUpdate,
 )
 from app.modules.knowledge_graph.service import KnowledgeGraphImportService
@@ -77,8 +94,18 @@ class FakeGraphLLM(LLMClient):
     )
 
 
+@pytest.fixture
+def db_session():
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+    yield session
+    session.close()
+
+
 def _dataset(directory: Path) -> KnowledgeGraphDataset:
-    directory.mkdir()
+    directory.mkdir(parents=True, exist_ok=True)
     (directory / "entities.csv").write_text(
         "id,name,type,status\nplace_001,Hoan Kiem Lake,Place,verified\n",
         encoding="utf-8",
@@ -120,10 +147,15 @@ constraints:
     return KnowledgeGraphDataset(directory)
 
 
-def test_import_matches_existing_node_and_applies_approved_graph(tmp_path: Path) -> None:
+def test_import_matches_existing_node_and_applies_approved_graph(
+    tmp_path: Path, db_session: Session
+) -> None:
     dataset = _dataset(tmp_path / "graph")
+    import_repo = GraphImportRepository(db_session)
+    kg_repo = KnowledgeGraphRepository(db_session)
     service = KnowledgeGraphImportService(
-        GraphImportRepository(tmp_path / "imports.json"),
+        import_repo,
+        kg_repo,
         dataset,
         FakeGraphLLM(),
     )
@@ -161,26 +193,26 @@ def test_import_matches_existing_node_and_applies_approved_graph(tmp_path: Path)
         "n_city",
         ProposedNodeUpdate(
             entityId="city_hanoi",
-                type="City",
-                canonicalName="Hà Nội",
-                aliases=["Hanoi"],
-                properties={"special_experience": '[{"intent":"visit","priority":"must"}]'},
+            type="City",
+            canonicalName="Hà Nội",
+            aliases=["Hanoi"],
+            properties={"special_experience": '[{"intent":"visit","priority":"must"}]'},
             decision="approve_create",
         ),
     )
     service.update_edge(
         created["id"],
         "e_location",
-            ProposedEdgeUpdate(
-                fromRef="n_lake",
-                relationship="LOCATED_IN",
-                toRef="n_city",
-                recommendations=[{
-                    "intent": "visit",
-                    "priority": "must",
-                    "reason": "Test recommendation",
-                }],
-                source="test-source",
+        ProposedEdgeUpdate(
+            fromRef="n_lake",
+            relationship="LOCATED_IN",
+            toRef="n_city",
+            recommendations=[{
+                "intent": "visit",
+                "priority": "must",
+                "reason": "Test recommendation",
+            }],
+            source="test-source",
             decision="approve_create",
         ),
     )
@@ -188,9 +220,15 @@ def test_import_matches_existing_node_and_applies_approved_graph(tmp_path: Path)
     applied = service.apply(created["id"])
 
     assert applied["status"] == "applied"
-    entities = list(csv.DictReader(io.StringIO((dataset.directory / "entities.csv").read_text(encoding="utf-8"))))
-    relationships = list(csv.DictReader(io.StringIO((dataset.directory / "relationships.csv").read_text(encoding="utf-8"))))
-    properties = list(csv.DictReader(io.StringIO((dataset.directory / "properties.csv").read_text(encoding="utf-8"))))
+    entities = list(
+        csv.DictReader(io.StringIO((dataset.directory / "entities.csv").read_text(encoding="utf-8")))
+    )
+    relationships = list(
+        csv.DictReader(io.StringIO((dataset.directory / "relationships.csv").read_text(encoding="utf-8")))
+    )
+    properties = list(
+        csv.DictReader(io.StringIO((dataset.directory / "properties.csv").read_text(encoding="utf-8")))
+    )
     assert {row["id"] for row in entities} == {"place_001", "city_hanoi"}
     assert relationships == [
         {
@@ -279,10 +317,14 @@ def test_proposed_node_response_exposes_schema_property_fields() -> None:
     ]
 
 
-def test_revalidate_refreshes_hash_and_returns_all_decisions_to_pending(tmp_path: Path) -> None:
+def test_revalidate_refreshes_hash_and_returns_all_decisions_to_pending(
+    tmp_path: Path, db_session: Session
+) -> None:
     dataset = _dataset(tmp_path / "graph")
-    repository = GraphImportRepository(tmp_path / "imports.json")
-    service = KnowledgeGraphImportService(repository, dataset, FakeGraphLLM())
+    import_repo = GraphImportRepository(db_session)
+    kg_repo = KnowledgeGraphRepository(db_session)
+    service = KnowledgeGraphImportService(import_repo, kg_repo, dataset, FakeGraphLLM())
+
     created = asyncio.run(
         service.create(
             GraphImportCreate(
@@ -316,4 +358,6 @@ def test_revalidate_refreshes_hash_and_returns_all_decisions_to_pending(tmp_path
     assert refreshed["dataset_hash"] != previous_hash
     assert {node["decision"] for node in refreshed["nodes"]} == {"pending"}
     assert {edge["decision"] for edge in refreshed["edges"]} == {"pending"}
-    assert repository.list()[0][0]["node_count"] == 2
+    imports, total = import_repo.list()
+    assert total == 1
+    assert imports[0]["node_count"] == 2

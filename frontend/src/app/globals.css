@@ -2401,7 +2401,8 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .itinerarySuggestionItem {
   display: grid;
-  gap: 2px;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
   padding: 10px 12px;
   border-bottom: 1px solid #e4e7f0;
   cursor: pointer;
@@ -2422,12 +2423,62 @@ h1, h2, h3, p { margin-top: 0; }
   font-size: .82rem;
   color: #365f5a;
 }
-.itinerarySuggestionItem span {
+.itinerarySuggestionItem .suggestionAddress {
   font-size: .7rem;
-  color: #365f5a;
+  color: #6b7280;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
+}
+.suggestionThumbnail {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  grid-row: span 2;
+}
+.suggestionThumbnailPlaceholder {
+  width: 56px;
+  height: 56px;
+  background: #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-row: span 2;
+  color: #9ca3af;
+}
+.suggestionContent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.suggestionMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.suggestionRating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: .7rem;
+  color: #365f5a;
+  font-weight: 500;
+}
+.suggestionReviews {
+  font-size: .65rem;
+  color: #6b7280;
+}
+.suggestionType {
+  font-size: .65rem;
+  color: #9ca3af;
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 .selectedPlaceBadge {
   display: grid;
@@ -14557,7 +14608,8 @@ svg {
 .confirm-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(20, 35, 35, 0.55);
+  background: rgba(15, 25, 35, 0.6);
+  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   z-index: 80;
@@ -14566,55 +14618,124 @@ svg {
 
 .confirm-modal {
   background: var(--paper);
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 480px;
+  border-radius: 20px;
+  padding: 28px;
+  max-width: 460px;
   width: 100%;
-  box-shadow: var(--shadow);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 24px rgba(0, 0, 0, 0.08);
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  border: 1px solid var(--line);
+  animation: modalSlideIn 0.25s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.confirm-modal-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.confirm-modal-icon svg {
+  width: 24px;
+  height: 24px;
+  color: #92400e;
 }
 
 .confirm-modal h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.02em;
 }
 
 .confirm-modal-hint {
   color: var(--muted);
   margin: 0;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .confirm-modal-blocks {
   margin: 0;
-  padding-left: 18px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--line);
   display: grid;
-  gap: 6px;
+  gap: 8px;
   font-size: 14px;
-  max-height: 220px;
+  max-height: 180px;
   overflow-y: auto;
+  line-height: 1.6;
+}
+
+.confirm-modal-blocks li {
+  padding: 4px 0;
+  color: var(--ink);
 }
 
 .confirm-modal-actions {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+  margin-top: 8px;
 }
 
 .confirm-modal-actions .ghost {
   background: transparent;
   border: 1px solid var(--line);
-  padding: 8px 14px;
+  padding: 10px 20px;
   border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.confirm-modal-actions .ghost:hover {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--muted);
 }
 
 .confirm-modal-actions .submit {
-  background: var(--brand);
-  color: var(--paper);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #fff;
   border: none;
-  padding: 8px 14px;
+  padding: 10px 24px;
   border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+.confirm-modal-actions .submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
+}
+
+.confirm-modal-actions .submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* New Planner visits start as a conversation. Saved chats remain available

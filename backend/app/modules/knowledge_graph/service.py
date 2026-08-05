@@ -11,7 +11,10 @@ import yaml
 
 from app.integrations.llm.base import LLMClient
 from app.modules.knowledge_graph.dataset import KnowledgeGraphDataset
-from app.modules.knowledge_graph.repository import GraphImportRepository
+from app.modules.knowledge_graph.repositories import (
+    GraphImportRepository,
+    KnowledgeGraphRepository,
+)
 from app.modules.knowledge_graph.schema import (
     ExtractionOutput,
     GraphImportCreate,
@@ -34,11 +37,13 @@ def _normalized(value: str) -> str:
 class KnowledgeGraphImportService:
     def __init__(
         self,
-        repository: GraphImportRepository,
+        import_repository: GraphImportRepository,
+        kg_repository: KnowledgeGraphRepository,
         dataset: KnowledgeGraphDataset,
         llm: LLMClient,
     ) -> None:
-        self.repository = repository
+        self.import_repository = import_repository
+        self.kg_repository = kg_repository
         self.dataset = dataset
         self.llm = llm
 
@@ -62,7 +67,7 @@ class KnowledgeGraphImportService:
             "applied_at": None,
             "error_message": None,
         }
-        self.repository.save(job)
+        self.import_repository.save(job)
         try:
             extracted = await self._extract(payload, schema=schema, ontology=ontology)
             job["warnings"] = extracted.warnings
@@ -94,11 +99,11 @@ class KnowledgeGraphImportService:
             self._rematch(job)
             job["status"] = "needs_review"
             self._refresh_counts(job)
-            return self.repository.save(job)
+            return self.import_repository.save(job)
         except Exception as exc:
             job["status"] = "failed"
             job["error_message"] = str(exc)[:500]
-            self.repository.save(job)
+            self.import_repository.save(job)
             raise AppError(
                 502,
                 "KNOWLEDGE_GRAPH_EXTRACTION_FAILED",
@@ -113,15 +118,15 @@ class KnowledgeGraphImportService:
         status: str | None = None,
         search: str | None = None,
     ) -> tuple[list[dict], int]:
-        return self.repository.list(
+        return self.import_repository.list(
             limit=limit, offset=offset, status=status, search=search
         )
 
     def count(self) -> int:
-        return self.repository.count()
+        return self.import_repository.count()
 
     def get(self, import_id: str) -> dict:
-        job = self.repository.get(import_id)
+        job = self.import_repository.get(import_id)
         if job is None:
             raise AppError(404, "GRAPH_IMPORT_NOT_FOUND", "Không tìm thấy AI import.")
         self._refresh_counts(job)
@@ -179,23 +184,23 @@ class KnowledgeGraphImportService:
 
     def update_node(self, import_id: str, temp_id: str, payload: ProposedNodeUpdate) -> dict:
         job = self._editable(import_id)
-        node = next((item for item in job["nodes"] if item["temp_id"] == temp_id), None)
+        node = next((item for item in job["nodes"] if item.get("temp_id") == temp_id), None)
         if node is None:
             raise AppError(404, "PROPOSED_NODE_NOT_FOUND", "Không tìm thấy node proposal.")
         node.update(payload.model_dump())
         self._rematch(job)
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     def update_edge(self, import_id: str, temp_id: str, payload: ProposedEdgeUpdate) -> dict:
         job = self._editable(import_id)
-        edge = next((item for item in job["edges"] if item["temp_id"] == temp_id), None)
+        edge = next((item for item in job["edges"] if item.get("temp_id") == temp_id), None)
         if edge is None:
             raise AppError(404, "PROPOSED_EDGE_NOT_FOUND", "Không tìm thấy edge proposal.")
         edge.update(payload.model_dump())
         self._rematch(job)
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     def revalidate(self, import_id: str) -> dict:
         job = self._editable(import_id)
@@ -207,7 +212,7 @@ class KnowledgeGraphImportService:
             item["decision"] = "pending"
         self._rematch(job)
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     def delete_node(self, import_id: str, temp_id: str) -> dict:
         job = self._editable(import_id)
@@ -220,7 +225,7 @@ class KnowledgeGraphImportService:
             if item["from_ref"] != temp_id and item["to_ref"] != temp_id
         ]
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     def delete_edge(self, import_id: str, temp_id: str) -> dict:
         job = self._editable(import_id)
@@ -229,13 +234,13 @@ class KnowledgeGraphImportService:
             raise AppError(404, "PROPOSED_EDGE_NOT_FOUND", "Không tìm thấy edge proposal.")
         job["edges"] = [item for item in job["edges"] if item["temp_id"] != temp_id]
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     def delete_import(self, import_id: str) -> str:
-        existing = self.repository.get(import_id)
+        existing = self.import_repository.get(import_id)
         if existing is None:
             raise AppError(404, "IMPORT_NOT_FOUND", "Không tìm thấy graph import job.")
-        self.repository.delete(import_id)
+        self.import_repository.delete(import_id)
         return import_id
 
     def apply(self, import_id: str) -> dict:
@@ -304,7 +309,7 @@ class KnowledgeGraphImportService:
         job["applied_at"] = _now()
         job["applied_dataset_hash"] = new_hash
         self._refresh_counts(job)
-        return self.repository.save(job)
+        return self.import_repository.save(job)
 
     async def _extract(
         self,

@@ -18,6 +18,7 @@ from app.modules.places.resolver import (
     DatabasePlaceResolver,
     FallbackPlaceResolver,
     GoogleMapsScraperPlaceResolver,
+    GoogleMapsSearchClient,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -46,13 +47,16 @@ from app.modules.plans.explorer.timing import ExplorerTimingLogger
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
-from app.modules.plans.trip_theme_planner.place_repository_adapter import PlaceRepositoryAdapter
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.research_tool import (
     RepositoryPlannerResearchTool,
 )
-from app.modules.plans.trip_theme_planner.research_tools_orchestrator import (
-    ResearchToolsOrchestrator,
+from app.modules.plans.trip_theme_planner.graph_research import (
+    TripThemeGraphResearchService,
+)
+from app.modules.knowledge_graph.research import (
+    GraphResearchOrchestrator,
+    ScopeResolutionRepository,
 )
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.checks.overall_checker import OverallChecker
@@ -80,7 +84,22 @@ def get_plan_mutation_service(
         place_repository=place_repository,
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
+        gmaps_client=_get_gmaps_search_client(),
     )
+
+
+def _get_gmaps_search_client() -> GoogleMapsSearchClient | None:
+    """Get Google Maps search client for autocomplete fallback."""
+    if (
+        settings.google_maps_scraper_executable
+        or settings.google_maps_scraper_work_dir is not None
+    ):
+        return GoogleMapsSearchClient(
+            executable=settings.google_maps_scraper_executable,
+            work_dir=settings.google_maps_scraper_work_dir,
+            timeout_seconds=settings.google_maps_scraper_timeout_seconds,
+        )
+    return None
 
 
 def get_conversation_turn_service(
@@ -127,7 +146,11 @@ def get_plan_service(
     )
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
-    research_tools = ResearchToolsOrchestrator(PlaceRepositoryAdapter(db))
+    # Wire graph research dependency chain:
+    # repository -> GraphResearchOrchestrator -> TripThemeGraphResearchService -> TripThemePlannerService
+    kg_repo = ScopeResolutionRepository(db)
+    graph_orchestrator = GraphResearchOrchestrator(kg_repo, kg_repo)
+    graph_research_service = TripThemeGraphResearchService(graph_orchestrator)
     transcript_worker = (
         HttpYouTubeTranscriptWorker(
             base_url=settings.youtube_transcript_worker_url,
@@ -157,7 +180,7 @@ def get_plan_service(
         statistics,
         llm_client,
         RepositoryPlannerResearchTool(place_repository),
-        research_tools=research_tools,
+        graph_research_service=graph_research_service,
     )
     place_selector = PlaceSelectorService(
         RepositoryPlaceSelectionTool(place_repository),

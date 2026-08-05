@@ -179,6 +179,24 @@ function hasCoordinates(
   );
 }
 
+function browserSupportsWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const options = {
+      alpha: true,
+      antialias: true,
+      failIfMajorPerformanceCaveat: false,
+      powerPreference: "default",
+    } as WebGLContextAttributes;
+    return Boolean(
+      canvas.getContext("webgl2", options) ||
+        canvas.getContext("webgl", options)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizeBearing(value: number): number {
   return ((value % 360) + 360) % 360;
 }
@@ -496,28 +514,56 @@ export function PlannerMap({
   useEffect(() => {
     let disposed = false;
     let styleLoaded = false;
+    let initAttempted = false;
 
     async function initializeMap() {
-      if (!containerRef.current || mapRef.current) return;
+      if (!containerRef.current || mapRef.current || initAttempted) return;
+      initAttempted = true;
 
-      const maplibre = await import("maplibre-gl");
+      if (!browserSupportsWebGL()) {
+        setMapError(
+          "Trình duyệt này chưa hỗ trợ WebGL. Bạn vẫn có thể xem lịch trình trong danh sách."
+        );
+        return;
+      }
+
+      let maplibre: typeof import("maplibre-gl");
+      try {
+        maplibre = await import("maplibre-gl");
+      } catch {
+        if (!disposed) {
+          setMapError("Không thể tải thư viện bản đồ. Vui lòng tải lại trang.");
+        }
+        return;
+      }
       if (disposed || !containerRef.current) return;
 
       maplibreRef.current = maplibre;
-      const map = new maplibre.Map({
-        attributionControl: false,
-        center: VIETNAM_CENTER,
-        container: containerRef.current,
-        doubleClickZoom: false,
-        dragPan: true,
-        dragRotate: false,
-        keyboard: false,
-        maxZoom: 19,
-        pitchWithRotate: true,
-        style: MAP_STYLE_URL,
-        touchPitch: true,
-        zoom: 4.7
-      });
+      let map: MapLibreMap;
+      try {
+        map = new maplibre.Map({
+          attributionControl: false,
+          center: VIETNAM_CENTER,
+          container: containerRef.current,
+          doubleClickZoom: false,
+          dragPan: true,
+          dragRotate: false,
+          keyboard: false,
+          maxZoom: 19,
+          pitchWithRotate: true,
+          style: MAP_STYLE_URL,
+          touchPitch: true,
+          zoom: 4.7,
+        });
+      } catch {
+        if (!disposed) {
+          setMapError(
+            "Không thể khởi tạo bản đồ trên trình duyệt này. Bạn vẫn có thể xem lịch trình và địa điểm trong danh sách."
+          );
+        }
+        maplibreRef.current = null;
+        return;
+      }
 
       map.addControl(
         new maplibre.NavigationControl({ showCompass: true }),

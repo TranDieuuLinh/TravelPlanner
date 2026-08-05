@@ -1465,6 +1465,11 @@ function Planner() {
           address: selectedSuggestion?.address || undefined,
           latitude: selectedSuggestion?.latitude ?? undefined,
           longitude: selectedSuggestion?.longitude ?? undefined,
+          rating: selectedSuggestion?.rating ?? undefined,
+          reviewCount: selectedSuggestion?.reviewCount ?? undefined,
+          imageUrls: selectedSuggestion?.imageUrl
+            ? [selectedSuggestion.imageUrl]
+            : undefined,
         },
       });
       setChatRevision(updatedChat.revision);
@@ -5913,10 +5918,50 @@ function Planner() {
                           role="option"
                           type="button"
                         >
-                          <strong>{suggestion.name}</strong>
-                          {suggestion.address ? (
-                            <span>{suggestion.address}</span>
-                          ) : null}
+                          {suggestion.imageUrl ? (
+                            <img
+                              alt={suggestion.name}
+                              className="suggestionThumbnail"
+                              src={suggestion.imageUrl}
+                            />
+                          ) : (
+                            <div className="suggestionThumbnailPlaceholder">
+                              <svg viewBox="0 0 24 24" width="40" height="40">
+                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="suggestionContent">
+                            <strong>{suggestion.name}</strong>
+                            <div className="suggestionMeta">
+                              {suggestion.rating != null ? (
+                                <span className="suggestionRating">
+                                  <svg viewBox="0 0 24 24" width="14" height="14">
+                                    <path
+                                      d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+                                      fill="#f59e0b"
+                                    />
+                                  </svg>
+                                  {suggestion.rating.toFixed(1)}
+                                </span>
+                              ) : null}
+                              {suggestion.reviewCount != null ? (
+                                <span className="suggestionReviews">
+                                  ({suggestion.reviewCount.toLocaleString("vi")} đánh giá)
+                                </span>
+                              ) : null}
+                              {suggestion.placeType ? (
+                                <span className="suggestionType">
+                                  {suggestion.placeType}
+                                </span>
+                              ) : null}
+                            </div>
+                            {suggestion.address ? (
+                              <span className="suggestionAddress">
+                                {suggestion.address}
+                              </span>
+                            ) : null}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -6100,10 +6145,24 @@ function Planner() {
             data-testid="confirm-turn-modal"
           >
             <div className="confirm-modal">
-              <h2 id="confirm-turn-title">Xác nhận thay đổi lịch trình</h2>
+              <div className="confirm-modal-icon">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <h2 id="confirm-turn-title">Xác nhận thay đổi</h2>
               <p className="confirm-modal-hint">
-                Supervisor đề xuất thay đổi có phạm vi lớn. Xác nhận để áp dụng
-                hoặc hủy để giữ lịch trình hiện tại.
+                Lịch trình sẽ được cập nhật theo đề xuất. Bạn có thể hoàn tác
+                sau nếu cần.
               </p>
               <ul className="confirm-modal-blocks">
                 {pendingTurn.assistantBlocks.map((block, index) => {
@@ -6122,7 +6181,7 @@ function Planner() {
                   disabled={confirmBusy}
                   className="ghost"
                 >
-                  Hủy
+                  Để sau
                 </button>
                 <button
                   type="button"
