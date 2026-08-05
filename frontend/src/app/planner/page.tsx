@@ -518,6 +518,7 @@ function Planner() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const activeChatIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef(0);
+  const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
@@ -1783,12 +1784,6 @@ function Planner() {
   const awaitingInitialPlan =
     !displayedPlan && (backgroundPlanning || loading);
 
-  useEffect(() => {
-    if (awaitingInitialPlan && window.innerWidth > 900) {
-      setChatCollapsed(true);
-    }
-  }, [awaitingInitialPlan]);
-
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
     return (
@@ -2880,22 +2875,21 @@ function Planner() {
       ...guidedIntakeAnswers,
       [guidedIntakeStep]: answer === "Bỏ qua" ? "" : answer,
     };
-    const currentIndex = guidedIntakeOrder.indexOf(guidedIntakeStep);
-    const isLastStep = currentIndex === guidedIntakeOrder.length - 1;
-    const nextStep: GuidedIntakeStep = isLastStep
-      ? "complete"
-      : guidedIntakeOrder[currentIndex + 1];
     setGuidedIntakeAnswers(nextAnswers);
-    setGuidedIntakeStep(nextStep);
+    setGuidedDraft(nextAnswers[guidedIntakeStep] ?? "");
     setError("");
+    setGuidedIntakeOpen(false);
+    showPlannerToast(
+      `Đã cập nhật ${
+        guidedIntakeQuestions[guidedIntakeStep].replace(/[?？]$/, "")
+      }`
+    );
 
-    if (isLastStep) {
+    if (guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]) {
+      setGuidedIntakeStep("complete");
       setGuidedIntakeOpen(false);
       setGuidedDraft("");
       void sendMessage(buildGuidedIntakeRequest(nextAnswers), false);
-    } else {
-      const pendingStep = nextStep as Exclude<GuidedIntakeStep, "complete">;
-      setGuidedDraft(nextAnswers[pendingStep]?.trim() ?? "");
     }
   }
 
@@ -3330,15 +3324,19 @@ function Planner() {
   }
 
   function sendPlannerEntry() {
+    if (submittingEntryRef.current || loading || queueingUrls) return;
     const request = buildEntryRequest();
     if (!request) {
       setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
       return;
     }
 
+    submittingEntryRef.current = true;
     setPrompt("");
     setUrlInput("");
-    void sendMessage(request);
+    void sendMessage(request).finally(() => {
+      submittingEntryRef.current = false;
+    });
   }
 
   function submitPlannerEntry(event: React.FormEvent<HTMLFormElement>) {
@@ -3624,9 +3622,7 @@ function Planner() {
             <section
               className={`plannerLayout ${
                 !displayedPlan ? "is-new-chat" : ""
-              } ${backgroundPlanning || loading ? "is-planning" : ""} ${
-                awaitingInitialPlan ? "is-awaiting-plan" : ""
-              }`}
+              } ${backgroundPlanning || loading ? "is-planning" : ""}`}
               ref={plannerLayoutRef}
               style={
                 {
@@ -3691,12 +3687,7 @@ function Planner() {
                                 value={guidedStartDate}
                               />
                             </label>
-                            <span
-                              aria-hidden="true"
-                              className="guidedDateArrow"
-                            >
-                              →
-                            </span>
+                            <span className="guidedDateArrow">đến</span>
                             <label>
                               <span>Ngày kết thúc</span>
                               <input
@@ -3709,6 +3700,11 @@ function Planner() {
                                 value={guidedEndDate}
                               />
                             </label>
+                          </div>
+                          <div className="guidedIntakeActions">
+                            <button className="guidedIntakeUpdate" type="submit">
+                              Cập nhật
+                            </button>
                           </div>
                         </form>
                       ) : guidedIntakeStep === "travelers" ? (
@@ -3777,6 +3773,11 @@ function Planner() {
                               );
                             })}
                           </div>
+                          <div className="guidedIntakeActions">
+                            <button className="guidedIntakeUpdate" type="submit">
+                              Cập nhật
+                            </button>
+                          </div>
                         </form>
                       ) : (
                         <form
@@ -3802,20 +3803,15 @@ function Planner() {
                               value={guidedDraft}
                             />
                             <button
-                              aria-label={
-                                guidedDraft.trim() ? "Tiếp tục" : "Bỏ qua"
-                              }
-                              className="guidedIntakeAnswerNext"
+                              aria-label="Cập nhật thông tin"
+                              className="guidedIntakeUpdate"
                               disabled={
                                 guidedIntakeStep === "destination" &&
                                 !guidedDraft.trim()
                               }
-                              title={guidedDraft.trim() ? "Tiếp tục" : "Bỏ qua"}
                               type="submit"
                             >
-                              <svg aria-hidden="true" viewBox="0 0 24 24">
-                                <path d="m9 5 7 7-7 7" />
-                              </svg>
+                              Cập nhật
                             </button>
                           </div>
                         </form>
@@ -3824,18 +3820,13 @@ function Planner() {
                   </section>
                 </div>
               ) : null}
-              {awaitingInitialPlan
-                ? renderPlanningStage("plannerPlanningCanvas")
-                : null}
               <aside
                 aria-busy={loading}
                 aria-label="Trợ lý lập kế hoạch VSF"
                 className={`plannerChat panel ${
                   chatCollapsed ? "is-collapsed" : ""
                 } ${
-                  displayedPlan || awaitingInitialPlan
-                    ? "plannerChat--compact"
-                    : ""
+                  displayedPlan ? "plannerChat--compact" : ""
                 }`}
                 ref={plannerChatRef}
                 style={
@@ -3877,6 +3868,17 @@ function Planner() {
                     messages={messages}
                     ref={messageListRef}
                   />
+                  {awaitingInitialPlan ? (
+                    <div
+                      aria-live="polite"
+                      aria-label="Đang xử lý yêu cầu"
+                      className="plannerInlineProcessing"
+                      role="status"
+                    >
+                      <span aria-hidden="true" className="plannerInlineSpinner" />
+                      <span>Đang xử lý</span>
+                    </div>
+                  ) : null}
                   {error ? <p className="formError">{error}</p> : null}
                   <PlannerChatComposer
                     disabled={loading}
