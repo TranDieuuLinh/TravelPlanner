@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
 from app.modules.knowledge_graph.price_research import TravelPlacePriceOutcome
-from scripts.enrich_travel_place_prices import apply_outcomes, load_candidates
+from scripts.auto_crawl_tien_ve.enrich_travel_place_prices import (
+    apply_outcomes,
+    load_candidates,
+)
 
 
 def _entity() -> KnowledgeEntity:
