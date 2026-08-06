@@ -13,6 +13,9 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.main import app
 from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
+from app.modules.knowledge_graph.place_repository import (
+    KnowledgeGraphPlaceRepository,
+)
 from app.modules.plans.dependencies import get_plan_service
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
@@ -42,6 +45,32 @@ def test_knowledge_graph_place_repository_imports_without_statistics_cycle() -> 
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "KnowledgeGraphPlaceRepository"
+
+
+def test_planner_runtime_uses_knowledge_graph_place_repository() -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            service = get_plan_service(session)
+
+            place_tool = service.main_workflow.place_selector.place_tool
+            assert isinstance(place_tool, RepositoryPlaceSelectionTool)
+            assert isinstance(
+                place_tool.repository,
+                KnowledgeGraphPlaceRepository,
+            )
+            assert isinstance(
+                service.main_workflow.trip_theme_planner.graph_research_service,
+                TripThemeGraphResearchService,
+            )
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
 
 
 def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
