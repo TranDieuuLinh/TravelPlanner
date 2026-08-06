@@ -14,6 +14,22 @@ ConversationAgentName = Literal[
 ]
 
 
+def agent_for_conversation_intent(
+    intent: str,
+) -> ConversationAgentName | None:
+    """Return the allowlisted conversation agent for an intent."""
+    if intent in {"ask_place", "ask_travel_information", "travel_advice", "explain_plan"}:
+        return "information_finder"
+    if intent in {"create_plan", "regenerate_plan"}:
+        return "main_planner"
+    if intent in {
+        "add_place", "update_place", "remove_place", "move_place",
+        "lock_item", "unlock_item",
+    }:
+        return "plan_editor"
+    return None
+
+
 @dataclass
 class ConversationAgentContext:
     """Request envelope passed between the supervisor and a conversation agent."""
@@ -90,3 +106,22 @@ class ConversationAgentDispatcher:
         if selected is None:
             raise ValueError(f"Unknown conversation agent: {agent}")
         return await selected.run(context)
+
+    async def dispatch_for_decision(
+        self,
+        context: ConversationAgentContext,
+    ) -> Any:
+        expected = agent_for_conversation_intent(context.decision.intent)
+        if expected is None:
+            raise ValueError(
+                f"Intent {context.decision.intent!r} does not route to an agent"
+            )
+        # Legacy callers did not carry an agent field. They still route via
+        # this server-owned mapping; an explicitly supplied wrong agent is
+        # rejected.
+        if context.decision.agent is not None and context.decision.agent != expected:
+            raise ValueError(
+                f"Agent {context.decision.agent!r} does not match intent "
+                f"{context.decision.intent!r}"
+            )
+        return await self.dispatch(expected, context)

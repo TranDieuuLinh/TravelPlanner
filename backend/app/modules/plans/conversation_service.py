@@ -379,9 +379,7 @@ class ConversationTurnService:
                 "explorer", context
             )
             context.data["explorer"] = explorer_context
-            return await self.agent_dispatcher.dispatch(
-                decision.agent or "main_planner", context
-            )
+            return await self.agent_dispatcher.dispatch_for_decision(context)
 
         if decision.intent == "clarify":
             blocks = _clarification_blocks(decision, plan, turn.content)
@@ -392,15 +390,21 @@ class ConversationTurnService:
                 blocks,
             )
 
-        if decision.intent == "travel_advice":
-            return await self.agent_dispatcher.dispatch(
-                decision.agent or "information_finder",
-                ConversationAgentContext(chat, turn, decision, plan, images, confirmed),
+        if decision.intent in {"travel_advice", "ask_place", "ask_travel_information"}:
+            return await self.agent_dispatcher.dispatch_for_decision(
+                ConversationAgentContext(
+                    chat=chat,
+                    turn=turn,
+                    decision=decision,
+                    plan=plan,
+                    images=images,
+                    confirmed=confirmed,
+                    data={"information_intent": decision.intent},
+                )
             )
 
         if decision.intent == "explain_plan":
-            return await self.agent_dispatcher.dispatch(
-                decision.agent or "information_finder",
+            return await self.agent_dispatcher.dispatch_for_decision(
                 ConversationAgentContext(
                     chat=chat,
                     turn=turn,
@@ -410,6 +414,15 @@ class ConversationTurnService:
                     confirmed=confirmed,
                     data={"information_intent": "explain_plan"},
                 ),
+            )
+
+        if decision.intent == "create_backup":
+            message = decision.message or (
+                "Luồng tạo phương án dự phòng trong chat hiện chưa được hỗ trợ. "
+                "Bạn có thể dùng endpoint backup riêng."
+            )
+            return self._save_response(
+                chat, turn, message, [{"type": "text", "text": message}]
             )
 
         if plan is None:
@@ -459,8 +472,7 @@ class ConversationTurnService:
                 "Mình cần bạn nói rõ địa điểm và ngày cần thay đổi.",
             )
 
-        return await self.agent_dispatcher.dispatch(
-            decision.agent or "plan_editor",
+        return await self.agent_dispatcher.dispatch_for_decision(
             ConversationAgentContext(
                 chat=chat,
                 turn=turn,

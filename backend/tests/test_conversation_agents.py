@@ -51,6 +51,8 @@ def test_intents_map_to_the_temporary_agent_set() -> None:
     assert _agent_for_intent("create_plan") == "main_planner"
     assert _agent_for_intent("regenerate_plan") == "main_planner"
     assert _agent_for_intent("travel_advice") == "information_finder"
+    assert _agent_for_intent("ask_place") == "information_finder"
+    assert _agent_for_intent("ask_travel_information") == "information_finder"
     assert _agent_for_intent("explain_plan") == "information_finder"
     assert _agent_for_intent("add_place") == "plan_editor"
     assert _agent_for_intent("validate_plan") is None
@@ -68,4 +70,3 @@ def test_supervisor_output_accepts_optional_agent() -> None:
     )
 
     assert output.agent == "main_planner"
-
