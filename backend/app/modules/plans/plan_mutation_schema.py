@@ -2,6 +2,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import CheckReport, Plan
+from app.modules.plans.plan_editor.contract import PlanEditorOperation
 
 
 class PlaceSuggestion(BaseModel):
@@ -41,6 +42,12 @@ class AddItemRequest(BaseModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: Annotated[int | None, Field(default=None, ge=0, alias="reviewCount")] = None
     image_urls: Annotated[list[str] | None, Field(default=None, alias="imageUrls")] = None
+    candidate_id: Annotated[str | None, Field(default=None, alias="candidateId", min_length=1, max_length=128)] = None
+    source_refs: Annotated[list[str], Field(default_factory=list, alias="sourceRefs", max_length=32)]
+    source_import_node_id: Annotated[int | None, Field(default=None, alias="sourceImportNodeId", ge=1)] = None
+    candidate_entity_ids: Annotated[list[str], Field(default_factory=list, alias="candidateEntityIds", max_length=32)]
+    source_provider: Annotated[str | None, Field(default=None, alias="sourceProvider", max_length=64)] = None
+    identity_confidence: Annotated[str | None, Field(default=None, alias="identityConfidence", max_length=32)] = None
 
     model_config = {"populate_by_name": True}
 
@@ -58,6 +65,12 @@ class UpdateItemRequest(BaseModel):
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] | None = None
     locked: bool | None = None
+    candidate_id: Annotated[str | None, Field(default=None, alias="candidateId", min_length=1, max_length=128)] = None
+    source_refs: Annotated[list[str] | None, Field(default=None, alias="sourceRefs", max_length=32)] = None
+    source_import_node_id: Annotated[int | None, Field(default=None, alias="sourceImportNodeId", ge=1)] = None
+    candidate_entity_ids: Annotated[list[str] | None, Field(default=None, alias="candidateEntityIds", max_length=32)] = None
+    source_provider: Annotated[str | None, Field(default=None, alias="sourceProvider", max_length=64)] = None
+    identity_confidence: Annotated[str | None, Field(default=None, alias="identityConfidence", max_length=32)] = None
 
     model_config = {"populate_by_name": True}
 

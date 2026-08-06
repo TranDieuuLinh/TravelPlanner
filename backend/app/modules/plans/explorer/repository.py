@@ -244,6 +244,32 @@ class ExplorerPersistenceRepository:
             for value in (row.candidate_reviews or [])
         ]
 
+    def load_candidate_node(
+        self,
+        intake_id: str | None,
+        node_id: int,
+        *,
+        user_id: str | None = None,
+        chat_id: str | None = None,
+    ) -> KnowledgeGraphImportNode | None:
+        """Load a node only when it belongs to the requested Explorer intake."""
+        if not intake_id:
+            return None
+        statement = (
+            select(KnowledgeGraphImportNode)
+            .join(KnowledgeGraphImport)
+            .where(
+                KnowledgeGraphImportNode.id == node_id,
+                KnowledgeGraphImportNode.import_id == intake_id,
+                KnowledgeGraphImport.import_kind == "explorer_intake",
+            )
+        )
+        if user_id is not None:
+            statement = statement.where(KnowledgeGraphImport.created_by == _numeric_user_id(user_id))
+        if chat_id is not None:
+            statement = statement.where(KnowledgeGraphImport.chat_id == chat_id)
+        return self.session.scalar(statement)
+
     def replace_candidate_reviews(
         self,
         intake_id: str,

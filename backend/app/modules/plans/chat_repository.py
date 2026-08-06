@@ -82,7 +82,7 @@ class TripChatRepository:
             (msg.sequence for msg in chat.messages),
             default=0,
         ) + 1
-        intake = self.db.get(KnowledgeGraphImport, intake_id)
+        intake = self._claim_intake_for_chat(chat, intake_id)
         if intake is None:
             intake = KnowledgeGraphImport(
                 id=intake_id,
@@ -96,6 +96,7 @@ class TripChatRepository:
                 dataset_hash="",
                 destination=destination,
                 candidate_reviews=[],
+                chat_id=chat.id,
             )
             self.db.add(intake)
             self.db.flush()
@@ -192,7 +193,7 @@ class TripChatRepository:
         next_sequence = max(
             (message.sequence for message in chat.messages), default=0
         ) + 1
-        intake = self.db.get(KnowledgeGraphImport, intake_id)
+        intake = self._claim_intake_for_chat(chat, intake_id)
         if intake is None:
             intake = KnowledgeGraphImport(
                 id=intake_id,
@@ -206,6 +207,7 @@ class TripChatRepository:
                 dataset_hash="",
                 destination="",
                 candidate_reviews=[],
+                chat_id=chat.id,
             )
             self.db.add(intake)
             self.db.flush()
@@ -607,26 +609,38 @@ class TripChatRepository:
         return TripIntent.model_validate(chat.current_trip_intent)
 
     def load_candidate_reviews(self, chat: TripChat) -> list[PlaceCandidateReview]:
-        intake_ids = list(
-            dict.fromkeys(
-                intake_id
-                for intake_id in [
-                    *(revision.intake_id for revision in chat.plan_revisions),
-                    chat.current_intake_id,
-                ]
-                if intake_id is not None
-            )
-        )
-        reviews: list[PlaceCandidateReview] = []
-        for intake_id in intake_ids:
-            intake = self.db.get(KnowledgeGraphImport, intake_id)
-            if intake is None or intake.import_kind != "explorer_intake":
+        intake = self._get_owned_intake(chat, chat.current_intake_id)
+        if intake is None:
+            return []
+        return [
+            PlaceCandidateReview.model_validate(value)
+            for value in (intake.candidate_reviews or [])
+        ]
+
+    def load_candidate_snapshots(
+        self, chat: TripChat, turn: TripChatMessage | None = None
+    ) -> list[dict]:
+        """Read normalized candidate snapshots persisted by conversation turns."""
+        messages = [turn] if turn is not None else list(chat.messages)
+        snapshots: list[dict] = []
+        for message in messages:
+            if message is None:
                 continue
-            reviews.extend(
-                PlaceCandidateReview.model_validate(value)
-                for value in intake.candidate_reviews
-            )
-        return reviews
+            blocks = [
+                *list(getattr(message, "content_blocks", None) or []),
+                *list(getattr(message, "assistant_blocks", None) or []),
+            ]
+            for block in blocks:
+                if not isinstance(block, dict):
+                    continue
+                values = block.get("candidates") or block.get("placeCandidates")
+                if isinstance(values, list):
+                    snapshots.extend(value for value in values if isinstance(value, dict))
+            summary = getattr(message, "result_summary", None) or {}
+            values = summary.get("candidateSnapshots") or summary.get("candidates")
+            if isinstance(values, list):
+                snapshots.extend(value for value in values if isinstance(value, dict))
+        return snapshots
 
     def replace_candidate_reviews(
         self,
@@ -635,12 +649,49 @@ class TripChatRepository:
     ) -> None:
         if chat.current_intake_id is None:
             return
-        intake = self.db.get(KnowledgeGraphImport, chat.current_intake_id)
-        if intake is None or intake.import_kind != "explorer_intake":
+        intake = self._get_owned_intake(chat, chat.current_intake_id)
+        if intake is None:
             return
         intake.candidate_reviews = [
             review.model_dump(mode="json", by_alias=True) for review in reviews
         ]
+
+    def _get_owned_intake(
+        self, chat: TripChat, intake_id: str | None
+    ) -> KnowledgeGraphImport | None:
+        """Resolve only the current chat's intake for read operations."""
+        if not intake_id:
+            return None
+        statement = select(KnowledgeGraphImport).where(
+            KnowledgeGraphImport.id == intake_id,
+            KnowledgeGraphImport.import_kind == "explorer_intake",
+            KnowledgeGraphImport.created_by == chat.user_id,
+            KnowledgeGraphImport.chat_id == chat.id,
+        )
+        return self.db.scalar(statement)
+
+    def _claim_intake_for_chat(
+        self, chat: TripChat, intake_id: str
+    ) -> KnowledgeGraphImport | None:
+        """Link a legacy user-owned intake when it is first saved by a chat."""
+        intake = self._get_owned_intake(chat, intake_id)
+        if intake is not None:
+            return intake
+        existing = self.db.get(KnowledgeGraphImport, intake_id)
+        if existing is not None:
+            if (
+                existing.import_kind != "explorer_intake"
+                or existing.created_by != chat.user_id
+                or existing.chat_id not in (None, chat.id)
+            ):
+                raise AppError(
+                    404,
+                    "CANDIDATE_INTAKE_NOT_FOUND",
+                    "Không tìm thấy dữ liệu địa điểm trong cuộc trò chuyện này.",
+                )
+            existing.chat_id = chat.id
+            return existing
+        return None
 
     def get_revision(
         self, chat_id: str, revision: int
