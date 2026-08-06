@@ -99,6 +99,13 @@ def make_sample_plan() -> Plan:
     )
 
 
+def test_item_mutation_contract_only_accepts_personal_notes() -> None:
+    assert "notes" not in AddItemRequest.model_json_schema()["properties"]
+    assert "notes" not in UpdateItemRequest.model_json_schema()["properties"]
+    assert "personalNotes" in AddItemRequest.model_json_schema()["properties"]
+    assert "personalNotes" in UpdateItemRequest.model_json_schema()["properties"]
+
+
 def test_add_item_success():
     service = PlanMutationService()
     plan = make_sample_plan()
@@ -110,7 +117,7 @@ def test_add_item_success():
         durationMinutes=45,
         latitude=21.0185,
         longitude=105.8545,
-        notes="Ăn trưa ngon",
+        personalNotes="Ăn trưa ngon",
     )
 
     result = asyncio.run(service.add_item(plan, req))
@@ -121,6 +128,8 @@ def test_add_item_success():
     added = day1.items[-1]
     assert added.name == "Phở Thìn Lò Đúc"
     assert added.source == "manual"
+    assert added.notes is None
+    assert added.personal_notes == "Ăn trưa ngon"
     assert len(day1.transport_legs) == 2
 
 
@@ -196,7 +205,7 @@ def test_update_item_success():
 
     req = UpdateItemRequest(
         name="Hồ Gươm (Hồ Hoàn Kiếm)",
-        notes="Đi dạo quanh hồ",
+        personalNotes="Đi dạo quanh hồ",
     )
 
     result = asyncio.run(
@@ -204,7 +213,8 @@ def test_update_item_success():
     )
     updated_item = result.plan.days[0].items[0]
     assert updated_item.name == "Hồ Gươm (Hồ Hoàn Kiếm)"
-    assert updated_item.notes == "Đi dạo quanh hồ"
+    assert updated_item.notes == plan.days[0].items[0].notes
+    assert updated_item.personal_notes == "Đi dạo quanh hồ"
 
 
 def test_personal_notes_are_separate_from_source_context() -> None:

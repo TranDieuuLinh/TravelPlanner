@@ -283,9 +283,7 @@ def _url_result(
             confidence=0.9 if details else 0.3,
             expectedPlaceCount=expected_place_count,
             extractionCoverage=(
-                min(1.0, count / expected_place_count)
-                if expected_place_count
-                else None
+                min(1.0, count / expected_place_count) if expected_place_count else None
             ),
             coverageStatus=coverage_status,
         ),
@@ -353,7 +351,7 @@ def test_plain_prompt_goes_directly_to_formatter() -> None:
     assert result.explorer.intent.destination == "Hội An"
     assert result.intake_id
     assert result.user_id == "user-1"
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
     assert not hasattr(result, "places")
     assert not hasattr(result, "persistence_status")
     assert url_reels.inputs == []
@@ -444,10 +442,8 @@ def test_url_is_extracted_before_formatter_runs() -> None:
     result = asyncio.run(service.explore_full(payload))
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_place_suggestions is True
-    assert [item.url for item in url_reels.inputs] == [
-        "https://example.com/reel"
-    ]
+    assert result.allow_finder_gap_fill is True
+    assert [item.url for item in url_reels.inputs] == ["https://example.com/reel"]
     assert formatter.context_called is True
     assert formatter.url_reel_results is not None
     assert formatter.url_reel_results[0].url == "https://example.com/reel"
@@ -472,9 +468,10 @@ def test_explorer_preserves_unresolved_candidates_for_review_and_retry() -> None
         )
     )
 
-    assert [
-        review.status for review in result.explorer.candidate_reviews
-    ] == ["resolved", "needs_review"]
+    assert [review.status for review in result.explorer.candidate_reviews] == [
+        "resolved",
+        "needs_review",
+    ]
     pending = result.explorer.candidate_reviews[1]
     assert pending.name == "URL stop 2"
     assert pending.resolution_reason == "not_found"
@@ -726,16 +723,12 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert result.timing_report.candidate_count == 2
     assert result.timing_report.resolved_count == 2
     assert result.timing_report.provider_counts == {"fake_places": 2}
-    assert result.timing_report.resolved_provider_counts == {
-        "fake_places": 2
-    }
+    assert result.timing_report.resolved_provider_counts == {"fake_places": 2}
     assert len(result.timing_report.provider_attempts) == 2
     assert {
         attempt.candidate for attempt in result.timing_report.provider_attempts
     } == {"URL stop 1", "URL stop 2"}
-    assert {
-        stage.key for stage in result.timing_report.stages
-    } >= {
+    assert {stage.key for stage in result.timing_report.stages} >= {
         "urlExtractionWall",
         "candidateAggregation",
         "formatter",
@@ -749,18 +742,13 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert persisted["sources"][0]["cacheStatus"] == "miss"
     assert persisted["sources"][0]["cacheLookupSeconds"] >= 0.0
     assert any(
-        stage["key"] == "urlCacheLookup"
-        for stage in persisted["sources"][0]["stages"]
+        stage["key"] == "urlCacheLookup" for stage in persisted["sources"][0]["stages"]
     )
     assert persisted["sources"][0]["extractedPlaceCount"] == 2
     assert persisted["sources"][0]["candidateCount"] == 2
     assert persisted["sources"][0]["resolvedCount"] == 2
-    assert persisted["sources"][0]["providerCounts"] == {
-        "fake_places": 2
-    }
-    assert persisted["sources"][0]["resolvedProviderCounts"] == {
-        "fake_places": 2
-    }
+    assert persisted["sources"][0]["providerCounts"] == {"fake_places": 2}
+    assert persisted["sources"][0]["resolvedProviderCounts"] == {"fake_places": 2}
     assert len(persisted["providerAttempts"]) == 2
     serialized = json.dumps(persisted)
     assert "Private prompt content" not in serialized
@@ -777,6 +765,7 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     assert terminal_payload["providerCounts"] == {"fake_places": 2}
     assert terminal_payload["providerAttempts"][0]["provider"] == "fake_places"
     assert "candidate" not in terminal_payload["providerAttempts"][0]
+    assert "attemptedQueries" not in terminal_payload["providerAttempts"][0]
     assert "Private prompt content" not in terminal_lines[0]
     assert "https://example.com/private-query" not in terminal_lines[0]
     assert "private-query" not in serialized
@@ -795,12 +784,14 @@ def test_explorer_timing_counts_every_provider_attempt() -> None:
             PlaceResolutionAttempt(
                 candidate=candidate.name,
                 provider="database",
+                attemptedQueries=["Resolved Place"],
                 outcome="unresolved",
                 rejectionReason="not_found",
             ),
             PlaceResolutionAttempt(
                 candidate=candidate.name,
                 provider="google_maps_scraper",
+                attemptedQueries=["Resolved Place, Hà Nội"],
                 aliasQueryCount=1,
                 queueWaitSeconds=0.2,
                 executionSeconds=1.5,
@@ -816,6 +807,8 @@ def test_explorer_timing_counts_every_provider_attempt() -> None:
     assert trace.resolved_provider_counts == {"google_maps_scraper": 1}
     assert trace.provider_attempts[1].queue_wait_seconds == 0.2
     assert trace.provider_attempts[1].execution_seconds == 1.5
+    assert trace.provider_attempts[0].attempted_queries == ["Resolved Place"]
+    assert trace.provider_attempts[1].attempted_queries == ["Resolved Place, Hà Nội"]
 
 
 def test_resolved_place_metrics_dedupe_aliases_but_keep_unique_places() -> None:
@@ -901,11 +894,9 @@ def test_image_ocr_is_added_before_formatter_runs() -> None:
 
     assert len(image_ocr.calls) == 1
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
     assert formatter.payload is not None
-    assert formatter.payload.image_contexts[0].ocr_text == (
-        "Bánh mì Phượng, Hội An"
-    )
+    assert formatter.payload.image_contexts[0].ocr_text == ("Bánh mì Phượng, Hội An")
     assert formatter.url_reel_results == []
     assert image.data == b""
 
@@ -925,10 +916,11 @@ def test_url_without_requested_duration_does_not_fill_sparse_covered_day() -> No
         )
     )
 
-    assert result.explorer.trip_spec.days == 5
-    assert result.allow_place_suggestions is False
+    assert result.explorer.trip_spec.days == 3
+    assert result.allow_finder_gap_fill is True
+    assert result.allow_replace_source_places is False
     assert any(
-        "inferred as 5 days" in assumption
+        "default 3-day duration was kept" in assumption
         for assumption in result.explorer.assumptions
     )
 
@@ -952,7 +944,7 @@ def test_url_with_two_day_coverage_keeps_default_and_allows_empty_day_fill() -> 
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
     assert any(
         "default 3-day duration was kept" in assumption
         for assumption in result.explorer.assumptions
@@ -976,7 +968,7 @@ def test_url_with_more_requested_days_allows_finder_for_empty_days() -> None:
     )
 
     assert result.explorer.trip_spec.days == 10
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
 
 
 def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
@@ -1000,7 +992,7 @@ def test_seven_day_url_allows_finder_when_late_days_are_sparse() -> None:
     )
 
     assert result.explorer.trip_spec.days == 7
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
 
 
 def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None:
@@ -1042,7 +1034,7 @@ def test_unresolved_url_places_keep_default_duration_and_enable_finder() -> None
     )
 
     assert result.explorer.trip_spec.days == 3
-    assert result.allow_place_suggestions is True
+    assert result.allow_finder_gap_fill is True
 
 
 def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
@@ -1089,7 +1081,8 @@ def test_city_duration_url_creates_empty_two_day_stay_without_place() -> None:
     assert result.explorer.intent.destination == "Hanoi"
     assert result.explorer.trip_spec.days == 2
     assert result.explorer.intent.destination_stays[0].name == "Hanoi"
-    assert result.allow_place_suggestions is False
+    assert result.allow_finder_gap_fill is True
+    assert result.allow_replace_source_places is False
 
 
 def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
@@ -1109,7 +1102,8 @@ def test_explicit_shorter_duration_wins_over_large_url_itinerary() -> None:
     )
 
     assert result.explorer.trip_spec.days == 6
-    assert result.allow_place_suggestions is False
+    assert result.allow_finder_gap_fill is True
+    assert result.allow_replace_source_places is False
 
 
 def test_url_formatter_and_resolver_run_concurrently() -> None:
@@ -1162,9 +1156,7 @@ def test_url_formatter_and_resolver_run_concurrently() -> None:
         )
 
         assert result.explorer.intent.destination == "Hà Nội"
-        assert result.explorer.trace["destinationGuardrail"]["status"] == (
-            "corrected"
-        )
+        assert result.explorer.trace["destinationGuardrail"]["status"] == ("corrected")
         assert formatter.context_called is True
 
     asyncio.run(scenario())
@@ -1228,6 +1220,8 @@ def test_failed_url_ocr_does_not_generate_empty_ready_plan() -> None:
                 )
             )
         )
+
+
 def test_constraint_policy_is_completed_from_vietnamese_request() -> None:
     formatter = RecordingFormatter()
 

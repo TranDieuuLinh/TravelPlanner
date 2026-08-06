@@ -14,6 +14,10 @@ from app.db.base import Base
 from app.main import app
 from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
 from app.modules.plans.dependencies import get_plan_service
+from app.modules.places.resolver import (
+    FallbackPlaceResolver,
+    KnowledgeGraphPlaceResolver,
+)
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
@@ -109,6 +113,11 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
             session.commit()
 
             service = get_plan_service(session)
+            assert isinstance(service.place_resolver, FallbackPlaceResolver)
+            assert isinstance(
+                service.place_resolver.primary,
+                KnowledgeGraphPlaceResolver,
+            )
             assert isinstance(
                 service.main_workflow.place_selector.place_tool,
                 RepositoryPlaceSelectionTool,
@@ -147,10 +156,7 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
             )
 
             committed_items = [
-                item
-                for day in plan.days
-                for item in day.items
-                if item.place_id
+                item for day in plan.days for item in day.items if item.place_id
             ]
             assert len(committed_items) == 5
             assert [item.role for item in committed_items] == [
@@ -160,10 +166,7 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
                 "main_activity_2",
                 "dinner_meal",
             ]
-            assert all(
-                item.source == "finder_suggestion"
-                for item in committed_items
-            )
+            assert all(item.source == "finder_suggestion" for item in committed_items)
             assert plan.status.value == "draft"
             assert plan.check_report is not None
             assert plan.check_report.status == "needs_backup"
@@ -228,13 +231,10 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     assert response.status_code == 201
     body = response.json()
     assert body["intent"]["days"] == 1
-    assert len(
-        [
-            item
-            for item in body["days"][0]["items"]
-            if item["placeId"] is not None
-        ]
-    ) == 5
+    assert (
+        len([item for item in body["days"][0]["items"] if item["placeId"] is not None])
+        == 5
+    )
     assert [item["role"] for item in body["days"][0]["items"]] == [
         "breakfast_meal",
         "main_activity_1",
@@ -260,7 +260,7 @@ def test_from_explorer_provider_error_keeps_cors_headers(
     registered_client: TestClient,
 ) -> None:
     class FailingPlanService:
-        async def create_main_plan_from_explorer_with_timing(self, payload):
+        async def create_main_plan_from_trip_intent_with_timing(self, payload):
             raise RuntimeError("Planner provider failed.")
 
     app.dependency_overrides[get_plan_service] = lambda: FailingPlanService()
@@ -284,9 +284,7 @@ def test_from_explorer_provider_error_keeps_cors_headers(
     )
 
     assert response.status_code == 502
-    assert response.headers["access-control-allow-origin"] == (
-        "http://localhost:3000"
-    )
+    assert response.headers["access-control-allow-origin"] == ("http://localhost:3000")
     assert response.json()["detail"] == "Planner provider failed."
 
 
@@ -315,7 +313,9 @@ def _place(
         id=place_id,
         canonical_name=name,
         normalized_name=name.casefold(),
-        entity_type="Restaurant" if place_type in {"restaurant", "bakery", "cafe"} else "TravelPlace",
+        entity_type="Restaurant"
+        if place_type in {"restaurant", "bakery", "cafe"}
+        else "TravelPlace",
         status="verified",
     )
     values = {
@@ -325,12 +325,9 @@ def _place(
         "typical_duration_minutes": "60",
         "data_confidence": "high",
         "opening_hours": '[{"openTime":"08:00","closeTime":"22:00","is24Hours":false}]',
-        "metadata": json.dumps(
-            {"tags": tags, "activityIntensity": "light"}
-        ),
+        "metadata": json.dumps({"tags": tags, "activityIntensity": "light"}),
     }
     entity.properties = [
-        KnowledgeProperty(key=key, value=value)
-        for key, value in values.items()
+        KnowledgeProperty(key=key, value=value) for key, value in values.items()
     ]
     return entity

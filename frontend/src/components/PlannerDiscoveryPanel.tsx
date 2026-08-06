@@ -106,13 +106,6 @@ export function PlannerDiscoveryPanel({ planning = false }: PlannerDiscoveryPane
         <button type="button">Xem tất cả</button>
       </header>
 
-      {planning ? (
-        <div className="plannerDiscoveryNotice" role="status">
-          <span className="plannerDiscoveryNoticeDot" />
-          Planner đang chạy nền. Bạn có thể xem tiếp và rời trang này bất kỳ lúc nào.
-        </div>
-      ) : null}
-
       <div className="plannerDiscoveryGrid">
         {discoveryItems.map((item, index) => (
           <article

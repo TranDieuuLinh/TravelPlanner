@@ -134,9 +134,10 @@ thời tiết, địa điểm đóng cửa hay tuyến đường không khả th
 1. Người dùng thêm, xóa, kéo thả, đổi thời gian hoặc khóa từng item.
 2. UI tách ghi chú thành hai cấp: ghi chú khu vực đặt dưới tiêu đề điểm đến
    (tổng quan, ràng buộc và giả định áp dụng cho cả hành trình) và khối ghi chú
-   mở rộng dưới từng hoạt động. Trong hoạt động, gợi ý ngắn có provenance từ
-   nguồn và thông tin bổ sung được hiển thị riêng với `personalNotes` do user
-   chỉnh sửa; sửa lời nhắc cá nhân không ghi đè source context và không ghép
+   mở rộng dưới từng hoạt động. Trong hoạt động, một source summary chỉ đọc
+   (`notes`) đi cùng nhãn provenance (`noteSources`) và hiển thị riêng với
+   `personalNotes` do user chỉnh sửa. Itinerary và map popup đọc cùng ba field
+   từ `PlanItem`; sửa lời nhắc cá nhân không ghi đè source summary và không ghép
    toàn bộ transcript/OCR vào note.
 3. Có thể yêu cầu AI sửa một ngày, một khung giờ hoặc các item chưa khóa.
 4. Mỗi chỉnh sửa ảnh hưởng route/chi phí phải kích hoạt kiểm tra lại phần liên

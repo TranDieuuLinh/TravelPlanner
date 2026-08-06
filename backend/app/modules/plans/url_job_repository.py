@@ -11,6 +11,9 @@ from app.modules.plans.url_job_schema import UrlImportJobRead
 from app.shared.errors import AppError
 
 
+WORKER_IMPORT_KINDS = ("explorer_job", "trip_intent_plan_job")
+
+
 ACTIVE_JOB_STATUSES = ("queued", "running")
 
 
@@ -180,7 +183,7 @@ class UrlImportJobRepository:
             self.db.scalars(
                 select(UrlImportJob.batch_id)
                 .where(
-                    UrlImportJob.import_kind == "explorer_job",
+                    UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                     UrlImportJob.processing_status == "running",
                     UrlImportJob.batch_id.is_not(None),
                 )
@@ -190,7 +193,7 @@ class UrlImportJobRepository:
         result = self.db.execute(
             update(UrlImportJob)
             .where(
-                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                 UrlImportJob.processing_status == "running",
             )
             .values(
@@ -210,7 +213,7 @@ class UrlImportJobRepository:
         cutoff = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
         stale_filter = (
             (UrlImportJob.processing_status == "running")
-            & (UrlImportJob.import_kind == "explorer_job")
+            & (UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS))
             & (
                 (UrlImportJob.started_at.is_(None))
                 | (UrlImportJob.started_at <= cutoff)
@@ -249,7 +252,7 @@ class UrlImportJobRepository:
     def claim_next(self) -> UrlImportJob | None:
         running_count = self.db.scalar(
             select(func.count()).select_from(UrlImportJob).where(
-                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                 UrlImportJob.processing_status == "running"
             )
         )
@@ -258,7 +261,7 @@ class UrlImportJobRepository:
         statement = (
             select(UrlImportJob)
             .where(
-                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                 UrlImportJob.processing_status == "queued",
             )
             .order_by(
@@ -274,13 +277,19 @@ class UrlImportJobRepository:
         if job is None:
             return None
         job.processing_status = "running"
-        job.processing_phase = "exploring"
+        job.processing_phase = (
+            "planning" if job.import_kind == "trip_intent_plan_job" else "exploring"
+        )
         job.status = "running"
         job.started_at = datetime.now(UTC)
         job.finished_at = None
         job.error_code = None
         job.error_message = None
         job.attempt_count += 1
+        if job.import_kind == "trip_intent_plan_job":
+            chat = self.db.get(TripChat, job.chat_id)
+            if chat is not None:
+                chat.trip_intent_plan_status = "running"
         self._set_batch_turn_status(job.batch_id, "executing")
         self.db.commit()
         self.db.refresh(job)
@@ -307,6 +316,18 @@ class UrlImportJobRepository:
         job.explorer_timing = explorer_timing
         self.db.commit()
 
+    def mark_planner_timing(
+        self,
+        job_id: str,
+        *,
+        planner_timing: dict,
+    ) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None or job.processing_status != "running":
+            return
+        job.planner_timing = planner_timing
+        self.db.commit()
+
     def succeed(self, job_id: str, revision: int) -> None:
         job = self.db.get(UrlImportJob, job_id)
         if job is None:
@@ -323,6 +344,8 @@ class UrlImportJobRepository:
             chat.latest_planner_timing if chat is not None else None
         )
         job.finished_at = datetime.now(UTC)
+        if job.import_kind == "trip_intent_plan_job" and chat is not None:
+            chat.trip_intent_plan_status = "synced"
         self.db.flush()
         self._sync_batch_turn(job.batch_id, revision=revision)
         self.db.commit()
@@ -337,8 +360,28 @@ class UrlImportJobRepository:
         job.error_code = code[:64]
         job.error_message = message[:1000]
         job.finished_at = datetime.now(UTC)
+        if job.import_kind == "trip_intent_plan_job":
+            chat = self.db.get(TripChat, job.chat_id)
+            if chat is not None:
+                chat.trip_intent_plan_status = "failed"
         self.db.flush()
         self._sync_batch_turn(job.batch_id)
+        self.db.commit()
+
+    def requeue_superseded(self, job_id: str) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None:
+            return
+        job.processing_status = "queued"
+        job.processing_phase = "planning"
+        job.status = "queued"
+        job.started_at = None
+        job.finished_at = None
+        job.error_code = None
+        job.error_message = None
+        chat = self.db.get(TripChat, job.chat_id)
+        if chat is not None:
+            chat.trip_intent_plan_status = "queued"
         self.db.commit()
 
     def retry(self, job_id: str, user_id: int) -> UrlImportJob:
@@ -370,10 +413,24 @@ class UrlImportJobRepository:
                 "Chỉ có thể phân tích lại tác vụ đã kết thúc.",
                 details={"status": source_job.status},
             )
+        chat = TripChatRepository(self.db).get(source_job.chat_id, user_id)
+        replay_content = source_job.request_content.strip() or source_job.url.strip()
+        turn = TripChatRepository(self.db).create_turn(
+            chat,
+            client_turn_id=f"url-reprocess-{source_job.id}",
+            content=replay_content,
+            attachment_names=(
+                [source_job.source_name]
+                if source_job.source_type == "image" and source_job.source_name
+                else []
+            ),
+            expected_revision=chat.revision,
+            commit=False,
+        )
         job = UrlImportJob(
             id=str(uuid4()),
             import_kind="explorer_job",
-            batch_id=str(uuid4()),
+            batch_id=turn.id,
             user_id=source_job.user_id,
             chat_id=source_job.chat_id,
             source_type=source_job.source_type,

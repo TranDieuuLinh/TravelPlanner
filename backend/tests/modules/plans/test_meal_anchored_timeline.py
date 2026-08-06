@@ -133,7 +133,10 @@ def test_timeline_overflows_activity_when_route_time_misses_next_meal() -> None:
 
     assert overflow == []
     assert [item.item_id for item in scheduled] == ["breakfast", "activity", "lunch"]
-    assert next(item for item in scheduled if item.role == "lunch_meal").time_window == "12:10-13:10"
+    assert (
+        next(item for item in scheduled if item.role == "lunch_meal").time_window
+        == "12:10-13:10"
+    )
 
 
 def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -> None:
@@ -152,7 +155,7 @@ def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -
             )
             for index in range(1, 5)
         ],
-        allowPlaceSuggestions=False,
+        allowFinderGapFill=False,
     )
 
     result = selector.fill_agent_plan(selection_input)
@@ -201,13 +204,11 @@ def _required_timing_input(duration: int) -> PlaceSelectionInput:
                     "reason": "Trải nghiệm phù hợp vào buổi tối.",
                     "evidenceClaimIds": ["claim-night-market"],
                     "sourceRefs": ["https://example.com/night-market"],
-                    "preferredTimeWindows": [
-                        {"start": "19:00", "end": "21:00"}
-                    ],
+                    "preferredTimeWindows": [{"start": "19:00", "end": "21:00"}],
                     "recommendedVisitMinutes": duration,
                 }
             ],
-            "allowPlaceSuggestions": False,
+            "allowFinderGapFill": False,
         }
     )
 
@@ -227,7 +228,9 @@ def test_route_first_uses_graph_preferred_time_window() -> None:
     )
     assert activity.time_window == "19:00-20:00"
     assert activity.preferred_time_windows[0].start == "19:00"
-    assert not any("outside its graph-recommended" in warning for warning in result.warnings)
+    assert not any(
+        "outside its graph-recommended" in warning for warning in result.warnings
+    )
 
 
 def test_route_first_falls_back_when_graph_window_cannot_fit_duration() -> None:
@@ -244,7 +247,9 @@ def test_route_first_falls_back_when_graph_window_cannot_fit_duration() -> None:
         if item.timeline_category == "activity"
     )
     assert activity.time_window == "09:00-11:30"
-    assert any("outside its graph-recommended" in warning for warning in result.warnings)
+    assert any(
+        "outside its graph-recommended" in warning for warning in result.warnings
+    )
 
 
 def test_overflow_retries_once_in_another_day() -> None:

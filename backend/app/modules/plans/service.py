@@ -3,6 +3,7 @@ import hashlib
 import math
 import re
 import time
+from typing import Callable
 import unicodedata
 from uuid import uuid4
 
@@ -34,6 +35,7 @@ from app.modules.plans.explorer.place_policy import (
     is_meal_place,
     is_schedulable_place,
 )
+from app.modules.plans.domain.plan_notes import merge_note_sources
 from app.modules.plans.place_selector.timeline_policy import (
     DAILY_ACTIVITY_MINUTES,
     MEAL_ANCHORS,
@@ -253,6 +255,15 @@ class PlanService:
             async def extract_urls():
                 started_at = time.perf_counter()
                 try:
+                    if force_url_refresh and self.explorer_persistence is not None:
+                        delete_cache = getattr(
+                            self.explorer_persistence,
+                            "delete_url_cache",
+                            None,
+                        )
+                        if callable(delete_cache):
+                            for url in urls:
+                                delete_cache(url)
                     return await self._extract_urls(
                         urls,
                         destination=destination,
@@ -286,6 +297,7 @@ class PlanService:
                 url_reel_results=url_reel_results,
                 intake_id=intake_id,
                 trace=trace,
+                bypass_cache=force_url_refresh,
             )
             self._complete_explorer_run(run_id, run_input, result)
             return result
@@ -333,6 +345,7 @@ class PlanService:
         candidates,
         *,
         destination: str,
+        bypass_cache: bool = False,
     ):
         resolutions = [None] * len(candidates)
         missing_candidates = []
@@ -349,7 +362,7 @@ class PlanService:
                     candidate,
                     destination=destination,
                 )
-                if self.explorer_persistence is not None
+                if self.explorer_persistence is not None and not bypass_cache
                 else None
             )
             if cached is not None:
@@ -397,23 +410,8 @@ class PlanService:
                     )
                 )
             else:
-                graph_resolver = getattr(
-                    self.explorer_persistence,
-                    "resolve_from_knowledge_graph",
-                    None,
-                )
-                graph_resolution = (
-                    graph_resolver(candidate, destination=destination)
-                    if callable(graph_resolver)
-                    else None
-                )
-                if graph_resolution is not None:
-                    resolutions[index] = _with_authoritative_place_category(
-                        graph_resolution
-                    )
-                else:
-                    missing_indexes.append(index)
-                    missing_candidates.append(candidate)
+                missing_indexes.append(index)
+                missing_candidates.append(candidate)
         if missing_candidates:
             fresh = await self.place_resolver.resolve_many(
                 missing_candidates,
@@ -475,6 +473,7 @@ class PlanService:
         url_reel_results: list[UrlReelExtractionResult],
         intake_id: str,
         trace: ExplorerTimingTrace,
+        bypass_cache: bool = False,
     ) -> ExploreIntakeResponse:
         explicitly_requested_days = payload.trip_spec.days
         destination_stays = _url_destination_stays(url_reel_results)
@@ -671,6 +670,7 @@ class PlanService:
                     return await self._resolve_places(
                         candidates,
                         destination=resolution_destination,
+                        bypass_cache=bypass_cache,
                     )
                 finally:
                     trace.record_stage(
@@ -891,20 +891,8 @@ class PlanService:
             intakeId=intake_id,
             userId=payload.user_state.user_id,
             explorer=explorer,
-            allowPlaceSuggestions=(
-                False
-                if (destination_stays and not schedulable_candidates)
-                or any(
-                    result.extracted_context.coverage_status == "review"
-                    for result in url_reel_results
-                )
-                else not has_reference_input
-                or _source_days_need_place_selector(
-                    schedulable_candidates,
-                    days=effective_days,
-                    pace=explorer.intent.pace.value,
-                )
-            ),
+            allowFinderGapFill=True,
+            allowReplaceSourcePlaces=False,
             timingReport=timing_report,
         )
 
@@ -967,7 +955,8 @@ class PlanService:
                 "intakeId": result.intake_id,
                 "destination": result.explorer.intent.destination,
                 "days": result.explorer.trip_spec.days,
-                "allowPlaceSuggestions": result.allow_place_suggestions,
+                "allowFinderGapFill": result.allow_finder_gap_fill,
+                "allowReplaceSourcePlaces": result.allow_replace_source_places,
                 "candidateCount": (
                     result.timing_report.candidate_count
                     if result.timing_report is not None
@@ -1022,15 +1011,19 @@ class PlanService:
     async def create_main_plan_from_trip_intent_with_timing(
         self,
         payload: MainPlanFromTripIntentCreate,
+        *,
+        on_timing_update: Callable[[PlanTimingReport], None] | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         """Canonical Explorer hand-off; projection happens at this boundary."""
         return await self.create_main_plan_from_explorer_with_timing(
-            payload.to_planner_input()
+            payload.to_planner_input(), on_timing_update=on_timing_update
         )
 
     async def create_main_plan_from_explorer_with_timing(
         self,
         payload: MainPlanFromExplorerCreate,
+        *,
+        on_timing_update: Callable[[PlanTimingReport], None] | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         selected_places = list(payload.selected_places)
         if payload.intake_id and self.explorer_persistence is not None:
@@ -1045,26 +1038,16 @@ class PlanService:
         # Grow an unlocked trip until every resolved source place has capacity.
         # An explicit duration/date range is a hard boundary and keeps overflow
         # visible in UnscheduledPlace instead.
-        expand_for_url_places = any(
-            _has_url_source_ref(place.source_refs) for place in selected_places
-        )
-        disable_suggestions_for_url_overflow = False
         if payload.expand_days_to_fit_selected_places:
             required_days = _required_days_for_selected_places(
                 selected_places,
                 pace=payload.intent.pace.value,
             )
             if required_days > payload.trip_spec.days:
-                disable_suggestions_for_url_overflow = expand_for_url_places
                 payload = payload.model_copy(
                     update={
                         "trip_spec": payload.trip_spec.model_copy(
                             update={"days": required_days}
-                        ),
-                        "allow_place_suggestions": (
-                            False
-                            if disable_suggestions_for_url_overflow
-                            else payload.allow_place_suggestions
                         ),
                     }
                 )
@@ -1072,9 +1055,10 @@ class PlanService:
             update={"selected_places": selected_places}
         )
         plan, timing_report = await self.main_workflow.run_from_explorer_with_timing(
-            workflow_payload
+            workflow_payload, on_timing_update=on_timing_update
         )
-        plan = _ensure_url_place_coverage(plan, selected_places)
+        if not workflow_payload.allow_replace_source_places:
+            plan = _ensure_url_place_coverage(plan, selected_places)
         # Duration capacity handles normal overflow. Calculated route legs can
         # still make a day miss its next meal anchor; retry with extra days
         # rather than returning that source place as optional/unscheduled. Hard
@@ -1100,14 +1084,16 @@ class PlanService:
                     "trip_spec": workflow_payload.trip_spec.model_copy(
                         update={"days": next_days}
                     ),
-                    "allow_place_suggestions": False,
+                    "allow_finder_gap_fill": True,
+                    "allow_replace_source_places": False,
                 }
             )
             (
                 plan,
                 timing_report,
             ) = await self.main_workflow.run_from_explorer_with_timing(workflow_payload)
-            plan = _ensure_url_place_coverage(plan, selected_places)
+            if not workflow_payload.allow_replace_source_places:
+                plan = _ensure_url_place_coverage(plan, selected_places)
         self.repository.save(plan)
         return plan, timing_report
 
@@ -1232,52 +1218,6 @@ def _timed_stop_coverage_days(stops) -> int:
         math.ceil(activity_minutes / DAILY_ACTIVITY_MINUTES) if activity_minutes else 0,
         math.ceil(meal_count / len(MEAL_ANCHORS)) if meal_count else 0,
     )
-
-
-def _source_days_need_place_selector(
-    candidates,
-    *,
-    days: int,
-    pace: str,
-) -> bool:
-    del pace
-    source_candidates = [
-        candidate
-        for candidate in candidates
-        if any(
-            source.type
-            in {
-                PlaceCandidateSourceType.url,
-                PlaceCandidateSourceType.ocr,
-            }
-            for source in candidate.sources
-        )
-    ]
-    explicit_counts = {day: 0 for day in range(1, days + 1)}
-    occupied_minutes = {day: 0 for day in range(1, days + 1)}
-    unassigned = []
-    for candidate in source_candidates:
-        if candidate.source_day is None or candidate.source_day not in explicit_counts:
-            unassigned.append(candidate)
-            continue
-        explicit_counts[candidate.source_day] += 1
-        occupied_minutes[candidate.source_day] += activity_allocation_cost(
-            candidate.source_duration_minutes
-        )
-
-    # Balance candidates without a source day by their duration, matching the
-    # selector's day allocation. PlaceSelector is needed only for requested days
-    # with no URL coverage; it must not pad every sparse reference day.
-    for candidate in unassigned:
-        day = min(
-            occupied_minutes,
-            key=lambda candidate_day: (occupied_minutes[candidate_day], candidate_day),
-        )
-        explicit_counts[day] += 1
-        occupied_minutes[day] += activity_allocation_cost(
-            candidate.source_duration_minutes
-        )
-    return any(count == 0 for count in explicit_counts.values())
 
 
 def _with_url_cache_timing(
@@ -1474,6 +1414,10 @@ def _prefer_selected_place(
             ),
             "tags": list(dict.fromkeys([*current.tags, *incoming.tags])),
             "notes": preferred.notes or current.notes or incoming.notes,
+            "note_sources": merge_note_sources(
+                current.note_sources,
+                incoming.note_sources,
+            ),
             "personal_notes": (
                 preferred.personal_notes
                 or current.personal_notes
@@ -1602,6 +1546,11 @@ def _ensure_url_place_coverage(
                         dict.fromkeys([*item.source_refs, *place.source_refs])
                     ),
                     "source_provider": (item.source_provider or place.source_provider),
+                    "notes": item.notes or place.notes,
+                    "note_sources": merge_note_sources(
+                        item.note_sources,
+                        place.note_sources,
+                    ),
                     "source_activity": item.source_activity or place.source_activity,
                 }
             )

@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterator
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -22,7 +22,10 @@ from app.modules.knowledge_graph.model import (
     KnowledgeProperty,
 )
 from app.modules.knowledge_graph.research.schema import PLACE_TYPES
-from app.modules.knowledge_graph.text import normalize_knowledge_text
+from app.modules.knowledge_graph.text import (
+    normalize_knowledge_text,
+    repair_cp437_utf8_mojibake,
+)
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import KnowledgeEntityImage
 
@@ -108,8 +111,33 @@ class KnowledgeGraphPlaceRepository:
         if not keys:
             return []
         predicates = []
+        exact_predicates = []
+        prefix_predicates = []
         for key in keys:
             pattern = f"%{key}%"
+            prefix_pattern = f"{key}%"
+            exact_predicates.extend(
+                [
+                    KnowledgeEntity.normalized_name == key,
+                    KnowledgeEntity.aliases.any(
+                        and_(
+                            KnowledgeAlias.normalized_alias == key,
+                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                        )
+                    ),
+                ]
+            )
+            prefix_predicates.extend(
+                [
+                    KnowledgeEntity.normalized_name.ilike(prefix_pattern),
+                    KnowledgeEntity.aliases.any(
+                        and_(
+                            KnowledgeAlias.normalized_alias.ilike(prefix_pattern),
+                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                        )
+                    ),
+                ]
+            )
             predicates.extend(
                 [
                     KnowledgeEntity.normalized_name.ilike(pattern),
@@ -128,7 +156,14 @@ class KnowledgeGraphPlaceRepository:
                     KnowledgeEntity.entity_type.in_(PLACE_TYPES),
                     or_(*predicates),
                 )
-                .order_by(KnowledgeEntity.id)
+                .order_by(
+                    case(
+                        (or_(*exact_predicates), 0),
+                        (or_(*prefix_predicates), 1),
+                        else_=2,
+                    ),
+                    KnowledgeEntity.id,
+                )
                 .limit(limit)
             )
         )
@@ -269,13 +304,19 @@ def _record_from_entity(
     aliases: list[str],
     images: list[KnowledgeGraphImage],
 ) -> KnowledgeGraphPlaceRecord:
-    metadata = _json_object(props.get("metadata"))
-    metadata.setdefault("description", props.get("description"))
+    metadata = _repair_text_tree(_json_object(props.get("metadata")))
+    # ``description`` is stored as a flat property in the legacy graph dump,
+    # so it does not pass through ``_repair_text_tree`` above.  Repair it at
+    # the same read boundary as the other text fields.
+    metadata.setdefault(
+        "description",
+        repair_cp437_utf8_mojibake(props.get("description") or "") or None,
+    )
     metadata.setdefault("tags", _tags(props))
     metadata.setdefault("aliases", aliases)
     return KnowledgeGraphPlaceRecord(
         id=entity.id,
-        name=entity.canonical_name,
+        name=repair_cp437_utf8_mojibake(entity.canonical_name),
         place_type=(props.get("place_type") or props.get("place_category") or entity.entity_type),
         address=_text(props.get("address")),
         city=_text(props.get("city")),
@@ -302,8 +343,22 @@ def _record_from_entity(
 
 
 def _text(value: str | None) -> str | None:
-    value = (value or "").strip()
+    value = repair_cp437_utf8_mojibake((value or "").strip())
     return value or None
+
+
+def _repair_text_tree(value: Any) -> Any:
+    """Repair legacy text without changing the shape of metadata JSON."""
+    if isinstance(value, str):
+        return repair_cp437_utf8_mojibake(value)
+    if isinstance(value, list):
+        return [_repair_text_tree(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _repair_text_tree(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _decimal(value: str | None) -> Decimal | None:

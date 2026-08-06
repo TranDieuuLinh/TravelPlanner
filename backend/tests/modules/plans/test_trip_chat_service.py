@@ -19,6 +19,7 @@ from app.modules.plans.schema import (
     MainPlanFromTripIntentCreate,
 )
 from app.modules.plans.timing import PlanTimingReport
+from app.modules.plans.trip_intent import TripIntent
 from app.modules.preferences.repository import TravelerProfileRepository
 from app.modules.users.repository import UserRepository
 from app.shared.errors import AppError
@@ -151,10 +152,14 @@ class _FakePlanService:
     async def explore_from_intake(self, **kwargs) -> ExploreIntakeResponse:
         self.raw_requests.append(kwargs["raw_request"])
         self.explore_kwargs.append(kwargs)
-        destination = self.forced_destination if self.forced_destination is not None else (
-            "Hà Nội"
-            if kwargs["destination"] == "unspecified"
-            else kwargs["destination"]
+        destination = (
+            self.forced_destination
+            if self.forced_destination is not None
+            else (
+                "Hà Nội"
+                if kwargs["destination"] == "unspecified"
+                else kwargs["destination"]
+            )
         )
         result = _explore(destination)
         result.explorer.candidate_reviews = list(self.candidate_reviews)
@@ -237,7 +242,9 @@ def test_missing_destination_saves_draft_and_does_not_run_planner(
     assert result.current_trip_intent is not None
     assert result.current_trip_intent.destination == ""
     assert fake_plans.plan_payloads == []
-    assert result.messages[-1].content == "Bạn muốn đi du lịch ở đâu?"
+    assert (
+        result.messages[-1].content == "Bạn muốn đi du lịch ở tỉnh hoặc thành phố nào?"
+    )
 
 
 def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() -> None:
@@ -250,9 +257,7 @@ def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() ->
 
     hydrated_catalog = service._with_missing_addresses(catalog_plan, None)
 
-    assert hydrated_catalog.days[0].items[0].address == (
-        "10 Catalog Street, Hà Nội"
-    )
+    assert hydrated_catalog.days[0].items[0].address == ("10 Catalog Street, Hà Nội")
 
     imported_plan = _plan("Hà Nội", plan_id="imported-plan")
     imported_plan.days[0].items[0].place_id = None
@@ -270,9 +275,7 @@ def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() ->
 
     hydrated_import = service._with_missing_addresses(imported_plan, explorer)
 
-    assert hydrated_import.days[0].items[0].address == (
-        "20 Imported Street, Hà Nội"
-    )
+    assert hydrated_import.days[0].items[0].address == ("20 Imported Street, Hà Nội")
 
 
 def test_chat_amendment_keeps_one_plan_identity_and_history(
@@ -334,16 +337,288 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert fake_plans.plan_payloads[1].selected_places[0].name == "Old Cafe"
     assert fake_plans.plan_payloads[1].selected_places[0].source_day == 1
     revisions = list(
-        db_session.scalars(
-            select(TripRevision).order_by(
-                TripRevision.revision
-            )
-        )
+        db_session.scalars(select(TripRevision).order_by(TripRevision.revision))
     )
     assert [item.intake_id for item in revisions] == [
         "intake-Hà Nội",
         "intake-Hà Nội",
     ]
+
+
+def test_structured_trip_intent_edit_regenerates_and_snapshots_plan(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+    created = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+    assert created.current_trip_intent is not None
+    assert created.current_plan is not None
+    updated_intent = created.current_trip_intent.model_copy(
+        deep=True,
+        update={
+            "timing": created.current_trip_intent.timing.model_copy(
+                update={"days": 4}
+            ),
+            "notes": ["Ưu tiên đi chậm"],
+        },
+    )
+
+    updated = service.update_trip_intent(
+        chat.id,
+        user,
+        trip_intent=updated_intent,
+        expected_revision=created.revision,
+        expected_trip_intent_version=created.trip_intent_version,
+    )
+
+    assert updated.revision == 1
+    assert updated.trip_intent_version == created.trip_intent_version + 1
+    assert updated.trip_intent_plan_status == "queued"
+    assert updated.current_plan is not None
+    assert updated.current_plan.id == created.current_plan.id
+    assert updated.current_trip_intent is not None
+    assert updated.current_trip_intent.timing.days == 4
+    assert updated.current_trip_intent.notes == ["Ưu tiên đi chậm"]
+    assert len(updated.messages) == len(created.messages)
+    assert fake_plans.plan_payloads[-1].trip_spec.days == 2
+    pending_revisions = list(
+        db_session.scalars(
+            select(TripRevision).where(TripRevision.chat_id == chat.id)
+        )
+    )
+    assert [revision.revision for revision in pending_revisions] == [1]
+
+    regenerated = asyncio.run(
+        service.regenerate_trip_intent_plan(
+            chat.id,
+            user,
+            trip_intent=updated_intent,
+            expected_revision=updated.revision,
+            expected_trip_intent_version=updated.trip_intent_version,
+        )
+    )
+    assert regenerated.revision == 2
+    assert regenerated.trip_intent_plan_status == "synced"
+    assert regenerated.current_plan is not None
+    assert regenerated.current_plan.id == created.current_plan.id
+    assert fake_plans.plan_payloads[-1].trip_spec.days == 4
+    revisions = list(
+        db_session.scalars(
+            select(TripRevision)
+            .where(TripRevision.chat_id == chat.id)
+            .order_by(TripRevision.revision)
+        )
+    )
+    assert [revision.revision for revision in revisions] == [1, 2]
+    assert revisions[-1].trip_intent_payload["timing"]["days"] == 4
+    assert revisions[-1].trip_intent_payload["notes"] == ["Ưu tiên đi chậm"]
+
+
+def test_structured_trip_intent_edit_rejects_stale_revision(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    service = TripChatService(
+        TripChatRepository(db_session),
+        _FakePlanService(),  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+
+    with pytest.raises(AppError) as caught:
+        service.update_trip_intent(
+            chat.id,
+            user,
+            trip_intent=TripIntent(destination="Hà Nội"),
+            expected_revision=1,
+            expected_trip_intent_version=0,
+        )
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "VERSION_CONFLICT"
+
+
+def test_repeated_trip_intent_edits_coalesce_and_only_latest_plan_is_saved(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+    created = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+    assert created.current_trip_intent is not None
+
+    first_intent = created.current_trip_intent.model_copy(
+        update={"notes": ["Bản đầu"]}
+    )
+    first = service.update_trip_intent(
+        chat.id,
+        user,
+        trip_intent=first_intent,
+        expected_revision=created.revision,
+        expected_trip_intent_version=created.trip_intent_version,
+    )
+    second_intent = first_intent.model_copy(update={"notes": ["Bản mới nhất"]})
+    second = service.update_trip_intent(
+        chat.id,
+        user,
+        trip_intent=second_intent,
+        expected_revision=first.revision,
+        expected_trip_intent_version=first.trip_intent_version,
+    )
+
+    active_jobs = list(
+        db_session.scalars(
+            select(KnowledgeGraphImport).where(
+                KnowledgeGraphImport.chat_id == chat.id,
+                KnowledgeGraphImport.import_kind == "trip_intent_plan_job",
+                KnowledgeGraphImport.processing_status.in_(("queued", "running")),
+            )
+        )
+    )
+    assert len(active_jobs) == 1
+    assert second.revision == created.revision
+    assert second.trip_intent_version == created.trip_intent_version + 2
+
+    with pytest.raises(AppError) as stale:
+        asyncio.run(
+            service.regenerate_trip_intent_plan(
+                chat.id,
+                user,
+                trip_intent=first_intent,
+                expected_revision=first.revision,
+                expected_trip_intent_version=first.trip_intent_version,
+            )
+        )
+    assert stale.value.code == "TRIP_INTENT_SUPERSEDED"
+
+    regenerated = asyncio.run(
+        service.regenerate_trip_intent_plan(
+            chat.id,
+            user,
+            trip_intent=second_intent,
+            expected_revision=second.revision,
+            expected_trip_intent_version=second.trip_intent_version,
+        )
+    )
+    assert regenerated.current_trip_intent is not None
+    assert regenerated.current_trip_intent.notes == ["Bản mới nhất"]
+    assert regenerated.trip_intent_plan_status == "synced"
+
+
+def test_structured_destination_edit_does_not_restore_old_place_candidates(
+    db_session,
+    registered_client,
+) -> None:
+    user = UserRepository(db_session).get_by_email("traveler@example.com")
+    assert user is not None
+    fake_plans = _FakePlanService()
+    fake_plans.candidate_reviews = [
+        PlaceCandidateReview.model_validate(
+            {
+                "candidateId": "old-hanoi-place",
+                "name": "Old Cafe",
+                "status": "resolved",
+                "sourceUrls": ["https://example.com/hanoi"],
+                "address": "Hà Nội",
+            }
+        )
+    ]
+    service = TripChatService(
+        TripChatRepository(db_session),
+        fake_plans,  # type: ignore[arg-type]
+    )
+    chat = service.create(user)
+    created = asyncio.run(
+        service.amend(
+            chat.id,
+            user,
+            content="Tạo chuyến Hà Nội 2 ngày",
+            expected_revision=0,
+            initial_destination="Hà Nội",
+            urls=[],
+            images=[],
+        )
+    )
+    assert created.current_trip_intent is not None
+
+    destination_intent = created.current_trip_intent.model_copy(
+        update={"destination": "Đà Lạt"}
+    )
+    changed_destination = service.update_trip_intent(
+        chat.id,
+        user,
+        trip_intent=destination_intent,
+        expected_revision=created.revision,
+        expected_trip_intent_version=created.trip_intent_version,
+    )
+    assert changed_destination.current_trip_intent is not None
+    regenerated_destination = asyncio.run(
+        service.regenerate_trip_intent_plan(
+            chat.id,
+            user,
+            trip_intent=destination_intent,
+            expected_revision=changed_destination.revision,
+            expected_trip_intent_version=changed_destination.trip_intent_version,
+        )
+    )
+    assert regenerated_destination.current_trip_intent is not None
+    note_intent = regenerated_destination.current_trip_intent.model_copy(
+        update={"notes": ["Đi chậm"]}
+    )
+    changed_note = service.update_trip_intent(
+        chat.id,
+        user,
+        trip_intent=note_intent,
+        expected_revision=regenerated_destination.revision,
+        expected_trip_intent_version=regenerated_destination.trip_intent_version,
+    )
+    regenerated_note = asyncio.run(
+        service.regenerate_trip_intent_plan(
+            chat.id,
+            user,
+            trip_intent=note_intent,
+            expected_revision=changed_note.revision,
+            expected_trip_intent_version=changed_note.trip_intent_version,
+        )
+    )
+
+    assert regenerated_note.candidate_reviews == []
+    assert fake_plans.plan_payloads[-2].selected_places == []
+    assert fake_plans.plan_payloads[-1].candidate_reviews == []
 
 
 def test_url_amendment_keeps_canonical_vietnamese_destination_name(
@@ -390,9 +665,7 @@ def test_url_amendment_keeps_canonical_vietnamese_destination_name(
     assert amended.current_plan.destination == "Hà Nội"
     assert fake_plans.plan_payloads[1].intent.destination == "Hà Nội"
     revisions = list(
-        db_session.scalars(
-            select(TripRevision).where(TripRevision.chat_id == chat.id)
-        )
+        db_session.scalars(select(TripRevision).where(TripRevision.chat_id == chat.id))
     )
     assert revisions[-1].trip_intent_payload["destination"] == "Hà Nội"
 
@@ -470,10 +743,7 @@ def test_chat_more_days_amendment_allows_duration_expansion(
     )
 
     assert fake_plans.explore_kwargs[1]["trip_spec"].days is None
-    assert (
-        fake_plans.plan_payloads[1].expand_days_to_fit_selected_places
-        is True
-    )
+    assert fake_plans.plan_payloads[1].expand_days_to_fit_selected_places is True
 
 
 def test_chat_keeps_explicit_duration_fixed_when_url_is_added(
@@ -512,10 +782,7 @@ def test_chat_keeps_explicit_duration_fixed_when_url_is_added(
         )
     )
 
-    assert (
-        fake_plans.plan_payloads[1].expand_days_to_fit_selected_places
-        is False
-    )
+    assert fake_plans.plan_payloads[1].expand_days_to_fit_selected_places is False
 
 
 def test_chat_does_not_promote_finder_suggestions_to_selected_places(
@@ -749,8 +1016,7 @@ def test_sequential_url_imports_preserve_all_candidate_sources(
     assert reviews[1].source_urls == [youtube_url]
     second_selected = fake_plans.plan_payloads[1].selected_places
     assert any(
-        place.name == "Hồ Hoàn Kiếm"
-        and place.source_refs == [tiktok_url]
+        place.name == "Hồ Hoàn Kiếm" and place.source_refs == [tiktok_url]
         for place in second_selected
     )
 
@@ -810,8 +1076,7 @@ def test_chat_read_uses_candidate_reviews_from_persisted_intake(
     intake = db_session.get(KnowledgeGraphImport, stored.current_intake_id)
     assert intake is not None
     intake.candidate_reviews = [
-        review.model_dump(mode="json", by_alias=True)
-        for review in overwritten_reviews
+        review.model_dump(mode="json", by_alias=True) for review in overwritten_reviews
     ]
     db_session.commit()
 

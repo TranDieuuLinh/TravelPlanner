@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatPlanNote, sourceScheduleNotes } from "./plan-note.ts";
+import {
+  formatNoteSources,
+  formatPlanNote,
+  planItemNotePresentation
+} from "./plan-note.ts";
 
 test("translates known itinerary notes into Vietnamese", () => {
   assert.equal(formatPlanNote("withdraw money"), "Rút tiền");
@@ -21,50 +25,42 @@ test("preserves valid notes that do not need a compatibility translation", () =>
   assert.equal(formatPlanNote("Thử món địa phương"), "Thử món địa phương");
 });
 
-test("builds schedule notes only from meaningful URL activity evidence", () => {
-  const notes = sourceScheduleNotes({
-    id: "plan-1",
-    title: "Hà Nội",
-    destination: "Hà Nội",
-    kind: "main",
-    planningAssumptions: ["Generic assumption that must not be shown"],
-    days: [{
-      day: 1,
-      theme: "Phố cổ",
-      transportLegs: [],
-      items: [
-        {
-          name: "Cafe Phố Cổ",
-          timeWindow: "08:00-09:00",
-          placeType: "cafe",
-          source: "selected_place",
-          sourceRefs: ["https://example.com/reel"],
-          sourceTimeHint: "morning",
-          sourceActivity: "Gọi cà phê trứng"
-        },
-        {
-          name: "Hồ Hoàn Kiếm",
-          timeWindow: "09:00-10:00",
-          placeType: "attraction",
-          source: "finder_suggestion",
-          sourceRefs: [],
-          notes: "Mô tả địa điểm chung chung"
-        },
-        {
-          name: "Nhà thờ Lớn",
-          timeWindow: "10:00-11:00",
-          placeType: "attraction",
-          source: "selected_place",
-          sourceRefs: ["https://example.com/reel"],
-          sourceActivity: null
-        }
-      ]
-    }]
-  });
+test("presents source and personal notes without merging their ownership", () => {
+  assert.deepEqual(
+    planItemNotePresentation({
+      notes: "Gọi cà phê trứng vào buổi sáng.",
+      noteSources: [
+        { type: "url", ref: "https://example.com/reel", evidenceTypes: ["stt"] },
+        { type: "google_maps", ref: "google-place-id" }
+      ],
+      personalNotes: "Nhớ gọi ít đường."
+    }),
+    {
+      sourceLabel: "Từ video tham khảo\nGoogle Maps",
+      sourceText: "Gọi cà phê trứng vào buổi sáng.",
+      personalText: "Nhớ gọi ít đường."
+    }
+  );
+});
 
-  assert.deepEqual(notes.map(({ day, place, text }) => ({ day, place, text })), [{
-    day: 1,
-    place: "Cafe Phố Cổ",
-    text: "Buổi sáng: Gọi cà phê trứng"
-  }]);
+test("infers a source label for legacy plan revisions", () => {
+  assert.equal(
+    planItemNotePresentation({
+      notes: null,
+      sourceActivity: "Ăn sáng",
+      sourceRefs: ["https://example.com/reel"]
+    }).sourceLabel,
+    "Từ video tham khảo"
+  );
+  assert.equal(
+    formatNoteSources([{ type: "google_maps" }]),
+    "Google Maps"
+  );
+  assert.equal(
+    formatNoteSources([
+      { type: "url" },
+      { type: "place_provider" }
+    ]),
+    "Từ video tham khảo\nNguồn địa điểm"
+  );
 });

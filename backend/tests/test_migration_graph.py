@@ -14,4 +14,4 @@ def test_alembic_history_has_exactly_one_head() -> None:
 
     heads = ScriptDirectory.from_config(config).get_heads()
 
-    assert heads == ["20260805_0041"]
+    assert heads == ["20260806_0044"]

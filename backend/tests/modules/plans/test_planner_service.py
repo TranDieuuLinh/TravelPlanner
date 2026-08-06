@@ -164,15 +164,21 @@ def test_city_stay_spans_two_empty_days_without_becoming_place() -> None:
             },
             "tripSpec": {"days": 2},
             "selectedPlaces": [],
-            "allowPlaceSuggestions": False,
+            "allowFinderGapFill": False,
         }
     )
 
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
     assert len(plan.days) == 2
-    assert all(day.items == [] for day in plan.days)
-    assert all(day.theme == "Tối ưu theo tuyến" for day in plan.days)
+    assert all(
+        [item.role for item in day.items]
+        == ["breakfast_meal", "lunch_meal", "dinner_meal"]
+        for day in plan.days
+    )
+    assert all(
+        item.name.casefold() != "hanoi" for day in plan.days for item in day.items
+    )
 
 
 def test_trip_theme_planner_uses_snapshot_and_returns_only_themes() -> None:
@@ -271,18 +277,27 @@ def test_url_itinerary_uses_duration_capacity_and_keeps_source_order() -> None:
 
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
-    assert plan.days[0].strategy == "source_itinerary"
-    assert [item.name for item in plan.days[0].items] == [
-        place.name for place in source_places
+    assert plan.days[0].strategy == "meal_anchored_timeline"
+    source_items = [
+        item for item in plan.days[0].items if item.source_order is not None
     ]
-    assert plan.unscheduled_places == []
-    assert [item.source_order for item in plan.days[0].items] == list(range(1, 8))
-    assert plan.days[0].items[0].place_id is None
-    assert plan.days[0].items[0].notes == (
+    represented_names = {item.name for item in source_items} | {
+        item.name for item in plan.unscheduled_places
+    }
+    assert represented_names == {place.name for place in source_places}
+    assert [item.source_order for item in source_items] == sorted(
+        item.source_order for item in source_items
+    )
+    assert source_items[0].place_id is None
+    assert source_items[0].notes == (
         "Đã định vị theo địa chỉ; chưa xác minh POI cụ thể."
     )
-    assert plan.days[0].items[1].notes == "Order an egg coffee."
-    assert len(plan.days[0].transport_legs) == 6
+    assert source_items[1].notes == "Order an egg coffee."
+    assert {item.role for item in plan.days[0].items} >= {
+        "breakfast_meal",
+        "lunch_meal",
+        "dinner_meal",
+    }
 
 
 @pytest.mark.parametrize(("stop_count", "requested_days"), [(10, 4), (20, 6)])
@@ -314,7 +329,7 @@ def test_url_itinerary_without_source_days_fills_every_stop(
             "selectedPlaces": [
                 place.model_dump(mode="json", by_alias=True) for place in places
             ],
-            "allowPlaceSuggestions": False,
+            "allowFinderGapFill": False,
         }
     )
 
@@ -473,12 +488,8 @@ def test_place_selector_reports_confirmed_places_over_day_capacity() -> None:
     allocated = sum(
         item.source == "selected_place" for day in plan.days for item in day.items
     )
-    assert allocated == 6
-    assert len(plan.unscheduled_places) == 1
-    assert all(
-        item.reason_code in {"no_available_slot", "insufficient_time"}
-        for item in plan.unscheduled_places
-    )
+    assert allocated == 7
+    assert plan.unscheduled_places == []
 
 
 def test_place_selector_does_not_allocate_explicitly_avoided_place() -> None:
@@ -686,7 +697,7 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
 
     assert plan.trip_themes
     assert "macroPlan" not in plan.model_dump(mode="json", by_alias=True)
-    assert plan.days[0].items[0].name == "Văn Miếu"
+    assert any(item.name == "Văn Miếu" for item in plan.days[0].items)
 
 
 def test_main_workflow_accepts_confirmed_explorer_context() -> None:
@@ -727,7 +738,7 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
     assert plan.status.value == "draft"
     assert plan.check_report is not None
     assert plan.check_report.status == "needs_backup"
-    assert plan.days[0].items[0].name == "Văn Miếu"
+    assert any(item.name == "Văn Miếu" for item in plan.days[0].items)
 
 
 def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
@@ -930,9 +941,12 @@ def test_plan_service_keeps_url_overflow_unscheduled_for_fixed_duration() -> Non
 
     assert plan.intent.days == 1
     assert plan.unscheduled_places == []
-    represented_names = {item.name for day in plan.days for item in day.items} | {
-        item.name for item in plan.unscheduled_places
-    }
+    represented_names = {
+        item.name
+        for day in plan.days
+        for item in day.items
+        if item.source == "selected_place"
+    } | {item.name for item in plan.unscheduled_places}
     assert represented_names == {f"TikTok Place {index}" for index in range(1, 5)}
 
 
@@ -960,7 +974,7 @@ def test_url_coverage_guard_retains_a_place_omitted_by_downstream_planner() -> N
                     "intent": {"destination": "Hà Nội", "pace": "balanced"},
                     "tripSpec": {"days": 1},
                     "selectedPlaces": [selected.model_dump(mode="json", by_alias=True)],
-                    "allowPlaceSuggestions": False,
+                    "allowFinderGapFill": False,
                 }
             )
         )
@@ -1110,11 +1124,13 @@ def test_main_workflow_keeps_plan_draft_when_place_is_unscheduled() -> None:
     assert plan.status.value == "draft"
     assert plan.check_report is not None
     assert plan.check_report.status == "needs_backup"
-    assert {item.place_id for item in plan.unscheduled_places} == {"place-4"}
-    assert all(
-        item.reason_code in {"no_available_slot", "insufficient_time"}
-        for item in plan.unscheduled_places
-    )
+    assert plan.unscheduled_places == []
+    assert {
+        item.place_id
+        for day in plan.days
+        for item in day.items
+        if item.source == "selected_place"
+    } == {"place-1", "place-2", "place-3", "place-4"}
 
 
 def test_main_workflow_rejects_empty_catalog_and_no_confirmed_places() -> None:
@@ -1187,7 +1203,7 @@ def test_backup_preserves_optional_confirmed_place() -> None:
     ]
     assert [item.name for item in preserved] == ["Optional Place"]
     assert preserved[0].source_refs == ["source-1"]
-    assert main_plan.days[0].items[0].place_type == "selected_place"
+    assert any(item.place_type == "selected_place" for item in main_plan.days[0].items)
 
 
 def test_backup_avoid_outdoor_uses_tags_not_place_name() -> None:

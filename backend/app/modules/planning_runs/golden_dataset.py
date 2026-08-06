@@ -23,16 +23,12 @@ def load_golden_cases(
     query: str | None = None,
 ) -> list[dict]:
     selected = (
-        {module: _MODULE_FILES[module]}
-        if module in _MODULE_FILES
-        else _MODULE_FILES
+        {module: _MODULE_FILES[module]} if module in _MODULE_FILES else _MODULE_FILES
     )
     normalized_query = (query or "").strip().casefold()
     items: list[dict] = []
     for module_name, filename in selected.items():
-        payload = json.loads(
-            (_DATASET_DIR / filename).read_text(encoding="utf-8")
-        )
+        payload = json.loads((_DATASET_DIR / filename).read_text(encoding="utf-8"))
         for case in payload.get("cases", []):
             case = _adapt_legacy_planning_case(module_name, case)
             item = {
@@ -72,19 +68,18 @@ def update_golden_case_input(case_id: str, new_input: dict) -> dict | None:
         for case in payload.get("cases", []):
             if str(case.get("id", "")).casefold() == normalized_id:
                 case["input"] = new_input
-                filepath.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-                
-                adapted_case = _adapt_legacy_planning_case(
-                    module_name, case
+                filepath.write_text(
+                    json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
                 )
+
+                adapted_case = _adapt_legacy_planning_case(module_name, case)
                 item = {
                     "module": module_name,
                     "datasetVersion": payload.get("version"),
                     **adapted_case,
                 }
-                item["validation"] = _validate_case(
-                    module_name, adapted_case
-                )
+                item["validation"] = _validate_case(module_name, adapted_case)
                 return item
     return None
 
@@ -110,16 +105,15 @@ def _adapt_legacy_planning_case(module: str, case: dict) -> dict:
         output.setdefault("tripSpec", input_data.get("tripSpec", {"days": 1}))
     elif module == "place_selector":
         legacy_macro = input_data.pop("macroPlan", None) or {}
-        input_data["regionKey"] = legacy_macro.get(
-            "regionKey", "vn,ha-noi"
-        )
+        input_data["regionKey"] = legacy_macro.get("regionKey", "vn,ha-noi")
         input_data["tripThemes"] = legacy_macro.get(
             "tripThemes"
         ) or _themes_from_legacy_days(legacy_macro.get("dayBriefs", []))
         if "allowFinderSuggestions" in input_data:
-            input_data["allowPlaceSuggestions"] = input_data.pop(
-                "allowFinderSuggestions"
-            )
+            input_data["allowFinderGapFill"] = input_data.pop("allowFinderSuggestions")
+        if "allowPlaceSuggestions" in input_data:
+            input_data["allowFinderGapFill"] = input_data.pop("allowPlaceSuggestions")
+        input_data.setdefault("allowReplaceSourcePlaces", False)
     return adapted
 
 
@@ -248,10 +242,7 @@ def _validate_case(module: str, case: dict) -> dict:
             for item_index, item in enumerate(day.get("items", [])):
                 if item.get("placeType") == "transport":
                     issue(
-                        (
-                            f"goldenOutput.finalDays[{day_index}].items"
-                            f"[{item_index}]"
-                        ),
+                        (f"goldenOutput.finalDays[{day_index}].items[{item_index}]"),
                         "Current PlaceSelector stores travel in transportLegs, not as "
                         "a transport PlanItem.",
                     )

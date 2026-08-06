@@ -17,6 +17,11 @@ from app.modules.plans.domain.entities import (
     UserStatus,
     UserStatusLocation,
 )
+from app.modules.plans.domain.plan_notes import (
+    compose_plan_source_note,
+    merge_note_sources,
+    source_note_provenance,
+)
 from app.modules.plans.domain.enums import TravelPace
 from app.modules.plans.dto.agent_contracts import (
     AgentTrace,
@@ -130,7 +135,8 @@ class PlaceSelectorService:
         *,
         user_status: UserStatus | None = None,
         plan_status: PlaceSelectionStatus | None = None,
-        allow_place_suggestions: bool = True,
+        allow_finder_gap_fill: bool = True,
+        allow_replace_source_places: bool = False,
     ) -> PlaceSelectionResult:
         return self._fill_days(
             selection_blueprint,
@@ -140,7 +146,8 @@ class PlaceSelectorService:
             plan_status=plan_status or PlaceSelectionStatus(),
             avoided_place_names={name.casefold() for name in intent.avoid_places},
             intent_constraints=intent.constraints,
-            allow_place_suggestions=allow_place_suggestions,
+            allow_finder_gap_fill=allow_finder_gap_fill,
+            allow_replace_source_places=allow_replace_source_places,
             constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
             trip_start_date=None,
@@ -158,7 +165,8 @@ class PlaceSelectorService:
         *,
         user_status: UserStatus | None = None,
         plan_status: PlaceSelectionStatus | None = None,
-        allow_place_suggestions: bool = True,
+        allow_finder_gap_fill: bool = True,
+        allow_replace_source_places: bool = False,
     ) -> PlaceSelectionResult:
         return self._fill_days(
             selection_blueprint,
@@ -168,7 +176,8 @@ class PlaceSelectorService:
             plan_status=plan_status or PlaceSelectionStatus(),
             avoided_place_names={name.casefold() for name in intent.avoid_places},
             intent_constraints=intent.constraints,
-            allow_place_suggestions=allow_place_suggestions,
+            allow_finder_gap_fill=allow_finder_gap_fill,
+            allow_replace_source_places=allow_replace_source_places,
             constraint_policy=intent.constraint_policy,
             budget_level=intent.budget.value,
             trip_start_date=None,
@@ -207,7 +216,8 @@ class PlaceSelectorService:
                 name.casefold() for name in selection_input.intent.avoid_places
             },
             intent_constraints=selection_input.intent.constraints,
-            allow_place_suggestions=selection_input.allow_place_suggestions,
+            allow_finder_gap_fill=selection_input.allow_finder_gap_fill,
+            allow_replace_source_places=(selection_input.allow_replace_source_places),
             constraint_policy=selection_input.intent.constraint_policy,
             budget_level=selection_input.trip_spec.budget.level.value,
             trip_start_date=selection_input.trip_spec.start_date,
@@ -392,22 +402,36 @@ class PlaceSelectorService:
                 source_activity=place.source_activity,
             ) and "cafe" not in {tag.casefold() for tag in place.tags}
             cost = activity_allocation_cost(place.source_duration_minutes)
-            if place.source_day is not None and place.source_day in allocated_by_day:
-                day = place.source_day
+            eligible_days = [
+                candidate_day
+                for candidate_day in allocated_by_day
+                if (
+                    meal_count_by_day[candidate_day] < len(MEAL_ANCHORS)
+                    if meal
+                    else activity_minutes_by_day[candidate_day] + cost
+                    <= DAILY_ACTIVITY_MINUTES
+                )
+            ]
+            preferred_day = (
+                place.source_day
+                if place.source_day is not None and place.source_day in allocated_by_day
+                else None
+            )
+            if preferred_day is not None and preferred_day in eligible_days:
+                day = preferred_day
             else:
-                eligible_days = [
+                # A source day is a preferred constraint, not permission to
+                # overbook that day. Spill forward when the shared timeline is
+                # expanded, while preserving source order and provenance.
+                forward_days = [
                     candidate_day
-                    for candidate_day in allocated_by_day
-                    if (
-                        meal_count_by_day[candidate_day] < len(MEAL_ANCHORS)
-                        if meal
-                        else activity_minutes_by_day[candidate_day] + cost
-                        <= DAILY_ACTIVITY_MINUTES
-                    )
+                    for candidate_day in eligible_days
+                    if preferred_day is None or candidate_day >= preferred_day
                 ]
+                candidate_days = forward_days or eligible_days
                 day = (
                     min(
-                        eligible_days,
+                        candidate_days,
                         key=lambda candidate_day: (
                             meal_count_by_day[candidate_day]
                             if meal
@@ -415,7 +439,7 @@ class PlaceSelectorService:
                             candidate_day,
                         ),
                     )
-                    if eligible_days
+                    if candidate_days
                     else day_count
                 )
             allocated_by_day[day].append(place.stable_ref)
@@ -469,7 +493,8 @@ class PlaceSelectorService:
         plan_status: PlaceSelectionStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
-        allow_place_suggestions: bool,
+        allow_finder_gap_fill: bool,
+        allow_replace_source_places: bool,
         constraint_policy: ConstraintPolicy,
         budget_level: str,
         trip_start_date: str | None,
@@ -500,7 +525,10 @@ class PlaceSelectorService:
         route_first_mode = bool(
             getattr(self.route_optimizer, "supports_fixed_anchors", False)
         )
-        if route_first_mode and self.meal_selector is not None:
+        # Day construction is shared by raw-prompt and URL intake. The route
+        # optimizer may vary as an operational fallback, but URL provenance
+        # must never select a different itinerary-building algorithm.
+        if self.meal_selector is not None:
             return self._fill_route_first_days(
                 selection_blueprint,
                 selected_places,
@@ -509,7 +537,8 @@ class PlaceSelectorService:
                 plan_status=committed_plan_status,
                 avoided_place_names=avoided_place_names,
                 intent_constraints=intent_constraints,
-                allow_place_suggestions=allow_place_suggestions,
+                allow_finder_gap_fill=allow_finder_gap_fill,
+                allow_replace_source_places=allow_replace_source_places,
                 constraint_policy=constraint_policy,
                 budget_level=budget_level,
                 trip_start_date=trip_start_date,
@@ -528,10 +557,10 @@ class PlaceSelectorService:
                 for ref in brief.allocated_selected_place_refs
                 if ref in selected_by_ref
             ]
-            allow_suggestions_for_day = allow_place_suggestions and (
+            allow_suggestions_for_day = allow_finder_gap_fill and (
                 route_first_mode or not has_reference_places or not allocated_places
             )
-            if not allow_place_suggestions and not allocated_places:
+            if not allow_finder_gap_fill and not allocated_places:
                 days.append(
                     PlanDay(
                         day=brief.day,
@@ -1031,6 +1060,10 @@ class PlaceSelectorService:
             for ref in day.allocated_selected_place_refs
         }
         for place in self._source_ordered_places(selected_places):
+            if allow_replace_source_places and any(
+                ref.startswith(("http://", "https://")) for ref in place.source_refs
+            ):
+                continue
             if (
                 place.stable_ref
                 not in committed_plan_status.remaining_selected_place_ids
@@ -1083,7 +1116,8 @@ class PlaceSelectorService:
         plan_status: PlaceSelectionStatus,
         avoided_place_names: set[str],
         intent_constraints: list[str],
-        allow_place_suggestions: bool,
+        allow_finder_gap_fill: bool,
+        allow_replace_source_places: bool,
         constraint_policy: ConstraintPolicy,
         budget_level: str,
         trip_start_date: str | None,
@@ -1105,6 +1139,10 @@ class PlaceSelectorService:
             for _ in range(requirement.minimum_activities)
         ]
         activity_slot_index = 0
+        has_url_reference_input = any(
+            any(ref.startswith(("http://", "https://")) for ref in place.source_refs)
+            for place in selected_places
+        )
 
         for brief in selection_blueprint.selection_days:
             allocated_places = [
@@ -1113,7 +1151,11 @@ class PlaceSelectorService:
                 if ref in selected_by_ref
                 and ref in plan_status.remaining_selected_place_ids
             ]
-            if not allow_place_suggestions and not allocated_places:
+            if (
+                not allow_finder_gap_fill
+                and not allocated_places
+                and not has_url_reference_input
+            ):
                 activity_days.append(
                     PlanDay(
                         day=brief.day,
@@ -1139,6 +1181,10 @@ class PlaceSelectorService:
             selected_activities = [
                 place for place in allocated_places if place not in selected_meals
             ]
+            # URL Places remain authoritative, but reference-only mode must not
+            # turn a food-heavy source into a meal-only itinerary. Finder may
+            # fill one missing activity in each daytime gap without replacing
+            # or removing any source Place.
             activity_brief = brief.model_copy(
                 update={
                     "allocated_selected_place_refs": [
@@ -1153,13 +1199,13 @@ class PlaceSelectorService:
             activity_number = 0
             for available_window_index, available_window in enumerate(ACTIVITY_WINDOWS):
                 cursor = available_window.start_minutes
+                activity_count_in_window = 0
                 while (
                     available_window.end_minutes - cursor
                     >= MINIMUM_FILLABLE_GAP_MINUTES
                 ):
                     remaining_minutes = available_window.end_minutes - cursor
-                    activity_number += 1
-                    role = f"main_activity_{activity_number}"
+                    role = f"main_activity_{activity_number + 1}"
                     block = DayBlock(
                         role=role,
                         time_window=format_clock_window(cursor, remaining_minutes),
@@ -1231,9 +1277,7 @@ class PlaceSelectorService:
                                 )
                                 if has_future_preferred_fit:
                                     continue
-                        available_minutes = (
-                            available_window.end_minutes - timing_start
-                        )
+                        available_minutes = available_window.end_minutes - timing_start
                         if duration > available_minutes:
                             continue
                         candidate = self.candidate_selector.select(
@@ -1274,7 +1318,10 @@ class PlaceSelectorService:
                         if candidate is not None:
                             candidate_start = timing_start
                             break
-                    if candidate is None and allow_place_suggestions:
+                    allow_gap_suggestion = (
+                        allow_finder_gap_fill and activity_count_in_window == 0
+                    )
+                    if candidate is None and allow_gap_suggestion:
                         candidate = self.candidate_selector.select(
                             CandidateSelectionContext(
                                 selection_blueprint=selection_blueprint,
@@ -1305,6 +1352,7 @@ class PlaceSelectorService:
                         )
                     if candidate is None:
                         break
+                    activity_number += 1
                     cursor = candidate_start
                     selected_source = candidate.stable_ref in selected_by_ref
                     duration = candidate_duration(candidate, block)
@@ -1321,6 +1369,7 @@ class PlaceSelectorService:
                         selected_source=selected_source,
                     )
                     day_items.append(item)
+                    activity_count_in_window += 1
                     self.status_tracker.apply_activity(
                         candidate,
                         scheduled_block,
@@ -1328,6 +1377,18 @@ class PlaceSelectorService:
                         plan_status,
                     )
                     cursor += duration + DEFAULT_TRANSITION_MINUTES
+                if available_window_index < 2 and activity_count_in_window == 0:
+                    gap_label = (
+                        "breakfast and lunch"
+                        if available_window_index == 0
+                        else "lunch and dinner"
+                    )
+                    message = (
+                        f"Day {brief.day} has no verified activity between "
+                        f"{gap_label}; Finder could not resolve a safe suggestion."
+                    )
+                    warnings.append(message)
+                    plan_status.warnings.append(message)
             plan_status.current_slot = None
             user_status.after_committed_day = brief.day
             self.status_tracker.finish_day_location(user_status)
@@ -1444,31 +1505,33 @@ class PlaceSelectorService:
                     candidate = meal_candidates.get(role)
                 if candidate is None:
                     message = (
-                        f"Day {day.day} omits unresolved meal slot {role} "
-                        "after route-based fallback search."
+                        f"Day {day.day} uses a generic meal anchor for {role} "
+                        "because no verified food place matched it."
                     )
                     warnings.append(message)
                     plan_status.warnings.append(message)
-                    continue
-                meal_item = self._build_activity_item(
-                    candidate,
-                    block,
-                    mode=mode,
-                    selected_source=selected_source,
-                )
+                    meal_item = self._build_generic_meal_anchor(block)
+                else:
+                    meal_item = self._build_activity_item(
+                        candidate,
+                        block,
+                        mode=mode,
+                        selected_source=selected_source,
+                    )
                 meal_items.append(meal_item)
-                used_refs.add(candidate.stable_ref)
-                # Keep meal venues varied across days even when a provider
-                # exposes a venue with no stable place id.
-                used_refs.add(candidate.name)
-                if candidate.place_id is not None:
-                    used_refs.add(candidate.place_id.casefold())
-                self.status_tracker.apply_activity(
-                    candidate,
-                    block,
-                    user_status,
-                    plan_status,
-                )
+                if candidate is not None:
+                    used_refs.add(candidate.stable_ref)
+                    # Keep meal venues varied across days even when a provider
+                    # exposes a venue with no stable place id.
+                    used_refs.add(candidate.name)
+                    if candidate.place_id is not None:
+                        used_refs.add(candidate.place_id.casefold())
+                    self.status_tracker.apply_activity(
+                        candidate,
+                        block,
+                        user_status,
+                        plan_status,
+                    )
 
             ordered_items = sorted(
                 [*activities, *meal_items],
@@ -1606,6 +1669,10 @@ class PlaceSelectorService:
 
         unscheduled = []
         for place in self._source_ordered_places(selected_places):
+            if allow_replace_source_places and any(
+                ref.startswith(("http://", "https://")) for ref in place.source_refs
+            ):
+                continue
             if place.stable_ref not in plan_status.remaining_selected_place_ids:
                 continue
             rejection = rejected_selected_places.get(
@@ -1663,6 +1730,17 @@ class PlaceSelectorService:
         scheduled: list[PlanItem] = list(meal_by_role.values())
         overflow: list[PlanItem] = []
 
+        def fallback_transition(left: PlanItem, right: PlanItem) -> int:
+            # A generic meal anchor has no venue or coordinates, so it must not
+            # invent travel time to or from an activity. Verified meal Places
+            # still receive the deterministic fallback when routing is absent.
+            if any(
+                item.source == "finder_rule" and item.place_type == "meal"
+                for item in (left, right)
+            ):
+                return 0
+            return DEFAULT_TRANSITION_MINUTES
+
         for index, window in enumerate(ACTIVITY_WINDOWS):
             window_activities = [
                 item
@@ -1699,7 +1777,7 @@ class PlaceSelectorService:
                 inbound = (
                     leg_minutes.get(
                         (previous.item_id, activity.item_id),
-                        DEFAULT_TRANSITION_MINUTES,
+                        fallback_transition(previous, activity),
                     )
                     if previous is not None
                     else 0
@@ -1718,7 +1796,7 @@ class PlaceSelectorService:
                 outbound = (
                     leg_minutes.get(
                         (activity.item_id, next_meal.item_id),
-                        DEFAULT_TRANSITION_MINUTES,
+                        fallback_transition(activity, next_meal),
                     )
                     if next_meal is not None
                     else 0
@@ -1735,17 +1813,25 @@ class PlaceSelectorService:
                 previous = activity
 
             next_meal = meal_by_role.get(anchor.role)
-            if index + 1 < len(MEAL_ANCHORS) and next_meal is not None and previous is not None:
+            if (
+                index + 1 < len(MEAL_ANCHORS)
+                and next_meal is not None
+                and previous is not None
+            ):
                 inbound_to_meal = leg_minutes.get(
-                    (previous.item_id, next_meal.item_id), DEFAULT_TRANSITION_MINUTES
+                    (previous.item_id, next_meal.item_id),
+                    fallback_transition(previous, next_meal),
                 )
-                meal_start = max(anchor.earliest, anchor.start_minutes, cursor + inbound_to_meal)
+                meal_start = max(
+                    anchor.earliest, anchor.start_minutes, cursor + inbound_to_meal
+                )
                 meal_start = min(meal_start, anchor.latest)
                 if meal_start != parse_clock_minutes(next_meal.time_window):
                     meal_by_role[anchor.role] = next_meal.model_copy(
                         update={
                             "time_window": format_clock_window(
-                                meal_start, next_meal.duration_minutes or anchor.duration_minutes
+                                meal_start,
+                                next_meal.duration_minutes or anchor.duration_minutes,
                             )
                         }
                     )
@@ -2016,6 +2102,25 @@ class PlaceSelectorService:
             if block.kind == "meal" or place_category(candidate) == "food_drink"
             else "activity"
         )
+        provider_description = candidate.description
+        source_note = candidate.notes
+        if source_note is None:
+            source_note = compose_plan_source_note(
+                source_activity=candidate.source_activity,
+                provider_description=provider_description,
+            )
+        note_sources = list(candidate.note_sources)
+        if provider_description:
+            note_sources = merge_note_sources(
+                note_sources,
+                source_note_provenance(
+                    source_refs=[],
+                    evidence_types=[],
+                    provider=candidate.source_provider or "knowledge_graph",
+                    provider_ref=candidate.source_link or candidate.place_id,
+                    include_provider=True,
+                ),
+            )
         return PlanItem(
             itemId=str(uuid4()),
             placeId=candidate.place_id,
@@ -2047,12 +2152,8 @@ class PlaceSelectorService:
             tags=candidate.tags,
             latitude=candidate.latitude,
             longitude=candidate.longitude,
-            notes=(
-                candidate.notes
-                or candidate.source_activity
-                or candidate.description
-                or None
-            ),
+            notes=source_note,
+            noteSources=note_sources,
             personalNotes=candidate.personal_notes,
             imageUrls=candidate.image_urls,
             rating=candidate.rating,
@@ -2126,6 +2227,25 @@ class PlaceSelectorService:
             source="finder_rule",
             durationMinutes=block.duration_minutes,
             notes="Khoảng nghỉ này không cần địa điểm cụ thể.",
+        )
+
+    @staticmethod
+    def _build_generic_meal_anchor(block: DayBlock) -> PlanItem:
+        names = {
+            "breakfast_meal": "Ăn sáng",
+            "lunch_meal": "Ăn trưa",
+            "dinner_meal": "Ăn tối",
+        }
+        return PlanItem(
+            itemId=str(uuid4()),
+            name=names.get(block.role, "Bữa ăn"),
+            timeWindow=block.time_window,
+            placeType="meal",
+            timelineCategory="food",
+            role=block.role,
+            source="finder_rule",
+            durationMinutes=block.duration_minutes,
+            notes="Chưa chọn địa điểm ăn; bạn có thể thay bằng một quán phù hợp gần tuyến.",
         )
 
     def _normalize_selected_places(

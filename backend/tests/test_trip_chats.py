@@ -32,6 +32,55 @@ def test_user_can_create_and_list_own_trip_chats(registered_client) -> None:
     ]
 
 
+def test_structured_trip_intent_edit_requires_an_existing_plan(
+    registered_client,
+) -> None:
+    chat = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Chuyến chưa lập kế hoạch"},
+        headers=csrf_headers(registered_client),
+    ).json()
+
+    response = registered_client.patch(
+        f"/api/trip-chats/{chat['id']}/trip-intent",
+        json={
+            "expectedRevision": 0,
+            "expectedTripIntentVersion": 0,
+            "tripIntent": {
+                "destination": "Đà Lạt",
+                "timing": {"days": 3},
+                "travelParty": {"adults": 2},
+                "budget": {"targetAmount": 8_000_000, "currency": "VND"},
+                "notes": ["Đi chậm"],
+            },
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "TRIP_INTENT_NOT_READY"
+
+
+def test_structured_trip_intent_edit_requires_csrf(registered_client) -> None:
+    chat = registered_client.post(
+        "/api/trip-chats",
+        json={},
+        headers=csrf_headers(registered_client),
+    ).json()
+
+    response = registered_client.patch(
+        f"/api/trip-chats/{chat['id']}/trip-intent",
+        json={
+            "expectedRevision": 0,
+            "expectedTripIntentVersion": 0,
+            "tripIntent": {"destination": "Đà Lạt"},
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "CSRF_VALIDATION_FAILED"
+
+
 def test_active_turn_is_restored_and_listed_for_background_loading(
     registered_client,
 ) -> None:
@@ -404,6 +453,7 @@ def test_user_can_save_personal_note_from_flat_form_data(
         f"/api/trip-chats/{chat_id}/plan/days/1/items/pho-thin-bo-ho",
         data={
             "expectedRevision": "1",
+            "notes": "Không được ghi đè source summary.",
             "personalNotes": "Ngồi ngoài trời và gọi món đặc trưng.",
         },
         headers=csrf_headers(registered_client),

@@ -14,8 +14,9 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { BackgroundUrlJobs } from "@/components/BackgroundUrlJobs";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
   PlannerChatComposer,
@@ -28,17 +29,21 @@ import {
   addTripChatItem,
   calculateDayDirections,
   createTripChat,
+  createPlanFromExplorer,
   deleteAllTripChats,
   deleteUrlImportJob,
   deleteTripChat,
   enqueueTripChatUrls,
+  exploreFullIntake,
   getTripChat,
   listTripChats,
   listUrlImportJobs,
   removeTripChatItem,
   reorderTripChatItem,
+  retryTripChatTransportLeg,
   searchPlaces,
   selectTripChatTransportOption,
+  updateTripChatIntent,
   updateTripChatItem,
   type PlaceSuggestion,
   type ExplorerContext,
@@ -47,6 +52,7 @@ import {
   type TransportOption,
   type TransportLeg,
   type TripChat,
+  type TripIntent,
   type TripChatSummary,
   type UnscheduledPlace,
   type TripChatTurn,
@@ -54,6 +60,15 @@ import {
   type TravelPlan,
 } from "@/lib/plans";
 import { useConversationTurn } from "@/lib/useConversationTurn";
+import {
+  enqueueGuestUrlJobs,
+  enqueueGuestPromptJob,
+  deleteGuestUrlJob,
+  GUEST_URL_JOBS_EVENT,
+  GUEST_URL_JOB_RESULT_EVENT,
+  listGuestUrlJobs,
+  type GuestUrlImportJob,
+} from "@/lib/guest-url-jobs";
 import {
   PlannerMap,
   type PlannerMapCurrentLocation,
@@ -72,10 +87,13 @@ import {
   visibleTransportOptions,
 } from "@/lib/transport-options";
 import { visiblePlanDays, visiblePlanItems } from "@/lib/visible-plan-days";
-import { formatPlanNote } from "@/lib/plan-note";
+import { formatPlanNote, planItemNotePresentation } from "@/lib/plan-note";
 import { planItemMapKey } from "@/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/lib/itinerary-order";
-import { shouldApplyBackgroundChatResult } from "@/lib/planner-chat-navigation";
+import {
+  resolvePlannerEntryChatId,
+  shouldApplyBackgroundChatResult,
+} from "@/lib/planner-chat-navigation";
 import { dragAutoScrollVelocity } from "@/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/lib/url-only-input";
 
@@ -92,7 +110,7 @@ type PlannerToast = {
 
 type ActivePlanningJob = { id: string; guest: boolean };
 
-type WorkflowStage = "idle" | "exploring" | "planning" | "ready" | "failed";
+type WorkflowStage = "idle" | "preparing" | "exploring" | "planning" | "ready" | "failed";
 type IntakeKind = "prompt" | "image" | "url";
 type GuidedIntakeStep =
   | "destination"
@@ -304,6 +322,53 @@ function formatTripParty(
   return travelerAnswer(party) || "Chưa xác định";
 }
 
+function formatTripBudget(intent: TripIntent): string {
+  if (intent.budget.targetAmount != null) {
+    return new Intl.NumberFormat("vi-VN", {
+      style: "currency",
+      currency: intent.budget.currency,
+      maximumFractionDigits: 0,
+    }).format(intent.budget.targetAmount);
+  }
+  return `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase("vi-VN")}`;
+}
+
+function guidedAnswersFromTripIntent(intent: TripIntent): GuidedIntakeAnswers {
+  return {
+    destination: intent.destination,
+    dates: formatTripTiming(intent.timing),
+    travelers: formatTripParty(intent.travelParty),
+    budget: formatTripBudget(intent),
+    note: intent.notes.join(" · "),
+  };
+}
+
+function tripDaysBetween(startDate: string, endDate: string): number {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+}
+
+function budgetFromAnswer(answer: string, current: TripIntent["budget"]) {
+  const normalized = answer.trim().toLocaleLowerCase("vi-VN");
+  const digits = normalized.replace(/[^\d]/g, "");
+  let targetAmount = digits ? Number(digits) : null;
+  const decimalMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(triệu|tr|million)/);
+  if (decimalMatch) {
+    targetAmount = Math.round(Number(decimalMatch[1].replace(",", ".")) * 1_000_000);
+  } else if (targetAmount != null && /\b(nghìn|ngàn|k)\b/.test(normalized)) {
+    targetAmount *= 1_000;
+  }
+  const level = normalized.includes("cao")
+    ? "high"
+    : normalized.includes("thấp")
+      ? "low"
+      : normalized.includes("trung bình")
+        ? "medium"
+        : current.level;
+  return { ...current, targetAmount, level };
+}
+
 function finishedTripFacts(context: ExplorerContext) {
   const intent = context.tripIntent;
   const budget =
@@ -397,18 +462,15 @@ export default function PlannerPage() {
 }
 
 function Planner() {
-  const router = useRouter();
   const params = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const initialChatId = params.get("chatId")?.trim() || null;
+  const initialEntryChatIdRef = useRef(initialChatId);
   const initialDestination = params.get("destination") ?? "";
   const initialPrompt = params.get("prompt")?.trim() ?? "";
   const hasPrefilledRequest = Boolean(initialPrompt || initialDestination);
   const [prompt, setPrompt] = useState(
-    initialPrompt ||
-      (initialDestination
-        ? `Tạo lịch trình ${initialDestination} 3 ngày, ẩm thực và văn hóa địa phương`
-        : "")
+    initialPrompt
   );
   const [urlInput, setUrlInput] = useState("");
   const [urlInputError, setUrlInputError] = useState("");
@@ -430,7 +492,9 @@ function Planner() {
     hasPrefilledRequest ? "complete" : "destination"
   );
   const [guidedIntakeAnswers, setGuidedIntakeAnswers] =
-    useState<GuidedIntakeAnswers>({});
+    useState<GuidedIntakeAnswers>(() =>
+      initialDestination ? { destination: initialDestination } : {}
+    );
   const [guidedIntakeOpen, setGuidedIntakeOpen] = useState(false);
   const [guidedDraft, setGuidedDraft] = useState(initialDestination);
   const [guidedStartDate, setGuidedStartDate] = useState("");
@@ -441,6 +505,7 @@ function Planner() {
     infants: 0,
     pets: 0,
   });
+  const [savingTripIntent, setSavingTripIntent] = useState(false);
   const [plannerToast, setPlannerToast] = useState<PlannerToast | null>(null);
   const showPlannerToast = useCallback((text: string) => {
     if (toastTimerRef.current != null)
@@ -475,6 +540,12 @@ function Planner() {
   const [savingTransportOptionKey, setSavingTransportOptionKey] = useState<
     string | null
   >(null);
+  const [retryingTransportLegKey, setRetryingTransportLegKey] = useState<
+    string | null
+  >(null);
+  const [transportLegRetryErrors, setTransportLegRetryErrors] = useState<
+    Record<string, string>
+  >({});
   const [expandedTransportOptionKeys, setExpandedTransportOptionKeys] =
     useState<Record<string, boolean>>({});
   const [directionsActive, setDirectionsActive] = useState(false);
@@ -503,6 +574,7 @@ function Planner() {
   const directionsPendingLocationRef = useRef(false);
   const directionsDestinationRef = useRef<DirectionStop | null>(null);
   const directionsRequestIdRef = useRef(0);
+  const autoRetriedTransportLegKeysRef = useRef<Set<string>>(new Set());
   const locationWatchIdRef = useRef<number | null>(null);
   const latestLocationRef = useRef<PlannerMapCurrentLocation | null>(null);
   const orientationListenerRef = useRef<
@@ -515,6 +587,7 @@ function Planner() {
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
   const [initialPlanningActive, setInitialPlanningActive] = useState(false);
   const [processingElapsedSeconds, setProcessingElapsedSeconds] = useState(0);
+  const [processingStartedAtMs, setProcessingStartedAtMs] = useState<number | null>(null);
   const [activePlanningJobs, setActivePlanningJobs] = useState<
     ActivePlanningJob[]
   >([]);
@@ -525,9 +598,14 @@ function Planner() {
   const [urlJobSnapshot, setUrlJobSnapshot] = useState<UrlImportJob[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const activeChatIdRef = useRef<string | null>(null);
+  const chatLoadControllerRef = useRef<AbortController | null>(null);
   const activeRequestIdRef = useRef(0);
   const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
+  const [tripIntentVersion, setTripIntentVersion] = useState(0);
+  const [tripIntentPlanStatus, setTripIntentPlanStatus] = useState<
+    TripChat["tripIntentPlanStatus"]
+  >("synced");
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [deletingAllChats, setDeletingAllChats] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
@@ -941,7 +1019,8 @@ function Planner() {
       if (job.chatId !== activeChatId) return;
       if (job.status === "queued" || job.status === "running") {
         setBackgroundPlanning(true);
-        setWorkflowStage(job.explorerTiming ? "planning" : "exploring");
+        setProcessingStartedAtMs(Date.parse(job.startedAt ?? job.createdAt));
+        setWorkflowStage(job.status === "queued" ? "preparing" : job.explorerTiming ? "planning" : "exploring");
       } else if (job.status === "failed") {
         setBackgroundPlanning(false);
         setInitialPlanningActive(false);
@@ -968,6 +1047,57 @@ function Planner() {
   }, [activeChatId, chatRevision]);
 
   useEffect(() => {
+    if (
+      !activeChatId ||
+      (tripIntentPlanStatus !== "queued" &&
+        tripIntentPlanStatus !== "running")
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const targetVersion = tripIntentVersion;
+
+    async function refreshRegeneratedPlan() {
+      while (!cancelled) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        if (cancelled || !activeChatId) return;
+        try {
+          const latest = await getTripChat(activeChatId);
+          if (cancelled || latest.tripIntentVersion < targetVersion) continue;
+          setTripIntentVersion(latest.tripIntentVersion);
+          setTripIntentPlanStatus(latest.tripIntentPlanStatus);
+          if (
+            latest.tripIntentPlanStatus === "synced" ||
+            latest.tripIntentPlanStatus === "failed"
+          ) {
+            applyTripChatBackgroundResult(latest);
+            if (latest.tripIntentPlanStatus === "synced") {
+              showPlannerToast("Lịch trình đã đồng bộ theo thông tin mới");
+            } else {
+              showPlannerToast(
+                "Thông tin đã lưu, nhưng chưa tạo lại được lịch trình"
+              );
+            }
+            return;
+          }
+        } catch {
+          // A transient refresh failure must not block another intent edit.
+        }
+      }
+    }
+
+    void refreshRegeneratedPlan();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeChatId,
+    tripIntentPlanStatus,
+    tripIntentVersion,
+    showPlannerToast,
+  ]);
+
+  useEffect(() => {
     if (!user) {
       setUrlJobSnapshot([]);
       return;
@@ -987,10 +1117,14 @@ function Planner() {
       );
       setBackgroundPlanning(active.length > 0);
       if (active.length > 0) {
+        const oldestStart = Math.min(...active.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
+        setProcessingStartedAtMs(oldestStart);
         setIntakeKind("url");
         setInitialPlanningActive(true);
         setWorkflowStage(
-          active.some((job) => Boolean(job.explorerTiming))
+          active.every((job) => job.status === "queued")
+            ? "preparing"
+            : active.some((job) => Boolean(job.explorerTiming))
             ? "planning"
             : "exploring"
         );
@@ -1009,13 +1143,67 @@ function Planner() {
       window.removeEventListener("vsf:url-jobs-snapshot", handleSnapshot);
   }, [user?.id]);
 
+  useEffect(() => {
+    const applyGuestResult = (job: GuestUrlImportJob) => {
+      if (job.status !== "succeeded" || !job.result) return;
+      setGuidedIntakeStep("complete");
+      setGuidedIntakeOpen(false);
+      setBackgroundPlanning(false);
+      setInitialPlanningActive(false);
+      setActivePlanningJobs([]);
+      setExploreResult(job.result.explore);
+      setPlan(job.result.plan);
+      setWorkflowStage("ready");
+      setSelectedMapPlaceKey(null);
+      setError("");
+    };
+    const handleGuestResult = (event: Event) => {
+      applyGuestResult((event as CustomEvent<GuestUrlImportJob>).detail);
+    };
+    const handleGuestJobs = (event: Event) => {
+      const jobs = (event as CustomEvent<GuestUrlImportJob[]>).detail ?? [];
+      const activeJobs = jobs.filter(
+        (job) => job.status === "queued" || job.status === "running"
+      );
+      setActivePlanningJobs(activeJobs.map((job) => ({ id: job.id, guest: true })));
+      setBackgroundPlanning(activeJobs.length > 0);
+      setInitialPlanningActive(activeJobs.length > 0);
+      if (activeJobs.length > 0) {
+        const oldestStart = Math.min(...activeJobs.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
+        setProcessingStartedAtMs(oldestStart);
+        setIntakeKind(activeJobs.some((job) => job.contextUrls.length > 0) ? "url" : "prompt");
+        setWorkflowStage(
+          activeJobs.every((job) => job.status === "queued")
+            ? "preparing"
+            : activeJobs.some(
+            (job) =>
+              job.phase === "planning"
+          )
+            ? "planning"
+            : "exploring"
+        );
+      }
+    };
+    window.addEventListener(GUEST_URL_JOB_RESULT_EVENT, handleGuestResult);
+    window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
+    const latest = listGuestUrlJobs()
+      .filter((job) => job.status === "succeeded" && job.result)
+      .sort(
+        (left, right) =>
+          Date.parse(right.finishedAt ?? "") - Date.parse(left.finishedAt ?? "")
+      )[0];
+    if (latest) applyGuestResult(latest);
+    return () => {
+      window.removeEventListener(GUEST_URL_JOB_RESULT_EVENT, handleGuestResult);
+      window.removeEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
+    };
+  }, []);
+
   const [editingItem, setEditingItem] = useState<{
     day: number;
     itemId: string;
     originalName: string;
     name: string;
-    personalNotes: string;
-    notesExpanded: boolean;
   } | null>(null);
   const [addingDay, setAddingDay] = useState<number | null>(null);
   const [addName, setAddName] = useState("");
@@ -1045,12 +1233,13 @@ function Planner() {
     itemId: string | null;
     itemName: string;
     sourceNote: string | null;
-    additionalContext: string | null;
+    sourceLabel: string | null;
     personalNotes: string;
   } | null>(null);
   const [openQuickActionKey, setOpenQuickActionKey] = useState<string | null>(
     null
   );
+  const [openHoursKey, setOpenHoursKey] = useState<string | null>(null);
 
   useEffect(() => {
     const modalIsClosed =
@@ -1166,9 +1355,12 @@ function Planner() {
       return;
     }
     if (
-      conversationTurn.status === "queued" ||
-      conversationTurn.status === "classifying"
+      conversationTurn.status === "queued"
     ) {
+      setWorkflowStage("preparing");
+      return;
+    }
+    if (conversationTurn.status === "classifying") {
       setWorkflowStage("exploring");
       return;
     }
@@ -1192,10 +1384,16 @@ function Planner() {
     initialPlanningActive,
   ]);
 
+  useEffect(() => {
+    const turn = conversationTurn.turn;
+    if (!turn || turn.chatId !== activeChatIdRef.current) return;
+    const startedAt = Date.parse(turn.createdAt);
+    if (Number.isFinite(startedAt)) setProcessingStartedAtMs(startedAt);
+  }, [conversationTurn.turn]);
+
   function openItemEditor(
     day: number,
-    item: TravelPlan["days"][number]["items"][number],
-    personalNotes: string | null
+    item: TravelPlan["days"][number]["items"][number]
   ) {
     if (!item.itemId || !activeChatId) return;
     setEditingItem({
@@ -1203,8 +1401,6 @@ function Planner() {
       itemId: item.itemId,
       originalName: item.name,
       name: item.name,
-      personalNotes: personalNotes || "",
-      notesExpanded: Boolean(personalNotes),
     });
     setSelectedEditSuggestion(
       item.address ||
@@ -1418,7 +1614,6 @@ function Planner() {
           address: selectedEditSuggestion?.address,
           latitude: selectedEditSuggestion?.latitude,
           longitude: selectedEditSuggestion?.longitude,
-          personalNotes: editingItem.personalNotes,
         },
       });
       setChatRevision(updatedChat.revision);
@@ -1702,6 +1897,7 @@ function Planner() {
   }, [historyCollapsed]);
 
   useEffect(() => {
+    const entryChatId = initialEntryChatIdRef.current;
     if (authLoading || !user) {
       if (authLoading) {
         setPlannerEntryResolved(false);
@@ -1753,38 +1949,35 @@ function Planner() {
     }
     let cancelled = false;
     const controller = new AbortController();
-    setPlannerEntryResolved(true);
+    setPlannerEntryResolved(false);
     setTripChats([]);
-    activeChatIdRef.current = null;
-    setActiveChatId(null);
-    setChatRevision(0);
-    setExploreResult(null);
-    setPlan(null);
-    setBackgroundPlanning(false);
-    setInitialPlanningActive(false);
-    setActivePlanningJobs([]);
-    setChatCollapsed(false);
-    setGuidedIntakeStep(hasPrefilledRequest ? "complete" : "destination");
-    setGuidedIntakeOpen(false);
-    setGuidedDraft(initialDestination);
-    setGuidedIntakeAnswers({});
-    setMessages([
-      {
-        id: Date.now(),
-        role: "assistant",
-        text: hasPrefilledRequest
-          ? "Mình đã điền sẵn yêu cầu bạn vừa gửi. Bạn có thể chỉnh lại, thêm URL nguồn rồi gửi khi sẵn sàng."
-          : NEW_CHAT_GREETING,
-      },
-    ]);
+
+    // A deep-linked chat can be loaded directly. Waiting for the full history
+    // list first adds an unnecessary round trip and leaves the planner on the
+    // "new chat" loading screen after every reload.
+    if (entryChatId && !hasPrefilledRequest) {
+      void openTripChat(entryChatId);
+    }
+
     void listTripChats({ signal: controller.signal })
       .then((chats) => {
         if (cancelled) return;
         setTripChats(chats);
-        if (initialChatId && chats.some((chat) => chat.id === initialChatId)) {
-          void openTripChat(initialChatId);
-        } else if (initialChatId) {
+        if (entryChatId && !hasPrefilledRequest) return;
+        const entryChatIdToOpen = resolvePlannerEntryChatId(
+          entryChatId,
+          hasPrefilledRequest,
+          chats.map((chat) => chat.id),
+        );
+        if (entryChatIdToOpen) {
+          void openTripChat(entryChatIdToOpen);
+        } else if (entryChatId) {
           syncPlannerChatUrl(null);
+          setPlannerEntryResolved(true);
+        } else if (!hasPrefilledRequest && chats[0]) {
+          void openTripChat(chats[0].id);
+        } else {
+          setPlannerEntryResolved(true);
         }
       })
       .catch((caught) => {
@@ -1792,15 +1985,23 @@ function Planner() {
           setError(
             caught instanceof Error
               ? caught.message
-              : "Không thể tải danh sách chuyến đi cũ. Chat mới vẫn sẵn sàng."
+              : "Không thể tải lịch sử chuyến đi. Bạn vẫn có thể bắt đầu chat mới."
           );
+          // The deep-linked chat is loading independently of the history
+          // sidebar, so keep its loading state until getTripChat finishes.
+          if (!(entryChatId && !hasPrefilledRequest)) {
+            setPlannerEntryResolved(true);
+          }
         }
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [authLoading, hasPrefilledRequest, initialChatId, user?.id]);
+    // Query-string chat changes are handled by openTripChat/resetWorkflow.
+    // Depending on initialChatId here makes Next's patched history.replaceState
+    // rerun this bootstrap and clear the chat while it is being opened.
+  }, [authLoading, hasPrefilledRequest, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -1857,17 +2058,16 @@ function Planner() {
       return;
     }
 
-    const startedAt = Date.now();
     const updateElapsed = () => {
       setProcessingElapsedSeconds(
-        Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+        Math.max(0, Math.floor((Date.now() - (processingStartedAtMs ?? Date.now())) / 1000))
       );
     };
 
     updateElapsed();
     const timerId = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(timerId);
-  }, [awaitingInitialPlan]);
+  }, [awaitingInitialPlan, processingStartedAtMs]);
 
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
@@ -1984,6 +2184,11 @@ function Planner() {
                 latitude: item.latitude ?? null,
                 longitude: item.longitude ?? null,
                 notes: item.notes,
+                noteSources: item.noteSources,
+                personalNotes: item.personalNotes,
+                sourceRefs: item.sourceRefs,
+                sourceProvider: item.sourceProvider,
+                sourceActivity: item.sourceActivity,
                 imageUrl: item.imageUrls?.find(isDisplayableImageUrl) ?? null,
                 openingHours: item.openingHours,
                 rating: item.rating,
@@ -2797,6 +3002,78 @@ function Planner() {
     }
   }
 
+  async function retryPlanTransportLeg(day: number, legIndex: number) {
+    const retryKey = planLegSelectionKey(day, legIndex);
+    const chatId = activeChatIdRef.current ?? activeChatId ?? initialChatId;
+    if (!chatId) {
+      setTransportLegRetryErrors((current) => ({
+        ...current,
+        [retryKey]: "Không thể lưu tuyến khi chưa mở chuyến đi.",
+      }));
+      return;
+    }
+
+    setRetryingTransportLegKey(retryKey);
+    setTransportLegRetryErrors((current) => {
+      const next = { ...current };
+      delete next[retryKey];
+      return next;
+    });
+    try {
+      const updatedChat = await retryTripChatTransportLeg({
+        chatId,
+        expectedRevision: chatRevision,
+        day,
+        legIndex,
+      });
+      setChatRevision(updatedChat.revision);
+      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      setSelectedPlanLegOptionKeys((current) => {
+        const next = { ...current };
+        delete next[retryKey];
+        return next;
+      });
+      showPlannerToast("Đã tính lại tuyến đường");
+    } catch (caught: any) {
+      setTransportLegRetryErrors((current) => ({
+        ...current,
+        [retryKey]: caught?.message || "Vẫn chưa tính được tuyến. Hãy thử lại.",
+      }));
+    } finally {
+      setRetryingTransportLegKey(null);
+    }
+  }
+
+  useEffect(() => {
+    const chatId = activeChatIdRef.current ?? activeChatId ?? initialChatId;
+    if (!chatId || !displayedPlan || retryingTransportLegKey) return;
+
+    for (const day of displayedPlan.days) {
+      for (let legIndex = 0; legIndex < day.transportLegs.length; legIndex += 1) {
+        const leg = day.transportLegs[legIndex];
+        if (transportOptionsForLeg(leg).length > 0) continue;
+        const attemptKey = [
+          chatId,
+          day.day,
+          legIndex,
+          leg.mode,
+          leg.source,
+          Math.round(leg.distanceMeters),
+        ].join(":");
+        if (autoRetriedTransportLegKeysRef.current.has(attemptKey)) continue;
+        autoRetriedTransportLegKeysRef.current.add(attemptKey);
+        void retryPlanTransportLeg(day.day, legIndex);
+        return;
+      }
+    }
+  }, [
+    activeChatId,
+    chatRevision,
+    displayedPlan,
+    initialChatId,
+    retryingTransportLegKey,
+  ]);
+
   function selectRouteOnMapWithoutFocus(routeKey: string) {
     setSelectedMapPlaceKey(null);
     setSelectedMapRouteKey(routeKey);
@@ -2949,7 +3226,131 @@ function Planner() {
     selectedDayDirectionLegs,
   ]);
 
-  function submitGuidedAnswer(rawAnswer: string) {
+  function updatedTripIntentForStep(
+    intent: TripIntent,
+    step: Exclude<GuidedIntakeStep, "complete">,
+    answer: string
+  ): TripIntent {
+    if (step === "destination") {
+      return { ...intent, destination: answer };
+    }
+    if (step === "dates") {
+      const hasDates = Boolean(guidedStartDate && guidedEndDate);
+      return {
+        ...intent,
+        timing: {
+          ...intent.timing,
+          startDate: hasDates ? guidedStartDate : null,
+          endDate: hasDates ? guidedEndDate : null,
+          days: hasDates
+            ? tripDaysBetween(guidedStartDate, guidedEndDate)
+            : intent.timing.days,
+          flexibility: hasDates ? "fixed" : "unknown",
+        },
+      };
+    }
+    if (step === "travelers") {
+      const type = travelerCounts.children || travelerCounts.infants
+        ? "family"
+        : travelerCounts.adults === 1
+          ? "solo"
+          : travelerCounts.adults === 2
+            ? "couple"
+            : "group";
+      return {
+        ...intent,
+        travelParty: {
+          ...intent.travelParty,
+          ...travelerCounts,
+          type,
+        },
+      };
+    }
+    if (step === "budget") {
+      return { ...intent, budget: budgetFromAnswer(answer, intent.budget) };
+    }
+    return { ...intent, notes: answer ? [answer] : [] };
+  }
+
+  async function saveGuidedTripIntent(
+    step: Exclude<GuidedIntakeStep, "complete">,
+    answer: string
+  ) {
+    const currentIntent = exploreResult?.explorer.tripIntent;
+    if (!activeChatId || !currentIntent) return false;
+    setSavingTripIntent(true);
+    setError("");
+    try {
+      let updated: TripChat;
+      try {
+        updated = await updateTripChatIntent({
+          chatId: activeChatId,
+          expectedRevision: chatRevision,
+          expectedTripIntentVersion: tripIntentVersion,
+          tripIntent: updatedTripIntentForStep(currentIntent, step, answer),
+        });
+      } catch (caught) {
+        if (
+          !(caught instanceof APIError) ||
+          (caught.code !== "VERSION_CONFLICT" &&
+            caught.code !== "TRIP_INTENT_SUPERSEDED")
+        ) {
+          throw caught;
+        }
+        const latest = await getTripChat(activeChatId);
+        if (!latest.currentTripIntent) throw caught;
+        updated = await updateTripChatIntent({
+          chatId: activeChatId,
+          expectedRevision: latest.revision,
+          expectedTripIntentVersion: latest.tripIntentVersion,
+          tripIntent: updatedTripIntentForStep(
+            latest.currentTripIntent,
+            step,
+            answer
+          ),
+        });
+      }
+      applyTripChat(updated);
+      setTripChats((current) => [
+        {
+          id: updated.id,
+          title: updated.title,
+          destination: updated.destination,
+          revision: updated.revision,
+          hasPlan: updated.hasPlan,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        },
+        ...current.filter((chat) => chat.id !== updated.id),
+      ]);
+      void listTripChats()
+        .then(setTripChats)
+        .catch(() => {
+          // The PATCH response already updated the visible chat and sidebar.
+        });
+      showPlannerToast("Đã lưu thông tin; lịch trình đang được đồng bộ nền");
+      return true;
+    } catch (caught) {
+      if (caught instanceof APIError && caught.code === "VERSION_CONFLICT") {
+        try {
+          const latest = await getTripChat(activeChatId);
+          applyTripChat(latest);
+        } catch {
+          // Keep the original version-conflict error visible to the user.
+        }
+      }
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Không thể cập nhật thông tin chuyến đi."
+      );
+      return true;
+    } finally {
+      setSavingTripIntent(false);
+    }
+  }
+
+  async function submitGuidedAnswer(rawAnswer: string) {
     if (guidedIntakeStep === "complete") return;
     const answer = rawAnswer.trim();
     if (!answer) {
@@ -2957,14 +3358,25 @@ function Planner() {
       return;
     }
 
+    const effectiveAnswer = answer === "Bỏ qua" ? "" : answer;
     const nextAnswers = {
       ...guidedIntakeAnswers,
-      [guidedIntakeStep]: answer === "Bỏ qua" ? "" : answer,
+      [guidedIntakeStep]: effectiveAnswer,
     };
     setGuidedIntakeAnswers(nextAnswers);
     setGuidedDraft(nextAnswers[guidedIntakeStep] ?? "");
     setError("");
+    // Đóng hộp thoại ngay khi bắt đầu lưu để người dùng không bị giữ lại
+    // trước màn hình "Đang cập nhật…" trong lúc request ghi vào DB hoàn tất.
     setGuidedIntakeOpen(false);
+    if (
+      await saveGuidedTripIntent(
+        guidedIntakeStep,
+        effectiveAnswer
+      )
+    ) {
+      return;
+    }
     showPlannerToast(
       `Đã cập nhật ${
         guidedIntakeQuestions[guidedIntakeStep].replace(/[?？]$/, "")
@@ -2980,6 +3392,14 @@ function Planner() {
   }
 
   function submitGuidedDates() {
+    if (
+      activeChatId &&
+      exploreResult?.explorer.tripIntent &&
+      Boolean(guidedStartDate) !== Boolean(guidedEndDate)
+    ) {
+      setError("Chọn đủ ngày bắt đầu và ngày kết thúc.");
+      return;
+    }
     let answer = "Bỏ qua";
     if (guidedStartDate && guidedEndDate) {
       answer = `${formatGuidedDate(guidedStartDate)} đến ${formatGuidedDate(
@@ -2990,7 +3410,7 @@ function Planner() {
     } else if (guidedEndDate) {
       answer = `Kết thúc trước ${formatGuidedDate(guidedEndDate)}`;
     }
-    submitGuidedAnswer(answer);
+    void submitGuidedAnswer(answer);
   }
 
   function updateTravelerCount(key: keyof TravelerCounts, delta: number) {
@@ -3003,18 +3423,35 @@ function Planner() {
   }
 
   function openGuidedStep(step: Exclude<GuidedIntakeStep, "complete">) {
+    const intent = exploreResult?.explorer.tripIntent;
     setGuidedIntakeStep(step);
-    setGuidedDraft(guidedIntakeAnswers[step] ?? "");
+    if (intent) {
+      setGuidedIntakeAnswers(guidedAnswersFromTripIntent(intent));
+      setGuidedStartDate(intent.timing.startDate ?? "");
+      setGuidedEndDate(intent.timing.endDate ?? "");
+      setTravelerCounts({
+        adults: intent.travelParty.adults,
+        children: intent.travelParty.children,
+        infants: intent.travelParty.infants,
+        pets: intent.travelParty.pets,
+      });
+    }
+    setGuidedDraft(
+      intent
+        ? step === "destination"
+          ? intent.destination
+          : step === "budget"
+            ? formatTripBudget(intent)
+            : step === "note"
+              ? intent.notes.join(" · ")
+              : guidedIntakeAnswers[step] ?? ""
+        : guidedIntakeAnswers[step] ?? ""
+    );
     setGuidedIntakeOpen(true);
     setError("");
   }
 
   async function sendMessage(requestText?: string, displayUserMessage = true) {
-    if (!user) {
-      const next = `${window.location.pathname}${window.location.search}`;
-      router.push(`/login?next=${encodeURIComponent(next)}`);
-      return;
-    }
     const typedText = requestText?.trim() ?? prompt.trim();
     if (!typedText) {
       setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
@@ -3036,9 +3473,37 @@ function Planner() {
     setPrompt("");
     if (!plan) {
       setInitialPlanningActive(true);
-      setWorkflowStage("exploring");
+      setProcessingStartedAtMs(Date.now());
+      setWorkflowStage("preparing");
     }
-    if (requestUrls.length > 0) {
+    if (!user) {
+      setIntakeKind(requestUrls.length > 0 ? "url" : "prompt");
+      setBackgroundPlanning(true);
+      const createdGuestJobs: GuestUrlImportJob[] = [];
+      if (requestUrls.length > 0) {
+        createdGuestJobs.push(
+          ...enqueueGuestUrlJobs({ content: text, urls: requestUrls })
+        );
+      } else {
+        createdGuestJobs.push(enqueueGuestPromptJob({ content: text }));
+      }
+      setActivePlanningJobs(
+        createdGuestJobs.map((job) => ({ id: job.id, guest: true }))
+      );
+      setError("");
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text: requestUrls.length > 0
+            ? `Mình đang đọc ${requestUrls.length} nguồn và tìm các địa điểm có bằng chứng. Bạn có thể tiếp tục ở đây trong lúc nguồn được xử lý.`
+            : "Mình đang chuẩn bị và lập lịch trình. Bạn có thể chuyển sang màn hình khác trong lúc tác vụ chạy nền.",
+        },
+      ]);
+      return;
+    }
+    if (user && requestUrls.length > 0) {
       setIntakeKind("url");
       setQueueingUrls(true);
       setBackgroundPlanning(true);
@@ -3125,46 +3590,75 @@ function Planner() {
     setWorkflowStage("exploring");
     setError("");
     try {
-      let chatId = activeChatId;
-      let expectedRevision = chatRevision;
-      if (!chatId) {
-        const created = await createTripChat();
-        chatId = created.id;
-        expectedRevision = created.revision;
-        activeChatIdRef.current = chatId;
-        setActiveChatId(chatId);
-        setChatRevision(created.revision);
-        syncPlannerChatUrl(chatId);
-      }
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          const clientTurnId =
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-          await conversationTurn.submitTurn({
-            chatId,
-            content: text,
-            expectedRevision,
-            clientTurnId,
-            attachmentNames: [],
-          });
-          setSelectedMapPlaceKey(null);
-          return;
-        } catch (caught) {
-          if (
-            !(caught instanceof APIError) ||
-            caught.code !== "VERSION_CONFLICT" ||
-            attempt === 2
-          ) {
-            throw caught;
-          }
-          const latest = await getTripChat(chatId);
-          expectedRevision = latest.revision;
-          applyTripChat(latest);
+      if (user) {
+        let chatId = activeChatId;
+        let expectedRevision = chatRevision;
+        if (!chatId) {
+          const created = await createTripChat();
+          chatId = created.id;
+          expectedRevision = created.revision;
+          activeChatIdRef.current = chatId;
+          setActiveChatId(chatId);
+          setChatRevision(created.revision);
+          syncPlannerChatUrl(chatId);
         }
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const clientTurnId =
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            await conversationTurn.submitTurn({
+              chatId,
+              content: text,
+              expectedRevision,
+              clientTurnId,
+              attachmentNames: [],
+            });
+            setSelectedMapPlaceKey(null);
+            return;
+          } catch (caught) {
+            if (
+              !(caught instanceof APIError) ||
+              caught.code !== "VERSION_CONFLICT" ||
+              attempt === 2
+            ) {
+              throw caught;
+            }
+            const latest = await getTripChat(chatId);
+            expectedRevision = latest.revision;
+            applyTripChat(latest);
+          }
+        }
+        throw new Error("Không thể cập nhật chat.");
       }
-      throw new Error("Không thể cập nhật chat.");
+      const nextExploreResult = await exploreFullIntake({
+        rawRequest: text,
+        images: [],
+      });
+      setExploreResult(nextExploreResult);
+      setWorkflowStage("planning");
+      const generation = await createPlanFromExplorer({
+        context: nextExploreResult.explorer,
+        intakeId: nextExploreResult.intakeId,
+        userId: nextExploreResult.userId,
+        allowFinderGapFill: nextExploreResult.allowFinderGapFill,
+        allowReplaceSourcePlaces: nextExploreResult.allowReplaceSourcePlaces,
+      });
+      setPlan(generation.plan);
+      setInitialPlanningActive(false);
+      setWorkflowStage("ready");
+      setSelectedMapPlaceKey(null);
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text: nextExploreResult.allowFinderGapFill
+            ? `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Planner và Finder đã tạo lịch trình và có thể bổ sung địa điểm phù hợp.`
+            : `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Finder không thể bổ sung activity còn thiếu vào lịch trình này.`,
+        },
+      ]);
     } catch (caught) {
       if (activeRequestIdRef.current !== requestId) return;
       const message =
@@ -3184,6 +3678,8 @@ function Planner() {
   }
 
   function resetWorkflow() {
+    chatLoadControllerRef.current?.abort();
+    chatLoadControllerRef.current = null;
     activeRequestIdRef.current += 1;
     activeChatIdRef.current = null;
     setLoading(false);
@@ -3196,6 +3692,7 @@ function Planner() {
     setWorkflowStage("idle");
     setBackgroundPlanning(false);
     setInitialPlanningActive(false);
+    setProcessingStartedAtMs(null);
     setActivePlanningJobs([]);
     setChatCollapsed(false);
     setError("");
@@ -3217,6 +3714,8 @@ function Planner() {
     if (user) {
       setActiveChatId(null);
       setChatRevision(0);
+      setTripIntentVersion(0);
+      setTripIntentPlanStatus("synced");
     }
   }
 
@@ -3225,6 +3724,10 @@ function Planner() {
     setError("");
     await Promise.allSettled(
       jobs.map(async (job) => {
+        if (job.guest) {
+          deleteGuestUrlJob(job.id);
+          return;
+        }
         await deleteUrlImportJob(job.id);
       })
     );
@@ -3235,6 +3738,9 @@ function Planner() {
   async function openTripChat(chatId: string) {
     syncPlannerChatUrl(chatId);
     if (chatId === activeChatIdRef.current) return;
+    chatLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    chatLoadControllerRef.current = controller;
     activeRequestIdRef.current += 1;
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
@@ -3245,11 +3751,12 @@ function Planner() {
     setError("");
     try {
       const [chat, jobsResponse] = await Promise.all([
-        getTripChat(chatId),
+        getTripChat(chatId, { signal: controller.signal }),
         listUrlImportJobs().catch(() => ({ jobs: [] })),
       ]);
-      if (activeChatIdRef.current === chatId) {
+      if (!controller.signal.aborted && activeChatIdRef.current === chatId) {
         applyTripChat(chat);
+        setPlannerEntryResolved(true);
         setUrlJobSnapshot(jobsResponse.jobs);
         const active = jobsResponse.jobs.filter(
           (job) =>
@@ -3257,6 +3764,8 @@ function Planner() {
             (job.status === "queued" || job.status === "running")
         );
         if (active.length) {
+          const oldestStart = Math.min(...active.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
+          setProcessingStartedAtMs(oldestStart);
           setActivePlanningJobs(
             active.map((job) => ({ id: job.id, guest: false }))
           );
@@ -3264,17 +3773,44 @@ function Planner() {
           setInitialPlanningActive(!chat.currentPlan);
           setIntakeKind("url");
           setWorkflowStage(
-            active.some((job) => Boolean(job.explorerTiming))
+            active.every((job) => job.status === "queued")
+              ? "preparing"
+              : active.some((job) => Boolean(job.explorerTiming))
               ? "planning"
               : "exploring"
           );
+        } else {
+          const activeTurn = (chat.turns ?? []).find((turn) =>
+            turn.status === "queued" || turn.status === "classifying" || turn.status === "executing"
+          );
+          if (activeTurn) {
+            setInitialPlanningActive(!chat.currentPlan);
+            setProcessingStartedAtMs(Date.parse(activeTurn.createdAt));
+            setWorkflowStage(
+              activeTurn.status === "queued"
+                ? "preparing"
+                : activeTurn.status === "classifying"
+                  ? "exploring"
+                  : "planning"
+            );
+            void conversationTurn.resumeTurn(activeTurn).catch((caught) => {
+              setInitialPlanningActive(false);
+              setWorkflowStage("failed");
+              setError(caught instanceof Error ? caught.message : "Không thể tiếp tục tác vụ.");
+            });
+          }
         }
       }
     } catch (caught) {
-      if (activeChatIdRef.current === chatId) {
+      if (!controller.signal.aborted && activeChatIdRef.current === chatId) {
         setError(
           caught instanceof Error ? caught.message : "Không thể mở chuyến đi."
         );
+        setPlannerEntryResolved(true);
+      }
+    } finally {
+      if (chatLoadControllerRef.current === controller) {
+        chatLoadControllerRef.current = null;
       }
     }
   }
@@ -3342,10 +3878,26 @@ function Planner() {
   function applyTripChat(chat: TripChat) {
     setGuidedIntakeStep("complete");
     setGuidedIntakeOpen(false);
-    setGuidedIntakeAnswers({});
+    setGuidedIntakeAnswers(
+      chat.currentTripIntent
+        ? guidedAnswersFromTripIntent(chat.currentTripIntent)
+        : {}
+    );
+    setGuidedStartDate(chat.currentTripIntent?.timing.startDate ?? "");
+    setGuidedEndDate(chat.currentTripIntent?.timing.endDate ?? "");
+    if (chat.currentTripIntent) {
+      setTravelerCounts({
+        adults: chat.currentTripIntent.travelParty.adults,
+        children: chat.currentTripIntent.travelParty.children,
+        infants: chat.currentTripIntent.travelParty.infants,
+        pets: chat.currentTripIntent.travelParty.pets,
+      });
+    }
     activeChatIdRef.current = chat.id;
     setActiveChatId(chat.id);
     setChatRevision(chat.revision);
+    setTripIntentVersion(chat.tripIntentVersion);
+    setTripIntentPlanStatus(chat.tripIntentPlanStatus);
     setPlan(chat.currentPlan);
     setExploreResult(
       chat.currentTripIntent
@@ -3359,7 +3911,8 @@ function Planner() {
               preferenceSnapshot: { version: 1, signals: [], effectiveProfile: { version: 1, explicit: [], scores: {}, observationCount: 0 } },
               candidateReviews: chat.candidateReviews,
             },
-            allowPlaceSuggestions: true,
+            allowFinderGapFill: true,
+            allowReplaceSourcePlaces: false,
           }
         : null
     );
@@ -3418,6 +3971,43 @@ function Planner() {
         sendPlannerEntry();
       }
     }
+  }
+
+  function applyTripChatBackgroundResult(chat: TripChat) {
+    if (chat.id !== activeChatIdRef.current) return;
+    setChatRevision(chat.revision);
+    setTripIntentVersion(chat.tripIntentVersion);
+    setTripIntentPlanStatus(chat.tripIntentPlanStatus);
+    setPlan(chat.currentPlan);
+    setExploreResult((current) =>
+      current && chat.currentTripIntent
+        ? {
+            ...current,
+            intakeId: chat.currentIntakeId ?? "",
+            explorer: {
+              ...current.explorer,
+              tripIntent: chat.currentTripIntent,
+              candidateReviews: chat.candidateReviews,
+            },
+          }
+        : current
+    );
+    setWorkflowStage(chat.currentPlan ? "ready" : "idle");
+    setTripChats((current) =>
+      current.map((item) =>
+        item.id === chat.id
+          ? {
+              id: chat.id,
+              title: chat.title,
+              destination: chat.destination,
+              revision: chat.revision,
+              hasPlan: chat.hasPlan,
+              createdAt: chat.createdAt,
+              updatedAt: chat.updatedAt,
+            }
+          : item
+      )
+    );
   }
 
   function handleUrlPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -3515,13 +4105,16 @@ function Planner() {
                             : undefined
                         }
                         className={value ? "is-filled" : ""}
-                        disabled={backgroundPlanning || loading}
+                        disabled={backgroundPlanning || loading || savingTripIntent}
                         key={step}
                         onClick={() => openGuidedStep(step)}
                         title={value || label}
                         type="button"
                       >
                         <span className="plannerIntakeCopy">{label}</span>
+                        {value ? (
+                          <small className="plannerIntakeValue">{value}</small>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -3540,73 +4133,6 @@ function Planner() {
           ) : null}
         </header>
       </div>
-    );
-  }
-
-  function renderPlanningStage(className = "") {
-    return (
-      <section
-        aria-labelledby="planner-background-title"
-        aria-live="polite"
-        className={`plannerBackgroundStage ${className}`.trim()}
-      >
-        <div aria-hidden="true" className="plannerLoadingJourney">
-          <Image
-            alt=""
-            className="plannerLoadingThoughts"
-            height={724}
-            priority
-            src="/images/planner-vietnam-thoughts.png"
-            width={2172}
-          />
-          <svg className="plannerLoadingRoute" viewBox="0 0 520 120">
-            <path d="M58 35 C154 10 188 104 260 82 S370 10 462 35" />
-          </svg>
-          <div className="plannerLoadingStop plannerLoadingStop--search">
-            <span className="plannerLoadingMascot">
-              <PenguinMascot priority size={88} variant="search" />
-            </span>
-            <small>Tìm cảm hứng</small>
-          </div>
-          <div className="plannerLoadingStop plannerLoadingStop--plan">
-            <span className="plannerLoadingMascot">
-              <PenguinMascot priority size={98} variant="plan" />
-            </span>
-            <small>Xếp lịch trình</small>
-          </div>
-          <div className="plannerLoadingStop plannerLoadingStop--ready">
-            <span className="plannerLoadingMascot">
-              <PenguinMascot priority size={88} variant="hi" />
-            </span>
-            <small>Sẵn sàng lên đường</small>
-          </div>
-          <span className="plannerLoadingSpark plannerLoadingSpark--one">✦</span>
-          <span className="plannerLoadingSpark plannerLoadingSpark--two">✦</span>
-        </div>
-        <div className="plannerBackgroundCopy">
-          <h2 id="planner-background-title">
-            Đang lên plan
-            <span aria-hidden="true" className="plannerLoadingDots">
-              <i>.</i>
-              <i>.</i>
-              <i>.</i>
-            </span>
-          </h2>
-        </div>
-        {activePlanningJobs.length ? (
-          <button
-            aria-label="Dừng và lập chuyến khác"
-            className="plannerCancelJob"
-            onClick={() => void cancelBackgroundPlanning()}
-            title="Dừng và lập chuyến khác"
-            type="button"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
-              <path d="m7 7 10 10M17 7 7 17" />
-            </svg>
-          </button>
-        ) : null}
-      </section>
     );
   }
 
@@ -3772,12 +4298,14 @@ function Planner() {
           ) : null}
 
           {!plannerEntryResolved ? (
-            <div className="routeLoading">Đang chuẩn bị chat mới…</div>
+            <div className="routeLoading">Đang tải cuộc trò chuyện…</div>
           ) : (
             <section
               className={`plannerLayout ${
                 !displayedPlan ? "is-new-chat" : ""
-              } ${backgroundPlanning || loading ? "is-planning" : ""}`}
+              } ${backgroundPlanning || loading ? "is-planning" : ""} ${
+                awaitingInitialPlan ? "is-awaiting-plan" : ""
+              }`}
               ref={plannerLayoutRef}
               style={
                 {
@@ -3856,8 +4384,12 @@ function Planner() {
                             </label>
                           </div>
                           <div className="guidedIntakeActions">
-                            <button className="guidedIntakeUpdate" type="submit">
-                              Cập nhật
+                            <button
+                              className="guidedIntakeUpdate"
+                              disabled={savingTripIntent}
+                              type="submit"
+                            >
+                              {savingTripIntent ? "Đang cập nhật…" : "Cập nhật"}
                             </button>
                           </div>
                         </form>
@@ -3866,7 +4398,7 @@ function Planner() {
                           className="guidedTravelerPicker"
                           onSubmit={(event) => {
                             event.preventDefault();
-                            submitGuidedAnswer(travelerAnswer(travelerCounts));
+                            void submitGuidedAnswer(travelerAnswer(travelerCounts));
                           }}
                         >
                           <div className="guidedTravelerRows">
@@ -3928,8 +4460,12 @@ function Planner() {
                             })}
                           </div>
                           <div className="guidedIntakeActions">
-                            <button className="guidedIntakeUpdate" type="submit">
-                              Cập nhật
+                            <button
+                              className="guidedIntakeUpdate"
+                              disabled={savingTripIntent}
+                              type="submit"
+                            >
+                              {savingTripIntent ? "Đang cập nhật…" : "Cập nhật"}
                             </button>
                           </div>
                         </form>
@@ -3937,7 +4473,7 @@ function Planner() {
                         <form
                           onSubmit={(event) => {
                             event.preventDefault();
-                            submitGuidedAnswer(guidedDraft.trim() || "Bỏ qua");
+                            void submitGuidedAnswer(guidedDraft.trim() || "Bỏ qua");
                           }}
                         >
                           <div className="guidedIntakeAnswer">
@@ -3960,12 +4496,13 @@ function Planner() {
                               aria-label="Cập nhật thông tin"
                               className="guidedIntakeUpdate"
                               disabled={
-                                guidedIntakeStep === "destination" &&
-                                !guidedDraft.trim()
+                                savingTripIntent ||
+                                (guidedIntakeStep === "destination" &&
+                                  !guidedDraft.trim())
                               }
                               type="submit"
                             >
-                              Cập nhật
+                              {savingTripIntent ? "Đang cập nhật…" : "Cập nhật"}
                             </button>
                           </div>
                         </form>
@@ -3980,7 +4517,9 @@ function Planner() {
                 className={`plannerChat panel ${
                   chatCollapsed ? "is-collapsed" : ""
                 } ${
-                  displayedPlan ? "plannerChat--compact" : ""
+                  displayedPlan || awaitingInitialPlan
+                    ? "plannerChat--compact"
+                    : ""
                 }`}
                 ref={plannerChatRef}
                 style={
@@ -3994,6 +4533,11 @@ function Planner() {
                     : undefined
                 }
               >
+                <BackgroundUrlJobs
+                  authenticated={Boolean(user)}
+                  enabled={!authLoading}
+                  placement="planner-chat"
+                />
                 <PlannerChatHeader
                   collapsed={chatCollapsed}
                   contentId="planner-chat-content"
@@ -4033,23 +4577,12 @@ function Planner() {
                         Planner đang chạy nền. Bạn có thể chuyển tab; tiến trình
                         sẽ tiếp tục cho đến khi lịch trình hoàn tất.
                       </span>
-                      <span aria-hidden="true" className="plannerPenguinTrack">
-                        <i className="plannerTrackDash plannerTrackDash--one" />
-                        <i className="plannerTrackDash plannerTrackDash--two" />
-                        <i className="plannerTrackSpark plannerTrackSpark--one">✦</i>
-                        <i className="plannerTrackSpark plannerTrackSpark--two">✦</i>
-                        <span className="plannerRunningPenguin">
-                          <PenguinMascot
-                            className="plannerRunningPenguinImage"
-                            size={52}
-                            variant="search"
-                          />
-                          <i className="plannerRunnerDust plannerRunnerDust--one" />
-                          <i className="plannerRunnerDust plannerRunnerDust--two" />
-                        </span>
+                      <span aria-hidden="true" className="plannerLoadingPenguin">
+                        <PenguinMascot size={58} variant="search" />
                       </span>
                       <span className="plannerProcessingMeta">
                         <span className="plannerProcessingCopy">
+                          <small>{processingStageLabel(workflowStage)}</small>
                           <strong>
                             {processingActivity(
                               workflowStage,
@@ -4171,13 +4704,16 @@ function Planner() {
                                     : undefined
                                 }
                                 className={value ? "is-filled" : ""}
-                                disabled={backgroundPlanning || loading}
+                                disabled={backgroundPlanning || loading || savingTripIntent}
                                 key={step}
                                 onClick={() => openGuidedStep(step)}
                                 title={value || label}
                                 type="button"
                               >
                                 <span className="plannerIntakeCopy">{label}</span>
+                                {value ? (
+                                  <small className="plannerIntakeValue">{value}</small>
+                                ) : null}
                               </button>
                             );
                           })}
@@ -4665,28 +5201,14 @@ function Planner() {
                               ) : null}
                               {displayedPlanDay.items.map((item, itemIndex) => {
                                 const displayNotes = formatPlanNote(item.notes);
-                                const sourceActivityNote = formatPlanNote(
-                                  item.sourceActivity
-                                );
-                                const personalNotes = formatPlanNote(
-                                  item.personalNotes
-                                );
-                                const hasUrlEvidence = (
-                                  item.sourceRefs ?? []
-                                ).some(
-                                  (sourceRef) =>
-                                    sourceRef.startsWith("http://") ||
-                                    sourceRef.startsWith("https://")
-                                );
-                                const additionalContextNote =
-                                  displayNotes &&
-                                  !hasUrlEvidence &&
-                                  !sourceActivityNote
-                                    ? displayNotes
-                                    : null;
+                                const notePresentation =
+                                  planItemNotePresentation(item);
+                                const sourceActivityNote =
+                                  notePresentation.sourceText;
+                                const personalNotes =
+                                  notePresentation.personalText;
                                 const activityNoteCount = [
                                   sourceActivityNote,
-                                  additionalContextNote,
                                   personalNotes,
                                 ].filter(Boolean).length;
                                  const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
@@ -4831,13 +5353,17 @@ function Planner() {
                                       aria-controls={notePanelId}
                                       aria-expanded={isNoteEditorOpen}
                                       aria-label={
-                                        activityNoteCount
+                                        isNoteEditorOpen
+                                          ? `Đóng ghi chú cho ${displayItemName}`
+                                          : activityNoteCount
                                           ? `Mở ${activityNoteCount} mục ghi chú cho ${displayItemName}`
                                           : `Thêm ghi chú cho ${displayItemName}`
                                       }
                                       className="itineraryActionButton itineraryNoteActionButton"
-                                      onClick={() => {
+                                      onClick={(event) => {
+                                        event.stopPropagation();
                                         setOpenQuickActionKey(null);
+                                        setOpenHoursKey(null);
                                         setNoteEditor(
                                           isNoteEditorOpen
                                             ? null
@@ -4846,8 +5372,8 @@ function Planner() {
                                                 itemId: item.itemId ?? null,
                                                 itemName: item.name,
                                                 sourceNote: sourceActivityNote,
-                                                additionalContext:
-                                                  additionalContextNote,
+                                                sourceLabel:
+                                                  notePresentation.sourceLabel,
                                                 personalNotes:
                                                   personalNotes ?? "",
                                               }
@@ -4858,17 +5384,22 @@ function Planner() {
                                           ? "Ghi chú hoạt động"
                                           : "Thêm ghi chú"
                                       }
-                                      role="menuitem"
                                       type="button"
                                     >
-                                      <svg viewBox="0 0 24 24">
+                                      <svg
+                                        aria-hidden="true"
+                                        className="itineraryNoteActionIcon"
+                                        viewBox="0 0 24 24"
+                                      >
                                         <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
                                         <path d="M14 3v6h6M8 13h8M8 17h5" />
                                       </svg>
+                                      <span className="itineraryNoteActionLabel">
+                                        Ghi chú
+                                      </span>
                                       {activityNoteCount ? (
                                         <span
                                           className="activityNotesButtonCount"
-                                          aria-hidden="true"
                                         >
                                           {activityNoteCount}
                                         </span>
@@ -4908,25 +5439,15 @@ function Planner() {
                                         );
                                       }}
                                     >
-                                      {noteEditor.sourceNote ||
-                                      noteEditor.additionalContext ? (
+                                      {noteEditor.sourceNote ? (
                                         <div className="activityNotesReferences">
-                                          {noteEditor.sourceNote ? (
-                                            <section>
-                                              <strong>
-                                                Từ nguồn tham khảo
-                                              </strong>
-                                              <p>{noteEditor.sourceNote}</p>
-                                            </section>
-                                          ) : null}
-                                          {noteEditor.additionalContext ? (
-                                            <section>
-                                              <strong>Thông tin bổ sung</strong>
-                                              <p>
-                                                {noteEditor.additionalContext}
-                                              </p>
-                                            </section>
-                                          ) : null}
+                                          <section>
+                                            <strong>
+                                              {noteEditor.sourceLabel ??
+                                                "Thông tin bổ sung"}
+                                            </strong>
+                                            <p>{noteEditor.sourceNote}</p>
+                                          </section>
                                         </div>
                                       ) : null}
                                       <label
@@ -4972,6 +5493,14 @@ function Planner() {
                                     displayedExploreResult?.explorer.tripIntent
                                       .timing.startDate
                                   );
+                                const openingHoursSchedule =
+                                  formatOpeningHoursSchedule(item.openingHours);
+                                const activeOpeningDay =
+                                  dayOfWeekForTripDay(
+                                    displayedPlanDay.day,
+                                    displayedExploreResult?.explorer.tripIntent
+                                      .timing.startDate
+                                  ) ?? currentDayOfWeekInVietnam();
                                 return (
                                   <Fragment
                                     key={
@@ -5260,7 +5789,6 @@ function Planner() {
                                                             target="_blank"
                                                             title="Mở đánh giá trên Google Maps"
                                                           >
-                                                            <GoogleMapsTinyIcon />
                                                             <small>
                                                               {formatCompactCount(
                                                                 item.reviewCount
@@ -5303,8 +5831,35 @@ function Planner() {
                                                       <span>URL</span>
                                                     </a>
                                                   ) : null}
-                                                  {(itemNoteAction ||
-                                                    (item.itemId && activeChatId)) ? (
+                                                  <span
+                                                    aria-label={
+                                                      isFoodStop
+                                                        ? "Ăn uống"
+                                                        : "Hoạt động tham quan"
+                                                    }
+                                                    className="itineraryTypeIcon"
+                                                    role="img"
+                                                    title={
+                                                      isFoodStop
+                                                        ? "Ăn uống"
+                                                        : "Hoạt động tham quan"
+                                                    }
+                                                  >
+                                                    {isFoodStop ? (
+                                                      <svg viewBox="0 0 24 24">
+                                                        <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                                        <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                                                      </svg>
+                                                    ) : (
+                                                      <svg viewBox="0 0 24 24">
+                                                        <circle cx="6" cy="6" r="2.5" />
+                                                        <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                                                        <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                                        <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                                                      </svg>
+                                                    )}
+                                                  </span>
+                                                  {item.itemId && activeChatId ? (
                                                     <div className="itineraryPlaceQuickActionMenu">
                                                       <button
                                                         aria-expanded={
@@ -5338,9 +5893,7 @@ function Planner() {
                                                           className="itineraryPlaceQuickActionPopup"
                                                           role="menu"
                                                         >
-                                                          {itemNoteAction}
-                                                          {item.itemId && activeChatId ? (
-                                                            <>
+                                                          <>
                                                               <button
                                                                 aria-label={`Sửa ${displayItemName}`}
                                                                 className="itineraryActionButton"
@@ -5348,8 +5901,7 @@ function Planner() {
                                                                   setOpenQuickActionKey(null);
                                                                   openItemEditor(
                                                                     displayedPlanDay.day,
-                                                                    item,
-                                                                    personalNotes
+                                                                    item
                                                                   );
                                                                 }}
                                                                 role="menuitem"
@@ -5378,50 +5930,75 @@ function Planner() {
                                                                   <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
                                                                 </svg>
                                                               </button>
-                                                            </>
-                                                          ) : null}
+                                                          </>
                                                         </div>
                                                       ) : null}
                                                     </div>
                                                   ) : null}
-                                                <span
-                                                  aria-label={
-                                                    isFoodStop
-                                                      ? "Ăn uống"
-                                                      : "Hoạt động tham quan"
-                                                  }
-                                                  className="itineraryTypeIcon"
-                                                  role="img"
-                                                  title={
-                                                    isFoodStop
-                                                      ? "Ăn uống"
-                                                      : "Hoạt động tham quan"
-                                                  }
-                                                >
-                                                  {isFoodStop ? (
-                                                    <svg viewBox="0 0 24 24">
-                                                      <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                                                      <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                                                    </svg>
-                                                  ) : (
-                                                    <svg viewBox="0 0 24 24">
-                                                      <circle cx="6" cy="6" r="2.5" />
-                                                      <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7-.7" />
-                                                      <path d="m2 21 6-9 4 5 2-3 8 7" />
-                                                      <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                                                    </svg>
-                                                  )}
-                                                </span>
                                                 </div>
                                               </header>
-                                              {openingHoursText ? (
-                                                <div className="itineraryPlaceHours">
-                                                  <span>Giờ mở cửa</span>
-                                                  <strong>
-                                              {openingHoursText}
-                                                  </strong>
-                                                </div>
+                                              {openingHoursText &&
+                                              !isFoodStop ? (
+                                                <details
+                                                  className="itineraryPlaceHours"
+                                                  open={
+                                                    openHoursKey ===
+                                                    quickActionKey
+                                                  }
+                                                  onClick={(event) =>
+                                                    event.stopPropagation()
+                                                  }
+                                                >
+                                                  <summary
+                                                    onClick={(event) => {
+                                                      event.preventDefault();
+                                                      setNoteEditor(null);
+                                                      setOpenHoursKey(
+                                                        openHoursKey ===
+                                                          quickActionKey
+                                                          ? null
+                                                          : quickActionKey
+                                                      );
+                                                    }}
+                                                  >
+                                                    <span className="itineraryPlaceHoursLabel">
+                                                      Giờ mở cửa
+                                                    </span>
+                                                    <strong>
+                                                      {openingHoursText}
+                                                    </strong>
+                                                    <svg
+                                                      aria-hidden="true"
+                                                      className="itineraryPlaceHoursChevron"
+                                                      viewBox="0 0 24 24"
+                                                    >
+                                                      <path d="m7 10 5 5 5-5" />
+                                                    </svg>
+                                                  </summary>
+                                                  {openingHoursSchedule.length >
+                                                  0 ? (
+                                                    <div className="itineraryPlaceHoursSchedule">
+                                                      {openingHoursSchedule.map(
+                                                        (entry, scheduleIndex) => (
+                                                          <div
+                                                            className={
+                                                              entry.dayOfWeek ===
+                                                              activeOpeningDay
+                                                                ? "isActiveDay"
+                                                                : undefined
+                                                            }
+                                                            key={`${entry.dayOfWeek ?? "unknown"}-${scheduleIndex}`}
+                                                          >
+                                                            <span>{entry.label}</span>
+                                                            <strong>{entry.value}</strong>
+                                                          </div>
+                                                        )
+                                                      )}
+                                                    </div>
+                                                  ) : null}
+                                                </details>
                                               ) : null}
+                                              {itemNoteAction}
                                             </div>
                                             {itemNotePanel}
                                           </div>
@@ -5591,6 +6168,52 @@ function Planner() {
                                             )}
                                           </div>
                                         ) : null}
+                                      </div>
+                                    ) : transportLeg &&
+                                      transportLegIndex >= 0 ? (
+                                      <div
+                                        className="itineraryRouteRetry"
+                                        role="status"
+                                      >
+                                        <div>
+                                          <strong>
+                                            Không tính được tuyến phù hợp
+                                          </strong>
+                                          <small>
+                                            Tính lại chặng từ {transportLeg.fromPlace} đến {transportLeg.toPlace}.
+                                          </small>
+                                          {transportLegRetryErrors[
+                                            transportOptionsPanelKey
+                                          ] ? (
+                                            <span role="alert">
+                                              {
+                                                transportLegRetryErrors[
+                                                  transportOptionsPanelKey
+                                                ]
+                                              }
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <button
+                                          disabled={
+                                            retryingTransportLegKey ===
+                                            transportOptionsPanelKey
+                                          }
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            void retryPlanTransportLeg(
+                                              displayedPlanDay.day,
+                                              transportLegIndex
+                                            );
+                                          }}
+                                          type="button"
+                                        >
+                                          {retryingTransportLegKey ===
+                                          transportOptionsPanelKey
+                                            ? "Đang tính…"
+                                            : "Thử lại"}
+                                        </button>
                                       </div>
                                     ) : null}
                                   </Fragment>
@@ -5925,41 +6548,6 @@ function Planner() {
                     bản đồ.
                   </p>
                 ) : null}
-                {editingItem.notesExpanded ? (
-                  <div className="itineraryMutationField editPlaceNotesField">
-                    <label htmlFor="edit-place-notes">
-                      <span className="editPlaceSearchLabel">Ghi chú</span>
-                    </label>
-                    <textarea
-                      autoFocus={!editingItem.personalNotes}
-                      id="edit-place-notes"
-                      onChange={(event) =>
-                        setEditingItem({
-                          ...editingItem,
-                          personalNotes: event.target.value,
-                        })
-                      }
-                      placeholder="Viết ghi chú cho địa điểm này…"
-                      rows={4}
-                      value={editingItem.personalNotes}
-                    />
-                  </div>
-                ) : (
-                  <button
-                    aria-controls="edit-place-notes"
-                    aria-expanded="false"
-                    className="editPlaceAddNotes"
-                    onClick={() =>
-                      setEditingItem({ ...editingItem, notesExpanded: true })
-                    }
-                    type="button"
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24">
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
-                    Thêm ghi chú
-                  </button>
-                )}
               </div>
               <div className="itineraryMutationActions">
                 <button
@@ -6462,6 +7050,30 @@ function UnscheduledPlacesSection({
                               <span>URL</span>
                             </a>
                           ) : null}
+                          <span
+                            aria-label={
+                              isFoodStop ? "Ăn uống" : "Hoạt động tham quan"
+                            }
+                            className="itineraryTypeIcon"
+                            role="img"
+                            title={
+                              isFoodStop ? "Ăn uống" : "Hoạt động tham quan"
+                            }
+                          >
+                            {isFoodStop ? (
+                              <svg viewBox="0 0 24 24">
+                                <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                              </svg>
+                            ) : (
+                              <svg viewBox="0 0 24 24">
+                                <circle cx="6" cy="6" r="2.5" />
+                                <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                                <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                              </svg>
+                            )}
+                          </span>
                         </div>
                       </header>
                       {place.address ? (
@@ -6485,28 +7097,6 @@ function UnscheduledPlacesSection({
                         </p>
                       ) : null}
                     </div>
-                    <span
-                      aria-label={
-                        isFoodStop ? "Ăn uống" : "Hoạt động tham quan"
-                      }
-                      className="itineraryTypeIcon"
-                      role="img"
-                      title={isFoodStop ? "Ăn uống" : "Hoạt động tham quan"}
-                    >
-                      {isFoodStop ? (
-                        <svg viewBox="0 0 24 24">
-                          <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                          <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                        </svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24">
-                          <circle cx="6" cy="6" r="2.5" />
-                          <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
-                          <path d="m2 21 6-9 4 5 2-3 8 7" />
-                          <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                        </svg>
-                      )}
-                    </span>
                   </div>
                 </article>
               </div>
@@ -6735,11 +7325,20 @@ function processingDescription(
   return "Đang hiểu điểm đến, thời lượng, ngân sách, sở thích và ràng buộc.";
 }
 
+function processingStageLabel(stage: WorkflowStage): string {
+  if (stage === "preparing") return "Bước 1/3 · Chuẩn bị";
+  if (stage === "planning") return "Bước 3/3 · Lập kế hoạch";
+  return "Bước 2/3 · Khám phá";
+}
+
 function processingActivity(
   stage: WorkflowStage,
   intakeKind: IntakeKind,
   elapsed: number
 ): string {
+  if (stage === "preparing") {
+    return "Đang chuẩn bị yêu cầu chuyến đi";
+  }
   if (stage === "planning") {
     if (elapsed < 6) return "Đang tạo khung chuyến đi theo từng ngày";
     if (elapsed < 14) return "Đang xếp địa điểm, bữa ăn và thời gian nghỉ";
@@ -6833,9 +7432,6 @@ function itinerarySourceLabel(
       provider,
       displayUrl: compactSourceUrl(sourceRef),
     };
-  }
-  if (source === "finder_suggestion" || source === "finder") {
-    return null;
   }
   if (source === "selected_place") {
     return {
@@ -6991,17 +7587,24 @@ function formatOpeningHoursForPlanDay(
   startDate?: string | null
 ): string | null {
   if (!openingHours?.length) return null;
-  const dayOfWeek = dayOfWeekForTripDay(dayNumber, startDate);
+  const dayOfWeek =
+    dayOfWeekForTripDay(dayNumber, startDate) ?? currentDayOfWeekInVietnam();
   const entry = openingHours.find(
-    (candidate) => dayOfWeek != null && candidate.dayOfWeek === dayOfWeek
+    (candidate) => openingHourDayNumber(candidate) === dayOfWeek
   );
-  if (!entry) return formatOpeningHoursSummary(openingHours);
+  if (!entry) {
+    return (
+      formatOpeningHoursSchedule(openingHours)[0]?.value ??
+      formatOpeningHoursSummary(openingHours)
+    );
+  }
   if (entry?.is24Hours) return "Mở cửa 24 giờ";
   return formatOpeningHourSlots(entry);
 }
 
 function formatOpeningHoursSummary(
   openingHours: Array<{
+    dayOfWeek?: number | null;
     dayName?: string | null;
     rawTimeSlots?: string | null;
     openTime?: string | null;
@@ -7026,6 +7629,109 @@ function formatOpeningHoursSummary(
       entry.label ? `${entry.label}: ${entry.value}` : entry.value
     )
     .join("; ");
+}
+
+function formatOpeningHoursSchedule(
+  openingHours:
+    | Array<{
+        dayOfWeek?: number | null;
+        dayName?: string | null;
+        rawTimeSlots?: string | null;
+        openTime?: string | null;
+        closeTime?: string | null;
+        is24Hours?: boolean | null;
+      }>
+    | undefined
+): Array<{ dayOfWeek: number | null; label: string; value: string }> {
+  if (!openingHours?.length) return [];
+
+  return openingHours
+    .map((entry) => {
+      const dayOfWeek = openingHourDayNumber(entry);
+      const value = entry.is24Hours
+        ? "Mở cửa 24 giờ"
+        : formatOpeningHourSlots(entry);
+      if (!value) return null;
+      return {
+        dayOfWeek,
+        label:
+          (dayOfWeek != null && FULL_OPENING_HOUR_DAY_LABELS[dayOfWeek]) ||
+          entry.dayName?.trim() ||
+          "Ngày khác",
+        value,
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is { dayOfWeek: number | null; label: string; value: string } =>
+        entry != null
+    )
+    .sort(
+      (left, right) =>
+        (left.dayOfWeek ?? Number.MAX_SAFE_INTEGER) -
+        (right.dayOfWeek ?? Number.MAX_SAFE_INTEGER)
+    );
+}
+
+const FULL_OPENING_HOUR_DAY_LABELS: Record<number, string> = {
+  1: "Thứ Hai",
+  2: "Thứ Ba",
+  3: "Thứ Tư",
+  4: "Thứ Năm",
+  5: "Thứ Sáu",
+  6: "Thứ Bảy",
+  7: "Chủ Nhật",
+};
+
+function openingHourDayNumber(entry: {
+  dayOfWeek?: number | null;
+  dayName?: string | null;
+}): number | null {
+  if (
+    entry.dayOfWeek != null &&
+    entry.dayOfWeek >= 1 &&
+    entry.dayOfWeek <= 7
+  ) {
+    return entry.dayOfWeek;
+  }
+
+  const normalized = entry.dayName
+    ?.trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return null;
+  const dayNumbers: Record<string, number> = {
+    monday: 1,
+    "thu hai": 1,
+    "thu 2": 1,
+    t2: 1,
+    tuesday: 2,
+    "thu ba": 2,
+    "thu 3": 2,
+    t3: 2,
+    wednesday: 3,
+    "thu tu": 3,
+    "thu 4": 3,
+    t4: 3,
+    thursday: 4,
+    "thu nam": 4,
+    "thu 5": 4,
+    t5: 4,
+    friday: 5,
+    "thu sau": 5,
+    "thu 6": 5,
+    t6: 5,
+    saturday: 6,
+    "thu bay": 6,
+    "thu 7": 6,
+    t7: 6,
+    sunday: 7,
+    "chu nhat": 7,
+    cn: 7,
+  };
+  return dayNumbers[normalized] ?? null;
 }
 
 function formatOpeningHourSlots(entry: {
@@ -7069,13 +7775,23 @@ function dayOfWeekForTripDay(
   return day === 0 ? 7 : day;
 }
 
-function GoogleMapsTinyIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M12 21s6-5.4 6-11a6 6 0 0 0-12 0c0 5.6 6 11 6 11Z" />
-      <circle cx="12" cy="10" r="2.2" />
-    </svg>
-  );
+function currentDayOfWeekInVietnam(): number {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    weekday: "long",
+  })
+    .format(new Date())
+    .toLowerCase();
+  const dayNumbers: Record<string, number> = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 7,
+  };
+  return dayNumbers[weekday] ?? 1;
 }
 
 function transportModeLabel(mode: string): string {

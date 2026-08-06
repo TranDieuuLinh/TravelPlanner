@@ -9,6 +9,13 @@ export type OpeningHourEntry = {
   is24Hours?: boolean | null;
 };
 
+export type PlanNoteSource = {
+  type: string;
+  ref?: string | null;
+  evidenceTypes?: string[];
+  fetchedAt?: string | null;
+};
+
 export type PlanItem = {
   itemId?: string | null;
   placeId?: string | null;
@@ -27,6 +34,7 @@ export type PlanItem = {
   sourceTimeHint?: string | null;
   sourceActivity?: string | null;
   notes?: string | null;
+  noteSources?: PlanNoteSource[];
   personalNotes?: string | null;
   imageUrls?: string[];
   rating?: number | null;
@@ -340,6 +348,11 @@ export type ExplorePlace = {
   preferenceLevel?: "mentioned" | "preferred" | "must_visit";
   attributes?: string[];
   notes?: string | null;
+  noteSources?: PlanNoteSource[];
+  personalNotes?: string | null;
+  sourceRefs?: string[];
+  sourceProvider?: string | null;
+  sourceActivity?: string | null;
   imageUrls?: string[];
   rating?: number | null;
   reviewCount?: number | null;
@@ -351,7 +364,8 @@ export type ExploreResponse = {
   intakeId: string;
   userId?: string | null;
   explorer: ExplorerContext;
-  allowPlaceSuggestions: boolean;
+  allowFinderGapFill: boolean;
+  allowReplaceSourcePlaces: boolean;
   timingReport?: ExplorerTimingReport | null;
 };
 
@@ -403,6 +417,7 @@ export type ExplorerTimingReport = {
   providerAttempts?: Array<{
     candidate: string;
     provider: string;
+    attemptedQueries: string[];
     aliasQueryCount: number;
     queueWaitSeconds: number;
     executionSeconds: number;
@@ -466,6 +481,8 @@ export type TripChatSummary = {
 };
 
 export type TripChat = TripChatSummary & {
+  tripIntentVersion: number;
+  tripIntentPlanStatus: "synced" | "queued" | "running" | "failed";
   currentIntakeId?: string | null;
   currentPlan: TravelPlan | null;
   currentTripIntent: TripIntent | null;
@@ -473,6 +490,7 @@ export type TripChat = TripChatSummary & {
   latestExplorerTiming?: ExplorerTimingReport | null;
   latestPlannerTiming?: PlanTimingReport | null;
   messages: TripChatMessage[];
+  turns: TripChatTurn[];
 };
 
 export type UrlImportJob = {
@@ -483,6 +501,7 @@ export type UrlImportJob = {
   url: string;
   forceRefresh: boolean;
   status: "queued" | "running" | "succeeded" | "failed";
+  phase: "queued" | "exploring" | "planning" | "complete";
   queuePosition: number | null;
   attemptCount: number;
   resultRevision: number | null;
@@ -631,7 +650,8 @@ export async function runPlannerIntake(
     context: explore.explorer,
     intakeId: explore.intakeId,
     userId: explore.userId,
-    allowPlaceSuggestions: explore.allowPlaceSuggestions
+    allowFinderGapFill: explore.allowFinderGapFill,
+    allowReplaceSourcePlaces: explore.allowReplaceSourcePlaces
   });
 
   return { explore, plan: generation.plan };
@@ -673,7 +693,8 @@ export async function createPlanFromExplorer(input: {
   intakeId?: string | null;
   userId?: string | null;
   selectedPlaces?: ExplorePlace[];
-  allowPlaceSuggestions?: boolean;
+  allowFinderGapFill?: boolean;
+  allowReplaceSourcePlaces?: boolean;
   signal?: AbortSignal;
 }): Promise<PlanGenerationResult> {
   const selectedPlaces = input.selectedPlaces ?? [];
@@ -687,7 +708,8 @@ export async function createPlanFromExplorer(input: {
       tripIntent: input.context.tripIntent,
       intakeId: input.intakeId ?? null,
       userId: input.userId ?? null,
-      allowPlaceSuggestions: input.allowPlaceSuggestions ?? true,
+      allowFinderGapFill: input.allowFinderGapFill ?? true,
+      allowReplaceSourcePlaces: input.allowReplaceSourcePlaces ?? false,
       candidateReviews: input.context.candidateReviews ?? [],
       selectedPlaces: selectedPlaces.map((place) => ({
         name: place.name,
@@ -701,6 +723,7 @@ export async function createPlanFromExplorer(input: {
         tags: [place.category, ...(place.attributes ?? [])],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
         notes: place.notes ?? null,
+        noteSources: place.noteSources ?? [],
         imageUrls: place.imageUrls ?? [],
         rating: place.rating ?? null,
         reviewCount: place.reviewCount ?? null
@@ -753,6 +776,22 @@ export async function getTripChat(
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChat> {
   return apiFetch<TripChat>(`/trip-chats/${chatId}`, init);
+}
+
+export async function updateTripChatIntent(input: {
+  chatId: string;
+  tripIntent: TripIntent;
+  expectedRevision: number;
+  expectedTripIntentVersion: number;
+}): Promise<TripChat> {
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/trip-intent`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      tripIntent: input.tripIntent,
+      expectedRevision: input.expectedRevision,
+      expectedTripIntentVersion: input.expectedTripIntentVersion,
+    }),
+  });
 }
 
 export async function deleteTripChat(chatId: string): Promise<void> {
@@ -868,7 +907,6 @@ export type AddItemInput = {
   durationMinutes?: number;
   latitude?: number | null;
   longitude?: number | null;
-  notes?: string | null;
   personalNotes?: string | null;
   tags?: string[];
   position?: number | null;
@@ -886,7 +924,6 @@ export type UpdateItemInput = {
   durationMinutes?: number | null;
   latitude?: number | null;
   longitude?: number | null;
-  notes?: string | null;
   personalNotes?: string | null;
   tags?: string[] | null;
 };
@@ -907,7 +944,6 @@ export async function addTripChatItem(input: {
   if (input.item.durationMinutes) form.append("durationMinutes", String(input.item.durationMinutes));
   if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
-  if (input.item.notes) form.append("notes", input.item.notes);
   if (input.item.personalNotes) form.append("personalNotes", input.item.personalNotes);
   if (input.item.position != null) form.append("position", String(input.item.position));
 
@@ -934,7 +970,6 @@ export async function updateTripChatItem(input: {
   if (input.item.durationMinutes != null) form.append("durationMinutes", String(input.item.durationMinutes));
   if (input.item.latitude != null) form.append("latitude", String(input.item.latitude));
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
-  if (input.item.notes !== undefined) form.append("notes", input.item.notes || "");
   if (input.item.personalNotes !== undefined) form.append("personalNotes", input.item.personalNotes || "");
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
@@ -1057,6 +1092,23 @@ export async function selectTripChatTransportOption(input: {
   );
 }
 
+export async function retryTripChatTransportLeg(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  legIndex: number;
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  return apiFetch<TripChat>(
+    `/trip-chats/${input.chatId}/plan/days/${input.day}/transport-legs/${input.legIndex}/retry`,
+    {
+      method: "POST",
+      body: form
+    }
+  );
+}
+
 // --- Conversation supervisor endpoints -------------------------------------
 
 export async function createTripChatTurn(input: {
@@ -1084,6 +1136,10 @@ export async function getTripChatTurn(input: {
   return apiFetch<TripChatTurn>(
     `/trip-chats/${input.chatId}/turns/${input.turnId}`
   );
+}
+
+export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
+  return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
 }
 
 export async function executeTripChatTurn(input: {

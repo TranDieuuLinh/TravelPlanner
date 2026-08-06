@@ -58,15 +58,56 @@ async function parseError(response: Response): Promise<APIError> {
   return new APIError(response.status, body);
 }
 
-async function refreshSession(): Promise<boolean> {
+let refreshSessionPromise: Promise<boolean> | null = null;
+
+type NavigatorWithLocks = Navigator & {
+  locks?: {
+    request<T>(
+      name: string,
+      callback: () => Promise<T>
+    ): Promise<T>;
+  };
+};
+
+async function performSessionRefresh(observedCsrf?: string): Promise<boolean> {
   const csrf = getCookie("vsf_csrf");
   if (!csrf) return false;
-  const response = await fetch(`${apiBase}/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "X-CSRF-Token": decodeURIComponent(csrf) }
+
+  // Another tab may have refreshed while this request was waiting for the
+  // browser-wide lock. Its new cookies are already available to this tab, so
+  // retry the original request instead of rotating the token a second time.
+  if (observedCsrf && csrf !== observedCsrf) return true;
+
+  try {
+    const response = await fetch(`${apiBase}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": decodeURIComponent(csrf) }
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function refreshSession(observedCsrf?: string): Promise<boolean> {
+  if (refreshSessionPromise) return refreshSessionPromise;
+
+  refreshSessionPromise = (async () => {
+    const locks = typeof navigator !== "undefined"
+      ? (navigator as NavigatorWithLocks).locks
+      : undefined;
+    if (locks) {
+      return locks.request("vsf-auth-refresh", () =>
+        performSessionRefresh(observedCsrf)
+      );
+    }
+    return performSessionRefresh(observedCsrf);
+  })().finally(() => {
+    refreshSessionPromise = null;
   });
-  return response.ok;
+
+  return refreshSessionPromise;
 }
 
 export async function apiFetch<T>(
@@ -75,6 +116,7 @@ export async function apiFetch<T>(
   retryAuth = true
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
+  const observedCsrf = getCookie("vsf_csrf");
   const headers = new Headers(init.headers);
   const bodyNeedsJsonContentType = (
     init.body
@@ -102,7 +144,12 @@ export async function apiFetch<T>(
   }
 
   const isAuthRoute = path.startsWith("/auth/");
-  if (response.status === 401 && retryAuth && !isAuthRoute && await refreshSession()) {
+  if (
+    response.status === 401 &&
+    retryAuth &&
+    !isAuthRoute &&
+    await refreshSession(observedCsrf)
+  ) {
     return apiFetch<T>(path, init, false);
   }
   if (!response.ok) throw await parseError(response);

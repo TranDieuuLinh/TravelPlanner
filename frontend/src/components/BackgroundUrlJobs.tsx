@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   deleteUrlImportJob,
   listActiveTripChatTurns,
@@ -15,11 +15,23 @@ import {
   type TripChatTurn,
   type UrlImportJob
 } from "@/lib/plans";
+import {
+  deleteGuestUrlJob,
+  GUEST_URL_JOBS_EVENT,
+  listGuestUrlJobs,
+  reprocessGuestUrlJob,
+  retryGuestUrlJob,
+  type GuestUrlImportJob
+} from "@/lib/guest-url-jobs";
 import { urlPlaceCountLabel } from "@/lib/url-place-count";
 
 const TERMINAL = new Set(["succeeded", "failed"]);
 const ACTIVE = new Set(["queued", "running"]);
-type DisplayJob = UrlImportJob;
+type DisplayJob = UrlImportJob | GuestUrlImportJob;
+
+function isGuestJob(job: DisplayJob): job is GuestUrlImportJob {
+  return "storage" in job && job.storage === "guest-memory";
+}
 
 function sourceLabel(value: string) {
   try {
@@ -112,7 +124,7 @@ function runningActivity(job: DisplayJob, elapsed: number) {
 }
 
 function isPlanningJob(job: DisplayJob) {
-  return Boolean(job.explorerTiming);
+  return job.phase === "planning";
 }
 
 function progressStage(job: DisplayJob) {
@@ -235,20 +247,35 @@ function ProviderAttempts({
     <details className="backgroundJobProviderAttempts" open>
       <summary>Chi tiết từng lần resolve ({attempts.length})</summary>
       <div className="backgroundJobProviderAttemptList">
-        {attempts.map((attempt, index) => (
-          <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
-            <strong>{attempt.candidate}</strong>
-            <span>{providerLabel(attempt.provider)}</span>
-            <span>{attempt.aliasQueryCount} keyword</span>
-            <span>chờ {timingLabel(attempt.queueWaitSeconds)}</span>
-            <span>chạy {timingLabel(attempt.executionSeconds)}</span>
-            <span>
-              {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
-                ? "đã xác định"
-                : attempt.rejectionReason ?? attempt.outcome}
-            </span>
-          </div>
-        ))}
+        {attempts.map((attempt, index) => {
+          const isKnowledgeGraph =
+            attempt.provider === "knowledge_graph" || attempt.provider === "database";
+          const lookupCount = isKnowledgeGraph
+            ? attempt.attemptedQueries?.length ?? 0
+            : attempt.aliasQueryCount;
+          return (
+            <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
+              <div className="backgroundJobAttemptHeader">
+                <strong>{attempt.candidate}</strong>
+                <span>{providerLabel(attempt.provider)}</span>
+              </div>
+              <div className="backgroundJobAttemptMeta">
+                <span><b>Tra cứu</b> {lookupCount} {isKnowledgeGraph ? "tên" : "truy vấn"}</span>
+                <span><b>Chờ</b> {timingLabel(attempt.queueWaitSeconds)}</span>
+                <span><b>Chạy</b> {timingLabel(attempt.executionSeconds)}</span>
+              <span><b>Kết quả</b> {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
+                  ? attempt.outcome === "cache_hit" ? "đã dùng cache" : "đã xác định"
+                  : attempt.rejectionReason ?? attempt.outcome}</span>
+              </div>
+              {attempt.attemptedQueries?.length ? (
+                <div className="backgroundJobAttemptQueries">
+                  <b>Tên tìm kiếm</b>
+                  <span>{attempt.attemptedQueries.join(" · ")}</span>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </details>
   );
@@ -368,15 +395,21 @@ function JobTimingDetails({
       {planner ? (
         <section className="backgroundJobTimingSummary">
           <header>
-            <strong>Planner + Finder</strong>
+            <strong>{planner.status === "running" ? "Planner + Finder đang chạy" : "Planner + Finder"}</strong>
             <b>{timingLabel(planner.totalSeconds)}</b>
           </header>
           <div className="backgroundJobTimingChips">
-            <span>{planner.dayCount} ngày</span>
-            <span>{planner.itemCount} item</span>
-            <span>{planner.transportLegCount} chặng</span>
-            <span>{planner.unscheduledCount} chưa xếp</span>
-            <span>{planner.warningCount} cảnh báo</span>
+            {planner.status === "running" ? (
+              <span>Đã hoàn tất {planner.stages.length} bước</span>
+            ) : (
+              <>
+                <span>{planner.dayCount} ngày</span>
+                <span>{planner.itemCount} item</span>
+                <span>{planner.transportLegCount} chặng</span>
+                <span>{planner.unscheduledCount} chưa xếp</span>
+                <span>{planner.warningCount} cảnh báo</span>
+              </>
+            )}
           </div>
           <TimingStages label="Các bước Planner + Finder" stages={planner.stages} />
         </section>
@@ -399,24 +432,40 @@ function JobTimingDetails({
 
 export function BackgroundUrlJobs({
   authenticated,
-  enabled
+  enabled,
+  placement = "topbar"
 }: {
   authenticated: boolean;
   enabled: boolean;
+  placement?: "topbar" | "planner-chat";
 }) {
+  const router = useRouter();
   const [serverJobs, setServerJobs] = useState<UrlImportJob[]>([]);
   const [activeTurns, setActiveTurns] = useState<TripChatTurn[]>([]);
+  const [guestJobs, setGuestJobs] = useState<GuestUrlImportJob[]>(() => listGuestUrlJobs());
   const [now, setNow] = useState(() => Date.now());
   const [panelOpen, setPanelOpen] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ jobId: string; message: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const statusesRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    const handleGuestJobs = (event: Event) => {
+      const nextJobs = (event as CustomEvent<GuestUrlImportJob[]>).detail;
+      const resolvedJobs = Array.isArray(nextJobs) ? nextJobs : listGuestUrlJobs();
+      setGuestJobs(resolvedJobs);
+    };
+    window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
+    setGuestJobs(listGuestUrlJobs());
+    return () => window.removeEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
+  }, []);
+
   const jobs = useMemo<DisplayJob[]>(
-    () => [...serverJobs].sort(
+    () => [...guestJobs, ...serverJobs].sort(
       (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
     ),
-    [serverJobs]
+    [guestJobs, serverJobs]
   );
 
   useEffect(() => {
@@ -518,13 +567,19 @@ export function BackgroundUrlJobs({
     setRetryingId(job.id);
     setActionError(null);
     try {
-      const updated = job.status === "failed"
-        ? await retryUrlImportJob(job.id)
-        : await reprocessUrlImportJob(job.id);
-      setServerJobs((current) => job.status === "failed"
-        ? current.map((item) => item.id === updated.id ? updated : item)
-        : [updated, ...current]);
-      window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+      if (isGuestJob(job)) {
+        if (job.status === "failed") retryGuestUrlJob(job.id);
+        else reprocessGuestUrlJob(job.id);
+      } else {
+        const updated = job.status === "failed"
+          ? await retryUrlImportJob(job.id)
+          : await reprocessUrlImportJob(job.id);
+        setServerJobs((current) => job.status === "failed"
+          ? current.map((item) => item.id === updated.id ? updated : item)
+          : [updated, ...current]);
+        router.push(`/planner?chatId=${encodeURIComponent(updated.chatId)}`);
+        window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+      }
     } catch (caught) {
       setActionError({
         jobId: job.id,
@@ -535,22 +590,37 @@ export function BackgroundUrlJobs({
     }
   }
 
+  function openJobChat(job: DisplayJob) {
+    if (!isGuestJob(job)) {
+      router.push(`/planner?chatId=${encodeURIComponent(job.chatId)}`);
+    }
+  }
+
   async function removeJob(job: DisplayJob) {
     setDeletingId(job.id);
     try {
-      await deleteUrlImportJob(job.id);
-      setServerJobs((current) => current.filter((item) => item.id !== job.id));
-      statusesRef.current.delete(job.id);
+      if (isGuestJob(job)) {
+        deleteGuestUrlJob(job.id);
+      } else {
+        await deleteUrlImportJob(job.id);
+        setServerJobs((current) => current.filter((item) => item.id !== job.id));
+        statusesRef.current.delete(job.id);
+      }
     } catch {
       // The job may have completed just before the stop/delete request.
     } finally {
       setDeletingId(null);
-      window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+      if (!isGuestJob(job)) window.dispatchEvent(new Event("vsf:url-job-enqueued"));
     }
   }
 
   return (
-    <div aria-live="polite" className="backgroundJobsDock">
+    <div
+      aria-live="polite"
+      className={`backgroundJobsDock ${
+        placement === "planner-chat" ? "backgroundJobsDock--planner-chat" : ""
+      }`}
+    >
       <details
         className="backgroundJobsPanel"
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
@@ -586,9 +656,6 @@ export function BackgroundUrlJobs({
                     <strong>AI Planner</strong>
                     <small>Bước {stage.step}/3 · {stage.label} · {elapsedLabel(elapsed)}</small>
                   </span>
-                  <Link className="backgroundJobOpenChat" href={`/planner?chatId=${encodeURIComponent(turn.chatId)}`}>
-                    Quay lại chuyến đi
-                  </Link>
                 </div>
               </div>
             );
@@ -640,16 +707,14 @@ export function BackgroundUrlJobs({
                     <p className="backgroundJobError">{actionError.message}</p>
                   ) : null}
                   <div className="backgroundJobActions">
-                    <Link
-                      className="backgroundJobOpenChat"
-                      href={
-                        `/planner?chatId=${encodeURIComponent(job.chatId)}`
-                      }
-                    >
-                      {job.status === "succeeded"
-                        ? "Xem lịch trình"
-                        : "Quay lại chuyến đi"}
-                    </Link>
+                    {!isGuestJob(job) ? (
+                      <button
+                        onClick={() => openJobChat(job)}
+                        type="button"
+                      >
+                        Mở chat chuyến đi
+                      </button>
+                    ) : null}
                     {TERMINAL.has(job.status) ? (
                       <button
                         disabled={retryingId === job.id}

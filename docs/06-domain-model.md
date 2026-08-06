@@ -80,11 +80,19 @@ FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
   cửa và không tin giá trị timing do LLM tự trả.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
-  địa điểm, source context trong `notes`, lời nhắc user trong `personalNotes`,
-  ảnh catalog, rating/số lượt đánh giá khi có dữ liệu thật và `sourceDay` khi
-  item bắt nguồn từ itinerary tham khảo. Hai loại note không ghi đè nhau.
+  địa điểm, một source summary chỉ đọc trong `notes`, provenance không chứa text
+  trong `noteSources`, lời nhắc user trong `personalNotes`, ảnh catalog,
+  rating/số lượt đánh giá khi có dữ liệu thật và `sourceDay` khi item bắt nguồn
+  từ itinerary tham khảo. `notes` và `personalNotes` không ghi đè nhau; cả
+  itinerary lẫn map popup đọc trực tiếp cùng snapshot này.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
+  Mỗi ngày route-first giữ ba meal anchor sáng, trưa và tối. Quán ăn đã resolve
+  từ URL được ưu tiên vào đúng anchor theo timing cue; anchor chưa có venue dùng
+  item `finder_rule` tổng quát để giữ cấu trúc bữa ăn mà không giả mạo một địa
+  điểm. Với intake URL, PlaceSelector được phép thêm `finder_suggestion` vào
+  khoảng sáng và chiều còn thiếu nhưng không được thay thế hoặc làm mất
+  `SelectedPlace` có provenance URL.
 - `UnscheduledPlace` cũng mang location/catalog metadata tối thiểu khi là gợi ý
   `activity_fallback_recommendation`. Gợi ý này được tạo sau khi route đã có,
   liên kết source activity để giải thích nhu cầu nhưng dùng provenance
@@ -108,11 +116,20 @@ Plan từ các endpoint độc lập hiện vẫn là object Pydantic được g
 Plan tạo qua trip chat vẫn được lưu dưới dạng snapshot JSON có version trong
 `trip_revisions`; mỗi revision chứa cả plan và đúng TripIntent snapshot đã dùng.
 `trip_chats.current_plan` và `current_trip_intent` giữ trạng thái hiện hành.
+Năm field intake có cấu trúc (`destination`, `timing`, `travelParty`, `budget`,
+`notes`) đọc từ TripIntent hiện hành. Khi user lưu một field trên chat đã có
+plan, backend validate rồi ghi ngay `current_trip_intent`, tăng
+`trip_intent_version`, đặt `trip_intent_plan_status=queued` và trả response mà
+không chờ Planner. Durable worker tạo lại plan theo version mới nhất; chỉ khi
+thành công mới cập nhật `current_plan`, thêm `TripRevision` chứa đúng cặp
+TripIntent/plan và đặt trạng thái `synced`. Nếu user sửa tiếp trong lúc worker
+chạy, output của version cũ không được ghi và job được xếp lại cho version mới.
 
 ### Lịch sử hội thoại chuyến đi đã triển khai
 
 - `TripChat`: thuộc đúng một user, đại diện cho một chuyến đi/điểm đến, giữ khóa
-  TripIntent hiện tại, plan hiện tại và số revision. Không còn cột
+  TripIntent hiện tại, version/sync status của intent, plan hiện tại và số
+  revision của plan. Không còn cột
   `current_explorer`.
 - `TripChatMessage`: tin nhắn user/assistant theo thứ tự; user message đồng thời
   giữ lifecycle của turn (`queued/executing/completed/failed`), decision và lỗi
@@ -123,13 +140,18 @@ Plan tạo qua trip chat vẫn được lưu dưới dạng snapshot JSON có ve
 - `TripRevision`: snapshot bất biến gồm `planPayload`, `tripIntentPayload` và
   `intakeId` sau mỗi lần tạo hoặc sửa plan thành công.
 - `KnowledgeGraphImport`: envelope dùng chung cho URL/image job, Explorer intake
-  và admin import. `processingStatus` (`queued/running/succeeded/failed`) tách
-  khỏi `reviewStatus` (`not_required/pending/approved/rejected`).
+  durable trip-intent planning job và admin import. `processingStatus`
+  (`queued/running/succeeded/failed`) tách
+  khỏi `reviewStatus` (`not_required/pending/approved/rejected`). Job Explorer
+  còn có `processing_phase` (`queued/exploring/planning/complete`), được trả dưới
+  tên `phase` trong URL job API, để UI hiển thị bước hiện tại mà không thay đổi
+  lifecycle chính.
 - `SourceDocument`: canonical URL cùng caption/STT/OCR, extracted context,
   version/hash và freshness. Raw provider payload không đi qua boundary này.
-- `KnowledgeGraphImportNode/Edge`: Area/Venue observation, evidence, source note,
-  Top-K identity và quan hệ graph đề xuất. Admin review chỉ quyết định promotion
-  vào graph chung; Planner vẫn được dùng snapshot provisional.
+- `KnowledgeGraphImportNode/Edge`: Area/Venue observation, evidence,
+  `sourceActivity`, Top-K identity và quan hệ graph đề xuất. Import node không
+  còn field display note. Admin review chỉ quyết định promotion vào graph chung;
+  Planner vẫn được dùng snapshot provisional.
 
 Một user có nhiều `TripChat`, ví dụ Hà Nội, TP.HCM và Paris. Follow-up trong
 cùng chat luôn tạo revision mới cho cùng plan ID và cập nhật `current_plan`;

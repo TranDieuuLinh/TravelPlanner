@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import PreferredTimeWindow
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -478,6 +479,10 @@ class SelectablePlace(BaseModel):
     region_key: str = Field(alias="regionKey")
     description: str | None = None
     notes: str | None = None
+    note_sources: list[PlanNoteSource] = Field(
+        default_factory=list,
+        alias="noteSources",
+    )
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     place_group: str | None = Field(default=None, alias="placeGroup")
     tags: list[str] = Field(default_factory=list)

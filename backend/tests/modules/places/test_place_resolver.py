@@ -23,6 +23,7 @@ from app.modules.places.resolver import (
     KnowledgeGraphPlaceResolver,
     PlaceResolution,
     PlaceResolver,
+    _candidate_lookup_names,
 )
 from app.modules.plans import dependencies
 from app.modules.plans.explorer.schema import UnifiedPlaceCandidate
@@ -51,14 +52,23 @@ class FakePlaceRepository:
     ) -> list[Any]:
         self.global_name_searches.append(names)
         keys = {" ".join(name.split()).casefold() for name in names}
-        return [
-            place
-            for place in self.places
+        matches: list[Any] = []
+        for place in self.places:
+            metadata = getattr(place, "metadata_json", {})
+            aliases = metadata.get("aliases", []) if isinstance(metadata, dict) else []
+            searchable_names = [place.name, *aliases]
+            normalized_names = {
+                " ".join(str(name).split()).casefold()
+                for name in searchable_names
+                if name
+            }
             if any(
-                key in " ".join(place.name.split()).casefold()
+                key in searchable_name
                 for key in keys
-            )
-        ][:limit]
+                for searchable_name in normalized_names
+            ):
+                matches.append(place)
+        return matches[:limit]
 
 
 class FakeGoogleMapsScraperResolver(GoogleMapsScraperPlaceResolver):
@@ -320,6 +330,129 @@ def test_knowledge_graph_repository_searches_reviewed_alias_before_fallback() ->
         assert result.place_id == entity.id
         assert result.match_options[0].name == "Hồ Hoàn Kiếm"
         assert fallback.calls == 0
+
+
+def test_knowledge_graph_name_search_prioritizes_exact_alias_before_limit() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                KnowledgeEntity(
+                    id=f"aaa-related-{index:03d}",
+                    canonical_name=f"Nhà thờ lớn phụ {index}",
+                    normalized_name=f"nha tho lon phu {index}",
+                    entity_type="TravelPlace",
+                    status="active",
+                )
+                for index in range(105)
+            ]
+        )
+        exact = KnowledgeEntity(
+            id="zzz-exact-alias",
+            canonical_name="St. Joseph Cathedral",
+            normalized_name="st joseph cathedral",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        exact.aliases.append(
+            KnowledgeAlias(
+                alias="Nhà thờ lớn",
+                normalized_alias="nha tho lon",
+                status="verified",
+            )
+        )
+        session.add(exact)
+        session.commit()
+
+        results = KnowledgeGraphPlaceRepository(session).search_active_by_names(
+            ["Nhà thờ lớn"],
+            limit=1,
+        )
+
+        assert [result.id for result in results] == ["zzz-exact-alias"]
+
+
+def test_knowledge_graph_collapses_collocated_exact_duplicates_before_fallback(
+) -> None:
+    def duplicate(
+        place_id: str,
+        *,
+        latitude: str,
+        primary_area: str,
+        aliases: list[str],
+    ) -> Any:
+        return SimpleNamespace(
+            id=place_id,
+            name="Nhà Thờ Lớn Hà Nội",
+            place_type="Catholic cathedral",
+            address="Hoàn Kiếm, Hà Nội",
+            city="Hà Nội",
+            country="Việt Nam",
+            country_code="VN",
+            primary_area=primary_area,
+            latitude=Decimal(latitude),
+            longitude=Decimal("105.8489"),
+            data_confidence="medium",
+            region_key="vn,ha-noi,hoan-kiem",
+            status="active",
+            opening_hours=[],
+            typical_duration_minutes=60,
+            source_platform="knowledge_graph",
+            source_link=None,
+            plus_code=None,
+            rating=Decimal("4.6"),
+            review_count=7500,
+            revision=1,
+            source_fetched_at=None,
+            metadata_json={"aliases": aliases},
+        )
+
+    candidate = UnifiedPlaceCandidate(
+        name="Nhà thờ lớn Hà Nội",
+        searchNames=["nhà thờ lớn"],
+        searchRegion="Hà Nội",
+    )
+    google = RecordingFallbackResolver(
+        PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider="google_maps_scraper",
+            name=candidate.name,
+            latitude=Decimal("21.0280"),
+            longitude=Decimal("105.8489"),
+        )
+    )
+    resolver = FallbackPlaceResolver(
+        KnowledgeGraphPlaceResolver(
+            FakePlaceRepository(
+                [
+                    duplicate(
+                        "kg-cathedral-reviewed",
+                        latitude="21.0286",
+                        primary_area="Phường, Hoàn Kiếm",
+                        aliases=["St. Joseph's Cathedral", "nhà thờ lớn"],
+                    ),
+                    duplicate(
+                        "kg-cathedral-duplicate",
+                        latitude="21.0274",
+                        primary_area="Hoàn Kiếm",
+                        aliases=["Nha Tho Lon Ha Noi"],
+                    ),
+                ]
+            )
+        ),
+        google,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.provider == "knowledge_graph"
+    assert result.place_id == "kg-cathedral-reviewed"
+    assert result.resolution_reason == "collapsed_equivalent_duplicate"
+    assert sum(option.selected for option in result.match_options) == 1
+    assert google.calls == 0
 
 
 def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
@@ -662,7 +795,7 @@ results_path.write_text(json.dumps([{
     "plus_code": "2VJ2+P2 Hoàn Kiếm, Hà Nội",
     "website": "https://example.com/place",
     "phone": "+84 24 1234 5678",
-    "descriptions": ["Điểm tham quan lịch sử."],
+    "descriptions": ["─Éiß╗âm tham quan lß╗ïch sß╗¡."],
     "opening_hours": [{
         "dayOfWeek": 1,
         "dayName": "Thứ Hai",
@@ -896,7 +1029,10 @@ def test_database_resolver_matches_bilingual_alias_before_provider() -> None:
         )
     )
 
-    assert repository.region_keys == ["vn,ha-noi"]
+    assert repository.region_keys == []
+    assert repository.global_name_searches == [
+        ["Ethnology Museum", "Bảo tàng Dân tộc học Việt Nam"]
+    ]
     assert result.status == "resolved"
     assert result.provider == "database"
     assert result.external_id == "place-ethnology"
@@ -951,18 +1087,8 @@ def test_database_resolver_finds_english_place_from_vietnamese_source() -> None:
     assert str(result.longitude) == "105.7980"
 
 
-def test_database_resolver_falls_back_to_global_name_when_region_misses() -> None:
-    class RegionMissRepository(FakePlaceRepository):
-        def list_active_for_planner_research(
-            self,
-            region_key: str | None = None,
-            *,
-            limit: int = 5000,
-        ) -> list[Any]:
-            self.region_keys.append(region_key)
-            return []
-
-    repository = RegionMissRepository(
+def test_database_resolver_uses_bounded_name_search_without_region_preload() -> None:
+    repository = FakePlaceRepository(
         [
             SimpleNamespace(
                 id="place-hidden-garden-hanoi",
@@ -996,7 +1122,7 @@ def test_database_resolver_falls_back_to_global_name_when_region_misses() -> Non
         )
     )
 
-    assert repository.region_keys == ["vn,ha-noi,tay-ho"]
+    assert repository.region_keys == []
     assert repository.global_name_searches == [["Hidden Garden"]]
     assert result.status == "resolved"
     assert result.provider == "database"
@@ -1149,11 +1275,11 @@ def test_database_resolver_chooses_strong_top_k_match_over_repository_order() ->
 
     assert result.status == "resolved"
     assert result.external_id == "strong"
-    assert len(result.match_options) == 2
+    assert len(result.match_options) == 1
     assert result.match_options[0].external_id == "strong"
     assert result.match_options[0].rank == 1
     assert result.match_options[0].match_source == "places_db"
-    assert result.match_options[0].score > result.match_options[1].score
+    assert result.match_options[0].score > 0.82
 
 
 def test_fallback_chain_calls_google_when_all_database_scores_are_low() -> None:
@@ -1199,7 +1325,7 @@ def test_fallback_chain_calls_google_when_all_database_scores_are_low() -> None:
 
     assert result.status == "resolved"
     assert result.provider == "google_maps_scraper"
-    assert result.provider_attempts[0].rejection_reason == "low_database_score"
+    assert result.provider_attempts[0].rejection_reason == "not_found"
     assert google.calls == 1
 
 
@@ -1337,7 +1463,7 @@ def test_database_route_context_cannot_promote_match_below_threshold() -> None:
     )
 
     assert results[1].status == "unresolved"
-    assert results[1].resolution_reason == "low_database_score"
+    assert results[1].resolution_reason == "not_found"
 
 
 def test_database_resolver_does_not_resolve_generic_food_without_address() -> None:
@@ -1421,7 +1547,7 @@ def test_database_resolver_keeps_similarly_close_branches_ambiguous() -> None:
     assert results[1].resolution_reason == "ambiguous_name"
 
 
-def test_fallback_chain_calls_google_when_database_scores_are_tied() -> None:
+def test_fallback_chain_keeps_distinct_database_branches_for_review() -> None:
     def branch(place_id: str, city: str) -> Any:
         return SimpleNamespace(
             id=place_id,
@@ -1472,9 +1598,10 @@ def test_fallback_chain_calls_google_when_database_scores_are_tied() -> None:
         resolver.resolve(candidate, destination="Hà Nội")
     )
 
-    assert result.status == "resolved"
-    assert result.provider == "google_maps_scraper"
-    assert provider.calls == 1
+    assert result.status == "unresolved"
+    assert result.provider == "database"
+    assert result.resolution_reason == "ambiguous_name"
+    assert provider.calls == 0
 
 
 def test_fallback_chain_skips_google_when_database_matches() -> None:
@@ -1753,3 +1880,13 @@ def test_google_maps_does_not_query_literal_unspecified() -> None:
     asyncio.run(resolver.resolve(candidate, destination="unspecified"))
 
     assert resolver.queries == ["Cafe Giảng"]
+
+
+def test_lookup_names_drop_short_alias_contained_in_canonical_name() -> None:
+    candidate = UnifiedPlaceCandidate(
+        name="Nhà tù Hỏa Lò",
+        searchNames=["Hỏa Lò"],
+        searchRegion="Hà Nội",
+    )
+
+    assert _candidate_lookup_names(candidate) == ["Nhà tù Hỏa Lò"]
