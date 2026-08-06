@@ -48,6 +48,14 @@ trả một plan identity mới. Các địa điểm của plan hiện tại đ�
 `SelectedPlace` cho lần sửa, còn địa điểm user yêu cầu tránh được loại qua
 `avoidPlaces`/constraint của Explorer.
 
+Conversation Supervisor chỉ phân loại intent và dispatch đúng một agent cho mỗi
+turn. `create_plan` đi vào `ExplorerAgent`: agent này lưu intake và hỏi lại nếu
+chưa xác định được destination; khi destination đã đủ, nó tiếp tục gọi pipeline
+`TripThemePlanner -> PlaceSelector -> Check` và lưu revision đầu tiên.
+`regenerate_plan` đi vào `MainPlanningAgent`; câu hỏi thông tin đi vào
+`InformationFinderAgent`; mutation item đi vào `PlanEditorAgent`. Supervisor
+không tự chạy Explorer như một bước tiền xử lý trước khi dispatch agent khác.
+
 Message có URL của user đã đăng nhập được tách thành một job bền vững cho từng
 URL và trả về ngay. Worker FIFO chỉ chạy một job mỗi lần, gọi lại chính workflow
 Explorer–TripThemePlanner/PlaceSelector rồi ghi revision hoàn chỉnh vào trip chat. Vì vậy user

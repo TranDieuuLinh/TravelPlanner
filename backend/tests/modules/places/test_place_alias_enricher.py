@@ -10,6 +10,7 @@ class FakeAliasLLM(LLMClient):
     def __init__(self, response: str) -> None:
         self.response = response
         self.payload: dict | None = None
+        self.system_prompt = ""
 
     async def generate_profile_plan(self, prompt: str) -> str:
         raise NotImplementedError
@@ -24,6 +25,7 @@ class FakeAliasLLM(LLMClient):
         *,
         response_schema: dict,
     ) -> str:
+        self.system_prompt = system_prompt
         self.payload = json.loads(user_payload)
         return self.response
 
@@ -79,6 +81,8 @@ def test_alias_enricher_preserves_original_and_adds_bilingual_names() -> None:
     ]
     assert llm.payload is not None
     assert llm.payload["places"][0]["searchRegion"] == "Hanoi"
+    assert "generatedLookupAliases" in llm.system_prompt
+    assert "không phải verified alias" in llm.system_prompt
 
 
 def test_alias_enricher_keeps_only_one_official_name_per_language() -> None:

@@ -726,7 +726,7 @@ class TestGraphCatalogInPayload:
         assert "activity-coffee-tour" in activity_ids
         assert "activity-cooking-class" in activity_ids
         assert "place-cafe-giang" in place_ids
-        assert "Trip Theme Planner" in llm.system_prompts[0]
+        assert "Bạn là Trip Theme Planner" in llm.system_prompts[0]
         assert "graphCandidateCatalog" in llm.system_prompts[0]
         # Repair payload should also include the bounded catalog so the LLM
         # can pick only IDs from it during the repair attempt.

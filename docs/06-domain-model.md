@@ -63,7 +63,7 @@ FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
 `place_opening_hours` và `place_amenities` không còn tồn tại.
 
 Giá vé TravelPlace được làm giàu theo batch bằng
-`scripts/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
+`scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
 lưu trong property JSON `admission_price`; giá đại diện bằng VND được chiếu thêm
 vào `admission_fee_vnd` để các research tool hiện tại đọc được. JSON giữ khoảng
 giá, đơn vị tính, thời điểm lấy, model, confidence và danh sách nguồn. Kết quả

@@ -20,7 +20,9 @@ def agent_for_conversation_intent(
     """Return the allowlisted conversation agent for an intent."""
     if intent in {"ask_place", "ask_travel_information", "travel_advice", "explain_plan"}:
         return "information_finder"
-    if intent in {"create_plan", "regenerate_plan"}:
+    if intent == "create_plan":
+        return "explorer"
+    if intent == "regenerate_plan":
         return "main_planner"
     if intent in {
         "add_place", "update_place", "remove_place", "move_place",

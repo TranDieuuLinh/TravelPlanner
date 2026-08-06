@@ -131,7 +131,7 @@ def read_place_group(place: Any) -> str | None:
 
 # Mirror of the Google Maps ``types`` -> ``PLACE_GROUP_CATEGORY`` mapping
 # kept in ``app.modules.plans.place_selector.place_tool``. Defined here so that
-# ``read_place_group`` can resolve a bucket without importing the finder
+# ``read_place_group`` can resolve a bucket without importing the place-selection
 # tool (which itself imports this module, causing a circular import).
 GOOGLE_TYPES_CATEGORY: dict[str, str] = {
     "amusement_park": "entertainment",

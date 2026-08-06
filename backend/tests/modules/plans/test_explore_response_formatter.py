@@ -81,6 +81,35 @@ class RecordingLLM:
         )
 
 
+def test_full_formatter_keeps_candidates_provisional_for_kg_resolution(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.response_formatter.settings.enable_llm_explore_formatter",
+        True,
+    )
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.response_formatter.settings.gemini_api_key",
+        "test-key",
+    )
+    llm = RecordingLLM()
+    formatter = ExploreResponseFormatter(llm)  # type: ignore[arg-type]
+
+    asyncio.run(
+        formatter.format(
+            FullExploreRequest(
+                rawRequest="Tôi muốn ghé Xôi Yến.",
+                destination="Hà Nội",
+            )
+        )
+    )
+
+    assert "knowledge_entities" in llm.system_prompt
+    assert "observation provisional" in llm.system_prompt
+    assert "không được tự chọn entity ID hay tọa độ" in llm.system_prompt
+    assert "không tự dịch, bản địa hóa" in llm.system_prompt
+
+
 def test_plain_vague_prompt_gets_v2_completeness_metadata(
     monkeypatch,
 ) -> None:
@@ -172,8 +201,8 @@ def test_url_context_formatter_sends_compact_summary_and_structured_schema(
         )
     )
 
-    assert "untrusted evidence" in llm.system_prompt
-    assert "Do not produce places" in llm.system_prompt
+    assert "bằng chứng không đáng tin cậy" in llm.system_prompt
+    assert "Không tạo places" in llm.system_prompt
     sent = json.loads(llm.user_payload)
     assert "requiredOutputShape" not in sent
     assert "transcript" not in sent

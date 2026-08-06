@@ -39,6 +39,8 @@ def test_allowlist_has_no_agent_for_service_owned_intents() -> None:
     assert agent_for_conversation_intent("ask_place") == "information_finder"
     assert agent_for_conversation_intent("ask_travel_information") == "information_finder"
     assert agent_for_conversation_intent("add_place") == "plan_editor"
+    assert agent_for_conversation_intent("create_plan") == "explorer"
+    assert agent_for_conversation_intent("regenerate_plan") == "main_planner"
     assert agent_for_conversation_intent("clarify") is None
     assert agent_for_conversation_intent("validate_plan") is None
     assert agent_for_conversation_intent("undo") is None
@@ -122,6 +124,42 @@ def test_edit_request_dispatches_plan_editor() -> None:
     )
     assert result == "edited"
     assert calls == ["add_place"]
+
+
+@pytest.mark.parametrize(
+    ("intent", "expected_agent"),
+    [
+        ("create_plan", "explorer"),
+        ("regenerate_plan", "main_planner"),
+    ],
+)
+def test_planning_request_dispatches_exactly_one_agent(intent, expected_agent) -> None:
+    calls: list[str] = []
+
+    async def explorer(context: ConversationAgentContext) -> str:
+        calls.append("explorer")
+        return "explored"
+
+    async def main_planner(context: ConversationAgentContext) -> str:
+        calls.append("main_planner")
+        return "planned"
+
+    dispatcher = ConversationAgentDispatcher(
+        {"explorer": explorer, "main_planner": main_planner}
+    )
+    result = asyncio.run(
+        dispatcher.dispatch_for_decision(
+            ConversationAgentContext(
+                chat=None,
+                turn=None,
+                decision=_decision(intent, expected_agent),
+                plan=None,
+            )
+        )
+    )
+
+    assert calls == [expected_agent]
+    assert result == ("explored" if expected_agent == "explorer" else "planned")
 
 
 def test_backup_is_deterministically_unsupported_in_chat() -> None:

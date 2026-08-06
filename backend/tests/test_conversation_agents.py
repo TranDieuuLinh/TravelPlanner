@@ -48,7 +48,7 @@ def test_dispatcher_calls_only_registered_agent() -> None:
 
 
 def test_intents_map_to_the_temporary_agent_set() -> None:
-    assert _agent_for_intent("create_plan") == "main_planner"
+    assert _agent_for_intent("create_plan") == "explorer"
     assert _agent_for_intent("regenerate_plan") == "main_planner"
     assert _agent_for_intent("travel_advice") == "information_finder"
     assert _agent_for_intent("ask_place") == "information_finder"
@@ -65,8 +65,8 @@ def test_supervisor_output_accepts_optional_agent() -> None:
             "intent": "create_plan",
             "confidence": 1.0,
             "responseText": "Đang chuẩn bị lịch trình.",
-            "agent": "main_planner",
+            "agent": "explorer",
         }
     )
 
-    assert output.agent == "main_planner"
+    assert output.agent == "explorer"

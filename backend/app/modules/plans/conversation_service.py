@@ -367,19 +367,16 @@ class ConversationTurnService:
     ) -> TripChatMessage:
         self.repository.update_turn(turn, status="executing")
         if decision.intent in {"create_plan", "regenerate_plan"}:
-            context = ConversationAgentContext(
-                chat=chat,
-                turn=turn,
-                decision=decision,
-                plan=plan,
-                images=images,
-                confirmed=confirmed,
+            return await self.agent_dispatcher.dispatch_for_decision(
+                ConversationAgentContext(
+                    chat=chat,
+                    turn=turn,
+                    decision=decision,
+                    plan=plan,
+                    images=images,
+                    confirmed=confirmed,
+                )
             )
-            explorer_context = await self.agent_dispatcher.dispatch(
-                "explorer", context
-            )
-            context.data["explorer"] = explorer_context
-            return await self.agent_dispatcher.dispatch_for_decision(context)
 
         if decision.intent == "clarify":
             blocks = _clarification_blocks(decision, plan, turn.content)
@@ -485,22 +482,20 @@ class ConversationTurnService:
 
     async def _run_explorer_agent(
         self, context: ConversationAgentContext
-    ) -> dict[str, object]:
-        """Prepare the normalized request handed to the planning agent.
+    ) -> TripChatMessage:
+        """Own initial intake and continue into planning when it is complete.
 
-        The existing TripChatService still owns the full persistence-safe
-        Explorer pipeline. This adapter makes its boundary explicit while the
-        lower-level Explorer implementation remains unchanged.
+        ``TripChatService`` persists the Explorer snapshot. If destination is
+        still missing it returns a clarification without invoking the theme
+        planner; otherwise the same call continues through TripThemePlanner,
+        PlaceSelector and Check before saving the first plan revision.
         """
-        urls = list(dict.fromkeys(_extract_urls(context.turn.content)))
-        destination = (
-            _infer_destination(_remove_urls(context.turn.content))
-            or _infer_destination_from_urls(urls)
-            or "unspecified"
+        return await self._create_plan(
+            context.chat,
+            context.turn,
+            context.images,
+            planning_context=self._planning_context(context.turn.content),
         )
-        if _is_context_only_plan_request(context.turn.content):
-            destination = "unspecified"
-        return {"urls": urls, "initial_destination": destination}
 
     async def _run_main_planner_agent(
         self, context: ConversationAgentContext
@@ -509,8 +504,20 @@ class ConversationTurnService:
             context.chat,
             context.turn,
             context.images,
-            planning_context=context.data.get("explorer"),
+            planning_context=self._planning_context(context.turn.content),
         )
+
+    @staticmethod
+    def _planning_context(content: str) -> dict[str, object]:
+        urls = list(dict.fromkeys(_extract_urls(content)))
+        destination = (
+            _infer_destination(_remove_urls(content))
+            or _infer_destination_from_urls(urls)
+            or "unspecified"
+        )
+        if _is_context_only_plan_request(content):
+            destination = "unspecified"
+        return {"urls": urls, "initial_destination": destination}
 
     async def _run_information_finder_agent(
         self, context: ConversationAgentContext

@@ -67,9 +67,9 @@ class ImageOcrService:
             )
 
         system_prompt = (
-            "You are an OCR extractor for travel planning screenshots and images. "
-            "Return concise plain text only. Transcribe visible text, place names, addresses, prices, dates, notes, captions, and travel-relevant labels. "
-            "If the image has no readable travel information, say so briefly. Do not invent missing text."
+            "Bạn là bộ trích xuất OCR cho screenshot và hình ảnh lập kế hoạch du lịch. "
+            "Chỉ trả về văn bản thuần ngắn gọn. Chép lại văn bản nhìn thấy, tên địa điểm, địa chỉ, giá, ngày, ghi chú, caption và nhãn liên quan đến du lịch. "
+            "Nếu ảnh không có thông tin du lịch đọc được, hãy nói ngắn gọn. Không bịa văn bản bị thiếu."
         )
         user_text = "Extract travel-relevant OCR text from this uploaded image."
         if destination:

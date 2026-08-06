@@ -38,7 +38,9 @@ class FakeGraphLLM(LLMClient):
         return "{}"
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
-        assert "NEVER invent facts" in system_prompt
+        assert "KHÔNG BAO GIỜ bịa sự thật" in system_prompt
+        assert "schema.nodes" in system_prompt
+        assert "schema.abstract_nodes" in system_prompt
         assert "responseContract" in json.loads(user_payload)
         return self.output
 
@@ -49,7 +51,8 @@ class FakeGraphLLM(LLMClient):
         *,
         response_schema: dict,
     ) -> str:
-        assert "NEVER invent facts" in system_prompt
+        assert "KHÔNG BAO GIỜ bịa sự thật" in system_prompt
+        assert "import proposal" in system_prompt
         assert response_schema["type"] == "object"
         return self.output
 

@@ -597,4 +597,4 @@ class TestSupervisorDecide:
         supervisor = ConstrainedConversationSupervisor(llm=_RecordingLLM())
         plan = _make_plan()
         await supervisor.decide("hi", plan)
-        assert "repairing" in seen_prompts[1].lower()
+        assert "đang sửa" in seen_prompts[1].lower()

@@ -130,7 +130,7 @@ class GeminiLLMClient(LLMClient):
 
     async def generate_profile_plan(self, prompt: str) -> str:
         return await self.generate_json(
-            system_prompt="Return a concise travel planning draft as plain JSON.",
+            system_prompt="Trả về bản nháp kế hoạch du lịch ngắn gọn dưới dạng JSON thuần.",
             user_payload=prompt,
         )
 

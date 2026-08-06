@@ -106,7 +106,7 @@ class FakeGeminiClient:
         *,
         response_schema: dict,
     ) -> str:
-        assert "Never translate" in system_prompt
+        assert "Không bao giờ dịch" in system_prompt
         assert response_schema["type"] == "object"
         payload = json.loads(user_payload)
         return json.dumps(

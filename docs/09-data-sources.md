@@ -416,7 +416,7 @@ Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI ph�
 
 ### Enrichment giá TravelPlace
 
-CLI `scripts/enrich_travel_place_prices.py` dùng Gemini Google Search grounding
+CLI `scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py` dùng Gemini Google Search grounding
 để nghiên cứu giá vé công khai cho đúng entity `TravelPlace`. Query mang tên,
 địa chỉ, thành phố, quốc gia và URL identity đã có; source web luôn là dữ liệu
 không tin cậy. Model phải trả structured output và chỉ tham chiếu nguồn bằng

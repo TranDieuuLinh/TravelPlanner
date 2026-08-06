@@ -17,9 +17,11 @@ class FakeGroundedClient:
     def __init__(self, text: str, *, with_source: bool = True) -> None:
         self.text = text
         self.with_source = with_source
+        self.system_prompt = ""
 
     async def generate_grounded_structured_json(self, *args, **kwargs):
-        del args, kwargs
+        self.system_prompt = args[0]
+        del kwargs
         sources = (
             GroundingSource(
                 title="Official tickets",
@@ -46,23 +48,24 @@ def _candidate() -> TravelPlacePriceCandidate:
 
 
 def test_grounded_price_with_citation_is_verified() -> None:
+    client = FakeGroundedClient(
+        """{
+          "identityMatched": true,
+          "status": "priced",
+          "currency": "VND",
+          "minAmount": 70000,
+          "maxAmount": 70000,
+          "representativeAmount": 70000,
+          "pricingUnit": "per_adult",
+          "sourceAuthority": "official",
+          "sourceIndexes": [0],
+          "confidence": 0.95
+        }"""
+    )
     outcome = asyncio.run(
         research_travel_place_price(
             _candidate(),
-            llm_client=FakeGroundedClient(
-                """{
-                  "identityMatched": true,
-                  "status": "priced",
-                  "currency": "VND",
-                  "minAmount": 70000,
-                  "maxAmount": 70000,
-                  "representativeAmount": 70000,
-                  "pricingUnit": "per_adult",
-                  "sourceAuthority": "official",
-                  "sourceIndexes": [0],
-                  "confidence": 0.95
-                }"""
-            ),
+            llm_client=client,
             model_name="test-model",
         )
     )
@@ -70,6 +73,8 @@ def test_grounded_price_with_citation_is_verified() -> None:
     assert outcome.status == PriceResearchStatus.verified_price
     assert outcome.representative_amount == 70_000
     assert outcome.sources[0].uri == "https://official.example/tickets"
+    assert "TravelPlace canonical" in client.system_prompt
+    assert "property admission_price" in client.system_prompt
 
 
 def test_price_without_grounding_source_is_not_verified() -> None:
@@ -116,4 +121,3 @@ def test_mismatched_place_identity_is_not_verified() -> None:
 
     assert outcome.status == PriceResearchStatus.ambiguous
     assert outcome.can_apply is False
-

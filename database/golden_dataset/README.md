@@ -29,7 +29,9 @@ Mỗi file JSON chứa danh sách các `cases` với cấu trúc chuẩn sau:
 
 ## Cách Sử dụng trong Pytest / Evaluation Script
 
-Có thể load dữ liệu từ các file này trong pytest hoặc trong script `scripts/evaluate_planner_finder.py`:
+Có thể load dữ liệu từ các file này trong pytest hoặc trong các
+script đánh giá `scripts/evaluate_theme_selector.py` và
+`scripts/evaluate_route_first_place_selector.py`:
 
 ```python
 import json
