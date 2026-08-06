@@ -112,7 +112,7 @@ function runningActivity(job: DisplayJob, elapsed: number) {
 }
 
 function isPlanningJob(job: DisplayJob) {
-  return job.phase === "planning";
+  return Boolean(job.explorerTiming);
 }
 
 function progressStage(job: DisplayJob) {
@@ -240,9 +240,6 @@ function ProviderAttempts({
             <strong>{attempt.candidate}</strong>
             <span>{providerLabel(attempt.provider)}</span>
             <span>{attempt.aliasQueryCount} keyword</span>
-            {attempt.attemptedQueries?.length ? (
-              <span>Keyword: {attempt.attemptedQueries.join(" · ")}</span>
-            ) : null}
             <span>chờ {timingLabel(attempt.queueWaitSeconds)}</span>
             <span>chạy {timingLabel(attempt.executionSeconds)}</span>
             <span>

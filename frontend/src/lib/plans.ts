@@ -836,6 +836,10 @@ export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
   return apiFetch<UrlImportJobBatch>("/url-import-jobs");
 }
 
+export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
+  return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
+}
+
 export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {
   return apiFetch<UrlImportJob>(`/url-import-jobs/${jobId}/retry`, {
     method: "POST"
