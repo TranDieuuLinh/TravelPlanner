@@ -87,10 +87,7 @@ class ConversationTurnService:
         )
         self.turn_timeout_seconds = settings.conversation_turn_timeout_seconds
         self.plan_timeout_seconds = settings.conversation_plan_timeout_seconds
-        self.turn_stale_after_seconds = max(
-            settings.conversation_turn_stale_after_seconds,
-            self.plan_timeout_seconds + 30,
-        )
+        self.turn_stale_after_seconds = settings.conversation_turn_stale_after_seconds
 
     def get_turn(self, chat_id: str, user: User, turn_id: str) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
