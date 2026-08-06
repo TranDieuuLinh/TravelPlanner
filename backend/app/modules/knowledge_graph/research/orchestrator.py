@@ -35,7 +35,10 @@ from app.modules.knowledge_graph.research.experience_fit_tool import (
     HARD_CONSTRAINTS,
     kg_evaluate_experience_fit,
 )
-from app.modules.knowledge_graph.research.experience_tool import kg_discover_experiences
+from app.modules.knowledge_graph.research.experience_tool import (
+    build_special_experience_catalog,
+    kg_discover_experiences,
+)
 from app.modules.knowledge_graph.research.schema import (
     RecommendationPriority,
 )
@@ -385,6 +388,7 @@ class GraphResearchOrchestrator:
                 warnings=warnings,
                 graphSnapshot=discovery_output.graphSnapshot,
                 trace=trace,
+                catalog=discovery_output.catalog,
             )
 
         # ------------------------------------------------------------------
@@ -450,6 +454,7 @@ class GraphResearchOrchestrator:
 
         # Assign final ranks
         ranked_experiences: list[RankedExperience] = []
+        catalog_claims: list[GraphEvidenceClaim] = []
         rank_reasons_map: dict[str, list[str]] = {}
 
         for rank, (idx, candidate) in enumerate(eligible_sorted, start=1):
@@ -477,6 +482,7 @@ class GraphResearchOrchestrator:
                 rank=rank,
                 rankReasons=reasons,
             ))
+            catalog_claims.append(claim)
 
         # Add unknown candidates at the end (they are eligible but with warnings)
         for rank_offset, candidate in enumerate(unknown_candidates):
@@ -523,6 +529,10 @@ class GraphResearchOrchestrator:
             warnings=warnings,
             graphSnapshot=discovery_output.graphSnapshot,
             trace=trace,
+            catalog=build_special_experience_catalog(
+                catalog_claims,
+                input_data.candidateLimit,
+            ),
         )
 
 

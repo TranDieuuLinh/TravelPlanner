@@ -280,6 +280,16 @@ class Recommendation(BaseModel):
         default_factory=list, description="Warnings or caveats"
     )
 
+    @property
+    def time_slots(self) -> list[str | dict]:
+        """Pythonic read alias for the public ``timeSlots`` field."""
+        return self.timeSlots
+
+    @property
+    def recommended_visit_minutes(self) -> int | None:
+        """Pythonic read alias for the public timing field."""
+        return self.recommendedVisitMinutes
+
 
 class EdgeEvidence(BaseModel):
     """Evidence for a graph edge."""
@@ -364,6 +374,10 @@ class GraphEvidenceBundle(BaseModel):
     graphSnapshot: GraphSnapshot = Field(
         description="Graph state snapshot"
     )
+    catalog: "SpecialExperienceCatalog" = Field(
+        default_factory=lambda: SpecialExperienceCatalog(),
+        description="Bounded catalog of evidence-backed Activity candidates",
+    )
 
 
 class ExperienceDiscoveryInput(BaseModel):
@@ -385,6 +399,33 @@ class ExperienceDiscoveryInput(BaseModel):
     includeInferred: bool = Field(
         default=True, description="Include inferred claims"
     )
+
+
+class SpecialExperienceCandidate(BaseModel):
+    """A selectable Activity with graph provenance and bounded evidence."""
+
+    claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
+    place_ids: list[str] = Field(default_factory=list, alias="placeIds")
+    anchor_place_ids: list[str] = Field(default_factory=list, alias="anchorPlaceIds")
+    activity_id: str = Field(alias="activityId")
+    predicate: str = Field(description="Predicate of the primary evidence claim")
+    path: list[str] = Field(default_factory=list, description="Primary graph path")
+    edge_evidence: list[EdgeEvidence] = Field(default_factory=list, alias="edgeEvidence")
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    recommendation: Recommendation | None = None
+    trust: TrustLevel = TrustLevel.SOURCE_BACKED
+    warnings: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+
+class SpecialExperienceCatalog(BaseModel):
+    """Bounded main-experience catalog; raw provider payload is never included."""
+
+    candidates: list[SpecialExperienceCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
 
 # ---------------------------------------------------------------------------
@@ -535,4 +576,8 @@ class TripResearchBundle(BaseModel):
     )
     trace: ResearchTrace = Field(
         default_factory=ResearchTrace, description="Execution trace"
+    )
+    catalog: SpecialExperienceCatalog = Field(
+        default_factory=lambda: SpecialExperienceCatalog(),
+        description="Bounded main-experience catalog",
     )

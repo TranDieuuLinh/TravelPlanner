@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.modules.knowledge_graph.model import (
     KnowledgeAlias,
@@ -521,17 +521,25 @@ class ScopeResolutionRepository:
 
         Path: LocationEntity → SPECIAL_EXPERIENCE → Activity
         """
+        source_entity = aliased(KnowledgeEntity)
+        activity_entity = aliased(KnowledgeEntity)
         query = (
             select(KnowledgeRelationship)
             .join(
-                KnowledgeEntity,
-                KnowledgeRelationship.to_entity_id == KnowledgeEntity.id,
+                source_entity,
+                KnowledgeRelationship.from_entity_id == source_entity.id,
+            )
+            .join(
+                activity_entity,
+                KnowledgeRelationship.to_entity_id == activity_entity.id,
             )
             .where(
                 KnowledgeRelationship.from_entity_id.in_(location_ids),
                 KnowledgeRelationship.relationship_type == "SPECIAL_EXPERIENCE",
-                KnowledgeEntity.entity_type.in_(ActivityTypes),
+                source_entity.entity_type.in_(AREA_TYPES),
+                activity_entity.entity_type.in_(ActivityTypes),
             )
+            .order_by(KnowledgeRelationship.id)
             .limit(limit)
         )
         return list(self.db.scalars(query).all())
@@ -557,12 +565,19 @@ class ScopeResolutionRepository:
 
         if not activity_ids:
             return []
+        source_entity = aliased(KnowledgeEntity)
+        place_entity = aliased(KnowledgeEntity)
         query = (
             select(KnowledgeRelationship)
+            .join(source_entity, KnowledgeRelationship.from_entity_id == source_entity.id)
+            .join(place_entity, KnowledgeRelationship.to_entity_id == place_entity.id)
             .where(
                 KnowledgeRelationship.from_entity_id.in_(activity_ids),
                 KnowledgeRelationship.relationship_type == "TARGETS_PLACE",
+                source_entity.entity_type.in_(ActivityTypes),
+                place_entity.entity_type.in_(PLACE_TYPES),
             )
+            .order_by(KnowledgeRelationship.id)
             .limit(limit)
         )
         return list(self.db.scalars(query).all())
@@ -576,12 +591,19 @@ class ScopeResolutionRepository:
 
         Path: Place → OFFERS_ACTIVITY → Activity
         """
+        place_entity = aliased(KnowledgeEntity)
+        activity_entity = aliased(KnowledgeEntity)
         query = (
             select(KnowledgeRelationship)
+            .join(place_entity, KnowledgeRelationship.from_entity_id == place_entity.id)
+            .join(activity_entity, KnowledgeRelationship.to_entity_id == activity_entity.id)
             .where(
                 KnowledgeRelationship.from_entity_id.in_(place_ids),
                 KnowledgeRelationship.relationship_type == "OFFERS_ACTIVITY",
+                place_entity.entity_type.in_(PLACE_TYPES),
+                activity_entity.entity_type.in_(ActivityTypes),
             )
+            .order_by(KnowledgeRelationship.id)
             .limit(limit)
         )
         return list(self.db.scalars(query).all())
@@ -611,12 +633,14 @@ class ScopeResolutionRepository:
             return []
 
         offers_rels = self.query_place_offers_activity(place_ids, limit=limit)
-        offers_by_place = {rel.from_entity_id: rel for rel in offers_rels}
+        offers_by_place: dict[str, list[KnowledgeRelationship]] = {}
+        for rel in offers_rels:
+            offers_by_place.setdefault(rel.from_entity_id, []).append(rel)
 
         chained: list[tuple[KnowledgeRelationship, KnowledgeRelationship]] = []
         for li_rel in located_in_list:
-            if li_rel.from_entity_id in offers_by_place:
-                chained.append((li_rel, offers_by_place[li_rel.from_entity_id]))
+            for offers_rel in offers_by_place.get(li_rel.from_entity_id, []):
+                chained.append((li_rel, offers_rel))
 
         return chained
 

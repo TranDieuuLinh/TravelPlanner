@@ -22,6 +22,9 @@ from app.modules.knowledge_graph.research.schema import (
     GraphEvidenceClaim,
     GraphSnapshot,
     Recommendation,
+    RecommendationPriority,
+    SpecialExperienceCandidate,
+    SpecialExperienceCatalog,
     TrustLevel,
     UnknownClaim,
 )
@@ -89,6 +92,127 @@ def _least_trusted(*levels: TrustLevel) -> TrustLevel:
         TrustLevel.INFERRED: 2,
     }
     return max(levels, key=order.__getitem__)
+
+
+def build_special_experience_catalog(
+    claims: list[GraphEvidenceClaim],
+    limit: int = 30,
+) -> SpecialExperienceCatalog:
+    """Project only Activity-backed SPECIAL_EXPERIENCE claims.
+
+    OFFERS_ACTIVITY/LOCATED_IN claims are useful only as anchors for an Activity
+    already established by SPECIAL_EXPERIENCE. This prevents ordinary meals or
+    Place names from becoming main experiences without an explicit claim.
+    """
+    grouped: dict[str, list[GraphEvidenceClaim]] = {}
+    special_activity_ids: set[str] = set()
+    warnings: list[str] = []
+    for claim in claims:
+        activity_id = claim.activity.id if claim.activity else None
+        if not activity_id:
+            continue
+        if claim.predicate == "SPECIAL_EXPERIENCE" and claim.object.type in {
+            "Activity", "Event", "Tour", "Workshop", "Class",
+        }:
+            special_activity_ids.add(activity_id)
+            grouped.setdefault(activity_id, []).append(claim)
+
+    for claim in claims:
+        activity_id = claim.activity.id if claim.activity else None
+        if (
+            activity_id
+            and activity_id in special_activity_ids
+            and claim.predicate in {"LOCATED_IN", "OFFERS_ACTIVITY"}
+        ):
+            grouped.setdefault(activity_id, []).append(claim)
+
+    candidates: list[SpecialExperienceCandidate] = []
+    priority_order = {
+        RecommendationPriority.MUST: 0,
+        RecommendationPriority.RECOMMENDED: 1,
+        RecommendationPriority.OPTIONAL: 2,
+    }
+    for activity_id, activity_claims in grouped.items():
+        ordered = sorted(activity_claims, key=lambda claim: (claim.claimId, claim.path))
+        primary = next(
+            claim for claim in ordered if claim.predicate == "SPECIAL_EXPERIENCE"
+        )
+        recommendations = [
+            recommendation
+            for claim in ordered
+            for recommendation in claim.recommendations
+        ]
+        recommendation = min(
+            recommendations,
+            key=lambda item: (priority_order[item.priority], item.model_dump_json()),
+            default=None,
+        )
+        if recommendation is not None:
+            # Keep the strongest priority while filling timing from another
+            # evidence edge when the strongest recommendation is untimed.
+            time_slots = next(
+                (item.timeSlots for item in recommendations if item.timeSlots),
+                recommendation.timeSlots,
+            )
+            visit_minutes = recommendation.recommendedVisitMinutes
+            if visit_minutes is None:
+                visit_minutes = next(
+                    (
+                        item.recommendedVisitMinutes
+                        for item in recommendations
+                        if item.recommendedVisitMinutes is not None
+                    ),
+                    None,
+                )
+            if time_slots != recommendation.timeSlots or (
+                visit_minutes != recommendation.recommendedVisitMinutes
+            ):
+                recommendation = recommendation.model_copy(
+                    update={
+                        "timeSlots": list(time_slots),
+                        "recommendedVisitMinutes": visit_minutes,
+                    }
+                )
+        place_ids = sorted({
+            place.id
+            for claim in ordered
+            for place in ([claim.anchorPlace] if claim.anchorPlace else [])
+        })
+        sources = sorted({
+            evidence.source
+            for claim in ordered
+            for evidence in claim.evidence
+            if evidence.source
+        })
+        if not sources:
+            warnings.append(
+                f"CATALOG_CLAIM_WITHOUT_SOURCE: excluded Activity {activity_id}"
+            )
+            continue
+        candidates.append(SpecialExperienceCandidate(
+            claimIds=[claim.claimId for claim in ordered],
+            placeIds=place_ids,
+            anchorPlaceIds=place_ids,
+            activityId=activity_id,
+            predicate=primary.predicate,
+            path=primary.path,
+            edgeEvidence=[evidence for claim in ordered for evidence in claim.evidence],
+            sourceRefs=sources,
+            recommendation=recommendation,
+            trust=max((claim.trust for claim in ordered), key=lambda level: {
+                TrustLevel.VERIFIED: 0,
+                TrustLevel.SOURCE_BACKED: 1,
+                TrustLevel.INFERRED: 2,
+            }[level]),
+            warnings=list(dict.fromkeys(
+                warning for claim in ordered for warning in claim.warnings
+            )),
+        ))
+
+    candidates.sort(key=lambda candidate: (candidate.activity_id, candidate.claim_ids))
+    if len(candidates) > limit:
+        warnings.append(f"CATALOG_LIMIT_APPLIED: limited to {limit} candidates")
+    return SpecialExperienceCatalog(candidates=candidates[:limit], warnings=warnings)
 
 
 def kg_discover_experiences(
@@ -366,4 +490,5 @@ def kg_discover_experiences(
             placeIds=list(all_place_ids)[:100],
             activityIds=list(all_activity_ids)[:100],
         ),
+        catalog=build_special_experience_catalog(all_claims, input_data.limit),
     )
