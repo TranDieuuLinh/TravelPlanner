@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None
     gemini_caption_api_keys: str | None = None
+    gemini_price_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_price_model: str | None = None
     gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
     gemini_caption_timeout_seconds: float = Field(
         default=60.0,
@@ -213,6 +215,14 @@ class Settings(BaseSettings):
                 (*self.gemini_stt_key_pool, *self.gemini_ocr_key_pool)
             )
         )
+
+    @property
+    def gemini_price_key_pool(self) -> tuple[str, ...]:
+        """Use dedicated price-research keys or the shared text key pool."""
+        dedicated = _gemini_keys(self.gemini_price_api_keys)
+        if dedicated:
+            return tuple(dict.fromkeys(dedicated))
+        return tuple(dict.fromkeys(_gemini_keys(self.gemini_api_key)))
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":

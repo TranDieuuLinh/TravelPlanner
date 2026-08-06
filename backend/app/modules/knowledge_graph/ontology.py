@@ -73,6 +73,8 @@ ONTOLOGY_NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
             "place_category",
             "special_experience",
             "opening_hours",
+            "admission_price",
+            "admission_fee_vnd",
             *PLACE_RUNTIME_PROPERTIES,
         ],
     },
