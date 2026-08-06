@@ -237,7 +237,7 @@ def test_missing_destination_saves_draft_and_does_not_run_planner(
     assert result.current_trip_intent is not None
     assert result.current_trip_intent.destination == ""
     assert fake_plans.plan_payloads == []
-    assert result.messages[-1].content == "Bạn muốn đi du lịch ở đâu?"
+    assert result.messages[-1].content == "Bạn muốn đi du lịch ở tỉnh hoặc thành phố nào?"
 
 
 def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() -> None:

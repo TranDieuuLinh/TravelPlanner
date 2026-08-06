@@ -74,7 +74,11 @@ class TimelineFitter:
             if required_start + duration >= 24 * 60:
                 overflow.append(item)
                 continue
-            if required_start > start:
+            current_window_duration = window_duration(item.time_window)
+            if (
+                required_start > start
+                or current_window_duration != duration
+            ):
                 shifted = True
                 if anchor is not None:
                     message = (

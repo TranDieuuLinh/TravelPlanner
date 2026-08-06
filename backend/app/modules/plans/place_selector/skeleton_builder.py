@@ -11,9 +11,11 @@ from app.modules.plans.place_selector.time_windows import (
     format_clock_window,
     parse_clock_minutes,
 )
+from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.place_selector.timeline_policy import (
     ACTIVITY_WINDOWS,
     DEFAULT_TRANSITION_MINUTES,
+    MEAL_ANCHORS,
     selected_activity_duration,
 )
 
@@ -640,7 +642,26 @@ class DaySkeletonBuilder:
         )
         cursor = 8 * 60
         blocks: list[DayBlock] = []
+        meal_index = 0
         for place in ordered:
+            if is_meal_place(
+                tags=place.tags,
+                source_activity=place.source_activity,
+            ):
+                anchor = MEAL_ANCHORS[min(meal_index, len(MEAL_ANCHORS) - 1)]
+                blocks.append(
+                    DayBlock(
+                        role=anchor.role,
+                        time_window=anchor.time_window,
+                        duration_minutes=anchor.duration_minutes,
+                        activity=False,
+                        preferred_ref=place.stable_ref,
+                        kind="meal",
+                        candidate_category="food_drink",
+                    )
+                )
+                meal_index += 1
+                continue
             duration = place.source_duration_minutes or self._source_default_duration(
                 place.source_time_hint
             )

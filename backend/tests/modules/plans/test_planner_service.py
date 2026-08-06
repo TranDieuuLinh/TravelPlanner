@@ -1109,7 +1109,7 @@ def test_main_workflow_keeps_plan_draft_when_place_is_unscheduled() -> None:
 
     assert plan.status.value == "draft"
     assert plan.check_report is not None
-    assert plan.check_report.status == "needs_backup"
+    assert plan.check_report.status == "warning"
     assert {item.place_id for item in plan.unscheduled_places} == {"place-4"}
     assert all(
         item.reason_code in {"no_available_slot", "insufficient_time"}

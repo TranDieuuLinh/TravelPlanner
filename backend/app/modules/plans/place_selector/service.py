@@ -601,19 +601,27 @@ class PlaceSelectorService:
                 source_activity=place.source_activity,
             ) and "cafe" not in {tag.casefold() for tag in place.tags}
             cost = activity_allocation_cost(place.source_duration_minutes)
-            if place.source_day is not None and place.source_day in allocated_by_day:
+            eligible_days = [
+                candidate_day
+                for candidate_day in allocated_by_day
+                if (
+                    meal_count_by_day[candidate_day] < len(MEAL_ANCHORS)
+                    if meal
+                    else activity_minutes_by_day[candidate_day] + cost
+                    <= DAILY_ACTIVITY_MINUTES
+                )
+            ]
+            source_day_is_available = (
+                place.source_day is not None
+                and place.source_day in allocated_by_day
+                and (
+                    not meal
+                    or meal_count_by_day[place.source_day] < len(MEAL_ANCHORS)
+                )
+            )
+            if source_day_is_available:
                 day = place.source_day
             else:
-                eligible_days = [
-                    candidate_day
-                    for candidate_day in allocated_by_day
-                    if (
-                        meal_count_by_day[candidate_day] < len(MEAL_ANCHORS)
-                        if meal
-                        else activity_minutes_by_day[candidate_day] + cost
-                        <= DAILY_ACTIVITY_MINUTES
-                    )
-                ]
                 day = (
                     min(
                         eligible_days,
