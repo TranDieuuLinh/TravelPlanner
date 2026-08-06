@@ -250,8 +250,8 @@ export default function ExplorePage() {
     <main className="explorePage marketExplorePage">
       <section className="pageWidth marketExploreHero">
         <div>
-          <h1>Tìm hành trình đã được kiểm chứng bởi Creator</h1>
-          <p>Mỗi Plan đều kèm Backup Plan, dự toán chi phí và bằng chứng nguồn từ video gốc.</p>
+          <h1>Khám phá hành trình từ Creator</h1>
+          <p>Xem các plan được chia sẻ, lấy cảm hứng và tiếp tục tùy chỉnh theo chuyến đi của bạn.</p>
 
           <form className="marketHeroSearch" onSubmit={handleSearchSubmit}>
             <SearchIcon />
