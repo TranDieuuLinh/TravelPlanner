@@ -3592,14 +3592,6 @@ function Planner() {
     return (
       <div className="plannerEntryTopbar">
         <header className="panelHeading itineraryHeading">
-          <span className="planHeaderIcon" aria-hidden="true">
-            <Image
-              alt=""
-              height={54}
-              src="/images/penguin-plan.png"
-              width={54}
-            />
-          </span>
           <div className="itineraryHeadingCopy">
             <strong>Kế hoạch chi tiết</strong>
             <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
@@ -3638,9 +3630,6 @@ function Planner() {
               </small>
             </div>
           </div>
-          <span aria-hidden="true" className="plannerIntakePenguin">
-            <PenguinMascot size={36} variant="intakePeek" />
-          </span>
           {user ? (
             <HistoryMenuButton
               className="plannerHistoryMenu--intake"
@@ -4248,14 +4237,6 @@ function Planner() {
 
               <section className="itinerary panel">
                 <header className="panelHeading itineraryHeading">
-                  <span className="planHeaderIcon" aria-hidden="true">
-                    <Image
-                      alt=""
-                      height={52}
-                      src="/images/penguin-plan.png"
-                      width={52}
-                    />
-                  </span>
                   <div className="itineraryHeadingCopy">
                     <strong>Kế hoạch chi tiết</strong>
                     <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
@@ -4294,9 +4275,6 @@ function Planner() {
                       </small>
                     </div>
                   </div>
-                  <span aria-hidden="true" className="plannerIntakePenguin">
-                    <PenguinMascot size={36} variant="intakePeek" />
-                  </span>
                   {user ? (
                     <HistoryMenuButton
                       className="plannerHistoryMenu--itinerary"
