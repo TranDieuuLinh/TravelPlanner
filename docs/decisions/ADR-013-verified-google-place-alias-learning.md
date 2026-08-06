@@ -1,11 +1,14 @@
 # ADR-013: Học alias Places từ Google identity đã xác minh
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Đã thay thế bởi ADR-025
 - Ngày: 2026-08-03
 
 ## Bối cảnh
 
-Resolver ưu tiên `places` catalog rồi mới fallback sang Google Maps Playwright.
+Resolver hiện ưu tiên Knowledge Graph rồi mới fallback sang Google Maps
+Playwright. Quyết định bên dưới mô tả catalog `places` legacy và không còn là
+wiring runtime sau ADR-025; kết quả Explorer hiện được stage để review trước khi
+promotion thành `KnowledgeAlias` canonical.
 Một source spelling hoặc lỗi OCR có thể làm catalog miss dù Google xác định được
 identity ổn định. Nếu không học kết quả này, URL khác tiếp tục trả cùng miss và
 phải trả latency Playwright lặp lại.

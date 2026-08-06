@@ -5,10 +5,10 @@
 
 ## Bối cảnh
 
-Explorer đã tra bảng `places` bằng tên gốc và alias song ngữ trước khi gọi
-provider ngoài. Một số địa điểm địa phương có trên Google Maps nhưng không có
-trong catalog nội bộ, làm candidate thiếu latitude/longitude và
-không đủ điều kiện lưu vào `user_must_place`.
+Explorer tra canonical Knowledge Graph bằng tên gốc và alias đã review trước
+khi gọi provider ngoài. Một số địa điểm địa phương có trên Google Maps nhưng
+không có trong graph nội bộ, làm candidate thiếu latitude/longitude và không đủ
+điều kiện đưa vào Planner.
 
 Repo `gosom/google-maps-scraper` cung cấp Playwright CLI và output JSON có tên,
 địa chỉ, latitude, longitude cùng Google place identity mà không cần API key.
@@ -18,11 +18,12 @@ hành.
 
 ## Quyết định
 
-- Thứ tự resolve hiện hành là:
-  `shared URL/place cache -> places DB -> google-maps-scraper (nếu cấu hình)`.
+- Thứ tự resolve hiện hành, sau khi ADR-025 loại catalog `places`, là:
+  `shared URL/place cache -> Knowledge Graph Top-K -> google-maps-scraper (nếu cấu hình)`.
   Cache dùng snapshot đã chuẩn hóa, không dùng lại payload thô. Playwright được
   ưu tiên sau catalog nội bộ để thu thập snapshot Google Maps đầy đủ hơn.
-- Places DB xếp hạng tối đa `top K` record theo tên/alias, vùng, evidence vị
+- Knowledge Graph xếp hạng tối đa `top K` entity theo canonical name/alias đã
+  review, vùng, evidence vị
   trí, category và độ tin cậy catalog. Chỉ nhận top-1 khi vượt ngưỡng điểm tuyệt
   đối và margin với top-2. Mặc định là `K=5`, score phải lớn hơn `0.82`, margin
   `0.08`; score bằng `0.82` không đủ điều kiện. Route context chỉ phân xử các
@@ -32,8 +33,8 @@ hành.
   miss, điểm thấp và kết quả sát nhau đều đi tiếp tới Playwright. Score này là
   heuristic nội bộ cần hiệu chỉnh bằng dữ liệu có nhãn.
 - Gọi trực tiếp executable `google-maps-scraper`; không dùng API key.
-- Candidate chỉ có tối đa hai tên lookup: tên chính thức tiếng Việt và tên
-  canonical tiếng Anh/tên gốc. Cả hai được tra trong `places` theo
+- Candidate chỉ có tối đa hai tên lookup gửi ra Google: tên chính thức tiếng Việt và tên
+  canonical tiếng Anh/tên gốc. Các tên/alias candidate được tra trong Knowledge Graph theo
   `region_key` canonical trước; Google Maps nhận fallback khi DB miss, điểm
   thấp hoặc không tách được top-1 khỏi top-2.
   Scraper tra tiếng Việt trước rồi tên Anh/tên gốc, luôn kèm `searchRegion` và
@@ -91,7 +92,7 @@ reason nhưng không ghi query đầy đủ hay payload Google Maps.
 
 - Có thêm nguồn tọa độ cho alias địa phương mà không làm `PlaceResolver` phụ
   thuộc payload Google Maps.
-- Cache hit và catalog hit không khởi động Playwright. Cache miss có thể chậm
+- Cache hit và Knowledge Graph hit không khởi động Playwright. Cache miss có thể chậm
   vì cần tải Google Maps; timeout vẫn bảo vệ request Explorer.
 - Operator chịu trách nhiệm tự host, quota/tài nguyên, proxy nếu cần, review
   điều khoản sử dụng, attribution và retention trước khi bật provider.

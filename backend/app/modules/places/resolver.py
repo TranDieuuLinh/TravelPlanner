@@ -178,6 +178,10 @@ class PlaceResolution(BaseModel):
 class PlaceResolutionAttempt(BaseModel):
     candidate: str
     provider: str
+    attempted_queries: list[str] = Field(
+        default_factory=list,
+        alias="attemptedQueries",
+    )
     alias_query_count: int = Field(default=0, alias="aliasQueryCount")
     queue_wait_seconds: float = Field(default=0.0, alias="queueWaitSeconds")
     execution_seconds: float = Field(default=0.0, alias="executionSeconds")
@@ -632,6 +636,7 @@ class DatabasePlaceResolver(PlaceResolver):
     ) -> PlaceResolution:
         started_at = time.perf_counter()
         search_region = _effective_search_region(candidate, destination)
+        lookup_queries = _candidate_lookup_names(candidate)
         ranked = self._ranked_records(candidate, destination=destination)
         if not ranked:
             return _with_provider_attempt(
@@ -643,11 +648,13 @@ class DatabasePlaceResolver(PlaceResolver):
                 ),
                 provider=self.provider_name,
                 started_at=started_at,
+                attempted_queries=lookup_queries,
             )
         match_options = _database_match_options(
             candidate,
             ranked,
             destination=destination,
+            provider=self.provider_name,
         )
         best_score, record = ranked[0]
         if (
@@ -663,6 +670,7 @@ class DatabasePlaceResolver(PlaceResolver):
                 ).model_copy(update={"match_options": match_options}),
                 provider=self.provider_name,
                 started_at=started_at,
+                attempted_queries=lookup_queries,
             )
         if best_score <= self.minimum_score:
             return _with_provider_attempt(
@@ -674,6 +682,7 @@ class DatabasePlaceResolver(PlaceResolver):
                 ).model_copy(update={"match_options": match_options}),
                 provider=self.provider_name,
                 started_at=started_at,
+                attempted_queries=lookup_queries,
             )
         if (
             _database_candidate_is_generic(candidate)
@@ -688,6 +697,7 @@ class DatabasePlaceResolver(PlaceResolver):
                 ).model_copy(update={"match_options": match_options}),
                 provider=self.provider_name,
                 started_at=started_at,
+                attempted_queries=lookup_queries,
             )
         used_source_location = _database_source_location_score(
             candidate,
@@ -698,6 +708,7 @@ class DatabasePlaceResolver(PlaceResolver):
                 candidate,
                 record,
                 search_region=search_region,
+                provider=self.provider_name,
                 reason=(
                     "matched_source_location"
                     if used_source_location and len(ranked) > 1
@@ -713,6 +724,7 @@ class DatabasePlaceResolver(PlaceResolver):
             ),
             provider=self.provider_name,
             started_at=started_at,
+            attempted_queries=lookup_queries,
         )
 
     async def resolve_many(
@@ -754,6 +766,7 @@ class DatabasePlaceResolver(PlaceResolver):
                 candidate,
                 record,
                 search_region=_effective_search_region(candidate, destination),
+                provider=self.provider_name,
                 reason="matched_route_context",
             ).model_copy(
                 update={
@@ -829,11 +842,18 @@ class DatabasePlaceResolver(PlaceResolver):
         return ranked[: self.top_k]
 
 
+class KnowledgeGraphPlaceResolver(DatabasePlaceResolver):
+    """Resolve places from the canonical Knowledge Graph catalog."""
+
+    provider_name = "knowledge_graph"
+
+
 def _database_resolution(
     candidate: UnifiedPlaceCandidate,
     record: PlaceLookupRecord,
     *,
     search_region: str,
+    provider: str = "database",
     reason: str | None = None,
 ) -> PlaceResolution:
     metadata = (
@@ -858,7 +878,7 @@ def _database_resolution(
         candidate=candidate,
         status="resolved",
         resolutionReason=reason,
-        provider="database",
+        provider=provider,
         externalId=record.id,
         placeId=record.id,
         name=record.name,
@@ -908,6 +928,7 @@ def _database_match_options(
     ranked: list[tuple[float, PlaceLookupRecord]],
     *,
     destination: str,
+    provider: str = "database",
 ) -> list[PlaceMatchOption]:
     search_region = _effective_search_region(candidate, destination)
     options: list[PlaceMatchOption] = []
@@ -925,8 +946,8 @@ def _database_match_options(
         options.append(
             PlaceMatchOption(
                 rank=rank,
-                matchSource="places_db",
-                provider="database",
+                matchSource="knowledge_graph" if provider == "knowledge_graph" else "places_db",
+                provider=provider,
                 placeId=record.id,
                 externalId=record.id,
                 name=record.name,
@@ -1061,6 +1082,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             limit=self.max_alias_queries,
         )
         attempted_query_count = 0
+        attempted_queries: list[str] = []
         queue_wait_seconds = 0.0
         execution_seconds = 0.0
         provider_started_at = time.perf_counter()
@@ -1070,6 +1092,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             # the remaining aliases as a quality-preserving fallback.
             first_queries = queries[:1]
             attempted_query_count += len(first_queries)
+            attempted_queries.extend(first_queries)
             first_batch = _as_google_maps_search_batch(
                 await self._search(first_queries)
             )
@@ -1085,6 +1108,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             ):
                 fallback_queries = queries[1:]
                 attempted_query_count += len(fallback_queries)
+                attempted_queries.extend(fallback_queries)
                 fallback_batch = _as_google_maps_search_batch(
                     await self._search(fallback_queries)
                 )
@@ -1100,6 +1124,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                     provider=self.provider_name,
                 ),
                 provider=self.provider_name,
+                attempted_queries=attempted_queries,
                 alias_query_count=attempted_query_count,
                 queue_wait_seconds=queue_wait_seconds + exc.queue_wait_seconds,
                 execution_seconds=execution_seconds + exc.execution_seconds,
@@ -1123,6 +1148,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                     provider=self.provider_name,
                 ),
                 provider=self.provider_name,
+                attempted_queries=attempted_queries,
                 alias_query_count=attempted_query_count,
                 queue_wait_seconds=queue_wait_seconds,
                 execution_seconds=execution_seconds,
@@ -1138,6 +1164,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                     provider=self.provider_name,
                 ),
                 provider=self.provider_name,
+                attempted_queries=attempted_queries,
                 alias_query_count=attempted_query_count,
                 queue_wait_seconds=queue_wait_seconds,
                 execution_seconds=execution_seconds,
@@ -1283,6 +1310,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 attribution="Google Maps data via gosom/google-maps-scraper",
             ),
             provider=self.provider_name,
+            attempted_queries=attempted_queries,
             alias_query_count=attempted_query_count,
             queue_wait_seconds=queue_wait_seconds,
             execution_seconds=execution_seconds,
@@ -1497,6 +1525,7 @@ def _with_provider_attempt(
     resolution: PlaceResolution,
     *,
     provider: str,
+    attempted_queries: list[str] | None = None,
     started_at: float | None = None,
     alias_query_count: int = 0,
     queue_wait_seconds: float = 0.0,
@@ -1513,6 +1542,7 @@ def _with_provider_attempt(
     attempt = PlaceResolutionAttempt(
         candidate=resolution.candidate.name,
         provider=provider,
+        attemptedQueries=attempted_queries or [],
         aliasQueryCount=alias_query_count,
         queueWaitSeconds=round(max(0.0, queue_wait_seconds), 3),
         executionSeconds=round(max(0.0, execution_seconds), 3),

@@ -8,6 +8,7 @@ by integration tests / manual testing.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -575,3 +576,87 @@ class TestStaleRecovery:
         # No expire_stale_turns attribute -> no-op, must not raise.
         service = _make_service(repo)
         service.get_turn("chat-1", SimpleNamespace(id=1), "t1")  # should not raise
+
+
+class TestExecuteTimeout:
+    def test_execution_timeout_is_persisted_as_failed_turn(self):
+        turn = SimpleNamespace(
+            id="turn-1",
+            turn_id="turn-1",
+            status="queued",
+            base_revision=0,
+            content="lên plan Hà Nội",
+            attachment_names=[],
+        )
+        chat = SimpleNamespace(
+            id="chat-1",
+            user_id=1,
+            revision=0,
+            current_plan=None,
+            messages=[],
+            conversation_context={},
+            conversation_phase="exploration",
+            destination=None,
+            turns=[turn],
+        )
+
+        class _Db:
+            def __init__(self):
+                self.rollback_calls = 0
+
+            def rollback(self):
+                self.rollback_calls += 1
+
+        class _Repo:
+            def __init__(self):
+                self.db = _Db()
+                self.saved_responses: list[dict[str, Any]] = []
+
+            def get(self, chat_id, user_id):
+                return chat
+
+            def get_turn(self, chat_id, user_id, turn_id):
+                return turn
+
+            def update_turn(self, target, **kwargs):
+                for key, value in kwargs.items():
+                    setattr(target, key, value)
+                return target
+
+            def save_conversation_response(
+                self, target_chat, target_turn, **kwargs
+            ):
+                self.saved_responses.append(kwargs)
+
+        class _Supervisor:
+            async def decide(self, *args, **kwargs):
+                return _decision(intent="create_plan")
+
+        repo = _Repo()
+        service = ConversationTurnService(
+            repository=repo,  # type: ignore[arg-type]
+            trip_chat_service=_FakeTripChatService(),  # type: ignore[arg-type]
+            mutation_service=_FakeMutationService(),  # type: ignore[arg-type]
+            supervisor=_Supervisor(),  # type: ignore[arg-type]
+        )
+        service.plan_timeout_seconds = 0.01
+
+        async def slow_run_decision(*args, **kwargs):
+            await asyncio.sleep(1)
+
+        service._run_decision = slow_run_decision  # type: ignore[method-assign]
+
+        result = asyncio.run(
+            service.execute("chat-1", SimpleNamespace(id=1), "turn-1")
+        )
+
+        assert result.status == "failed"
+        assert result.error_code == "TURN_TIMEOUT"
+        assert "hết thời gian chờ" in result.error_message
+        assert repo.db.rollback_calls == 1
+        assert repo.saved_responses[0]["assistant_blocks"] == [
+            {
+                "type": "errorRecovery",
+                "message": "Lượt xử lý đã hết thời gian chờ. Bạn có thể thử lại.",
+            }
+        ]

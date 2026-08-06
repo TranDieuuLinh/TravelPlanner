@@ -184,6 +184,31 @@ export function useConversationTurn(
     [finish, startPolling],
   );
 
+  const resumeTurn = useCallback(
+    async (turn: TripChatTurn) => {
+      completedRef.current = false;
+      setState({ status: turn.status, turn, error: null });
+      if (TERMINAL_TURN_STATUSES.has(turn.status)) {
+        finish(turn);
+        return turn;
+      }
+      if (turn.status === "queued") {
+        const executed = await executeTripChatTurn({
+          chatId: turn.chatId,
+          turnId: turn.id,
+        });
+        setState({ status: executed.status, turn: executed, error: null });
+        if (TERMINAL_TURN_STATUSES.has(executed.status)) {
+          finish(executed);
+          return executed;
+        }
+      }
+      startPolling(turn.chatId, turn.id);
+      return turn;
+    },
+    [finish, startPolling],
+  );
+
   const confirm = useCallback(
     async (input: { chatId: string; turnId: string }) => {
       const turn = await confirmTripChatTurn(input);
@@ -216,6 +241,7 @@ export function useConversationTurn(
   return {
     ...state,
     submitTurn,
+    resumeTurn,
     confirm,
     cancel,
     reset,

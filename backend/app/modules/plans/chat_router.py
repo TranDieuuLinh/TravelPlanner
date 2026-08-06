@@ -78,6 +78,15 @@ def delete_all_trip_chats(
     service.delete_all_for_user(current_user)
 
 
+@router.get("/active-turns", response_model=list[TripChatTurnRead])
+def list_active_trip_chat_turns(
+    service: Annotated[ConversationTurnService, Depends(get_conversation_turn_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[TripChatTurnRead]:
+    """Return durable planning work so navigation does not hide its state."""
+    return [TripChatTurnRead.model_validate(turn) for turn in service.list_active_turns(current_user)]
+
+
 @router.get("/{chat_id}", response_model=TripChatRead)
 def get_trip_chat(
     chat_id: str,
@@ -354,6 +363,27 @@ def select_trip_chat_transport_option(
             distanceMeters=distance_meters,
             estimatedDurationMinutes=estimated_duration_minutes,
         ),
+    )
+
+
+@router.post(
+    "/{chat_id}/plan/days/{day}/transport-legs/{leg_index}/retry",
+    response_model=TripChatRead,
+)
+def retry_trip_chat_transport_leg(
+    chat_id: str,
+    day: int,
+    leg_index: int,
+    expected_revision: Annotated[int, Form(alias="expectedRevision", ge=0)],
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return service.retry_transport_leg(
+        chat_id,
+        current_user,
+        expected_revision=expected_revision,
+        day=day,
+        leg_index=leg_index,
     )
 
 

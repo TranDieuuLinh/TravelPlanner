@@ -184,6 +184,9 @@ class KnowledgeGraphImport(Base):
     processing_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="queued", index=True
     )
+    processing_phase: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="queued"
+    )
     review_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="not_required", index=True
     )

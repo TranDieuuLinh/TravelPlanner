@@ -260,6 +260,7 @@ class ExplorerTimingTrace:
                     ExplorerProviderAttempt(
                         candidate=attempt.candidate,
                         provider=attempt.provider,
+                        attemptedQueries=attempt.attempted_queries,
                         aliasQueryCount=attempt.alias_query_count,
                         queueWaitSeconds=_seconds(attempt.queue_wait_seconds),
                         executionSeconds=_seconds(attempt.execution_seconds),
@@ -326,7 +327,7 @@ class ExplorerTimingLogger:
             {
                 key: value
                 for key, value in attempt.items()
-                if key != "candidate"
+                if key not in {"candidate", "attemptedQueries"}
             }
             for attempt in terminal_payload.get("providerAttempts", [])
         ]
@@ -366,6 +367,7 @@ def _synthetic_attempt(resolution: PlaceResolution):
     return PlaceResolutionAttempt(
         candidate=resolution.candidate.name,
         provider=resolution.provider or "unknown",
+        attemptedQueries=[],
         outcome=("resolved" if resolution.status == "resolved" else "unresolved"),
         rejectionReason=resolution.resolution_reason,
     )

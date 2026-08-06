@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteUrlImportJob,
+  listActiveTripChatTurns,
   listUrlImportJobs,
   reprocessUrlImportJob,
   retryUrlImportJob,
@@ -11,6 +12,7 @@ import {
   type ExplorerTimingStage,
   type PlanTimingReport,
   type PlanTimingStage,
+  type TripChatTurn,
   type UrlImportJob
 } from "@/lib/plans";
 import {
@@ -43,6 +45,7 @@ function sourceLabel(value: string) {
 }
 
 function jobSourceLabel(job: DisplayJob) {
+  if (!job.url && job.sourceLabel) return job.sourceLabel;
   if (job.sourceType === "image") {
     const label = job.sourceLabel || "Ảnh OCR";
     return label.length > 48 ? `${label.slice(0, 45)}…` : label;
@@ -78,8 +81,26 @@ function detailLabel(value: string | number | boolean | null) {
   return value ?? "—";
 }
 
+const DETAIL_LABELS: Record<string, string> = {
+  candidateCount: "Candidate",
+  selectedPlaceCount: "Địa điểm đầu vào",
+  requestedDays: "Số ngày yêu cầu",
+  tripThemeCount: "Chủ đề chuyến đi",
+  scheduledDayCount: "Số ngày đã xếp",
+  itemCount: "Hoạt động",
+  unscheduledCount: "Chưa xếp",
+  issueCount: "Vấn đề",
+  status: "Trạng thái",
+  urlCount: "URL",
+  dataSource: "Công cụ / dữ liệu"
+};
+
+function detailKeyLabel(key: string) {
+  return DETAIL_LABELS[key] ?? key;
+}
+
 function runningActivity(job: DisplayJob, elapsed: number) {
-  const isPlanning = (isGuestJob(job) && job.phase === "planning") || Boolean(job.explorerTiming);
+  const isPlanning = isPlanningJob(job);
 
   if (isPlanning) {
     if (elapsed < 6) return "Đang tạo khung chuyến đi theo từng ngày";
@@ -102,10 +123,22 @@ function runningActivity(job: DisplayJob, elapsed: number) {
   return "Đang đối chiếu, gộp trùng và xác định địa điểm";
 }
 
+function isPlanningJob(job: DisplayJob) {
+  return job.phase === "planning";
+}
+
+function progressStage(job: DisplayJob) {
+  if (job.status === "queued") return { step: 1, label: "Chuẩn bị" };
+  return isPlanningJob(job)
+    ? { step: 3, label: "Lập kế hoạch" }
+    : { step: 2, label: "Khám phá" };
+}
+
 function statusLabel(job: DisplayJob, now: number) {
   if (job.status === "running") {
     const elapsed = elapsedSeconds(job, now);
-    return `${runningActivity(job, elapsed)} · ${elapsedLabel(elapsed)}`;
+    const stage = progressStage(job);
+    return `Bước ${stage.step}/3 · ${stage.label} · ${runningActivity(job, elapsed)} · ${elapsedLabel(elapsed)}`;
   }
   if (job.status === "queued") {
     const position = job.queuePosition ? ` · vị trí #${job.queuePosition}` : "";
@@ -138,7 +171,7 @@ function TimingStages({
                 <span>{stage.label}</span>
                 {details.length ? (
                   <small>
-                    {details.map(([key, value]) => `${key}: ${detailLabel(value)}`).join(" · ")}
+                    {details.map(([key, value]) => `${detailKeyLabel(key)}: ${detailLabel(value)}`).join(" · ")}
                   </small>
                 ) : null}
               </span>
@@ -155,7 +188,8 @@ function TimingStages({
 const PROVIDER_LABELS: Record<string, string> = {
   shared_cache: "Shared place cache",
   cache: "Place cache",
-  database: "Places DB",
+  database: "Knowledge Graph DB",
+  knowledge_graph: "Knowledge Graph DB",
   google_maps_scraper: "Google Maps · Playwright",
   provisional: "Provisional",
   unknown: "Không xác định"
@@ -210,14 +244,17 @@ function ProviderAttempts({
 }) {
   if (!attempts?.length) return null;
   return (
-    <details className="backgroundJobProviderAttempts">
+    <details className="backgroundJobProviderAttempts" open>
       <summary>Chi tiết từng lần resolve ({attempts.length})</summary>
       <div className="backgroundJobProviderAttemptList">
         {attempts.map((attempt, index) => (
           <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
             <strong>{attempt.candidate}</strong>
             <span>{providerLabel(attempt.provider)}</span>
-            <span>{attempt.aliasQueryCount} query</span>
+            <span>{attempt.aliasQueryCount} keyword</span>
+            {attempt.attemptedQueries?.length ? (
+              <span>Keyword: {attempt.attemptedQueries.join(" · ")}</span>
+            ) : null}
             <span>chờ {timingLabel(attempt.queueWaitSeconds)}</span>
             <span>chạy {timingLabel(attempt.executionSeconds)}</span>
             <span>
@@ -335,6 +372,12 @@ function JobTimingDetails({
             <strong>Đang tìm và xác định địa điểm</strong>
             <b>{elapsedLabel(elapsed)}</b>
           </header>
+          <small>
+            Explorer đang chạy URL extraction → gộp candidate → Knowledge Graph
+            Top-K theo tên/alias → Google Maps Playwright khi KG không đủ tin cậy
+            → lưu PostgreSQL.
+            Keyword và timer chính xác của từng lượt sẽ hiện ngay khi resolve xong.
+          </small>
         </section>
       ) : null}
       {planner ? (
@@ -352,6 +395,18 @@ function JobTimingDetails({
           </div>
           <TimingStages label="Các bước Planner + Finder" stages={planner.stages} />
         </section>
+      ) : running && explorer ? (
+        <section className="backgroundJobTimingSummary backgroundJobTimingPending">
+          <header>
+            <strong>Planner + Finder đang chạy</strong>
+            <b>{elapsedLabel(Math.max(0, elapsed - explorer.totalSeconds))}</b>
+          </header>
+          <small>
+            TripThemePlanner (Knowledge Graph DB + LLM) → PlaceSelector
+            (Knowledge Graph DB + rules) → dựng plan → kiểm tra tính khả thi. Timer từng
+            bước sẽ được giữ lại tại đây sau khi hoàn tất.
+          </small>
+        </section>
       ) : null}
     </div>
   );
@@ -365,29 +420,19 @@ export function BackgroundUrlJobs({
   enabled: boolean;
 }) {
   const [serverJobs, setServerJobs] = useState<UrlImportJob[]>([]);
+  const [activeTurns, setActiveTurns] = useState<TripChatTurn[]>([]);
   const [guestJobs, setGuestJobs] = useState<GuestUrlImportJob[]>(() => listGuestUrlJobs());
   const [now, setNow] = useState(() => Date.now());
   const [panelOpen, setPanelOpen] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ jobId: string; message: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [readyJobIds, setReadyJobIds] = useState<Set<string>>(() => new Set());
   const statusesRef = useRef<Map<string, string>>(new Map());
-  const guestStatusesRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     const handleGuestJobs = (event: Event) => {
       const nextJobs = (event as CustomEvent<GuestUrlImportJob[]>).detail;
       const resolvedJobs = Array.isArray(nextJobs) ? nextJobs : listGuestUrlJobs();
-      for (const job of resolvedJobs) {
-        const oldStatus = guestStatusesRef.current.get(job.id);
-        if (oldStatus && oldStatus !== job.status && job.status === "succeeded") {
-          setReadyJobIds((current) => new Set(current).add(job.id));
-        }
-      }
-      guestStatusesRef.current = new Map(
-        resolvedJobs.map((job) => [job.id, job.status])
-      );
       setGuestJobs(resolvedJobs);
     };
     window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
@@ -403,15 +448,16 @@ export function BackgroundUrlJobs({
   );
 
   useEffect(() => {
-    if (!enabled || !jobs.some((job) => ACTIVE.has(job.status))) return;
+    if (!enabled || (!activeTurns.length && !jobs.some((job) => ACTIVE.has(job.status)))) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [enabled, jobs]);
+  }, [activeTurns.length, enabled, jobs]);
 
   useEffect(() => {
     if (!enabled || !authenticated) {
       setServerJobs([]);
+      setActiveTurns([]);
       statusesRef.current.clear();
       return;
     }
@@ -420,24 +466,28 @@ export function BackgroundUrlJobs({
 
     async function refresh() {
       try {
-        const response = await listUrlImportJobs();
+        const [response, turns] = await Promise.all([
+          listUrlImportJobs(),
+          listActiveTripChatTurns()
+        ]);
         if (cancelled) return;
         const previous = statusesRef.current;
         for (const job of response.jobs) {
           const oldStatus = previous.get(job.id);
           if (oldStatus && oldStatus !== job.status && TERMINAL.has(job.status)) {
             window.dispatchEvent(new CustomEvent("vsf:url-job-update", { detail: job }));
-            if (job.status === "succeeded") {
-              setReadyJobIds((current) => new Set(current).add(job.id));
-            }
           }
         }
         statusesRef.current = new Map(response.jobs.map((job) => [job.id, job.status]));
         setServerJobs(response.jobs);
+        setActiveTurns(turns);
         window.dispatchEvent(new CustomEvent("vsf:url-jobs-snapshot", {
           detail: response.jobs
         }));
-        const hasActive = response.jobs.some((job) => !TERMINAL.has(job.status));
+        window.dispatchEvent(new CustomEvent("vsf:active-turns-snapshot", {
+          detail: turns
+        }));
+        const hasActive = turns.length > 0 || response.jobs.some((job) => !TERMINAL.has(job.status));
         timer = setTimeout(refresh, hasActive ? 1800 : 8000);
       } catch {
         if (!cancelled) timer = setTimeout(refresh, 8000);
@@ -457,34 +507,40 @@ export function BackgroundUrlJobs({
     };
   }, [authenticated, enabled]);
 
-  const visibleJobs = jobs
-    .filter((job) => job.status !== "succeeded" || readyJobIds.has(job.id))
-    .slice(0, 12);
+  // Keep completed jobs visible while timing diagnostics are being tested.
+  // They disappear only when the user explicitly deletes them.
+  const visibleJobs = jobs.slice(0, 12);
   const runningJobs = visibleJobs.filter((job) => job.status === "running");
   const running = runningJobs.length;
   const queued = visibleJobs.filter((job) => job.status === "queued").length;
   const failed = visibleJobs.filter((job) => job.status === "failed").length;
   const ready = visibleJobs.filter((job) => job.status === "succeeded").length;
-  if (!enabled || visibleJobs.length === 0) return null;
+  if (!enabled || (visibleJobs.length === 0 && activeTurns.length === 0)) return null;
 
-  const summary = running || queued
-    ? running
-      ? `${running > 1 ? `${running} đang xử lý` : "Đang xử lý"} · ${elapsedLabel(elapsedSeconds(runningJobs[0], now))}${queued ? ` · ${queued} đang chờ` : ""}`
-      : `${queued} đang chờ`
+  const primaryRunningJob = runningJobs[0];
+  const primaryStage = primaryRunningJob ? progressStage(primaryRunningJob) : null;
+  const primaryTurn = activeTurns[0];
+  const turnStage = primaryTurn
+    ? primaryTurn.status === "queued"
+      ? { step: 1, label: "Chuẩn bị" }
+      : primaryTurn.status === "classifying"
+        ? { step: 2, label: "Khám phá" }
+        : { step: 3, label: "Lập kế hoạch" }
+    : null;
+  const activeCount = running + queued + activeTurns.length;
+  const primaryElapsed = primaryTurn
+    ? Math.max(0, Math.floor((now - Date.parse(primaryTurn.createdAt)) / 1000))
+    : primaryRunningJob
+      ? elapsedSeconds(primaryRunningJob, now)
+      : 0;
+
+  const summary = activeCount
+    ? `${activeCount > 1 ? `${activeCount} tác vụ · ` : ""}Bước ${turnStage?.step ?? primaryStage?.step ?? 1}/3 · ${turnStage?.label ?? primaryStage?.label ?? "Chuẩn bị"} · ${elapsedLabel(primaryElapsed)}`
     : ready
       ? ready > 1
         ? `${ready} plan đã sẵn sàng`
         : "Plan đã sẵn sàng"
       : `${failed} tác vụ thất bại`;
-
-  function dismissReady(jobId: string) {
-    setReadyJobIds((current) => {
-      const next = new Set(current);
-      next.delete(jobId);
-      return next;
-    });
-    setPanelOpen(false);
-  }
 
   async function runAgain(job: DisplayJob) {
     setRetryingId(job.id);
@@ -538,20 +594,42 @@ export function BackgroundUrlJobs({
         open={panelOpen}
       >
         <summary aria-label={summary} title={summary}>
-          <span className={running || queued ? "backgroundJobPulse" : "backgroundJobIcon"} aria-hidden="true" />
+          <span className={activeCount ? "backgroundJobPulse" : "backgroundJobIcon"} aria-hidden="true" />
           <strong>{summary}</strong>
           <span className="backgroundJobsChevron" aria-hidden="true">⌄</span>
         </summary>
         <div className="backgroundJobsList">
           <div className="backgroundJobsListHeader">
             <strong>
-              {running || queued
-                ? "Nguồn đang được xử lý"
+              {activeCount
+                ? "Chuyến đi đang được xử lý"
                 : ready
                   ? "Lịch trình đã sẵn sàng"
                   : "Nguồn xử lý thất bại"}
             </strong>
           </div>
+          {activeTurns.map((turn) => {
+            const stage = turn.status === "queued"
+              ? { step: 1, label: "Chuẩn bị" }
+              : turn.status === "classifying"
+                ? { step: 2, label: "Khám phá" }
+                : { step: 3, label: "Lập kế hoạch" };
+            const elapsed = Math.max(0, Math.floor((now - Date.parse(turn.createdAt)) / 1000));
+            return (
+              <div className="backgroundJobRow running" key={`turn-${turn.id}`}>
+                <div className="backgroundTurnSummary">
+                  <span className="backgroundJobState" aria-hidden="true" />
+                  <span className="backgroundJobCopy">
+                    <strong>AI Planner</strong>
+                    <small>Bước {stage.step}/3 · {stage.label} · {elapsedLabel(elapsed)}</small>
+                  </span>
+                  <Link className="backgroundJobOpenChat" href={`/planner?chatId=${encodeURIComponent(turn.chatId)}`}>
+                    Quay lại chuyến đi
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
           {visibleJobs.map((job) => {
             return (
               <details className={`backgroundJobRow ${job.status}`} key={job.id}>
@@ -606,9 +684,6 @@ export function BackgroundUrlJobs({
                           ? "/planner"
                           : `/planner?chatId=${encodeURIComponent(job.chatId)}`
                       }
-                      onClick={() => {
-                        if (job.status === "succeeded") dismissReady(job.id);
-                      }}
                     >
                       {job.status === "succeeded"
                         ? "Xem lịch trình"

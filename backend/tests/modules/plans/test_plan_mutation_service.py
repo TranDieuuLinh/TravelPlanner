@@ -765,6 +765,45 @@ def test_select_transport_option_rejects_unavailable_mode():
     assert exc_info.value.status_code == 400
 
 
+def test_retry_transport_leg_replaces_hidden_long_walk_with_car_fallback():
+    route_provider = LongWalkOnlyRouteProvider()
+    service = PlanMutationService(
+        route_optimizer=GeographicRouteOptimizer(route_provider),
+    )
+    plan = make_sample_plan()
+    day = plan.days[0].model_copy(
+        update={
+            "transport_legs": [
+                PlanTransportLeg(
+                    fromItemId="item-1-1",
+                    toItemId="item-1-2",
+                    fromPlace="Hồ Hoàn Kiếm",
+                    toPlace="Chợ Đồng Xuân",
+                    mode="walk",
+                    distanceMeters=8856,
+                    estimatedDurationMinutes=118,
+                    geometryCoordinates=[
+                        (21.0285, 105.8542),
+                        (21.0375, 105.8500),
+                    ],
+                    source="valhalla_routing",
+                    verified=True,
+                )
+            ]
+        }
+    )
+    plan = plan.model_copy(update={"days": [day, plan.days[1]]})
+
+    result = service.retry_transport_leg(plan, day_number=1, leg_index=0)
+
+    leg = result.plan.days[0].transport_legs[0]
+    assert leg.mode == "car"
+    assert leg.source == "geodesic_estimate"
+    assert leg.verified is False
+    assert [option.mode for option in leg.alternatives] == ["walk"]
+    assert route_provider.requested_modes == ["pedestrian", "car", "car"]
+
+
 class RecordingValhallaRouteProvider:
     def __init__(self) -> None:
         self.requested_pairs: list[
@@ -784,6 +823,31 @@ class RecordingValhallaRouteProvider:
         return RouteCalculation(
             distance_meters=900 if transport_mode == "pedestrian" else 1400,
             duration_seconds=600 if transport_mode == "pedestrian" else 240,
+            geometry_coordinates=[origin, destination],
+            provider="valhalla_routing",
+            fetched_at=datetime.now(timezone.utc),
+        )
+
+
+class LongWalkOnlyRouteProvider:
+    def __init__(self) -> None:
+        self.requested_modes: list[str] = []
+
+    def calculate(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        *,
+        transport_mode: str,
+        departure_time: datetime | None = None,
+    ) -> RouteCalculation | None:
+        del departure_time
+        self.requested_modes.append(transport_mode)
+        if transport_mode == "car":
+            return None
+        return RouteCalculation(
+            distance_meters=8856,
+            duration_seconds=7080,
             geometry_coordinates=[origin, destination],
             provider="valhalla_routing",
             fetched_at=datetime.now(timezone.utc),

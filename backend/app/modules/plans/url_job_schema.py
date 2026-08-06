@@ -15,6 +15,7 @@ class UrlImportJobRead(BaseModel):
     url: str
     force_refresh: Annotated[bool, Field(alias="forceRefresh")]
     status: str
+    phase: str
     queue_position: Annotated[int | None, Field(alias="queuePosition")]
     attempt_count: Annotated[int, Field(alias="attemptCount")]
     result_revision: Annotated[int | None, Field(alias="resultRevision")]

@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     auto_plan_mutation_enabled: bool = True
     conversation_streaming_enabled: bool = True
     conversation_turn_timeout_seconds: float = Field(default=120.0, ge=1.0, le=900.0)
-    conversation_turn_stale_after_seconds: float = Field(default=300.0, ge=1.0, le=3600.0)
+    conversation_plan_timeout_seconds: float = Field(default=300.0, ge=30.0, le=1800.0)
+    conversation_turn_stale_after_seconds: float = Field(default=360.0, ge=1.0, le=3600.0)
     candidate_review_enabled: bool = False
     weather_enabled: bool = False
     conversational_backup_enabled: bool = True

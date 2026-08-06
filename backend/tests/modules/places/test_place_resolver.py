@@ -6,10 +6,21 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.base import Base
+from app.modules.knowledge_graph.model import (
+    KnowledgeAlias,
+    KnowledgeEntity,
+    KnowledgeProperty,
+)
+from app.modules.knowledge_graph.place_repository import KnowledgeGraphPlaceRepository
 from app.modules.places.resolver import (
     DatabasePlaceResolver,
     FallbackPlaceResolver,
     GoogleMapsScraperPlaceResolver,
+    KnowledgeGraphPlaceResolver,
     PlaceResolution,
     PlaceResolver,
 )
@@ -153,6 +164,23 @@ def test_runtime_wires_database_before_provisional_when_scraper_is_disabled(
     assert isinstance(resolver.fallback, dependencies.ProvisionalPlaceResolver)
 
 
+def test_runtime_keeps_knowledge_graph_primary_in_provisional_mode(
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(
+        dependencies.settings,
+        "place_resolver_provider",
+        "provisional",
+    )
+    repository = FakePlaceRepository([])
+
+    resolver = dependencies._get_place_resolver(repository)  # type: ignore[arg-type]
+
+    assert isinstance(resolver, FallbackPlaceResolver)
+    assert isinstance(resolver.primary, KnowledgeGraphPlaceResolver)
+    assert isinstance(resolver.fallback, dependencies.ProvisionalPlaceResolver)
+
+
 def test_runtime_wires_database_before_google_maps_scraper(
     monkeypatch: Any,
 ) -> None:
@@ -175,8 +203,123 @@ def test_runtime_wires_database_before_google_maps_scraper(
     resolver = dependencies._get_place_resolver(FakePlaceRepository([]))  # type: ignore[arg-type]
 
     assert isinstance(resolver, FallbackPlaceResolver)
-    assert isinstance(resolver.primary, DatabasePlaceResolver)
+    assert isinstance(resolver.primary, KnowledgeGraphPlaceResolver)
     assert isinstance(resolver.fallback, GoogleMapsScraperPlaceResolver)
+
+
+def test_knowledge_graph_resolver_matches_alias_before_fallback() -> None:
+    repository = FakePlaceRepository(
+        [
+            SimpleNamespace(
+                id="kg-hoan-kiem-lake",
+                name="Hồ Hoàn Kiếm",
+                place_type="TravelPlace",
+                address="Hoàn Kiếm, Hà Nội",
+                city="Hà Nội",
+                country="Việt Nam",
+                country_code="VN",
+                primary_area="Hoàn Kiếm",
+                latitude=Decimal("21.0286669"),
+                longitude=Decimal("105.8521484"),
+                data_confidence="high",
+                region_key="vn,ha-noi",
+                status="active",
+                opening_hours=[],
+                typical_duration_minutes=90,
+                source_platform="knowledge_graph",
+                source_link=None,
+                plus_code=None,
+                rating=None,
+                review_count=None,
+                revision=1,
+                source_fetched_at=None,
+                metadata_json={"aliases": ["Ho Guom", "Lake of the Returned Sword"]},
+            )
+        ]
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Ho Guom",
+        searchNames=["Lake of the Returned Sword"],
+        searchRegion="Hà Nội",
+    )
+    fallback_result = PlaceResolution(
+        candidate=candidate,
+        status="unresolved",
+        provider="google_maps_scraper",
+        name=candidate.name,
+    )
+    fallback = RecordingFallbackResolver(fallback_result)
+    resolver = FallbackPlaceResolver(
+        KnowledgeGraphPlaceResolver(repository, top_k=5),
+        fallback,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.provider == "knowledge_graph"
+    assert result.place_id == "kg-hoan-kiem-lake"
+    assert result.match_options[0].match_source == "knowledge_graph"
+    assert result.provider_attempts[0].provider == "knowledge_graph"
+    assert fallback.calls == 0
+
+
+def test_knowledge_graph_repository_searches_reviewed_alias_before_fallback() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        entity = KnowledgeEntity(
+            id="kg-hoan-kiem-lake",
+            canonical_name="Hồ Hoàn Kiếm",
+            normalized_name="ho hoan kiem",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        entity.aliases.append(
+            KnowledgeAlias(
+                alias="Lake of the Returned Sword",
+                normalized_alias="lake of the returned sword",
+                status="verified",
+            )
+        )
+        entity.properties.extend(
+            [
+                KnowledgeProperty(key="city", value="Hà Nội"),
+                KnowledgeProperty(key="region_key", value="vn,ha-noi"),
+                KnowledgeProperty(key="latitude", value="21.0286669"),
+                KnowledgeProperty(key="longitude", value="105.8521484"),
+                KnowledgeProperty(key="data_confidence", value="high"),
+            ]
+        )
+        session.add(entity)
+        session.commit()
+
+        candidate = UnifiedPlaceCandidate(
+            name="Lake of the Returned Sword",
+            searchRegion="Hà Nội",
+        )
+        fallback_result = PlaceResolution(
+            candidate=candidate,
+            status="unresolved",
+            provider="google_maps_scraper",
+            name=candidate.name,
+        )
+        fallback = RecordingFallbackResolver(fallback_result)
+        resolver = FallbackPlaceResolver(
+            KnowledgeGraphPlaceResolver(
+                KnowledgeGraphPlaceRepository(session),
+                top_k=5,
+            ),
+            fallback,
+        )
+
+        result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+        assert result.status == "resolved"
+        assert result.provider == "knowledge_graph"
+        assert result.place_id == entity.id
+        assert result.match_options[0].name == "Hồ Hoàn Kiếm"
+        assert fallback.calls == 0
 
 
 def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
@@ -227,6 +370,7 @@ def test_google_maps_scraper_resolves_coordinates_with_alias_name() -> None:
         "Google Maps data via gosom/google-maps-scraper"
     )
     assert result.provider_attempts[0].alias_query_count == 1
+    assert result.provider_attempts[0].attempted_queries == [alias_query]
     assert result.provider_attempts[0].outcome == "resolved"
 
 
@@ -261,6 +405,7 @@ def test_google_maps_scraper_defaults_to_two_official_alias_queries() -> None:
     ]
     assert result.status == "resolved"
     assert result.provider_attempts[0].alias_query_count == 2
+    assert result.provider_attempts[0].attempted_queries == resolver.queries
 
 
 def test_google_maps_caps_legacy_alias_setting_at_two_queries() -> None:
@@ -362,7 +507,7 @@ def test_google_maps_selects_top_scored_descriptive_name_above_threshold() -> No
     assert result.match_options[0].rejection_reasons == []
 
 
-def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
+def test_google_maps_scraper_fills_coordinates_missing_from_knowledge_graph() -> None:
     candidate = UnifiedPlaceCandidate(
         name="Hidden Garden",
         searchNames=["Vườn Ẩn"],
@@ -402,7 +547,7 @@ def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
         }
     )
     resolver = FallbackPlaceResolver(
-        DatabasePlaceResolver(repository),
+        KnowledgeGraphPlaceResolver(repository),
         scraper,
     )
 
@@ -416,7 +561,7 @@ def test_google_maps_scraper_fills_coordinates_missing_from_places_db() -> None:
     assert str(result.longitude) == "105.82"
     assert scraper.queries == ["Hidden Garden, Hà Nội"]
     assert [attempt.provider for attempt in result.provider_attempts] == [
-        "database",
+        "knowledge_graph",
         "google_maps_scraper",
     ]
     assert [attempt.outcome for attempt in result.provider_attempts] == [
@@ -1228,6 +1373,7 @@ def test_database_resolver_does_not_resolve_generic_food_without_address() -> No
 
     assert result.status == "unresolved"
     assert result.resolution_reason == "generic_name_without_source_location"
+    assert "Bún Chả" in result.provider_attempts[0].attempted_queries
 
 
 def test_database_resolver_keeps_similarly_close_branches_ambiguous() -> None:

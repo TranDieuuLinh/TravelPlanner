@@ -2,8 +2,8 @@
 
 ## Nguyên tắc
 
-- Category/tag vận hành của một địa điểm đã resolve lấy từ Places database hoặc
-  Google Maps Playwright, không lấy từ phân loại của AI. Giữ raw provider type
+- Category/tag vận hành của một địa điểm đã resolve lấy từ canonical Knowledge
+  Graph hoặc Google Maps Playwright, không lấy từ phân loại của AI. Giữ raw provider type
   trong `place_type`, chuẩn hóa category riêng cho tìm kiếm/Planner; thiếu dữ
   liệu provider thì dùng `other` thay vì đoán từ nội dung nguồn.
 
@@ -245,7 +245,7 @@ instruction.
    lưu riêng trong `generatedLookupAliases`, sau đó chuẩn hóa địa điểm theo chuỗi
    shared cache -> `places` catalog -> Google Maps Playwright
    và gộp trùng.
-   Places DB và external provider giữ tối đa năm match option kèm score component;
+   Knowledge Graph và external provider giữ tối đa năm match option kèm score component;
    top-1 chỉ được nhận khi đủ score/margin. Stable identity đã xác minh mới cho
    phép học `verifiedAliases`; alias Việt được trả riêng cho frontend.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Khi candidate

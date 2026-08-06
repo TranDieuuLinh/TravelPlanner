@@ -874,9 +874,53 @@ export function PlannerMap({
       const day = document.createElement("small");
       day.textContent = place.dayLabel;
       const openingHours = formatOpeningHoursForDay(place.openingHours, place.dayLabel);
-      const hours = document.createElement("span");
+      const openingHoursSchedule = formatOpeningHoursSchedule(place.openingHours);
+      const activeOpeningDay = dayIndexFromVietnameseLabel(place.dayLabel);
+      const hours = document.createElement("details");
       hours.className = "candidateMapPopupHours";
-      hours.textContent = openingHours ? `Giờ mở cửa: ${openingHours}` : "Giờ mở cửa: chưa có dữ liệu";
+      const hoursSummary = document.createElement("summary");
+      const hoursLabel = document.createElement("span");
+      hoursLabel.className = "candidateMapPopupHoursLabel";
+      hoursLabel.textContent = "Giờ mở cửa";
+      const hoursValue = document.createElement("strong");
+      hoursValue.textContent = openingHours ?? "Chưa có dữ liệu";
+      const hoursChevron = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg"
+      );
+      hoursChevron.classList.add("candidateMapPopupHoursChevron");
+      hoursChevron.setAttribute("aria-hidden", "true");
+      hoursChevron.setAttribute("viewBox", "0 0 24 24");
+      const hoursChevronPath = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path"
+      );
+      hoursChevronPath.setAttribute("d", "m7 10 5 5 5-5");
+      hoursChevron.append(hoursChevronPath);
+      hoursSummary.append(hoursLabel, hoursValue, hoursChevron);
+      hours.append(hoursSummary);
+      if (openingHoursSchedule.length > 0) {
+        const schedule = document.createElement("div");
+        schedule.className = "candidateMapPopupHoursSchedule";
+        openingHoursSchedule.forEach((entry) => {
+          const row = document.createElement("div");
+          if (entry.dayOfWeek === activeOpeningDay) {
+            row.className = "isActiveDay";
+          }
+          const label = document.createElement("span");
+          label.textContent = entry.label;
+          const value = document.createElement("strong");
+          value.textContent = entry.value;
+          row.append(label, value);
+          schedule.append(row);
+        });
+        hours.append(schedule);
+      } else {
+        hoursSummary.setAttribute("aria-disabled", "true");
+        hours.addEventListener("toggle", () => {
+          if (hours.open) hours.open = false;
+        });
+      }
       const address = document.createElement("span");
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
@@ -1794,12 +1838,56 @@ function formatOpeningHoursForDay(
   if (!openingHours?.length) return null;
   const dayIndex = dayIndexFromVietnameseLabel(dayLabel);
   const entry = openingHours.find((candidate) => (
-    dayIndex != null && candidate.dayOfWeek === dayIndex
+    dayIndex != null && openingHourDayNumber(candidate) === dayIndex
   ));
   if (!entry) return formatOpeningHoursSummary(openingHours);
   if (entry?.is24Hours) return "Mở cửa 24 giờ";
   return formatOpeningHourSlots(entry);
 }
+
+function formatOpeningHoursSchedule(
+  openingHours: ExplorePlace["openingHours"]
+): Array<{ dayOfWeek: number | null; label: string; value: string }> {
+  if (!openingHours?.length) return [];
+
+  return openingHours
+    .map((entry) => {
+      const dayOfWeek = openingHourDayNumber(entry);
+      const value = entry.is24Hours
+        ? "Mở cửa 24 giờ"
+        : formatOpeningHourSlots(entry);
+      if (!value) return null;
+      return {
+        dayOfWeek,
+        label:
+          (dayOfWeek != null && FULL_OPENING_HOUR_DAY_LABELS[dayOfWeek]) ||
+          entry.dayName?.trim() ||
+          "Ngày khác",
+        value
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is { dayOfWeek: number | null; label: string; value: string } =>
+        entry != null
+    )
+    .sort(
+      (left, right) =>
+        (left.dayOfWeek ?? Number.MAX_SAFE_INTEGER) -
+        (right.dayOfWeek ?? Number.MAX_SAFE_INTEGER)
+    );
+}
+
+const FULL_OPENING_HOUR_DAY_LABELS: Record<number, string> = {
+  1: "Thứ Hai",
+  2: "Thứ Ba",
+  3: "Thứ Tư",
+  4: "Thứ Năm",
+  5: "Thứ Sáu",
+  6: "Thứ Bảy",
+  7: "Chủ Nhật"
+};
 
 function formatOpeningHoursSummary(
   openingHours: NonNullable<ExplorePlace["openingHours"]>
@@ -1846,6 +1934,55 @@ function openingHourDayLabel(value?: string | null): string | null {
   return labels[normalized] ?? value?.trim() ?? null;
 }
 
+function openingHourDayNumber(
+  entry: NonNullable<ExplorePlace["openingHours"]>[number]
+): number | null {
+  if (
+    entry.dayOfWeek != null &&
+    entry.dayOfWeek >= 1 &&
+    entry.dayOfWeek <= 7
+  ) {
+    return entry.dayOfWeek;
+  }
+
+  const normalized = entry.dayName
+    ?.trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized) return null;
+  const dayNumbers: Record<string, number> = {
+    monday: 1,
+    "thu hai": 1,
+    "thu 2": 1,
+    t2: 1,
+    tuesday: 2,
+    "thu ba": 2,
+    "thu 3": 2,
+    t3: 2,
+    wednesday: 3,
+    "thu tu": 3,
+    "thu 4": 3,
+    t4: 3,
+    thursday: 4,
+    "thu nam": 4,
+    "thu 5": 4,
+    t5: 4,
+    friday: 5,
+    "thu sau": 5,
+    "thu 6": 5,
+    t6: 5,
+    saturday: 6,
+    "thu bay": 6,
+    "thu 7": 6,
+    t7: 6,
+    sunday: 7,
+    "chu nhat": 7,
+    cn: 7
+  };
+  return dayNumbers[normalized] ?? null;
+}
+
 function dayIndexFromVietnameseLabel(value: string): number | null {
   const normalized = value.toLowerCase();
   if (normalized.includes("thứ hai")) return 1;
@@ -1855,7 +1992,21 @@ function dayIndexFromVietnameseLabel(value: string): number | null {
   if (normalized.includes("thứ sáu")) return 5;
   if (normalized.includes("thứ bảy")) return 6;
   if (normalized.includes("chủ nhật")) return 7;
-  return null;
+  const dateMatch = value.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dateMatch) {
+    const date = new Date(
+      Number(dateMatch[3]),
+      Number(dateMatch[2]) - 1,
+      Number(dateMatch[1])
+    );
+    const jsDay = date.getDay();
+    return jsDay === 0 ? 7 : jsDay;
+  }
+  const currentDay = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    weekday: "long"
+  }).format(new Date());
+  return openingHourDayNumber({ dayName: currentDay });
 }
 
 function FitMapIcon() {

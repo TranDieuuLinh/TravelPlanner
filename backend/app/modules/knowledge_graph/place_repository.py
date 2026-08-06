@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterator
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -25,6 +25,9 @@ from app.modules.knowledge_graph.research.schema import PLACE_TYPES
 from app.modules.knowledge_graph.text import normalize_knowledge_text
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import KnowledgeEntityImage
+
+
+SEARCHABLE_ALIAS_STATUSES = {"imported", "verified", "active", "approved"}
 
 
 @dataclass(frozen=True)
@@ -111,7 +114,10 @@ class KnowledgeGraphPlaceRepository:
                 [
                     KnowledgeEntity.normalized_name.ilike(pattern),
                     KnowledgeEntity.aliases.any(
-                        KnowledgeAlias.normalized_alias.ilike(pattern)
+                        and_(
+                            KnowledgeAlias.normalized_alias.ilike(pattern),
+                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                        )
                     ),
                 ]
             )
@@ -228,7 +234,10 @@ class KnowledgeGraphPlaceRepository:
 
         aliases: dict[str, list[str]] = {entity_id: [] for entity_id in entity_ids}
         for alias in self.session.scalars(
-            select(KnowledgeAlias).where(KnowledgeAlias.entity_id.in_(entity_ids))
+            select(KnowledgeAlias).where(
+                KnowledgeAlias.entity_id.in_(entity_ids),
+                KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+            )
         ):
             aliases[alias.entity_id].append(alias.alias)
 

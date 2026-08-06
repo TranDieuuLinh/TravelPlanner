@@ -504,6 +504,84 @@ class PlanMutationService:
         updated_day = day.model_copy(update={"transport_legs": updated_legs})
         return self._finalize_mutation(plan, [updated_day])
 
+    def retry_transport_leg(
+        self,
+        plan: Plan,
+        day_number: int,
+        leg_index: int,
+    ) -> MutationResponse:
+        """Recalculate one persisted leg without changing itinerary order."""
+        day = self._get_day(plan, day_number)
+        if leg_index < 0 or leg_index >= len(day.transport_legs):
+            raise AppError(
+                404,
+                "TRANSPORT_LEG_NOT_FOUND",
+                f"Không tìm thấy chặng di chuyển trong Ngày {day_number}.",
+            )
+
+        current_leg = day.transport_legs[leg_index]
+        origin = _leg_endpoint_item(
+            day.items,
+            item_id=current_leg.from_item_id,
+            place_name=current_leg.from_place,
+        )
+        destination = _leg_endpoint_item(
+            day.items,
+            item_id=current_leg.to_item_id,
+            place_name=current_leg.to_place,
+        )
+        if origin is None or destination is None:
+            raise AppError(
+                400,
+                "TRANSPORT_LEG_ENDPOINT_NOT_FOUND",
+                "Không tìm thấy hai địa điểm của chặng cần tính lại.",
+            )
+        if any(
+            coordinate is None
+            for coordinate in (
+                origin.latitude,
+                origin.longitude,
+                destination.latitude,
+                destination.longitude,
+            )
+        ):
+            raise AppError(
+                400,
+                "TRANSPORT_LEG_COORDINATES_REQUIRED",
+                "Chưa có đủ tọa độ để tính lại chặng này.",
+            )
+
+        retried = self.route_optimizer.calculate_leg(origin, destination)
+        has_car_option = any(
+            _is_car_mode(option.mode)
+            for option in [_option_from_leg(retried), *retried.alternatives]
+        )
+        if (
+            _is_walking_mode(retried.mode)
+            and retried.distance_meters
+            > self.route_optimizer.max_walking_distance_meters
+            and not has_car_option
+        ):
+            walking_choice = _option_from_leg(retried)
+            car_choice = self.route_optimizer.calculate_leg(
+                origin,
+                destination,
+                requested_mode="car",
+            )
+            car_choice = car_choice.model_copy(
+                update={
+                    "alternatives": _deduplicate_transport_options(
+                        [walking_choice, *retried.alternatives]
+                    )
+                }
+            )
+            retried = car_choice
+
+        updated_legs = list(day.transport_legs)
+        updated_legs[leg_index] = retried
+        updated_day = day.model_copy(update={"transport_legs": updated_legs})
+        return self._finalize_mutation(plan, [updated_day])
+
     def _get_day(self, plan: Plan, day_number: int) -> PlanDay:
         for day in plan.days:
             if day.day == day_number:
@@ -678,6 +756,50 @@ def _option_from_leg(leg: PlanTransportLeg) -> PlanTransportOption:
         fetchedAt=leg.fetched_at,
         details=leg.details,
     )
+
+
+def _leg_endpoint_item(
+    items: list[PlanItem],
+    *,
+    item_id: str | None,
+    place_name: str,
+) -> PlanItem | None:
+    if item_id:
+        matched = next((item for item in items if item.item_id == item_id), None)
+        if matched is not None:
+            return matched
+    normalized_name = place_name.strip().casefold()
+    return next(
+        (item for item in items if item.name.strip().casefold() == normalized_name),
+        None,
+    )
+
+
+def _is_walking_mode(mode: str) -> bool:
+    normalized = mode.casefold()
+    return any(token in normalized for token in ("walk", "pedestrian"))
+
+
+def _is_car_mode(mode: str) -> bool:
+    normalized = mode.casefold()
+    return any(
+        token in normalized
+        for token in ("car", "auto", "drive", "ride", "hailing", "taxi")
+    )
+
+
+def _deduplicate_transport_options(
+    options: list[PlanTransportOption],
+) -> list[PlanTransportOption]:
+    unique: list[PlanTransportOption] = []
+    seen: set[tuple[str, str, int, int]] = set()
+    for option in options:
+        key = _transport_option_key(option)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(option)
+    return unique
 
 
 def _transport_option_matches_request(

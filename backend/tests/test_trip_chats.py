@@ -32,6 +32,39 @@ def test_user_can_create_and_list_own_trip_chats(registered_client) -> None:
     ]
 
 
+def test_active_turn_is_restored_and_listed_for_background_loading(
+    registered_client,
+) -> None:
+    chat = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Đà Nẵng chạy nền"},
+        headers=csrf_headers(registered_client),
+    ).json()
+    created_turn = registered_client.post(
+        f"/api/trip-chats/{chat['id']}/turns",
+        json={
+            "content": "Lập kế hoạch Đà Nẵng 3 ngày",
+            "expectedRevision": 0,
+            "clientTurnId": "background-loading-turn",
+            "attachmentNames": [],
+        },
+        headers=csrf_headers(registered_client),
+    )
+
+    assert created_turn.status_code == 201
+    assert created_turn.json()["status"] == "queued"
+
+    active = registered_client.get("/api/trip-chats/active-turns")
+    assert active.status_code == 200
+    assert [(turn["chatId"], turn["status"]) for turn in active.json()] == [
+        (chat["id"], "queued")
+    ]
+
+    restored_chat = registered_client.get(f"/api/trip-chats/{chat['id']}")
+    assert restored_chat.status_code == 200
+    assert restored_chat.json()["turns"][0]["id"] == created_turn.json()["id"]
+
+
 def test_user_cannot_read_another_users_trip_chat(registered_client) -> None:
     created = registered_client.post(
         "/api/trip-chats",

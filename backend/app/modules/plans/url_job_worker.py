@@ -241,6 +241,7 @@ class UrlImportJobWorker:
         # dropping either update.
         last_conflict: AppError | None = None
         for _ in range(3):
+            UrlImportJobRepository(db).mark_exploring(job_id)
             chat_repository = TripChatRepository(db)
             chat = chat_repository.get(job.chat_id, job.user_id)
             service = TripChatService(
@@ -289,6 +290,14 @@ class UrlImportJobWorker:
                         job.batch_id
                         if job.batch_id and db.get(TripChatMessage, job.batch_id)
                         else None
+                    ),
+                    on_explore_complete=lambda timing: UrlImportJobRepository(db).mark_planning(
+                        job_id,
+                        explorer_timing=(
+                            timing.model_dump(mode="json", by_alias=True)
+                            if timing is not None
+                            else None
+                        ),
                     ),
                 )
                 return result.revision

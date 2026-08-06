@@ -320,12 +320,12 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobProviderAttempts { color: #172033; font-size: .52rem; }
 .backgroundJobProviderAttempts summary { cursor: pointer; font-weight: 800; }
 .backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; }
-.backgroundJobProviderAttemptList > div { display: grid; grid-template-columns: minmax(90px,1.4fr) repeat(5,minmax(55px,auto)); gap: 5px; align-items: center; padding: 5px 6px; border-radius: 7px; background: #ffffff; }
+.backgroundJobProviderAttemptList > div { display: grid; grid-template-columns: minmax(90px,1.2fr) minmax(90px,1fr) minmax(150px,2fr) repeat(4,minmax(55px,auto)); gap: 5px; align-items: center; padding: 5px 6px; border-radius: 7px; background: #ffffff; }
 .backgroundJobProviderAttemptList strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .backgroundJobSourceTiming { display: grid; gap: 6px; border-top: 1px solid #f6f7fb; padding-top: 8px; }
 .backgroundJobSourceTiming > small { color: #172033; font-size: .5rem; line-height: 1.4; }
 .backgroundJobTimingPending { border-style: dashed; }
-.backgroundJobTimingPending p { margin: 0; color: #172033; font-size: .52rem; line-height: 1.45; }
+.backgroundJobTimingPending p, .backgroundJobTimingPending > small { margin: 0; color: #172033; font-size: .52rem; line-height: 1.45; }
 .backgroundJobError { margin: 0; color: #365f5a; font-size: .57rem; line-height: 1.4; }
 .backgroundJobActions { display: flex; flex-wrap: wrap; gap: 7px; }
 .backgroundJobActions > button, .backgroundJobActions > .backgroundJobOpenChat { border: 0; border-radius: 8px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .57rem; font-weight: 850; text-decoration: none; }
@@ -1451,23 +1451,82 @@ h1, h2, h3, p { margin-top: 0; }
   stroke-width: 2;
 }
 .itineraryPlaceHours {
-  display: flex;
+  display: block;
   min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-  font-size: .58rem;
-  line-height: 1.35;
+  color: #3c4043;
+  font-size: .64rem;
+  line-height: 1.45;
 }
-.itineraryPlaceHours span {
+.itineraryPlaceHours summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) 18px;
+  align-items: start;
+  gap: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+.itineraryPlaceHours summary::-webkit-details-marker {
+  display: none;
+}
+.itineraryPlaceHours summary:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 3px;
+}
+.itineraryPlaceHoursLabel {
+  color: #5f6368;
   font-weight: 750;
+  white-space: nowrap;
 }
-.itineraryPlaceHours strong {
+.itineraryPlaceHours summary strong {
   min-width: 0;
-  color: #172033;
+  color: #202124;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+.itineraryPlaceHoursChevron {
+  width: 18px;
+  height: 18px;
+  margin-top: -1px;
+  fill: none;
+  stroke: #5f6368;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  transition: transform .16s ease;
+}
+.itineraryPlaceHours[open] .itineraryPlaceHoursChevron {
+  transform: rotate(180deg);
+}
+.itineraryPlaceHoursSchedule {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+  border-top: 1px solid #e8eaed;
+  padding-top: 9px;
+}
+.itineraryPlaceHoursSchedule > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(72px, .7fr) minmax(0, 1.3fr);
+  gap: 12px;
+  color: #3c4043;
+}
+.itineraryPlaceHoursSchedule span,
+.itineraryPlaceHoursSchedule strong {
+  min-width: 0;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+.itineraryPlaceHoursSchedule strong {
+  color: #3c4043;
+  font-weight: 500;
+}
+.itineraryPlaceHoursSchedule .isActiveDay span,
+.itineraryPlaceHoursSchedule .isActiveDay strong {
+  color: #202124;
+  font-weight: 700;
 }
 .itinerarySourceTag--url {
   border-color: #365f5a;
@@ -3326,37 +3385,29 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
   white-space: nowrap;
 }
 .itineraryRouteAlternatives .transportSegments {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: stretch;
-  gap: 18px;
+  gap: 0;
   margin: 3px 0 0;
   padding: 2px 1px 3px;
 }
 .itineraryRouteAlternatives .transportSegment {
   min-width: 0;
-  flex: 1 1 0;
   grid-template-columns: 24px minmax(0, 1fr);
-  padding: 3px 0;
+  padding: 6px 0;
 }
 .itineraryRouteAlternatives .transportSegment:not(:last-child)::after {
-  top: 14px;
-  right: -14px;
-  bottom: auto;
-  left: auto;
-  width: 10px;
-  height: 1px;
+  top: 27px;
+  right: auto;
+  bottom: -6px;
+  left: 11px;
+  width: 1px;
+  height: auto;
   border: 0;
-  border-top: 1px dashed #cbd6d3;
+  border-left: 1px dashed #cbd6d3;
 }
 .itineraryRouteAlternatives .transportSegment:not(:last-child)::before {
-  position: absolute;
-  top: 11px;
-  right: -15px;
-  color: #68817b;
-  content: "\203A";
-  font-size: 10px;
-  line-height: 1;
+  content: none;
 }
 .itineraryRouteAlternatives .transportSegment p {
   display: grid;
@@ -3612,7 +3663,23 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .candidateMapPopup small { color: #365f5a; font-size: .7rem; font-weight: 800; }
 .candidateMapPopup span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
 .candidateMapPopup .candidateMapPopupAddress { padding-left: 20px; background: no-repeat left 2px / 15px 15px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23142323' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); }
-.candidateMapPopup .candidateMapPopupHours { color: #172033; font-weight: 750; }
+.candidateMapPopup .candidateMapPopupHours { min-width: 0; color: #3c4043; font-size: .76rem; line-height: 1.5; }
+.candidateMapPopupHours summary { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) 18px; align-items: start; gap: 6px; border-radius: 4px; cursor: pointer; list-style: none; }
+.candidateMapPopupHours summary::-webkit-details-marker { display: none; }
+.candidateMapPopupHours summary:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; }
+.candidateMapPopup .candidateMapPopupHoursLabel { color: #5f6368; font-weight: 750; white-space: nowrap; }
+.candidateMapPopupHours summary > strong { min-width: 0; padding-right: 0; color: #202124; font-size: inherit; font-weight: 700; overflow-wrap: anywhere; }
+.candidateMapPopupHoursChevron { width: 18px; height: 18px; margin-top: -1px; fill: none; stroke: #5f6368; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: transform .16s ease; }
+.candidateMapPopupHours[open] .candidateMapPopupHoursChevron { transform: rotate(180deg); }
+.candidateMapPopupHours summary[aria-disabled="true"] { cursor: default; }
+.candidateMapPopupHours summary[aria-disabled="true"] .candidateMapPopupHoursChevron { visibility: hidden; }
+.candidateMapPopupHoursSchedule { display: grid; gap: 7px; margin-top: 9px; border-top: 1px solid #e8eaed; padding-top: 9px; }
+.candidateMapPopupHoursSchedule > div { display: grid; min-width: 0; grid-template-columns: minmax(72px, .7fr) minmax(0, 1.3fr); gap: 12px; color: #3c4043; }
+.candidateMapPopupHoursSchedule span,
+.candidateMapPopupHoursSchedule strong { min-width: 0; padding-right: 0; color: #3c4043; font: inherit; overflow-wrap: anywhere; }
+.candidateMapPopupHoursSchedule strong { font-weight: 500; }
+.candidateMapPopupHoursSchedule .isActiveDay span,
+.candidateMapPopupHoursSchedule .isActiveDay strong { color: #202124; font-weight: 700; }
 .candidateMapPopup .candidateMapPopupRating {
   display: inline-flex;
   width: fit-content;
@@ -11497,7 +11564,7 @@ svg {
 .itinerary .itineraryPlaceCard--withImage,
 .itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
   grid-template-columns: 100px minmax(0, 1fr);
-  column-gap: 2px;
+  column-gap: 13px;
 }
 
 .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--mapInteractive {
@@ -13832,10 +13899,26 @@ svg {
 }
 
 .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceOrder {
+  display: grid;
+  height: 100px;
   grid-column: 1;
   grid-row: 1;
-  margin: 0;
+  align-self: start;
+  place-items: center;
+  margin: -4px 0 0;
   order: 0;
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceOrder {
+    height: 96px;
+  }
+}
+
+@media (max-width: 520px) {
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceOrder {
+    height: 92px;
+  }
 }
 
 .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia {
@@ -13849,6 +13932,7 @@ svg {
   grid-column: 3;
   grid-row: 1;
   min-width: 0;
+  padding-right: 38px;
   order: 0;
 }
 
@@ -13857,6 +13941,135 @@ svg {
   grid-row: 1;
   align-self: start;
   order: 0;
+}
+
+/* Keep settings, source, and place type on one evenly spaced vertical rail. */
+.itinerary .itineraryPlaceQuickActions {
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0;
+  padding-left: 0;
+}
+
+.itinerary .itineraryQuickActionMenuButton {
+  width: 28px;
+  height: 28px;
+}
+
+.itinerary .itineraryQuickActionMenuButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.itinerary .itineraryPlaceQuickActions .itineraryPlaceQuickActionPopup {
+  top: 0;
+  right: calc(100% + 4px);
+  display: inline-flex;
+  width: auto;
+  height: 28px;
+  align-items: center;
+  gap: 2px;
+  transform: none;
+  pointer-events: auto;
+}
+
+.itinerary .itineraryPlaceQuickActions .itineraryPlaceQuickActionPopup > .itineraryActionButton {
+  position: static;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 28px;
+}
+
+.itinerary .itinerarySourceIconLink {
+  width: 28px;
+  height: 28px;
+  grid-template-rows: 14px auto;
+}
+
+.itinerary .itinerarySourceIconLink svg,
+.itinerary .itinerarySourceIconLink--tiktok svg {
+  width: 13px;
+  height: 13px;
+}
+
+.itinerary .itinerarySourceIconLink > span {
+  font-size: .36rem;
+}
+
+.itinerary .itineraryPlaceQuickActions > .itineraryTypeIcon {
+  position: static;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.itinerary .itineraryPlaceQuickActions > .itineraryTypeIcon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.itinerary .itineraryPlaceContent:has(> .itineraryNoteActionButton) {
+  position: relative;
+  align-self: stretch;
+  padding-bottom: 34px;
+}
+
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton {
+  position: absolute;
+  z-index: 2;
+  bottom: 0;
+  left: 0;
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 1px solid #d7e3df;
+  border-radius: 8px;
+  padding: 0;
+  background: #fff;
+  color: #315a54;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton:hover,
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton:focus-visible,
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton[aria-expanded="true"] {
+  border-color: #9fc4ba;
+  background: #edf7f4;
+  color: #173f39;
+  outline: none;
+}
+
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton:focus-visible {
+  outline: 2px solid #9fc4ba;
+  outline-offset: 2px;
+}
+
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton .activityNotesButtonCount {
+  top: -6px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  border: 2px solid #fff;
+  background: #315a54;
+  font-size: .5rem;
 }
 
 @container itinerary-panel (max-width: 480px) {
@@ -13919,6 +14132,63 @@ svg {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+}
+
+.itinerary .itineraryRouteRetry {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #efc9bc;
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: #fff8f4;
+  color: #6f3428;
+}
+
+.itinerary .itineraryRouteRetry > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.itinerary .itineraryRouteRetry strong {
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.itinerary .itineraryRouteRetry small,
+.itinerary .itineraryRouteRetry span {
+  overflow: hidden;
+  font-size: .58rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.itinerary .itineraryRouteRetry span {
+  color: #a13f2d;
+}
+
+.itinerary .itineraryRouteRetry button {
+  flex: 0 0 auto;
+  border: 1px solid #d77d62;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: #fff;
+  color: #9a432f;
+  cursor: pointer;
+  font-size: .62rem;
+  font-weight: 850;
+}
+
+.itinerary .itineraryRouteRetry button:hover:not(:disabled) {
+  background: #fff0e9;
+}
+
+.itinerary .itineraryRouteRetry button:disabled {
+  cursor: wait;
+  opacity: .62;
 }
 
 .itinerary .itineraryRouteLink {
@@ -15365,6 +15635,8 @@ svg {
 
 .plannerInlineProcessing {
   display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: center;
   width: calc(100% - 28px);
   max-width: calc(100% - 28px);
   gap: 7px;
@@ -15377,99 +15649,20 @@ svg {
   animation: plannerProcessingArrive .32s ease-out both;
 }
 
-.plannerPenguinTrack {
-  position: relative;
-  display: block;
-  height: 58px;
-  min-width: 110px;
-  overflow: hidden;
-}
-
-.plannerPenguinTrack::before,
-.plannerPenguinTrack::after {
-  position: absolute;
-  bottom: 5px;
-  left: -36px;
-  width: calc(100% + 72px);
-  height: 2px;
-  content: "";
-}
-
-.plannerPenguinTrack::before {
-  background: rgba(54, 95, 90, .16);
-}
-
-.plannerPenguinTrack::after {
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0 16px,
-    rgba(54, 95, 90, .3) 16px 25px
-  );
-  animation: plannerTrackFlow .72s linear infinite;
-}
-
-.plannerTrackDash {
-  position: absolute;
-  bottom: 13px;
-  width: 18px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(54, 95, 90, .14);
-  animation: plannerTrackMarker 2.8s linear infinite;
-}
-
-.plannerTrackDash--one { animation-delay: -.35s; }
-.plannerTrackDash--two { animation-delay: -1.75s; }
-
-.plannerTrackSpark {
-  position: absolute;
-  color: #dda343;
-  font-size: .65rem;
-  font-style: normal;
-  opacity: 0;
-  animation: plannerTrackSpark 2.8s linear infinite;
-}
-
-.plannerTrackSpark--one { top: 8px; animation-delay: -.9s; }
-.plannerTrackSpark--two { top: 19px; animation-delay: -2.2s; }
-
-.plannerRunnerDust {
-  position: absolute;
-  z-index: -1;
-  bottom: 7px;
-  left: 4px;
-  width: 7px;
-  height: 7px;
-  border: 1px solid rgba(83, 117, 109, .32);
+.plannerLoadingPenguin {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
   border-radius: 50%;
-  opacity: 0;
-  animation: plannerRunnerDust .9s ease-out infinite;
+  background: #f3f8f6;
+  filter: drop-shadow(0 5px 8px rgba(36, 67, 61, .1));
+  animation: plannerSinglePenguinFloat 1.2s ease-in-out infinite alternate;
 }
 
-.plannerRunnerDust--two {
-  width: 4px;
-  height: 4px;
-  animation-delay: .34s;
-}
-
-.plannerRunningPenguin {
-  position: absolute;
-  z-index: 1;
-  bottom: 5px;
-  left: clamp(20px, 22%, 72px);
-  width: 52px;
-  height: 52px;
-  filter: drop-shadow(0 5px 5px rgba(36, 67, 61, .12));
-  animation: plannerPenguinRun .42s cubic-bezier(.45, 0, .55, 1) infinite alternate;
-}
-
-.plannerRunningPenguinImage {
-  display: block;
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
-  transform-origin: 50% 85%;
-  animation: plannerPenguinStride .42s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+.plannerLoadingPenguin .penguinMascot {
+  width: 58px;
+  height: 58px;
 }
 
 .plannerProcessingMeta {
@@ -15483,6 +15676,12 @@ svg {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.plannerProcessingCopy > small {
+  color: #70837f;
+  font-size: .55rem;
+  font-weight: 800;
 }
 
 .plannerProcessingCopy > strong {
@@ -15541,36 +15740,9 @@ svg {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes plannerTrackFlow {
-  to { transform: translateX(-25px); }
-}
-
-@keyframes plannerTrackMarker {
-  from { left: calc(100% + 18px); opacity: 0; }
-  12%, 88% { opacity: 1; }
-  to { left: -20px; opacity: 0; }
-}
-
-@keyframes plannerTrackSpark {
-  from { left: calc(100% + 12px); opacity: 0; transform: rotate(0) scale(.7); }
-  18%, 82% { opacity: .72; }
-  to { left: -12px; opacity: 0; transform: rotate(90deg) scale(1); }
-}
-
-@keyframes plannerPenguinRun {
-  from { transform: translateY(0); }
+@keyframes plannerSinglePenguinFloat {
+  from { transform: translateY(1px); }
   to { transform: translateY(-3px); }
-}
-
-@keyframes plannerPenguinStride {
-  from { transform: rotate(-4deg) scaleX(.98); }
-  to { transform: rotate(5deg) scaleX(1.02); }
-}
-
-@keyframes plannerRunnerDust {
-  0% { opacity: 0; transform: translate(5px, 0) scale(.55); }
-  30% { opacity: .75; }
-  100% { opacity: 0; transform: translate(-17px, -8px) scale(1.15); }
 }
 
 @keyframes plannerProcessingPulse {
@@ -15579,13 +15751,8 @@ svg {
 
 @media (prefers-reduced-motion: reduce) {
   .plannerInlineProcessing,
-  .plannerPenguinTrack::after,
-  .plannerTrackDash,
-  .plannerTrackSpark,
-  .plannerRunnerDust,
-  .plannerRunningPenguin,
-  .plannerRunningPenguinImage,
-  .plannerProcessingCopy > span i { animation: none; }
+  .plannerProcessingCopy > span i,
+  .plannerLoadingPenguin { animation: none; }
 }
 
 @media (max-width: 420px) {
@@ -16016,4 +16183,88 @@ svg {
   .itinerary .unscheduledPlacesHeading {
     align-items: flex-start;
   }
+}
+
+/* One durable loading treatment: keep the Planner chat in place and let the
+   single inline mascot represent preparation, exploration, and planning. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 560px;
+    border: 0;
+    border-bottom: 1px solid #e8eae9;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatMoveHandle,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatResizeHandles,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan {
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
+    grid-column: 1;
+    grid-row: 2;
+    width: calc(100% - 28px);
+    height: 100%;
+    min-height: 560px;
+    margin: 14px;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
+    grid-column: 1;
+    grid-row: 3;
+  }
+}
+
+.backgroundTurnSummary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.backgroundTurnSummary .backgroundJobCopy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.backgroundTurnSummary .backgroundJobOpenChat {
+  flex: 0 0 auto;
 }

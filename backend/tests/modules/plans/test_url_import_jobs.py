@@ -50,11 +50,13 @@ def test_multiple_urls_are_enqueued_as_individual_jobs(
     jobs = response.json()["jobs"]
     assert [job["url"] for job in jobs] == urls
     assert [job["status"] for job in jobs] == ["queued", "queued", "queued"]
+    assert [job["phase"] for job in jobs] == ["queued", "queued", "queued"]
     assert sorted(job["queuePosition"] for job in jobs) == [1, 2, 3]
     chat = registered_client.get(f"/api/trip-chats/{chat_id}").json()
     assert len(chat["messages"]) == 1
     assert chat["messages"][0]["role"] == "user"
     assert chat["messages"][0]["content"] == f"Dùng các nguồn này {' '.join(urls)}"
+    assert registered_client.get("/api/trip-chats/active-turns").json() == []
     turn = db_session.get(TripChatMessage, chat["messages"][0]["id"])
     assert turn is not None
     assert turn.status == "queued"
@@ -174,12 +176,16 @@ def test_worker_sends_persisted_image_through_trip_chat_pipeline(
 
     async def fake_amend(_service, _chat_id, _user, **kwargs):
         captured.update(kwargs)
+        kwargs["on_explore_complete"](None)
         return SimpleNamespace(revision=1)
 
     monkeypatch.setattr(worker_module, "get_plan_service", lambda _db: object())
     monkeypatch.setattr(worker_module, "get_plan_mutation_service", lambda _db: object())
     monkeypatch.setattr(worker_module.TripChatService, "amend", fake_amend)
     worker = UrlImportJobWorker(lambda: db_session)
+    claimed = UrlImportJobRepository(db_session).claim_next()
+    assert claimed is not None
+    assert claimed.id == created["id"]
 
     revision = asyncio.run(worker._process(db_session, created["id"]))
 
@@ -193,6 +199,9 @@ def test_worker_sends_persisted_image_through_trip_chat_pipeline(
     assert images[0].data == b"ocr-source-bytes"
     chat = registered_client.get(f"/api/trip-chats/{chat_id}").json()
     assert captured["turn_id"] == chat["messages"][0]["id"]
+    persisted = db_session.get(UrlImportJob, created["id"])
+    assert persisted is not None
+    assert persisted.processing_phase == "planning"
 
 
 def test_queue_claims_only_one_job_until_it_finishes(
@@ -215,6 +224,7 @@ def test_queue_claims_only_one_job_until_it_finishes(
     first = repository.claim_next()
     assert first is not None
     assert first.status == "running"
+    assert repository.read(first).phase == "exploring"
     assert first.url == "https://example.com/one"
     assert repository.claim_next() is None
 
@@ -247,6 +257,7 @@ def test_queue_claims_only_one_job_until_it_finishes(
     db_session.commit()
     repository.succeed(first.id, revision=1)
     completed = repository.read(first)
+    assert completed.phase == "complete"
     assert completed.explorer_timing is not None
     assert completed.explorer_timing.total_seconds == 3.5
     assert completed.planner_timing is not None

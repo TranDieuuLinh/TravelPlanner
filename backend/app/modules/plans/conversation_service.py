@@ -55,11 +55,18 @@ class ConversationTurnService:
         self.mutation_service = mutation_service
         self.supervisor = supervisor or ConstrainedConversationSupervisor(get_llm_client())
         self.turn_timeout_seconds = settings.conversation_turn_timeout_seconds
-        self.turn_stale_after_seconds = settings.conversation_turn_stale_after_seconds
+        self.plan_timeout_seconds = settings.conversation_plan_timeout_seconds
+        self.turn_stale_after_seconds = max(
+            settings.conversation_turn_stale_after_seconds,
+            self.plan_timeout_seconds + 30,
+        )
 
     def get_turn(self, chat_id: str, user: User, turn_id: str) -> TripChatMessage:
         self._recover_stale_turns(chat_id)
         return self.repository.get_turn(chat_id, user.id, turn_id)
+
+    def list_active_turns(self, user: User) -> list[TripChatMessage]:
+        return self.repository.list_active_turns_for_user(user.id)
 
     def _recover_stale_turns(self, chat_id: str) -> None:
         expire = getattr(self.repository, "expire_stale_turns", None)
@@ -200,7 +207,18 @@ class ConversationTurnService:
                 self._run_decision(
                     chat, turn, decision, plan, images or []
                 ),
-                timeout=self.turn_timeout_seconds,
+                timeout=self._execution_timeout_seconds(decision),
+            )
+        except asyncio.TimeoutError:
+            logger.exception(
+                "Conversation turn timed out during execution",
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn)},
+            )
+            return self._save_failed_turn(
+                chat,
+                turn,
+                "TURN_TIMEOUT",
+                "Lượt xử lý đã hết thời gian chờ. Bạn có thể thử lại.",
             )
         except AppError as error:
             logger.exception(
@@ -250,13 +268,27 @@ class ConversationTurnService:
             options=(),
         )
         try:
-            return await self._run_decision(
+            return await asyncio.wait_for(
+                self._run_decision(
+                    chat,
+                    turn,
+                    decision,
+                    plan,
+                    [],
+                    confirmed=True,
+                ),
+                timeout=self._execution_timeout_seconds(decision),
+            )
+        except asyncio.TimeoutError:
+            logger.exception(
+                "Confirmed conversation turn timed out during execution",
+                extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn)},
+            )
+            return self._save_failed_turn(
                 chat,
                 turn,
-                decision,
-                plan,
-                [],
-                confirmed=True,
+                "TURN_TIMEOUT",
+                "Lượt xử lý đã hết thời gian chờ. Bạn có thể thử lại.",
             )
         except AppError as error:
             logger.exception(
@@ -264,6 +296,14 @@ class ConversationTurnService:
                 extra={"chat_id": chat.id, "turn_id": _turn_lifecycle_id(turn), "error_code": error.code},
             )
             return self._save_failed_turn(chat, turn, error.code, error.message)
+
+    def _execution_timeout_seconds(
+        self,
+        decision: ConversationDecision,
+    ) -> float:
+        if decision.intent in {"create_plan", "regenerate_plan"}:
+            return self.plan_timeout_seconds
+        return self.turn_timeout_seconds
 
     def cancel(
         self,

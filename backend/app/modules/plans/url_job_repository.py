@@ -69,6 +69,7 @@ class UrlImportJobRepository:
                 force_refresh=force_refresh,
                 batch_position=batch_position,
                 processing_status="queued",
+                processing_phase="queued",
                 review_status="not_required",
                 status="queued",
             )
@@ -133,6 +134,7 @@ class UrlImportJobRepository:
                 force_refresh=False,
                 batch_position=batch_position,
                 processing_status="queued",
+                processing_phase="queued",
                 review_status="not_required",
                 status="queued",
             )
@@ -193,6 +195,7 @@ class UrlImportJobRepository:
             )
             .values(
                 processing_status="queued", status="queued", started_at=None,
+                processing_phase="queued",
                 updated_at=datetime.now(UTC),
             )
             .execution_options(synchronize_session=False)
@@ -225,6 +228,7 @@ class UrlImportJobRepository:
             .where(stale_filter)
             .values(
                 processing_status="failed",
+                processing_phase="complete",
                 status="failed",
                 error_code="URL_IMPORT_TIMEOUT",
                 error_message=(
@@ -270,6 +274,7 @@ class UrlImportJobRepository:
         if job is None:
             return None
         job.processing_status = "running"
+        job.processing_phase = "exploring"
         job.status = "running"
         job.started_at = datetime.now(UTC)
         job.finished_at = None
@@ -281,12 +286,34 @@ class UrlImportJobRepository:
         self.db.refresh(job)
         return job
 
+    def mark_exploring(self, job_id: str) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None or job.processing_status != "running":
+            return
+        job.processing_phase = "exploring"
+        job.explorer_timing = None
+        self.db.commit()
+
+    def mark_planning(
+        self,
+        job_id: str,
+        *,
+        explorer_timing: dict | None,
+    ) -> None:
+        job = self.db.get(UrlImportJob, job_id)
+        if job is None or job.processing_status != "running":
+            return
+        job.processing_phase = "planning"
+        job.explorer_timing = explorer_timing
+        self.db.commit()
+
     def succeed(self, job_id: str, revision: int) -> None:
         job = self.db.get(UrlImportJob, job_id)
         if job is None:
             return
         chat = self.db.get(TripChat, job.chat_id)
         job.processing_status = "succeeded"
+        job.processing_phase = "complete"
         job.status = "succeeded"
         job.result_revision = revision
         job.explorer_timing = (
@@ -305,6 +332,7 @@ class UrlImportJobRepository:
         if job is None:
             return
         job.processing_status = "failed"
+        job.processing_phase = "complete"
         job.status = "failed"
         job.error_code = code[:64]
         job.error_message = message[:1000]
@@ -320,6 +348,7 @@ class UrlImportJobRepository:
         # A failed run restarts from its original URL or persisted image bytes.
         job.force_refresh = True
         job.processing_status = "queued"
+        job.processing_phase = "queued"
         job.status = "queued"
         job.started_at = None
         job.finished_at = None
@@ -362,6 +391,7 @@ class UrlImportJobRepository:
             force_refresh=True,
             batch_position=0,
             processing_status="queued",
+            processing_phase="queued",
             review_status="not_required",
             status="queued",
         )
@@ -458,6 +488,7 @@ class UrlImportJobRepository:
             url=job.url,
             forceRefresh=job.force_refresh,
             status=job.status,
+            phase=job.processing_phase,
             queuePosition=position,
             attemptCount=job.attempt_count,
             resultRevision=job.result_revision,

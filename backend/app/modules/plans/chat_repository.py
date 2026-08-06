@@ -667,3 +667,18 @@ class TripChatRepository:
             .limit(limit)
         )
         return list(self.db.scalars(statement))
+
+    def list_active_turns_for_user(self, user_id: int) -> list[TripChatMessage]:
+        statement = (
+            select(TripChatMessage)
+            .join(TripChat, TripChat.id == TripChatMessage.chat_id)
+            .where(
+                TripChat.user_id == user_id,
+                TripChatMessage.client_turn_id.is_not(None),
+                ~TripChatMessage.client_turn_id.like("url-batch-%"),
+                ~TripChatMessage.client_turn_id.like("image-batch-%"),
+                TripChatMessage.status.in_(PROCESSING_TURN_STATUSES | {"queued"}),
+            )
+            .order_by(TripChatMessage.created_at.desc(), TripChatMessage.id.desc())
+        )
+        return list(self.db.scalars(statement))
