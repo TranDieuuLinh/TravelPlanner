@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -202,6 +202,11 @@ class PlanItem(BaseModel):
     source_day: int | None = Field(default=None, ge=1, le=30, alias="sourceDay")
     source_time_hint: str | None = Field(default=None, alias="sourceTimeHint")
     source_activity: str | None = Field(default=None, alias="sourceActivity")
+    activity_id: str | None = Field(default=None, alias="activityId")
+    experience_category: str | None = Field(
+        default=None, alias="experienceCategory"
+    )
+    claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
     preferred_time_windows: list[PreferredTimeWindow] = Field(
         default_factory=list,
         alias="preferredTimeWindows",
@@ -471,6 +476,7 @@ class CheckIssue(BaseModel):
         default=None,
         alias="suggestedAction",
     )
+    owner: str = "checker"
 
     model_config = {"populate_by_name": True}
 
@@ -492,6 +498,10 @@ class Plan(BaseModel):
     trip_themes: list[TripThemeRequirement] = Field(
         default_factory=list,
         alias="tripThemes",
+    )
+    required_experiences: list[Any] = Field(
+        default_factory=list,
+        alias="requiredExperiences",
     )
     days: list[PlanDay]
     initial_user_status: UserStatus = Field(

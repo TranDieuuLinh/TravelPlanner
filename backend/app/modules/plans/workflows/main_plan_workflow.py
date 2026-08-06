@@ -379,6 +379,7 @@ class MainPlanWorkflow:
             destination=intent.destination,
             intent=intent,
             tripThemes=theme_output.trip_themes,
+            requiredExperiences=theme_output.required_experiences,
             days=selection_output.final_days,
             initialUserStatus=user_status,
             finalUserStatus=selection_output.final_user_status,

@@ -97,6 +97,7 @@ class BackupPlanWorkflow:
             parentPlanId=main_plan.id,
             intent=backup_intent,
             tripThemes=main_plan.trip_themes,
+            requiredExperiences=main_plan.required_experiences,
             days=selection_output.final_days,
             initialUserStatus=main_plan.initial_user_status,
             finalUserStatus=selection_output.final_user_status,
