@@ -49,7 +49,6 @@ RESEARCH_PROPERTY_KEYS = {
     "source_url",
     "review_count",
     "admission_price",
-    "admission_fee_vnd",
 }
 TERMINAL_CACHE_STATUSES = {
     PriceResearchStatus.verified_price,
@@ -149,9 +148,7 @@ def load_candidates(
         place_type = (props.get("place_type") or "").strip()
         if normalized_types and place_type.casefold() not in normalized_types:
             continue
-        has_existing_price = bool(
-            props.get("admission_price") or props.get("admission_fee_vnd")
-        )
+        has_existing_price = bool(props.get("admission_price"))
         if has_existing_price and not overwrite:
             continue
         candidates.append(
@@ -232,7 +229,7 @@ def apply_outcomes(
         existing = {
             prop.key: prop
             for prop in repo.get_properties_for_entity(outcome.entity_id)
-            if prop.key in {"admission_price", "admission_fee_vnd"}
+            if prop.key == "admission_price"
         }
         if existing and not overwrite:
             stats["existing_price_skipped"] += 1
@@ -246,15 +243,6 @@ def apply_outcomes(
         )
         price_property.note = f"gemini_grounded_price_research:{outcome.model}"
         stats["admission_price_upserted"] += 1
-        if outcome.currency == "VND" and outcome.representative_amount is not None:
-            fee_property = repo.upsert_property(
-                outcome.entity_id,
-                "admission_fee_vnd",
-                str(outcome.representative_amount),
-                source=primary_source,
-            )
-            fee_property.note = f"derived_from:admission_price:{outcome.fetched_at.isoformat()}"
-            stats["admission_fee_vnd_upserted"] += 1
     session.flush()
     if apply:
         session.commit()

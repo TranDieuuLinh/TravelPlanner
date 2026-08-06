@@ -59,7 +59,7 @@ def test_load_candidates_prioritizes_review_count(db_session) -> None:
     assert records[0].candidate.place_type == "Museum"
 
 
-def test_apply_outcome_writes_full_price_and_scalar_vnd(db_session) -> None:
+def test_apply_outcome_writes_single_full_price_property(db_session) -> None:
     db_session.add(_entity())
     db_session.flush()
 
@@ -77,7 +77,7 @@ def test_apply_outcome_writes_full_price_and_scalar_vnd(db_session) -> None:
         )
     }
     assert stats["admission_price_upserted"] == 1
-    assert properties["admission_fee_vnd"].value == "70000"
+    assert set(properties) == {"admission_price"}
     assert properties["admission_price"].source == "https://official.example/tickets"
     assert "verified_price" in properties["admission_price"].value
 
@@ -88,8 +88,8 @@ def test_apply_does_not_overwrite_existing_price_without_flag(db_session) -> Non
     db_session.add(
         KnowledgeProperty(
             entity_id="travel_place_1",
-            key="admission_fee_vnd",
-            value="50000",
+            key="admission_price",
+            value='{"currency":"VND","representativeAmount":50000}',
             source="manual",
         )
     )
@@ -104,9 +104,8 @@ def test_apply_does_not_overwrite_existing_price_without_flag(db_session) -> Non
 
     prop = db_session.query(KnowledgeProperty).filter_by(
         entity_id="travel_place_1",
-        key="admission_fee_vnd",
+        key="admission_price",
     ).one()
     assert stats["existing_price_skipped"] == 1
-    assert prop.value == "50000"
+    assert prop.value == '{"currency":"VND","representativeAmount":50000}'
     assert prop.source == "manual"
-
