@@ -7,6 +7,7 @@ import unicodedata
 
 
 _MOJIBAKE_MARKERS = frozenset(bytes(range(128, 256)).decode("cp437"))
+_NON_ASCII_RUN = re.compile(r"[^\x00-\x7f]+")
 
 
 def normalize_knowledge_text(value: str) -> str:
@@ -51,7 +52,11 @@ def repair_cp437_utf8_mojibake(value: str) -> str:
         if _mojibake_score(candidate) >= before:
             break
         current = candidate
-    return current
+    # A planning snapshot can combine already-correct Vietnamese evidence with
+    # a corrupt provider description.  The whole string then cannot be encoded
+    # as CP437.  Repair only contiguous non-ASCII byte-rendering runs, leaving
+    # correct surrounding text untouched.
+    return _NON_ASCII_RUN.sub(_repair_cp437_run, current)
 
 
 def contains_mojibake(value: str) -> bool:
@@ -60,3 +65,15 @@ def contains_mojibake(value: str) -> bool:
 
 def _mojibake_score(value: str) -> int:
     return sum(character in _MOJIBAKE_MARKERS for character in value)
+
+
+def _repair_cp437_run(match: re.Match[str]) -> str:
+    value = match.group(0)
+    before = _mojibake_score(value)
+    if before == 0:
+        return value
+    try:
+        candidate = value.encode("cp437").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return value
+    return candidate if _mojibake_score(candidate) < before else value

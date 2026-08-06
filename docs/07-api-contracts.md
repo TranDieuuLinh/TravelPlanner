@@ -128,9 +128,20 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `DELETE /api/trip-chats`: xóa toàn bộ chat thuộc user hiện tại cùng message và
   snapshot revision; không ảnh hưởng chat của user khác và trả `204 No Content`.
 - `GET /api/trip-chats/{chatId}`: lấy message history, TripIntent hiện hành,
-  candidate review và plan hiện tại.
+  `tripIntentVersion`, `tripIntentPlanStatus`, candidate review, tối đa năm turn
+  gần nhất và plan hiện tại.
 - `DELETE /api/trip-chats/{chatId}`: xóa chat thuộc user hiện tại cùng toàn bộ
   message và snapshot revision của chat; trả `204 No Content`.
+- `PATCH /api/trip-chats/{chatId}/trip-intent`: nhận `tripIntent` canonical đầy
+  đủ, `expectedRevision` và `expectedTripIntentVersion`. Backend validate rồi ghi
+  `trip_chats.current_trip_intent` ngay, tăng intent version, đặt trạng thái
+  `queued` và trả về mà không chờ Planner. Durable worker tạo lại plan nền và
+  sau khi thành công mới cập nhật `current_plan`, tăng plan revision, tạo snapshot
+  `trip_revisions.trip_intent_payload/plan_payload` và đặt trạng thái `synced`.
+  Nhiều edit liên tiếp được coalesce; output của intent version cũ bị loại bỏ.
+  Đổi destination không mang candidate hoặc selected place cũ sang plan mới.
+  Chat chưa có plan trả `TRIP_INTENT_NOT_READY`; revision/version cũ trả
+  `VERSION_CONFLICT`.
 - `POST /api/trip-chats/{chatId}/messages`: gửi yêu cầu đầu tiên hoặc sửa plan
   hiện tại qua Conversation Supervisor. Mọi message đều tạo một
   `TripChatTurn` ở trạng thái `queued` rồi chạy `execute` ngay; trả
@@ -147,6 +158,10 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
   completed, failed, cancelled). Endpoint này cũng tự động quét các
   turn `processing` quá thời gian (mặc định 300s) đánh dấu `failed`
   với `errorCode=TURN_STALE` để tránh treo supervisor.
+- `GET /api/trip-chats/active-turns`: lấy các turn `queued`, `classifying` hoặc
+  `executing` của user hiện tại. AppShell poll endpoint này cùng danh sách job
+  URL để giữ bước và timer của Planner khi user chuyển route; turn của user
+  khác không được trả về.
 - `POST /api/trip-chats/{chatId}/turns/{turnId}/execute`: chạy
   supervisor cho turn đang `queued`. Idempotent: gọi lại với turn đã
   terminal sẽ trả về turn hiện tại mà không chạy lại LLM.
@@ -195,6 +210,11 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `PUT /api/trip-chats/{chatId}/plan/days/{day}/items/reorder`: lưu thứ tự item
   mới của một ngày. Request dùng `multipart/form-data` với `expectedRevision`
   và các field `itemIds` lặp lại theo đúng thứ tự hiển thị mong muốn.
+- `POST /api/trip-chats/{chatId}/plan/days/{day}/transport-legs/{legIndex}/retry`:
+  tính lại riêng một chặng không có lựa chọn khả dụng, giữ nguyên thứ tự item và
+  lưu revision mới. Request dùng `multipart/form-data` với `expectedRevision`.
+  Nếu provider ô tô tạm lỗi trên một chặng đi bộ quá dài, response giữ fallback
+  ô tô chưa xác minh thay vì để UI không còn lựa chọn nào.
 
 Các thao tác trực tiếp trong editor (thêm, sửa, xóa, sắp xếp item và chọn
 phương tiện) vẫn tạo plan revision nhưng không tạo `TripChatMessage`. Client
@@ -226,6 +246,8 @@ ký thời gian chi tiết.
   "title": "Chuyến đi Hà Nội",
   "destination": "Hà Nội",
   "revision": 2,
+  "tripIntentVersion": 3,
+  "tripIntentPlanStatus": "synced",
   "hasPlan": true,
   "currentPlan": {},
   "currentTripIntent": {},
@@ -273,6 +295,7 @@ Request tạo background OCR job cũng dùng `multipart/form-data`, gồm `conte
       "url": "https://www.youtube.com/watch?v=...",
       "forceRefresh": false,
       "status": "queued",
+      "phase": "queued",
       "queuePosition": 1,
       "attemptCount": 0,
       "resultRevision": null,
@@ -288,7 +311,9 @@ Request tạo background OCR job cũng dùng `multipart/form-data`, gồm `conte
 
 Worker xử lý một URL hoặc ảnh mỗi lần trên toàn hàng chờ của deployment. User có thể gửi
 prompt thường, thêm batch nguồn khác hoặc điều hướng sang route khác trong khi job
-chạy. Tiến độ chỉ hiển thị trong panel task toàn ứng dụng, không chèn message
+chạy. `phase` có các giá trị `queued`, `exploring`, `planning`, `complete` để UI
+hiển thị ba bước thân thiện “Chuẩn bị”, “Lấy dữ liệu” và “Tạo lịch trình” theo
+tiến độ thật, không suy đoán từ elapsed time. Tiến độ chỉ hiển thị trong panel task toàn ứng dụng, không chèn message
 trạng thái vào transcript và không disable chat composer. Mỗi task có thể mở để
 xem thời điểm bắt đầu, tổng elapsed, attempt và timing stage có sẵn. Job thành
 công lưu và trả riêng `explorerTiming` cùng `plannerTiming`, để UI đặt toàn bộ
@@ -348,7 +373,7 @@ dưới 40% venue authority cao/trung bình, response trả HTTP 422
 Timing từng source có thêm `speechSource`, `expectedPlaceCount`,
 `extractionCoverage` và `coverageStatus`; client hiển thị `YouTube caption`
 thay vì gắn nhãn STT cho caption. Coverage 40–70% vẫn trả Explorer nhưng
-`allowFinderSuggestions=false`.
+không cho phép thay source URL; Finder vẫn được bù activity còn thiếu.
 
 Input JSON của Explorer nhận `userState.travelStyle` để client truyền phong cách
 du lịch người dùng, ví dụ `local`, `adventure`, `relaxation` hoặc một chuỗi mô
@@ -365,9 +390,10 @@ nội bộ giữa extractor, aggregator, resolver và repository; không trả c
 
 Không công khai raw OCR, transcript, URL result hoặc debug. Caption/STT/OCR và
 `ExtractedContext` dùng chung một `source_documents` theo canonical URL.
-Area/Venue candidate, evidence và note được stage trong
-`knowledge_graph_import_nodes`; flow không ghi vào `places` hay graph canonical
-trước admin review. Review không chặn TripIntent/itinerary provisional.
+Area/Venue candidate, evidence, `sourceActivity` và provenance được stage trong
+`knowledge_graph_import_nodes`; display note không được lưu ở import node. Flow
+không ghi vào `places` hay graph canonical trước admin review. Review không chặn
+TripIntent/itinerary provisional.
 
 `explorer.candidateReviews[]` giữ candidate có evidence sau aggregation kể cả
 khi place provider chưa resolve được. Mỗi item có `candidateId`, `name`,
@@ -404,12 +430,14 @@ dùng extraction đã lưu, phải chạy extraction mới, hay chủ động b�
 `providerCounts` là số candidate provider đã xử lý,
 không đồng nghĩa tất cả đã resolve thành công. Report cấp intake cũng có
 `resolvedProviderCounts` với cùng ý nghĩa. `providerAttempts` ghi từng attempt
-thực tế với `candidate`, `provider`, `aliasQueryCount`, `queueWaitSeconds`,
+thực tế với `candidate`, `provider`, `attemptedQueries`, `aliasQueryCount`, `queueWaitSeconds`,
 `executionSeconds`, `outcome` và `rejectionReason`; cache hit dùng
 `provider=cache`, `outcome=cache_hit`. Các stage chạy song song giữ duration
 riêng và phải so theo wall time, không cộng STT với frame vision hoặc Formatter
-với place resolution. Report không chứa raw prompt, URL đầy đủ, transcript, OCR
-text, query provider đầy đủ, provider payload hay credential. Runtime nối mỗi report thành một dòng JSON tại
+với place resolution. `attemptedQueries` là các keyword địa điểm đã thực sự gửi
+đến Knowledge Graph DB hoặc Google Maps Playwright để phục vụ panel chẩn đoán; terminal
+log chủ động loại field này cùng tên candidate. Report không chứa raw prompt,
+URL đầy đủ, transcript, OCR text, provider payload hay credential. Runtime nối mỗi report thành một dòng JSON tại
 `backend/var/explorer-timings.jsonl`; dùng
 `cd backend && python scripts/show_explorer_timing.py` để xem lần gần nhất.
 Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `details` an toàn;
@@ -417,6 +445,9 @@ Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `de
 URL. Trong khi HTTP Explorer vẫn đang chạy, UI chỉ hiển thị tổng timer và trạng
 thái đang thu thập; timing chi tiết xuất hiện sau khi Explorer trả report, không
 suy đoán provider hoặc duration trung gian ở client.
+
+Panel giữ job thành công và toàn bộ timing cho tới khi user bấm **Xóa tác vụ**;
+mở plan không tự ẩn job trong giai đoạn kiểm thử hiện tại.
 
 Mỗi phần tử địa điểm có `category` với một trong các giá trị `attraction`,
 `food`, `cafe`, `hotel`, `transport`, `free_time`, `nature`, `culture`,
@@ -470,8 +501,8 @@ trả nó trong `tripIntent.timing.destinationStays`, ví dụ:
 ```
 
 Planner phải áp `targetArea=Hanoi` cho cả Ngày 1 và Ngày 2. Nếu intake chỉ có
-city stay và chưa có venue cụ thể, `allowFinderSuggestions=false` và hai ngày
-được trả về với danh sách item trống.
+city stay và chưa có venue cụ thể, Finder được phép bổ sung activity và meal
+venue theo cùng planning pipeline của raw prompt.
 
 Response tổng quát:
 
@@ -524,12 +555,14 @@ basis, và không có `budgetLevel` ở vị trí khác.
 `POST /api/plans/main/from-explorer` nối kết quả Explorer vào Planner/Finder.
 Response bọc plan trong `{ "plan": ..., "timingReport": ... }`.
 `timingReport` gồm tổng wall-clock và các stage
-`preparePlanningContext`, `planner`, `finder`, `assemblePlan`,
+`preparePlanningContext`, `tripThemePlanner`, `placeSelector`, `assemblePlan`,
 `checkOverall`; report còn trả số ngày, item, chặng di chuyển, địa điểm chưa
-xếp và cảnh báo để UI hiển thị chi tiết latency. Timing không chứa prompt,
+xếp và cảnh báo để UI hiển thị chi tiết latency. Mỗi stage có `dataSource` để
+phân biệt Explorer snapshot, Knowledge Graph DB + LLM, Knowledge Graph DB + deterministic
+rules, plan assembly và checker. Timing không chứa prompt,
 selected-place payload hay dữ liệu provider thô.
 Request gồm `tripIntent`, `intakeId`, `userId`, `selectedPlaces`,
-`candidateReviews`, `allowFinderSuggestions` và cờ nội bộ
+`candidateReviews`, `allowFinderGapFill`, `allowReplaceSourcePlaces` và cờ nội bộ
 `expandDaysToFitSelectedPlaces`. `candidateReviews` cho phép bước hậu xử lý đọc
 activity URL chưa resolve sau khi Finder đã chốt route; field này không tự biến
 candidate thành selected place. Trip chat
@@ -541,17 +574,19 @@ sách này với thao tác thêm thủ công vào một ngày hoặc điền pro
 Item có `reasonCode=activity_fallback_recommendation` mang place/location,
 popularity và `sourceProvider=route_aware_activity_fallback`; đây là gợi ý của
 hệ thống gần route, không phải venue được URL xác nhận.
-Sức chứa route-first là hai activity chính và ba meal stop mỗi ngày; restaurant/
-food URL ưu tiên thay meal suggestion, còn cafe/coffee dùng activity slot.
+Route-first giữ ít nhất một activity giữa breakfast–lunch, ít nhất một activity
+giữa lunch–dinner và ba meal anchor mỗi ngày; restaurant/food URL ưu tiên thay
+meal suggestion, còn cafe/coffee dùng activity slot.
 Service merge `selectedPlaces` explicit với các candidate đã tự động lưu theo
 đúng `intakeId + userId`. Candidate chưa được user xác nhận vẫn giữ
 `preferenceLevel=preferred`, confidence và provenance; không được đổi thành
 `mustVisit` ngầm.
 
-Explorer trả `allowFinderSuggestions=false` khi intake có URL/ảnh/OCR và nguồn
-đã phủ duration hiệu lực. Nếu user nói rõ số ngày dài hơn coverage nguồn,
-Explorer trả `true`; Finder vẫn chỉ tìm catalog cho ngày trống, không thêm vào
-ngày đã có stop URL/OCR. Prompt thuần trả `true` cho mọi ngày.
+Explorer trả `allowFinderGapFill=true` và `allowReplaceSourcePlaces=false` cho
+cả prompt thuần lẫn intake URL/ảnh/OCR. Finder chỉ lấp slot activity/meal còn
+thiếu; không được xóa, thay thế hoặc đổi provenance của source Place. Request cũ
+dùng `allowPlaceSuggestions` hoặc `allowFinderSuggestions` vẫn được nhận như
+alias của `allowFinderGapFill`, nhưng response chỉ xuất hai policy mới.
 
 Nếu intake URL/OCR không có `tripIntent.timing.days` explicit, Explorer suy ra số ngày từ
 `sourceDay`; nếu nguồn không gán ngày, dùng số ngày tối thiểu theo số stop và
@@ -574,12 +609,19 @@ Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrde
 `longitude`. Khi dữ liệu đã tồn tại trong Knowledge Graph hoặc import snapshot,
 `selectedPlaces` và `PlanItem` còn có thể trả `imageUrls`,
 `rating` và `reviewCount`. Field thiếu được để rỗng/null; API không tạo ảnh hoặc
-rating giả. `PlanItem.notes` giữ context bổ sung từ nguồn/provider;
-`PlanItem.personalNotes` là lời nhắc user chỉnh sửa qua mutation endpoint. Hai
-field không ghi đè nhau và đều được giữ qua trip-chat revision. `PlanItem` trả
-lại cùng địa chỉ/tọa độ để UI hiển thị và đặt marker.
-`sourceProvider` giữ adapter đã resolve candidate (`database`,
-`google_maps_scraper`, ...)
+rating giả. `PlanItem.notes` giữ một source summary ngắn, chỉ đọc, được compose
+từ evidence đã rút gọn, `sourceActivity` và description provider được phép.
+`PlanItem.noteSources[]` có shape `{ type, ref?, evidenceTypes?, fetchedAt? }`
+và chỉ giữ provenance để render nhãn như `Từ video tham khảo · Google Maps`;
+field này không lặp lại note text. `PlanItem.personalNotes` là lời nhắc user
+chỉnh sửa qua mutation endpoint. Ba field được giữ trong cùng trip-chat revision
+và itinerary/map popup phải đọc cùng `PlanItem`. `PlanItem` trả lại cùng địa
+chỉ/tọa độ để UI hiển thị và đặt marker.
+Mutation thêm/sửa item không nhận `notes` hoặc `noteSources`; text do user nhập
+chỉ đi qua `personalNotes`, vì source summary và provenance là read-only.
+`sourceProvider` giữ adapter đã resolve candidate (`knowledge_graph`,
+`google_maps_scraper`, ...). Giá trị `database` chỉ có thể còn xuất hiện trong
+snapshot/cache legacy và cũng được UI hiển thị là Knowledge Graph DB.
 và được chuyển tiếp vào `PlanItem` cùng `sourceRefs`; UI dùng hai field này để
 hiển thị URL nguồn chính xác dưới dạng liên kết, kèm provider resolve như
 `https://www.tiktok.com/... · GOOGLE MAPS · PLAYWRIGHT`. Card không có URL provenance được phân

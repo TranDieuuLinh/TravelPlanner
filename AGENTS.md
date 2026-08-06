@@ -63,6 +63,9 @@ API.
 - JSON của API sử dụng camelCase ở bên ngoài và snake_case trong Python.
 - Dữ liệu nghiệp vụ phải được lưu thông qua repository. Repository trong bộ nhớ
   chỉ phù hợp cho prototype và test.
+- Runtime và migration không được kết nối vào database bảo trì mặc định
+  `postgres`. Phải dùng database ứng dụng riêng (hiện là `vsf_travel`); database
+  test tích hợp cũng phải có tên riêng.
 - Plan đã mua phải tạo ra một bản sao cá nhân; chỉnh sửa bản sao không được thay
   đổi phiên bản creator đã xuất bản.
 - Plan dự phòng là plan riêng được liên kết với plan chính; không được âm thầm

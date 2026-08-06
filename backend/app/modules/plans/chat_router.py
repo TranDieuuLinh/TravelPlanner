@@ -15,6 +15,7 @@ from app.modules.plans.chat_schema import (
     TripChatSummaryRead,
     TripChatTurnCreate,
     TripChatTurnRead,
+    TripIntentUpdateRequest,
 )
 from app.modules.plans.chat_service import TripChatService
 from app.modules.plans.conversation_service import ConversationTurnService
@@ -103,6 +104,22 @@ def delete_trip_chat(
     current_user: Annotated[User, Depends(require_csrf)],
 ) -> None:
     service.delete(chat_id, current_user)
+
+
+@router.patch("/{chat_id}/trip-intent", response_model=TripChatRead)
+def update_trip_chat_intent(
+    chat_id: str,
+    payload: TripIntentUpdateRequest,
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return service.update_trip_intent(
+        chat_id,
+        current_user,
+        trip_intent=payload.trip_intent,
+        expected_revision=payload.expected_revision,
+        expected_trip_intent_version=payload.expected_trip_intent_version,
+    )
 
 
 @router.post(

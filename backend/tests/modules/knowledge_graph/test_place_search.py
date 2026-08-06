@@ -148,3 +148,43 @@ def test_search_returns_no_graph_result_when_destination_is_unknown(
     )
 
     assert results == []
+
+
+def test_search_repairs_legacy_cp437_utf8_text_at_projection_boundary(
+    db_session: Session,
+) -> None:
+    place = _entity(
+        "place-food-culture",
+        "Nh├á h├áng H├á Nß╗Öi",
+        "Restaurant",
+    )
+    # The legacy row has a valid normalized index but corrupted display text.
+    place.normalized_name = "nha hang ha noi"
+    db_session.add_all([_entity("area-hanoi", "Hà Nội", "AreaAdm1"), place])
+    db_session.flush()
+    db_session.add_all(
+        [
+            KnowledgeRelationship(
+                from_entity_id="place-food-culture",
+                relationship_type="LOCATED_IN",
+                to_entity_id="area-hanoi",
+            ),
+            _property("place-food-culture", "latitude", "21.0340925"),
+            _property("place-food-culture", "longitude", "105.8538401"),
+            _property(
+                "place-food-culture",
+                "address",
+                "60 Ng. Phß╗æ H├áng, H├á Nß╗Öi",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    results = KnowledgeGraphPlaceSearchRepository(db_session).search(
+        "nha hang",
+        "Hà Nội",
+        limit=5,
+    )
+
+    assert results[0].name == "Nhà hàng Hà Nội"
+    assert results[0].address == "60 Ng. Phố Hàng, Hà Nội"

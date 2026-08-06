@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 
 
 class DestinationStay(BaseModel):
@@ -174,6 +175,10 @@ class PlanItem(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     notes: str | None = None
+    note_sources: list[PlanNoteSource] = Field(
+        default_factory=list,
+        alias="noteSources",
+    )
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     rating: float | None = Field(default=None, ge=0, le=5)

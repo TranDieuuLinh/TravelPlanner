@@ -34,7 +34,6 @@ class AddItemRequest(BaseModel):
     duration_minutes: Annotated[int, Field(default=60, ge=15, le=720, alias="durationMinutes")] = 60
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    notes: str | None = None
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] = Field(default_factory=list)
     position: int | None = Field(default=None, ge=0)
@@ -54,7 +53,6 @@ class UpdateItemRequest(BaseModel):
     duration_minutes: Annotated[int | None, Field(default=None, ge=15, le=720, alias="durationMinutes")] = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    notes: str | None = None
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     tags: list[str] | None = None
     locked: bool | None = None

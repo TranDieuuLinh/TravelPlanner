@@ -33,6 +33,11 @@ Sử dụng pytest cho domain và service:
   dùng matrix khi có và bảo toàn thứ tự khi provider lỗi;
 - route-first giữ ba meal anchor, cho phép hơn hai activity khi duration và
   transition còn vừa, đồng thời đưa activity tràn thời gian vào danh sách chưa xếp;
+- URL chỉ có quán ăn vẫn ưu tiên ba source meal vào đúng anchor, dùng Finder bù
+  ít nhất một activity giữa breakfast–lunch và lunch–dinner dù chế độ thay thế
+  source bị tắt, đồng thời giữ provenance của toàn bộ source Place;
+- meal venue không resolve vẫn giữ anchor tổng quát và warning, không giả mạo
+  một Place đã được provider xác minh;
 - route-first thử chuyển activity overflow sang đúng một ngày khả thi khác và
   không làm bật khỏi lịch một item đã xếp ở ngày đích;
 - mọi selected place được xếp hoặc có lý do chưa xếp;
@@ -44,6 +49,8 @@ Sử dụng pytest cho domain và service:
 - required experience được PlaceSelector resolve thành required Place hoặc giữ
   trong `UnscheduledPlace`, không bị bỏ âm thầm;
 - lifecycle turn nằm trên user message và revision chứa cùng TripIntent snapshot
+- structured intent edit trả sau khi persist, coalesce nhiều edit đang chờ và
+  chỉ worker của intent version mới nhất được ghi plan/revision
   đã dùng để tạo plan;
 - quy tắc thời gian, mật độ và validation;
 - bất biến của order, entitlement, review và payment;
@@ -71,6 +78,10 @@ Chạy test FastAPI với database cô lập:
 - Explorer persistence phải chứng minh caption/STT/OCR/context cùng nằm trong
   một `source_documents`, evidence bám đúng import node và provider snapshot chỉ
   giữ một ảnh;
+- note contract phải chứng minh import node không có display-note column;
+  source summary/provenance/user note round-trip qua plan revision, mutation chỉ
+  cho sửa `personalNotes`, và itinerary/map popup tạo cùng presentation từ
+  `notes`, `noteSources`, `personalNotes`;
 - Top-K Knowledge Graph phải test cả alias đã review, auto-resolve có margin và
   hai chi nhánh cùng tên. Case chi nhánh phải giữ `branch_ambiguous`, không gọi
   Google, rồi chuyển lựa chọn `route_proximity` vào plan item mà không sửa node;

@@ -9,6 +9,7 @@ from app.modules.plans.domain.entities import (
     TravelIntent,
     UserStatus,
 )
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.dto.agent_contracts import PlanningIntent, TripPlanningSpec
 from app.modules.plans.dto.agent_contracts import PlacePreferenceLevel
@@ -31,8 +32,12 @@ class ExplorerRequest(BaseModel):
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)
-    must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
-    avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
+    must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(
+        default_factory=list
+    )
+    avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(
+        default_factory=list
+    )
     constraints: list[str] = Field(default_factory=list)
 
 
@@ -69,10 +74,11 @@ class SelectedPlaceCreate(BaseModel):
     identity_confidence: Annotated[
         str | None, Field(default=None, alias="identityConfidence")
     ]
-    route_score: Annotated[
-        float | None, Field(default=None, alias="routeScore")
-    ]
+    route_score: Annotated[float | None, Field(default=None, alias="routeScore")]
     notes: str | None = None
+    note_sources: Annotated[
+        list[PlanNoteSource], Field(default_factory=list, alias="noteSources")
+    ]
     personal_notes: Annotated[
         str | None,
         Field(default=None, alias="personalNotes"),
@@ -86,7 +92,9 @@ class SelectedPlaceCreate(BaseModel):
         Field(default=None, ge=0, alias="reviewCount"),
     ]
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
-    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_day: Annotated[
+        int | None, Field(default=None, ge=1, le=30, alias="sourceDay")
+    ]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
     source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
     source_duration_minutes: Annotated[
@@ -129,15 +137,21 @@ class MainPlanFromExplorerCreate(BaseModel):
         LongTermPreferenceProfile,
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
     ]
-    allow_place_suggestions: Annotated[
+    allow_finder_gap_fill: Annotated[
         bool,
         Field(
             default=True,
             validation_alias=AliasChoices(
-                "allowPlaceSuggestions", "allowFinderSuggestions"
+                "allowFinderGapFill",
+                "allowPlaceSuggestions",
+                "allowFinderSuggestions",
             ),
-            serialization_alias="allowPlaceSuggestions",
+            serialization_alias="allowFinderGapFill",
         ),
+    ]
+    allow_replace_source_places: Annotated[
+        bool,
+        Field(default=False, alias="allowReplaceSourcePlaces"),
     ]
     expand_days_to_fit_selected_places: Annotated[
         bool,
@@ -166,8 +180,21 @@ class MainPlanFromTripIntentCreate(BaseModel):
         LongTermPreferenceProfile,
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
     ]
-    allow_place_suggestions: Annotated[
-        bool, Field(default=True, alias="allowPlaceSuggestions")
+    allow_finder_gap_fill: Annotated[
+        bool,
+        Field(
+            default=True,
+            validation_alias=AliasChoices(
+                "allowFinderGapFill",
+                "allowPlaceSuggestions",
+                "allowFinderSuggestions",
+            ),
+            serialization_alias="allowFinderGapFill",
+        ),
+    ]
+    allow_replace_source_places: Annotated[
+        bool,
+        Field(default=False, alias="allowReplaceSourcePlaces"),
     ]
     expand_days_to_fit_selected_places: Annotated[
         bool, Field(default=False, alias="expandDaysToFitSelectedPlaces")
@@ -186,7 +213,8 @@ class MainPlanFromTripIntentCreate(BaseModel):
             regionKey=self.region_key,
             userStatus=self.user_status,
             preferenceProfile=self.preference_profile,
-            allowPlaceSuggestions=self.allow_place_suggestions,
+            allowFinderGapFill=self.allow_finder_gap_fill,
+            allowReplaceSourcePlaces=self.allow_replace_source_places,
             expandDaysToFitSelectedPlaces=self.expand_days_to_fit_selected_places,
         )
 

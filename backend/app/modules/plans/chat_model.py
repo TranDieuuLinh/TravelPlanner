@@ -28,6 +28,10 @@ class TripChat(Base):
     latest_planner_timing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     current_intake_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     current_trip_intent: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    trip_intent_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    trip_intent_plan_status: Mapped[str] = mapped_column(
+        String(32), default="synced", nullable=False
+    )
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     conversation_phase: Mapped[str] = mapped_column(String(32), default="discovery", nullable=False)
     conversation_context: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

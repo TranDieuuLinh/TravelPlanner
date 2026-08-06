@@ -208,7 +208,7 @@ h1, h2, h3, p { margin-top: 0; }
   box-shadow: none;
 }
 
-.topbar.is-planner .backgroundJobsDock { width: min(360px, calc(100vw - 48px)); }
+.topbar.is-planner .backgroundJobsDock { width: min(1180px, calc(100vw - 48px)); }
 .accountMenu { position: relative; }
 .accountMenu > summary { list-style: none; }
 .accountMenu > summary::-webkit-details-marker { display: none; }
@@ -258,7 +258,11 @@ h1, h2, h3, p { margin-top: 0; }
 .logoutButton svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .logoutButton:hover, .logoutButton:focus-visible { background: #f6f7fb; color: #365f5a; transform: none !important; }
 .navItem:focus-visible, .newTrip:focus-visible, .accountLink:focus-visible, .logoutButton:focus-visible, .accountMenuTrigger:focus-visible { outline: 3px solid rgba(54, 95, 90, .2); outline-offset: 2px; }
-.backgroundJobsDock { position: fixed; z-index: 1900; top: 76px; right: 24px; width: min(360px, calc(100vw - 48px)); animation: backgroundJobsDockIn .2s ease-out both; }
+.backgroundJobsDock { position: fixed; z-index: 1900; top: 76px; right: 24px; width: min(1180px, calc(100vw - 48px)); animation: backgroundJobsDockIn .2s ease-out both; }
+.backgroundJobsDock--planner-chat { position: absolute; z-index: 20; top: 14px; right: 16px; width: min(320px, calc(100% - 32px)); padding: 0; }
+.backgroundJobsDock--planner-chat .backgroundJobsPanel > summary { min-height: 44px; border-radius: 14px; background: rgba(255, 255, 255, .94); box-shadow: 0 8px 24px rgba(54, 95, 90, .12); }
+.backgroundJobsDock--planner-chat .backgroundJobsList { right: 0; width: min(560px, calc(100vw - 36px)); }
+.plannerChat:has(.backgroundJobsPanel[open]) { overflow: visible; }
 .backgroundJobsPanel { position: relative; }
 .backgroundJobsPanel > summary { display: grid; grid-template-columns: 12px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 40px; border: 1px solid rgba(54, 95, 90, .11); border-radius: 12px; padding: 9px 11px; background: rgba(255, 255, 255, .9); cursor: pointer; list-style: none; }
 .backgroundJobsPanel > summary::-webkit-details-marker { display: none; }
@@ -268,7 +272,7 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobPulse { background: var(--brand); box-shadow: 0 0 0 0 rgba(54, 95, 90, .36); animation: backgroundJobPulse 1.7s infinite; }
 .backgroundJobsChevron { color: var(--muted); font-size: .8rem; transition: transform .18s ease; }
 .backgroundJobsPanel[open] .backgroundJobsChevron { transform: rotate(180deg); }
-.backgroundJobsList { position: absolute; top: calc(100% + 10px); right: 0; width: min(520px, calc(100vw - 36px)); max-height: min(520px, calc(100dvh - 92px)); overflow-y: auto; border: 1px solid rgba(54, 95, 90, .11); border-radius: 15px; padding: 5px; background: rgba(255, 255, 255, .98); box-shadow: 0 15px 42px rgba(54, 95, 90, .14); backdrop-filter: blur(16px); }
+.backgroundJobsList { position: absolute; top: calc(100% + 10px); right: 0; width: min(1180px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 92px)); overflow-y: auto; border: 1px solid rgba(54, 95, 90, .11); border-radius: 15px; padding: 5px; background: rgba(255, 255, 255, .98); box-shadow: 0 15px 42px rgba(54, 95, 90, .14); backdrop-filter: blur(16px); }
 .backgroundJobsListHeader { position: sticky; z-index: 1; top: -5px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 10px 8px; background: rgba(255, 255, 255, .98); }
 .backgroundJobsListHeader > strong { font-size: .66rem; }
 .backgroundJobsListHeader > button { border: 0; border-radius: 8px; padding: 6px 8px; background: #e4e7f0; color: #172033; font-size: .55rem; font-weight: 850; }
@@ -287,7 +291,7 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobRow.succeeded .backgroundJobState { border-color: var(--brand); background: var(--brand); }
 .backgroundJobRow.failed .backgroundJobState { border-color: var(--danger); background: var(--danger); }
 .backgroundJobCopy { display: grid; min-width: 0; gap: 2px; }
-.backgroundJobCopy strong { overflow: hidden; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobCopy strong { overflow-wrap: anywhere; font-size: .66rem; }
 .backgroundJobCopy small { color: var(--muted); font-size: .59rem; }
 .backgroundJobDetails { display: grid; gap: 10px; border-top: 1px solid #f6f7fb; padding: 10px 12px 12px 42px; background: #ffffff; }
 .backgroundJobMeta { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
@@ -314,21 +318,29 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobProviders { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 5px; margin: 0; }
 .backgroundJobProviders div { min-width: 0; border-radius: 8px; padding: 6px; background: #ffffff; }
 .backgroundJobProviders div.resolved { background: #f6f7fb; }
-.backgroundJobProviders dt { overflow: hidden; color: #365f5a; font-size: .52rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobProviders dt { overflow-wrap: anywhere; color: #365f5a; font-size: .52rem; font-weight: 800; }
 .backgroundJobProviders dd { margin: 2px 0 0; color: #172033; font-size: .48rem; }
 .backgroundJobProviders dd b { color: #365f5a; }
 .backgroundJobProviderAttempts { color: #172033; font-size: .52rem; }
 .backgroundJobProviderAttempts summary { cursor: pointer; font-weight: 800; }
-.backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; }
-.backgroundJobProviderAttemptList > div { display: grid; grid-template-columns: minmax(90px,1.2fr) minmax(90px,1fr) minmax(150px,2fr) repeat(4,minmax(55px,auto)); gap: 5px; align-items: center; padding: 5px 6px; border-radius: 7px; background: #ffffff; }
-.backgroundJobProviderAttemptList strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; padding-bottom: 2px; }
+.backgroundJobProviderAttemptList > div { display: grid; min-width: 0; gap: 7px; padding: 8px; border-radius: 7px; background: #ffffff; }
+.backgroundJobAttemptHeader { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.backgroundJobAttemptHeader strong { min-width: 0; overflow-wrap: anywhere; }
+.backgroundJobAttemptHeader > span { flex: 0 1 auto; color: #365f5a; font-weight: 750; text-align: right; overflow-wrap: anywhere; }
+.backgroundJobAttemptMeta { display: grid; grid-template-columns: 1.1fr 1fr 1fr 1.5fr; gap: 8px; color: #172033; }
+.backgroundJobAttemptMeta span { min-width: 0; overflow-wrap: anywhere; }
+.backgroundJobAttemptMeta b, .backgroundJobAttemptQueries b { color: #63706c; font-weight: 750; }
+.backgroundJobAttemptQueries { display: flex; min-width: 0; align-items: flex-start; gap: 8px; color: #172033; }
+.backgroundJobAttemptQueries b { flex: 0 0 auto; }
+.backgroundJobAttemptQueries span { min-width: 0; overflow-wrap: anywhere; }
 .backgroundJobSourceTiming { display: grid; gap: 6px; border-top: 1px solid #f6f7fb; padding-top: 8px; }
-.backgroundJobSourceTiming > small { color: #172033; font-size: .5rem; line-height: 1.4; }
+.backgroundJobSourceTiming > small { overflow-wrap: anywhere; color: #172033; font-size: .5rem; line-height: 1.4; }
 .backgroundJobTimingPending { border-style: dashed; }
 .backgroundJobTimingPending p, .backgroundJobTimingPending > small { margin: 0; color: #172033; font-size: .52rem; line-height: 1.45; }
 .backgroundJobError { margin: 0; color: #365f5a; font-size: .57rem; line-height: 1.4; }
 .backgroundJobActions { display: flex; flex-wrap: wrap; gap: 7px; }
-.backgroundJobActions > button, .backgroundJobActions > .backgroundJobOpenChat { border: 0; border-radius: 8px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .57rem; font-weight: 850; text-decoration: none; }
+.backgroundJobActions > button { border: 0; border-radius: 8px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .57rem; font-weight: 850; text-decoration: none; }
 .backgroundJobActions > .backgroundJobDelete { background: #f6f7fb; color: #365f5a; }
 .backgroundJobActions > button:disabled { cursor: wait; opacity: .45; }
 @keyframes backgroundJobPulse { 70% { box-shadow: 0 0 0 7px rgba(54, 95, 90, 0); } 100% { box-shadow: 0 0 0 0 rgba(54, 95, 90, 0); } }
@@ -339,11 +351,14 @@ h1, h2, h3, p { margin-top: 0; }
   .backgroundJobsDock, .backgroundJobPulse, .backgroundJobRow.queued .backgroundJobState, .backgroundJobRow.running .backgroundJobState { animation: none; }
 }
 @media (max-width: 560px) {
-  .backgroundJobsDock { top: 70px; right: 12px; width: min(320px, calc(100vw - 24px)); }
+  .backgroundJobsDock, .topbar.is-planner .backgroundJobsDock { top: 70px; right: 12px; width: min(320px, calc(100vw - 24px)); }
+  .backgroundJobsDock--planner-chat { top: 10px; right: 14px; width: min(300px, calc(100% - 28px)); padding: 0; }
+  .backgroundJobsDock--planner-chat .backgroundJobsList { right: 0; width: calc(100vw - 24px); }
   .backgroundJobsPanel > summary { width: 100%; }
   .backgroundJobsList { width: calc(100vw - 24px); max-height: calc(100dvh - 136px); }
   .backgroundJobProviders { grid-template-columns: 1fr; }
-  .backgroundJobProviderAttemptList > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .backgroundJobAttemptMeta { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .backgroundJobAttemptQueries { align-items: flex-start; flex-direction: column; gap: 2px; }
 }
 .appBody { min-height: calc(100vh - 64px); }
 .mobileNav { display: none; }
@@ -1440,16 +1455,6 @@ h1, h2, h3, p { margin-top: 0; }
 .itineraryGoogleReviewLink:hover small {
   text-decoration: underline;
 }
-.itineraryGoogleReviewLink svg {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: #4285f4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-}
 .itineraryPlaceHours {
   display: block;
   min-width: 0;
@@ -1612,7 +1617,11 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .activityNotesContent > .activityPersonalNote { border-left-color: #365f5a; }
 .activityNotesContent > .activityPersonalNote strong { color: #365f5a; }
-.activityNotesContent strong { color: #365f5a; font-size: .5rem; }
+.activityNotesContent strong {
+  color: #365f5a;
+  font-size: .5rem;
+  white-space: pre-line;
+}
 .activityNotesContent p { margin: 0; }
 .activityNotesContent .activityNotesEmpty { color: #172033; font-style: italic; }
 .activityPersonalNoteForm {
@@ -1731,7 +1740,10 @@ h1, h2, h3, p { margin-top: 0; }
   padding: 7px 9px;
   background: #ffffff;
 }
-.activityNotesContent strong { font-size: .58rem; }
+.activityNotesContent strong {
+  font-size: .58rem;
+  white-space: pre-line;
+}
 .activityNotesContent p { color: #172033; line-height: 1.55; }
 .activityPersonalNoteForm {
   gap: 8px;
@@ -2840,45 +2852,6 @@ h1, h2, h3, p { margin-top: 0; }
 .editPlaceNotesPaper .itinerarySuggestionItem:hover { background: var(--edit-place-color-surface); }
 .editPlaceNotesPaper .itinerarySuggestionItem strong { color: var(--ink); }
 .editPlaceNotesPaper .itinerarySuggestionItem span { color: var(--muted); }
-.editPlaceAddNotes {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: transparent;
-  color: var(--edit-place-color);
-  font-size: .75rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: background .16s ease, color .16s ease;
-}
-.editPlaceAddNotes:hover {
-  background: var(--edit-place-color-soft);
-  color: var(--edit-place-color-dark);
-}
-.editPlaceAddNotes:focus-visible {
-  outline: 3px solid rgba(54, 95, 90, .2);
-  outline-offset: 2px;
-}
-.editPlaceAddNotes svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-width: 2;
-}
-.editPlaceNotesField textarea {
-  min-height: 104px;
-  border-color: var(--line-strong);
-  color: var(--ink);
-}
-.editPlaceNotesField textarea:focus {
-  border-color: var(--edit-place-color);
-}
 .editPlaceNotesWindow > .itineraryMutationActions {
   border-top-color: rgba(54, 95, 90, .24);
   padding: 16px 20px;
@@ -3659,12 +3632,26 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .plannerMapCanvas .maplibregl-popup-content { max-height: calc(100dvh - 112px); overflow-y: auto; border: 1px solid rgba(54, 95, 90, .08); border-radius: 15px; padding: 18px 20px; box-shadow: 0 14px 36px rgba(54, 95, 90, .2); }
 .plannerMapCanvas .maplibregl-popup-close-button { top: 7px; right: 7px; width: 30px; height: 30px; border-radius: 50%; color: var(--muted); font-size: 22px; }
 .plannerMapCanvas .maplibregl-popup-close-button:hover { background: var(--canvas); }
-.candidateMapPopup strong { padding-right: 28px; font-size: .9rem; line-height: 1.35; }
-.candidateMapPopup small { color: #365f5a; font-size: .7rem; font-weight: 800; }
-.candidateMapPopup span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
-.candidateMapPopup .candidateMapPopupAddress { padding-left: 20px; background: no-repeat left 2px / 15px 15px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23142323' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); }
-.candidateMapPopup .candidateMapPopupHours { min-width: 0; color: #3c4043; font-size: .76rem; line-height: 1.5; }
-.candidateMapPopupHours summary { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) 18px; align-items: start; gap: 6px; border-radius: 4px; cursor: pointer; list-style: none; }
+.candidateMapPopup > strong { padding-right: 28px; font-size: .9rem; line-height: 1.35; }
+.candidateMapPopup > small { color: #365f5a; font-size: .7rem; font-weight: 800; }
+.candidateMapPopup > span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.plannerMapCanvas .candidateMapPopupShell .maplibregl-popup-content { overflow: hidden; padding: 0; }
+.plannerMapCanvas .candidateMapPopupShell .maplibregl-popup-close-button { z-index: 2; background: rgba(255, 255, 255, .92); box-shadow: 0 2px 8px rgba(23, 32, 51, .12); backdrop-filter: blur(6px); }
+.candidateMapPopup--place { display: block; width: 100%; min-width: 220px; max-height: calc(100dvh - 112px); overflow-y: auto; background: #fff; }
+.candidateMapPopupMedia { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: #f1f4f3; }
+.candidateMapPopupPhoto { display: block; width: 100%; height: 100%; margin: 0; background: #f1f4f3; object-fit: cover; }
+.candidateMapPopupHeader { display: grid; gap: 8px; padding: 16px 48px 13px 16px; }
+.candidateMapPopupTitle { margin: 0; color: #172033; font-size: .94rem; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
+.candidateMapPopupMeta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; }
+.candidateMapPopupMeta .candidateMapPopupDay,
+.candidateMapPopupMeta .candidateMapPopupRating { display: inline-flex; width: fit-content; align-items: center; border-radius: 999px; padding: 4px 8px; font-size: .64rem; font-weight: 800; line-height: 1.25; text-decoration: none; }
+.candidateMapPopupMeta .candidateMapPopupDay { background: #edf7f4; color: #285f56; }
+.candidateMapPopupMeta .candidateMapPopupRating { background: transparent; color: #172033; }
+.candidateMapPopupMeta a.candidateMapPopupRating:hover { background: transparent; text-decoration: underline; }
+.candidateMapPopupDetails { display: grid; gap: 11px; padding: 0 16px 15px; }
+.candidateMapPopupAddress { min-width: 0; padding-left: 22px; background: no-repeat left 2px / 16px 16px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23315a54' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); color: #4f5d59; font-size: .73rem; line-height: 1.45; overflow-wrap: anywhere; }
+.candidateMapPopup .candidateMapPopupHours { min-width: 0; color: #3c4043; font-size: .73rem; line-height: 1.45; }
+.candidateMapPopupHours summary { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) 18px; align-items: start; gap: 7px; border-radius: 6px; padding-left: 22px; background: no-repeat left 2px / 16px 16px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23315a54' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E"); cursor: pointer; list-style: none; }
 .candidateMapPopupHours summary::-webkit-details-marker { display: none; }
 .candidateMapPopupHours summary:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; }
 .candidateMapPopup .candidateMapPopupHoursLabel { color: #5f6368; font-weight: 750; white-space: nowrap; }
@@ -3673,24 +3660,16 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .candidateMapPopupHours[open] .candidateMapPopupHoursChevron { transform: rotate(180deg); }
 .candidateMapPopupHours summary[aria-disabled="true"] { cursor: default; }
 .candidateMapPopupHours summary[aria-disabled="true"] .candidateMapPopupHoursChevron { visibility: hidden; }
-.candidateMapPopupHoursSchedule { display: grid; gap: 7px; margin-top: 9px; border-top: 1px solid #e8eaed; padding-top: 9px; }
+.candidateMapPopupHoursSchedule { display: grid; gap: 7px; margin-top: 9px; padding-top: 9px; }
 .candidateMapPopupHoursSchedule > div { display: grid; min-width: 0; grid-template-columns: minmax(72px, .7fr) minmax(0, 1.3fr); gap: 12px; color: #3c4043; }
 .candidateMapPopupHoursSchedule span,
 .candidateMapPopupHoursSchedule strong { min-width: 0; padding-right: 0; color: #3c4043; font: inherit; overflow-wrap: anywhere; }
 .candidateMapPopupHoursSchedule strong { font-weight: 500; }
 .candidateMapPopupHoursSchedule .isActiveDay span,
 .candidateMapPopupHoursSchedule .isActiveDay strong { color: #202124; font-weight: 700; }
-.candidateMapPopup .candidateMapPopupRating {
-  display: inline-flex;
-  width: fit-content;
-  color: #172033;
-  font-size: .72rem;
-  font-weight: 800;
-  text-decoration: none;
-}
-.candidateMapPopup a.candidateMapPopupRating:hover { text-decoration: underline; }
-.candidateMapPopup p { margin: 2px 0 0; color: #172033; font-size: .73rem; line-height: 1.5; }
-.candidateMapPopupPhoto { display: block; width: 100%; height: clamp(160px, 24vh, 200px); margin-top: 7px; border-radius: 10px; background: #f6f7fb; object-fit: cover; }
+.candidateMapPopupNotes { display: grid; gap: 5px; padding: 0 16px 16px; }
+.candidateMapPopupNotes small { color: #315a54; font-size: .65rem; font-weight: 850; }
+.candidateMapPopupNotes p { margin: 0; color: #394742; font-size: .72rem; line-height: 1.5; white-space: pre-line; }
 
 @media (max-width: 780px) {
   .itineraryPlaceCard { gap: 10px; }
@@ -3698,7 +3677,7 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
   .itineraryPlaceImage { width: 96px; height: 96px; }
   .itineraryStop--food .itineraryPlaceCard--withImage { grid-template-columns: 88px minmax(0, 1fr); }
   .itineraryStop--food .itineraryPlaceImage { width: 88px; height: 88px; }
-  .candidateMapPopupPhoto { height: clamp(140px, 22vh, 180px); }
+  .candidateMapPopup--place { min-width: 200px; }
 }
 
 @media (max-width: 500px) {
@@ -7283,23 +7262,6 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 .plannerDiscoveryHeader h2 { margin: 0; color: #161b1a; font-size: clamp(1.35rem, 2vw, 1.85rem); letter-spacing: -.04em; }
 .plannerDiscoveryHeader button { border: 0; padding: 7px 0; background: transparent; color: #27332f; font-size: .64rem; font-weight: 850; }
 
-.plannerDiscoveryNotice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  border: 1px solid #dbe7e3;
-  border-radius: 12px;
-  padding: 9px 11px;
-  background: #edf7f3;
-  color: #49625c;
-  font-size: .59rem;
-  line-height: 1.4;
-}
-
-.plannerDiscoveryNoticeDot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #3e776b; box-shadow: 0 0 0 4px rgba(62, 119, 107, .12); animation: plannerDiscoveryPulse 1.4s ease-in-out infinite; }
-@keyframes plannerDiscoveryPulse { 50% { opacity: .45; transform: scale(.8); } }
-
 .plannerDiscoveryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .plannerDiscoveryCard { position: relative; min-height: 245px; overflow: hidden; border-radius: 20px; background: #dce3e0; color: #fff; box-shadow: 0 7px 20px rgba(26, 39, 35, .09); isolation: isolate; }
 .plannerDiscoveryCard.featured { grid-column: span 2; min-height: 300px; }
@@ -7513,8 +7475,7 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .plannerLoadingDots i,
-  .plannerDiscoveryNoticeDot { animation: none; opacity: 1; }
+  .plannerLoadingDots i { animation: none; opacity: 1; }
   .plannerDiscoveryCard img { transition: none; }
 }
 
@@ -7952,9 +7913,24 @@ button:active:not(:disabled), .primaryBtn:active:not(:disabled), .secondaryBtn:a
 }
 
 .plannerIntakeCopy {
+  display: block;
   font-size: .78rem;
   font-weight: 400;
   letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.plannerIntakeValue {
+  /* Details remain available when a category is opened, but stay out of the compact nav. */
+  display: none;
+  max-width: 132px;
+  overflow: hidden;
+  margin-top: 2px;
+  color: inherit;
+  font-size: .58rem;
+  line-height: 1.15;
+  opacity: .78;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -11564,7 +11540,7 @@ svg {
 .itinerary .itineraryPlaceCard--withImage,
 .itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
   grid-template-columns: 100px minmax(0, 1fr);
-  column-gap: 13px;
+  column-gap: 18px;
 }
 
 .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--mapInteractive {
@@ -11864,6 +11840,7 @@ svg {
 
 .itinerary .dayTabList {
   gap: 20px;
+  padding-right: 20px;
   border-bottom-color: var(--itinerary-edge);
   background: rgba(255, 255, 255, .96);
   box-shadow: none;
@@ -12134,6 +12111,8 @@ svg {
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+  padding: 4px 4px 0 0;
+  opacity: .92;
 }
 
 .itinerary .itineraryPlaceQuickActions > * {
@@ -13764,10 +13743,6 @@ svg {
   grid-row: 2;
 }
 
-.itinerary .itineraryPlaceCard--withDrag > .activityNotesInlinePanel {
-  grid-column: 2 / -1;
-}
-
 .itinerary .itineraryStop--activity .itineraryTypeIcon {
   border-color: #bfdbfe;
   background: #eff6ff;
@@ -13943,14 +13918,15 @@ svg {
   order: 0;
 }
 
-/* Keep settings, source, and place type on one evenly spaced vertical rail. */
+/* Stack settings, source, and place type together at the card's top-right. */
 .itinerary .itineraryPlaceQuickActions {
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
+  top: 0;
+  right: 0;
+  bottom: auto;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 0;
+  justify-content: flex-start;
+  gap: 6px;
   padding-left: 0;
 }
 
@@ -13982,12 +13958,17 @@ svg {
   height: 28px;
   min-height: 28px;
   flex: 0 0 28px;
+  border: 1px solid #d7e3df;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(35, 73, 68, .12);
 }
 
 .itinerary .itinerarySourceIconLink {
   width: 28px;
   height: 28px;
   grid-template-rows: 14px auto;
+  border-color: #d7e3df;
 }
 
 .itinerary .itinerarySourceIconLink svg,
@@ -14023,16 +14004,16 @@ svg {
   z-index: 2;
   bottom: 0;
   left: 0;
-  display: inline-grid;
-  width: 28px;
+  display: inline-flex;
+  width: auto;
   height: 28px;
   min-height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
+  align-items: center;
+  gap: 6px;
   border: 1px solid #d7e3df;
   border-radius: 8px;
-  padding: 0;
-  background: #fff;
+  padding: 0 10px;
+  background: transparent;
   color: #315a54;
   box-shadow: none;
   cursor: pointer;
@@ -14042,7 +14023,7 @@ svg {
 .itinerary .itineraryPlaceContent > .itineraryNoteActionButton:focus-visible,
 .itinerary .itineraryPlaceContent > .itineraryNoteActionButton[aria-expanded="true"] {
   border-color: #9fc4ba;
-  background: #edf7f4;
+  background: transparent;
   color: #173f39;
   outline: none;
 }
@@ -14062,6 +14043,13 @@ svg {
   stroke-width: 1.8;
 }
 
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton .itineraryNoteActionLabel {
+  font-size: .75rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .itinerary .itineraryPlaceContent > .itineraryNoteActionButton .activityNotesButtonCount {
   top: -6px;
   right: -6px;
@@ -14072,11 +14060,76 @@ svg {
   font-size: .5rem;
 }
 
+/* Keep the editor in normal flow so opening it grows the card and pushes the
+   following route/activities down from the note action. */
+.itinerary .itineraryPlaceCard > .activityNotesInlinePanel {
+  position: static;
+  z-index: auto;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  box-sizing: border-box;
+  border-radius: inherit;
+}
+
+.itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .activityNotesInlinePanel {
+  grid-column: 2 / -1;
+}
+
+.itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag > .activityNotesInlinePanel {
+  grid-column: 3 / -1;
+}
+
+.itinerary .itineraryPlaceCard--withDrag:not(.itineraryPlaceCard--withImage) > .activityNotesInlinePanel {
+  grid-column: 2 / -1;
+}
+
+.itinerary .itineraryPlaceCard > .activityNotesInlinePanel > textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 @container itinerary-panel (max-width: 480px) {
   .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
   .itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
     grid-template-columns: max-content clamp(72px, 24cqw, 96px) minmax(0, 1fr) max-content;
-    column-gap: 8px;
+    column-gap: 14px;
+  }
+
+  .itinerary .itineraryPlaceCard--mapInteractive header > strong,
+  .itinerary .itineraryPlaceCard--mapInteractive header .placeMapButton strong,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive header > strong,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive header .placeMapButton strong {
+    font-size: .78rem;
+  }
+
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryPlaceCategory,
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryPlaceRating,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive .itineraryPlaceCategory,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive .itineraryPlaceRating {
+    font-size: .56rem;
+  }
+
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryPlaceRating small,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive .itineraryPlaceRating small {
+    font-size: .5rem;
+  }
+
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryPlaceHours,
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryPlaceNote,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive .itineraryPlaceHours,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--mapInteractive .itineraryPlaceNote {
+    font-size: .58rem;
+  }
+
+  .itinerary .itineraryPlaceCard--mapInteractive .itineraryNoteActionLabel {
+    font-size: .64rem;
   }
 }
 
@@ -15327,8 +15380,9 @@ svg {
   cursor: not-allowed;
 }
 
-/* New Planner visits start as a conversation. Saved chats remain available
-   from the history drawer and never replace this entry screen automatically. */
+/* New Planner visits with an explicit request start as a conversation. A plain
+   Planner visit restores the latest saved chat; the history drawer remains the
+   place to switch projects or deliberately start a new one. */
 .plannerLayout.is-new-chat {
   display: grid;
   min-height: calc(100dvh - 64px);
@@ -16075,10 +16129,45 @@ svg {
 /* Keep chat history on the right side (second column) of the entry topbar. */
 .plannerHistoryMenu--intake {
   flex: 0 0 38px;
-  margin-right: 0px;
+  margin-left: 8px;
+  margin-right: 0;
+  padding-left: 8px;
   border-color: #e3e9e7;
   background: #fff;
   color: #51615d;
+}
+
+/* Keep the trip facts and history control usable as the Planner gets narrower. */
+.plannerEntryTopbar .plannerIntakeNav {
+  width: auto;
+  flex: 1 1 auto;
+  gap: clamp(4px, 1vw, 10px);
+}
+
+.plannerEntryTopbar .plannerIntakeCopy {
+  font-size: clamp(.56rem, 1.45vw, .78rem);
+}
+
+.plannerEntryTopbar .plannerIntakeValue {
+  display: none;
+}
+
+.plannerEntryTopbar .plannerIntakeNav button {
+  padding-inline: clamp(6px, 1.1vw, 14px);
+}
+
+.plannerEntryTopbar .itineraryHeadingCopy {
+  padding-right: clamp(8px, 1.5vw, 18px);
+}
+
+@media (max-width: 560px) {
+  .plannerEntryTopbar .plannerIntakeNav button {
+    padding-inline: 6px;
+  }
+
+  .plannerHistoryMenu--intake {
+    margin-left: 6px;
+  }
 }
 
 /* The collapsed mascot is the drag target; keep the old dots handle hidden. */
@@ -16143,6 +16232,24 @@ svg {
   border-color: #d9b9a5;
 }
 
+/* Unscheduled cards do not have an order number. Remove that empty column so
+   their image and content start at the same left edge as regular activities. */
+.itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+  grid-template-columns: 108px minmax(0, 1fr) max-content;
+}
+
+.itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia {
+  grid-column: 1;
+}
+
+.itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent {
+  grid-column: 2;
+}
+
+.itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryTypeIcon {
+  grid-column: 3;
+}
+
 .itinerary .unscheduledPlaceAddress,
 .itinerary .unscheduledPlaceContext {
   margin: 0;
@@ -16182,6 +16289,30 @@ svg {
 
   .itinerary .unscheduledPlacesHeading {
     align-items: flex-start;
+  }
+}
+
+@container itinerary-panel (max-width: 480px) {
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia,
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent,
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryTypeIcon {
+    grid-column: 1;
+  }
+
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia {
+    grid-row: 1;
+  }
+
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent {
+    grid-row: 2;
+  }
+
+  .itinerary .unscheduledPlaceStop .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryTypeIcon {
+    grid-row: 1;
   }
 }
 
@@ -16263,8 +16394,4 @@ svg {
 .backgroundTurnSummary .backgroundJobCopy {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.backgroundTurnSummary .backgroundJobOpenChat {
-  flex: 0 0 auto;
 }

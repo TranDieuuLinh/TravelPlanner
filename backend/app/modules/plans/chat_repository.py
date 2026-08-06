@@ -337,6 +337,138 @@ class TripChatRepository:
         self.db.commit()
         return self.get(chat.id, chat.user_id)
 
+    def save_trip_intent_revision(
+        self,
+        chat: TripChat,
+        *,
+        trip_intent: TripIntent,
+        plan_payload: dict,
+        planner_timing_payload: dict | None,
+        intake_id: str | None,
+        destination: str,
+        title: str,
+        revision: int,
+        expected_trip_intent_version: int,
+    ) -> TripChat:
+        """Atomically pair a structured intent edit with its regenerated plan."""
+        now = datetime.now(UTC)
+        trip_intent_payload = trip_intent.model_dump(mode="json", by_alias=True)
+        result = self.db.execute(
+            update(TripChat)
+            .where(
+                TripChat.id == chat.id,
+                TripChat.user_id == chat.user_id,
+                TripChat.revision == revision - 1,
+                TripChat.trip_intent_version == expected_trip_intent_version,
+            )
+            .values(
+                title=title,
+                destination=destination,
+                current_plan=plan_payload,
+                current_trip_intent=trip_intent_payload,
+                current_intake_id=intake_id,
+                latest_planner_timing=planner_timing_payload,
+                trip_intent_plan_status="synced",
+                revision=revision,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise AppError(
+                409,
+                "TRIP_INTENT_SUPERSEDED",
+                "Thông tin chuyến đi đã được sửa thêm trong lúc Planner đang chạy.",
+            )
+        self.db.add(
+            TripRevision(
+                id=str(uuid4()),
+                chat_id=chat.id,
+                revision=revision,
+                intake_id=intake_id,
+                plan_payload=plan_payload,
+                trip_intent_payload=trip_intent_payload,
+                created_at=now,
+            )
+        )
+        self.db.commit()
+        return self.get(chat.id, chat.user_id)
+
+    def save_trip_intent_update(
+        self,
+        chat: TripChat,
+        *,
+        trip_intent: TripIntent,
+        expected_revision: int,
+        expected_trip_intent_version: int,
+        destination: str,
+        title: str,
+    ) -> TripChat:
+        """Persist an intent edit immediately and coalesce its durable plan job."""
+        now = datetime.now(UTC)
+        payload = trip_intent.model_dump(mode="json", by_alias=True)
+        destination_changed = (
+            (chat.destination or "").strip().casefold() != destination.casefold()
+        )
+        values: dict = {
+            "title": title,
+            "destination": destination,
+            "current_trip_intent": payload,
+            "trip_intent_version": expected_trip_intent_version + 1,
+            "trip_intent_plan_status": "queued",
+            "updated_at": now,
+        }
+        if destination_changed:
+            values["current_intake_id"] = None
+        result = self.db.execute(
+            update(TripChat)
+            .where(
+                TripChat.id == chat.id,
+                TripChat.user_id == chat.user_id,
+                TripChat.revision == expected_revision,
+                TripChat.trip_intent_version == expected_trip_intent_version,
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount != 1:
+            self.db.rollback()
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Thông tin chuyến đi đã được cập nhật ở phiên khác. Hãy tải lại rồi thử lại.",
+            )
+        existing_job = self.db.scalar(
+            select(KnowledgeGraphImport).where(
+                KnowledgeGraphImport.import_kind == "trip_intent_plan_job",
+                KnowledgeGraphImport.chat_id == chat.id,
+                KnowledgeGraphImport.processing_status.in_(("queued", "running")),
+            )
+        )
+        if existing_job is None:
+            self.db.add(
+                KnowledgeGraphImport(
+                    id=str(uuid4()),
+                    import_kind="trip_intent_plan_job",
+                    created_by=chat.user_id,
+                    chat_id=chat.id,
+                    source_label="Trip intent plan regeneration",
+                    source_content="",
+                    processing_status="queued",
+                    processing_phase="planning",
+                    review_status="not_required",
+                    status="queued",
+                    schema_version="trip-intent-v1",
+                    ontology_version="knowledge-graph-v2",
+                    dataset_hash="",
+                    destination=destination,
+                    source_type="prompt",
+                )
+            )
+        self.db.commit()
+        return self.get(chat.id, chat.user_id)
+
     # ----------------------------------------------------------------------
     # Conversation turn lifecycle (supervisor)
     # ----------------------------------------------------------------------
@@ -607,6 +739,8 @@ class TripChatRepository:
         return TripIntent.model_validate(chat.current_trip_intent)
 
     def load_candidate_reviews(self, chat: TripChat) -> list[PlaceCandidateReview]:
+        if chat.current_intake_id is None:
+            return []
         intake_ids = list(
             dict.fromkeys(
                 intake_id

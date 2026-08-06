@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -27,6 +27,10 @@ from app.modules.plans.explorer.model import SourceDocument
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
+)
+from app.modules.plans.domain.plan_notes import (
+    compose_plan_source_note,
+    source_note_provenance,
 )
 from app.modules.plans.explorer.schema import (
     PlaceCandidateReview,
@@ -194,7 +198,6 @@ class ExplorerPersistenceRepository:
                 provider=resolution.provider,
                 provider_external_id=resolution.external_id,
                 provider_snapshot=provider_snapshot,
-                source_note=_place_notes(candidate),
                 source_order=candidate.source_order,
                 source_day=candidate.source_day,
                 source_time_hint=candidate.source_time_hint,
@@ -299,6 +302,31 @@ class ExplorerPersistenceRepository:
                 })
             if not _is_schedulable_snapshot(node, snapshot, import_job.destination or ""):
                 continue
+            source_refs = [
+                document.canonical_url
+                for document in [
+                    self.session.get(SourceDocument, node.source_document_id)
+                    if node.source_document_id else None
+                ]
+                if document is not None
+            ]
+            provider_description = _optional_text(snapshot.get("description"))
+            source_note = compose_plan_source_note(
+                source_activity=node.source_activity,
+                source_evidence=dict(node.source_evidence or {}),
+                provider_description=provider_description,
+            )
+            note_sources = source_note_provenance(
+                source_refs=source_refs,
+                evidence_types=list((node.source_evidence or {}).keys()),
+                provider=node.provider,
+                provider_ref=(
+                    _optional_text(snapshot.get("googleMapsUrl"))
+                    or _optional_text(snapshot.get("externalId"))
+                ),
+                provider_fetched_at=snapshot.get("fetchedAt"),
+                include_provider=bool(provider_description),
+            )
             output.append(
                 SelectedPlaceCreate(
                     name=str(snapshot.get("name") or node.canonical_name),
@@ -322,14 +350,7 @@ class ExplorerPersistenceRepository:
                     ])),
                     latitude=snapshot.get("latitude"),
                     longitude=snapshot.get("longitude"),
-                    sourceRefs=[
-                        document.canonical_url
-                        for document in [
-                            self.session.get(SourceDocument, node.source_document_id)
-                            if node.source_document_id else None
-                        ]
-                        if document is not None
-                    ],
+                    sourceRefs=source_refs,
                     sourceProvider=node.provider,
                     sourceImportNodeId=node.id,
                     candidateEntityIds=[
@@ -350,7 +371,8 @@ class ExplorerPersistenceRepository:
                         else "low" if node.identity_status == "branch_ambiguous"
                         else "medium"
                     ),
-                    notes=node.source_note,
+                    notes=source_note,
+                    noteSources=note_sources,
                     imageUrls=_image_urls_from_snapshot(snapshot),
                     rating=snapshot.get("rating"),
                     reviewCount=snapshot.get("reviewCount"),
@@ -392,6 +414,28 @@ class ExplorerPersistenceRepository:
             extractedContext=context,
             timings={"sharedSourceDocument": 0.0},
         )
+
+    def delete_url_cache(self, url: str) -> bool:
+        """Delete the shared URL extraction/resolution cache for one URL.
+
+        Historical Explorer imports remain intact, but their link to the
+        shared source document is cleared so a replay cannot reuse an old
+        provider snapshot. Canonical KG entities are never deleted here.
+        """
+        source_url = _artifact_source_url(url)
+        document = self.session.scalar(
+            select(SourceDocument).where(SourceDocument.canonical_url == source_url)
+        )
+        if document is None:
+            return False
+        self.session.execute(
+            update(KnowledgeGraphImportNode)
+            .where(KnowledgeGraphImportNode.source_document_id == document.id)
+            .values(source_document_id=None)
+        )
+        self.session.delete(document)
+        self.session.commit()
+        return True
 
     def load_url_source_artifacts(
         self,
@@ -641,6 +685,16 @@ class ExplorerPersistenceRepository:
             ):
                 candidate_by_id[entity.id] = entity
 
+        properties_by_entity: dict[str, dict[str, str]] = {}
+        if candidate_by_id:
+            property_rows = self.session.scalars(
+                select(KnowledgeProperty).where(
+                    KnowledgeProperty.entity_id.in_(list(candidate_by_id))
+                )
+            )
+            for prop in property_rows:
+                properties_by_entity.setdefault(prop.entity_id, {})[prop.key] = prop.value
+
         ranked: list[tuple[float, float, KnowledgeEntity, list[str], dict[str, str]]] = []
         normalized_region = _normalized(region)
         for entity in candidate_by_id.values():
@@ -657,11 +711,7 @@ class ExplorerPersistenceRepository:
                 for entity_name in entity_names
             )
             type_score = 1.0 if entity.entity_type in _compatible_entity_types(expected_type) else 0.0
-            properties = {
-                prop.key: prop.value for prop in self.session.scalars(
-                    select(KnowledgeProperty).where(KnowledgeProperty.entity_id == entity.id)
-                )
-            }
+            properties = properties_by_entity.get(entity.id, {})
             location_text = " ".join(
                 str(properties.get(key) or "")
                 for key in ("address", "city", "area", "primary_area", "region_key")
@@ -723,13 +773,6 @@ def _shared_candidate_key(candidate: UnifiedPlaceCandidate, destination: str) ->
     return _slug(candidate.name) if _candidate_source_url(candidate) else (
         f"{_slug(destination)}:{_slug(candidate.name)}"
     )
-
-
-def _place_notes(candidate: UnifiedPlaceCandidate) -> str | None:
-    values = [candidate.notes, *candidate.source_evidence.values()]
-    return "\n".join(dict.fromkeys(
-        value.strip() for value in values if value and value.strip()
-    )) or None
 
 
 def _is_persistable_resolution(
@@ -809,6 +852,7 @@ def _provider_snapshot(resolution: PlaceResolution) -> dict:
         "placeType": resolution.place_type,
         "address": resolution.address,
         "city": resolution.city,
+        "description": resolution.description,
         "latitude": float(resolution.latitude) if resolution.latitude is not None else None,
         "longitude": float(resolution.longitude) if resolution.longitude is not None else None,
         "googleMapsUrl": resolution.source_link,
@@ -817,6 +861,7 @@ def _provider_snapshot(resolution: PlaceResolution) -> dict:
         "rating": float(resolution.rating) if resolution.rating is not None else None,
         "reviewCount": resolution.review_count,
         "fetchedAt": resolution.fetched_at.isoformat() if resolution.fetched_at else None,
+        "attribution": resolution.attribution,
     }
 
 
@@ -850,6 +895,13 @@ def _optional_float(value: object) -> float | None:
         return float(value) if value not in (None, "") else None
     except (TypeError, ValueError):
         return None
+
+
+def _optional_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _select_branch_near_route(

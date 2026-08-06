@@ -12,6 +12,12 @@ vừa một ngày. Pace cũng không phải bằng chứng trực tiếp cho cap
 
 ## Quyết định
 
+- Raw prompt và URL luôn dùng chung `meal_anchored_timeline`. Metadata URL chỉ
+  thêm source constraint, thứ tự/ngày gợi ý và provenance; nó không chọn một
+  skeleton hoặc thuật toán planning khác.
+- Finder được phép lấp khoảng trống theo policy `allowFinderGapFill`; địa điểm
+  nguồn chỉ được thay thế khi policy độc lập `allowReplaceSourcePlaces` bật.
+  Giá trị mặc định cho intake URL là lần lượt `true` và `false`.
 - Route-first dùng timeline địa phương 08:00–21:00.
 - Breakfast, lunch và dinner có giờ mục tiêu để xếp hạng nhưng là cửa sổ mềm
   (lần lượt khoảng 07:00–09:30, 11:30–14:00 và 17:30–20:00). Activity kéo dài

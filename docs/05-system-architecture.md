@@ -30,6 +30,10 @@ PostgreSQL là database runtime duy nhất ở cả Docker và khi chạy backen
 tiếp trên host. SQLite chỉ được tạo trong bộ nhớ bởi một số unit test cô lập,
 không phải cấu hình ứng dụng. Container backend chạy Alembic trước khi khởi
 động FastAPI; ứng dụng không dùng `create_all()` để âm thầm thay đổi schema.
+Database bảo trì mặc định `postgres` không được dùng cho runtime, migration hay
+test tích hợp. Mỗi môi trường phải trỏ `DATABASE_URL` tới database ứng dụng riêng;
+database local/Docker hiện tại là `vsf_travel`. Backend từ chối khởi động nếu URL
+trỏ tới database `postgres`.
 Docker dùng image `pgvector/pgvector:0.8.2-pg16` để các development volume từng
 áp dụng migration embedding đã revert vẫn đọc được kiểu `vector`. Runtime hiện
 không dùng embedding search; revision compatibility chỉ giữ Alembic và dữ liệu
@@ -73,7 +77,8 @@ trên bản đồ, WALK được vẽ bằng nét chấm, BUS bằng nét liền
 ghép trên cùng bản đồ. Backend không lưu tọa độ, lựa
 chọn hoặc chặng điều hướng vào plan, database hay timing log.
 
-Luồng tạo plan mặc định dùng `ITINERARY_OPTIMIZER_MODE=route_first`.
+Mọi luồng tạo plan dùng chung `meal_anchored_timeline`; URL metadata chỉ bổ sung
+constraint và provenance cho cùng Planner.
 `TripThemePlannerService` chỉ xác định các trải nghiệm bắt buộc ở cấp toàn
 chuyến qua `tripThemes`; nó không chia theme theo ngày. PlaceSelector tạo day
 slot từ `tripSpec.days`, sau đó route optimizer phân hoạt động theo cụm địa lý.
@@ -85,12 +90,13 @@ bữa ăn tại 08:00–09:00, 12:00–13:00 và 18:00–19:00, rồi lấp các
 đến 21:00 theo thời lượng tham quan, giờ mở cửa và thời gian chuyển tiếp đã tính.
 Số activity không bị giới hạn theo count hoặc pace. Nếu một activity tràn timeline,
 PlaceSelector thử đúng một ngày khả thi khác trước khi giữ `UnscheduledPlace`.
-Stop URL/OCR có provenance hoặc
-ngày/thứ tự nguồn không bị di chuyển. Chỉ khi allocation và thứ tự cuối cùng đã chốt,
-legacy route gateway mới
+Stop URL/OCR luôn được giữ trong plan hoặc `UnscheduledPlace`; ngày/thứ tự nguồn
+được ưu tiên nhưng có thể spill sang ngày kế tiếp khi ngày nguồn hết capacity.
+Chỉ khi allocation và thứ tự cuối cùng đã chốt, legacy route gateway mới
 bổ sung walking/car/transit leg chi tiết. Theme ngày là tín hiệu mềm và không nằm
-trong hàm mục tiêu route. Chế độ
-`legacy` giữ nguyên `GeographicRouteOptimizer` cũ để rollback. Xem ADR-012.
+trong hàm mục tiêu route. Biến cấu hình `ITINERARY_OPTIMIZER_MODE` vẫn được nhận
+để tương thích triển khai nhưng không còn chọn một day-planning algorithm khác.
+Xem ADR-012 và ADR-024.
 `timeWindow` route-first là giờ lịch thực, không còn là marker thứ tự giả.
 
 ### Pipeline Explorer intake hiện tại
@@ -145,15 +151,24 @@ ghi vào `places`. Caption, STT và frame OCR thành công được lưu riêng 
 canonical URL trong `url_source_artifacts`; nội dung này không được trả trong
 Explorer response hay ghi vào timing log. Bảng dùng chung này là nguồn văn bản
 cho retrieval/RAG và tạo note về sau, còn `url_extraction_cache` tiếp tục chỉ
-giữ context đã chuẩn hóa để tránh chạy lại extractor.
+giữ context đã chuẩn hóa để tránh chạy lại extractor. Import node chỉ stage
+evidence ngắn, `sourceActivity` và provenance trong lúc resolve; sau khi resolve,
+backend compose một source summary ngắn và lưu bản hiển thị duy nhất trong
+`PlanItem.notes` của plan revision, với `noteSources` không chứa note text.
 
-Place resolver xếp hạng tối đa `top K` record catalog theo tên/alias, vùng,
-evidence địa chỉ, category và độ tin cậy dữ liệu. Record đứng đầu chỉ được nhận
-khi vượt cả ngưỡng điểm tuyệt đối và khoảng cách điểm với record thứ hai. DB
-miss, điểm thấp hoặc hai kết quả quá sát nhau đều chuyển sang Google Maps
+Place resolver xếp hạng tối đa `top K` entity canonical trong Knowledge Graph
+theo tên, alias đã review, vùng, evidence địa chỉ, category và độ tin cậy dữ
+liệu. Record đứng đầu chỉ được nhận khi vượt cả ngưỡng điểm tuyệt đối và khoảng
+cách điểm với record thứ hai. KG miss, điểm thấp hoặc hai kết quả quá sát nhau
+đều chuyển sang Google Maps
 Playwright đã cấu hình; kết quả ngoài vẫn phải vượt rule xác minh identity và
 tọa độ riêng. Các ngưỡng là cấu hình runtime để hiệu chỉnh bằng tập test có
 nhãn, không phải confidence do provider công bố.
+
+Các lookup Knowledge Graph trong cùng intake chạy qua pool tối đa 4 worker mặc
+định, mỗi worker mở một SQLAlchemy session riêng; runtime cho phép cấu hình từ
+1 đến 8. Google Maps Playwright vẫn có semaphore riêng tối đa 2 candidate, nên
+tăng concurrency database không làm tăng số page Chromium đồng thời.
 
 `UrlReelExtractionService` định tuyến theo loại nguồn trước khi chuẩn hóa chung:
 
@@ -202,9 +217,15 @@ TripThemePlanner/PlaceSelector và lưu revision mới của chat. Job đang `ru
 deadline chuyển sang `failed` để không khóa FIFO và có thể được user retry
 riêng. User có thể dừng và xóa job `running`; worker hủy task đang xử lý, giải
 phóng slot FIFO rồi claim job `queued` kế tiếp ngay. Prompt chat không có URL
-vẫn đi theo request đồng bộ hiện tại. UI poll tài nguyên job ở AppShell nên
-trạng thái tiếp tục hiện khi user chuyển từ Planner sang Khám phá hoặc route
-khác. Tiến độ không được chèn vào transcript Planner; trạng thái gọn nằm trong
+vẫn execute trong request backend hiện tại, nhưng lifecycle turn được lưu trước
+khi execute. `GET /api/trip-chats/active-turns` cho phép AppShell phục hồi và
+poll trạng thái khi user chuyển route; mở lại chat tiếp tục poll turn đang chạy
+hoặc execute turn còn `queued`. AppShell poll cả active turn lẫn tài nguyên job
+URL nên trạng thái tiếp tục hiện khi user chuyển từ Planner sang Khám phá hoặc
+route khác. UI chuẩn hóa tiến độ thành ba nhãn dễ hiểu `Chuẩn bị`, `Khám phá`,
+`Lập kế hoạch`; timer lấy từ timestamp đã lưu thay vì khởi động lại khi component
+mount. Tiến độ không
+được chèn vào transcript Planner; trạng thái gọn nằm trong
 header và mặc định không che nội dung. User có thể mở dropdown để xem timer,
 timing Explorer/Planner chi tiết hoặc xóa các job đã kết thúc.
 Composer không bị khóa bởi URL job nên user vẫn gửi prompt chat bình thường.
@@ -213,8 +234,9 @@ commit batch. `batchId` của các job trỏ tới lifecycle ID của message n�
 truyền lại ID khi lưu revision để chỉ nối assistant response, không ghi trùng user
 message. Vì vậy lịch sử hiển thị request ngay cả khi Explorer chưa hoàn tất.
 
-Guest dùng hàng chờ FIFO trong memory của AppShell và gọi cùng endpoint Explorer
--> TripThemePlanner/PlaceSelector mà không tạo trip chat hay `url_import_jobs`. Vì queue nằm ở
+Guest dùng hàng chờ FIFO trong memory của AppShell cho cả prompt thuần và URL,
+gọi cùng endpoint Explorer -> TripThemePlanner/PlaceSelector mà không tạo trip
+chat hay `url_import_jobs`. Vì queue nằm ở
 client, nó tiếp tục chạy khi điều hướng trong SPA nhưng biến mất khi reload,
 đóng tab hoặc runtime trình duyệt bị dừng. Đây là hành vi có chủ đích: guest
 không có owner để lưu job riêng tư bền vững trong PostgreSQL. User đăng nhập vẫn

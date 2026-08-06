@@ -9,7 +9,7 @@ import type {
 } from "maplibre-gl";
 import { createDayColorMap } from "@/lib/day-colors";
 import { routeForwardBearing } from "@/lib/map-navigation";
-import { formatPlanNote } from "@/lib/plan-note";
+import { planItemNotePresentation } from "@/lib/plan-note";
 import {
   isCarMode,
   isPublicTransitMode,
@@ -867,12 +867,33 @@ export function PlannerMap({
       pin.append(order);
       element.append(pin);
 
-      const popupContent = document.createElement("div");
-      popupContent.className = "candidateMapPopup";
-      const name = document.createElement("strong");
+      const popupContent = document.createElement("article");
+      popupContent.className = "candidateMapPopup candidateMapPopup--place";
+      const header = document.createElement("header");
+      header.className = "candidateMapPopupHeader";
+      const name = document.createElement("h3");
+      name.className = "candidateMapPopupTitle";
       name.textContent = `${place.mapOrder}. ${place.name}`;
-      const day = document.createElement("small");
-      day.textContent = place.dayLabel;
+      const meta = document.createElement("div");
+      meta.className = "candidateMapPopupMeta";
+      if (place.rating != null) {
+        const rating = document.createElement(place.sourceLink ? "a" : "span");
+        rating.className = "candidateMapPopupRating";
+        rating.textContent = `★ ${place.rating.toFixed(1)}${
+          place.reviewCount ? ` · ${formatCompactCount(place.reviewCount)} lượt đánh giá` : ""
+        }`;
+        if (place.sourceLink && rating instanceof HTMLAnchorElement) {
+          rating.href = place.sourceLink;
+          rating.target = "_blank";
+          rating.rel = "noreferrer";
+          rating.title = "Mở đánh giá trên Google Maps";
+        }
+        meta.append(rating);
+      }
+      header.append(name, meta);
+
+      const details = document.createElement("div");
+      details.className = "candidateMapPopupDetails";
       const openingHours = formatOpeningHoursForDay(place.openingHours, place.dayLabel);
       const openingHoursSchedule = formatOpeningHoursSchedule(place.openingHours);
       const activeOpeningDay = dayIndexFromVietnameseLabel(place.dayLabel);
@@ -924,34 +945,43 @@ export function PlannerMap({
       const address = document.createElement("span");
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
-      popupContent.append(name, day, hours, address);
-      if (place.rating != null) {
-        const rating = document.createElement(place.sourceLink ? "a" : "span");
-        rating.className = "candidateMapPopupRating";
-        rating.textContent = `★ ${place.rating.toFixed(1)}${
-          place.reviewCount ? ` · ${formatCompactCount(place.reviewCount)} lượt đánh giá` : ""
-        }`;
-        if (place.sourceLink && rating instanceof HTMLAnchorElement) {
-          rating.href = place.sourceLink;
-          rating.target = "_blank";
-          rating.rel = "noreferrer";
-          rating.title = "Mở đánh giá trên Google Maps";
-        }
-        popupContent.append(rating);
-      }
+      details.append(address, hours);
+
       if (place.imageUrl) {
+        const media = document.createElement("div");
+        media.className = "candidateMapPopupMedia";
         const photo = document.createElement("img");
         photo.className = "candidateMapPopupPhoto";
         photo.alt = `Ảnh ${place.name}`;
         photo.loading = "lazy";
         photo.src = place.imageUrl;
-        popupContent.append(photo);
+        photo.addEventListener("error", () => media.remove());
+        media.append(photo);
+        popupContent.append(media);
       }
-      const displayNotes = formatPlanNote(place.notes);
-      if (displayNotes) {
-        const description = document.createElement("p");
-        description.textContent = displayNotes;
-        popupContent.append(description);
+      popupContent.append(header, details);
+
+      const notePresentation = planItemNotePresentation(place);
+      if (notePresentation.sourceText || notePresentation.personalText) {
+        const notes = document.createElement("section");
+        notes.className = "candidateMapPopupNotes";
+        if (notePresentation.sourceText) {
+          const notesLabel = document.createElement("small");
+          notesLabel.style.whiteSpace = "pre-line";
+          notesLabel.textContent =
+            notePresentation.sourceLabel ?? "Thông tin bổ sung";
+          const description = document.createElement("p");
+          description.textContent = notePresentation.sourceText;
+          notes.append(notesLabel, description);
+        }
+        if (notePresentation.personalText) {
+          const personalLabel = document.createElement("small");
+          personalLabel.textContent = "Ghi chú của bạn";
+          const personal = document.createElement("p");
+          personal.textContent = notePresentation.personalText;
+          notes.append(personalLabel, personal);
+        }
+        popupContent.append(notes);
       }
 
       const popup = new maplibre.Popup({

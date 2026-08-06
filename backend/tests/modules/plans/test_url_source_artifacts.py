@@ -100,6 +100,24 @@ def test_refresh_updates_document_artifacts_without_duplicate_rows() -> None:
         assert documents[0].artifacts_json["ocr"]["_"]["text"] == "UPDATED SIGN"
 
 
+def test_delete_url_cache_removes_shared_document_but_keeps_import_history() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-delete-cache", user_id=None, destination="Hà Nội",
+            resolutions=[], url_results=[_result()],
+        )
+        assert repository.delete_url_cache(
+            "https://www.tiktok.com/@creator/video/123?utm_source=retry"
+        ) is True
+        assert repository.load_cached_url_result(
+            "https://www.tiktok.com/@creator/video/123"
+        ) is None
+        assert session.get(SourceDocument, "missing") is None
+
+
 def test_web_page_retains_structured_evidence_not_full_article() -> None:
     result = _result(
         url="https://example.com/article?id=42&utm_source=feed",

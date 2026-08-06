@@ -31,8 +31,9 @@ Explorer -> TripThemePlanner -> PlaceSelector -> Checker
 - Package runtime `plans/planner` và `plans/finder` bị loại bỏ; code chuyển sang
   `plans/trip_theme_planner` và `plans/place_selector`.
 - Adapter chỉ-đọc nhận snapshot cũ có `macroPlan.tripThemes`. Request cũ dùng
-  `allowFinderSuggestions` vẫn được nhận, nhưng response mới dùng
-  `allowPlaceSuggestions`.
+  `allowFinderSuggestions` hoặc `allowPlaceSuggestions` vẫn được nhận như alias
+  của `allowFinderGapFill`; response mới tách `allowFinderGapFill` khỏi
+  `allowReplaceSourcePlaces`.
 
 ## Hệ quả
 

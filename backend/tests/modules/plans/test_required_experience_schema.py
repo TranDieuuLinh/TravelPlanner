@@ -33,6 +33,24 @@ def test_place_selector_contract_accepts_required_experiences() -> None:
     }
 
 
+def test_place_selector_contract_separates_gap_fill_from_source_replacement() -> None:
+    selection_input = PlaceSelectionInput.model_validate(
+        {
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 1},
+            "regionKey": "vn:hanoi",
+            "allowPlaceSuggestions": False,
+        }
+    )
+
+    assert selection_input.allow_finder_gap_fill is False
+    assert selection_input.allow_replace_source_places is False
+    serialized = selection_input.model_dump(mode="json", by_alias=True)
+    assert serialized["allowFinderGapFill"] is False
+    assert serialized["allowReplaceSourcePlaces"] is False
+    assert "allowPlaceSuggestions" not in serialized
+
+
 class _RequiredPlaceTool:
     def get(self, place_id: str) -> SelectablePlace | None:
         if place_id != "place-bun-cha":
@@ -56,9 +74,7 @@ def test_place_selector_resolves_required_anchor_into_selected_place() -> None:
             "regionKey": "vn:hanoi",
             "requiredExperiences": [
                 _base_requirement(
-                    preferredTimeWindows=[
-                        {"start": "19:00", "end": "21:00"}
-                    ],
+                    preferredTimeWindows=[{"start": "19:00", "end": "21:00"}],
                     recommendedVisitMinutes=60,
                 )
             ],
@@ -91,9 +107,7 @@ def test_current_trip_time_hint_overrides_graph_preferred_windows() -> None:
             ],
             "requiredExperiences": [
                 _base_requirement(
-                    preferredTimeWindows=[
-                        {"start": "19:00", "end": "21:00"}
-                    ],
+                    preferredTimeWindows=[{"start": "19:00", "end": "21:00"}],
                     recommendedVisitMinutes=60,
                 )
             ],
@@ -168,9 +182,7 @@ def test_required_experience_schema_serializes_as_camel_case() -> None:
     assert payload["minimumRequired"] == 1
     assert payload["evidenceClaimIds"] == ["claim-1"]
     assert payload["sourceRefs"] == ["https://example.com/reel"]
-    assert payload["preferredTimeWindows"] == [
-        {"start": "09:00", "end": "11:30"}
-    ]
+    assert payload["preferredTimeWindows"] == [{"start": "09:00", "end": "11:30"}]
     assert payload["recommendedVisitMinutes"] == 75
 
 
@@ -185,9 +197,7 @@ def test_required_experience_schema_requires_anchor_for_required_anchor_policy()
     assert "anchorPlaceIds" in str(exc_info.value)
 
 
-def test_required_experience_schema_requires_candidates_for_choose_one_policy() -> (
-    None
-):
+def test_required_experience_schema_requires_candidates_for_choose_one_policy() -> None:
     with pytest.raises(ValidationError) as exc_info:
         RequiredExperience.model_validate(
             _base_requirement(
@@ -326,12 +336,8 @@ def test_trip_theme_planning_output_serializes_required_experiences_as_camel_cas
     assert "requiredExperiences" in payload
     assert isinstance(payload["requiredExperiences"], list)
     assert payload["requiredExperiences"][0]["requirementId"] == "req-test-1"
-    assert (
-        payload["requiredExperiences"][0]["selectionPolicy"] == "required_anchor"
-    )
-    assert (
-        payload["requiredExperiences"][0]["anchorPlaceIds"] == ["place-bun-cha"]
-    )
+    assert payload["requiredExperiences"][0]["selectionPolicy"] == "required_anchor"
+    assert payload["requiredExperiences"][0]["anchorPlaceIds"] == ["place-bun-cha"]
 
 
 def test_trip_theme_planning_output_exposes_snake_case_on_python_side() -> None:
@@ -348,9 +354,7 @@ def test_trip_theme_planning_output_exposes_snake_case_on_python_side() -> None:
     assert requirement.source_refs == ["https://example.com/reel"]
 
 
-def test_trip_theme_planning_output_rejects_day_route_allocation_at_top_level() -> (
-    None
-):
+def test_trip_theme_planning_output_rejects_day_route_allocation_at_top_level() -> None:
     with pytest.raises(ValidationError) as exc_info:
         TripThemePlanningOutput.model_validate(
             {

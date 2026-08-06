@@ -30,10 +30,16 @@ class ExploreAccommodationInput(BaseModel):
 
 class ExploreTransportInput(BaseModel):
     required: bool | None = None
-    preferred_modes: Annotated[list[str], Field(default_factory=list, alias="preferredModes")]
+    preferred_modes: Annotated[
+        list[str], Field(default_factory=list, alias="preferredModes")
+    ]
     avoid_modes: Annotated[list[str], Field(default_factory=list, alias="avoidModes")]
-    include_between_places: Annotated[bool | None, Field(default=None, alias="includeBetweenPlaces")]
-    include_arrival_departure: Annotated[bool | None, Field(default=None, alias="includeArrivalDeparture")]
+    include_between_places: Annotated[
+        bool | None, Field(default=None, alias="includeBetweenPlaces")
+    ]
+    include_arrival_departure: Annotated[
+        bool | None, Field(default=None, alias="includeArrivalDeparture")
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -53,7 +59,9 @@ class ExploreTripSpecInput(BaseModel):
     party_size: Annotated[int | None, Field(default=None, ge=1, alias="partySize")]
     start_date: Annotated[str | None, Field(default=None, alias="startDate")]
     end_date: Annotated[str | None, Field(default=None, alias="endDate")]
-    accommodation: ExploreAccommodationInput = Field(default_factory=ExploreAccommodationInput)
+    accommodation: ExploreAccommodationInput = Field(
+        default_factory=ExploreAccommodationInput
+    )
     transport: ExploreTransportInput = Field(default_factory=ExploreTransportInput)
     budget: ExploreBudgetInput = Field(default_factory=ExploreBudgetInput)
 
@@ -74,10 +82,19 @@ class FullExploreRequest(BaseModel):
     raw_request: Annotated[str, Field(min_length=1, alias="rawRequest")]
     destination: str = ""
     urls: list[str] = Field(default_factory=list)
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")]
-    user_state: Annotated[UserPlanningState, Field(default_factory=UserPlanningState, alias="userState")]
-    trip_spec: Annotated[ExploreTripSpecInput, Field(default_factory=ExploreTripSpecInput, alias="tripSpec")]
-    image_contexts: Annotated[list["ExploreImageContext"], Field(default_factory=list, alias="imageContexts")]
+    place_candidates: Annotated[
+        list[PlaceCandidateHint], Field(default_factory=list, alias="placeCandidates")
+    ]
+    user_state: Annotated[
+        UserPlanningState, Field(default_factory=UserPlanningState, alias="userState")
+    ]
+    trip_spec: Annotated[
+        ExploreTripSpecInput,
+        Field(default_factory=ExploreTripSpecInput, alias="tripSpec"),
+    ]
+    image_contexts: Annotated[
+        list["ExploreImageContext"], Field(default_factory=list, alias="imageContexts")
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -137,8 +154,11 @@ class PlaceMatchOption(BaseModel):
     rank: int = Field(ge=1)
     match_source: Annotated[
         Literal[
-            "url_snapshot", "verified_alias", "places_db",
-            "knowledge_graph", "external_provider",
+            "url_snapshot",
+            "verified_alias",
+            "places_db",
+            "knowledge_graph",
+            "external_provider",
         ],
         Field(alias="matchSource"),
     ]
@@ -214,7 +234,9 @@ class UnifiedPlaceCandidate(BaseModel):
     attributes: list[str] = Field(default_factory=list)
     notes: str | None = None
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
-    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_day: Annotated[
+        int | None, Field(default=None, ge=1, le=30, alias="sourceDay")
+    ]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
     source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
     source_duration_minutes: Annotated[
@@ -345,7 +367,9 @@ class ExplorerContextResponse(BaseModel):
         Field(default_factory=list, alias="missingFields"),
     ]
     assumptions: list[str] = Field(default_factory=list)
-    missing_info_questions: Annotated[list[str], Field(default_factory=list, alias="missingInfoQuestions")]
+    missing_info_questions: Annotated[
+        list[str], Field(default_factory=list, alias="missingInfoQuestions")
+    ]
     preference_snapshot: Annotated[
         PreferenceSnapshot,
         Field(default_factory=PreferenceSnapshot, alias="preferenceSnapshot"),
@@ -387,9 +411,7 @@ class ExplorerTimingStage(BaseModel):
     key: str
     label: str
     duration_seconds: Annotated[float, Field(alias="durationSeconds")]
-    details: dict[str, str | int | float | bool | None] = Field(
-        default_factory=dict
-    )
+    details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
 
@@ -469,6 +491,10 @@ class ExplorerSourceTiming(BaseModel):
 class ExplorerProviderAttempt(BaseModel):
     candidate: str
     provider: str
+    attempted_queries: Annotated[
+        list[str],
+        Field(default_factory=list, alias="attemptedQueries"),
+    ]
     alias_query_count: Annotated[
         int,
         Field(default=0, alias="aliasQueryCount"),
@@ -481,9 +507,7 @@ class ExplorerProviderAttempt(BaseModel):
         float,
         Field(default=0.0, alias="executionSeconds"),
     ]
-    outcome: Literal[
-        "resolved", "unresolved", "error", "timeout", "cache_hit"
-    ]
+    outcome: Literal["resolved", "unresolved", "error", "timeout", "cache_hit"]
     rejection_reason: Annotated[
         str | None,
         Field(default=None, alias="rejectionReason"),
@@ -524,15 +548,21 @@ class ExploreIntakeResponse(BaseModel):
     intake_id: Annotated[str, Field(alias="intakeId")]
     user_id: Annotated[str | None, Field(default=None, alias="userId")]
     explorer: ExplorerContextResponse
-    allow_place_suggestions: Annotated[
+    allow_finder_gap_fill: Annotated[
         bool,
         Field(
             default=True,
             validation_alias=AliasChoices(
-                "allowPlaceSuggestions", "allowFinderSuggestions"
+                "allowFinderGapFill",
+                "allowPlaceSuggestions",
+                "allowFinderSuggestions",
             ),
-            serialization_alias="allowPlaceSuggestions",
+            serialization_alias="allowFinderGapFill",
         ),
+    ]
+    allow_replace_source_places: Annotated[
+        bool,
+        Field(default=False, alias="allowReplaceSourcePlaces"),
     ]
     timing_report: Annotated[
         ExplorerTimingReport | None,

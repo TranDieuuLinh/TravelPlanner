@@ -33,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mobileNav = dynamicNav.map((item) =>
     item.href === "/profile" && !user ? { ...item, href: "/login", label: "Đăng nhập" } : item
   );
+  const desktopNav = dynamicNav.filter((item) => item.href !== "/profile");
 
   return (
     <>
@@ -47,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="shellActions">
             <nav aria-label="Điều hướng chính" className="desktopNav">
-              {dynamicNav.map((item) => (
+              {desktopNav.map((item) => (
                 <Link
                   aria-current={pathname.startsWith(item.href) ? "page" : undefined}
                   className={pathname.startsWith(item.href) ? "navItem active" : "navItem"}
@@ -58,7 +59,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Link>
               ))}
             </nav>
-            <BackgroundUrlJobs authenticated={Boolean(user)} enabled={!loading} />
+            {!plannerRoute ? (
+              <BackgroundUrlJobs authenticated={Boolean(user)} enabled={!loading} />
+            ) : null}
             {!loading && !user ? (
               <Link className="accountLink" href="/login">
                 Đăng nhập

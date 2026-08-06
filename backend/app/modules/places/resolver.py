@@ -15,16 +15,18 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Callable, ContextManager, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
 from app.modules.places.category import canonical_place_category
+from app.modules.knowledge_graph.text import repair_cp437_utf8_mojibake
 from app.modules.plans.destination_inference import usable_destination
 from app.modules.plans.explorer.schema import PlaceMatchOption, UnifiedPlaceCandidate
 
 
 DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE = 0.82
+DEFAULT_DATABASE_NAME_CANDIDATE_LIMIT = 100
 
 GENERIC_VENUE_NAMES = {
     "banh cuon",
@@ -442,6 +444,8 @@ class FallbackPlaceResolver(PlaceResolver):
         )
         if _is_usable_resolution(primary_result):
             return primary_result
+        if not _should_fallback_to_provider(primary_result):
+            return primary_result
 
         fallback_result = await self.fallback.resolve(
             candidate,
@@ -488,7 +492,7 @@ class FallbackPlaceResolver(PlaceResolver):
         fallback_indexes = [
             index
             for index, result in enumerate(primary_results)
-            if not _is_usable_resolution(result)
+            if _should_fallback_to_provider(result)
         ]
         if not fallback_indexes:
             return primary_results
@@ -616,6 +620,10 @@ class DatabasePlaceResolver(PlaceResolver):
         top_k: int = 5,
         minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
         minimum_margin: float = 0.08,
+        max_concurrency: int = 1,
+        repository_context_factory: (
+            Callable[[], ContextManager[PlaceLookupRepository]] | None
+        ) = None,
     ) -> None:
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
@@ -623,12 +631,28 @@ class DatabasePlaceResolver(PlaceResolver):
             raise ValueError("minimum_score must be between 0 and 1")
         if not 0.0 <= minimum_margin <= 1.0:
             raise ValueError("minimum_margin must be between 0 and 1")
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
+        if max_concurrency > 1 and repository_context_factory is None:
+            raise ValueError(
+                "repository_context_factory is required for concurrent database resolution"
+            )
         self.repository = repository
         self.top_k = top_k
         self.minimum_score = minimum_score
         self.minimum_margin = minimum_margin
+        self.max_concurrency = max_concurrency
+        self.repository_context_factory = repository_context_factory
 
     async def resolve(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> PlaceResolution:
+        return self._resolve_sync(candidate, destination=destination)
+
+    def _resolve_sync(
         self,
         candidate: UnifiedPlaceCandidate,
         *,
@@ -656,10 +680,16 @@ class DatabasePlaceResolver(PlaceResolver):
             destination=destination,
             provider=self.provider_name,
         )
+        equivalent_duplicate = _select_equivalent_duplicate_record(
+            candidate,
+            ranked,
+            minimum_margin=self.minimum_margin,
+        )
         best_score, record = ranked[0]
         if (
             len(ranked) > 1
             and best_score - ranked[1][0] < self.minimum_margin
+            and equivalent_duplicate is None
         ):
             return _with_provider_attempt(
                 _unresolved(
@@ -672,6 +702,8 @@ class DatabasePlaceResolver(PlaceResolver):
                 started_at=started_at,
                 attempted_queries=lookup_queries,
             )
+        if equivalent_duplicate is not None:
+            record = equivalent_duplicate
         if best_score <= self.minimum_score:
             return _with_provider_attempt(
                 _unresolved(
@@ -710,9 +742,13 @@ class DatabasePlaceResolver(PlaceResolver):
                 search_region=search_region,
                 provider=self.provider_name,
                 reason=(
-                    "matched_source_location"
-                    if used_source_location and len(ranked) > 1
-                    else None
+                    "collapsed_equivalent_duplicate"
+                    if equivalent_duplicate is not None
+                    else (
+                        "matched_source_location"
+                        if used_source_location and len(ranked) > 1
+                        else None
+                    )
                 ),
             ).model_copy(
                 update={
@@ -733,10 +769,29 @@ class DatabasePlaceResolver(PlaceResolver):
         *,
         destination: str,
     ) -> list[PlaceResolution]:
-        results = [
-            await self.resolve(candidate, destination=destination)
-            for candidate in candidates
-        ]
+        if self.max_concurrency == 1 or self.repository_context_factory is None:
+            results = [
+                await self.resolve(candidate, destination=destination)
+                for candidate in candidates
+            ]
+        else:
+            semaphore = asyncio.Semaphore(self.max_concurrency)
+
+            async def resolve_one(
+                candidate: UnifiedPlaceCandidate,
+            ) -> PlaceResolution:
+                async with semaphore:
+                    return await asyncio.to_thread(
+                        self._resolve_with_fresh_repository,
+                        candidate,
+                        destination,
+                    )
+
+            results = list(
+                await asyncio.gather(
+                    *(resolve_one(candidate) for candidate in candidates)
+                )
+            )
         for index, result in enumerate(results):
             if result.resolution_reason != "ambiguous_name":
                 continue
@@ -786,6 +841,22 @@ class DatabasePlaceResolver(PlaceResolver):
             )
         return results
 
+    def _resolve_with_fresh_repository(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        destination: str,
+    ) -> PlaceResolution:
+        if self.repository_context_factory is None:
+            return self._resolve_sync(candidate, destination=destination)
+        with self.repository_context_factory() as repository:
+            worker = type(self)(
+                repository,
+                top_k=self.top_k,
+                minimum_score=self.minimum_score,
+                minimum_margin=self.minimum_margin,
+            )
+            return worker._resolve_sync(candidate, destination=destination)
+
     def _matching_records(
         self,
         candidate: UnifiedPlaceCandidate,
@@ -819,11 +890,13 @@ class DatabasePlaceResolver(PlaceResolver):
             else None
         )
         candidate_names = _candidate_lookup_names(candidate)
-        records = self.repository.list_active_for_planner_research(region_key)
-        global_matches = self.repository.search_active_by_names(candidate_names)
+        name_matches = self.repository.search_active_by_names(
+            candidate_names,
+            limit=DEFAULT_DATABASE_NAME_CANDIDATE_LIMIT,
+        )
         candidates_by_id = {
             record.id: record
-            for record in (*records, *global_matches)
+            for record in name_matches
         }
         ranked = [
             (
@@ -1076,7 +1149,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         candidate_names = _candidate_lookup_names(candidate)
         queries = _google_maps_alias_queries(
             candidate_names,
-            address_hint=candidate.address_hint,
+            address_hint=_effective_candidate_address_hint(candidate),
             context_hint=_candidate_context_hint(candidate),
             search_region=search_region,
             limit=self.max_alias_queries,
@@ -1184,7 +1257,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
             minimum_score=self.minimum_score,
         )
         title = _optional_text(result.get("title")) or candidate.name
-        address = _google_maps_address(result) or candidate.address_hint
+        address = _google_maps_address(result) or _effective_candidate_address_hint(candidate)
         latitude = _as_decimal(result.get("latitude"))
         longitude = _as_decimal(
             result.get("longitude", result.get("longtitude"))
@@ -1285,7 +1358,9 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 regionKey=_region_key_for_search(search_region, destination),
                 latitude=latitude,
                 longitude=longitude,
-                description=_google_maps_description(result),
+                description=repair_cp437_utf8_mojibake(
+                    _google_maps_description(result) or ""
+                ) or None,
                 placeStatus="active" if status == "resolved" else "unverified",
                 openingHours=_normalized_opening_hours(
                     result.get("opening_hours")
@@ -1866,6 +1941,19 @@ def _is_usable_resolution(result: PlaceResolution) -> bool:
     )
 
 
+def _should_fallback_to_provider(result: PlaceResolution) -> bool:
+    """Use an external provider only when the catalog has no safe identity.
+
+    An ambiguous catalog result already contains real Knowledge Graph options.
+    Sending the same ambiguous name to Google is both wasteful and can replace
+    reviewed catalog identities with an unrelated provider result.
+    """
+    return (
+        not _is_usable_resolution(result)
+        and result.resolution_reason != "ambiguous_name"
+    )
+
+
 def _provider_reason(
     result: PlaceResolution,
     default_reason: str,
@@ -2001,6 +2089,82 @@ def _database_name_similarity(
     )
 
 
+def _select_equivalent_duplicate_record(
+    candidate: UnifiedPlaceCandidate,
+    ranked: list[tuple[float, PlaceLookupRecord]],
+    *,
+    minimum_margin: float,
+    maximum_distance_km: float = 0.2,
+) -> PlaceLookupRecord | None:
+    """Collapse duplicate catalog rows for one physical place.
+
+    This intentionally does not collapse brand branches: the candidate and all
+    tied rows must share the exact normalized canonical name, place type,
+    region and a sub-200m coordinate cluster.
+    """
+    if len(ranked) < 2 or _database_candidate_is_generic(candidate):
+        return None
+    best_score = ranked[0][0]
+    tied = [
+        record
+        for score, record in ranked
+        if best_score - score < minimum_margin
+    ]
+    if len(tied) < 2:
+        return None
+
+    canonical_name = _normalized(tied[0].name)
+    candidate_names = {
+        _normalized(name) for name in _candidate_lookup_names(candidate)
+    }
+    if not canonical_name or canonical_name not in candidate_names:
+        return None
+    if any(_normalized(record.name) != canonical_name for record in tied[1:]):
+        return None
+
+    place_type = _normalized(tied[0].place_type)
+    region_key = getattr(tied[0], "region_key", "")
+    if any(
+        _normalized(record.place_type) != place_type
+        or getattr(record, "region_key", "") != region_key
+        for record in tied[1:]
+    ):
+        return None
+    localities = [
+        _normalized(record.primary_area or record.address or "")
+        for record in tied
+    ]
+    if any(
+        left and right and left not in right and right not in left
+        for index, left in enumerate(localities)
+        for right in localities[index + 1 :]
+    ):
+        return None
+
+    coordinates = [
+        (float(record.latitude), float(record.longitude))
+        for record in tied
+        if record.latitude is not None and record.longitude is not None
+    ]
+    if len(coordinates) != len(tied) or any(
+        _haversine_km(left, right) > maximum_distance_km
+        for index, left in enumerate(coordinates)
+        for right in coordinates[index + 1 :]
+    ):
+        return None
+
+    def quality(record: PlaceLookupRecord) -> tuple[int, int, int, int, str]:
+        return (
+            len(_database_names(record)),
+            _database_confidence_score(record.data_confidence),
+            int(getattr(record, "review_count", None) or 0),
+            int(getattr(record, "revision", 1) or 1),
+            record.id,
+        )
+
+    return max(tied, key=quality)
+
+
 def _database_record_is_eligible(
     candidate: UnifiedPlaceCandidate,
     record: PlaceLookupRecord,
@@ -2008,6 +2172,8 @@ def _database_record_is_eligible(
     if record.latitude is None or record.longitude is None:
         return False
     if getattr(record, "status", "active") != "active":
+        return False
+    if _authoritative_address_conflicts(candidate, record):
         return False
     candidate_category = candidate.category.value
     record_category = canonical_place_category(record.place_type)
@@ -2021,6 +2187,57 @@ def _database_record_is_eligible(
         and record_category in record_group
         for candidate_group, record_group in clear_conflicts
     )
+
+
+def _authoritative_address_conflicts(
+    candidate: UnifiedPlaceCandidate,
+    record: PlaceLookupRecord,
+) -> bool:
+    """Reject a catalog branch that contradicts an evidenced source address."""
+    source_address = _effective_candidate_address_hint(candidate)
+    if not source_address or not candidate.source_evidence.get("metadata"):
+        return False
+    record_address = str(getattr(record, "address", None) or "")
+    if not record_address:
+        return False
+
+    source_numbers = set(re.findall(r"\b\d+[A-Za-z]?\b", source_address))
+    record_numbers = set(re.findall(r"\b\d+[A-Za-z]?\b", record_address))
+    if source_numbers and record_numbers and source_numbers.isdisjoint(record_numbers):
+        return True
+
+    source_tokens = set(_name_tokens(source_address))
+    record_tokens = set(_name_tokens(record_address))
+    meaningful_source_tokens = {
+        token for token in source_tokens if len(token) >= 4
+    }
+    return bool(
+        meaningful_source_tokens
+        and record_tokens
+        and not meaningful_source_tokens.intersection(record_tokens)
+    )
+
+
+def _effective_candidate_address_hint(
+    candidate: UnifiedPlaceCandidate,
+) -> str | None:
+    if candidate.address_hint:
+        return candidate.address_hint
+    # Keep this conservative: only accept an explicit address introduced by
+    # "ở/tại" (or "at/on"), never a free-form place description.
+    texts = [*candidate.source_evidence.values(), candidate.source_activity or ""]
+    pattern = re.compile(
+        r"(?:^|[;,.]\s*|\b(?:ở|tại|at|on)\s+)"
+        r"(?P<address>\d{1,4}\s+[A-Za-zÀ-ỹĐđ0-9][^;,.]{3,80})",
+        flags=re.IGNORECASE,
+    )
+    for value in texts:
+        if not isinstance(value, str):
+            continue
+        match = pattern.search(value)
+        if match:
+            return " ".join(match.group("address").split()).strip()
+    return None
 
 
 def _database_record_matches_region(
@@ -2055,7 +2272,7 @@ def _database_source_location_score(
     region_key = _normalized(candidate.search_region or "")
     hints = [
         hint
-        for hint in (candidate.address_hint, _candidate_context_hint(candidate))
+        for hint in (_effective_candidate_address_hint(candidate), _candidate_context_hint(candidate))
         if hint
         and len(_name_tokens(hint)) >= 2
         and _normalized(hint) != region_key
@@ -2081,7 +2298,7 @@ def _candidate_has_authoritative_address(
     candidate: UnifiedPlaceCandidate,
 ) -> bool:
     return bool(
-        candidate.address_hint
+        _effective_candidate_address_hint(candidate)
         and candidate.source_evidence.get("metadata")
     )
 
@@ -2277,7 +2494,32 @@ def _candidate_lookup_names(
         names.append(name)
         if len(names) == 2:
             break
+    # A short alias fully contained in the selected canonical name does not
+    # add a useful lookup. For example, searching both "Nhà tù Hỏa Lò" and
+    # "Hỏa Lò" repeats the same KG work; retain the more specific name.
+    if len(names) == 2:
+        long_name, short_name = sorted(names, key=lambda value: len(_lookup_tokens(value)), reverse=True)
+        long_tokens = _lookup_tokens(long_name)
+        short_tokens = _lookup_tokens(short_name)
+        if (
+            len(short_tokens) < len(long_tokens)
+            and any(
+                long_tokens[index:index + len(short_tokens)] == short_tokens
+                for index in range(len(long_tokens) - len(short_tokens) + 1)
+            )
+        ):
+            return [long_name]
     return names
+
+
+def _lookup_tokens(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFD", value.casefold())
+    without_marks = "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    ).replace("đ", "d")
+    return re.findall(r"[a-z0-9]+", without_marks)
 
 
 def _database_confidence_score(value: str) -> int:
