@@ -686,6 +686,7 @@ class CandidateSelector:
             sourceDurationMinutes=selected.source_duration_minutes,
             preferredTimeWindows=selected.preferred_time_windows,
             notes=selected.notes,
+            contextPlaces=selected.context_places,
             personalNotes=selected.personal_notes,
             imageUrls=selected.image_urls,
             rating=selected.rating,

@@ -202,6 +202,7 @@ def get_plan_service(
     place_selector = PlaceSelectorService(
         RepositoryPlaceSelectionTool(place_repository),
         route_optimizer=_get_itinerary_optimizer(),
+        graph_repository=kg_repo,
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),

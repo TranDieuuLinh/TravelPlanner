@@ -71,6 +71,35 @@ class AreaSurveyResult:
     survey_method: str = "catalog"
 
 
+@dataclass(frozen=True)
+class NearbyExperienceCandidate:
+    """Evidence-backed graph candidate discovered around an anchor."""
+
+    place: SelectablePlace
+    activity_id: str
+    activity_name: str
+    predicate: str
+    claim_ids: tuple[str, ...]
+    source_refs: tuple[str, ...]
+    distance_km: float
+    route_cost_km: float
+    context_only: bool = False
+    context_for_place_id: str | None = None
+    preferred_time_windows: tuple[dict[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class NearbyAreaSurvey:
+    """Bounded survey result used by PlaceSelector after anchor selection."""
+
+    region_key: str
+    radius_km: float
+    anchor_place_id: str
+    candidates: tuple[NearbyExperienceCandidate, ...] = ()
+    context_by_place_id: dict[str, tuple[str, ...]] | None = None
+    warnings: tuple[str, ...] = ()
+
+
 class AreaSurveyService:
     """Service khảo sát khu vực dựa trên places trong catalog."""
 
@@ -92,9 +121,161 @@ class AreaSurveyService:
         place_tool: PlaceSelectionTool,
         *,
         max_survey_places: int = 500,
+        graph_repository=None,
+        route_cost_provider=None,
+        nearby_limit: int = 25,
     ) -> None:
         self.place_tool = place_tool
         self.max_survey_places = max_survey_places
+        self.graph_repository = graph_repository
+        self.route_cost_provider = route_cost_provider
+        self.nearby_limit = max(1, nearby_limit)
+        self._nearby_cache: dict[tuple[str, str, float, tuple[str, ...]], NearbyAreaSurvey] = {}
+
+    def survey_near_anchor(
+        self,
+        anchor: SelectablePlace,
+        *,
+        region_key: str | None = None,
+        interests: list[str] | None = None,
+        radius_km: float = 5.0,
+    ) -> NearbyAreaSurvey:
+        """Discover only graph-backed experiences reachable from one anchor.
+
+        Ordinary catalog Places are deliberately not used as nearby candidates.
+        The graph edge is the eligibility boundary; catalog data only hydrates the
+        canonical Place used by the selector.
+        """
+        anchor_id = anchor.place_id or anchor.name
+        cache_key = (
+            region_key or anchor.region_key,
+            anchor_id,
+            float(radius_km),
+            tuple(sorted({item.casefold() for item in interests or []})),
+        )
+        cached = self._nearby_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        empty = NearbyAreaSurvey(
+            region_key=region_key or anchor.region_key,
+            radius_km=radius_km,
+            anchor_place_id=anchor_id,
+        )
+        if self.graph_repository is None or anchor.place_id is None:
+            self._nearby_cache[cache_key] = empty
+            return empty
+
+        claims = self._nearby_claims(anchor.place_id, region_key, interests)
+        candidates: list[NearbyExperienceCandidate] = []
+        seen: set[tuple[str, str]] = set()
+        for claim in claims:
+            place_ref = claim.anchorPlace
+            if place_ref is None or place_ref.id == anchor.place_id:
+                continue
+            place = self.place_tool.get(place_ref.id)
+            if place is None or place.latitude is None or place.longitude is None:
+                continue
+            distance = self._haversine_km(
+                (anchor.latitude, anchor.longitude),
+                (place.latitude, place.longitude),
+            ) if anchor.latitude is not None and anchor.longitude is not None else None
+            if distance is None:
+                continue
+            route_cost = self._route_cost_km(anchor, place, distance)
+            if route_cost > radius_km:
+                continue
+            activity = claim.activity or claim.object
+            key = (place.place_id or place.name, activity.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            source_refs = tuple(
+                sorted({e.source for e in claim.evidence if e.source})
+            )
+            time_windows: list[dict[str, str]] = []
+            for recommendation in getattr(claim, "recommendations", []) or []:
+                for slot in getattr(recommendation, "timeSlots", []) or []:
+                    if isinstance(slot, str) and "-" in slot:
+                        start, end = (value.strip() for value in slot.split("-", 1))
+                        if len(start) == 5 and len(end) == 5:
+                            time_windows.append({"start": start, "end": end})
+            candidates.append(
+                NearbyExperienceCandidate(
+                    place=place.model_copy(update={
+                        "activity_id": activity.id,
+                        "claim_ids": [claim.claimId],
+                        "source_refs": list(source_refs),
+                        "selection_method": "nearby_graph_survey",
+                    }),
+                    activity_id=activity.id,
+                    activity_name=activity.name,
+                    predicate=claim.predicate,
+                    claim_ids=(claim.claimId,),
+                    source_refs=source_refs,
+                    distance_km=round(distance, 3),
+                    route_cost_km=round(route_cost, 3),
+                    preferred_time_windows=tuple(time_windows),
+                )
+            )
+        candidates.sort(key=lambda item: (item.route_cost_km, item.distance_km, item.place.name.casefold()))
+        context_names: tuple[str, ...] = ()
+        if hasattr(self.graph_repository, "query_located_in_children"):
+            relations = self.graph_repository.query_located_in_children(
+                [anchor.place_id], limit=self.nearby_limit
+            )
+            entities = self.graph_repository.get_entities_by_ids(
+                [rel.from_entity_id for rel in relations]
+            )
+            context_names = tuple(
+                sorted(
+                    entity.canonical_name
+                    for entity in entities.values()
+                    if entity.id != anchor.place_id
+                )
+            )
+        result = NearbyAreaSurvey(
+            region_key=region_key or anchor.region_key,
+            radius_km=radius_km,
+            anchor_place_id=anchor.place_id,
+            candidates=tuple(candidates[: self.nearby_limit]),
+            context_by_place_id={anchor.place_id: context_names},
+        )
+        self._nearby_cache[cache_key] = result
+        return result
+
+    def _nearby_claims(self, anchor_id: str, region_key: str | None, interests: list[str] | None):
+        repo = self.graph_repository
+        if hasattr(repo, "discover_nearby_experiences"):
+            return repo.discover_nearby_experiences(anchor_id, region_key=region_key, interests=interests or [], limit=self.nearby_limit)
+        area_ids: list[str] = [anchor_id]
+        if region_key and hasattr(repo, "resolve_area_by_name"):
+            area = repo.resolve_area_by_name(region_key)
+            if area is not None:
+                area_ids = list(repo.get_scope_area_ids(area.id))
+        from app.modules.knowledge_graph.research.experience_tool import kg_discover_experiences
+        from app.modules.knowledge_graph.research.schema import ExperienceDiscoveryInput
+        bundle = kg_discover_experiences(
+            repo,
+            ExperienceDiscoveryInput(
+                rootAreaId=area_ids[0],
+                selectedPlaceIds=[anchor_id],
+                interests=interests or [],
+                limit=self.nearby_limit,
+            ),
+        )
+        return bundle.claims
+
+    def _route_cost_km(self, origin: SelectablePlace, destination: SelectablePlace, fallback: float) -> float:
+        provider = self.route_cost_provider
+        if provider is None:
+            return fallback
+        try:
+            value = provider(origin, destination)
+            if value is None:
+                return fallback
+            return float(value)
+        except (TypeError, ValueError):
+            return fallback
 
     def survey(self, region_key: str) -> AreaSurveyResult:
         """Khảo sát khu vực và trả về AreaProfile."""

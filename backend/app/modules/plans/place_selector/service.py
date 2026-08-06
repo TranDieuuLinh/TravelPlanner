@@ -81,6 +81,9 @@ class PlaceSelectorService:
         timeline_fitter: TimelineFitter | None = None,
         status_tracker: PlaceSelectionStatusTracker | None = None,
         meal_selector=None,
+        graph_repository=None,
+        nearby_radius_km: float = 5.0,
+        nearby_route_cost_provider=None,
     ) -> None:
         if max_candidates_per_block < 1:
             raise ValueError("max_candidates_per_block must be at least 1")
@@ -107,12 +110,126 @@ class PlaceSelectorService:
         self.meal_selector = meal_selector or MealStopSelector(self.place_tool)
         self._area_survey_cache: dict[str, AreaProfile] = {}
         self._area_survey_service: AreaSurveyService | None = None
+        self.graph_repository = graph_repository
+        self.nearby_radius_km = nearby_radius_km
+        self.nearby_route_cost_provider = nearby_route_cost_provider
 
     @property
     def _survey_service(self) -> AreaSurveyService:
         if self._area_survey_service is None:
-            self._area_survey_service = AreaSurveyService(self.place_tool)
+            self._area_survey_service = AreaSurveyService(
+                self.place_tool,
+                graph_repository=self.graph_repository,
+                route_cost_provider=self.nearby_route_cost_provider,
+            )
         return self._area_survey_service
+
+    def _fill_nearby_graph_experiences(
+        self,
+        selected_places: list[SelectedPlaceContext],
+        *,
+        region_key: str | None,
+        interests: list[str],
+    ) -> list[SelectedPlaceContext]:
+        """Add bounded graph experiences after selected anchors are known."""
+        if self.graph_repository is None:
+            return selected_places
+        result = list(selected_places)
+        existing = {place.stable_ref for place in result}
+        existing_activities = {
+            place.activity_id for place in result if place.activity_id is not None
+        }
+        nearby_category_counts: dict[str, int] = {}
+        for anchor in list(selected_places):
+            if not anchor.must_visit or not anchor.place_id:
+                continue
+            stored_anchor = self.place_tool.get(anchor.place_id)
+            if stored_anchor is None:
+                continue
+            survey = self._survey_service.survey_near_anchor(
+                stored_anchor,
+                region_key=region_key or anchor.region_key,
+                interests=interests,
+                radius_km=self.nearby_radius_km,
+            )
+            context_names = tuple(
+                (survey.context_by_place_id or {}).get(anchor.place_id, ())
+            )
+            if context_names:
+                index = next(
+                    (position for position, item in enumerate(result)
+                     if item.stable_ref == anchor.stable_ref),
+                    None,
+                )
+                if index is not None:
+                    result[index] = result[index].model_copy(update={
+                        "context_places": list(dict.fromkeys([
+                            *result[index].context_places,
+                            *context_names,
+                        ])),
+                    })
+            ordered_candidates = sorted(
+                survey.candidates,
+                key=lambda item: (
+                    0 if item.predicate == "SPECIAL_EXPERIENCE" else 1,
+                    0 if any(
+                        token.casefold() in item.activity_name.casefold()
+                        for token in interests
+                        if token.strip()
+                    ) else 1,
+                    item.route_cost_km,
+                ),
+            )
+            for nearby in ordered_candidates:
+                if nearby.activity_id in existing_activities:
+                    continue
+                candidate = nearby.place
+                if candidate.stable_ref in existing:
+                    continue
+                # A graph-backed offer may be a meal/supporting stop. It is never
+                # promoted to a main experience unless SPECIAL_EXPERIENCE exists.
+                is_meal = place_category(candidate) == "food_drink"
+                candidate_bucket = "meal" if is_meal else nearby.predicate
+                if nearby_category_counts.get(candidate_bucket, 0) >= 2:
+                    continue
+                category = (
+                    ExperienceCategory.meal
+                    if is_meal
+                    else ExperienceCategory.main_experience
+                    if nearby.predicate == "SPECIAL_EXPERIENCE"
+                    else ExperienceCategory.supporting_stop
+                )
+                result.append(
+                    SelectedPlaceContext(
+                        placeId=candidate.place_id,
+                        name=candidate.name,
+                        address=candidate.address,
+                        regionKey=candidate.region_key,
+                        latitude=candidate.latitude,
+                        longitude=candidate.longitude,
+                        tags=candidate.tags,
+                        sourceRefs=list(nearby.source_refs),
+                        claimIds=list(nearby.claim_ids),
+                        activityId=nearby.activity_id,
+                        experienceCategory=category,
+                        sourceProvider=candidate.source_provider,
+                        candidateEntityIds=[candidate.place_id] if candidate.place_id else [],
+                        selectionMethod="nearby_graph_survey",
+                        identityConfidence=candidate.data_confidence,
+                        notes=(
+                            f"Graph evidence: {nearby.activity_name}; "
+                            f"route cost {nearby.route_cost_km:.1f} km from {anchor.name}."
+                        ),
+                        sourceActivity=nearby.activity_name,
+                        preferredTimeWindows=list(nearby.preferred_time_windows),
+                    )
+                )
+                existing.add(candidate.stable_ref)
+                existing_activities.add(nearby.activity_id)
+                nearby_category_counts[candidate_bucket] = (
+                    nearby_category_counts.get(candidate_bucket, 0) + 1
+                )
+        return result
 
     def _get_area_profile(self, region_key: str) -> AreaProfile | None:
         if region_key not in self._area_survey_cache:
@@ -133,9 +250,29 @@ class PlaceSelectorService:
         plan_status: PlaceSelectionStatus | None = None,
         allow_place_suggestions: bool = True,
     ) -> PlaceSelectionResult:
+        normalized_selected = self._fill_nearby_graph_experiences(
+            self._normalize_selected_places(selected_places),
+            region_key=intent.destination,
+            interests=intent.interests,
+        )
+        selected_refs = {
+            ref
+            for day in selection_blueprint.selection_days
+            for ref in day.allocated_selected_place_refs
+        }
+        added = [
+            place for place in normalized_selected
+            if place.stable_ref not in selected_refs
+        ]
+        if added and selection_blueprint.selection_days:
+            selection_blueprint = selection_blueprint.model_copy(deep=True)
+            target_day = selection_blueprint.selection_days[0]
+            target_day.allocated_selected_place_refs.extend(
+                place.stable_ref for place in added
+            )
         return self._fill_days(
             selection_blueprint,
-            self._normalize_selected_places(selected_places),
+            normalized_selected,
             mode="main",
             user_status=user_status or UserStatus(),
             plan_status=plan_status or PlaceSelectionStatus(),
@@ -195,6 +332,14 @@ class PlaceSelectorService:
                 selected_places.append(place)
                 known_refs.add(place.stable_ref)
         effective_input = selection_input.model_copy(
+            update={"selected_places": selected_places}
+        )
+        selected_places = self._fill_nearby_graph_experiences(
+            selected_places,
+            region_key=selection_input.region_key,
+            interests=selection_input.intent.interests,
+        )
+        effective_input = effective_input.model_copy(
             update={"selected_places": selected_places}
         )
         selection_blueprint = self._build_selection_blueprint(effective_input)
@@ -2132,6 +2277,7 @@ class PlaceSelectorService:
                 or candidate.description
                 or None
             ),
+            contextPlaces=candidate.context_places,
             personalNotes=candidate.personal_notes,
             imageUrls=candidate.image_urls,
             rating=candidate.rating,

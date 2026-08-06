@@ -191,6 +191,7 @@ class PlanItem(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     notes: str | None = None
+    context_places: list[str] = Field(default_factory=list, alias="contextPlaces")
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     rating: float | None = Field(default=None, ge=0, le=5)

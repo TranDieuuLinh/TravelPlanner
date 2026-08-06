@@ -177,6 +177,9 @@ class SelectedPlaceContext(BaseModel):
         str | None, Field(default=None, alias="identityConfidence")
     ]
     notes: str | None = None
+    context_places: Annotated[list[str], Field(alias="contextPlaces")] = Field(
+        default_factory=list
+    )
     personal_notes: Annotated[
         str | None,
         Field(default=None, alias="personalNotes"),

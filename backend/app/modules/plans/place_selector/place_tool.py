@@ -478,6 +478,7 @@ class SelectablePlace(BaseModel):
     region_key: str = Field(alias="regionKey")
     description: str | None = None
     notes: str | None = None
+    context_places: list[str] = Field(default_factory=list, alias="contextPlaces")
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     place_group: str | None = Field(default=None, alias="placeGroup")
     tags: list[str] = Field(default_factory=list)

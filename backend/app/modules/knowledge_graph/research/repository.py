@@ -644,6 +644,24 @@ class ScopeResolutionRepository:
 
         return chained
 
+    def query_located_in_children(
+        self,
+        parent_place_ids: list[str],
+        *,
+        limit: int = 100,
+    ) -> list[KnowledgeRelationship]:
+        """Return child Places/landmarks attached by LOCATED_IN."""
+        if not parent_place_ids:
+            return []
+        return list(
+            self.db.scalars(
+                select(KnowledgeRelationship).where(
+                    KnowledgeRelationship.to_entity_id.in_(parent_place_ids),
+                    KnowledgeRelationship.relationship_type == "LOCATED_IN",
+                ).limit(limit)
+            ).all()
+        )
+
     def get_entities_by_ids(
         self,
         entity_ids: list[str],
