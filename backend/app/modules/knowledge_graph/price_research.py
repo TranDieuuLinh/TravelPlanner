@@ -197,11 +197,16 @@ async def research_travel_place_price(
             error=_safe_provider_error(exc),
         )
 
-    selected_sources = [
-        PriceSource(title=grounded.sources[index].title, uri=grounded.sources[index].uri)
-        for index in dict.fromkeys(draft.source_indexes)
-        if 0 <= index < len(grounded.sources)
-    ]
+    selected_sources: list[PriceSource] = []
+    selected_uris: set[str] = set()
+    for index in dict.fromkeys(draft.source_indexes):
+        if not 0 <= index < len(grounded.sources):
+            continue
+        source = grounded.sources[index]
+        if source.uri in selected_uris:
+            continue
+        selected_uris.add(source.uri)
+        selected_sources.append(PriceSource(title=source.title, uri=source.uri))
     if draft.status == "not_found":
         status = PriceResearchStatus.not_found
     elif not draft.identity_matched or draft.status == "ambiguous":

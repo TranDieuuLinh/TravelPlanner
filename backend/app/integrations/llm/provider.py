@@ -230,15 +230,13 @@ class GeminiLLMClient(LLMClient):
         candidate = (data.get("candidates") or [{}])[0]
         grounding = candidate.get("groundingMetadata") or {}
         sources: list[GroundingSource] = []
-        seen_uris: set[str] = set()
         for chunk in grounding.get("groundingChunks") or []:
             web = chunk.get("web") if isinstance(chunk, dict) else None
             if not isinstance(web, dict):
                 continue
             uri = str(web.get("uri") or "").strip()
-            if not uri or uri in seen_uris:
+            if not uri:
                 continue
-            seen_uris.add(uri)
             sources.append(
                 GroundingSource(
                     title=str(web.get("title") or uri).strip()[:500],
