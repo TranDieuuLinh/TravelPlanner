@@ -148,6 +148,7 @@ def get_conversation_turn_service(
         trip_chat_service=trip_chat_service,
         mutation_service=get_plan_mutation_service(db),
         supervisor=supervisor,
+        information_finder_reader=get_information_finder_reader(db),
     )
 
 

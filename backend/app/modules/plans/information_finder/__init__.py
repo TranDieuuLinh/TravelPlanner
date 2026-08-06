@@ -12,6 +12,7 @@ from .reader import (
     PlaceSearchProvider,
     PlaceSearchReader,
 )
+from .agent import InformationFinderAgent, InformationFinderResponse
 
 __all__ = [
     "InformationCandidate",
@@ -22,4 +23,6 @@ __all__ = [
     "InformationFinderReader",
     "PlaceSearchProvider",
     "PlaceSearchReader",
+    "InformationFinderAgent",
+    "InformationFinderResponse",
 ]

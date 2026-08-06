@@ -20,6 +20,7 @@ from app.modules.plans.conversation_agents import (
 )
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
+from app.modules.plans.information_finder import InformationFinderAgent, PlaceSearchReader
 from app.modules.plans.plan_mutation_schema import (
     AddItemRequest,
     MoveItemRequest,
@@ -53,11 +54,13 @@ class ConversationTurnService:
         trip_chat_service: TripChatService,
         mutation_service: PlanMutationService,
         supervisor: ConstrainedConversationSupervisor | None = None,
+        information_finder_reader: PlaceSearchReader | None = None,
     ) -> None:
         self.repository = repository
         self.trip_chat_service = trip_chat_service
         self.mutation_service = mutation_service
         self.supervisor = supervisor or ConstrainedConversationSupervisor(get_llm_client())
+        self.information_finder_agent = InformationFinderAgent(information_finder_reader)
         self.agent_dispatcher = ConversationAgentDispatcher(
             {
                 "explorer": self._run_explorer_agent,
@@ -382,6 +385,20 @@ class ConversationTurnService:
                 ConversationAgentContext(chat, turn, decision, plan, images, confirmed),
             )
 
+        if decision.intent == "explain_plan":
+            return await self.agent_dispatcher.dispatch(
+                decision.agent or "information_finder",
+                ConversationAgentContext(
+                    chat=chat,
+                    turn=turn,
+                    decision=decision,
+                    plan=plan,
+                    images=images,
+                    confirmed=confirmed,
+                    data={"information_intent": "explain_plan"},
+                ),
+            )
+
         if plan is None:
             raise AppError(
                 400,
@@ -401,19 +418,6 @@ class ConversationTurnService:
                         "report": report.model_dump(mode="json", by_alias=True),
                     }
                 ],
-            )
-
-        if decision.intent == "explain_plan":
-            return await self.agent_dispatcher.dispatch(
-                decision.agent or "information_finder",
-                ConversationAgentContext(
-                    chat=chat,
-                    turn=turn,
-                    decision=decision,
-                    plan=plan,
-                    images=images,
-                    confirmed=confirmed,
-                ),
             )
 
         if decision.intent == "create_backup":
@@ -486,13 +490,8 @@ class ConversationTurnService:
     async def _run_information_finder_agent(
         self, context: ConversationAgentContext
     ) -> TripChatMessage:
-        response_text = context.decision.message or (
-            "Mình có thể hỗ trợ tư vấn hành trình trước khi tạo plan."
-        )
-        blocks: list[dict[str, object]] = [{"type": "text", "text": response_text}]
-        if context.decision.options:
-            blocks.append({"type": "options", "options": list(context.decision.options)})
-        return self._save_response(context.chat, context.turn, response_text, blocks)
+        response = await self.information_finder_agent.run(context)
+        return self._save_response(context.chat, context.turn, response.message, response.blocks)
 
     async def _run_plan_editor_agent(
         self, context: ConversationAgentContext

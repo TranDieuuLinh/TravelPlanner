@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal, Protocol
 
+from app.modules.plans.information_finder.schema import InformationQuery
+
 
 ConversationAgentName = Literal[
     "explorer",
@@ -23,6 +25,7 @@ class ConversationAgentContext:
     images: list[Any] = field(default_factory=list)
     confirmed: bool = False
     data: dict[str, Any] = field(default_factory=dict)
+    information_query: InformationQuery | None = None
 
 
 class ConversationAgent(Protocol):
