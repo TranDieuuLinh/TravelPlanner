@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.core.config import settings
 from app.integrations.llm.base import LLMClient
 from app.modules.plans.domain.entities import Plan
+from app.modules.plans.conversation_agents import ConversationAgentName
 
 
 ConversationIntent = Literal[
@@ -70,6 +71,7 @@ class SupervisorOutput(BaseModel):
     options: list[SupervisorOption] = Field(default_factory=list, max_length=6)
     operations: list[SupervisorOperation] = Field(default_factory=list, max_length=1)
     requires_confirmation: bool = Field(default=False, alias="requiresConfirmation")
+    agent: ConversationAgentName | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ class ConversationDecision:
     requires_confirmation: bool
     message: str | None
     options: tuple[dict[str, str], ...]
+    agent: ConversationAgentName | None = None
 
 
 class ConversationSupervisorError(RuntimeError):
@@ -180,7 +183,6 @@ _INTENTS: tuple[ConversationIntent, ...] = (
     "unlock_item",
     "validate_plan",
     "explain_plan",
-    "create_backup",
     "undo",
     "unsupported",
 )
@@ -202,7 +204,8 @@ _SYSTEM_PROMPT = (
     "Create a plan only when the user clearly requests a plan and no current plan exists. If a current plan exists and the user asks for a new trip without a clear scope, use clarify and ask whether to create a new trip or revise the current trip.\n"
     "For operations against an existing item, use only an itemId supplied in currentPlan. Never invent an item ID. If the target is ambiguous, missing, or not in currentPlan, return intent=clarify, an empty operations array, a concise clarifyingQuestion and 2-6 useful options. Do not choose a place at random.\n"
     "Return zero or one operation only. For add_place, provide a concise name and day when known; otherwise clarify. For move_place, include itemId, day and toDay. For update_place, include itemId, day and name only when the user explicitly asks to rename/replace the place. For remove/lock/unlock, include itemId and day.\n"
-    "Use regenerate_plan for requests to rebalance, make a day lighter, change broad trip constraints, or regenerate a plan. Set requiresConfirmation=true whenever a current plan would be broadly regenerated or its destination/duration could change. Use explain_plan, validate_plan, create_backup and undo only for their corresponding requests. Use unsupported when VSF has no available action.\n"
+    "Use regenerate_plan for requests to rebalance, make a day lighter, change broad trip constraints, or regenerate a plan. Set requiresConfirmation=true whenever a current plan would be broadly regenerated or its destination/duration could change. Use explain_plan, validate_plan and undo only for their corresponding requests. Backup-plan chat routing is temporarily unavailable; use unsupported for that request. Use unsupported when VSF has no available action.\n"
+    "Set agent to information_finder for travel_advice/explain_plan, main_planner for create_plan/regenerate_plan, plan_editor for item mutations, and null for clarify/validate_plan/undo/unsupported. The server will enforce this mapping.\n"
     "The responseText is user-facing Vietnamese. Keep it concise, warm and actionable: acknowledge the request, state what is known, then ask at most one missing question. If factual data is absent from currentPlan, do not present it as verified. options must be short Vietnamese labels and sendable user messages.\n"
     "Examples: 'bạn là ai?' -> travel_advice; 'lên kế hoạch Hà Nội 2 ngày' with no plan -> create_plan; 'thêm Làng Bắc vào ngày 2' -> add_place only with a matching item/day contract; 'xóa chỗ đó' -> clarify because the target is ambiguous; 'làm lại lịch trình nhẹ hơn' -> regenerate_plan and requiresConfirmation=true.\n"
 )
@@ -325,6 +328,12 @@ def _validated_decision(
 
     message = result.clarifying_question or result.response_text
 
+    expected_agent = _agent_for_intent(result.intent)
+    if result.agent is not None and result.agent != expected_agent:
+        raise ConversationSupervisorError(
+            "Gemini selected an agent that does not match the intent."
+        )
+
     return ConversationDecision(
         intent=result.intent,
         confidence=result.confidence,
@@ -332,7 +341,18 @@ def _validated_decision(
         requires_confirmation=requires_confirmation,
         message=message,
         options=tuple(option.model_dump() for option in result.options),
+        agent=expected_agent,
     )
+
+
+def _agent_for_intent(intent: ConversationIntent) -> ConversationAgentName | None:
+    if intent in {"create_plan", "regenerate_plan"}:
+        return "main_planner"
+    if intent in {"travel_advice", "explain_plan"}:
+        return "information_finder"
+    if intent in _MUTATION_INTENTS:
+        return "plan_editor"
+    return None
 
 
 def _find_plan_item(plan: Plan | None, item_id: str) -> tuple[int, object] | None:
@@ -405,6 +425,7 @@ def _deterministic_decision(
             requires_confirmation=False,
             message=message,
             options=(),
+            agent="information_finder",
         )
 
     if (
@@ -419,6 +440,7 @@ def _deterministic_decision(
             requires_confirmation=False,
             message=None,
             options=(),
+            agent="main_planner",
         )
 
     # If there is no plan yet, a clear planning statement should enter the
@@ -440,6 +462,7 @@ def _deterministic_decision(
             requires_confirmation=False,
             message=None,
             options=(),
+            agent="main_planner",
         )
 
     return None

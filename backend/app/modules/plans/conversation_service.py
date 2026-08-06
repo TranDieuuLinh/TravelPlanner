@@ -14,6 +14,10 @@ from app.modules.plans.conversation_supervisor import (
     ConversationDecision,
     ConversationSupervisorError,
 )
+from app.modules.plans.conversation_agents import (
+    ConversationAgentContext,
+    ConversationAgentDispatcher,
+)
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.explorer.tools.image_ocr import ImageUploadPayload
 from app.modules.plans.plan_mutation_schema import (
@@ -54,6 +58,14 @@ class ConversationTurnService:
         self.trip_chat_service = trip_chat_service
         self.mutation_service = mutation_service
         self.supervisor = supervisor or ConstrainedConversationSupervisor(get_llm_client())
+        self.agent_dispatcher = ConversationAgentDispatcher(
+            {
+                "explorer": self._run_explorer_agent,
+                "information_finder": self._run_information_finder_agent,
+                "main_planner": self._run_main_planner_agent,
+                "plan_editor": self._run_plan_editor_agent,
+            }
+        )
         self.turn_timeout_seconds = settings.conversation_turn_timeout_seconds
         self.plan_timeout_seconds = settings.conversation_plan_timeout_seconds
         self.turn_stale_after_seconds = max(
@@ -339,7 +351,21 @@ class ConversationTurnService:
     ) -> TripChatMessage:
         self.repository.update_turn(turn, status="executing")
         if decision.intent in {"create_plan", "regenerate_plan"}:
-            return await self._create_plan(chat, turn, images)
+            context = ConversationAgentContext(
+                chat=chat,
+                turn=turn,
+                decision=decision,
+                plan=plan,
+                images=images,
+                confirmed=confirmed,
+            )
+            explorer_context = await self.agent_dispatcher.dispatch(
+                "explorer", context
+            )
+            context.data["explorer"] = explorer_context
+            return await self.agent_dispatcher.dispatch(
+                decision.agent or "main_planner", context
+            )
 
         if decision.intent == "clarify":
             blocks = _clarification_blocks(decision, plan, turn.content)
@@ -351,16 +377,10 @@ class ConversationTurnService:
             )
 
         if decision.intent == "travel_advice":
-            response_text = decision.message or "Mình có thể hỗ trợ tư vấn hành trình trước khi tạo plan."
-            blocks = [{"type": "text", "text": response_text}]
-            if decision.options:
-                blocks.append(
-                    {
-                        "type": "options",
-                        "options": list(decision.options),
-                    }
-                )
-            return self._save_response(chat, turn, response_text, blocks)
+            return await self.agent_dispatcher.dispatch(
+                decision.agent or "information_finder",
+                ConversationAgentContext(chat, turn, decision, plan, images, confirmed),
+            )
 
         if plan is None:
             raise AppError(
@@ -384,51 +404,36 @@ class ConversationTurnService:
             )
 
         if decision.intent == "explain_plan":
-            source_count = sum(
-                len(item.source_refs)
-                for day in plan.days
-                for item in day.items
-            )
-            text = decision.message or (
-                f"Lịch trình {plan.destination} hiện có {len(plan.days)} ngày và "
-                f"{source_count} tham chiếu nguồn. Bạn có thể chọn một địa điểm cụ thể để xem lý do và nguồn đã dùng."
-            )
-            return self._save_response(
-                chat,
-                turn,
-                text,
-                [{"type": "text", "text": text}],
+            return await self.agent_dispatcher.dispatch(
+                decision.agent or "information_finder",
+                ConversationAgentContext(
+                    chat=chat,
+                    turn=turn,
+                    decision=decision,
+                    plan=plan,
+                    images=images,
+                    confirmed=confirmed,
+                ),
             )
 
         if decision.intent == "create_backup":
-            from app.modules.plans.schema import BackupPlanCreate
-
-            avoid_outdoor = any(
-                word in turn.content.casefold()
-                for word in ("mưa", "rain")
-            )
-            bundle = await self.trip_chat_service.plan_service.create_backup_plan(
-                plan.id,
-                BackupPlanCreate(
-                    reason="conversation_request",
-                    avoidOutdoor=avoid_outdoor,
-                ),
-            )
-            block = {
-                "type": "backupComparison",
-                "mainPlanId": plan.id,
-                "backupPlanId": bundle.backup_plan.get("id"),
-                "validation": bundle.validation,
-            }
-            return self._save_response(
-                chat,
-                turn,
-                "Đã tạo phương án dự phòng riêng.",
-                [block],
+            raise AppError(
+                422,
+                "UNSUPPORTED_AGENT",
+                "Luồng tạo phương án dự phòng trong chat đang tạm thời chưa được bật.",
             )
 
         if decision.intent == "undo":
             return self._undo(chat, turn)
+
+        if decision.intent == "unsupported":
+            message = decision.message or "Yêu cầu này hiện chưa được hỗ trợ trong Planner."
+            return self._save_response(
+                chat,
+                turn,
+                message,
+                [{"type": "text", "text": message}],
+            )
 
         if decision.confidence < 0.85 and decision.operation is None:
             raise AppError(
@@ -437,12 +442,67 @@ class ConversationTurnService:
                 "Mình cần bạn nói rõ địa điểm và ngày cần thay đổi.",
             )
 
+        return await self.agent_dispatcher.dispatch(
+            decision.agent or "plan_editor",
+            ConversationAgentContext(
+                chat=chat,
+                turn=turn,
+                decision=decision,
+                plan=plan,
+                images=images,
+                confirmed=confirmed,
+            ),
+        )
+
+    async def _run_explorer_agent(
+        self, context: ConversationAgentContext
+    ) -> dict[str, object]:
+        """Prepare the normalized request handed to the planning agent.
+
+        The existing TripChatService still owns the full persistence-safe
+        Explorer pipeline. This adapter makes its boundary explicit while the
+        lower-level Explorer implementation remains unchanged.
+        """
+        urls = list(dict.fromkeys(_extract_urls(context.turn.content)))
+        destination = (
+            _infer_destination(_remove_urls(context.turn.content))
+            or _infer_destination_from_urls(urls)
+            or "unspecified"
+        )
+        if _is_context_only_plan_request(context.turn.content):
+            destination = "unspecified"
+        return {"urls": urls, "initial_destination": destination}
+
+    async def _run_main_planner_agent(
+        self, context: ConversationAgentContext
+    ) -> TripChatMessage:
+        return await self._create_plan(
+            context.chat,
+            context.turn,
+            context.images,
+            planning_context=context.data.get("explorer"),
+        )
+
+    async def _run_information_finder_agent(
+        self, context: ConversationAgentContext
+    ) -> TripChatMessage:
+        response_text = context.decision.message or (
+            "Mình có thể hỗ trợ tư vấn hành trình trước khi tạo plan."
+        )
+        blocks: list[dict[str, object]] = [{"type": "text", "text": response_text}]
+        if context.decision.options:
+            blocks.append({"type": "options", "options": list(context.decision.options)})
+        return self._save_response(context.chat, context.turn, response_text, blocks)
+
+    async def _run_plan_editor_agent(
+        self, context: ConversationAgentContext
+    ) -> TripChatMessage:
         return await self._mutate(
-            chat,
-            turn,
-            plan,
-            decision,
-            allow_locked_change=confirmed,
+            context.chat,
+            context.turn,
+            context.plan,
+            context.decision,
+            allow_locked_change=context.confirmed,
         )
 
     async def _create_plan(
@@ -450,6 +510,7 @@ class ConversationTurnService:
         chat: TripChat,
         turn: TripChatMessage,
         images: list[ImageUploadPayload],
+        planning_context: dict[str, object] | None = None,
     ) -> TripChatMessage:
         if (
             not chat.current_plan
@@ -467,18 +528,11 @@ class ConversationTurnService:
                 [{"type": "text", "text": message}],
             )
 
-        urls = list(
-            dict.fromkeys(
-                _normalize_urls([]) + _extract_urls(turn.content)
-            )
+        planning_context = planning_context or {}
+        urls = list(planning_context.get("urls") or [])
+        initial_destination = str(
+            planning_context.get("initial_destination") or "unspecified"
         )
-        initial_destination = (
-            _infer_destination(_remove_urls(turn.content))
-            or _infer_destination_from_urls(urls)
-            or "unspecified"
-        )
-        if _is_context_only_plan_request(turn.content):
-            initial_destination = "unspecified"
         from app.modules.users.model import User as _User
 
         try:
