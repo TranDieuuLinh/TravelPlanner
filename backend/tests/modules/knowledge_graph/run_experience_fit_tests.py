@@ -225,8 +225,8 @@ def populate_full_props(session):
     props = [
         KnowledgeProperty(entity_id="place_temple", key="opening_hours",
                          value="07:00-18:00", source="https://wikipedia.org", updated_at=now()),
-        KnowledgeProperty(entity_id="place_temple", key="admission_fee_vnd",
-                         value="30000", source="https://vietnamtourism.gov.vn", updated_at=now()),
+        KnowledgeProperty(entity_id="place_temple", key="admission_price",
+                         value='{"currency":"VND","representativeAmount":30000}', source="https://vietnamtourism.gov.vn", updated_at=now()),
         KnowledgeProperty(entity_id="place_temple", key="typical_duration_minutes",
                          value="120", source="https://wikipedia.org", updated_at=now()),
         KnowledgeProperty(entity_id="place_temple", key="best_time_slots",

@@ -8,6 +8,19 @@ class LLMImageInput:
     mime_type: str
 
 
+@dataclass(frozen=True)
+class GroundingSource:
+    title: str
+    uri: str
+
+
+@dataclass(frozen=True)
+class GroundedStructuredResult:
+    text: str
+    sources: tuple[GroundingSource, ...]
+    search_queries: tuple[str, ...] = ()
+
+
 class LLMClient(ABC):
     @abstractmethod
     async def generate_profile_plan(self, prompt: str) -> str:
@@ -35,3 +48,14 @@ class LLMClient(ABC):
         model: str | None = None,
     ) -> str:
         raise RuntimeError("The configured LLM provider does not support image input.")
+
+    async def generate_grounded_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> GroundedStructuredResult:
+        raise RuntimeError(
+            "The configured LLM provider does not support grounded search."
+        )

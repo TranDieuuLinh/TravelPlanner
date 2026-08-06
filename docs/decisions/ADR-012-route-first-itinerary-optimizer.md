@@ -34,7 +34,9 @@ Thêm module `app/modules/plans/itinerary_optimizer` sau bước Finder chọn P
   và meal để route optimization không thay thế quyết định relevance;
 - khi matrix không khả dụng, dùng khoảng cách địa lý; lỗi optimizer giữ nguyên thứ tự
   Finder và route enrichment vẫn chạy qua `GeographicRouteOptimizer` cũ;
-- `ITINERARY_OPTIMIZER_MODE=legacy` cho phép quay lại hoàn toàn luồng cũ.
+- `ITINERARY_OPTIMIZER_MODE` vẫn được parse để tương thích cấu hình triển khai,
+  nhưng không còn cho phép quay lại một day-planning algorithm khác; fallback
+  chỉ nằm ở route enrichment bên trong cùng `meal_anchored_timeline`.
 
 Thuật toán MVP là local search bằng hoán đổi cặp giữa các ngày, sau đó giải chính
 xác thứ tự activity trong từng ngày khi có tối đa tám activity. Đây là heuristic

@@ -7,7 +7,12 @@ import time
 import httpx
 
 from app.core.config import settings
-from app.integrations.llm.base import LLMClient, LLMImageInput
+from app.integrations.llm.base import (
+    GroundedStructuredResult,
+    GroundingSource,
+    LLMClient,
+    LLMImageInput,
+)
 
 GEMINI_GENERATE_CONTENT_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_MAX_ATTEMPTS = 3
@@ -192,6 +197,63 @@ class GeminiLLMClient(LLMClient):
         )
         return self._extract_text(data)
 
+    async def generate_grounded_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> GroundedStructuredResult:
+        """Return schema-bound JSON grounded by Google Search.
+
+        The raw search payload is deliberately not exposed to domain code. Only
+        the model JSON, public source title/URI pairs and search-query strings
+        cross the provider boundary.
+        """
+        generation_config: dict = {
+            "responseMimeType": "application/json",
+            "temperature": 0.0,
+        }
+        if response_schema:
+            generation_config["responseJsonSchema"] = response_schema
+        data = await self._generate_content(
+            model=self.model,
+            payload={
+                "system_instruction": {"parts": [{"text": system_prompt}]},
+                "contents": [
+                    {"role": "user", "parts": [{"text": user_payload}]}
+                ],
+                "tools": [{"google_search": {}}],
+                "generationConfig": generation_config,
+            },
+        )
+        candidate = (data.get("candidates") or [{}])[0]
+        grounding = candidate.get("groundingMetadata") or {}
+        sources: list[GroundingSource] = []
+        for chunk in grounding.get("groundingChunks") or []:
+            web = chunk.get("web") if isinstance(chunk, dict) else None
+            if not isinstance(web, dict):
+                continue
+            uri = str(web.get("uri") or "").strip()
+            if not uri:
+                continue
+            sources.append(
+                GroundingSource(
+                    title=str(web.get("title") or uri).strip()[:500],
+                    uri=uri[:2048],
+                )
+            )
+        queries = tuple(
+            str(query).strip()[:500]
+            for query in grounding.get("webSearchQueries") or []
+            if str(query).strip()
+        )
+        return GroundedStructuredResult(
+            text=self._extract_text(data),
+            sources=tuple(sources),
+            search_queries=queries,
+        )
+
     async def _generate_content(
         self,
         *,
@@ -296,7 +358,9 @@ class GeminiLLMClient(LLMClient):
                     if index not in available_indexes:
                         continue
                     if self._key_cooldown_until.get(index, 0.0) <= now:
-                        self._current_key_index = index
+                        self._current_key_index = (
+                            index + 1
+                        ) % len(self._api_keys)
                         return index, self._api_keys[index]
 
                 earliest_ready = min(

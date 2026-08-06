@@ -96,19 +96,30 @@ thức tiếng Việt và tên canonical tiếng Anh/tên gốc. Các field
 `alternateNames` và alias catalog cũ vẫn được đọc để tương thích nhưng không
 tạo thêm lookup provider. Input có thể ở bất kỳ ngôn ngữ nào; tên nguồn và
 provenance luôn được giữ nguyên. LLM không được sinh tọa độ hoặc tự quyết định
-place identity. Resolver lấy tối đa `top K` record `active` có tọa độ trong bảng
-`places`, gồm metadata alias và tên có hậu tố chi nhánh, rồi xếp hạng theo độ
-giống tên, `region_key`, evidence địa chỉ/landmark, category tương thích và
-`data_confidence`. Top-1 chỉ được nhận khi đạt điểm tối thiểu và cách top-2 đủ
+place identity. Resolver tra canonical name và alias đã review trực tiếp trong
+PostgreSQL, chỉ hydrate tối đa 100 record `active` khớp tên thay vì preload toàn
+bộ catalog của vùng. Python sau đó lấy `top K` theo độ giống tên, `region_key`,
+evidence địa chỉ/landmark, category tương thích và `data_confidence`. Top-1 chỉ
+được nhận khi đạt điểm tối thiểu và cách top-2 đủ
 xa; mặc định `K=5`, điểm phải **lớn hơn** `0.82` và margin `0.08`. Điểm bằng
 `0.82` vẫn bị loại. Route context chỉ phân xử giữa các match đã vượt ngưỡng;
 không được nâng một match yếu thành `resolved`. Candidate tên món/venue chung
 phải có địa chỉ nguồn khớp record mới được resolve tự động. Đây là score nội bộ
 có thể hiệu chỉnh, không phải confidence do Google hay source cung cấp. Nhờ vậy
 source tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại,
-đồng thời không đoán giữa các thương hiệu/địa điểm trùng tên. Catalog miss, toàn
-bộ điểm thấp hoặc top-1/top-2 quá sát nhau đều fallback sang Playwright worker
-của Google Maps.
+đồng thời không đoán giữa các thương hiệu/địa điểm trùng tên. Ngoại lệ duy nhất
+là nhiều row có cùng canonical name chính xác, cùng loại, cùng `region_key`,
+locality tương thích và nằm trong cụm bán kính 200 m: runtime coi đây là duplicate
+của cùng một địa điểm và chọn record có metadata đầy đủ hơn. Catalog miss hoặc
+toàn bộ điểm thấp mới fallback sang Playwright worker của Google Maps. Kết quả
+nhập nhằng giữa các địa điểm/chi nhánh thật được giữ để review và không gọi
+Google chỉ để phân xử lại identity đã có trong Knowledge Graph.
+Trong một Explorer intake, các candidate được tra Knowledge Graph bằng tối đa
+4 worker mặc định (`DATABASE_PLACE_RESOLVER_MAX_CONCURRENCY`), mỗi worker dùng
+một SQLAlchemy session riêng và trả connection về pool ngay sau khi xong. Cấu
+hình bị chặn ở mức 8 để giữ connection cho chat, Planner và API khác. Giới hạn
+này độc lập với hai page slot của Google Maps Playwright; chỉ candidate miss
+Knowledge Graph mới đi vào hàng chờ provider ngoài.
 Scraper nhận tên gốc và alias có cấu trúc qua file input tạm. Kết quả Google
 được xếp hạng theo top-K score tổng hợp từ độ giống tên, vùng, category và tọa
 độ; top-1 chỉ được nhận khi điểm **lớn hơn** `0.82`, không bị loại riêng chỉ vì
@@ -354,6 +365,13 @@ Traveler Profile. Dữ liệu dài hạn nằm trong các bảng quan hệ
 `traveler_preference_signal_sources`; intake ID gần nhất được giữ làm
 provenance mà không lưu lại nội dung chat thô trong signal.
 
+Display note của itinerary/map không phải một extraction artifact. Sau khi
+resolve place, backend compose một summary ngắn từ evidence đã chuẩn hóa,
+`sourceActivity` và description provider được phép, rồi lưu duy nhất trong
+`PlanItem.notes` của revision. `noteSources` giữ URL/place ID, loại evidence và
+freshness khi có; `personalNotes` giữ text do user nhập. Địa chỉ, rating và giờ
+mở cửa tiếp tục ở field có cấu trúc, không được chép vào prose này.
+
 ### Ma trận trạng thái nguồn
 
 | Trạng thái | Hành vi |
@@ -395,6 +413,27 @@ Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI ph�
 - Mẹo của creator có thể được giữ dưới dạng nội dung có version nhưng phải hiển
   thị ngày cập nhật plan.
 - Nếu không thể làm mới dữ liệu, phải hiển thị trạng thái cũ thay vì che giấu.
+
+### Enrichment giá TravelPlace
+
+CLI `scripts/enrich_travel_place_prices.py` dùng Gemini Google Search grounding
+để nghiên cứu giá vé công khai cho đúng entity `TravelPlace`. Query mang tên,
+địa chỉ, thành phố, quốc gia và URL identity đã có; source web luôn là dữ liệu
+không tin cậy. Model phải trả structured output và chỉ tham chiếu nguồn bằng
+index của `groundingChunks`; URL do model tự viết không được dùng làm provenance.
+
+Lệnh mặc định ưu tiên entity có nhiều review, chỉ nghiên cứu tối đa 10 entity,
+không ghi database và append kết quả đã chuẩn hóa vào JSONL cache để resume.
+`--apply` chỉ upsert kết quả `verified_price` hoặc `verified_free` có ít nhất một
+grounded source. `--overwrite` là bắt buộc nếu entity đã có giá; kết quả thủ
+công/provider khác không bị ghi đè mặc định. `--refresh` bỏ qua terminal cache
+để nghiên cứu lại. Search grounding có thể phát sinh phí theo model/số query,
+vì vậy operator phải dùng `--limit`, quota provider và theo dõi chi phí trước
+khi mở rộng tới toàn bộ catalog.
+
+Giá đầy đủ được lưu ở `admission_price`; `admission_fee_vnd` chỉ là giá đại diện
+được chiếu từ cùng snapshot khi currency là VND. Không tự đổi ngoại tệ và không
+dùng giá danh mục chung để giả làm giá của một địa điểm cụ thể.
 
 ## Tích hợp đặt dịch vụ
 

@@ -1,9 +1,15 @@
 import time
+from typing import Callable
 from uuid import uuid4
 
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.overall_checker import OverallChecker
-from app.modules.plans.domain.entities import Plan, TravelIntent, UnscheduledPlace, UserStatus
+from app.modules.plans.domain.entities import (
+    Plan,
+    TravelIntent,
+    UnscheduledPlace,
+    UserStatus,
+)
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
     PlaceSelectionInput,
@@ -16,7 +22,9 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.plans.place_selector.service import PlaceSelectorService
-from app.modules.plans.place_selector.activity_fallback import RouteAwareActivityFallback
+from app.modules.plans.place_selector.activity_fallback import (
+    RouteAwareActivityFallback,
+)
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
@@ -56,12 +64,12 @@ class MainPlanWorkflow:
             ),
             explicit_region_key=payload.region_key,
             selected_places=[
-                self._selected_place_context(place)
-                for place in payload.selected_places
+                self._selected_place_context(place) for place in payload.selected_places
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
-            allow_place_suggestions=True,
+            allow_finder_gap_fill=True,
+            allow_replace_source_places=False,
             source="direct",
             candidate_reviews=[],
         )
@@ -76,8 +84,10 @@ class MainPlanWorkflow:
     async def run_from_explorer_with_timing(
         self,
         payload: MainPlanFromExplorerCreate,
+        *,
+        on_timing_update: Callable[[PlanTimingReport], None] | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
-        trace = PlanTimingTrace()
+        trace = PlanTimingTrace(on_update=on_timing_update)
         prepare_started_at = time.perf_counter()
         intent = TravelIntent(
             destination=payload.intent.destination,
@@ -100,6 +110,7 @@ class MainPlanWorkflow:
             details={
                 "selectedPlaceCount": len(payload.selected_places),
                 "requestedDays": payload.trip_spec.days,
+                "dataSource": "Explorer snapshot",
             },
         )
         plan = await self._run_planning(
@@ -108,12 +119,12 @@ class MainPlanWorkflow:
             trip_spec=payload.trip_spec,
             explicit_region_key=payload.region_key,
             selected_places=[
-                self._selected_place_context(place)
-                for place in payload.selected_places
+                self._selected_place_context(place) for place in payload.selected_places
             ],
             user_status=payload.user_status,
             preference_profile=payload.preference_profile,
-            allow_place_suggestions=payload.allow_place_suggestions,
+            allow_finder_gap_fill=payload.allow_finder_gap_fill,
+            allow_replace_source_places=payload.allow_replace_source_places,
             timing_trace=trace,
             source="explorer",
             candidate_reviews=payload.candidate_reviews,
@@ -150,12 +161,12 @@ class MainPlanWorkflow:
             trip_spec=payload.trip_spec,
             explicit_region_key=payload.region_key,
             selected_places=[
-                self._selected_place_context(place)
-                for place in payload.selected_places
+                self._selected_place_context(place) for place in payload.selected_places
             ],
             user_status=payload.user_status,
             preference_profile=LongTermPreferenceProfile(),
-            allow_place_suggestions=True,
+            allow_finder_gap_fill=True,
+            allow_replace_source_places=False,
             source="context",
             candidate_reviews=[],
         )
@@ -170,7 +181,8 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
-        allow_place_suggestions: bool,
+        allow_finder_gap_fill: bool,
+        allow_replace_source_places: bool,
         source: str,
         candidate_reviews: list[PlaceCandidateReview],
         user_id: int | None = None,
@@ -187,7 +199,8 @@ class MainPlanWorkflow:
                 summary={
                     "days": trip_spec.days,
                     "selectedPlaceCount": len(selected_places),
-                    "allowPlaceSuggestions": allow_place_suggestions,
+                    "allowFinderGapFill": allow_finder_gap_fill,
+                    "allowReplaceSourcePlaces": allow_replace_source_places,
                 },
             )
             self.planning_runs.add_stage(
@@ -214,7 +227,8 @@ class MainPlanWorkflow:
                 selected_places=selected_places,
                 user_status=user_status,
                 preference_profile=preference_profile,
-                allow_place_suggestions=allow_place_suggestions,
+                allow_finder_gap_fill=allow_finder_gap_fill,
+                allow_replace_source_places=allow_replace_source_places,
                 run_id=run_id,
                 timing_trace=timing_trace,
                 candidate_reviews=candidate_reviews,
@@ -263,7 +277,8 @@ class MainPlanWorkflow:
         selected_places: list[SelectedPlaceContext],
         user_status: UserStatus,
         preference_profile: LongTermPreferenceProfile,
-        allow_place_suggestions: bool,
+        allow_finder_gap_fill: bool,
+        allow_replace_source_places: bool,
         run_id: str | None,
         timing_trace: PlanTimingTrace | None,
         candidate_reviews: list[PlaceCandidateReview],
@@ -285,17 +300,14 @@ class MainPlanWorkflow:
                 details={
                     "tripThemeCount": len(theme_output.trip_themes),
                     "selectedPlaceCount": len(selected_places),
+                    "dataSource": "Knowledge Graph DB + LLM",
                 },
             )
         if self.planning_runs is not None and run_id is not None:
             self.planning_runs.add_stage(
                 run_id,
                 stage="trip_theme_planner",
-                status=(
-                    "completed"
-                    if theme_output.trip_themes_ready
-                    else "blocked"
-                ),
+                status=("completed" if theme_output.trip_themes_ready else "blocked"),
                 duration_ms=int((time.perf_counter() - theme_started) * 1_000),
                 input_data={
                     "intent": planning_intent,
@@ -335,7 +347,8 @@ class MainPlanWorkflow:
             requiredExperiences=theme_output.required_experiences,
             selectedPlaces=selection_candidates,
             userStatus=user_status,
-            allowPlaceSuggestions=allow_place_suggestions,
+            allowFinderGapFill=allow_finder_gap_fill,
+            allowReplaceSourcePlaces=allow_replace_source_places,
         )
         selection_started = time.perf_counter()
         selection_output = self.place_selector.fill_agent_plan(selection_input)
@@ -347,6 +360,7 @@ class MainPlanWorkflow:
                 details={
                     "scheduledDayCount": len(selection_output.final_days),
                     "selectedPlaceCount": len(selection_candidates),
+                    "dataSource": "Knowledge Graph DB + deterministic rules",
                 },
             )
         if self.planning_runs is not None and run_id is not None:
@@ -399,6 +413,7 @@ class MainPlanWorkflow:
                 details={
                     "itemCount": sum(len(day.items) for day in plan.days),
                     "unscheduledCount": len(unscheduled_places),
+                    "dataSource": "In-memory plan assembly",
                 },
             )
         checker_started = time.perf_counter()
@@ -411,6 +426,7 @@ class MainPlanWorkflow:
                 details={
                     "status": check_report.status,
                     "issueCount": len(check_report.issues),
+                    "dataSource": "Deterministic checker",
                 },
             )
         if self.planning_runs is not None and run_id is not None:

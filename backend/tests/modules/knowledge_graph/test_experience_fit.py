@@ -218,8 +218,8 @@ def entity_with_all_props(db_session: Session) -> ScopeResolutionRepository:
         ),
         KnowledgeProperty(
             entity_id="place_temple",
-            key="admission_fee_vnd",
-            value="30000",
+            key="admission_price",
+            value='{"currency":"VND","representativeAmount":30000}',
             source="https://vietnamtourism.gov.vn",
         ),
         KnowledgeProperty(

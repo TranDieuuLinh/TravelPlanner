@@ -4,9 +4,10 @@
 
 - AI/Extractor chỉ trích xuất tên, alias, vùng tìm kiếm, evidence và ngữ cảnh
   hoạt động của place candidate. Category cuối cùng không được suy diễn từ
-  prompt, caption, STT, OCR hoặc tên địa điểm; phải lấy từ `places.place_type`
-  khi catalog match, hoặc category do Google Maps Playwright trả về, rồi mới
-  chuẩn hóa và lưu làm tag. Provider không trả category thì dùng `other`.
+  prompt, caption, STT, OCR hoặc tên địa điểm; phải lấy từ loại/properties của
+  canonical `knowledge_entities` khi Knowledge Graph match, hoặc category do
+  Google Maps Playwright trả về, rồi mới chuẩn hóa và lưu làm tag. Provider
+  không trả category thì dùng `other`.
 
 Biến nguồn cảm hứng và yêu cầu của user thành lịch trình có cấu trúc, giải thích
 được, tôn trọng ràng buộc và có thể chỉnh sửa ở cấp từng item. Model hỗ trợ trích
@@ -74,7 +75,8 @@ relevance; nguyên tắc này áp dụng cho activity và meal. Route optimizer 
 bổ/thứ tự các Place đã qua bước chọn, không được biến một Place kém phù hợp hơn
 thành lựa chọn chính chỉ vì nó gần hơn.
 
-TripThemePlanner không còn dùng research LLM hoặc Place-database research tool.
+TripThemePlanner không còn dùng research LLM hoặc place-catalog research tool
+legacy.
 Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
 evidence theo ontology v7 thành `graphCandidateCatalog`; sau đó LLM tạo
 `TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
@@ -116,10 +118,22 @@ giá; caption bổ sung bối cảnh. Evidence ngắn được giữ riêng tron
 Title/caption dạng `Top N` tạo expected coverage. Coverage dưới 40% trả
 `URL_EXTRACTION_LOW_COVERAGE` trước formatter/resolver; coverage 40–70% giữ
 review state và tắt PlaceSelector; từ 70% được coi là đủ để tiếp tục tự động.
-Planner ưu tiên blueprint này; PlaceSelector tạo skeleton
-`source_itinerary` và route optimizer không đảo thứ tự nguồn. Hard constraint
-của user vẫn được ưu tiên hơn URL, và stop bị loại phải xuất hiện trong
-`UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
+Planner ưu tiên blueprint này nhưng PlaceSelector vẫn dùng chung
+`meal_anchored_timeline` với raw prompt; metadata URL chỉ trở thành constraint
+`sourceDay`, `sourceOrder`, timing và provenance. Route optimizer không đảo thứ
+tự nguồn. Hard constraint của user vẫn được ưu tiên hơn URL, và stop bị loại
+phải xuất hiện trong `UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
+
+Timeline route-first áp cùng invariant cho raw prompt và URL: mỗi ngày có ba
+meal anchor `breakfast_meal`, `lunch_meal`, `dinner_meal`; phải có ít nhất một
+activity trong khoảng breakfast–lunch và ít nhất một activity trong khoảng
+lunch–dinner. Quán ăn từ URL được ưu tiên chiếm meal anchor phù hợp. Việc tắt
+gợi ý thay thế source không được tắt gap filling: khi URL thiếu activity,
+PlaceSelector được phép thêm một Place đã xác minh với
+`source=finder_suggestion` vào từng khoảng ban ngày còn trống. Gap filling không
+được xóa, thay hoặc đổi provenance của stop URL. Nếu không có meal venue đã xác
+minh, plan vẫn giữ anchor tổng quát `source=finder_rule`; nếu không có activity
+hợp lệ để bù, plan phải trả warning rõ ràng thay vì ngụy tạo địa điểm.
 
 Với intake URL, địa lý có evidence từ reel là guardrail của destination. Nếu
 prompt hoặc trip hiện tại ghi một destination khác nhưng `searchRegion` hoặc
@@ -240,8 +254,8 @@ trong video. Đó là claim của nguồn cho đến khi provider xác minh.
 - stage mọi candidate có evidence; chỉ chuyển candidate có representative
   coordinates sang đầu vào PlaceSelector;
 - không chặn intake để hỏi user;
-- lưu proposal/evidence/note trong `knowledge_graph_import_nodes`; không tự
-  upsert `places` hoặc graph canonical;
+- lưu proposal/evidence/`sourceActivity` trong `knowledge_graph_import_nodes`;
+  không lưu display note ở đây và không tự upsert `places` hoặc graph canonical;
 - Explorer bàn giao `intakeId + userId + explorer` nhưng không tự gọi Planner.
 - Explorer vẫn giữ mọi candidate sau aggregation trong
   `explorer.candidateReviews`; item chưa xác minh có status `needs_review` và
@@ -391,19 +405,19 @@ Sau khi `PlaceSelectorService` chọn Place mà chưa gọi route leg chi tiết
 `RouteFirstItineraryOptimizer` chạy ở cấp toàn chuyến.
 Nó dùng travel-time matrix để giảm tổng thời gian di chuyển bằng cách hoán đổi
 activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `MealStopSelector` cố gắng chèn
-ba bữa theo thứ tự breakfast → activity 1 → lunch → activity 2 → dinner. Stop nguồn có
-`sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ cố định. Đây là heuristic
+ba bữa và lấp activity theo capacity giữa các anchor. Stop nguồn có
+`sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ lại; timing nguồn là
+constraint ưu tiên và có thể spill khi ngày nguồn hết capacity. Đây là heuristic
 deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm cuối đã chốt;
-không được mô tả như tối ưu toàn cục. Có thể quay lại behavior cũ bằng
-`ITINERARY_OPTIMIZER_MODE=legacy`.
+không được mô tả như tối ưu toàn cục. URL và raw prompt không chọn hai thuật toán
+planning khác nhau.
 
-Nếu không tìm được Place ăn uống đã xác minh cho một meal slot, PlaceSelector bỏ slot đó
-khỏi `PlanDay.items` thay vì tạo card breakfast/lunch/dinner giả. Planning warning
-vẫn ghi nhận meal slot bị thiếu để plan không bị mô tả như đã hoàn thiện.
+Nếu không tìm được Place ăn uống đã xác minh cho một meal slot, PlaceSelector giữ
+một generic meal anchor không có `placeId` và ghi warning; nó không giả mạo một
+địa điểm ăn đã được xác minh.
 
-Route-first hiện không tạo lịch theo đồng hồ. Các marker `timeWindow` rất ngắn chỉ tồn tại
-để giữ tương thích schema và thứ tự; UI không cho nhập/sửa giờ và các marker không tham gia
-candidate selection, opening-hours check hoặc timeline fitting.
+`timeWindow` là giờ lịch thật và tham gia candidate selection, kiểm tra opening
+hours cùng timeline fitting.
 
 Adapter PlaceSelector dùng `RepositoryPlaceSelectionTool` trong runtime để tìm Place đang
 active theo `regionKey` và `focusTags`. Nếu catalog vùng trống nhưng có
@@ -489,6 +503,10 @@ tuyến đường hoặc danh tính địa điểm.
   Place đã chuẩn hóa khi policy cho phép.
 - `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
   nguyên caption hoặc transcript.
+- Sau place resolution, một composer giới hạn độ dài kết hợp `sourceActivity`,
+  evidence STT/OCR ngắn và provider description được phép thành
+  `PlanItem.notes`. Bước này không gọi Gemini lần nữa; Gemini có thể đã được dùng
+  ở extraction/structuring. Provenance được lưu riêng trong `noteSources`.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
 - Mỗi ngày có ba meal anchor và số activity phụ thuộc ngân sách thời gian. Restaurant/food URL
   thay meal suggestion và không chiếm activity slot; cafe/coffee vẫn là
@@ -534,6 +552,10 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 ## Vận hành câu lệnh và mô hình
 
 - Version hóa prompt và output schema.
+- Enrichment giá TravelPlace dùng Gemini Google Search grounding qua
+  `LLMClient.generate_grounded_structured_json`. Model chỉ đề xuất JSON; code
+  kiểm tra exact identity, schema, amount và citation index trước khi cho phép
+  lưu. Không có grounded source thì kết quả phải ở trạng thái `ambiguous`.
 - Ghi model/provider/version và phiên bản evaluation, không ghi toàn bộ prompt
   riêng tư.
 - Đặt timeout và retry có giới hạn. Gemini runtime hiện retry tối đa ba lần với
@@ -549,6 +571,10 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
   kế tiếp ngay. Key trả `401/403` bị loại khỏi pool cho đến khi tiến trình khởi
   động lại. API key không được ghi vào log.
   Circuit breaker vẫn là phần chưa triển khai.
+- Pool price research đọc `GEMINI_PRICE_API_KEYS` khi có, nếu không dùng toàn bộ
+  key trong `GEMINI_API_KEY`. Client round-robin cả sau request thành công,
+  cooldown key trả `429` và disable key trả `401/403`. Nhiều key không mặc định
+  làm tăng quota nếu chúng thuộc cùng Google project.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.

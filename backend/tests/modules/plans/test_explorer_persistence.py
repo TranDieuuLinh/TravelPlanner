@@ -37,6 +37,7 @@ def _resolution(name: str = "Mì Quảng Bà Mua") -> PlaceResolution:
         "city": "Đà Nẵng",
         "latitude": 16.0592,
         "longitude": 108.2131,
+        "description": "Quán mì Quảng ở trung tâm Hải Châu.",
         "sourceLink": "https://www.google.com/maps/place/example",
         "openingHours": [{"dayOfWeek": 1, "rawTimeSlots": "08:00-22:00"}],
         "rating": 4.4,
@@ -46,6 +47,7 @@ def _resolution(name: str = "Mì Quảng Bà Mua") -> PlaceResolution:
             "images": ["https://images.example/two.jpg"],
         },
         "fetchedAt": datetime(2026, 8, 5, tzinfo=timezone.utc),
+        "attribution": "Google Maps",
     })
 
 
@@ -75,8 +77,9 @@ def test_explorer_persists_candidate_as_kg_import_node_with_minimal_snapshot() -
         assert node.identity_status == "unresolved"
         assert set(node.provider_snapshot) == {
             "status", "externalId", "name", "placeType", "address", "city",
-            "latitude", "longitude", "googleMapsUrl", "imageUrl",
+            "description", "latitude", "longitude", "googleMapsUrl", "imageUrl",
             "openingHours", "rating", "reviewCount", "fetchedAt",
+            "attribution",
         }
         assert node.provider_snapshot["imageUrl"] == "https://images.example/one.jpg"
         edge = session.scalar(select(KnowledgeGraphImportEdge))
@@ -88,6 +91,13 @@ def test_explorer_persists_candidate_as_kg_import_node_with_minimal_snapshot() -
         assert len(selected) == 1
         assert selected[0].source_import_node_id == node.id
         assert selected[0].image_urls == ["https://images.example/one.jpg"]
+        assert selected[0].notes == (
+            "Ăn mì Quảng. Ăn tại Mì Quảng Bà Mua. "
+            "Quán mì Quảng ở trung tâm Hải Châu."
+        )
+        assert [source.type for source in selected[0].note_sources] == [
+            "google_maps"
+        ]
 
 
 def test_top_k_uses_reviewed_alias_and_resolves_a_clear_entity() -> None:

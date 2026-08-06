@@ -95,7 +95,8 @@ async function processQueue(): Promise<void> {
           context: explore.explorer,
           intakeId: explore.intakeId,
           userId: explore.userId,
-          allowPlaceSuggestions: explore.allowPlaceSuggestions,
+          allowFinderGapFill: explore.allowFinderGapFill,
+          allowReplaceSourcePlaces: explore.allowReplaceSourcePlaces,
           signal: controller.signal
         });
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;
@@ -176,6 +177,41 @@ export function enqueueGuestUrlJobs(input: {
   publish();
   void processQueue();
   return created;
+}
+
+export function enqueueGuestPromptJob(input: {
+  content: string;
+}): GuestUrlImportJob {
+  const createdAt = new Date().toISOString();
+  const job: GuestUrlImportJob = {
+    id: crypto.randomUUID(),
+    chatId: "guest-memory",
+    sourceType: "url",
+    sourceLabel: "Yêu cầu chuyến đi",
+    url: "",
+    forceRefresh: false,
+    status: "queued",
+    queuePosition: null,
+    attemptCount: 0,
+    resultRevision: null,
+    errorCode: null,
+    errorMessage: null,
+    createdAt,
+    startedAt: null,
+    finishedAt: null,
+    storage: "guest-memory",
+    phase: "queued",
+    requestContent: input.content,
+    contextUrls: [],
+    contextImages: [],
+    explorerTiming: null,
+    plannerTiming: null,
+    result: null
+  };
+  jobs = [...jobs, job];
+  publish();
+  void processQueue();
+  return job;
 }
 
 export function enqueueGuestImageJobs(input: {

@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -21,10 +22,10 @@ from app.modules.knowledge_graph.place_repository import (
 )
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.resolver import (
-    DatabasePlaceResolver,
     FallbackPlaceResolver,
     GoogleMapsScraperPlaceResolver,
     GoogleMapsSearchClient,
+    KnowledgeGraphPlaceResolver,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -85,7 +86,10 @@ def get_plan_mutation_service(
 ) -> PlanMutationService:
     place_repository = KnowledgeGraphPlaceRepository(db)
     return PlanMutationService(
-        place_resolver=_get_place_resolver(place_repository),
+        place_resolver=_get_place_resolver(
+            place_repository,
+            session_factory=_resolver_session_factory(db),
+        ),
         graph_place_repository=KnowledgeGraphPlaceSearchRepository(db),
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
@@ -152,7 +156,6 @@ def get_conversation_turn_service(
     )
 
 
-
 def get_plan_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> PlanService:
@@ -173,9 +176,7 @@ def get_plan_service(
         HttpYouTubeTranscriptWorker(
             base_url=settings.youtube_transcript_worker_url,
             token=settings.youtube_transcript_worker_token,
-            timeout_seconds=(
-                settings.youtube_transcript_worker_timeout_seconds
-            ),
+            timeout_seconds=(settings.youtube_transcript_worker_timeout_seconds),
         )
         if (
             settings.youtube_transcript_worker_url
@@ -189,9 +190,7 @@ def get_plan_service(
         bind=db.get_bind(),
     )
     youtube_transcript = YouTubeTranscriptExtractor(
-        cache=SqlAlchemyYouTubeTranscriptCache(
-            transcript_session_factory
-        ),
+        cache=SqlAlchemyYouTubeTranscriptCache(transcript_session_factory),
         worker=transcript_worker,
     )
     trip_theme_planner = TripThemePlannerService(
@@ -225,27 +224,31 @@ def get_plan_service(
             youtube_transcript=youtube_transcript,
             caption_structurer=GeminiCaptionStructurer(),
         ),
-        # Explorer never promotes Playwright output into the legacy places
-        # catalog. Results are staged as Knowledge Graph import nodes instead.
-        place_resolver=_get_place_resolver(None),
+        # Resolve against canonical Knowledge Graph entities/aliases first;
+        # only misses or low-confidence matches reach Playwright; catalog
+        # ambiguity stays in review instead of being re-decided externally.
+        place_resolver=_get_place_resolver(
+            place_repository,
+            session_factory=_resolver_session_factory(db),
+        ),
         # Explorer aliases must come from observed source text or from the
         # reviewed knowledge_aliases table, never from generated alias guesses.
         place_alias_enricher=None,
         explorer_persistence=ExplorerPersistenceRepository(db),
         preference_learning=PreferenceLearningService(),
         traveler_profile_repository=TravelerProfileRepository(db),
-        explorer_timing_logger=ExplorerTimingLogger(
-            settings.explorer_timing_log_path
-        ),
+        explorer_timing_logger=ExplorerTimingLogger(settings.explorer_timing_log_path),
         planning_runs=planning_runs,
     )
 
 
 def _get_place_resolver(
     place_repository: KnowledgeGraphPlaceRepository | None = None,
+    *,
+    session_factory: sessionmaker | None = None,
 ) -> PlaceResolver:
+    external_resolver: PlaceResolver = ProvisionalPlaceResolver()
     if settings.place_resolver_provider == "google_maps_scraper":
-        external_resolver: PlaceResolver = ProvisionalPlaceResolver()
         if (
             settings.google_maps_scraper_executable
             or settings.google_maps_scraper_work_dir is not None
@@ -253,32 +256,47 @@ def _get_place_resolver(
             external_resolver = GoogleMapsScraperPlaceResolver(
                 executable=settings.google_maps_scraper_executable,
                 work_dir=settings.google_maps_scraper_work_dir,
-                timeout_seconds=(
-                    settings.google_maps_scraper_timeout_seconds
-                ),
-                max_alias_queries=(
-                    settings.google_maps_scraper_max_alias_queries
-                ),
-                max_concurrency=(
-                    settings.google_maps_scraper_max_concurrency
-                ),
+                timeout_seconds=(settings.google_maps_scraper_timeout_seconds),
+                max_alias_queries=(settings.google_maps_scraper_max_alias_queries),
+                max_concurrency=(settings.google_maps_scraper_max_concurrency),
             )
-        if place_repository is not None:
-            return FallbackPlaceResolver(
-                DatabasePlaceResolver(
-                    place_repository,
-                    top_k=settings.database_place_resolver_top_k,
-                    minimum_score=(
-                        settings.database_place_resolver_minimum_score
-                    ),
-                    minimum_margin=(
-                        settings.database_place_resolver_minimum_margin
-                    ),
-                ),
-                external_resolver,
+    if place_repository is not None:
+        repository_context_factory = None
+        database_concurrency = 1
+        if session_factory is not None:
+
+            @contextmanager
+            def repository_context():
+                with session_factory() as worker_db:
+                    yield KnowledgeGraphPlaceRepository(worker_db)
+
+            repository_context_factory = repository_context
+            database_concurrency = (
+                settings.database_place_resolver_max_concurrency
             )
-        return external_resolver
-    return ProvisionalPlaceResolver()
+        return FallbackPlaceResolver(
+            KnowledgeGraphPlaceResolver(
+                place_repository,
+                top_k=settings.database_place_resolver_top_k,
+                minimum_score=(settings.database_place_resolver_minimum_score),
+                minimum_margin=(settings.database_place_resolver_minimum_margin),
+                max_concurrency=database_concurrency,
+                repository_context_factory=repository_context_factory,
+            ),
+            external_resolver,
+        )
+    return external_resolver
+
+
+def _resolver_session_factory(db: Session) -> sessionmaker | None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return None
+    return sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=bind,
+    )
 
 
 def _get_route_optimizer() -> GeographicRouteOptimizer:
@@ -287,9 +305,7 @@ def _get_route_optimizer() -> GeographicRouteOptimizer:
             ValhallaRouteProvider(
                 base_url=settings.valhalla_base_url,
                 timeout_seconds=settings.valhalla_timeout_seconds,
-                min_interval_seconds=(
-                    settings.valhalla_min_interval_seconds
-                ),
+                min_interval_seconds=(settings.valhalla_min_interval_seconds),
             ),
             OpenTripPlannerTransitProvider(
                 base_url=settings.opentripplanner_base_url,
@@ -306,8 +322,9 @@ def _get_route_optimizer() -> GeographicRouteOptimizer:
 
 def _get_itinerary_optimizer():
     legacy = _get_route_optimizer()
-    if settings.itinerary_optimizer_mode == "legacy":
-        return legacy
+    # Keep the setting accepted for deployment compatibility, but always use
+    # the common meal-anchored planner. The wrapped optimizer remains the
+    # routing fallback; it is no longer a separate day-planning algorithm.
     return RouteFirstItineraryOptimizer(legacy)
 
 

@@ -289,7 +289,6 @@ class KnowledgeGraphImportNode(Base):
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_order: Mapped[int | None] = mapped_column(nullable=True)
     source_day: Mapped[int | None] = mapped_column(nullable=True)
     source_time_hint: Mapped[str | None] = mapped_column(String(64), nullable=True)

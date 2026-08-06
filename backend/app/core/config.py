@@ -3,6 +3,7 @@ from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -55,7 +56,9 @@ class Settings(BaseSettings):
     gemini_stt_api_keys: str | None = None
     gemini_ocr_api_keys: str | None = None
     gemini_caption_api_keys: str | None = None
+    gemini_price_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_price_model: str | None = None
     gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
     gemini_caption_timeout_seconds: float = Field(
         default=60.0,
@@ -149,6 +152,11 @@ class Settings(BaseSettings):
         le=4,
     )
     database_place_resolver_top_k: int = Field(default=5, ge=1, le=50)
+    database_place_resolver_max_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+    )
     database_place_resolver_minimum_score: float = Field(
         default=0.82,
         ge=0.0,
@@ -208,6 +216,14 @@ class Settings(BaseSettings):
             )
         )
 
+    @property
+    def gemini_price_key_pool(self) -> tuple[str, ...]:
+        """Use dedicated price-research keys or the shared text key pool."""
+        dedicated = _gemini_keys(self.gemini_price_api_keys)
+        if dedicated:
+            return tuple(dict.fromkeys(dedicated))
+        return tuple(dict.fromkeys(_gemini_keys(self.gemini_api_key)))
+
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
         stt_keys = set(_gemini_keys(self.gemini_stt_api_keys))
@@ -246,6 +262,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must use PostgreSQL; SQLite is supported only "
                 "by isolated test engines"
+            )
+        database_name = make_url(self.database_url).database
+        if database_name and database_name.casefold() == "postgres":
+            raise ValueError(
+                "DATABASE_URL must not use the PostgreSQL maintenance "
+                "database 'postgres'; configure a dedicated application "
+                "database such as 'vsf_travel'"
             )
         if self.app_env not in {"local", "test"}:
             if self.jwt_secret == "local-only-change-me":

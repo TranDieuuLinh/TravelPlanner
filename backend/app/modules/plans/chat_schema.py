@@ -27,6 +27,16 @@ class TripChatCreate(BaseModel):
     title: Annotated[str | None, Field(default=None, max_length=255)]
 
 
+class TripIntentUpdateRequest(BaseModel):
+    trip_intent: Annotated[TripIntent, Field(alias="tripIntent")]
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+    expected_trip_intent_version: Annotated[
+        int, Field(ge=0, alias="expectedTripIntentVersion")
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
 class TripChatMessageRead(BaseModel):
     id: str
     role: str
@@ -62,6 +72,10 @@ class TripChatRead(TripChatSummaryRead):
     current_trip_intent: Annotated[
         TripIntent | None,
         Field(alias="currentTripIntent"),
+    ]
+    trip_intent_version: Annotated[int, Field(alias="tripIntentVersion")]
+    trip_intent_plan_status: Annotated[
+        str, Field(alias="tripIntentPlanStatus")
     ]
     candidate_reviews: Annotated[
         list[PlaceCandidateReview],

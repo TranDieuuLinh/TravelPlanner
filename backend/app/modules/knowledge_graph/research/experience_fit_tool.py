@@ -6,6 +6,7 @@ by checking multiple dimensions with evidence-based reasoning.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from app.modules.knowledge_graph.research.repository import (
@@ -343,8 +344,30 @@ def _check_admission_fee(
 ) -> DimensionCheck:
     """Check admission fee against budget constraints."""
     prop_value, prop_source = repo.get_entity_property_with_source(
-        entity_id, "admission_fee_vnd"
+        entity_id, "admission_price"
     )
+
+    if prop_value is not None:
+        try:
+            admission_price = json.loads(prop_value)
+            if admission_price.get("currency") == "VND":
+                amount = next(
+                    (
+                        admission_price.get(key)
+                        for key in (
+                            "representativeAmount",
+                            "maxAmount",
+                            "minAmount",
+                        )
+                        if admission_price.get(key) is not None
+                    ),
+                    None,
+                )
+                prop_value = str(amount) if amount is not None else None
+            else:
+                prop_value = None
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            prop_value = None
 
     if prop_value is None:
         prop_value, prop_source = repo.get_entity_property_with_source(

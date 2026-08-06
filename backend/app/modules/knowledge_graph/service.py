@@ -340,7 +340,8 @@ class KnowledgeGraphImportService:
             "- string: plain text\n"
             "- number: numeric value (int or float)\n"
             "- boolean: true/false\n"
-            "- json_array: array of strings or objects, encoded as JSON string\n\n"
+            "- json_array: array of strings or objects, encoded as JSON string\n"
+            "- json_object: object encoded as JSON string\n\n"
             "Return ONLY valid JSON matching the response schema."
         )
 

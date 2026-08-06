@@ -158,7 +158,8 @@ Input là `PlaceSelectionInput`:
   "requiredExperiences": [],
   "selectedPlaces": [],
   "placeSelectionStatus": {},
-  "allowPlaceSuggestions": true
+  "allowFinderGapFill": true,
+  "allowReplaceSourcePlaces": false
 }
 ```
 
@@ -181,8 +182,9 @@ nguồn. Route provider lỗi thì dùng ước tính địa lý và đánh dấ
 `macroPlan`. Model có adapter chỉ-đọc để nạp plan cũ có `macroPlan.tripThemes`,
 sau đó serialize lại theo contract mới.
 
-Request cũ dùng `allowFinderSuggestions` vẫn được chấp nhận qua validation
-alias, nhưng response mới chỉ xuất `allowPlaceSuggestions`.
+Request cũ dùng `allowFinderSuggestions` hoặc `allowPlaceSuggestions` vẫn được
+chấp nhận qua validation alias của `allowFinderGapFill`, nhưng response mới chỉ
+xuất `allowFinderGapFill` và `allowReplaceSourcePlaces`.
 
 Các source code lịch sử như `finder_suggestion` vẫn được đọc để không làm hỏng
 revision đã lưu. Code mới không phụ thuộc module Finder.

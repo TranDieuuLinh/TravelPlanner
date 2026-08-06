@@ -56,6 +56,31 @@ def _response(status_code: int, *, text: str = "{}") -> httpx.Response:
     )
 
 
+def _grounded_response(*, text: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "candidates": [
+                {
+                    "content": {"parts": [{"text": text}]},
+                    "groundingMetadata": {
+                        "webSearchQueries": ["Văn Miếu giá vé"],
+                        "groundingChunks": [
+                            {
+                                "web": {
+                                    "title": "Văn Miếu Quốc Tử Giám",
+                                    "uri": "https://example.test/tickets",
+                                }
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+        request=httpx.Request("POST", "https://example.test"),
+    )
+
+
 def _rate_limited_response(retry_delay: str) -> httpx.Response:
     return httpx.Response(
         429,
@@ -199,6 +224,27 @@ def test_gemini_rotates_to_next_key_after_quota_error(monkeypatch) -> None:
     assert FakeAsyncClient.api_keys == ["key-api1", "key-api2"]
 
 
+def test_gemini_round_robins_keys_after_success(monkeypatch) -> None:
+    FakeAsyncClient.responses = [
+        _response(200, text='{"call": 1}'),
+        _response(200, text='{"call": 2}'),
+        _response(200, text='{"call": 3}'),
+    ]
+    FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
+    monkeypatch.setattr(
+        "app.integrations.llm.provider.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+    client = GeminiLLMClient("key-api1,key-api2", "test-model")
+
+    asyncio.run(client.generate_json("system", "one"))
+    asyncio.run(client.generate_json("system", "two"))
+    asyncio.run(client.generate_json("system", "three"))
+
+    assert FakeAsyncClient.api_keys == ["key-api1", "key-api2", "key-api1"]
+
+
 def test_gemini_passes_structured_output_schema(monkeypatch) -> None:
     FakeAsyncClient.responses = [
         _response(200, text='{"destination": "Hà Nội"}'),
@@ -235,6 +281,29 @@ def test_gemini_passes_structured_output_schema(monkeypatch) -> None:
         ]
         == schema
     )
+
+
+def test_gemini_grounded_json_returns_sources_and_search_queries(monkeypatch) -> None:
+    FakeAsyncClient.responses = [_grounded_response(text='{"status": "free"}')]
+    FakeAsyncClient.api_keys = []
+    FakeAsyncClient.payloads = []
+    monkeypatch.setattr(
+        "app.integrations.llm.provider.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+
+    result = asyncio.run(
+        GeminiLLMClient("test-key", "gemini-3.1-flash-lite").generate_grounded_structured_json(
+            "system",
+            "payload",
+            response_schema={"type": "object"},
+        )
+    )
+
+    assert result.text == '{"status": "free"}'
+    assert result.sources[0].uri == "https://example.test/tickets"
+    assert result.search_queries == ("Văn Miếu giá vé",)
+    assert FakeAsyncClient.payloads[0]["tools"] == [{"google_search": {}}]
 
 
 def test_gemini_uses_provider_retry_delay() -> None:

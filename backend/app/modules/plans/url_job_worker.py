@@ -135,7 +135,15 @@ class UrlImportJobWorker:
                 )
             except AppError as exc:
                 db.rollback()
-                repository.fail(job_id, code=exc.code, message=exc.message)
+                current_job = db.get(UrlImportJob, job_id)
+                if (
+                    current_job is not None
+                    and current_job.import_kind == "trip_intent_plan_job"
+                    and exc.code in {"TRIP_INTENT_SUPERSEDED", "VERSION_CONFLICT"}
+                ):
+                    repository.requeue_superseded(job_id)
+                else:
+                    repository.fail(job_id, code=exc.code, message=exc.message)
             except Exception:
                 logger.exception("URL import job %s failed", job_id)
                 db.rollback()
@@ -230,6 +238,8 @@ class UrlImportJobWorker:
         job = db.get(UrlImportJob, job_id)
         if job is None:
             raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
+        if job.import_kind == "trip_intent_plan_job":
+            return await self._process_trip_intent_plan(db, job)
         if job.import_kind != "explorer_job":
             raise AppError(404, "URL_IMPORT_JOB_NOT_FOUND", "Không tìm thấy tác vụ nguồn.")
         user = db.get(User, job.user_id)
@@ -299,6 +309,10 @@ class UrlImportJobWorker:
                             else None
                         ),
                     ),
+                    on_planner_timing=lambda timing: UrlImportJobRepository(db).mark_planner_timing(
+                        job_id,
+                        planner_timing=timing.model_dump(mode="json", by_alias=True),
+                    ),
                 )
                 return result.revision
             except AppError as exc:
@@ -312,6 +326,38 @@ class UrlImportJobWorker:
             "VERSION_CONFLICT",
             "Lịch trình liên tục thay đổi trong khi xử lý URL. Hãy thử lại tác vụ.",
         )
+
+    async def _process_trip_intent_plan(
+        self,
+        db: Session,
+        job: UrlImportJob,
+    ) -> int:
+        user = db.get(User, job.user_id)
+        if user is None:
+            raise AppError(404, "USER_NOT_FOUND", "Không tìm thấy người dùng của tác vụ.")
+        chat_repository = TripChatRepository(db)
+        chat = chat_repository.get(job.chat_id, job.user_id)
+        trip_intent = chat_repository.load_trip_intent(chat)
+        if trip_intent is None or chat.current_plan is None:
+            raise AppError(
+                409,
+                "TRIP_INTENT_NOT_READY",
+                "Không có thông tin chuyến đi và plan hiện hành để đồng bộ.",
+            )
+        intent_version = chat.trip_intent_version
+        service = TripChatService(
+            chat_repository,
+            get_plan_service(db),
+            get_plan_mutation_service(db),
+        )
+        result = await service.regenerate_trip_intent_plan(
+            chat.id,
+            user,
+            trip_intent=trip_intent,
+            expected_revision=chat.revision,
+            expected_trip_intent_version=intent_version,
+        )
+        return result.revision
 
 
 def _timing_total_seconds(value: object) -> float | None:

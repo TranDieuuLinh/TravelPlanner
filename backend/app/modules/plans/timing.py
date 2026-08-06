@@ -2,7 +2,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,7 @@ class PlanTimingReport(BaseModel):
 class PlanTimingTrace:
     started_at: float = field(default_factory=time.perf_counter)
     stages: list[PlanTimingStage] = field(default_factory=list)
+    on_update: Callable[[PlanTimingReport], None] | None = None
 
     def add_stage(
         self,
@@ -55,6 +56,20 @@ class PlanTimingTrace:
                 details=details or {},
             )
         )
+        if self.on_update is not None:
+            self.on_update(self.snapshot())
+
+    def snapshot(self) -> PlanTimingReport:
+        return PlanTimingReport(
+            status="running",
+            totalSeconds=_seconds(time.perf_counter() - self.started_at),
+            stages=list(self.stages),
+            dayCount=0,
+            itemCount=0,
+            transportLegCount=0,
+            unscheduledCount=0,
+            warningCount=0,
+        )
 
     def finish(self, plan: Plan) -> PlanTimingReport:
         report = PlanTimingReport(
@@ -67,6 +82,8 @@ class PlanTimingTrace:
             unscheduledCount=len(plan.unscheduled_places),
             warningCount=len(plan.warnings),
         )
+        if self.on_update is not None:
+            self.on_update(report)
         terminal_logger.info(
             "VSF_TIMING planner %s",
             json.dumps(

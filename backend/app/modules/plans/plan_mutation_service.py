@@ -266,7 +266,6 @@ class PlanMutationService:
             tags=request.tags,
             latitude=lat,
             longitude=lng,
-            notes=request.notes,
             personalNotes=request.personal_notes,
             rating=request.rating,
             reviewCount=request.review_count,

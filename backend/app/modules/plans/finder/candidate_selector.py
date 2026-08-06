@@ -636,6 +636,7 @@ class CandidateSelector:
                         "source_activity": selected.source_activity,
                         "source_duration_minutes": selected.source_duration_minutes,
                         "notes": selected.notes,
+                        "note_sources": list(selected.note_sources),
                         "image_urls": (
                             list(selected.image_urls)
                             or stored_place.image_urls
@@ -672,6 +673,7 @@ class CandidateSelector:
             sourceActivity=selected.source_activity,
             sourceDurationMinutes=selected.source_duration_minutes,
             notes=selected.notes,
+            noteSources=selected.note_sources,
             personalNotes=selected.personal_notes,
             imageUrls=selected.image_urls,
             rating=selected.rating,

@@ -18,7 +18,10 @@ from app.modules.knowledge_graph.model import (
 )
 from app.modules.knowledge_graph.research.repository import ScopeResolutionRepository
 from app.modules.knowledge_graph.research.schema import PLACE_TYPES
-from app.modules.knowledge_graph.text import normalize_knowledge_text
+from app.modules.knowledge_graph.text import (
+    normalize_knowledge_text,
+    repair_cp437_utf8_mojibake,
+)
 from app.modules.places.model import KnowledgeEntityImage
 
 
@@ -195,7 +198,7 @@ def _to_place_match(
 
     return KnowledgeGraphPlaceMatch(
         entity_id=entity.id,
-        name=entity.canonical_name,
+        name=repair_cp437_utf8_mojibake(entity.canonical_name),
         entity_type=entity.entity_type,
         status=entity.status,
         address=_property_value(properties, "address"),
@@ -224,7 +227,7 @@ def _property_value(
     prop = properties.get(key)
     if prop is None:
         return None
-    value = prop.value.strip()
+    value = repair_cp437_utf8_mojibake(prop.value.strip())
     return value or None
 
 

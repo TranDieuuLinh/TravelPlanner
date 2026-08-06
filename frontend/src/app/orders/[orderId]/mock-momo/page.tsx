@@ -129,7 +129,7 @@ export default function MockMoMoPage() {
             >
               {paying ? "Đang xử lý giao dịch MoMo..." : "✓ Xác nhận Thanh toán MoMo Sandbox"}
             </button>
-            <Link className="momoCancelBtn" href={`/listings`}>
+            <Link className="momoCancelBtn" href="/explore">
               ✕ Hủy giao dịch
             </Link>
           </div>

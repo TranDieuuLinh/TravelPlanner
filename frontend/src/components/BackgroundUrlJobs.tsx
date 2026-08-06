@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   deleteUrlImportJob,
   listActiveTripChatTurns,
@@ -247,23 +247,35 @@ function ProviderAttempts({
     <details className="backgroundJobProviderAttempts" open>
       <summary>Chi tiết từng lần resolve ({attempts.length})</summary>
       <div className="backgroundJobProviderAttemptList">
-        {attempts.map((attempt, index) => (
-          <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
-            <strong>{attempt.candidate}</strong>
-            <span>{providerLabel(attempt.provider)}</span>
-            <span>{attempt.aliasQueryCount} keyword</span>
-            {attempt.attemptedQueries?.length ? (
-              <span>Keyword: {attempt.attemptedQueries.join(" · ")}</span>
-            ) : null}
-            <span>chờ {timingLabel(attempt.queueWaitSeconds)}</span>
-            <span>chạy {timingLabel(attempt.executionSeconds)}</span>
-            <span>
-              {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
-                ? "đã xác định"
-                : attempt.rejectionReason ?? attempt.outcome}
-            </span>
-          </div>
-        ))}
+        {attempts.map((attempt, index) => {
+          const isKnowledgeGraph =
+            attempt.provider === "knowledge_graph" || attempt.provider === "database";
+          const lookupCount = isKnowledgeGraph
+            ? attempt.attemptedQueries?.length ?? 0
+            : attempt.aliasQueryCount;
+          return (
+            <div key={`${attempt.candidate}-${attempt.provider}-${index}`}>
+              <div className="backgroundJobAttemptHeader">
+                <strong>{attempt.candidate}</strong>
+                <span>{providerLabel(attempt.provider)}</span>
+              </div>
+              <div className="backgroundJobAttemptMeta">
+                <span><b>Tra cứu</b> {lookupCount} {isKnowledgeGraph ? "tên" : "truy vấn"}</span>
+                <span><b>Chờ</b> {timingLabel(attempt.queueWaitSeconds)}</span>
+                <span><b>Chạy</b> {timingLabel(attempt.executionSeconds)}</span>
+              <span><b>Kết quả</b> {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
+                  ? attempt.outcome === "cache_hit" ? "đã dùng cache" : "đã xác định"
+                  : attempt.rejectionReason ?? attempt.outcome}</span>
+              </div>
+              {attempt.attemptedQueries?.length ? (
+                <div className="backgroundJobAttemptQueries">
+                  <b>Tên tìm kiếm</b>
+                  <span>{attempt.attemptedQueries.join(" · ")}</span>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </details>
   );
@@ -383,15 +395,21 @@ function JobTimingDetails({
       {planner ? (
         <section className="backgroundJobTimingSummary">
           <header>
-            <strong>Planner + Finder</strong>
+            <strong>{planner.status === "running" ? "Planner + Finder đang chạy" : "Planner + Finder"}</strong>
             <b>{timingLabel(planner.totalSeconds)}</b>
           </header>
           <div className="backgroundJobTimingChips">
-            <span>{planner.dayCount} ngày</span>
-            <span>{planner.itemCount} item</span>
-            <span>{planner.transportLegCount} chặng</span>
-            <span>{planner.unscheduledCount} chưa xếp</span>
-            <span>{planner.warningCount} cảnh báo</span>
+            {planner.status === "running" ? (
+              <span>Đã hoàn tất {planner.stages.length} bước</span>
+            ) : (
+              <>
+                <span>{planner.dayCount} ngày</span>
+                <span>{planner.itemCount} item</span>
+                <span>{planner.transportLegCount} chặng</span>
+                <span>{planner.unscheduledCount} chưa xếp</span>
+                <span>{planner.warningCount} cảnh báo</span>
+              </>
+            )}
           </div>
           <TimingStages label="Các bước Planner + Finder" stages={planner.stages} />
         </section>
@@ -414,11 +432,14 @@ function JobTimingDetails({
 
 export function BackgroundUrlJobs({
   authenticated,
-  enabled
+  enabled,
+  placement = "topbar"
 }: {
   authenticated: boolean;
   enabled: boolean;
+  placement?: "topbar" | "planner-chat";
 }) {
+  const router = useRouter();
   const [serverJobs, setServerJobs] = useState<UrlImportJob[]>([]);
   const [activeTurns, setActiveTurns] = useState<TripChatTurn[]>([]);
   const [guestJobs, setGuestJobs] = useState<GuestUrlImportJob[]>(() => listGuestUrlJobs());
@@ -556,6 +577,7 @@ export function BackgroundUrlJobs({
         setServerJobs((current) => job.status === "failed"
           ? current.map((item) => item.id === updated.id ? updated : item)
           : [updated, ...current]);
+        router.push(`/planner?chatId=${encodeURIComponent(updated.chatId)}`);
         window.dispatchEvent(new Event("vsf:url-job-enqueued"));
       }
     } catch (caught) {
@@ -565,6 +587,12 @@ export function BackgroundUrlJobs({
       });
     } finally {
       setRetryingId(null);
+    }
+  }
+
+  function openJobChat(job: DisplayJob) {
+    if (!isGuestJob(job)) {
+      router.push(`/planner?chatId=${encodeURIComponent(job.chatId)}`);
     }
   }
 
@@ -587,7 +615,12 @@ export function BackgroundUrlJobs({
   }
 
   return (
-    <div aria-live="polite" className="backgroundJobsDock">
+    <div
+      aria-live="polite"
+      className={`backgroundJobsDock ${
+        placement === "planner-chat" ? "backgroundJobsDock--planner-chat" : ""
+      }`}
+    >
       <details
         className="backgroundJobsPanel"
         onToggle={(event) => setPanelOpen(event.currentTarget.open)}
@@ -623,9 +656,6 @@ export function BackgroundUrlJobs({
                     <strong>AI Planner</strong>
                     <small>Bước {stage.step}/3 · {stage.label} · {elapsedLabel(elapsed)}</small>
                   </span>
-                  <Link className="backgroundJobOpenChat" href={`/planner?chatId=${encodeURIComponent(turn.chatId)}`}>
-                    Quay lại chuyến đi
-                  </Link>
                 </div>
               </div>
             );
@@ -677,18 +707,14 @@ export function BackgroundUrlJobs({
                     <p className="backgroundJobError">{actionError.message}</p>
                   ) : null}
                   <div className="backgroundJobActions">
-                    <Link
-                      className="backgroundJobOpenChat"
-                      href={
-                        isGuestJob(job)
-                          ? "/planner"
-                          : `/planner?chatId=${encodeURIComponent(job.chatId)}`
-                      }
-                    >
-                      {job.status === "succeeded"
-                        ? "Xem lịch trình"
-                        : "Quay lại chuyến đi"}
-                    </Link>
+                    {!isGuestJob(job) ? (
+                      <button
+                        onClick={() => openJobChat(job)}
+                        type="button"
+                      >
+                        Mở chat chuyến đi
+                      </button>
+                    ) : null}
                     {TERMINAL.has(job.status) ? (
                       <button
                         disabled={retryingId === job.id}

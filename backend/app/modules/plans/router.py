@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
-from app.modules.auth.dependencies import get_optional_current_user
+from app.modules.auth.dependencies import require_csrf
 from app.modules.preferences.schema import LongTermPreferenceProfile
 from app.modules.plans.dependencies import (
     get_current_location_route_service,
@@ -62,7 +62,7 @@ def feature_map(service: Annotated[PlanService, Depends(get_plan_service)]) -> l
 async def explore_full(
     payload: FullExploreRequest,
     service: Annotated[PlanService, Depends(get_plan_service)],
-    current_user: Annotated[User | None, Depends(get_optional_current_user)],
+    current_user: Annotated[User, Depends(require_csrf)],
 ) -> ExploreIntakeResponse:
     try:
         return await service.explore_full(
@@ -75,10 +75,7 @@ async def explore_full(
 @router.post("/explore/full/intake", response_model=ExploreIntakeResponse)
 async def explore_full_intake(
     service: Annotated[PlanService, Depends(get_plan_service)],
-    current_user: Annotated[
-        User | None,
-        Depends(get_optional_current_user),
-    ],
+    current_user: Annotated[User, Depends(require_csrf)],
     raw_request: Annotated[str, Form(alias="rawRequest")] = "",
     destination: Annotated[str | None, Form()] = None,
     urls: Annotated[list[str] | None, Form()] = None,
@@ -125,6 +122,7 @@ async def explore_full_intake(
 async def create_main_plan(
     payload: MainPlanCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
+    _current_user: Annotated[User, Depends(require_csrf)],
 ) -> PlanRead:
     return await service.create_main_plan(payload)
 
@@ -137,8 +135,10 @@ async def create_main_plan(
 async def create_main_plan_from_explorer(
     payload: MainPlanFromTripIntentCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
 ) -> PlanGenerationRead:
     try:
+        payload = payload.model_copy(update={"user_id": str(current_user.id)})
         plan, timing_report = (
             await service.create_main_plan_from_trip_intent_with_timing(payload)
         )
@@ -158,6 +158,7 @@ async def create_main_plan_from_explorer(
 async def create_main_plan_from_context(
     payload: PlanningContextCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
+    _current_user: Annotated[User, Depends(require_csrf)],
 ) -> PlanRead:
     return await service.create_main_plan_from_context(payload)
 
@@ -201,6 +202,7 @@ async def create_backup_plan(
     plan_id: str,
     payload: BackupPlanCreate,
     service: Annotated[PlanService, Depends(get_plan_service)],
+    _current_user: Annotated[User, Depends(require_csrf)],
 ) -> PlanBundleRead:
     return await service.create_backup_plan(plan_id, payload)
 

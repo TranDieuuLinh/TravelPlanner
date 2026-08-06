@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from app.modules.plans.domain.entities import (
     DestinationStay,
@@ -14,6 +14,7 @@ from app.modules.plans.domain.entities import (
     UnscheduledPlace,
     UserStatus,
 )
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.preferences.schema import LongTermPreferenceProfile
@@ -116,7 +117,9 @@ class PlaceCandidateHint(BaseModel):
         Field(default_factory=dict, alias="sourceEvidence"),
     ]
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
-    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_day: Annotated[
+        int | None, Field(default=None, ge=1, le=30, alias="sourceDay")
+    ]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
     source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
     source_duration_minutes: Annotated[
@@ -170,9 +173,7 @@ class SelectedPlaceContext(BaseModel):
     selection_method: Annotated[
         str | None, Field(default=None, alias="selectionMethod")
     ]
-    route_score: Annotated[
-        float | None, Field(default=None, alias="routeScore")
-    ]
+    route_score: Annotated[float | None, Field(default=None, alias="routeScore")]
     identity_confidence: Annotated[
         str | None, Field(default=None, alias="identityConfidence")
     ]
@@ -180,6 +181,9 @@ class SelectedPlaceContext(BaseModel):
     context_places: Annotated[list[str], Field(alias="contextPlaces")] = Field(
         default_factory=list
     )
+    note_sources: Annotated[
+        list[PlanNoteSource], Field(default_factory=list, alias="noteSources")
+    ]
     personal_notes: Annotated[
         str | None,
         Field(default=None, alias="personalNotes"),
@@ -193,7 +197,9 @@ class SelectedPlaceContext(BaseModel):
         Field(default=None, ge=0, alias="reviewCount"),
     ]
     source_order: Annotated[int | None, Field(default=None, ge=1, alias="sourceOrder")]
-    source_day: Annotated[int | None, Field(default=None, ge=1, le=30, alias="sourceDay")]
+    source_day: Annotated[
+        int | None, Field(default=None, ge=1, le=30, alias="sourceDay")
+    ]
     source_time_hint: Annotated[str | None, Field(default=None, alias="sourceTimeHint")]
     source_activity: Annotated[str | None, Field(default=None, alias="sourceActivity")]
     source_duration_minutes: Annotated[
@@ -235,9 +241,9 @@ class RegionStatisticsContext(BaseModel):
     tag_duration_profile: Annotated[
         dict[str, dict[str, int]], Field(alias="tagDurationProfile")
     ] = Field(default_factory=dict)
-    indoor_outdoor_mix: Annotated[
-        dict[str, int], Field(alias="indoorOutdoorMix")
-    ] = Field(default_factory=dict)
+    indoor_outdoor_mix: Annotated[dict[str, int], Field(alias="indoorOutdoorMix")] = (
+        Field(default_factory=dict)
+    )
     weather_sensitivity_counts: Annotated[
         dict[str, int], Field(alias="weatherSensitivityCounts")
     ] = Field(default_factory=dict)
@@ -250,17 +256,17 @@ class RegionStatisticsContext(BaseModel):
     price_coverage: Annotated[dict[str, int], Field(alias="priceCoverage")] = Field(
         default_factory=dict
     )
-    geographic_summary: Annotated[
-        dict[str, Any], Field(alias="geographicSummary")
-    ] = Field(default_factory=dict)
-    planner_eligible: Annotated[
-        dict[str, Any], Field(alias="plannerEligible")
-    ] = Field(default_factory=dict)
-    area_profiles: Annotated[list[dict[str, Any]], Field(alias="areaProfiles")] = (
-        Field(default_factory=list)
-    )
-    planner_signals: Annotated[dict[str, Any], Field(alias="plannerSignals")] = (
+    geographic_summary: Annotated[dict[str, Any], Field(alias="geographicSummary")] = (
         Field(default_factory=dict)
+    )
+    planner_eligible: Annotated[dict[str, Any], Field(alias="plannerEligible")] = Field(
+        default_factory=dict
+    )
+    area_profiles: Annotated[list[dict[str, Any]], Field(alias="areaProfiles")] = Field(
+        default_factory=list
+    )
+    planner_signals: Annotated[dict[str, Any], Field(alias="plannerSignals")] = Field(
+        default_factory=dict
     )
 
     model_config = {"populate_by_name": True}
@@ -277,8 +283,12 @@ class UnallocatedSelectedPlace(BaseModel):
 class UrlReelSignal(BaseModel):
     url: str
     platform: str | None = None
-    extracted_places: Annotated[list[str], Field(alias="extractedPlaces")] = Field(default_factory=list)
-    extracted_place_details: Annotated[list[PlaceCandidateHint], Field(alias="extractedPlaceDetails")] = Field(default_factory=list)
+    extracted_places: Annotated[list[str], Field(alias="extractedPlaces")] = Field(
+        default_factory=list
+    )
+    extracted_place_details: Annotated[
+        list[PlaceCandidateHint], Field(alias="extractedPlaceDetails")
+    ] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -292,7 +302,9 @@ class UserPlanningState(BaseModel):
     locale: str = "vi-VN"
     timezone: str = "Asia/Ho_Chi_Minh"
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
-    travel_preferences: Annotated[list[str], Field(alias="travelPreferences")] = Field(default_factory=list)
+    travel_preferences: Annotated[list[str], Field(alias="travelPreferences")] = Field(
+        default_factory=list
+    )
     preference_profile: Annotated[
         LongTermPreferenceProfile,
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
@@ -303,8 +315,12 @@ class UserPlanningState(BaseModel):
 
 class PlanWorkingState(BaseModel):
     trip_id: Annotated[str | None, Field(alias="tripId")] = None
-    locked_item_ids: Annotated[list[str], Field(alias="lockedItemIds")] = Field(default_factory=list)
-    excluded_place_names: Annotated[list[str], Field(alias="excludedPlaceNames")] = Field(default_factory=list)
+    locked_item_ids: Annotated[list[str], Field(alias="lockedItemIds")] = Field(
+        default_factory=list
+    )
+    excluded_place_names: Annotated[list[str], Field(alias="excludedPlaceNames")] = (
+        Field(default_factory=list)
+    )
     warnings: list[str] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -315,8 +331,12 @@ class PlanningIntent(BaseModel):
     travel_style: Annotated[str, Field(alias="travelStyle")] = "local"
     pace: TravelPace = TravelPace.balanced
     interests: list[str] = Field(default_factory=list)
-    must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(default_factory=list)
-    avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(default_factory=list)
+    must_visit_places: Annotated[list[str], Field(alias="mustVisitPlaces")] = Field(
+        default_factory=list
+    )
+    avoid_places: Annotated[list[str], Field(alias="avoidPlaces")] = Field(
+        default_factory=list
+    )
     constraints: list[str] = Field(default_factory=list)
     destination_stays: Annotated[
         list[DestinationStay],
@@ -326,7 +346,9 @@ class PlanningIntent(BaseModel):
         ConstraintPolicy,
         Field(default_factory=ConstraintPolicy, alias="constraintPolicy"),
     ]
-    clarifying_questions: Annotated[list[str], Field(alias="clarifyingQuestions")] = Field(default_factory=list)
+    clarifying_questions: Annotated[list[str], Field(alias="clarifyingQuestions")] = (
+        Field(default_factory=list)
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -370,10 +392,18 @@ class AccommodationRequirement(BaseModel):
 
 class TransportRequirement(BaseModel):
     required: bool = True
-    preferred_modes: Annotated[list[TransportMode], Field(alias="preferredModes")] = Field(default_factory=lambda: [TransportMode.mixed])
-    avoid_modes: Annotated[list[TransportMode], Field(alias="avoidModes")] = Field(default_factory=list)
-    include_between_places: Annotated[bool, Field(default=True, alias="includeBetweenPlaces")]
-    include_arrival_departure: Annotated[bool, Field(default=True, alias="includeArrivalDeparture")]
+    preferred_modes: Annotated[list[TransportMode], Field(alias="preferredModes")] = (
+        Field(default_factory=lambda: [TransportMode.mixed])
+    )
+    avoid_modes: Annotated[list[TransportMode], Field(alias="avoidModes")] = Field(
+        default_factory=list
+    )
+    include_between_places: Annotated[
+        bool, Field(default=True, alias="includeBetweenPlaces")
+    ]
+    include_arrival_departure: Annotated[
+        bool, Field(default=True, alias="includeArrivalDeparture")
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -383,7 +413,9 @@ class TripPlanningSpec(BaseModel):
     party_size: Annotated[int, Field(default=1, ge=1, alias="partySize")]
     start_date: Annotated[str | None, Field(default=None, alias="startDate")]
     end_date: Annotated[str | None, Field(default=None, alias="endDate")]
-    accommodation: AccommodationRequirement = Field(default_factory=AccommodationRequirement)
+    accommodation: AccommodationRequirement = Field(
+        default_factory=AccommodationRequirement
+    )
     transport: TransportRequirement = Field(default_factory=TransportRequirement)
     budget: BudgetEnvelope = Field(default_factory=BudgetEnvelope)
 
@@ -394,8 +426,12 @@ class TransportLeg(BaseModel):
     from_place: Annotated[str, Field(alias="fromPlace")]
     to_place: Annotated[str, Field(alias="toPlace")]
     mode: TransportMode = TransportMode.unknown
-    estimated_duration_minutes: Annotated[int | None, Field(default=None, ge=0, alias="estimatedDurationMinutes")]
-    estimated_cost: Annotated[MoneyEstimate | None, Field(default=None, alias="estimatedCost")]
+    estimated_duration_minutes: Annotated[
+        int | None, Field(default=None, ge=0, alias="estimatedDurationMinutes")
+    ]
+    estimated_cost: Annotated[
+        MoneyEstimate | None, Field(default=None, alias="estimatedCost")
+    ]
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -406,7 +442,9 @@ class FinalItineraryItem(BaseModel):
     category: ItineraryItemCategory
     time_window: Annotated[str, Field(alias="timeWindow")]
     address: str | None = None
-    estimated_cost: Annotated[MoneyEstimate | None, Field(default=None, alias="estimatedCost")]
+    estimated_cost: Annotated[
+        MoneyEstimate | None, Field(default=None, alias="estimatedCost")
+    ]
     notes: str | None = None
 
     model_config = {"populate_by_name": True}
@@ -417,8 +455,12 @@ class FinalItineraryDay(BaseModel):
     title: str
     hotel: FinalItineraryItem | None = None
     items: list[FinalItineraryItem]
-    transport_legs: Annotated[list[TransportLeg], Field(alias="transportLegs")] = Field(default_factory=list)
-    day_cost_estimate: Annotated[MoneyEstimate | None, Field(default=None, alias="dayCostEstimate")]
+    transport_legs: Annotated[list[TransportLeg], Field(alias="transportLegs")] = Field(
+        default_factory=list
+    )
+    day_cost_estimate: Annotated[
+        MoneyEstimate | None, Field(default=None, alias="dayCostEstimate")
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -434,9 +476,15 @@ class FinalTripCostEstimate(BaseModel):
 class ExplorerAgentInput(BaseModel):
     raw_request: Annotated[str | None, Field(alias="rawRequest")] = None
     destination: str
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
-    url_reel_signals: Annotated[list[UrlReelSignal], Field(alias="urlReelSignals")] = Field(default_factory=list)
-    user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(default_factory=UserPlanningState)
+    place_candidates: Annotated[
+        list[PlaceCandidateHint], Field(alias="placeCandidates")
+    ] = Field(default_factory=list)
+    url_reel_signals: Annotated[list[UrlReelSignal], Field(alias="urlReelSignals")] = (
+        Field(default_factory=list)
+    )
+    user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(
+        default_factory=UserPlanningState
+    )
     trip_spec: Annotated[TripPlanningSpec | None, Field(default=None, alias="tripSpec")]
 
     model_config = {"populate_by_name": True}
@@ -446,7 +494,9 @@ class ExplorerAgentOutput(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     assumptions: list[str] = Field(default_factory=list)
-    missing_info_questions: Annotated[list[str], Field(alias="missingInfoQuestions")] = Field(default_factory=list)
+    missing_info_questions: Annotated[
+        list[str], Field(alias="missingInfoQuestions")
+    ] = Field(default_factory=list)
     trace: AgentTrace
 
     model_config = {"populate_by_name": True}
@@ -501,8 +551,8 @@ class PlannerCapabilityEvidence(BaseModel):
     region_keys: Annotated[list[str], Field(alias="regionKeys")] = Field(
         default_factory=list
     )
-    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = (
-        Field(default_factory=list)
+    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = Field(
+        default_factory=list
     )
     confidence: Literal["none", "low", "medium", "high"] = "none"
 
@@ -517,8 +567,8 @@ class PlannerNearbyRegionEvidence(BaseModel):
         list[str],
         Field(alias="matchingCapabilities"),
     ] = Field(default_factory=list)
-    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = (
-        Field(default_factory=list)
+    sample_places: Annotated[list[dict[str, Any]], Field(alias="samplePlaces")] = Field(
+        default_factory=list
     )
 
     model_config = {"populate_by_name": True}
@@ -546,34 +596,38 @@ class TripThemePlanningInput(BaseModel):
     selected_places: Annotated[
         list[SelectedPlaceContext], Field(alias="selectedPlaces")
     ] = Field(default_factory=list)
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
+    place_candidates: Annotated[
+        list[PlaceCandidateHint], Field(alias="placeCandidates")
+    ] = Field(default_factory=list)
     preference_profile: Annotated[
         LongTermPreferenceProfile,
         Field(default_factory=LongTermPreferenceProfile, alias="preferenceProfile"),
     ]
-    plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
+    plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(
+        default_factory=PlanWorkingState
+    )
     # === Research Tools Results ===
     # Optional tool results that can be pre-populated before calling planner
     region_overview: Annotated[
         dict | None,
         Field(
             alias="regionOverview",
-            description="Pre-computed region overview statistics from region_overview tool"
-        )
+            description="Pre-computed region overview statistics from region_overview tool",
+        ),
     ] = Field(default=None)
     constraint_research: Annotated[
         dict | None,
         Field(
             alias="constraintResearch",
-            description="Pre-computed constraint research results from constraint_research tool"
-        )
+            description="Pre-computed constraint research results from constraint_research tool",
+        ),
     ] = Field(default=None)
     festival_discovery: Annotated[
         dict | None,
         Field(
             alias="festivalDiscovery",
-            description="Pre-computed festival discovery results from festival_discovery tool"
-        )
+            description="Pre-computed festival discovery results from festival_discovery tool",
+        ),
     ] = Field(default=None)
 
     model_config = {"populate_by_name": True}
@@ -615,15 +669,13 @@ class RequiredExperience(BaseModel):
         RequiredExperienceSelectionPolicy,
         Field(alias="selectionPolicy"),
     ]
-    anchor_place_ids: Annotated[
-        list[str], Field(alias="anchorPlaceIds")
-    ] = Field(default_factory=list)
-    candidate_place_ids: Annotated[
-        list[str], Field(alias="candidatePlaceIds")
-    ] = Field(default_factory=list)
-    minimum_required: Annotated[
-        int, Field(default=1, ge=1, alias="minimumRequired")
-    ]
+    anchor_place_ids: Annotated[list[str], Field(alias="anchorPlaceIds")] = Field(
+        default_factory=list
+    )
+    candidate_place_ids: Annotated[list[str], Field(alias="candidatePlaceIds")] = Field(
+        default_factory=list
+    )
+    minimum_required: Annotated[int, Field(default=1, ge=1, alias="minimumRequired")]
     priority: RequiredExperiencePriority = RequiredExperiencePriority.must
     reason: str = Field(min_length=1, max_length=1000)
     evidence_claim_ids: Annotated[
@@ -668,9 +720,7 @@ class RequiredExperience(BaseModel):
     @model_validator(mode="after")
     def _validate_internal_structure(self) -> "RequiredExperience":
         if self.priority is not RequiredExperiencePriority.must:
-            raise ValueError(
-                "priority currently only accepts 'must'."
-            )
+            raise ValueError("priority currently only accepts 'must'.")
 
         policy = self.selection_policy
         if policy is RequiredExperienceSelectionPolicy.required_anchor:
@@ -689,9 +739,7 @@ class RequiredExperience(BaseModel):
                 )
         elif policy is RequiredExperienceSelectionPolicy.open_candidate:
             if not self.activity_id:
-                raise ValueError(
-                    "open_candidate selectionPolicy requires activityId."
-                )
+                raise ValueError("open_candidate selectionPolicy requires activityId.")
 
         if not self.evidence_claim_ids:
             raise ValueError("evidenceClaimIds must not be empty.")
@@ -715,9 +763,9 @@ class RequiredExperience(BaseModel):
 class TripThemeDraft(BaseModel):
     """LLM contract for trip-wide requirements, with no calendar allocation."""
 
-    trip_themes: Annotated[
-        list[TripThemeRequirement], Field(alias="tripThemes")
-    ] = Field(default_factory=list)
+    trip_themes: Annotated[list[TripThemeRequirement], Field(alias="tripThemes")] = (
+        Field(default_factory=list)
+    )
     required_experiences: Annotated[
         list[RequiredExperience],
         Field(default_factory=list, alias="requiredExperiences"),
@@ -729,15 +777,15 @@ class TripThemeDraft(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_forbidden_day_route_allocation_fields(
-        cls, values: Any
-    ) -> Any:
+    def _reject_forbidden_day_route_allocation_fields(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
         forbidden = _FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS
-        for requirement in values.get("requiredExperiences") or values.get(
-            "required_experiences"
-        ) or []:
+        for requirement in (
+            values.get("requiredExperiences")
+            or values.get("required_experiences")
+            or []
+        ):
             if not isinstance(requirement, dict):
                 continue
             leaked = sorted(set(requirement.keys()) & forbidden)
@@ -759,9 +807,9 @@ class TripThemePlanningOutput(BaseModel):
     mode: PlanningMode
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     trip_themes_ready: Annotated[bool, Field(alias="tripThemesReady")] = True
-    trip_themes: Annotated[
-        list[TripThemeRequirement], Field(alias="tripThemes")
-    ] = Field(default_factory=list)
+    trip_themes: Annotated[list[TripThemeRequirement], Field(alias="tripThemes")] = (
+        Field(default_factory=list)
+    )
     required_experiences: Annotated[
         list[RequiredExperience],
         Field(default_factory=list, alias="requiredExperiences"),
@@ -785,15 +833,15 @@ class TripThemePlanningOutput(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_forbidden_day_route_allocation_fields(
-        cls, values: Any
-    ) -> Any:
+    def _reject_forbidden_day_route_allocation_fields(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
         forbidden = _FORBIDDEN_REQUIRED_EXPERIENCE_FIELDS
-        for requirement in values.get("requiredExperiences") or values.get(
-            "required_experiences"
-        ) or []:
+        for requirement in (
+            values.get("requiredExperiences")
+            or values.get("required_experiences")
+            or []
+        ):
             if not isinstance(requirement, dict):
                 continue
             leaked = sorted(set(requirement.keys()) & forbidden)
@@ -816,27 +864,45 @@ class PlaceSelectionInput(BaseModel):
     intent: PlanningIntent
     trip_spec: Annotated[TripPlanningSpec, Field(alias="tripSpec")]
     region_key: Annotated[str, Field(alias="regionKey")]
-    trip_themes: Annotated[
-        list[TripThemeRequirement], Field(alias="tripThemes")
-    ] = Field(default_factory=list)
+    trip_themes: Annotated[list[TripThemeRequirement], Field(alias="tripThemes")] = (
+        Field(default_factory=list)
+    )
     required_experiences: Annotated[
         list[RequiredExperience], Field(alias="requiredExperiences")
     ] = Field(default_factory=list)
     selected_places: Annotated[
         list[SelectedPlaceContext], Field(alias="selectedPlaces")
     ] = Field(default_factory=list)
-    place_candidates: Annotated[list[PlaceCandidateHint], Field(alias="placeCandidates")] = Field(default_factory=list)
-    plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(default_factory=PlanWorkingState)
-    user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(default_factory=UserPlanningState)
+    place_candidates: Annotated[
+        list[PlaceCandidateHint], Field(alias="placeCandidates")
+    ] = Field(default_factory=list)
+    plan_state: Annotated[PlanWorkingState, Field(alias="planState")] = Field(
+        default_factory=PlanWorkingState
+    )
+    user_state: Annotated[UserPlanningState, Field(alias="userState")] = Field(
+        default_factory=UserPlanningState
+    )
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
     )
     place_selection_status: Annotated[
         PlaceSelectionStatus, Field(alias="placeSelectionStatus")
     ] = Field(default_factory=PlaceSelectionStatus)
-    allow_place_suggestions: Annotated[
+    allow_finder_gap_fill: Annotated[
         bool,
-        Field(default=True, alias="allowPlaceSuggestions"),
+        Field(
+            default=True,
+            validation_alias=AliasChoices(
+                "allowFinderGapFill",
+                "allowPlaceSuggestions",
+                "allowFinderSuggestions",
+            ),
+            serialization_alias="allowFinderGapFill",
+        ),
+    ]
+    allow_replace_source_places: Annotated[
+        bool,
+        Field(default=False, alias="allowReplaceSourcePlaces"),
     ]
 
     model_config = {"populate_by_name": True}
@@ -847,7 +913,9 @@ class PlaceSelectionOutput(BaseModel):
     final_days: Annotated[list[PlanDay], Field(alias="finalDays")] = Field(
         default_factory=list
     )
-    trip_cost_estimate: Annotated[FinalTripCostEstimate | None, Field(default=None, alias="tripCostEstimate")]
+    trip_cost_estimate: Annotated[
+        FinalTripCostEstimate | None, Field(default=None, alias="tripCostEstimate")
+    ]
     unscheduled_places: Annotated[
         list[UnscheduledPlace], Field(alias="unscheduledPlaces")
     ] = Field(default_factory=list)

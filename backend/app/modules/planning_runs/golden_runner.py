@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
-
 from pydantic import ValidationError
 
 from app.modules.planning_runs.redaction import safe_snapshot
@@ -181,13 +179,15 @@ class GoldenCaseRunner:
             if case_id.startswith("CHK-"):
                 plan = _checker_plan(source_input)
                 report = self.plan_service.main_workflow.checker.check(plan)
-                return {"checkReport": report}, plan, [
-                    "Legacy checker input was expanded into the current Plan contract."
-                ]
+                return (
+                    {"checkReport": report},
+                    plan,
+                    [
+                        "Legacy checker input was expanded into the current Plan contract."
+                    ],
+                )
             main_plan_id = str(
-                source_input.get("parentPlanId")
-                or source_input.get("mainPlanId")
-                or ""
+                source_input.get("parentPlanId") or source_input.get("mainPlanId") or ""
             )
             if not main_plan_id:
                 raise GoldenCaseExecutionError(
@@ -198,8 +198,7 @@ class GoldenCaseRunner:
                 main_plan_id,
                 BackupPlanCreate(
                     reason=str(
-                        source_input.get("triggerReason")
-                        or "golden_dataset_evaluation"
+                        source_input.get("triggerReason") or "golden_dataset_evaluation"
                     )
                 ),
             )
@@ -253,10 +252,14 @@ class GoldenCaseRunner:
             tripSpec=source_input.get("tripSpec") or {},
         )
         draft = await self.plan_service.explore_formatter.format(payload)
-        return draft.explorer, payload, [
-            "urlReelSignals were mapped to the current FullExploreRequest.urls contract.",
-            "Fixture userId was cleared to keep evaluation runs isolated.",
-        ]
+        return (
+            draft.explorer,
+            payload,
+            [
+                "urlReelSignals were mapped to the current FullExploreRequest.urls contract.",
+                "Fixture userId was cleared to keep evaluation runs isolated.",
+            ],
+        )
 
     async def _run_full_pipeline(
         self,
@@ -282,17 +285,22 @@ class GoldenCaseRunner:
                 tripSpec=intake.explorer.trip_spec,
                 intakeId=intake.intake_id,
                 userId=None,
-                allowPlaceSuggestions=intake.allow_place_suggestions,
+                allowFinderGapFill=True,
+                allowReplaceSourcePlaces=False,
             )
         )
-        return {
-            "intakeId": intake.intake_id,
-            "explorer": intake.explorer,
-            "finalPlan": plan,
-        }, payload, [
-            "Destination and duration were derived from the fixture prompt.",
-            "Fixture userId was cleared to keep evaluation runs isolated.",
-        ]
+        return (
+            {
+                "intakeId": intake.intake_id,
+                "explorer": intake.explorer,
+                "finalPlan": plan,
+            },
+            payload,
+            [
+                "Destination and duration were derived from the fixture prompt.",
+                "Fixture userId was cleared to keep evaluation runs isolated.",
+            ],
+        )
 
 
 def _checker_plan(source_input: dict) -> Plan:
@@ -308,7 +316,8 @@ def _checker_plan(source_input: dict) -> Plan:
             end_hour = min(start_hour + 1, 23)
             items.append(
                 PlanItem(
-                    itemId=raw_item.get("itemId") or f"golden-{day_number}-{item_index + 1}",
+                    itemId=raw_item.get("itemId")
+                    or f"golden-{day_number}-{item_index + 1}",
                     placeId=raw_item.get("placeId"),
                     name=raw_item.get("name") or "Unnamed golden place",
                     timeWindow=raw_item.get("timeWindow")
@@ -354,9 +363,7 @@ def _destination(source_input: dict) -> str:
     if isinstance(intent, dict) and intent.get("destination"):
         return str(intent["destination"])
     text = str(
-        source_input.get("rawPrompt")
-        or source_input.get("rawRequest")
-        or ""
+        source_input.get("rawPrompt") or source_input.get("rawRequest") or ""
     ).casefold()
     return "Hà Nội" if "hà nội" in text or "ha noi" in text else "unspecified"
 
@@ -379,7 +386,11 @@ def _compare_projection(expected: object, actual: object) -> dict:
         if isinstance(expected_value, dict):
             if not isinstance(actual_value, dict):
                 mismatches.append(
-                    {"path": path or "$", "expected": expected_value, "actual": actual_value}
+                    {
+                        "path": path or "$",
+                        "expected": expected_value,
+                        "actual": actual_value,
+                    }
                 )
                 return
             for key, child in expected_value.items():
@@ -394,7 +405,11 @@ def _compare_projection(expected: object, actual: object) -> dict:
         if isinstance(expected_value, list):
             if not isinstance(actual_value, list):
                 mismatches.append(
-                    {"path": path or "$", "expected": expected_value, "actual": actual_value}
+                    {
+                        "path": path or "$",
+                        "expected": expected_value,
+                        "actual": actual_value,
+                    }
                 )
                 return
             if len(expected_value) != len(actual_value):
@@ -412,7 +427,11 @@ def _compare_projection(expected: object, actual: object) -> dict:
             matched += 1
         else:
             mismatches.append(
-                {"path": path or "$", "expected": expected_value, "actual": actual_value}
+                {
+                    "path": path or "$",
+                    "expected": expected_value,
+                    "actual": actual_value,
+                }
             )
 
     walk(expected, actual, "")
