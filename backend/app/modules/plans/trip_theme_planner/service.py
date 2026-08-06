@@ -49,6 +49,7 @@ from app.modules.plans.trip_theme_planner.graph_research import (
 )
 from app.modules.plans.trip_theme_planner.required_experience_validator import (
     RequiredExperienceGraphValidationError,
+    validate as validate_trip_theme_output,
     validate_required_experience,
 )
 from app.modules.plans.trip_theme_planner.region_context import (
@@ -545,6 +546,25 @@ class TripThemePlannerService:
         graph_catalog: GraphCandidateCatalog,
     ) -> TripThemeDraft:
         draft = TripThemeDraft.model_validate_json(raw)
+        validation = validate_trip_theme_output(draft, graph_catalog)
+        if not validation.is_valid:
+            first = validation.errors[0]
+            raise ValueError(
+                f"{first.code}: {first.reason}"
+                + (f" ({first.path})" if first.path else "")
+            )
+        if validation.output is not None:
+            draft = validation.output
+        if validation.warnings:
+            draft = draft.model_copy(update={
+                "warnings": [
+                    *draft.warnings,
+                    *[
+                        f"{warning.code}: {warning.reason}"
+                        for warning in validation.warnings
+                    ],
+                ]
+            })
         themes, normalized = self._normalize_trip_themes(
             draft.trip_themes,
             days=planner_input.trip_spec.days,

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 import re
+from typing import Any
+
+from pydantic import ValidationError
 
 from app.modules.knowledge_graph.research import (
     CheckStatus,
@@ -14,10 +18,12 @@ from app.modules.knowledge_graph.research import (
 from app.modules.plans.dto.agent_contracts import (
     RequiredExperience,
     RequiredExperienceSelectionPolicy,
+    TripThemeDraft,
 )
-from app.modules.plans.domain.entities import PreferredTimeWindow
+from app.modules.plans.domain.entities import ExperienceCategory, PreferredTimeWindow
 from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
     GraphCandidateCatalog,
+    GraphExperienceCandidate,
     _activity_id,
     _place_ids,
 )
@@ -25,6 +31,262 @@ from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
 
 class RequiredExperienceGraphValidationError(ValueError):
     """Raised when a requirement references unsupported graph evidence."""
+
+    def __init__(self, message: str, *, code: str = "invalid_graph_output") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    code: str
+    reason: str
+    path: str = ""
+
+
+@dataclass(frozen=True)
+class TripThemeValidationResult:
+    """Repairable validation result for the TripThemePlanner boundary."""
+
+    output: TripThemeDraft | None
+    errors: tuple[ValidationIssue, ...] = ()
+    warnings: tuple[ValidationIssue, ...] = ()
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+
+_FORBIDDEN_OUTPUT_FIELDS = frozenset({
+    "day", "route", "allocation", "scheduledDay", "scheduled_day",
+    "dayIndex", "day_index", "routeId", "route_id", "allocationId",
+    "allocation_id", "calendar", "calendarAllocation", "calendar_allocation",
+})
+
+
+def validate(
+    output: TripThemeDraft | Mapping[str, Any],
+    catalog: GraphCandidateCatalog,
+) -> TripThemeValidationResult:
+    """Validate and hydrate one complete TripThemePlanner output.
+
+    This boundary is intentionally independent from Pydantic's schema errors so
+    repair callers receive stable machine-readable reason codes.
+    """
+    errors: list[ValidationIssue] = []
+    if isinstance(output, Mapping):
+        leaked = _find_forbidden_fields(output)
+        if leaked:
+            return TripThemeValidationResult(
+                output=None,
+                errors=(ValidationIssue(
+                    code="calendar_field_forbidden",
+                    reason=f"Calendar field is not allowed in TripThemePlanner output: {leaked[0]}",
+                    path=leaked[0],
+                ),),
+            )
+        try:
+            draft = TripThemeDraft.model_validate(output)
+        except ValidationError as exc:
+            first = exc.errors()[0]
+            return TripThemeValidationResult(
+                output=None,
+                errors=(ValidationIssue(
+                    code="schema_invalid",
+                    reason=str(first.get("msg", "invalid TripThemeDraft")),
+                    path=".".join(str(part) for part in first.get("loc", ())),
+                ),),
+            )
+    else:
+        draft = output
+
+    if not catalog.candidates and draft.required_experiences:
+        errors.append(ValidationIssue(
+            code="catalog_empty",
+            reason="requiredExperiences must be empty when graph catalog is empty.",
+            path="requiredExperiences",
+        ))
+
+    claim_owner: dict[str, GraphExperienceCandidate] = {}
+    for candidate in catalog.candidates:
+        for claim_id in candidate.claim_ids:
+            if claim_id in claim_owner:
+                errors.append(ValidationIssue(
+                    code="duplicate_catalog_claim",
+                    reason=f"Claim ID appears in multiple catalog candidates: {claim_id}",
+                    path="graphCandidateCatalog",
+                ))
+            claim_owner[claim_id] = candidate
+
+    used_claims: set[str] = set()
+    used_main_keys: set[tuple[str | None, ExperienceCategory]] = set()
+    hydrated: list[RequiredExperience] = []
+    warnings: list[ValidationIssue] = []
+    for index, requirement in enumerate(draft.required_experiences):
+        path = f"requiredExperiences[{index}]"
+        candidate, issue = _candidate_for_requirement(requirement, catalog)
+        if issue is not None:
+            errors.append(ValidationIssue(issue[0], issue[1], path))
+            continue
+        assert candidate is not None
+
+        duplicate_claims = used_claims.intersection(requirement.claim_ids)
+        if duplicate_claims:
+            errors.append(ValidationIssue(
+                code="duplicate_claim",
+                reason=f"Claim is selected more than once: {sorted(duplicate_claims)[0]}",
+                path=f"{path}.claimIds",
+            ))
+        used_claims.update(requirement.claim_ids)
+
+        if requirement.category != candidate.category:
+            errors.append(ValidationIssue(
+                code="classification_mismatch",
+                reason=(f"category must match catalog candidate category "
+                        f"'{candidate.category.value}'."),
+                path=f"{path}.category",
+            ))
+        if requirement.category in {ExperienceCategory.meal, ExperienceCategory.food}:
+            # Meal/food candidates remain meal inputs and cannot be promoted to
+            # a main experience by the model.
+            if requirement.theme.casefold() in {"main", "main experience"}:
+                errors.append(ValidationIssue(
+                    code="meal_classification_invalid",
+                    reason="Meal/food candidates cannot be classified as main experience.",
+                    path=f"{path}.theme",
+                ))
+        if requirement.category is ExperienceCategory.main_experience:
+            diversity_key = (candidate.activity_id, candidate.category)
+            if diversity_key in used_main_keys:
+                warnings.append(ValidationIssue(
+                    code="diversity_warning",
+                    reason="Main experiences repeat an activity/category key.",
+                    path=path,
+                ))
+            used_main_keys.add(diversity_key)
+
+        hydrated.append(_hydrate_timing(requirement, candidate))
+
+    available_main_keys = {
+        (candidate.activity_id, candidate.category)
+        for candidate in catalog.candidates
+        if candidate.category not in {ExperienceCategory.meal, ExperienceCategory.food}
+    }
+    if len(available_main_keys) < len({
+        (item.activity_id, item.category)
+        for item in draft.required_experiences
+        if item.category is ExperienceCategory.main_experience
+    }):
+        warnings.append(ValidationIssue(
+            code="diversity_warning",
+            reason="Catalog does not contain enough distinct main activity/category candidates.",
+            path="requiredExperiences",
+        ))
+
+    if catalog.candidates:
+        for index, theme in enumerate(draft.trip_themes):
+            available = _theme_candidate_count(theme, catalog)
+            if theme.minimum_activities > available:
+                errors.append(ValidationIssue(
+                    code="minimum_activities_exceeds_candidates",
+                    reason=(f"minimumActivities={theme.minimum_activities} exceeds "
+                            f"available catalog candidates={available}."),
+                    path=f"tripThemes[{index}].minimumActivities",
+                ))
+
+    if errors:
+        return TripThemeValidationResult(output=None, errors=tuple(errors), warnings=tuple(warnings))
+    return TripThemeValidationResult(
+        output=draft.model_copy(update={"required_experiences": hydrated}),
+        warnings=tuple(warnings),
+    )
+
+
+def _find_forbidden_fields(value: Any, path: str = "") -> list[str]:
+    if isinstance(value, Mapping):
+        found: list[str] = []
+        for key, child in value.items():
+            key_path = f"{path}.{key}" if path else str(key)
+            if key in _FORBIDDEN_OUTPUT_FIELDS:
+                found.append(key_path)
+            found.extend(_find_forbidden_fields(child, key_path))
+        return found
+    if isinstance(value, list):
+        found = []
+        for index, child in enumerate(value):
+            found.extend(_find_forbidden_fields(child, f"{path}[{index}]"))
+        return found
+    return []
+
+
+def _candidate_for_requirement(
+    requirement: RequiredExperience,
+    catalog: GraphCandidateCatalog,
+) -> tuple[GraphExperienceCandidate | None, tuple[str, str] | None]:
+    claim_ids = set(requirement.claim_ids)
+    graph_claim_ids = {claim for candidate in catalog.candidates for claim in candidate.claim_ids}
+    graph_place_ids = {
+        place_id
+        for candidate in catalog.candidates
+        for place_id in (candidate.place_ids + candidate.anchor_place_ids + candidate.candidate_place_ids)
+    }
+    graph_activity_ids = {
+        candidate.activity_id for candidate in catalog.candidates if candidate.activity_id
+    }
+    for value in sorted(claim_ids - graph_claim_ids):
+        return None, ("unknown_graph_id", f"Unknown graph claim ID: {value}.")
+    for value in sorted(
+        (set(requirement.anchor_place_ids) | set(requirement.candidate_place_ids)) - graph_place_ids
+    ):
+        return None, ("unknown_graph_id", f"Unknown graph place ID: {value}.")
+    if requirement.activity_id and requirement.activity_id not in graph_activity_ids:
+        return None, ("unknown_graph_id", f"Unknown graph activity ID: {requirement.activity_id}.")
+
+    if requirement.selection_policy is RequiredExperienceSelectionPolicy.required_anchor:
+        required_ids = set(requirement.anchor_place_ids)
+        candidates = [c for c in catalog.candidates if required_ids.issubset(set(c.anchor_place_ids))]
+    elif requirement.selection_policy is RequiredExperienceSelectionPolicy.choose_one:
+        required_ids = set(requirement.candidate_place_ids)
+        candidates = [c for c in catalog.candidates if required_ids.issubset(set(c.candidate_place_ids or c.place_ids))]
+    else:
+        candidates = [c for c in catalog.candidates if c.activity_id == requirement.activity_id]
+
+    candidates = [c for c in candidates if claim_ids.issubset(set(c.claim_ids))]
+    identifier_candidates = candidates
+    candidates = [c for c in candidates if set(requirement.source_refs).issubset(set(c.source_refs))]
+    if not candidates:
+        if identifier_candidates and requirement.source_refs:
+            return None, ("provenance_mismatch", "claimIds and sourceRefs do not belong to one catalog candidate.")
+        return None, ("selection_policy_invalid", "Selected graph IDs do not satisfy one catalog candidate and selection policy.")
+
+    candidate = candidates[0]
+    if requirement.selection_policy is RequiredExperienceSelectionPolicy.choose_one:
+        count = len(set(candidate.candidate_place_ids or candidate.place_ids))
+        if requirement.minimum_required > count:
+            return None, ("minimum_required_exceeds_candidates", "minimumRequired exceeds candidate places in the selected graph candidate.")
+    return candidate, None
+
+
+def _hydrate_timing(requirement: RequiredExperience, candidate: GraphExperienceCandidate) -> RequiredExperience:
+    recommendation = candidate.recommendation
+    windows = _normalize_preferred_time_windows(recommendation.timeSlots) if recommendation else []
+    duration = (
+        recommendation.recommendedVisitMinutes
+        if recommendation and recommendation.recommendedVisitMinutes is not None
+        and 15 <= recommendation.recommendedVisitMinutes <= 720
+        else None
+    )
+    return requirement.model_copy(update={
+        "preferred_time_windows": windows,
+        "recommended_visit_minutes": duration,
+    })
+
+
+def _theme_candidate_count(theme: Any, catalog: GraphCandidateCatalog) -> int:
+    # Theme focus tags are narrative guidance, not graph IDs. The bounded
+    # catalog is therefore the only deterministic count available at this
+    # stage; category/route fitting belongs to PlaceSelector.
+    return len(catalog.candidates)
 
 
 def validate_required_experience(
