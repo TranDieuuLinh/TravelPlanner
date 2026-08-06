@@ -1,0 +1,18 @@
+{
+  "sourceRefs": ["fixture://kg-theme-selector/v1"],
+  "hanoi": [
+    {"id": "place-ho-guom", "name": "Ho Guom", "type": "TravelPlace", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-lake-walk", "activityName": "Ho Guom cultural walk", "category": "nature", "timeSlots": ["08:00-10:00"], "priority": "must"},
+    {"id": "place-lang-bac", "name": "Lang Bac", "type": "TravelPlace", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-history", "activityName": "Lang Bac history visit", "category": "history", "timeSlots": ["09:00-11:00"], "priority": "must"},
+    {"id": "place-puppet", "name": "Water Puppet Theatre", "type": "TravelPlace", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-puppet", "activityName": "Water puppet culture show", "category": "culture", "timeSlots": ["18:00-20:00"], "priority": "recommended"},
+    {"id": "place-pho", "name": "Pho restaurant", "type": "Restaurant", "predicate": "OFFERS_ACTIVITY", "activityId": "activity-pho", "activityName": "Pho meal", "category": "meal", "timeSlots": ["11:30-13:00"], "priority": "recommended"},
+    {"id": "place-bun-cha", "name": "Bun cha restaurant", "type": "Restaurant", "predicate": "OFFERS_ACTIVITY", "activityId": "activity-bun-cha", "activityName": "Bun cha meal", "category": "meal", "timeSlots": ["18:00-19:00"], "priority": "recommended"}
+  ],
+  "group": [
+    {"id": "place-family-museum", "name": "Family Museum", "type": "TravelPlace", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-museum", "activityName": "Family museum", "category": "culture", "timeSlots": ["09:00-11:00"], "priority": "recommended"},
+    {"id": "place-bar", "name": "Hanoi bar", "type": "DrinkDessert", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-bar", "activityName": "Nightlife bar", "category": "nightlife", "priority": "recommended", "fit": "conflicted", "fitReason": "not suitable for children and older travelers"}
+  ],
+  "missingData": [
+    {"id": "place-unknown", "name": "Unresolved venue", "type": "TravelPlace", "predicate": "SPECIAL_EXPERIENCE", "activityId": "activity-unknown", "activityName": "Unresolved experience", "category": "main_experience", "fit": "unknown", "fitReason": "missing provenance and coordinates"}
+  ],
+  "regression": {"foodCount": 20, "nonFoodCount": 1}
+}
