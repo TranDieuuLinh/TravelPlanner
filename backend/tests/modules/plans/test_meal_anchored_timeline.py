@@ -136,6 +136,58 @@ def test_timeline_overflows_activity_when_route_time_misses_next_meal() -> None:
     assert next(item for item in scheduled if item.role == "lunch_meal").time_window == "12:10-13:10"
 
 
+def test_shifted_meal_refits_following_activity_and_uses_default_transition() -> None:
+    breakfast = _item(
+        "breakfast",
+        "Breakfast",
+        "08:00-09:00",
+        duration=60,
+        role="breakfast_meal",
+        category="food",
+    )
+    morning = _item(
+        "morning",
+        "Long morning",
+        "09:00-11:30",
+        duration=170,
+        role="main_activity_1",
+    )
+    lunch = _item(
+        "lunch",
+        "Lunch",
+        "12:00-13:00",
+        duration=60,
+        role="lunch_meal",
+        category="food",
+    )
+    afternoon = _item(
+        "afternoon",
+        "Afternoon",
+        "13:00-14:00",
+        duration=60,
+        role="main_activity_2",
+    )
+
+    scheduled, overflow = PlaceSelectorService._apply_travel_aware_timeline(
+        [breakfast, morning, lunch, afternoon],
+        [
+            _leg(breakfast, morning, 20),
+            _leg(morning, lunch, 30),
+        ],
+    )
+
+    assert overflow == []
+    assert {
+        item.name: item.time_window
+        for item in scheduled
+    } == {
+        "Breakfast": "08:00-09:00",
+        "Long morning": "09:20-12:10",
+        "Lunch": "12:40-13:40",
+        "Afternoon": "13:55-14:55",
+    }
+
+
 def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -> None:
     selector = PlaceSelectorService(
         route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer())

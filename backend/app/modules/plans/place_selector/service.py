@@ -1520,6 +1520,24 @@ class PlaceSelectorService:
                             )
                         )
                     if candidate is None:
+                        # Preserve the uncovered part of the window as free time.
+                        free_block = DayBlock(
+                            role="free_time",
+                            time_window=format_clock_window(
+                                cursor,
+                                available_window.end_minutes - cursor,
+                            ),
+                            duration_minutes=available_window.end_minutes - cursor,
+                            activity=False,
+                            optional=True,
+                            kind="break",
+                        )
+                        day_items.append(self._build_non_activity_item(free_block))
+                        self.status_tracker.apply_break(
+                            user_status,
+                            plan_status,
+                            free_block,
+                        )
                         break
                     cursor = candidate_start
                     selected_source = candidate.stable_ref in selected_by_ref
@@ -1702,10 +1720,29 @@ class PlaceSelectorService:
                 preferred_modes=preferred_modes,
                 avoid_modes=avoid_modes,
             )
+            prefit_items = routed_items
             routed_items, overflow_items = self._apply_travel_aware_timeline(
                 routed_items,
                 transport_legs,
             )
+            original_windows = {
+                item.item_id: item.time_window
+                for item in prefit_items
+                if item.item_id is not None
+            }
+            for item in routed_items:
+                original_window = original_windows.get(item.item_id)
+                if (
+                    item.role in {anchor.role for anchor in MEAL_ANCHORS}
+                    and original_window is not None
+                    and item.time_window != original_window
+                ):
+                    message = (
+                        f"Day {day.day} moved {item.role} from {original_window} "
+                        f"to {item.time_window} to preserve route feasibility."
+                    )
+                    warnings.append(message)
+                    plan_status.warnings.append(message)
             if overflow_items:
                 overflow_for_retry.extend(overflow_items)
                 overflow_names = ", ".join(item.name for item in overflow_items)
@@ -1874,121 +1911,16 @@ class PlaceSelectorService:
         presentation/enrichment concern outside timeline capacity.
         """
 
-        leg_minutes = {
-            (leg.from_item_id, leg.to_item_id): leg.estimated_duration_minutes
-            for leg in transport_legs
-            if leg.from_item_id is not None and leg.to_item_id is not None
-        }
-        meal_by_role = {
-            item.role: item for item in items if item.timeline_category == "food"
-        }
-        activities = [item for item in items if item.timeline_category == "activity"]
-        scheduled: list[PlanItem] = list(meal_by_role.values())
-        overflow: list[PlanItem] = []
-
-        for index, window in enumerate(ACTIVITY_WINDOWS):
-            window_activities = [
-                item
-                for item in activities
-                if (
-                    (start := parse_clock_minutes(item.time_window)) is not None
-                    and window.start_minutes <= start < window.end_minutes
-                )
-            ]
-            window_activities.sort(
-                key=lambda item: (
-                    parse_clock_minutes(item.time_window) or window.start_minutes,
-                    item.name.casefold(),
-                )
-            )
-            previous = meal_by_role.get(MEAL_ANCHORS[index].role)
-            next_meal = (
-                meal_by_role.get(MEAL_ANCHORS[index + 1].role)
-                if index + 1 < len(MEAL_ANCHORS)
-                else None
-            )
-            # Permit a small overrun into the flexible meal window. The meal
-            # itself is shifted after the final activity instead of being
-            # treated as a hard 12:00/18:00 wall.
-            anchor = (
-                MEAL_ANCHORS[index + 1]
-                if index + 1 < len(MEAL_ANCHORS)
-                else MEAL_ANCHORS[index]
-            )
-            flexible_end = min(anchor.latest, window.end_minutes + 60)
-            window_end = max(window.end_minutes, flexible_end)
-            cursor = window.start_minutes
-            for activity in window_activities:
-                inbound = (
-                    leg_minutes.get(
-                        (previous.item_id, activity.item_id),
-                        DEFAULT_TRANSITION_MINUTES,
-                    )
-                    if previous is not None
-                    else 0
-                )
-                start = cursor + inbound
-                duration = activity.duration_minutes or selected_activity_duration(None)
-                preferred_start = preferred_start_minutes(
-                    activity.preferred_time_windows,
-                    interval_start=start,
-                    interval_end=window_end,
-                    duration_minutes=duration,
-                )
-                if preferred_start is not None:
-                    start = preferred_start
-                end = start + duration
-                outbound = (
-                    leg_minutes.get(
-                        (activity.item_id, next_meal.item_id),
-                        DEFAULT_TRANSITION_MINUTES,
-                    )
-                    if next_meal is not None
-                    else 0
-                )
-                if end + outbound > window_end:
-                    overflow.append(activity)
-                    continue
-                scheduled.append(
-                    activity.model_copy(
-                        update={"time_window": format_clock_window(start, duration)}
-                    )
-                )
-                cursor = end
-                previous = activity
-
-            next_meal = meal_by_role.get(anchor.role)
-            if index + 1 < len(MEAL_ANCHORS) and next_meal is not None and previous is not None:
-                inbound_to_meal = leg_minutes.get(
-                    (previous.item_id, next_meal.item_id), DEFAULT_TRANSITION_MINUTES
-                )
-                meal_start = max(anchor.earliest, anchor.start_minutes, cursor + inbound_to_meal)
-                meal_start = min(meal_start, anchor.latest)
-                if meal_start != parse_clock_minutes(next_meal.time_window):
-                    meal_by_role[anchor.role] = next_meal.model_copy(
-                        update={
-                            "time_window": format_clock_window(
-                                meal_start, next_meal.duration_minutes or anchor.duration_minutes
-                            )
-                        }
-                    )
-
-        # Rebuild the scheduled list with any shifted meal anchors.
-        scheduled = [
-            *meal_by_role.values(),
-            *(item for item in scheduled if item.timeline_category == "activity"),
-        ]
-
-        return (
-            sorted(
-                scheduled,
-                key=lambda item: (
-                    parse_clock_minutes(item.time_window) or 0,
-                    item.name.casefold(),
-                ),
-            ),
-            overflow,
+        status = PlaceSelectionStatus()
+        warnings: list[str] = []
+        result = TimelineFitter().fit(
+            items,
+            transport_legs,
+            day=1,
+            warnings=warnings,
+            plan_status=status,
         )
+        return result.items, result.overflow_items
 
     def _retry_overflow_on_other_day(
         self,

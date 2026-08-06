@@ -209,6 +209,15 @@ class CandidateSelector:
             ):
                 return None
             candidate = self._selected_to_candidate(selected, context.brief)
+            if (
+                context.block.kind != "meal"
+                and place_category(candidate) == "food_drink"
+            ):
+                context.rejected_selected_places[candidate.stable_ref] = CandidateRejection(
+                    "slot_category_mismatch",
+                    "Food and drink places are reserved for meal anchors, not main activities.",
+                )
+                return None
             rejection = self._candidate_rejection(
                 candidate,
                 context.block,
@@ -306,6 +315,16 @@ class CandidateSelector:
             context.plan_status,
         )
 
+        # Prefer a new semantic category/activity, while retaining candidates
+        # when the catalog is genuinely sparse.
+        used_tags = {tag.casefold() for tag in context.plan_status.visited_tag_counts}
+        unique_candidates.sort(
+            key=lambda candidate: (
+                candidate.stable_ref not in context.selected_by_ref,
+                bool(used_tags.intersection(tag.casefold() for tag in candidate.tags)),
+            )
+        )
+
         attempts = 0
         for candidate in unique_candidates:
             if attempts >= self.max_candidates_per_block:
@@ -313,6 +332,16 @@ class CandidateSelector:
             attempts += 1
             candidate_ref = candidate.stable_ref
             if candidate_ref in context.plan_status.used_place_ids:
+                continue
+            if (
+                context.block.kind != "meal"
+                and place_category(candidate) == "food_drink"
+            ):
+                if candidate_ref in context.selected_by_ref:
+                    context.rejected_selected_places[candidate_ref] = CandidateRejection(
+                        "slot_category_mismatch",
+                        "Food and drink places are reserved for meal anchors, not main activities.",
+                    )
                 continue
             rejection = self._candidate_rejection(
                 candidate,

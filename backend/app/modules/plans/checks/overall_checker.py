@@ -174,7 +174,7 @@ class OverallChecker:
                 issues.append(
                     CheckIssue(
                         code="meal_anchor_moved",
-                        severity="error",
+                        severity="warning",
                         message=f"{item.role} on day {day.day} moved from {expected}.",
                         affectedItemIds=[item.item_id] if item.item_id else [],
                         evidence=[item.time_window, expected],

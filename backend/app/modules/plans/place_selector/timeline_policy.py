@@ -10,6 +10,7 @@ DAY_END_MINUTES = 21 * 60
 DEFAULT_ACTIVITY_DURATION_MINUTES = 90
 DEFAULT_TRANSITION_MINUTES = 15
 MINIMUM_FILLABLE_GAP_MINUTES = 45
+MAX_MAIN_FOOD_RATIO = 0.4
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,28 @@ def hint_matches_activity_window(hint: str | None, index: int) -> bool:
 
 def selected_activity_duration(source_duration_minutes: int | None) -> int:
     return source_duration_minutes or DEFAULT_ACTIVITY_DURATION_MINUTES
+
+
+def resolve_timing_precedence(
+    edge_time_slots: list | None,
+    node_best_time_slots: list | None,
+    generic_window: str | None,
+) -> list | str | None:
+    """Apply graph timing precedence without inventing a new output field."""
+    return edge_time_slots or node_best_time_slots or generic_window
+
+
+def resolve_duration_precedence(
+    edge_recommended_visit_minutes: int | None,
+    node_typical_duration_minutes: int | None,
+    default_minutes: int = DEFAULT_ACTIVITY_DURATION_MINUTES,
+) -> int:
+    """Apply edge, node, then selector-default duration precedence."""
+    return (
+        edge_recommended_visit_minutes
+        or node_typical_duration_minutes
+        or default_minutes
+    )
 
 
 def activity_allocation_cost(source_duration_minutes: int | None) -> int:
