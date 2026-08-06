@@ -9,7 +9,7 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.preferences.schema import PreferenceDimension
 
 
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v3"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v4"
 
 _THEME_PROFILE_DIMENSIONS = {
     PreferenceDimension.category,
@@ -37,12 +37,13 @@ Available bounded context:
 - festivalDiscovery: Reference for timing activities around local events
   or avoiding planning during peak holiday periods.
 - graphCandidateCatalog: A bounded, evidence-backed catalog of selectable graph
-  experiences. Each candidate exposes:
+  experiences from the current knowledge-graph schema. The catalog is the only
+  source of concrete places for this stage. Each candidate exposes:
   - claimIds: identifiers of the underlying GraphEvidenceClaim rows.
-  - placeIds: anchored Place identifiers supported by those claims.
-  - anchorPlaceIds: Place identifiers that may serve as the must-visit anchor.
-  - activityId: the Activity identifier when the candidate represents an activity
-    that one of several places offers.
+  - placeIds: all Place identifiers supported by those claims.
+  - anchorPlaceIds: concrete Place identifiers where the experience happens.
+  - activityId: the graph Activity identifier. An Activity is not itself a
+    visitable place; resolve it through anchorPlaceIds or candidatePlaceIds.
   - activityName and anchorPlaceNames: display labels used only to understand
     and compare candidates; selection still uses IDs.
   - isSpecialExperience, recommendation, trust, rank and rankReasons: bounded
@@ -65,6 +66,15 @@ Planning rules:
    Do not return calendar days, day briefs, route buckets, journey phases, or
    Place allocations. PlaceSelector performs all day and route allocation.
 2. requiredExperiences list the must-cover experiences the trip must include.
+   Valid category values include main_experience, culture, history, nature,
+   outdoor, active, meal, food, nightlife, supporting_stop, and optional.
+   Use meal or food only for a food stop; use culture/history/nature/
+   main_experience for museums, temples, lakes, monuments, historic streets,
+   and landmarks. If graphCandidateCatalog has selectable candidates and the
+   trip is ready, requiredExperiences MUST contain at least one non-meal
+   candidate. For a 2-day trip, prefer two distinct non-meal candidates when
+   the catalog has enough supported candidates. Never return an empty list
+   merely because the user did not explicitly select a Place.
    Each entry MUST use only IDs from graphCandidateCatalog:
    - selectionPolicy="required_anchor": set anchorPlaceIds to exactly one
      placeId from a single candidate whose activity matches the experience.
@@ -86,9 +96,12 @@ Planning rules:
    and local life when verified evidence supports them.
    Select main experiences for diversity by activityId and semantic category,
    not by distinct Place names. Do not repeat an activityId or category while
-   another supported candidate remains. Restaurants and meal candidates are
-   meal inputs, not main experiences; food/drink must not dominate main
-   experiences when culture, history, or nature candidates remain.
+   another supported candidate remains. Restaurants, cafes, DrinkDessert
+   places, and meal candidates are meal inputs, not main experiences.
+   Food/drink must not dominate main experiences when culture, history,
+   nature, or other non-food candidates remain. A restaurant-backed Activity
+   is still a meal unless the catalog category explicitly identifies it as a
+   non-food experience.
    Exclude or lower-prioritize bars/nightlife, strenuous physical activities,
    and outdoor activities when party, accessibility, or evidence does not
    support them.
@@ -102,7 +115,10 @@ Planning rules:
    riding as the theme of every day.
 6. Use only the root regionKey or region keys already present on selectedPlaces.
 7. Use graphCandidateCatalog as the only authority for concrete required
-   experiences. An empty catalog means requiredExperiences must be empty.
+   experiences. An empty catalog means requiredExperiences must be empty and
+   assumptions/warnings must say that graph evidence was unavailable. A
+   non-empty catalog means the planner must select from it; do not fall back
+   to generic city knowledge, free-text place names, or tag-only suggestions.
 8. Do not allocate selectedPlaces to days. Keep valid selected Places available
    for downstream route allocation; use unallocatedSelectedPlaces only for a
    deterministic hard-constraint rejection.
