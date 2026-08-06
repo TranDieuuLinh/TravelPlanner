@@ -28,6 +28,13 @@ function formatDate(value: string): string {
   }).format(new Date(year, month - 1, day));
 }
 
+function addTripDays(value: string, durationDays = 3): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + Math.max(0, durationDays - 1));
+  return date.toISOString().slice(0, 10);
+}
+
 export function TripKickoffCard({
   initialDestination = "",
   onContinue,
@@ -106,8 +113,11 @@ export function TripKickoffCard({
               <small>Bắt đầu</small>
               <input
                 aria-label="Ngày bắt đầu"
-                max={endDate || undefined}
-                onChange={(event) => setStartDate(event.target.value)}
+                onChange={(event) => {
+                  const nextStartDate = event.target.value;
+                  setStartDate(nextStartDate);
+                  setEndDate(nextStartDate ? addTripDays(nextStartDate) : "");
+                }}
                 type="date"
                 value={startDate}
               />

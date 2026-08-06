@@ -62,6 +62,15 @@ Gallery được giữ riêng trong `knowledge_entity_images` để hỗ trợ n
 FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
 `place_opening_hours` và `place_amenities` không còn tồn tại.
 
+Giá vé TravelPlace được làm giàu theo batch bằng
+`scripts/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
+lưu trong property JSON `admission_price`; giá đại diện bằng VND được chiếu thêm
+vào `admission_fee_vnd` để các research tool hiện tại đọc được. JSON giữ khoảng
+giá, đơn vị tính, thời điểm lấy, model, confidence và danh sách nguồn. Kết quả
+không tìm thấy, nhập nhằng hoặc lỗi provider chỉ nằm trong cache resume, không
+được ghi thành giá của entity. Script mặc định không thay đổi database và chỉ
+ghi khi operator truyền `--apply`.
+
 ### Đối tượng giá trị của Planner
 
 - `TripIntent`: aggregate bền vững có version cho một trip chat, gồm

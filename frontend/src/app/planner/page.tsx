@@ -349,6 +349,25 @@ function tripDaysBetween(startDate: string, endDate: string): number {
   return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
 }
 
+function addTripDays(startDate: string, durationDays = 3): string {
+  const date = new Date(`${startDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + Math.max(0, durationDays - 1));
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultTripEndDate(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+  durationDays: number | null | undefined
+): string {
+  if (!startDate) return endDate ?? "";
+  const days = durationDays && durationDays > 0 ? durationDays : 3;
+  return !endDate || (days === 3 && endDate === startDate)
+    ? addTripDays(startDate, days)
+    : endDate;
+}
+
 function budgetFromAnswer(answer: string, current: TripIntent["budget"]) {
   const normalized = answer.trim().toLocaleLowerCase("vi-VN");
   const digits = normalized.replace(/[^\d]/g, "");
@@ -1236,6 +1255,7 @@ function Planner() {
     sourceLabel: string | null;
     personalNotes: string;
   } | null>(null);
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [openQuickActionKey, setOpenQuickActionKey] = useState<string | null>(
     null
   );
@@ -1253,12 +1273,17 @@ function Planner() {
   useEffect(() => {
     if (!noteEditor) return;
 
+    const focusFrame = window.requestAnimationFrame(() => {
+      noteTextareaRef.current?.focus({ preventScroll: true });
+    });
+
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !mutatingItem) setNoteEditor(null);
     };
     window.addEventListener("keydown", closeOnEscape);
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [mutatingItem, noteEditor]);
@@ -3428,7 +3453,13 @@ function Planner() {
     if (intent) {
       setGuidedIntakeAnswers(guidedAnswersFromTripIntent(intent));
       setGuidedStartDate(intent.timing.startDate ?? "");
-      setGuidedEndDate(intent.timing.endDate ?? "");
+      setGuidedEndDate(
+        defaultTripEndDate(
+          intent.timing.startDate,
+          intent.timing.endDate,
+          intent.timing.days
+        )
+      );
       setTravelerCounts({
         adults: intent.travelParty.adults,
         children: intent.travelParty.children,
@@ -3884,7 +3915,13 @@ function Planner() {
         : {}
     );
     setGuidedStartDate(chat.currentTripIntent?.timing.startDate ?? "");
-    setGuidedEndDate(chat.currentTripIntent?.timing.endDate ?? "");
+    setGuidedEndDate(
+      defaultTripEndDate(
+        chat.currentTripIntent?.timing.startDate,
+        chat.currentTripIntent?.timing.endDate,
+        chat.currentTripIntent?.timing.days
+      )
+    );
     if (chat.currentTripIntent) {
       setTravelerCounts({
         adults: chat.currentTripIntent.travelParty.adults,
@@ -4112,9 +4149,6 @@ function Planner() {
                         type="button"
                       >
                         <span className="plannerIntakeCopy">{label}</span>
-                        {value ? (
-                          <small className="plannerIntakeValue">{value}</small>
-                        ) : null}
                       </button>
                     );
                   })}
@@ -4361,10 +4395,19 @@ function Planner() {
                               <span>Ngày bắt đầu</span>
                               <input
                                 aria-label="Ngày bắt đầu"
-                                max={guidedEndDate || undefined}
-                                onChange={(event) =>
-                                  setGuidedStartDate(event.target.value)
-                                }
+                                onChange={(event) => {
+                                  const nextStartDate = event.target.value;
+                                  setGuidedStartDate(nextStartDate);
+                                  setGuidedEndDate(
+                                    nextStartDate
+                                      ? addTripDays(
+                                          nextStartDate,
+                                          exploreResult?.explorer.tripIntent.timing
+                                            .days ?? 3
+                                        )
+                                      : ""
+                                  );
+                                }}
                                 type="date"
                                 value={guidedStartDate}
                               />
@@ -4711,9 +4754,6 @@ function Planner() {
                                 type="button"
                               >
                                 <span className="plannerIntakeCopy">{label}</span>
-                                {value ? (
-                                  <small className="plannerIntakeValue">{value}</small>
-                                ) : null}
                               </button>
                             );
                           })}
@@ -5456,7 +5496,6 @@ function Planner() {
                                         Ghi chú của bạn
                                       </label>
                                       <textarea
-                                        autoFocus
                                         id={`${notePanelId}-personal`}
                                         name="personalNotes"
                                         onChange={(event) =>
@@ -5469,6 +5508,7 @@ function Planner() {
                                         readOnly={
                                           !noteEditor.itemId || !activeChatId
                                         }
+                                        ref={noteTextareaRef}
                                         rows={4}
                                         value={noteEditor.personalNotes}
                                       />
@@ -6000,8 +6040,8 @@ function Planner() {
                                               ) : null}
                                               {itemNoteAction}
                                             </div>
-                                            {itemNotePanel}
                                           </div>
+                                          {itemNotePanel}
                                         </article>
                                       )}
                                     </div>

@@ -414,6 +414,27 @@ Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI ph�
   thị ngày cập nhật plan.
 - Nếu không thể làm mới dữ liệu, phải hiển thị trạng thái cũ thay vì che giấu.
 
+### Enrichment giá TravelPlace
+
+CLI `scripts/enrich_travel_place_prices.py` dùng Gemini Google Search grounding
+để nghiên cứu giá vé công khai cho đúng entity `TravelPlace`. Query mang tên,
+địa chỉ, thành phố, quốc gia và URL identity đã có; source web luôn là dữ liệu
+không tin cậy. Model phải trả structured output và chỉ tham chiếu nguồn bằng
+index của `groundingChunks`; URL do model tự viết không được dùng làm provenance.
+
+Lệnh mặc định ưu tiên entity có nhiều review, chỉ nghiên cứu tối đa 10 entity,
+không ghi database và append kết quả đã chuẩn hóa vào JSONL cache để resume.
+`--apply` chỉ upsert kết quả `verified_price` hoặc `verified_free` có ít nhất một
+grounded source. `--overwrite` là bắt buộc nếu entity đã có giá; kết quả thủ
+công/provider khác không bị ghi đè mặc định. `--refresh` bỏ qua terminal cache
+để nghiên cứu lại. Search grounding có thể phát sinh phí theo model/số query,
+vì vậy operator phải dùng `--limit`, quota provider và theo dõi chi phí trước
+khi mở rộng tới toàn bộ catalog.
+
+Giá đầy đủ được lưu ở `admission_price`; `admission_fee_vnd` chỉ là giá đại diện
+được chiếu từ cùng snapshot khi currency là VND. Không tự đổi ngoại tệ và không
+dùng giá danh mục chung để giả làm giá của một địa điểm cụ thể.
+
 ## Tích hợp đặt dịch vụ
 
 Bắt đầu bằng deep link hoặc một tích hợp đối tác. Tách nội dung lịch trình khỏi

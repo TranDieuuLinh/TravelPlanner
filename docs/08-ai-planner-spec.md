@@ -552,6 +552,10 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 ## Vận hành câu lệnh và mô hình
 
 - Version hóa prompt và output schema.
+- Enrichment giá TravelPlace dùng Gemini Google Search grounding qua
+  `LLMClient.generate_grounded_structured_json`. Model chỉ đề xuất JSON; code
+  kiểm tra exact identity, schema, amount và citation index trước khi cho phép
+  lưu. Không có grounded source thì kết quả phải ở trạng thái `ambiguous`.
 - Ghi model/provider/version và phiên bản evaluation, không ghi toàn bộ prompt
   riêng tư.
 - Đặt timeout và retry có giới hạn. Gemini runtime hiện retry tối đa ba lần với
@@ -567,6 +571,10 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
   kế tiếp ngay. Key trả `401/403` bị loại khỏi pool cho đến khi tiến trình khởi
   động lại. API key không được ghi vào log.
   Circuit breaker vẫn là phần chưa triển khai.
+- Pool price research đọc `GEMINI_PRICE_API_KEYS` khi có, nếu không dùng toàn bộ
+  key trong `GEMINI_API_KEY`. Client round-robin cả sau request thành công,
+  cooldown key trả `429` và disable key trả `401/403`. Nhiều key không mặc định
+  làm tăng quota nếu chúng thuộc cùng Google project.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.

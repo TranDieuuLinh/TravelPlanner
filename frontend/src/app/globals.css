@@ -1934,11 +1934,18 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .activityNotesInlinePanel {
   display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   gap: 10px;
   border-top: 1px solid rgba(54, 95, 90, .12);
   padding: 14px;
   background: linear-gradient(180deg, rgba(245, 247, 243, .52), #ffffff 38%);
   animation: activityNoteDropIn .22s cubic-bezier(.2, .75, .25, 1);
+}
+.activityNotesInlinePanel > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .activityNotesInlinePanel > label {
   color: #44605b;
@@ -1947,7 +1954,10 @@ h1, h2, h3, p { margin-top: 0; }
   letter-spacing: .01em;
 }
 .activityNotesInlinePanel > textarea {
+  display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 96px;
   resize: vertical;
   border: 1px solid rgba(23, 32, 51, .12);
@@ -1970,10 +1980,14 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .activityNotesReferences {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 7px;
 }
 .activityNotesReferences section {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 3px;
   border-left: 2px solid rgba(54, 95, 90, .34);
   padding: 5px 9px;
@@ -1983,10 +1997,14 @@ h1, h2, h3, p { margin-top: 0; }
   font-size: .54rem;
 }
 .activityNotesReferences p {
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   color: #425653;
   font-size: .61rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .activityNotesInlineActions {
   display: flex;
@@ -11824,8 +11842,8 @@ svg {
   }
 
   .itinerary .itineraryStop {
-    grid-template-columns: 22px minmax(0, 1fr);
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 
   .itinerary .itineraryStopPin,
@@ -13776,19 +13794,35 @@ svg {
 }
 
 .itinerary .activityNotesInlinePanel {
-  width: 100%;
+  width: auto;
   box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  align-content: start;
+  justify-self: stretch;
   margin-top: 0;
+  overflow: hidden;
+  border: 1px solid #dce7e4;
+  border-radius: 12px;
   order: 3;
 }
 
-.itinerary .itineraryPlaceCard > .activityNotesInlinePanel {
+.itinerary .itineraryStop > .activityNotesInlinePanel {
+  width: calc(100% - 8px);
+  max-width: calc(100% - 8px);
   grid-column: 1 / -1;
-  grid-row: 2;
+  justify-self: start;
 }
 
-.itinerary .itineraryPlaceCard--withDrag > .activityNotesInlinePanel {
-  grid-column: 2 / -1;
+.itinerary .activityNotesInlinePanel > textarea {
+  inline-size: 100%;
+  max-inline-size: 100%;
+}
+
+.itinerary .activityNotesInlineActions {
+  min-width: 0;
+  flex-wrap: wrap;
+  padding-bottom: 1px;
 }
 
 .itinerary .itineraryStop--activity .itineraryTypeIcon {
@@ -13893,17 +13927,6 @@ svg {
     grid-row: 2;
   }
 
-  .itinerary .itineraryPlaceCard--withImage.itineraryPlaceCard--withDrag > .activityNotesInlinePanel {
-    grid-column: 1;
-    grid-row: 4;
-  }
-
-  .itinerary .itineraryPlaceCard--withDrag:not(.itineraryPlaceCard--withImage) > .activityNotesInlinePanel,
-  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .activityNotesInlinePanel {
-    grid-column: 1;
-    grid-row: 3;
-  }
-
 }
 
 .plannerMapCanvasWrap {
@@ -13917,7 +13940,7 @@ svg {
 /* Direct columns: order, media, main content, and place type. */
 .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
 .itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
-  grid-template-columns: max-content 108px minmax(0, 1fr) max-content;
+  grid-template-columns: max-content 100px minmax(0, 1fr) max-content;
   align-items: start;
 }
 
@@ -13955,7 +13978,8 @@ svg {
   grid-column: 3;
   grid-row: 1;
   min-width: 0;
-  padding-right: 38px;
+  padding-left: 8px;
+  padding-right: 0;
   order: 0;
 }
 
@@ -13969,7 +13993,7 @@ svg {
 /* Keep settings, source, and place type on one evenly spaced vertical rail. */
 .itinerary .itineraryPlaceQuickActions {
   top: 12px;
-  right: 12px;
+  right: -12px;
   bottom: 12px;
   align-items: center;
   justify-content: space-between;
@@ -14047,14 +14071,17 @@ svg {
   bottom: 0;
   left: 0;
   display: inline-grid;
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  flex: 0 0 28px;
+  width: auto;
+  min-width: 66px;
+  height: 32px;
+  min-height: 32px;
+  flex: 0 0 auto;
+  grid-template-columns: auto auto;
+  gap: 4px;
   place-items: center;
   border: 1px solid #d7e3df;
   border-radius: 8px;
-  padding: 0;
+  padding: 0 8px;
   background: #fff;
   color: #315a54;
   box-shadow: none;
@@ -14095,11 +14122,174 @@ svg {
   font-size: .5rem;
 }
 
+/* Keep the note label visible beside its icon at every card width. */
+.itinerary .itineraryPlaceContent > .itineraryNoteActionButton .itineraryNoteActionLabel {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  color: currentColor;
+  font-size: .62rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Long place names, review text, and route controls must yield to the card
+   width instead of creating a horizontal scrollbar. */
+.itinerary .itineraryPlaceCard,
+.itinerary .itineraryPlaceCard > *,
+.itinerary .itineraryPlaceContent,
+.itinerary .itineraryPlaceMain,
+.itinerary .itineraryPlaceCard header,
+.itinerary .itineraryRoute,
+.itinerary .itineraryRouteToolbar {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.itinerary .itineraryPlaceTitle,
+.itinerary .itineraryPlaceTitle > *,
+.itinerary .itineraryPlaceRating,
+.itinerary .itineraryRouteCopy,
+.itinerary .itineraryRouteChoicesButton {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.itinerary .itineraryPlaceTitle > strong,
+.itinerary .itineraryPlaceTitle .placeMapButton,
+.itinerary .itineraryRouteCopy small,
+.itinerary .itineraryRouteChoicesButton {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  /* Give long place names a little more room beside the image and action rail. */
+  .itinerary .itineraryPlaceCard header > strong,
+  .itinerary .itineraryPlaceCard header .placeMapButton strong,
+  .itinerary .itineraryStop--food .itineraryPlaceCard header > strong,
+  .itinerary .itineraryStop--food .itineraryPlaceCard header .placeMapButton strong,
+  .itinerary .itineraryPlaceTitle > strong {
+    font-size: .78rem;
+    line-height: 1.3;
+  }
+
+  .itinerary .itineraryRouteToolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .itinerary .itineraryRouteLink {
+    min-width: 0;
+  }
+
+  .itinerary .itineraryRouteMapButton,
+  .itinerary .itineraryRouteChoicesButton {
+    min-width: 0;
+  }
+}
+
 @container itinerary-panel (max-width: 480px) {
   .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
   .itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
     grid-template-columns: max-content clamp(72px, 24cqw, 96px) minmax(0, 1fr) max-content;
     column-gap: 8px;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent {
+    padding-left: 4px;
+  }
+
+  .itinerary .itineraryPlaceTitle,
+  .itinerary .itineraryPlaceTitle > strong,
+  .itinerary .itineraryPlaceTitle > .placeMapButton,
+  .itinerary .itineraryPlaceTitle > .placeMapButton strong {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .itinerary .activityNotesInlinePanel {
+    inline-size: calc(100% - 8px);
+    max-inline-size: calc(100% - 8px);
+    grid-column: 1 / -1;
+    justify-self: start;
+    overflow: hidden;
+  }
+
+  .itinerary .activityNotesInlinePanel > *,
+  .itinerary .activityNotesReferences,
+  .itinerary .activityNotesReferences section,
+  .itinerary .activityNotesReferences p {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .itinerary .activityNotesReferences p {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .itinerary .itineraryPlaceContent > .itineraryNoteActionButton {
+    width: auto;
+    min-width: 58px;
+    height: 32px;
+    min-height: 32px;
+    grid-template-columns: auto auto;
+    gap: 4px;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+
+  .itinerary .itineraryPlaceContent {
+    padding-left: 6px;
+  }
+
+  .itinerary .itineraryPlaceContent > .itineraryNoteActionButton .itineraryNoteActionLabel {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    color: currentColor;
+    font-size: .62rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+}
+
+@container itinerary-panel (max-width: 360px) {
+  .itinerary .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+    grid-template-columns: max-content clamp(56px, 21cqw, 72px) minmax(0, 1fr);
+  }
+
+  .itinerary .itineraryPlaceImage,
+  .itinerary .itineraryStop--food .itineraryPlaceImage {
+    height: 76px;
+    min-height: 76px;
+  }
+
+  .itinerary .activityNotesInlinePanel {
+    padding-inline: 10px;
+  }
+
+  .itinerary .activityNotesInlineActions {
+    justify-content: stretch;
+  }
+
+  .itinerary .activityNotesInlineActions button {
+    width: 100%;
   }
 }
 
