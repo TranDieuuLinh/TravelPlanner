@@ -743,6 +743,28 @@ class RepositoryPlaceSelectionTool:
                 else None
             ),
             tags=[str(tag) for tag in tags if isinstance(tag, str)],
+            sourceRefs=(
+                [
+                    str(ref)
+                    for ref in (
+                        metadata.get("sourceRefs", metadata.get("source_refs", []))
+                        or []
+                    )
+                    if ref
+                ]
+                or ([place.source_link] if place.source_link else [])
+            ),
+            claimIds=[
+                str(claim)
+                for claim in (
+                    metadata.get("claimIds", metadata.get("claim_ids", [])) or []
+                )
+                if claim
+            ],
+            activityId=metadata.get("activityId", metadata.get("activity_id")),
+            experienceCategory=metadata.get(
+                "experienceCategory", metadata.get("experience_category")
+            ),
             latitude=(
                 float(place.latitude) if place.latitude is not None else None
             ),
@@ -775,6 +797,7 @@ class RepositoryPlaceSelectionTool:
                 if image_url
             ],
             dataConfidence=place.data_confidence,
+            sourceProvider=place.source_platform,
             sourceLink=place.source_link,
         )
 

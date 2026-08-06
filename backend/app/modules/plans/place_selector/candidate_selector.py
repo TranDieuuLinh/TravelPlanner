@@ -615,8 +615,13 @@ class CandidateSelector:
                     update={
                         "address": selected.address or stored_place.address,
                         "must_visit": selected.must_visit,
-                        "source_refs": list(selected.source_refs),
-                        "source_provider": selected.source_provider,
+                        "source_refs": list(selected.source_refs) or stored_place.source_refs,
+                        "claim_ids": list(selected.claim_ids) or stored_place.claim_ids,
+                        "activity_id": selected.activity_id or stored_place.activity_id,
+                        "experience_category": (
+                            selected.experience_category or stored_place.experience_category
+                        ),
+                        "source_provider": selected.source_provider or stored_place.source_provider,
                         "source_import_node_id": selected.source_import_node_id,
                         "candidate_entity_ids": list(selected.candidate_entity_ids),
                         "selection_method": selected.selection_method,
@@ -662,6 +667,9 @@ class CandidateSelector:
             longitude=selected.longitude,
             mustVisit=selected.must_visit,
             sourceRefs=selected.source_refs,
+            claimIds=selected.claim_ids,
+            activityId=selected.activity_id,
+            experienceCategory=selected.experience_category,
             sourceProvider=selected.source_provider,
             sourceImportNodeId=selected.source_import_node_id,
             candidateEntityIds=selected.candidate_entity_ids,
@@ -757,8 +765,7 @@ class CandidateSelector:
                 f"Place category {category} cannot fill a regular activity block.",
             )
         if (
-            not is_selected
-            and block.kind != "meal"
+            block.kind != "meal"
             and (
                 category == "food_drink"
                 or (

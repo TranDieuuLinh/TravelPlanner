@@ -13,6 +13,7 @@ from app.modules.plans.domain.entities import (
     PlanItem,
     PlanTransportLeg,
     TravelIntent,
+    ExperienceCategory,
     UnscheduledPlace,
     UserStatus,
     UserStatusLocation,
@@ -277,49 +278,51 @@ class PlaceSelectorService:
         resolved: list[SelectedPlaceContext] = []
         unresolved: list[UnscheduledPlace] = []
         for requirement in selection_input.required_experiences:
-            candidate_ids = (
-                requirement.anchor_place_ids
-                if requirement.selection_policy.value == "required_anchor"
-                else requirement.candidate_place_ids
-            )
+            policy = requirement.selection_policy.value
+            if policy == "required_anchor":
+                candidate_ids = requirement.anchor_place_ids
+            else:
+                candidate_ids = requirement.candidate_place_ids
+            if policy == "open_candidate":
+                candidate_ids = []
+                searched = self.place_tool.search(
+                    region_key=selection_input.region_key,
+                    target_tags=[requirement.theme, requirement.activity_id or ""],
+                    excluded_place_ids=set(existing),
+                    limit=max(requirement.minimum_required, 5),
+                )
+                candidate_ids = [candidate.stable_ref for candidate in searched]
+                for candidate in searched:
+                    if candidate.stable_ref not in existing:
+                        existing[candidate.stable_ref] = self._candidate_to_selected(
+                            candidate,
+                            requirement,
+                        )
             matched = 0
             attempted_ids: list[str] = []
             for place_id in candidate_ids:
-                if matched >= requirement.minimum_required:
+                if policy != "required_anchor" and matched >= requirement.minimum_required:
                     break
                 attempted_ids.append(place_id)
                 selected = existing.get(place_id)
                 if selected is None:
                     candidate = self.place_tool.get(place_id)
                     if candidate is not None:
-                        selected = SelectedPlaceContext(
-                            placeId=candidate.place_id,
-                            name=candidate.name,
-                            address=candidate.address,
-                            mustVisit=True,
-                            regionKey=candidate.region_key,
-                            latitude=candidate.latitude,
-                            longitude=candidate.longitude,
-                            tags=candidate.tags,
-                            sourceRefs=[
-                                *requirement.source_refs,
-                                f"required_experience:{requirement.requirement_id}",
-                            ],
-                            claimIds=list(requirement.claim_ids),
-                            activityId=requirement.activity_id,
-                            experienceCategory=requirement.category,
-                            sourceProvider=candidate.source_provider,
-                            notes=requirement.reason,
-                            imageUrls=candidate.image_urls,
-                            rating=candidate.rating,
-                            reviewCount=candidate.review_count,
-                            sourceActivity=requirement.theme,
-                            preferredTimeWindows=requirement.preferred_time_windows,
-                            sourceDurationMinutes=(
-                                requirement.recommended_visit_minutes
-                            ),
-                        )
+                        selected = self._candidate_to_selected(candidate, requirement)
                 else:
+                    selected_category = (
+                        ExperienceCategory.meal
+                        if place_category(
+                            self.candidate_selector._selected_to_candidate(
+                                selected, PlaceSelectionDay(
+                                    day=1,
+                                    theme=requirement.theme,
+                                    targetArea=selection_input.region_key,
+                                )
+                            )
+                        ) == "food_drink"
+                        else selected.experience_category or requirement.category
+                    )
                     selected = selected.model_copy(
                         update={
                             "must_visit": True,
@@ -339,9 +342,7 @@ class PlaceSelectorService:
                                 )
                             ),
                             "activity_id": selected.activity_id or requirement.activity_id,
-                            "experience_category": (
-                                selected.experience_category or requirement.category
-                            ),
+                            "experience_category": selected_category,
                             "source_activity": (
                                 selected.source_activity or requirement.theme
                             ),
@@ -361,7 +362,12 @@ class PlaceSelectorService:
                 if selected is not None:
                     resolved.append(selected)
                     matched += 1
-            if matched < requirement.minimum_required:
+            required_count = (
+                len(requirement.anchor_place_ids)
+                if policy == "required_anchor"
+                else requirement.minimum_required
+            )
+            if matched < required_count:
                 unresolved.append(
                     UnscheduledPlace(
                         placeId=(attempted_ids[-1] if attempted_ids else None),
@@ -373,6 +379,52 @@ class PlaceSelectorService:
                     )
                 )
         return resolved, unresolved
+
+    @staticmethod
+    def _candidate_to_selected(candidate: SelectablePlace, requirement) -> SelectedPlaceContext:
+        """Project a catalog candidate into the planner's selected-place contract."""
+        source_refs = list(
+            dict.fromkeys(
+                [
+                    *candidate.source_refs,
+                    *requirement.source_refs,
+                    f"required_experience:{requirement.requirement_id}",
+                ]
+            )
+        )
+        claim_ids = list(dict.fromkeys([*candidate.claim_ids, *requirement.claim_ids]))
+        category = (
+            ExperienceCategory.meal
+            if place_category(candidate) == "food_drink"
+            else requirement.category
+        )
+        return SelectedPlaceContext(
+            placeId=candidate.place_id,
+            name=candidate.name,
+            address=candidate.address,
+            mustVisit=True,
+            regionKey=candidate.region_key,
+            latitude=candidate.latitude,
+            longitude=candidate.longitude,
+            tags=candidate.tags,
+            sourceRefs=source_refs,
+            claimIds=claim_ids,
+            activityId=candidate.activity_id or requirement.activity_id,
+            experienceCategory=category,
+            sourceProvider=candidate.source_provider,
+            sourceImportNodeId=candidate.source_import_node_id,
+            candidateEntityIds=candidate.candidate_entity_ids,
+            selectionMethod=candidate.selection_method,
+            routeScore=candidate.route_score,
+            identityConfidence=candidate.identity_confidence,
+            notes=requirement.reason,
+            imageUrls=candidate.image_urls,
+            rating=candidate.rating,
+            reviewCount=candidate.review_count,
+            sourceActivity=requirement.theme,
+            preferredTimeWindows=requirement.preferred_time_windows,
+            sourceDurationMinutes=requirement.recommended_visit_minutes,
+        )
 
     @staticmethod
     def _build_selection_blueprint(
@@ -1070,6 +1122,13 @@ class PlaceSelectorService:
                     name=place.name,
                     reasonCode=rejection.reason_code,
                     reason=rejection.reason,
+                    address=place.address,
+                    latitude=place.latitude,
+                    longitude=place.longitude,
+                    tags=place.tags,
+                    sourceRefs=place.source_refs,
+                    sourceProvider=place.source_provider,
+                    sourceActivity=place.source_activity,
                 )
             )
         self._append_preferred_timing_warnings(
@@ -1636,6 +1695,13 @@ class PlaceSelectorService:
                     name=place.name,
                     reasonCode=rejection.reason_code,
                     reason=rejection.reason,
+                    address=place.address,
+                    latitude=place.latitude,
+                    longitude=place.longitude,
+                    tags=place.tags,
+                    sourceRefs=place.source_refs,
+                    sourceProvider=place.source_provider,
+                    sourceActivity=place.source_activity,
                 )
             )
         self._append_preferred_timing_warnings(
@@ -2028,6 +2094,7 @@ class PlaceSelectorService:
             if block.kind == "meal" or place_category(candidate) == "food_drink"
             else "activity"
         )
+        role = self._explicit_role(candidate, block, selected_source=selected_source)
         return PlanItem(
             itemId=str(uuid4()),
             placeId=candidate.place_id,
@@ -2045,7 +2112,7 @@ class PlaceSelectorService:
             ),
             timelineCategory=timeline_category,
             regionKey=candidate.region_key,
-            role=block.role,
+            role=role,
             source="selected_place" if selected_source else "finder_suggestion",
             durationMinutes=candidate_duration(candidate, block),
             activityIntensity=candidate.activity_intensity,
@@ -2077,6 +2144,33 @@ class PlaceSelectorService:
             sourceActivity=candidate.source_activity,
             preferredTimeWindows=candidate.preferred_time_windows,
         )
+
+    @staticmethod
+    def _explicit_role(
+        candidate: SelectablePlace,
+        block: DayBlock,
+        *,
+        selected_source: bool,
+    ) -> str:
+        """Keep experience semantics separate from the timeline slot name."""
+        if block.kind == "meal" or place_category(candidate) == "food_drink":
+            return "meal"
+        category = candidate.experience_category
+        if category in {
+            ExperienceCategory.main_experience,
+            ExperienceCategory.culture,
+            ExperienceCategory.history,
+            ExperienceCategory.nature,
+            ExperienceCategory.active,
+            ExperienceCategory.outdoor,
+        }:
+            return "main_experience"
+        if category is ExperienceCategory.supporting_stop:
+            return "supporting_stop"
+        if category is ExperienceCategory.optional or block.optional:
+            return "optional"
+        # Existing non-experience selection callers still use their stable slot roles.
+        return block.role
 
     def _resolve_place_for_style(
         self,
