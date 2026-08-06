@@ -14,7 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
@@ -28,12 +28,10 @@ import {
   addTripChatItem,
   calculateDayDirections,
   createTripChat,
-  createPlanFromExplorer,
   deleteAllTripChats,
   deleteUrlImportJob,
   deleteTripChat,
   enqueueTripChatUrls,
-  exploreFullIntake,
   getTripChat,
   listTripChats,
   listUrlImportJobs,
@@ -56,14 +54,6 @@ import {
   type TravelPlan,
 } from "@/lib/plans";
 import { useConversationTurn } from "@/lib/useConversationTurn";
-import {
-  enqueueGuestUrlJobs,
-  deleteGuestUrlJob,
-  GUEST_URL_JOBS_EVENT,
-  GUEST_URL_JOB_RESULT_EVENT,
-  listGuestUrlJobs,
-  type GuestUrlImportJob,
-} from "@/lib/guest-url-jobs";
 import {
   PlannerMap,
   type PlannerMapCurrentLocation,
@@ -407,6 +397,7 @@ export default function PlannerPage() {
 }
 
 function Planner() {
+  const router = useRouter();
   const params = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const initialChatId = params.get("chatId")?.trim() || null;
@@ -1017,56 +1008,6 @@ function Planner() {
     return () =>
       window.removeEventListener("vsf:url-jobs-snapshot", handleSnapshot);
   }, [user?.id]);
-
-  useEffect(() => {
-    const applyGuestResult = (job: GuestUrlImportJob) => {
-      if (job.status !== "succeeded" || !job.result) return;
-      setGuidedIntakeStep("complete");
-      setGuidedIntakeOpen(false);
-      setBackgroundPlanning(false);
-      setInitialPlanningActive(false);
-      setActivePlanningJobs([]);
-      setExploreResult(job.result.explore);
-      setPlan(job.result.plan);
-      setWorkflowStage("ready");
-      setSelectedMapPlaceKey(null);
-      setError("");
-    };
-    const handleGuestResult = (event: Event) => {
-      applyGuestResult((event as CustomEvent<GuestUrlImportJob>).detail);
-    };
-    const handleGuestJobs = (event: Event) => {
-      const jobs = (event as CustomEvent<GuestUrlImportJob[]>).detail ?? [];
-      const active = jobs.some(
-        (job) => job.status === "queued" || job.status === "running"
-      );
-      setBackgroundPlanning(active);
-      if (active) {
-        setWorkflowStage(
-          jobs.some(
-            (job) =>
-              (job.status === "queued" || job.status === "running") &&
-              job.phase === "planning"
-          )
-            ? "planning"
-            : "exploring"
-        );
-      }
-    };
-    window.addEventListener(GUEST_URL_JOB_RESULT_EVENT, handleGuestResult);
-    window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
-    const latest = listGuestUrlJobs()
-      .filter((job) => job.status === "succeeded" && job.result)
-      .sort(
-        (left, right) =>
-          Date.parse(right.finishedAt ?? "") - Date.parse(left.finishedAt ?? "")
-      )[0];
-    if (latest) applyGuestResult(latest);
-    return () => {
-      window.removeEventListener(GUEST_URL_JOB_RESULT_EVENT, handleGuestResult);
-      window.removeEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
-    };
-  }, []);
 
   const [editingItem, setEditingItem] = useState<{
     day: number;
@@ -3069,6 +3010,11 @@ function Planner() {
   }
 
   async function sendMessage(requestText?: string, displayUserMessage = true) {
+    if (!user) {
+      const next = `${window.location.pathname}${window.location.search}`;
+      router.push(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
     const typedText = requestText?.trim() ?? prompt.trim();
     if (!typedText) {
       setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
@@ -3092,30 +3038,7 @@ function Planner() {
       setInitialPlanningActive(true);
       setWorkflowStage("exploring");
     }
-    if (!user && requestUrls.length > 0) {
-      setIntakeKind("url");
-      setBackgroundPlanning(true);
-      const createdGuestJobs: GuestUrlImportJob[] = [];
-      if (requestUrls.length > 0) {
-        createdGuestJobs.push(
-          ...enqueueGuestUrlJobs({ content: text, urls: requestUrls })
-        );
-      }
-      setActivePlanningJobs(
-        createdGuestJobs.map((job) => ({ id: job.id, guest: true }))
-      );
-      setError("");
-      setMessages((current) => [
-        ...current,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          text: `Mình đang đọc ${requestUrls.length} nguồn và tìm các địa điểm có bằng chứng. Bạn có thể tiếp tục ở đây trong lúc nguồn được xử lý.`,
-        },
-      ]);
-      return;
-    }
-    if (user && requestUrls.length > 0) {
+    if (requestUrls.length > 0) {
       setIntakeKind("url");
       setQueueingUrls(true);
       setBackgroundPlanning(true);
@@ -3202,74 +3125,46 @@ function Planner() {
     setWorkflowStage("exploring");
     setError("");
     try {
-      if (user) {
-        let chatId = activeChatId;
-        let expectedRevision = chatRevision;
-        if (!chatId) {
-          const created = await createTripChat();
-          chatId = created.id;
-          expectedRevision = created.revision;
-          activeChatIdRef.current = chatId;
-          setActiveChatId(chatId);
-          setChatRevision(created.revision);
-          syncPlannerChatUrl(chatId);
-        }
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          try {
-            const clientTurnId =
-              typeof crypto !== "undefined" && "randomUUID" in crypto
-                ? crypto.randomUUID()
-                : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            await conversationTurn.submitTurn({
-              chatId,
-              content: text,
-              expectedRevision,
-              clientTurnId,
-              attachmentNames: [],
-            });
-            setSelectedMapPlaceKey(null);
-            return;
-          } catch (caught) {
-            if (
-              !(caught instanceof APIError) ||
-              caught.code !== "VERSION_CONFLICT" ||
-              attempt === 2
-            ) {
-              throw caught;
-            }
-            const latest = await getTripChat(chatId);
-            expectedRevision = latest.revision;
-            applyTripChat(latest);
-          }
-        }
-        throw new Error("Không thể cập nhật chat.");
+      let chatId = activeChatId;
+      let expectedRevision = chatRevision;
+      if (!chatId) {
+        const created = await createTripChat();
+        chatId = created.id;
+        expectedRevision = created.revision;
+        activeChatIdRef.current = chatId;
+        setActiveChatId(chatId);
+        setChatRevision(created.revision);
+        syncPlannerChatUrl(chatId);
       }
-      const nextExploreResult = await exploreFullIntake({
-        rawRequest: text,
-        images: [],
-      });
-      setExploreResult(nextExploreResult);
-      setWorkflowStage("planning");
-      const generation = await createPlanFromExplorer({
-        context: nextExploreResult.explorer,
-        intakeId: nextExploreResult.intakeId,
-        userId: nextExploreResult.userId,
-        allowPlaceSuggestions: nextExploreResult.allowPlaceSuggestions,
-      });
-      setPlan(generation.plan);
-      setInitialPlanningActive(false);
-      setWorkflowStage("ready");
-      setSelectedMapPlaceKey(null);
-      setMessages((current) => [
-        ...current,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          text: nextExploreResult.allowPlaceSuggestions
-            ? `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Planner và Finder đã tạo lịch trình và có thể bổ sung địa điểm phù hợp.`
-            : `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Lịch trình chỉ dùng địa điểm trích xuất từ URL hoặc ảnh; Planner và Finder không thêm địa điểm catalog.`,
-        },
-      ]);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const clientTurnId =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          await conversationTurn.submitTurn({
+            chatId,
+            content: text,
+            expectedRevision,
+            clientTurnId,
+            attachmentNames: [],
+          });
+          setSelectedMapPlaceKey(null);
+          return;
+        } catch (caught) {
+          if (
+            !(caught instanceof APIError) ||
+            caught.code !== "VERSION_CONFLICT" ||
+            attempt === 2
+          ) {
+            throw caught;
+          }
+          const latest = await getTripChat(chatId);
+          expectedRevision = latest.revision;
+          applyTripChat(latest);
+        }
+      }
+      throw new Error("Không thể cập nhật chat.");
     } catch (caught) {
       if (activeRequestIdRef.current !== requestId) return;
       const message =
@@ -3330,10 +3225,6 @@ function Planner() {
     setError("");
     await Promise.allSettled(
       jobs.map(async (job) => {
-        if (job.guest) {
-          deleteGuestUrlJob(job.id);
-          return;
-        }
         await deleteUrlImportJob(job.id);
       })
     );

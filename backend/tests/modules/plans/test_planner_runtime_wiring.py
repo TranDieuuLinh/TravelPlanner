@@ -173,7 +173,7 @@ def test_runtime_finder_uses_place_repository_and_fills_catalog_places(
 
 
 def test_context_endpoint_builds_plan_from_normalized_input(
-    client: TestClient,
+    registered_client: TestClient,
     db_session: Session,
     monkeypatch,
 ) -> None:
@@ -205,7 +205,7 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     )
     db_session.commit()
 
-    response = client.post(
+    response = registered_client.post(
         "/api/plans/main/from-context",
         json={
             "intent": {
@@ -246,15 +246,25 @@ def test_context_endpoint_builds_plan_from_normalized_input(
     assert body["checkReport"]["status"] == "needs_backup"
 
 
+def test_plan_creation_requires_authentication(client: TestClient) -> None:
+    response = client.post(
+        "/api/plans/main/from-context",
+        json={"intent": {"destination": "Hà Nội"}, "tripSpec": {"days": 1}},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "AUTHENTICATION_REQUIRED"
+
+
 def test_from_explorer_provider_error_keeps_cors_headers(
-    client: TestClient,
+    registered_client: TestClient,
 ) -> None:
     class FailingPlanService:
         async def create_main_plan_from_explorer_with_timing(self, payload):
             raise RuntimeError("Planner provider failed.")
 
     app.dependency_overrides[get_plan_service] = lambda: FailingPlanService()
-    response = client.post(
+    response = registered_client.post(
         "/api/plans/main/from-explorer",
         headers={"Origin": "http://localhost:3000"},
         json={
@@ -281,9 +291,9 @@ def test_from_explorer_provider_error_keeps_cors_headers(
 
 
 def test_from_explorer_rejects_removed_split_intent_contract(
-    client: TestClient,
+    registered_client: TestClient,
 ) -> None:
-    response = client.post(
+    response = registered_client.post(
         "/api/plans/main/from-explorer",
         json={
             "intent": {"destination": "Hà Nội"},

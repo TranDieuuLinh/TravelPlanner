@@ -15,23 +15,11 @@ import {
   type TripChatTurn,
   type UrlImportJob
 } from "@/lib/plans";
-import {
-  deleteGuestUrlJob,
-  GUEST_URL_JOBS_EVENT,
-  listGuestUrlJobs,
-  reprocessGuestUrlJob,
-  retryGuestUrlJob,
-  type GuestUrlImportJob
-} from "@/lib/guest-url-jobs";
 import { urlPlaceCountLabel } from "@/lib/url-place-count";
 
 const TERMINAL = new Set(["succeeded", "failed"]);
 const ACTIVE = new Set(["queued", "running"]);
-type DisplayJob = UrlImportJob | GuestUrlImportJob;
-
-function isGuestJob(job: DisplayJob): job is GuestUrlImportJob {
-  return "storage" in job && job.storage === "guest-memory";
-}
+type DisplayJob = UrlImportJob;
 
 function sourceLabel(value: string) {
   try {
@@ -421,30 +409,17 @@ export function BackgroundUrlJobs({
 }) {
   const [serverJobs, setServerJobs] = useState<UrlImportJob[]>([]);
   const [activeTurns, setActiveTurns] = useState<TripChatTurn[]>([]);
-  const [guestJobs, setGuestJobs] = useState<GuestUrlImportJob[]>(() => listGuestUrlJobs());
   const [now, setNow] = useState(() => Date.now());
   const [panelOpen, setPanelOpen] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ jobId: string; message: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const statusesRef = useRef<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    const handleGuestJobs = (event: Event) => {
-      const nextJobs = (event as CustomEvent<GuestUrlImportJob[]>).detail;
-      const resolvedJobs = Array.isArray(nextJobs) ? nextJobs : listGuestUrlJobs();
-      setGuestJobs(resolvedJobs);
-    };
-    window.addEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
-    setGuestJobs(listGuestUrlJobs());
-    return () => window.removeEventListener(GUEST_URL_JOBS_EVENT, handleGuestJobs);
-  }, []);
-
   const jobs = useMemo<DisplayJob[]>(
-    () => [...guestJobs, ...serverJobs].sort(
+    () => [...serverJobs].sort(
       (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
     ),
-    [guestJobs, serverJobs]
+    [serverJobs]
   );
 
   useEffect(() => {
@@ -546,18 +521,13 @@ export function BackgroundUrlJobs({
     setRetryingId(job.id);
     setActionError(null);
     try {
-      if (isGuestJob(job)) {
-        if (job.status === "failed") retryGuestUrlJob(job.id);
-        else reprocessGuestUrlJob(job.id);
-      } else {
-        const updated = job.status === "failed"
-          ? await retryUrlImportJob(job.id)
-          : await reprocessUrlImportJob(job.id);
-        setServerJobs((current) => job.status === "failed"
-          ? current.map((item) => item.id === updated.id ? updated : item)
-          : [updated, ...current]);
-        window.dispatchEvent(new Event("vsf:url-job-enqueued"));
-      }
+      const updated = job.status === "failed"
+        ? await retryUrlImportJob(job.id)
+        : await reprocessUrlImportJob(job.id);
+      setServerJobs((current) => job.status === "failed"
+        ? current.map((item) => item.id === updated.id ? updated : item)
+        : [updated, ...current]);
+      window.dispatchEvent(new Event("vsf:url-job-enqueued"));
     } catch (caught) {
       setActionError({
         jobId: job.id,
@@ -571,18 +541,14 @@ export function BackgroundUrlJobs({
   async function removeJob(job: DisplayJob) {
     setDeletingId(job.id);
     try {
-      if (isGuestJob(job)) {
-        deleteGuestUrlJob(job.id);
-      } else {
-        await deleteUrlImportJob(job.id);
-        setServerJobs((current) => current.filter((item) => item.id !== job.id));
-        statusesRef.current.delete(job.id);
-      }
+      await deleteUrlImportJob(job.id);
+      setServerJobs((current) => current.filter((item) => item.id !== job.id));
+      statusesRef.current.delete(job.id);
     } catch {
       // The job may have completed just before the stop/delete request.
     } finally {
       setDeletingId(null);
-      if (!isGuestJob(job)) window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+      window.dispatchEvent(new Event("vsf:url-job-enqueued"));
     }
   }
 
@@ -680,9 +646,7 @@ export function BackgroundUrlJobs({
                     <Link
                       className="backgroundJobOpenChat"
                       href={
-                        isGuestJob(job)
-                          ? "/planner"
-                          : `/planner?chatId=${encodeURIComponent(job.chatId)}`
+                        `/planner?chatId=${encodeURIComponent(job.chatId)}`
                       }
                     >
                       {job.status === "succeeded"
