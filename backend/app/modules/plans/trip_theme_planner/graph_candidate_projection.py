@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+import re
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -114,6 +115,42 @@ _PRIORITY_ORDER = {
     RecommendationPriority.OPTIONAL: 2,
 }
 
+_CATEGORY_TERMS: dict[ExperienceCategory, tuple[str, ...]] = {
+    ExperienceCategory.nightlife: ("bar", "pub", "club", "nightlife", "cocktail"),
+    ExperienceCategory.food: ("food", "restaurant", "dining", "meal", "cuisine", "street food"),
+    ExperienceCategory.culture: ("culture", "museum", "temple", "pagoda", "heritage", "art", "van hoa", "bao tang", "chua"),
+    ExperienceCategory.history: ("history", "historic", "monument", "mausoleum", "citadel", "war", "lich su", "lang", "di tich"),
+    ExperienceCategory.nature: ("nature", "lake", "park", "garden", "waterfall", "beach", "ho guom", "thien nhien"),
+    ExperienceCategory.active: ("hike", "trek", "climb", "cycling", "bike", "sport"),
+    ExperienceCategory.outdoor: ("outdoor", "walk", "walking", "boat", "kayak"),
+}
+
+
+def infer_experience_category(
+    *,
+    activity_name: str | None,
+    anchor_place_names: Iterable[str] = (),
+    recommendation: Recommendation | None = None,
+) -> ExperienceCategory:
+    """Classify a graph experience using only bounded graph labels."""
+    labels = " ".join(
+        value for value in (
+            activity_name,
+            *(anchor_place_names or ()),
+            recommendation.intent if recommendation else None,
+        ) if value
+    ).casefold()
+    normalized = re.sub(r"[^a-z0-9]+", " ", labels)
+    for category, terms in _CATEGORY_TERMS.items():
+        if any(term in normalized for term in terms):
+            return category
+    return ExperienceCategory.main_experience
+
+
+def candidate_diversity_key(candidate: GraphExperienceCandidate) -> tuple[str | None, ExperienceCategory]:
+    """Diversity is measured by Activity first and semantic category second."""
+    return candidate.activity_id, candidate.category
+
 
 def project_graph_candidate_catalog(
     bundle: TripResearchBundle,
@@ -191,6 +228,8 @@ def _project_group(
     ordered = sorted(experiences, key=_ranked_sort_key)
     primary = ordered[0]
     claims = [ranked.claim for ranked in ordered]
+    recommendation = _best_recommendation(ordered)
+    anchor_names = _anchor_place_names(ordered)
 
     return GraphExperienceCandidate(
         claimIds=_ordered_ids(
@@ -213,7 +252,12 @@ def _project_group(
             for ranked in ordered
             if (anchor_id := _anchor_place_id(ranked.claim)) is not None
         ),
-        anchorPlaceNames=_anchor_place_names(ordered),
+        anchorPlaceNames=anchor_names,
+        category=infer_experience_category(
+            activity_name=_activity_name(primary.claim),
+            anchor_place_names=anchor_names.values(),
+            recommendation=recommendation,
+        ),
         isSpecialExperience=any(
             ranked.claim.predicate == "SPECIAL_EXPERIENCE"
             for ranked in ordered
@@ -226,7 +270,7 @@ def _project_group(
         rank=primary.rank,
         fit=primary.fit,
         trust=primary.claim.trust,
-        recommendation=_best_recommendation(ordered),
+        recommendation=recommendation,
         sourceRefs=sorted({
             evidence.source
             for claim in claims

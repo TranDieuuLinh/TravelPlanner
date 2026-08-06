@@ -36,10 +36,17 @@ from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
     GraphCandidateCatalog,
     GraphExperienceCandidate,
     _claim_shape,
+    infer_experience_category,
     _is_selectable,
     build_graph_candidate_catalog,
     project_graph_candidate_catalog,
 )
+
+
+def test_category_inference_separates_food_culture_and_nightlife() -> None:
+    assert infer_experience_category(activity_name="Museum history tour").value == "culture"
+    assert infer_experience_category(activity_name="Bun cha restaurant").value == "food"
+    assert infer_experience_category(activity_name="Hanoi bar crawl").value == "nightlife"
 
 
 # ---------------------------------------------------------------------------

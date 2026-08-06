@@ -74,6 +74,13 @@ class ExperienceCategory(StrEnum):
     meal = "meal"
     supporting_stop = "supporting_stop"
     optional = "optional"
+    culture = "culture"
+    history = "history"
+    nature = "nature"
+    food = "food"
+    nightlife = "nightlife"
+    active = "active"
+    outdoor = "outdoor"
 
 
 class RegionSnapshotReference(BaseModel):

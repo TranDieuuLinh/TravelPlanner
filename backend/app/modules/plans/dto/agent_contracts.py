@@ -772,6 +772,14 @@ class TripThemePlanningOutput(BaseModel):
         "extra": "forbid",
     }
 
+    @property
+    def required_experiences_only_food(self) -> bool:
+        """Whether every required experience is meal/food categorized."""
+        return bool(self.required_experiences) and all(
+            experience.category in {ExperienceCategory.meal, ExperienceCategory.food}
+            for experience in self.required_experiences
+        )
+
     @model_validator(mode="before")
     @classmethod
     def _reject_forbidden_day_route_allocation_fields(

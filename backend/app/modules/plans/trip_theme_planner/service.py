@@ -25,6 +25,8 @@ from app.modules.plans.dto.agent_contracts import (
     PlanningIntent,
     PlanningMode,
     PlanWorkingState,
+    RequiredExperience,
+    RequiredExperienceSelectionPolicy,
     SelectedPlaceContext,
     TripPlanningSpec,
 )
@@ -37,6 +39,8 @@ from app.modules.plans.trip_theme_planner.prompt import (
 )
 from app.modules.plans.trip_theme_planner.graph_candidate_projection import (
     GraphCandidateCatalog,
+    GraphExperienceCandidate,
+    candidate_diversity_key,
     project_graph_candidate_catalog,
 )
 from app.modules.plans.trip_theme_planner.graph_research import (
@@ -57,6 +61,168 @@ from app.modules.preferences.schema import (
 
 logger = logging.getLogger(__name__)
 TRIP_THEME_MAX_REPAIR_ATTEMPTS = 3
+
+
+def _candidate_matches_requirement(
+    requirement: RequiredExperience,
+    candidate: GraphExperienceCandidate,
+) -> bool:
+    evidence = set(requirement.claim_ids)
+    places = set(requirement.anchor_place_ids) | set(requirement.candidate_place_ids)
+    return bool(
+        evidence.intersection(candidate.claim_ids)
+        or places.intersection(candidate.place_ids)
+        or (
+            requirement.activity_id is not None
+            and requirement.activity_id == candidate.activity_id
+        )
+    )
+
+
+def _candidate_priority(
+    candidate: GraphExperienceCandidate,
+    planner_input: TripThemePlanningInput,
+) -> tuple[int, int, int, int, int, int]:
+    """Order hard-filtered candidates by traveler signals before graph rank."""
+    reasons = set(candidate.rank_reasons)
+    interests = {value.casefold() for value in planner_input.intent.interests}
+    profile_values = {
+        value.casefold()
+        for value in planner_input.preference_profile.top_values(
+            dimensions=None,
+        )
+    }
+    category = candidate.category.value.casefold()
+    activity = (candidate.activity_name or "").casefold()
+    current_match = int(category in interests or any(value in activity for value in interests))
+    profile_match = int(category in profile_values or any(value in activity for value in profile_values))
+    must_match = int("user_selected_place" in reasons or "source_place" in reasons or "must" in reasons)
+    return (
+        must_match,
+        current_match,
+        profile_match,
+        int(candidate.is_special_experience),
+        -candidate.rank,
+        -len(candidate.place_ids),
+    )
+
+
+def _enforce_experience_diversity(
+    requirements: list[RequiredExperience],
+    catalog: GraphCandidateCatalog,
+    planner_input: TripThemePlanningInput,
+) -> tuple[list[RequiredExperience], list[str]]:
+    """Keep graph-backed policies while preventing duplicate main experiences."""
+    if not requirements or not catalog.candidates:
+        return requirements, []
+
+    candidates = sorted(
+        catalog.candidates,
+        key=lambda candidate: _candidate_priority(candidate, planner_input),
+        reverse=True,
+    )
+    used_activities: set[str] = set()
+    used_categories = set()
+    selected: list[RequiredExperience] = []
+    warnings: list[str] = []
+
+    for requirement in requirements:
+        matching = [
+            candidate for candidate in candidates
+            if _candidate_matches_requirement(requirement, candidate)
+        ]
+        if not matching:
+            matching = candidates
+        matching.sort(
+            key=lambda candidate: (
+                int(candidate.activity_id in used_activities if candidate.activity_id else False),
+                int(candidate.category in used_categories),
+                -_candidate_priority(candidate, planner_input)[0],
+                candidate.rank,
+            )
+        )
+        chosen = matching[0]
+        for candidate in matching:
+            activity_free = not candidate.activity_id or candidate.activity_id not in used_activities
+            category_free = candidate.category not in used_categories
+            if activity_free and category_free:
+                chosen = candidate
+                break
+
+        policy = requirement.selection_policy
+        if policy is RequiredExperienceSelectionPolicy.required_anchor:
+            # An anchor is a user-visible hard choice; never silently replace it.
+            anchored = next(
+                (candidate for candidate in matching if set(requirement.anchor_place_ids) & set(candidate.anchor_place_ids)),
+                None,
+            )
+            if anchored is not None:
+                chosen = anchored
+
+        updated = requirement.model_copy(
+            update={
+                "category": chosen.category,
+                "activity_id": chosen.activity_id,
+                "claim_ids": list(chosen.claim_ids),
+                "evidence_claim_ids": list(chosen.claim_ids),
+                "source_refs": list(chosen.source_refs),
+                "anchor_place_ids": list(chosen.anchor_place_ids) if policy is RequiredExperienceSelectionPolicy.required_anchor else requirement.anchor_place_ids,
+                "candidate_place_ids": list(chosen.candidate_place_ids) if policy is RequiredExperienceSelectionPolicy.choose_one else requirement.candidate_place_ids,
+            }
+        )
+        selected.append(updated)
+        if chosen.activity_id:
+            used_activities.add(chosen.activity_id)
+        used_categories.add(chosen.category)
+
+    unique_keys = {candidate_diversity_key(candidate) for candidate in candidates}
+    if len(unique_keys) < len(requirements) or len(used_activities) < sum(
+        bool(requirement.activity_id) for requirement in selected
+    ):
+        warnings.append(
+            "Catalog nhỏ hoặc thiếu candidate phù hợp nên không thể đạt đủ diversity "
+            "theo activity/category; giữ lại các trải nghiệm hợp lệ tốt nhất."
+        )
+    non_food = [candidate for candidate in candidates if candidate.category.value not in {"food", "meal"}]
+    if non_food and selected and all(
+        requirement.category.value in {"food", "meal"} for requirement in selected
+    ):
+        replacement = next(
+            (candidate for candidate in non_food if candidate.category not in used_categories),
+            non_food[0],
+        )
+        replacement_index = next(
+            (
+                index for index in range(len(selected) - 1, -1, -1)
+                if selected[index].selection_policy is not RequiredExperienceSelectionPolicy.required_anchor
+            ),
+            None,
+        )
+        if replacement_index is not None:
+            original = selected[replacement_index]
+            selected[replacement_index] = original.model_copy(
+                update={
+                    "category": replacement.category,
+                    "activity_id": replacement.activity_id,
+                    "claim_ids": list(replacement.claim_ids),
+                    "evidence_claim_ids": list(replacement.claim_ids),
+                    "source_refs": list(replacement.source_refs),
+                    "candidate_place_ids": (
+                        list(replacement.candidate_place_ids)
+                        if original.selection_policy is RequiredExperienceSelectionPolicy.choose_one
+                        else original.candidate_place_ids
+                    ),
+                    "anchor_place_ids": (
+                        list(replacement.anchor_place_ids)
+                        if original.selection_policy is RequiredExperienceSelectionPolicy.required_anchor
+                        else original.anchor_place_ids
+                    ),
+                }
+            )
+        warnings.append(
+            "Diversity hậu kiểm đã ưu tiên candidate ngoài food khi catalog có lựa chọn hợp lệ."
+        )
+    return selected, warnings
 
 
 class TripThemePlannerService:
@@ -361,7 +527,7 @@ class TripThemePlannerService:
                     *graph_catalog_notes,
                     (
                         "requiredExperienceCount="
-                        f"{len(draft.required_experiences)}"
+                    f"{len(draft.required_experiences)}"
                     ),
                     (
                         "snapshotId="
@@ -420,6 +586,12 @@ class TripThemePlannerService:
                     f"{exc}"
                 ) from exc
 
+        required_experiences, diversity_warnings = _enforce_experience_diversity(
+            required_experiences,
+            graph_catalog,
+            planner_input,
+        )
+
         selection_policy = build_theme_selection_policy(planner_input)
         trusted_special_candidates = [
             candidate
@@ -440,6 +612,7 @@ class TripThemePlannerService:
             )
 
         warnings = list(draft.warnings)
+        warnings.extend(diversity_warnings)
         if normalized:
             warnings.append(
                 "Yêu cầu chủ đề đã được chuẩn hóa theo sức chứa hai "

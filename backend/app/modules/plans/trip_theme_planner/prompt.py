@@ -52,7 +52,7 @@ Available bounded context:
 
 Planning rules:
 0. Follow themeSelectionPolicy.selectionMode and this strict priority order:
-   current-trip interests and hard constraints > confirmed selected Places >
+   hard constraints > selected/must-visit Places > current-trip interests >
    effective long-term profile > destination special experiences. Current-trip
    input always overrides the long-term profile. A graph recommendation with
    priority="must" means important for the destination, not mandatory for every
@@ -84,6 +84,14 @@ Planning rules:
 3. Build a narrative arc instead of repeating the same interest every day.
    Contrast compatible themes such as coast, food, culture, nature, recovery,
    and local life when verified evidence supports them.
+   Select main experiences for diversity by activityId and semantic category,
+   not by distinct Place names. Do not repeat an activityId or category while
+   another supported candidate remains. Restaurants and meal candidates are
+   meal inputs, not main experiences; food/drink must not dominate main
+   experiences when culture, history, or nature candidates remain.
+   Exclude or lower-prioritize bars/nightlife, strenuous physical activities,
+   and outdoor activities when party, accessibility, or evidence does not
+   support them.
 4. Scale the theme mix with duration:
    - 1-3 days: prioritize the strongest experiences; do not force every theme.
    - 4-6 days: introduce a small number of contrasting themes.
