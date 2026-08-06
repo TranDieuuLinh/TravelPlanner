@@ -48,6 +48,10 @@ from app.modules.plans.explorer.tools.url_reels.youtube_transcript import (
     YouTubeTranscriptExtractor,
 )
 from app.modules.plans.explorer.timing import ExplorerTimingLogger
+from app.modules.plans.information_finder import (
+    GoogleMapsPlaceSearchProvider,
+    InformationFinderReader,
+)
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
@@ -86,6 +90,18 @@ def get_plan_mutation_service(
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
         gmaps_client=_get_gmaps_search_client(),
+    )
+
+
+def get_information_finder_reader(
+    db: Annotated[Session, Depends(get_db)],
+) -> InformationFinderReader:
+    """Build the read-only InformationFinder boundary for one DB session."""
+    client = _get_gmaps_search_client()
+    provider = GoogleMapsPlaceSearchProvider(client) if client is not None else None
+    return InformationFinderReader(
+        graph_repository=KnowledgeGraphPlaceSearchRepository(db),
+        provider=provider,
     )
 
 

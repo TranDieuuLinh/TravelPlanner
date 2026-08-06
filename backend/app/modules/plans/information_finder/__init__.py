@@ -6,10 +6,20 @@ from .schema import (
     InformationResult,
     InformationSource,
 )
+from .reader import (
+    GoogleMapsPlaceSearchProvider,
+    InformationFinderReader,
+    PlaceSearchProvider,
+    PlaceSearchReader,
+)
 
 __all__ = [
     "InformationCandidate",
     "InformationQuery",
     "InformationResult",
     "InformationSource",
+    "GoogleMapsPlaceSearchProvider",
+    "InformationFinderReader",
+    "PlaceSearchProvider",
+    "PlaceSearchReader",
 ]

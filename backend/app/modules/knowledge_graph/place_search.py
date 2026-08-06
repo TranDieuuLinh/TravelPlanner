@@ -38,6 +38,7 @@ class KnowledgeGraphPlaceMatch:
     phone: str | None = None
     website: str | None = None
     opening_hours: list[str] | None = None
+    source_fetched_at: Any | None = None
 
 
 class KnowledgeGraphPlaceSearchRepository:
@@ -211,6 +212,8 @@ def _to_place_match(
         phone=_property_value(properties, "phone"),
         website=_property_value(properties, "website"),
         opening_hours=_string_list(_property_value(properties, "opening_hours")),
+        source_fetched_at=_property_value(properties, "source_fetched_at")
+        or _property_value(properties, "fetched_at"),
     )
 
 
