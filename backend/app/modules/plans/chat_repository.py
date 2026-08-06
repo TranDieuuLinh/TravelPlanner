@@ -549,16 +549,32 @@ class TripChatRepository:
         """Persist a plan mutation produced by a turn. Mirrors the structure
         of save_plan_mutation but stamps the authoring turn for audit."""
         now = datetime.now(UTC)
+        expected_revision = turn.base_revision
+        if (
+            expected_revision is None
+            or turn.chat_id != chat.id
+            or revision != expected_revision + 1
+        ):
+            self.db.rollback()
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lá»‹ch trÃ¬nh Ä‘Ã£ Ä‘Æ°á»£c cáº­p nháº­t á»Ÿ phiÃªn khÃ¡c. HÃ£y táº£i láº¡i chat trÆ°á»›c khi gá»­i.",
+            )
         next_sequence = max(
             (msg.sequence for msg in chat.messages),
             default=0,
         ) + 1
+        # Capture the immutable revision metadata before the conditional chat
+        # update. Both values belong to the plan revision being written.
+        intake_id = chat.current_intake_id
+        trip_intent_payload = chat.current_trip_intent
         result = self.db.execute(
             update(TripChat)
             .where(
                 TripChat.id == chat.id,
                 TripChat.user_id == chat.user_id,
-                TripChat.revision == revision - 1,
+                TripChat.revision == expected_revision,
             )
             .values(
                 current_plan=plan_payload,
@@ -587,20 +603,25 @@ class TripChatRepository:
                     turn_id=turn.lifecycle_id,
                     message_kind="turn_response",
                     content_blocks=list(assistant_blocks),
+                    assistant_blocks=list(assistant_blocks),
                     created_at=now,
                 ),
                 TripRevision(
                     id=str(uuid4()),
                     chat_id=chat.id,
                     revision=revision,
-                    intake_id=chat.current_intake_id,
+                    intake_id=intake_id,
                     plan_payload=plan_payload,
-                    trip_intent_payload=chat.current_trip_intent,
+                    trip_intent_payload=trip_intent_payload,
                     created_at=now,
                 ),
             ]
         )
-        self.db.commit()
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         return self.get(chat.id, chat.user_id)
 
     def load_trip_intent(self, chat: TripChat) -> TripIntent | None:

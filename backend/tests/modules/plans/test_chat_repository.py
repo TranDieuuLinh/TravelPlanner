@@ -9,6 +9,7 @@ from app.modules.knowledge_graph.model import KnowledgeGraphImport
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.users.model import User
+from app.shared.errors import AppError
 
 
 @pytest.fixture
@@ -124,3 +125,78 @@ def test_load_candidate_reviews_rejects_another_chat_intake(db_session):
     db_session.commit()
 
     assert repository.load_candidate_reviews(repository.get(chat.id, user.id)) == []
+
+
+def test_conversation_mutation_persists_snapshot_and_diff(db_session):
+    user = db_session.query(User).filter_by(email="traveler@example.com").one()
+    repository = TripChatRepository(db_session)
+    chat = repository.create(user.id, "Revision persistence")
+    chat.current_intake_id = "intake-1"
+    chat.current_trip_intent = {"destination": "Hanoi", "days": 2}
+    db_session.commit()
+    turn = repository.create_turn(
+        chat,
+        client_turn_id="mutation-turn",
+        content="add place",
+        attachment_names=[],
+        expected_revision=0,
+    )
+    plan = {"id": "plan-1", "days": [{"day": 1, "items": []}]}
+    blocks = [{"type": "planDiff", "beforeRevision": 0, "afterRevision": 1}]
+
+    saved = repository.save_conversation_mutation(
+        chat,
+        turn=turn,
+        user_content=turn.content,
+        assistant_content="Added place.",
+        assistant_blocks=blocks,
+        plan_payload=plan,
+        revision=1,
+    )
+
+    reloaded = repository.get(saved.id, user.id)
+    snapshot = repository.get_revision(saved.id, 1)
+    assert reloaded.revision == 1
+    assert reloaded.current_plan == plan
+    assert snapshot is not None
+    assert snapshot.intake_id == "intake-1"
+    assert snapshot.trip_intent_payload == {"destination": "Hanoi", "days": 2}
+    assert reloaded.messages[-1].content_blocks == blocks
+
+
+def test_conversation_mutation_rejects_stale_writer_without_overwrite(db_session):
+    user = db_session.query(User).filter_by(email="traveler@example.com").one()
+    repository = TripChatRepository(db_session)
+    chat = repository.create(user.id, "Concurrent revisions")
+    first_turn = repository.create_turn(
+        chat,
+        client_turn_id="first-writer",
+        content="first",
+        attachment_names=[],
+        expected_revision=0,
+    )
+    repository.save_conversation_mutation(
+        chat,
+        turn=first_turn,
+        user_content="first",
+        assistant_content="first update",
+        assistant_blocks=[],
+        plan_payload={"writer": "first"},
+        revision=1,
+    )
+
+    with pytest.raises(AppError) as exc:
+        repository.save_conversation_mutation(
+            chat,
+            turn=first_turn,
+            user_content="first",
+            assistant_content="stale update",
+            assistant_blocks=[],
+            plan_payload={"writer": "stale"},
+            revision=1,
+        )
+
+    assert exc.value.code == "VERSION_CONFLICT"
+    reloaded = repository.get(chat.id, user.id)
+    assert reloaded.revision == 1
+    assert reloaded.current_plan == {"writer": "first"}

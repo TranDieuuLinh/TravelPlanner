@@ -554,8 +554,14 @@ class ConversationTurnService:
         execution: Any,
     ) -> TripChatMessage:
         result = execution.result
-        revision = chat.revision + 1
-        diff = _plan_diff(plan, result.plan, result.affected_days, chat.revision, revision)
+        revision = _turn_base_revision(chat, turn) + 1
+        diff = _plan_diff(
+            plan,
+            result.plan,
+            result.affected_days,
+            _turn_base_revision(chat, turn),
+            revision,
+        )
         diff["summary"] = execution.summary
         saved = self.repository.save_conversation_mutation(
             chat,
@@ -817,12 +823,12 @@ class ConversationTurnService:
                 {"newErrors": new_errors},
             )
 
-        revision = chat.revision + 1
+        revision = _turn_base_revision(chat, turn) + 1
         diff = _plan_diff(
             plan,
             result.plan,
             result.affected_days,
-            chat.revision,
+            _turn_base_revision(chat, turn),
             revision,
         )
         saved = self.repository.save_conversation_mutation(
@@ -848,13 +854,14 @@ class ConversationTurnService:
         )
 
     def _undo(self, chat: TripChat, turn: TripChatMessage) -> TripChatMessage:
-        if chat.revision < 2:
+        base_revision = _turn_base_revision(chat, turn)
+        if base_revision < 2:
             raise AppError(
                 409,
                 "UNDO_UNAVAILABLE",
                 "Chưa có bản sửa đổi trước đó để hoàn tác.",
             )
-        previous = self.repository.get_revision(chat.id, chat.revision - 1)
+        previous = self.repository.get_revision(chat.id, base_revision - 1)
         if previous is None:
             raise AppError(
                 409,
@@ -862,9 +869,9 @@ class ConversationTurnService:
                 "Không tìm thấy snapshot để hoàn tác.",
             )
         plan = Plan.model_validate(previous.plan_payload)
-        revision = chat.revision + 1
+        revision = _turn_base_revision(chat, turn) + 1
         diff = {
-            "beforeRevision": chat.revision,
+            "beforeRevision": base_revision,
             "afterRevision": revision,
             "affectedDays": [day.day for day in plan.days],
             "undoAvailable": True,
@@ -1199,6 +1206,12 @@ def _draft_has_no_destination(chat: TripChat) -> bool:
 
 def _error_codes(report) -> set[str]:
     return {issue.code for issue in report.issues if issue.severity == "error"}
+
+
+def _turn_base_revision(chat: TripChat, turn: TripChatMessage) -> int:
+    """Use the revision observed when the turn was created for all writes."""
+    base_revision = getattr(turn, "base_revision", None)
+    return chat.revision if base_revision is None else base_revision
 
 
 def _plan_diff(
