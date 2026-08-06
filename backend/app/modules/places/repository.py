@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Iterator, Protocol
 
 from sqlalchemy import Select, Text, case, cast, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.model import (
@@ -81,7 +81,6 @@ class SqlAlchemyPlaceRepository:
     def get(self, place_id: str) -> Place | None:
         return self.session.scalar(
             select(Place)
-            .options(selectinload(Place.images))
             .where(Place.id == place_id)
         )
 
@@ -94,7 +93,6 @@ class SqlAlchemyPlaceRepository:
         _validate_region_key(region_key)
         query = (
             select(Place)
-            .options(selectinload(Place.images))
             .where(
                 Place.deleted_at.is_(None),
                 Place.status == "active",

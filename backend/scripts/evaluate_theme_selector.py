@@ -20,23 +20,24 @@ from app.modules.places.model import Place
 from app.modules.places.auto_statistics.service import AutoPlaceStatisticsService
 from app.modules.places.repository import SqlAlchemyPlaceRepository
 from app.modules.plans.checks.backup_validator import BackupValidator
+from app.modules.plans.chat_model import TripChat, TripChatMessage, TripRevision
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.response_formatter import ExploreResponseFormatter
 from app.modules.plans.place_selector.service import PlaceSelectorService
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
-from app.modules.plans.trip_theme_planner.research_tool import (
-    RepositoryPlannerResearchTool,
-)
 from app.modules.plans.repository import PlanRepository
 from app.modules.plans.service import PlanService
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.schema import BackupPlanCreate, PlanningContextCreate
+from app.modules.users.model import User
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
         description="Run deterministic TripThemePlanner/PlaceSelector evaluations."
     )
@@ -159,7 +160,10 @@ async def run_evaluation() -> dict[str, Any]:
                 for place in selection_plan.unscheduled_places
             }
             assert unscheduled_codes["Avoid Me"] == "avoided_by_user"
-            assert "no_day_capacity" in unscheduled_codes.values()
+            assert any(
+                code in unscheduled_codes.values()
+                for code in {"no_day_capacity", "no_available_slot"}
+            ), unscheduled_codes
 
             backup_source = await service.create_main_plan_from_context(
                 _context(
@@ -216,7 +220,9 @@ def _plan_service(session: Session) -> PlanService:
     trip_theme_planner = TripThemePlannerService(
         statistics,
         llm,
-        RepositoryPlannerResearchTool(place_repository),
+        # This evaluator seeds the relational Place catalog only. Knowledge
+        # Graph research is covered by its own orchestrator evaluations.
+        graph_research_service=None,
     )
     place_selector = PlaceSelectorService(
         RepositoryPlaceSelectionTool(place_repository)

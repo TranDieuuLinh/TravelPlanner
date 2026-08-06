@@ -770,9 +770,9 @@ class RepositoryPlaceSelectionTool:
             rating=read_rating(place),
             reviewCount=read_review_count(place),
             imageUrls=[
-                image.image_url
-                for image in place.images
-                if image.image_url
+                str(image_url)
+                for image_url in metadata.get("imageUrls", [])
+                if image_url
             ],
             dataConfidence=place.data_confidence,
             sourceLink=place.source_link,
