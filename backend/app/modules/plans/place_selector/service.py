@@ -305,6 +305,9 @@ class PlaceSelectorService:
                                 *requirement.source_refs,
                                 f"required_experience:{requirement.requirement_id}",
                             ],
+                            claimIds=list(requirement.claim_ids),
+                            activityId=requirement.activity_id,
+                            experienceCategory=requirement.category,
                             sourceProvider=candidate.source_provider,
                             notes=requirement.reason,
                             imageUrls=candidate.image_urls,
@@ -329,6 +332,15 @@ class PlaceSelectorService:
                                         f"{requirement.requirement_id}",
                                     ]
                                 )
+                            ),
+                            "claim_ids": list(
+                                dict.fromkeys(
+                                    [*selected.claim_ids, *requirement.claim_ids]
+                                )
+                            ),
+                            "activity_id": selected.activity_id or requirement.activity_id,
+                            "experience_category": (
+                                selected.experience_category or requirement.category
                             ),
                             "source_activity": (
                                 selected.source_activity or requirement.theme

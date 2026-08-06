@@ -9,6 +9,7 @@ from app.modules.plans.domain.entities import (
     PlanDay,
     PreferredTimeWindow,
     RegionSnapshotReference,
+    ExperienceCategory,
     TripThemeRequirement,
     UnscheduledPlace,
     UserStatus,
@@ -149,6 +150,13 @@ class SelectedPlaceContext(BaseModel):
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )
+    claim_ids: Annotated[list[str], Field(alias="claimIds")] = Field(
+        default_factory=list
+    )
+    activity_id: Annotated[str | None, Field(default=None, alias="activityId")]
+    experience_category: Annotated[
+        ExperienceCategory | None, Field(default=None, alias="experienceCategory")
+    ]
     source_provider: Annotated[
         str | None,
         Field(default=None, alias="sourceProvider"),
@@ -598,6 +606,7 @@ class RequiredExperience(BaseModel):
 
     requirement_id: Annotated[str, Field(alias="requirementId")]
     theme: str = Field(min_length=1, max_length=120)
+    category: ExperienceCategory = ExperienceCategory.main_experience
     activity_id: Annotated[str | None, Field(default=None, alias="activityId")]
     selection_policy: Annotated[
         RequiredExperienceSelectionPolicy,
@@ -617,6 +626,9 @@ class RequiredExperience(BaseModel):
     evidence_claim_ids: Annotated[
         list[str], Field(alias="evidenceClaimIds")
     ] = Field(default_factory=list)
+    claim_ids: Annotated[list[str], Field(alias="claimIds")] = Field(
+        default_factory=list
+    )
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )
@@ -633,6 +645,22 @@ class RequiredExperience(BaseModel):
         "populate_by_name": True,
         "extra": "forbid",
     }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_claim_id_aliases(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        data = dict(values)
+        canonical = data.get("claimIds", data.get("claim_ids"))
+        legacy = data.get("evidenceClaimIds", data.get("evidence_claim_ids"))
+        if canonical is not None and legacy is not None and canonical != legacy:
+            raise ValueError("claimIds and evidenceClaimIds must match when both are provided.")
+        if canonical is None and legacy is not None:
+            data["claimIds"] = legacy
+        if legacy is None and canonical is not None:
+            data["evidenceClaimIds"] = canonical
+        return data
 
     @model_validator(mode="after")
     def _validate_internal_structure(self) -> "RequiredExperience":
@@ -664,6 +692,19 @@ class RequiredExperience(BaseModel):
 
         if not self.evidence_claim_ids:
             raise ValueError("evidenceClaimIds must not be empty.")
+
+        for field_name, values in {
+            "claimIds": self.claim_ids,
+            "anchorPlaceIds": self.anchor_place_ids,
+            "candidatePlaceIds": self.candidate_place_ids,
+        }.items():
+            if any(not isinstance(value, str) or not value.strip() for value in values):
+                raise ValueError(f"{field_name} must contain non-empty IDs.")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicate IDs.")
+
+        if self.claim_ids != self.evidence_claim_ids:
+            raise ValueError("claimIds and evidenceClaimIds must match.")
 
         return self
 

@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from app.modules.plans.domain.entities import PreferredTimeWindow
+from app.modules.plans.domain.entities import ExperienceCategory, PreferredTimeWindow
 from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -497,6 +497,11 @@ class SelectablePlace(BaseModel):
     )
     must_visit: bool = Field(default=False, alias="mustVisit")
     source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+    claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
+    activity_id: str | None = Field(default=None, alias="activityId")
+    experience_category: ExperienceCategory | None = Field(
+        default=None, alias="experienceCategory"
+    )
     source_provider: str | None = Field(
         default=None,
         alias="sourceProvider",

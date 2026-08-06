@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -64,6 +65,15 @@ class PreferredTimeWindow(BaseModel):
         if end_hour * 60 + end_minute <= start_hour * 60 + start_minute:
             raise ValueError("preferred time window end must be after start")
         return self
+
+
+class ExperienceCategory(StrEnum):
+    """Trip-wide role understood by TripThemePlanner and PlaceSelector."""
+
+    main_experience = "main_experience"
+    meal = "meal"
+    supporting_stop = "supporting_stop"
+    optional = "optional"
 
 
 class RegionSnapshotReference(BaseModel):

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.knowledge_graph.research import (
     CheckStatus,
@@ -16,6 +17,7 @@ from app.modules.knowledge_graph.research import (
     TripResearchBundle,
     TrustLevel,
 )
+from app.modules.plans.domain.entities import ExperienceCategory
 
 
 class GraphExperienceCandidate(BaseModel):
@@ -23,8 +25,13 @@ class GraphExperienceCandidate(BaseModel):
 
     claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
     place_ids: list[str] = Field(default_factory=list, alias="placeIds")
+    candidate_place_ids: list[str] = Field(
+        default_factory=list,
+        alias="candidatePlaceIds",
+    )
     activity_id: str | None = Field(default=None, alias="activityId")
     activity_name: str | None = Field(default=None, alias="activityName")
+    category: ExperienceCategory = ExperienceCategory.main_experience
     anchor_place_ids: list[str] = Field(
         default_factory=list,
         alias="anchorPlaceIds",
@@ -45,6 +52,37 @@ class GraphExperienceCandidate(BaseModel):
     source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
+
+
+class CandidateContract(BaseModel):
+    """Small selector-facing contract used after graph projection."""
+
+    activity_id: str | None = Field(default=None, alias="activityId")
+    claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
+    anchor_place_ids: list[str] = Field(default_factory=list, alias="anchorPlaceIds")
+    candidate_place_ids: list[str] = Field(
+        default_factory=list, alias="candidatePlaceIds"
+    )
+    category: ExperienceCategory = ExperienceCategory.main_experience
+    recommendation: dict[str, Any] = Field(default_factory=dict)
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+    @staticmethod
+    def _check_ids(values: list[str], field_name: str) -> list[str]:
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise ValueError(f"{field_name} must contain non-empty IDs.")
+        if len(values) != len(set(values)):
+            raise ValueError(f"{field_name} must not contain duplicate IDs.")
+        return values
+
+    @model_validator(mode="after")
+    def validate_ids(self) -> "CandidateContract":
+        self._check_ids(self.claim_ids, "claimIds")
+        self._check_ids(self.anchor_place_ids, "anchorPlaceIds")
+        self._check_ids(self.candidate_place_ids, "candidatePlaceIds")
+        return self
 
 
 class GraphCandidateCatalog(BaseModel):
@@ -163,6 +201,11 @@ def _project_group(
             for ranked in ordered
             for place_id in _place_ids(ranked.claim)
         ),
+        candidatePlaceIds=_ordered_ids(
+            (ranked.rank, place_id)
+            for ranked in ordered
+            for place_id in _place_ids(ranked.claim)
+        ),
         activityId=_activity_id(primary.claim),
         activityName=_activity_name(primary.claim),
         anchorPlaceIds=_ordered_ids(
@@ -263,6 +306,39 @@ def _best_recommendation(
     return min(ranked_recommendations, key=lambda entry: entry[:4])[4]
 
 
+def build_candidate_contract(fixture: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate a selector candidate fixture and return its public payload.
+
+    This small adapter is intentionally independent from LLM output. It is useful
+    for contract tests and for callers that already have graph-normalized data.
+    Timing follows the contract order: edge recommendation, node property, then
+    the neutral selector default.
+    """
+
+    data = dict(fixture)
+    claim_ids = data.get("claimIds", data.get("evidenceClaimIds", []))
+    candidate_place_ids = data.get(
+        "candidatePlaceIds", data.get("placeIds", [])
+    )
+    recommendation = dict(data.get("recommendation") or {})
+    edge_slots = recommendation.get("timeSlots")
+    node = data.get("nodeProperties") or data.get("node") or {}
+    node_slots = node.get("timeSlots", node.get("best_time_slots")) if isinstance(node, Mapping) else None
+    slots = edge_slots or node_slots or []
+    result = {
+        "activityId": data.get("activityId"),
+        "claimIds": list(claim_ids or []),
+        "anchorPlaceIds": list(data.get("anchorPlaceIds", [])),
+        "candidatePlaceIds": list(candidate_place_ids or []),
+        "category": data.get("category", ExperienceCategory.main_experience),
+        "recommendation": {**recommendation, "timeSlots": list(slots)},
+        "sourceRefs": list(data.get("sourceRefs", [])),
+    }
+    return CandidateContract.model_validate(result).model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+
 def _ranked_sort_key(ranked: RankedExperience) -> tuple[int, str, str]:
     return (
         ranked.rank,
@@ -288,6 +364,8 @@ build_graph_candidate_catalog = project_graph_candidate_catalog
 __all__ = [
     "GraphCandidateCatalog",
     "GraphExperienceCandidate",
+    "CandidateContract",
     "build_graph_candidate_catalog",
+    "build_candidate_contract",
     "project_graph_candidate_catalog",
 ]
