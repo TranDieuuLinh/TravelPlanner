@@ -300,6 +300,8 @@ class MainPlanWorkflow:
                 details={
                     "tripThemeCount": len(theme_output.trip_themes),
                     "selectedPlaceCount": len(selected_places),
+                    "inputSelectedPlaceCount": len(selected_places),
+                    "requiredExperienceCount": len(theme_output.required_experiences),
                     "dataSource": "Knowledge Graph DB + LLM",
                 },
             )
@@ -360,6 +362,9 @@ class MainPlanWorkflow:
                 details={
                     "scheduledDayCount": len(selection_output.final_days),
                     "selectedPlaceCount": len(selection_candidates),
+                    "inputSelectedPlaceCount": len(selected_places),
+                    "selectionCandidateCount": len(selection_candidates),
+                    "requiredExperienceCount": len(theme_output.required_experiences),
                     "dataSource": "Knowledge Graph DB + deterministic rules",
                 },
             )

@@ -260,7 +260,15 @@ def _batch_evaluate_fit(
     results: dict[str, FitResult] = {}
 
     for claim in claims:
-        entity_id = claim.object.id
+        # Activities are often graph nodes without their own LOCATED_IN edge.
+        # Their anchor place is the geographic entity that PlaceSelector will
+        # hydrate and schedule, so evaluate fit against that anchor when one
+        # is available.
+        entity_id = (
+            claim.anchorPlace.id
+            if claim.anchorPlace is not None
+            else claim.object.id
+        )
 
         fit_input = ExperienceFitInput(
             entityId=entity_id,

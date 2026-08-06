@@ -353,7 +353,7 @@ class PlaceSelectorService:
                 name.casefold() for name in selection_input.intent.avoid_places
             },
             intent_constraints=selection_input.intent.constraints,
-            allow_place_suggestions=selection_input.allow_place_suggestions,
+            allow_place_suggestions=selection_input.allow_finder_gap_fill,
             constraint_policy=selection_input.intent.constraint_policy,
             budget_level=selection_input.trip_spec.budget.level.value,
             trip_start_date=selection_input.trip_spec.start_date,
