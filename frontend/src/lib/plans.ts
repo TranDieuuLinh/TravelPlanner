@@ -1134,9 +1134,6 @@ export async function getTripChatTurn(input: {
   );
 }
 
-export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
-  return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
-}
 
 export async function executeTripChatTurn(input: {
   chatId: string;
