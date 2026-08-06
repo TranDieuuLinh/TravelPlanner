@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from app.modules.plans import dependencies
 from app.modules.plans.place_selector.area_survey import AreaSurveyService
 from app.modules.plans.place_selector.place_tool import SelectablePlace
 
@@ -80,3 +81,25 @@ def test_located_in_child_is_context_only():
 
     assert result.candidates == ()
     assert result.context_by_place_id["ho-guom"] == ("Thap Rua",)
+
+
+def test_production_nearby_route_adapter_returns_provider_distance(monkeypatch):
+    class RouteProvider:
+        def calculate(self, origin, destination, *, transport_mode, departure_time):
+            assert transport_mode == "pedestrian"
+            assert departure_time is None
+            return SimpleNamespace(distance_meters=2400)
+
+    monkeypatch.setattr(
+        dependencies,
+        "_get_route_optimizer",
+        lambda: SimpleNamespace(route_provider=RouteProvider()),
+    )
+    provider = dependencies._get_nearby_route_cost_provider()
+    origin = SelectablePlace(
+        placeId="a", name="A", placeType="attraction", regionKey="vn,hanoi",
+        latitude=21.028, longitude=105.852,
+    )
+    destination = origin.model_copy(update={"place_id": "b", "name": "B"})
+
+    assert provider(origin, destination) == 2.4

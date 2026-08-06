@@ -231,10 +231,10 @@ class PlanMutationService:
         lat = request.latitude
         lng = request.longitude
         address = request.address
-        place_id = None
+        place_id = request.place_id
 
         # Auto-resolve coordinates if missing
-        if lat is None or lng is None:
+        if (lat is None or lng is None) and place_id is None:
             candidate = UnifiedPlaceCandidate(
                 name=request.name,
                 address_hint=request.address,
@@ -256,7 +256,7 @@ class PlanMutationService:
 
         new_item = PlanItem(
             itemId=str(uuid4()),
-            placeId=request.place_id or place_id,
+            placeId=place_id,
             name=request.name,
             address=address,
             timeWindow=time_window,
@@ -271,6 +271,11 @@ class PlanMutationService:
             rating=request.rating,
             reviewCount=request.review_count,
             imageUrls=request.image_urls or [],
+            sourceRefs=request.source_refs,
+            sourceImportNodeId=request.source_import_node_id,
+            candidateEntityIds=request.candidate_entity_ids,
+            sourceProvider=request.source_provider,
+            identityConfidence=request.identity_confidence,
         )
 
         items = list(day.items)
@@ -308,11 +313,31 @@ class PlanMutationService:
         existing_item = day.items[item_index]
         updates = request.model_dump(exclude_unset=True, by_alias=False)
 
+        # Provenance is additive: an edit must not discard attribution already
+        # attached to the item when a client sends an empty metadata list.
+        if "source_refs" in updates:
+            updates["source_refs"] = list(dict.fromkeys([
+                *existing_item.source_refs,
+                *(updates["source_refs"] or []),
+            ]))
+        if "candidate_entity_ids" in updates:
+            updates["candidate_entity_ids"] = list(dict.fromkeys([
+                *existing_item.candidate_entity_ids,
+                *(updates["candidate_entity_ids"] or []),
+            ]))
+        if updates.get("source_provider") is None and "source_provider" in updates:
+            updates["source_provider"] = existing_item.source_provider
+        if updates.get("identity_confidence") is None and "identity_confidence" in updates:
+            updates["identity_confidence"] = existing_item.identity_confidence
+        if updates.get("source_import_node_id") is None and "source_import_node_id" in updates:
+            updates["source_import_node_id"] = existing_item.source_import_node_id
+
         # If name updated and no coordinates provided, try auto-resolving again
         if (
             "name" in updates
             and updates["name"] != existing_item.name
             and updates.get("latitude") is None
+            and updates.get("place_id") is None
         ):
             candidate = UnifiedPlaceCandidate(
                 name=updates["name"],

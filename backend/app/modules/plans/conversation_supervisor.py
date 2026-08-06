@@ -10,6 +10,11 @@ from app.core.config import settings
 from app.integrations.llm.base import LLMClient
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.conversation_agents import ConversationAgentName
+from app.modules.plans.plan_editor.contract import (
+    OperationType,
+    PlanEditorOperation,
+    validate_operation_for_intent,
+)
 
 
 ConversationIntent = Literal[
@@ -30,16 +35,6 @@ ConversationIntent = Literal[
     "unsupported",
 ]
 
-OperationType = Literal[
-    "add_place",
-    "update_place",
-    "remove_place",
-    "move_place",
-    "lock_item",
-    "unlock_item",
-]
-
-
 class SupervisorOption(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -47,14 +42,7 @@ class SupervisorOption(BaseModel):
     value: str = Field(1, max_length=500)
 
 
-class SupervisorOperation(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    type: OperationType
-    day: int | None = Field(default=None, ge=1, le=30)
-    item_id: str | None = Field(default=None, alias="itemId", max_length=128)
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    to_day: int | None = Field(default=None, alias="toDay", ge=1, le=30)
+SupervisorOperation = PlanEditorOperation
 
 
 class SupervisorOutput(BaseModel):
@@ -261,7 +249,10 @@ def _validated_decision(
             raise ConversationSupervisorError(
                 "Gemini returned an invalid mutation operation."
             )
-        operation = matching[0]
+        try:
+            operation = validate_operation_for_intent(result.intent, matching[0])
+        except ValueError as exc:
+            raise ConversationSupervisorError(str(exc)) from exc
     elif result.operations:
         raise ConversationSupervisorError(
             "Gemini returned operations for a non-mutation intent."
@@ -274,30 +265,6 @@ def _validated_decision(
                 "Gemini selected an item outside the current plan."
             )
         operation = operation.model_copy(update={"day": item[0]})
-
-    if operation and operation.type == "add_place" and (operation.day is None or not operation.name):
-        raise ConversationSupervisorError(
-            "Gemini returned an incomplete add-place operation."
-        )
-
-    if (
-        operation
-        and operation.type in {"move_place", "lock_item", "unlock_item", "update_place", "remove_place"}
-        and (not operation.item_id or operation.day is None)
-    ):
-        raise ConversationSupervisorError(
-            "Gemini returned an incomplete item operation."
-        )
-
-    if operation and operation.type == "update_place" and not operation.name:
-        raise ConversationSupervisorError(
-            "Gemini returned an incomplete update operation."
-        )
-
-    if operation and operation.type == "move_place" and operation.to_day is None:
-        raise ConversationSupervisorError(
-            "Gemini returned an incomplete move operation."
-        )
 
     if operation and operation.type == "add_place" and not _has_plan_day(plan, operation.day):
         raise ConversationSupervisorError(

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
@@ -27,6 +29,12 @@ from app.modules.plans.plan_mutation_schema import (
     UpdateItemRequest,
 )
 from app.modules.plans.plan_mutation_service import PlanMutationService
+from app.modules.plans.plan_editor import (
+    PlanEditorOperation,
+    validate_operation_for_intent,
+)
+from app.modules.plans.plan_editor.agent import PlanEditorAgent
+from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
 from app.modules.plans.router import (
     _extract_urls,
     _infer_destination,
@@ -61,6 +69,14 @@ class ConversationTurnService:
         self.mutation_service = mutation_service
         self.supervisor = supervisor or ConstrainedConversationSupervisor(get_llm_client())
         self.information_finder_agent = InformationFinderAgent(information_finder_reader)
+        self.plan_editor_agent = (
+            PlanEditorAgent(
+                repository,
+                ExplorerPersistenceRepository(repository.db),
+                mutation_service,
+            )
+            if hasattr(repository, "db") else None
+        )
         self.agent_dispatcher = ConversationAgentDispatcher(
             {
                 "explorer": self._run_explorer_agent,
@@ -491,17 +507,75 @@ class ConversationTurnService:
         self, context: ConversationAgentContext
     ) -> TripChatMessage:
         response = await self.information_finder_agent.run(context)
-        return self._save_response(context.chat, context.turn, response.message, response.blocks)
+        summary = _information_result_summary(response.result)
+        blocks = list(response.blocks)
+        if "candidate_data_stale" in summary.get("warnings", []) and not any(
+            block.get("code") == "candidate_data_stale" for block in blocks
+        ):
+            blocks.append({
+                "type": "warning",
+                "code": "candidate_data_stale",
+                "message": "Một số dữ liệu địa điểm đã cũ; hãy xác minh trước khi dùng cho kế hoạch.",
+                "freshness": "stale",
+            })
+        return self._save_response(
+            context.chat,
+            context.turn,
+            response.message,
+            blocks,
+            result_summary=summary,
+        )
 
     async def _run_plan_editor_agent(
         self, context: ConversationAgentContext
     ) -> TripChatMessage:
-        return await self._mutate(
+        if self.plan_editor_agent is None:
+            raise AppError(500, "PLAN_EDITOR_UNAVAILABLE", "Plan editor is unavailable.")
+        execution = await self.plan_editor_agent.execute(
+            plan=context.plan,
+            chat=context.chat,
+            turn=context.turn,
+            intent=context.decision.intent,
+            operation=context.decision.operation or {},
+            allow_locked_change=context.confirmed,
+        )
+        return self._persist_editor_execution(
             context.chat,
             context.turn,
             context.plan,
-            context.decision,
-            allow_locked_change=context.confirmed,
+            execution,
+        )
+
+    def _persist_editor_execution(
+        self,
+        chat: TripChat,
+        turn: TripChatMessage,
+        plan: Plan,
+        execution: Any,
+    ) -> TripChatMessage:
+        result = execution.result
+        revision = chat.revision + 1
+        diff = _plan_diff(plan, result.plan, result.affected_days, chat.revision, revision)
+        diff["summary"] = execution.summary
+        saved = self.repository.save_conversation_mutation(
+            chat,
+            turn=turn,
+            user_content=turn.content,
+            assistant_content=execution.summary,
+            assistant_blocks=[{"type": "planDiff", **diff}],
+            plan_payload=result.plan.model_dump(mode="json", by_alias=True),
+            revision=revision,
+        )
+        return self.repository.update_turn(
+            turn,
+            status="completed",
+            assistant_blocks=[{"type": "planDiff", **diff}],
+            result_summary={
+                "planRevision": saved.revision,
+                "operationSummary": execution.summary,
+                "affectedDays": result.affected_days,
+                "warnings": execution.warnings,
+            },
         )
 
     async def _create_plan(
@@ -620,7 +694,38 @@ class ConversationTurnService:
         *,
         allow_locked_change: bool = False,
     ) -> TripChatMessage:
-        operation = decision.operation or {}
+        operation_model = PlanEditorOperation.model_validate(decision.operation or {})
+        validate_operation_for_intent(decision.intent, operation_model)
+        hydration_warnings: list[str] = []
+        if self.plan_editor_agent is not None and decision.intent in {"add_place", "update_place"}:
+            hydrated = self.plan_editor_agent.hydrate_candidate(chat, turn, operation_model)
+            operation_model = hydrated.operation
+            hydration_warnings = hydrated.warnings
+        if decision.intent == "update_place" and operation_model.item_id:
+            current_item = _find_item(plan, operation_model.item_id)
+            if current_item is not None:
+                operation_model = operation_model.model_copy(update={
+                    "source_refs": _merge_string_values(
+                        current_item.source_refs, operation_model.source_refs
+                    ),
+                    "candidate_entity_ids": _merge_string_values(
+                        current_item.candidate_entity_ids,
+                        operation_model.candidate_entity_ids,
+                    ),
+                    "source_provider": (
+                        operation_model.source_provider or current_item.source_provider
+                    ),
+                    "identity_confidence": (
+                        operation_model.identity_confidence or current_item.identity_confidence
+                    ),
+                    "source_import_node_id": (
+                        operation_model.source_import_node_id
+                        or current_item.source_import_node_id
+                    ),
+                })
+        operation = operation_model.model_dump(
+            mode="python", by_alias=True, exclude_none=True
+        )
         day = int(operation.get("day") or 1)
         item_id = str(operation.get("itemId") or "")
         existing = _find_item(plan, item_id)
@@ -633,17 +738,40 @@ class ConversationTurnService:
             )
 
         if decision.intent == "add_place":
+            display_name = (
+                operation.get("name")
+                or operation.get("candidateId")
+                or operation.get("placeId")
+            )
             result = await self.mutation_service.add_item(
                 plan,
-                AddItemRequest(day=day, name=str(operation["name"])),
+                AddItemRequest(
+                    day=day,
+                    name=str(display_name),
+                    candidateId=operation.get("candidateId"),
+                    placeId=operation.get("placeId"),
+                    sourceRefs=operation.get("sourceRefs", []),
+                    sourceImportNodeId=operation.get("sourceImportNodeId"),
+                    candidateEntityIds=operation.get("candidateEntityIds", []),
+                    sourceProvider=operation.get("sourceProvider"),
+                    identityConfidence=operation.get("identityConfidence"),
+                ),
             )
-            summary = f"Đã thêm {operation['name']} vào Ngày {day}."
+            summary = f"Đã thêm {display_name} vào Ngày {day}."
         elif decision.intent == "update_place":
             result = await self.mutation_service.update_item(
                 plan,
                 day,
                 item_id,
-                UpdateItemRequest(name=str(operation["name"])),
+                UpdateItemRequest(
+                    name=operation.get("name"),
+                    placeId=operation.get("placeId"),
+                    sourceRefs=operation.get("sourceRefs"),
+                    sourceImportNodeId=operation.get("sourceImportNodeId"),
+                    candidateEntityIds=operation.get("candidateEntityIds"),
+                    sourceProvider=operation.get("sourceProvider"),
+                    identityConfidence=operation.get("identityConfidence"),
+                ),
             )
             summary = "Đã cập nhật địa điểm."
         elif decision.intent in {"lock_item", "unlock_item"}:
@@ -715,6 +843,7 @@ class ConversationTurnService:
             result_summary={
                 "planRevision": saved.revision,
                 "affectedDays": result.affected_days,
+                "warnings": hydration_warnings,
             },
         )
 
@@ -796,6 +925,7 @@ class ConversationTurnService:
         turn: TripChatMessage,
         content: str,
         blocks: list[dict],
+        result_summary: dict | None = None,
     ) -> TripChatMessage:
         self.repository.save_conversation_response(
             chat, turn, assistant_content=content, assistant_blocks=blocks
@@ -804,7 +934,10 @@ class ConversationTurnService:
             turn,
             status="completed",
             assistant_blocks=blocks,
-            result_summary={"planRevision": chat.revision},
+            result_summary={
+                "planRevision": chat.revision,
+                **(result_summary or {}),
+            },
         )
 
 
@@ -877,7 +1010,83 @@ def _conversation_context(
         "requirements": requirements if isinstance(requirements, dict) else {},
         "recentMessages": recent_messages,
         "recentActionHistory": action_history,
+        "informationFinderReferences": [
+            reference
+            for turn in list(lifecycle_messages)[-8:]
+            for reference in _turn_information_references(turn)
+        ],
     }
+
+
+def _information_result_summary(result: Any) -> dict:
+    """Persist only stable candidate references, never provider payloads."""
+    if result is None:
+        return {}
+    candidates = list(getattr(result, "candidates", []) or [])
+    if not candidates:
+        return {
+            "warnings": list(getattr(result, "warnings", []) or []),
+        }
+    candidate_ids = [candidate.candidate_id for candidate in candidates]
+    source_refs = list(
+        dict.fromkeys(
+            ref
+            for candidate in candidates
+            for ref in candidate.source_refs
+        )
+    )
+    selected_ids = [
+        candidate.candidate_id
+        for candidate in candidates
+        if bool(getattr(candidate, "selected", False))
+    ]
+    selected_place_ids = [
+        candidate.place_id
+        for candidate in candidates
+        if bool(getattr(candidate, "selected", False)) and candidate.place_id
+    ]
+    warnings = list(getattr(result, "warnings", []) or [])
+    if any(
+        _candidate_is_stale(getattr(candidate, "fetched_at", None), datetime.now(UTC))
+        for candidate in candidates
+    ) and "candidate_data_stale" not in warnings:
+        warnings.append("candidate_data_stale")
+    return {
+        "candidateIds": candidate_ids,
+        "sourceRefs": source_refs,
+        "selectedCandidateIds": selected_ids,
+        "selectedPlaceIds": selected_place_ids,
+        "warnings": warnings,
+    }
+
+
+def _turn_information_references(turn: TripChatMessage) -> list[dict]:
+    summary = getattr(turn, "result_summary", None) or {}
+    candidate_ids = summary.get("candidateIds")
+    if not isinstance(candidate_ids, list):
+        return []
+    return [{
+        "candidateIds": [str(value) for value in candidate_ids],
+        "sourceRefs": [str(value) for value in summary.get("sourceRefs", []) if value],
+        "selectedCandidateIds": [
+            str(value) for value in summary.get("selectedCandidateIds", []) if value
+        ],
+        "selectedPlaceIds": [
+            str(value) for value in summary.get("selectedPlaceIds", []) if value
+        ],
+    }]
+
+
+def _candidate_is_stale(fetched_at: Any, now: datetime) -> bool:
+    if not isinstance(fetched_at, datetime):
+        return True
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=UTC)
+    return fetched_at < now - timedelta(days=30)
+
+
+def _merge_string_values(left: list[str], right: list[str]) -> list[str]:
+    return list(dict.fromkeys([*left, *right]))
 
 
 def _turn_lifecycle_id(turn: TripChatMessage) -> str:

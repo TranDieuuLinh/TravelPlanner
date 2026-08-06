@@ -252,7 +252,7 @@ class PlaceSelectorService:
     ) -> PlaceSelectionResult:
         normalized_selected = self._fill_nearby_graph_experiences(
             self._normalize_selected_places(selected_places),
-            region_key=intent.destination,
+            region_key=selection_blueprint.region_key or intent.destination,
             interests=intent.interests,
         )
         selected_refs = {

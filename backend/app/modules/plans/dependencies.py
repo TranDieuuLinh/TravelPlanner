@@ -203,6 +203,7 @@ def get_plan_service(
         RepositoryPlaceSelectionTool(place_repository),
         route_optimizer=_get_itinerary_optimizer(),
         graph_repository=kg_repo,
+        nearby_route_cost_provider=_get_nearby_route_cost_provider(),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -308,6 +309,31 @@ def _get_itinerary_optimizer():
     if settings.itinerary_optimizer_mode == "legacy":
         return legacy
     return RouteFirstItineraryOptimizer(legacy)
+
+
+def _get_nearby_route_cost_provider():
+    """Adapt the configured route provider for bounded nearby discovery."""
+    route_provider = _get_route_optimizer().route_provider
+    if route_provider is None:
+        return None
+
+    def route_cost(origin, destination):
+        if (
+            origin.latitude is None
+            or origin.longitude is None
+            or destination.latitude is None
+            or destination.longitude is None
+        ):
+            return None
+        result = route_provider.calculate(
+            (origin.latitude, origin.longitude),
+            (destination.latitude, destination.longitude),
+            transport_mode="pedestrian",
+            departure_time=None,
+        )
+        return result.distance_meters / 1000.0 if result is not None else None
+
+    return route_cost
 
 
 def get_current_location_route_service() -> CurrentLocationRouteService:

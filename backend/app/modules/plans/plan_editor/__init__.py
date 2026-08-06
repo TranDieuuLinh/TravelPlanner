@@ -7,7 +7,6 @@ from .contract import (
     OperationType,
     validate_operation_for_intent,
 )
-
 __all__ = [
     "OperationType",
     "PlanEditorInput",
