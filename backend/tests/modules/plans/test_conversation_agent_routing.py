@@ -45,6 +45,24 @@ def test_allowlist_has_no_agent_for_service_owned_intents() -> None:
     assert agent_for_conversation_intent("unsupported") is None
 
 
+@pytest.mark.parametrize(
+    ("intent", "agent"),
+    [
+        ("ask_place", "information_finder"),
+        ("ask_travel_information", "information_finder"),
+        ("explain_plan", "information_finder"),
+        ("add_place", "plan_editor"),
+        ("update_place", "plan_editor"),
+        ("remove_place", "plan_editor"),
+        ("move_place", "plan_editor"),
+        ("lock_item", "plan_editor"),
+        ("unlock_item", "plan_editor"),
+    ],
+)
+def test_information_finder_and_plan_editor_routes_are_server_allowlisted(intent, agent):
+    assert agent_for_conversation_intent(intent) == agent
+
+
 def test_dispatcher_rejects_intent_agent_mismatch() -> None:
     dispatcher = ConversationAgentDispatcher(
         {
