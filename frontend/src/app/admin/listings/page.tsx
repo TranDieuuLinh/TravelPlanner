@@ -84,9 +84,10 @@ export default function AdminListingsPage() {
           <h1>Duyệt Listing Marketplace ({pendingListings.length})</h1>
           <p>Khai thác và kiểm duyệt chất lượng nội dung trước khi creator phát hành công khai.</p>
         </div>
-        <Link className="secondaryBtn" href="/profile">
-          ← Về Hồ sơ
-        </Link>
+        <div className="shellActions">
+          <Link className="secondaryBtn" href="/admin/places">Duyệt địa điểm</Link>
+          <Link className="secondaryBtn" href="/profile">← Về Hồ sơ</Link>
+        </div>
       </header>
 
       {error ? <div className="errorBanner">{error}</div> : null}

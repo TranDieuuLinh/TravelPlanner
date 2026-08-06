@@ -74,7 +74,10 @@ class StubLLMClient(LLMClient):
         instead of a provider error. It intentionally never proposes a plan
         mutation and never claims that an action was completed.
         """
-        del system_prompt, response_schema
+        schema_properties = response_schema.get("properties", {})
+        if "intent" not in schema_properties:
+            return await self.generate_json(system_prompt, user_payload)
+        del system_prompt
         try:
             payload = json.loads(user_payload)
         except (TypeError, ValueError):

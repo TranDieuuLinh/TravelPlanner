@@ -160,6 +160,34 @@ def test_planner_statistics_are_computed_without_database_snapshots(
     assert first.snapshot_id.startswith("live-")
 
 
+def test_planner_can_read_a_fresh_generated_snapshot_without_scanning_repository(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "statistics.json"
+    repository = FakePlaceStatisticsRepository([_example_place()])
+    writer = AutoPlaceStatisticsService(repository, output_path)
+    writer.refresh()
+
+    class RepositoryThatMustNotBeRead:
+        def source_signature(self, region_key=None):
+            raise AssertionError("planner should use the generated snapshot")
+
+        def iter_statistics_records(self, region_key=None):
+            raise AssertionError("planner should use the generated snapshot")
+
+    reader = AutoPlaceStatisticsService(
+        RepositoryThatMustNotBeRead(),
+        output_path,
+        prefer_snapshot_for_planner=True,
+    )
+
+    result = reader.get_for_planner("vn,ha-noi")
+
+    assert result.status == "snapshot"
+    assert result.regions[0]["regionKey"] == "vn,ha-noi"
+    assert result.snapshot_id.startswith("snapshot-")
+
+
 def test_statistics_reject_invalid_region_key() -> None:
     place = _example_place(region_key="ha-noi")
 

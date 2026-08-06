@@ -15,6 +15,10 @@ const {
   directories,
   processJob,
 } = require("../scripts/google_maps_scraper_worker");
+const {
+  normalizeResultUrl,
+  normalizeSearchResults,
+} = require("../scripts/google_web_search");
 
 async function ensureDirectories() {
   await Promise.all(
@@ -79,4 +83,35 @@ test("stale response, status, error, and cancellation files are removed", async 
   ]) {
     assert.deepEqual(await fs.promises.readdir(directory), []);
   }
+});
+
+test("Google web result normalization keeps only public result URLs", () => {
+  assert.equal(
+    normalizeResultUrl(
+      "https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Ftickets"
+    ),
+    "https://example.com/tickets"
+  );
+  const results = normalizeSearchResults(
+    [
+      {
+        title: "Official tickets",
+        uri: "https://example.com/tickets#prices",
+        snippet: "Adult ticket 70,000 VND",
+      },
+      {
+        title: "Internal",
+        uri: "https://www.google.com/search?q=tickets",
+        snippet: "ignored",
+      },
+    ],
+    8
+  );
+  assert.deepEqual(results, [
+    {
+      title: "Official tickets",
+      uri: "https://example.com/tickets",
+      snippet: "Adult ticket 70,000 VND",
+    },
+  ]);
 });

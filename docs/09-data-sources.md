@@ -36,12 +36,13 @@
 - UI bản đồ dễ tiếp cận và ràng buộc offline;
 - ảnh hưởng đến quyền riêng tư và vị trí lưu dữ liệu.
 
-Valhalla tự vận hành được chọn cho route từng leg của Finder. Finder gọi cả
-`pedestrian` và `auto` cho mỗi mode không bị user loại trừ. Ngưỡng đi bộ 1.500 m
-quyết định mode road được đề xuất ở backend, còn route road kia vẫn nằm trong
-`PlanTransportLeg.alternatives`. UI Planner luôn giữ ô tô trong các route road
-khả thi; đi bộ chỉ được thêm khi leg dưới 3.000 m. Tuyến public transit đã được
-OpenTripPlanner xác minh được hiển thị thêm để người dùng chọn; lựa chọn
+Valhalla tự vận hành được chọn cho route road của Finder. Sau khi global matrix
+đã gom activity và thứ tự cuối cùng được chốt, runtime batch toàn bộ ordered stop
+trong một ngày thay vì gọi từng cặp. Haversine 2.000 m chỉ là prefilter miễn phí;
+route pedestrian provider-backed không quá 1.500 m mới được chọn làm mode chính.
+Auto batch chỉ chạy khi có leg cần xe hoặc user ưu tiên car. Tuyến public transit
+chỉ được gọi trong critical path khi preference/constraint cần transit hoặc road
+route không khả dụng; route OTP đã xác minh vẫn có thể được hiển thị để user chọn. Lựa chọn
 `mixed`/`unknown` không được đưa lên UI hoặc gắn nhãn trên bản đồ.
 Summary distance/duration cùng polyline6 được chuẩn hóa vào
 `PlanTransportLeg`; lỗi provider fallback theo từng leg. Kết quả không được mô
@@ -108,9 +109,11 @@ phải có địa chỉ nguồn khớp record mới được resolve tự độn
 có thể hiệu chỉnh, không phải confidence do Google hay source cung cấp. Nhờ vậy
 source tiếng Việt vẫn match được record DB chỉ có tên tiếng Anh và ngược lại,
 đồng thời không đoán giữa các thương hiệu/địa điểm trùng tên. Ngoại lệ duy nhất
-là nhiều row có cùng canonical name chính xác, cùng loại, cùng `region_key`,
-locality tương thích và nằm trong cụm bán kính 200 m: runtime coi đây là duplicate
-của cùng một địa điểm và chọn record có metadata đầy đủ hơn. Catalog miss hoặc
+là nhiều row có cùng canonical name chính xác, cùng loại chuẩn hóa, địa chỉ/vùng
+tương thích và nằm trong cụm bán kính 200 m: runtime coi đây là duplicate của
+cùng một địa điểm và chọn record có metadata đầy đủ hơn. `region_key` chưa map
+không được ngăn gộp khi địa chỉ có cùng số nhà và đủ token đường/khu vực trùng
+nhau. Catalog miss hoặc
 toàn bộ điểm thấp mới fallback sang Playwright worker của Google Maps. Kết quả
 nhập nhằng giữa các địa điểm/chi nhánh thật được giữ để review và không gọi
 Google chỉ để phân xử lại identity đã có trong Knowledge Graph.
@@ -241,8 +244,10 @@ instruction.
    Heading thành phố có duration như `Hanoi - 2 days` được chuẩn hóa thành
    `destinationStay` phủ hai ngày và bị loại khỏi danh sách stop; duration không
    được hiểu thành một phần tên địa điểm.
-7. Metadata và nhánh media chạy song song; khi trip chưa có destination, nhánh
-   media chỉ chờ metadata đủ để tạo location hint rồi mới gọi STT/Vision. Validate
+7. Metadata và nhánh media chạy song song, ngoại trừ TikTok phải hoàn tất
+   metadata trước khi bắt đầu tải media để tránh burst request làm nền tảng trả
+   challenge. Khi trip chưa có destination, nhánh media chỉ chờ metadata đủ để
+   tạo location hint rồi mới gọi STT/Vision. Validate
    JSON, gộp/dedupe metadata + STT + OCR + caption, giữ evidence theo từng nguồn
    rồi chuyển thành place candidate. Metadata location cụ thể làm anchor; tên
    STT/OCR khác spelling được giữ trong `observedAliases`. Nếu tên candidate dính thêm câu review,
@@ -259,6 +264,35 @@ instruction.
    Knowledge Graph và external provider giữ tối đa năm match option kèm score component;
    top-1 chỉ được nhận khi đủ score/margin. Stable identity đã xác minh mới cho
    phép học `verifiedAliases`; alias Việt được trả riêng cho frontend.
+   Riêng catalog nội bộ, một canonical name hoặc `verifiedAlias` khớp exact có
+   thể resolve với `exact_unique_database_match` dù thiếu điểm region/category,
+   nhưng chỉ khi toàn bộ tập search còn đúng một identity active, tọa độ hợp lệ
+   và không có xung đột địa chỉ/category. Tên chuỗi có nhiều chi nhánh vẫn giữ
+   `ambiguous_name`.
+   `region_key=vn,unmapped` chỉ được backfill tự động khi source platform là
+   Google Maps, URL nguồn hợp lệ và địa chỉ nguồn chứa đúng một tên tỉnh/thành
+   trong allowlist đối chiếu với danh mục hành chính hiện hành. Backfill lưu
+   `region_key_source_url`, evidence và confidence; địa chỉ placeholder hoặc
+   chỉ có tên sông/núi vẫn giữ `vn,unmapped`.
+   Alias phiên âm/dịch từ tên phi Latin chỉ được lưu ở trạng thái `imported`,
+   kèm URL nguồn và confidence; alias này được phép tham gia search nhưng không
+   được coi là `verifiedAlias` để tự vượt ngưỡng resolve. Tên chung chung hoặc
+   chưa có cách đọc đủ tin cậy phải giữ lại để review, không tự đoán.
+   `backend/scripts/backfill_non_latin_place_aliases.py` ghi quyết định có kiểm
+   soát và chạy idempotent.
+   Category Planner được suy ra từ `place_type` bằng mapping deterministic.
+   Khi dữ liệu legacy để raw provider type trong `place_category`, backfill phải
+   bảo toàn giá trị đó trong `place_type` trước khi ghi taxonomy chuẩn. Script
+   `backend/scripts/backfill_knowledge_graph_categories.py` mặc định dry-run,
+   chỉ cập nhật record active và lưu source/version cùng thời điểm cập nhật.
+   Address comparison bỏ plus code, postal code và từ hành chính gây nhiễu,
+   chuẩn hóa dấu/Unicode cùng số nhà có hậu tố; chỉ báo conflict khi evidence
+   địa chỉ thực sự mâu thuẫn, không vì khác cách viết Việt–Anh.
+   Search và Planner chỉ nhận catalog record `active` có canonical name chứa
+   ít nhất một chữ/số Unicode, `place_type` không phải placeholder, tọa độ hữu
+   hạn trong phạm vi hợp lệ và khác `(0,0)`. Record vi phạm được soft-quarantine
+   với `quarantine_reasons`; record `merged` hoặc `quarantined` không được đưa
+   vào resolver nhưng vẫn còn trong DB để sửa và truy vết.
    Query dùng `searchRegion` của stop thay vì luôn nối trip base. Khi candidate
    có `addressHint`, Google fallback thử thêm một query chỉ gồm địa chỉ và vùng
    sau các query tên + địa chỉ. Kết quả có tổng score không vượt ngưỡng vẫn giữ
@@ -274,6 +308,20 @@ instruction.
    theo thứ tự candidate nguồn. Caption dạng danh sách `1. ... 2. ...` được
    tách theo marker số trước heuristic để dấu chấm trong tên như
    `St. Joseph's Cathedral` không làm mất địa điểm hoặc dính số thứ tự kế tiếp.
+   Catalog Knowledge Graph được kiểm tra trùng bằng
+   `backend/scripts/dedupe_knowledge_graph_places.py`. Mặc định script chỉ xuất
+   `auto_merge.json` và `needs_review.json`; cờ `--apply` chỉ gộp mềm các nhóm
+   chắc chắn theo rule identity/location đã được phê duyệt. Mọi nhóm có địa chỉ
+   trùng hoặc gần trùng đều giữ trong `needs_review.json` để admin xem trước;
+   không tự động gộp chỉ vì địa chỉ giống nhau. Apply ghi
+   `merged_into_entity_id` và không xóa bản ghi.
+   Có thể chạy `--dismiss-different-addresses` để ghi quyết định `not_merged`
+   cho các nhóm review có từ hai địa chỉ đầy đủ nhưng hoàn toàn khác nhau và
+   loại chúng khỏi `needs_review.json`; nhóm có địa chỉ giống/gần giống hoặc
+   thiếu địa chỉ vẫn được giữ để admin xem thủ công.
+   Lệnh một lần `--process-review-and-clean` áp dụng quyết định này cho toàn
+   bộ report hiện tại: merge các nhóm địa chỉ tương đồng, ghi `not_merged` cho
+   phần còn lại và xóa các JSON report sau khi DB commit thành công.
    Với tên thương hiệu trùng nhau, resolver có thể thêm nearby-place hint ngắn
    lấy từ evidence dạng `near/along ...` vào query; scraper phải mở một place
    card cụ thể trước khi đọc tên, địa chỉ và tọa độ, không được coi trang danh
@@ -366,11 +414,23 @@ Traveler Profile. Dữ liệu dài hạn nằm trong các bảng quan hệ
 provenance mà không lưu lại nội dung chat thô trong signal.
 
 Display note của itinerary/map không phải một extraction artifact. Sau khi
-resolve place, backend compose một summary ngắn từ evidence đã chuẩn hóa,
-`sourceActivity` và description provider được phép, rồi lưu duy nhất trong
-`PlanItem.notes` của revision. `noteSources` giữ URL/place ID, loại evidence và
-freshness khi có; `personalNotes` giữ text do user nhập. Địa chỉ, rating và giờ
-mở cửa tiếp tục ở field có cấu trúc, không được chép vào prose này.
+resolve place, backend tạo riêng một ghi chú tiếng Việt cho từng nguồn trong
+`PlanItem.noteSources`. Ghi chú video chỉ chứa câu chuyện/mẹo hữu ích thuộc đúng
+place và không sao chép summary cấp hành trình; nếu nguồn chỉ xác nhận tên place
+thì không tạo display note. Evidence span hỗ trợ được lưu cùng note và phải có
+nội dung ngoài tên place. Địa chỉ, rating, review count, giờ mở cửa và link
+provider nằm trong field/UI có cấu trúc, không được diễn đạt lại thành ghi chú.
+Mỗi source note giữ text cùng URL, loại evidence và freshness khi có.
+`PlanItem.notes` chỉ còn là summary tương thích revision cũ;
+`personalNotes` giữ text do user nhập. UI không được gán nhãn video cho
+`finder_suggestion` chỉ có dữ liệu provider.
+
+Nhận xét/tip áp dụng cho cả destination được lưu riêng trong
+`Plan.regionStories`. Caption/STT structurer trả story tiếng Việt cùng một
+evidence span nguyên văn; backend chuẩn hóa whitespace và chỉ nhận khi span có
+thật trong đúng source text. Chỉ nhắc tên vùng, story không có evidence, hoặc
+chi tiết chỉ thuộc một place đều không tạo region story. UI hiển thị story dưới
+tiêu đề destination cùng liên kết URL nguồn.
 
 ### Ma trận trạng thái nguồn
 
@@ -425,15 +485,55 @@ index của `groundingChunks`; URL do model tự viết không được dùng l�
 Lệnh mặc định ưu tiên entity có nhiều review, chỉ nghiên cứu tối đa 10 entity,
 không ghi database và append kết quả đã chuẩn hóa vào JSONL cache để resume.
 `--apply` chỉ upsert kết quả `verified_price` hoặc `verified_free` có ít nhất một
-grounded source. `--overwrite` là bắt buộc nếu entity đã có giá; kết quả thủ
+grounded source là URL HTTP(S) hợp lệ. Guard này được kiểm tra lại tại ranh giới
+ghi repository, kể cả khi outcome được đọc từ cache. `--overwrite` là bắt buộc
+nếu entity đã có giá; kết quả thủ
 công/provider khác không bị ghi đè mặc định. `--refresh` bỏ qua terminal cache
 để nghiên cứu lại. Search grounding có thể phát sinh phí theo model/số query,
 vì vậy operator phải dùng `--limit`, quota provider và theo dõi chi phí trước
 khi mở rộng tới toàn bộ catalog.
 
-Giá đầy đủ được lưu ở `admission_price`; `admission_fee_vnd` chỉ là giá đại diện
-được chiếu từ cùng snapshot khi currency là VND. Không tự đổi ngoại tệ và không
-dùng giá danh mục chung để giả làm giá của một địa điểm cụ thể.
+Snapshot admission chỉ chọn một giá vé vào cửa tiêu chuẩn ban ngày dành cho
+người lớn. Các mức trẻ em, học sinh/sinh viên, người cao tuổi, vé ưu tiên, VIP,
+tour đêm, combo, hướng dẫn viên, phương tiện và dịch vụ phụ trợ không được đưa
+vào `minAmount`/`maxAmount`; ba amount field cùng bằng giá người lớn đã chọn.
+
+`--concurrency` cho phép tối đa bốn request đang chạy. Client cấp key theo
+round-robin, cooldown key gặp `429` và loại key gặp `401/403`. Kết quả được
+append cache và commit riêng ngay khi hoàn tất; request nhanh không phải chờ
+request chậm nhất trong batch, và tiến độ đã hoàn thành vẫn được giữ nếu process
+dừng giữa chừng. Request price mặc định bắt đầu cách nhau tối thiểu bốn giây;
+operator có thể chỉnh bằng `--min-interval-seconds`. Khi pool vẫn quota-limited
+sau retry, worker dừng claim entity mới và summary báo `quota_limited_deferred`
+thay vì tiếp tục tạo cùng một provider error. Summary cũng trả
+`admission_price_in_database` để xác nhận tổng số price property sau lần chạy.
+Nhiều key cùng Google project không làm tăng quota project.
+
+Price crawler mặc định dùng `gemini-3.5-flash-lite`. Structured inference có thể
+khả dụng trong khi Google Search grounding vẫn bị từ chối do quota/billing của
+tool; hai capability phải được kiểm tra riêng. Với project mới không còn quyền
+gọi stable Gemini 2.5, đổi xuống `gemini-2.5-flash(-lite)` không phải fallback.
+Deployment có thể override bằng `GEMINI_PRICE_MODEL` hoặc `--model`, nhưng quota
+grounding vẫn được tính theo project.
+
+CLI có adapter opt-in `google_playwright` để chuẩn hóa title, URL và snippet từ
+Google SERP trước khi Gemini tạo structured output không-grounding. Adapter chạy
+tuần tự, không đăng nhập và không bypass consent/CAPTCHA. Trang chặn automation
+trở thành `google_playwright_blocked`, không phải nguồn hợp lệ và không được ghi
+DB. Kiểm tra local hiện tại bị Google chặn ở cả headless và headed, nên provider
+này không được bật mặc định và không được mô tả như fallback vận hành ổn định.
+
+Provider `tavily` là fallback API có key cho project không có Gemini Search
+grounding quota. Adapter gọi basic search, giới hạn tối đa 10 kết quả, không yêu
+cầu answer/raw content và chỉ chuyển title, URL cùng content snippet qua boundary.
+Gemini sau đó chạy structured output không-grounding; application map
+`sourceIndexes` về đúng URL provider trước khi apply. `TAVILY_API_KEY` là bắt
+buộc và không được log. Free tier 1.000 credits/tháng phù hợp batch thử nghiệm,
+không đủ làm giàu toàn bộ catalog trong một lượt.
+
+Giá đầy đủ và giá đại diện được lưu trong cùng snapshot `admission_price`. Không
+tự đổi ngoại tệ và không dùng giá danh mục chung để giả làm giá của một địa điểm
+cụ thể.
 
 ## Tích hợp đặt dịch vụ
 

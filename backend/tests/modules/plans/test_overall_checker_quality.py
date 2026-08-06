@@ -71,6 +71,43 @@ def test_diverse_plan_has_no_diversity_warning():
     assert "insufficient_main_experience_diversity" not in {i.code for i in report.issues}
 
 
+def test_daily_composition_requires_three_meals_two_activities_and_caps_coffee():
+    items = [
+        _item("breakfast", role="breakfast_meal"),
+        _item("museum", place_type="museum", category="activity"),
+        _item("lunch", role="lunch_meal"),
+        _item("park", place_type="park", category="activity"),
+        _item("coffee-1", place_type="cafe", category="activity"),
+        _item("coffee-2", place_type="coffee shop", category="activity"),
+        _item("dinner", role="dinner_meal"),
+    ]
+
+    report = OverallChecker().check(_plan(items))
+    codes = {issue.code for issue in report.issues}
+
+    assert "daily_meal_structure_invalid" not in codes
+    assert "insufficient_daily_non_food_activities" not in codes
+    assert "daily_coffee_limit_exceeded" in codes
+    assert report.status == "failed"
+
+
+def test_daily_composition_rejects_missing_meal_and_non_food_activity():
+    report = OverallChecker().check(
+        _plan(
+            [
+                _item("breakfast", role="breakfast_meal"),
+                _item("lunch", role="lunch_meal"),
+                _item("coffee", place_type="cafe", category="activity"),
+            ]
+        )
+    )
+
+    codes = {issue.code for issue in report.issues}
+    assert "daily_meal_structure_invalid" in codes
+    assert "insufficient_daily_non_food_activities" in codes
+    assert report.status == "failed"
+
+
 def test_missing_required_anchor_and_unpreserved_special_are_errors():
     requirement = SimpleNamespace(
         requirement_id="req-temple",

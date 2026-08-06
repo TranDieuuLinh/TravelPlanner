@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -23,8 +23,10 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
 class _GeminiAudioOutput(BaseModel):
     transcript: str
     observations: list[SpeechToTextObservation]
+    region_story: str = Field(default="", alias="regionStory")
+    region_story_evidence: str = Field(default="", alias="regionStoryEvidence")
 
-    model_config = {"extra": "forbid"}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
 
 class _GeminiSttRateLimiter:
@@ -308,10 +310,11 @@ class GeminiAudioSpeechToText:
             "Prefer real travel place names over similar-sounding generic words.",
             "Preserve sequence words, day references, time-of-day cues, recommended activities, dishes, prices, durations, and alternatives exactly when spoken.",
             "Create an observation when the speech identifies a specific place. Also create one when it clearly recommends a venue-independent travel activity or local dish (for example egg coffee) but gives no venue: use the concise activity or dish as placeName and repeat it in activity so the planner can find a clearly labeled nearby recommendation later. Do not do this for vague verbs such as eat, drink, visit, or relax. Keep evidence as a short verbatim span supporting that observation, not the whole transcript.",
-            "Use one-based chronological order. Use null for dayNumber or durationMinutes when the audio does not state them, and empty strings for missing timeHint or activity.",
+            "Use one-based chronological order. Use null for dayNumber or durationMinutes when the audio does not state them. Set activity to a concise Vietnamese creator-story summary for this place: what the creator did or recommends, plus any grounded reason, sequence, tip, dish, viewpoint, or timing detail. Do not merely translate 'visit/explore this place' and do not say only that the place was mentioned. Use an empty string when the source gives no useful place-specific story.",
             "Set searchRegion to a city or province only when the speech explicitly assigns that stop or day trip to it; otherwise use an empty string.",
             "Confidence measures confidence in the place extraction from 0 to 1.",
             "Classify entityType as venue, sub_place, address, city, person, activity, food, or unknown. Only venue/sub_place may become itinerary stops. Put street/locality text in addressHint on its venue instead of creating an address stop. Preserve the original proper name, add spelling variants to aliases, and set parentPlace when a sub-place belongs to a named venue. Set evidenceSource to stt and authority to medium.",
+            "When the creator expresses a meaningful overall perspective about the destination or region—such as its atmosphere, travel rhythm, area-wide advice, why it is interesting, or how the itinerary fits together—write a one- or two-sentence Vietnamese regionStory. Copy the shortest exact spoken span that supports it into regionStoryEvidence. Leave both empty when the audio only names the destination or gives place-specific details.",
         ]
         if language:
             prompt_parts.append(f"The expected speech languages are: {language}. Preserve the language that is actually spoken.")
@@ -346,6 +349,8 @@ class GeminiAudioSpeechToText:
                     "type": "object",
                     "properties": {
                         "transcript": {"type": "string"},
+                        "regionStory": {"type": "string"},
+                        "regionStoryEvidence": {"type": "string"},
                         "observations": {
                             "type": "array",
                             "items": {
@@ -428,7 +433,12 @@ class GeminiAudioSpeechToText:
                             },
                         },
                     },
-                    "required": ["transcript", "observations"],
+                    "required": [
+                        "transcript",
+                        "observations",
+                        "regionStory",
+                        "regionStoryEvidence",
+                    ],
                     "additionalProperties": False,
                 },
             },
@@ -474,6 +484,8 @@ class GeminiAudioSpeechToText:
         return SpeechToTextResult(
             text=structured.transcript,
             observations=structured.observations,
+            regionStory=structured.region_story,
+            regionStoryEvidence=structured.region_story_evidence,
             source="gemini_audio",
             language=language,
             languageProbability=None,
@@ -529,6 +541,18 @@ class GeminiAudioSpeechToText:
         return SpeechToTextResult(
             text="\n".join(dict.fromkeys(transcripts)),
             observations=observations,
+            regionStory=next(
+                (result.region_story for result in results if result.region_story),
+                "",
+            ),
+            regionStoryEvidence=next(
+                (
+                    result.region_story_evidence
+                    for result in results
+                    if result.region_story and result.region_story_evidence
+                ),
+                "",
+            ),
             source="gemini_audio",
             language=language,
             languageProbability=None,

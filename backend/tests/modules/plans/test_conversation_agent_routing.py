@@ -183,5 +183,36 @@ def test_supervisor_repairs_mismatched_agent_by_rejecting_it() -> None:
         _validated_decision(output, None)
 
 
+def test_supervisor_forwards_validated_intake_patch() -> None:
+    output = SupervisorOutput.model_validate(
+        {
+            "intent": "create_plan",
+            "confidence": 0.98,
+            "responseText": "Mình sẽ lên lịch trình.",
+            "agent": "explorer",
+            "intakePatch": {"destination": "Hà Nội", "days": 4},
+        }
+    )
+
+    decision = _validated_decision(output, None)
+
+    assert decision.intake_patch == {"destination": "Hà Nội", "days": 4}
+
+
+def test_supervisor_rejects_intake_patch_for_non_planning_intent() -> None:
+    output = SupervisorOutput.model_validate(
+        {
+            "intent": "travel_advice",
+            "confidence": 0.98,
+            "responseText": "Thông tin tham khảo.",
+            "agent": "information_finder",
+            "intakePatch": {"days": 4},
+        }
+    )
+
+    with pytest.raises(ConversationSupervisorError, match="non-planning"):
+        _validated_decision(output, None)
+
+
 async def _async_result(value: str) -> str:
     return value

@@ -78,6 +78,8 @@ class SpeechToTextObservation(BaseModel):
 class SpeechToTextResult(BaseModel):
     text: str
     observations: list[SpeechToTextObservation] = Field(default_factory=list)
+    region_story: str = Field(default="", alias="regionStory")
+    region_story_evidence: str = Field(default="", alias="regionStoryEvidence")
     status: str = "ok"
     source: str = "none"
     error: str | None = None
@@ -176,6 +178,17 @@ class ExtractedDestinationStay(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class RegionSourceStory(BaseModel):
+    """Destination-level creator context with an exact supporting source span."""
+
+    text: str = Field(min_length=1, max_length=360)
+    evidence: str = Field(min_length=1, max_length=500)
+    evidence_type: Literal["caption", "stt"] = Field(alias="evidenceType")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    model_config = {"populate_by_name": True}
+
+
 class ExtractedContext(BaseModel):
     extracted_places: list[str] = Field(default_factory=list, alias="extractedPlaces")
     extracted_place_details: list[ExtractedPlace] = Field(default_factory=list, alias="extractedPlaceDetails")
@@ -187,6 +200,10 @@ class ExtractedContext(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     confidence: float = 0.0
     notes: list[str] = Field(default_factory=list)
+    region_story: RegionSourceStory | None = Field(
+        default=None,
+        alias="regionStory",
+    )
     expected_place_count: int | None = Field(
         default=None,
         ge=1,

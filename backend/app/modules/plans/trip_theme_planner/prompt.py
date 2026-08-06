@@ -4,12 +4,11 @@ import json
 
 from app.modules.plans.dto.agent_contracts import (
     TripThemePlanningInput,
-    TripThemeDraft,
 )
 from app.modules.preferences.schema import PreferenceDimension
 
 
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v5_kg_vi"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_graph_v6_structured_output"
 
 _THEME_PROFILE_DIMENSIONS = {
     PreferenceDimension.category,
@@ -173,7 +172,6 @@ def build_trip_theme_payload(
     payload: dict[str, object] = {
         "stage": "trip_theme_plan",
         "promptVersion": TRIP_THEME_PROMPT_VERSION,
-        "requiredOutputShape": TripThemeDraft.model_json_schema(),
         "plannerInput": _bounded_planner_input(planner_input),
         "themeSelectionPolicy": build_theme_selection_policy(planner_input),
         "graphCandidateCatalog": graph_candidate_catalog,
@@ -191,7 +189,6 @@ def build_trip_theme_repair_payload(
     payload: dict[str, object] = {
         "stage": "trip_theme_plan_repair",
         "promptVersion": TRIP_THEME_PROMPT_VERSION,
-        "requiredOutputShape": TripThemeDraft.model_json_schema(),
         "plannerInput": _bounded_planner_input(planner_input),
         "themeSelectionPolicy": build_theme_selection_policy(planner_input),
         "graphCandidateCatalog": graph_candidate_catalog,

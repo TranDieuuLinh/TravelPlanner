@@ -561,6 +561,11 @@ xếp và cảnh báo để UI hiển thị chi tiết latency. Mỗi stage có 
 phân biệt Explorer snapshot, Knowledge Graph DB + LLM, Knowledge Graph DB + deterministic
 rules, plan assembly và checker. Timing không chứa prompt,
 selected-place payload hay dữ liệu provider thô.
+Stage `tripThemePlanner` còn có `subStages` để tách `regionStatistics`,
+`graphResearch`, `graphProjection`, `llmGenerate`, `validateThemeDraft` và các
+lần sửa hiếm `llmRepairN`/`validateThemeRepairN`. Chi tiết chỉ giữ trạng thái,
+số lượng candidate, kích thước response và loại lỗi validation; không giữ raw
+prompt, model response hoặc graph evidence.
 Request gồm `tripIntent`, `intakeId`, `userId`, `selectedPlaces`,
 `candidateReviews`, `allowFinderGapFill`, `allowReplaceSourcePlaces` và cờ nội bộ
 `expandDaysToFitSelectedPlaces`. `candidateReviews` cho phép bước hậu xử lý đọc
@@ -609,11 +614,13 @@ Với itinerary từ URL, phần tử `selectedPlaces` có thể có `sourceOrde
 `longitude`. Khi dữ liệu đã tồn tại trong Knowledge Graph hoặc import snapshot,
 `selectedPlaces` và `PlanItem` còn có thể trả `imageUrls`,
 `rating` và `reviewCount`. Field thiếu được để rỗng/null; API không tạo ảnh hoặc
-rating giả. `PlanItem.notes` giữ một source summary ngắn, chỉ đọc, được compose
-từ evidence đã rút gọn, `sourceActivity` và description provider được phép.
-`PlanItem.noteSources[]` có shape `{ type, ref?, evidenceTypes?, fetchedAt? }`
-và chỉ giữ provenance để render nhãn như `Từ video tham khảo · Google Maps`;
-field này không lặp lại note text. `PlanItem.personalNotes` là lời nhắc user
+rating giả. `PlanItem.notes` chỉ còn để đọc revision cũ.
+`PlanItem.noteSources[]` có shape
+`{ type, text?, evidence?, ref?, evidenceTypes?, fetchedAt? }` và chỉ chứa câu
+chuyện/mẹo source-owned có ích; Google/provider metadata không được tạo thành
+note. `Plan.regionStories[]` dùng cùng shape cho nhận xét/tip áp dụng cho cả
+destination và chỉ xuất hiện khi `evidence` là span có thật trong source.
+`PlanItem.personalNotes` là lời nhắc user
 chỉnh sửa qua mutation endpoint. Ba field được giữ trong cùng trip-chat revision
 và itinerary/map popup phải đọc cùng `PlanItem`. `PlanItem` trả lại cùng địa
 chỉ/tọa độ để UI hiển thị và đặt marker.
@@ -637,17 +644,19 @@ như `24:07-25:07`.
 
 Request còn nhận `preferenceProfile` từ
 `explorer.preferenceSnapshot.effectiveProfile`. Plan day trả `transportLegs`
-với thứ tự đã tối ưu nearest-neighbour + 2-opt. Finder lấy route
-pedestrian/auto từ Valhalla cho từng cặp stop. Leg thành công có
+với thứ tự đã tối ưu nearest-neighbour + 2-opt. Finder batch ordered stop của
+từng ngày qua Valhalla rồi tách response thành từng adjacent leg. Haversine chỉ
+là prefilter pedestrian; leg thành công có
 `source=valhalla_routing`, `verified=true`, `fetchedAt` và geometry theo đường;
 provider lỗi fallback thành `source=geodesic_estimate`, `verified=false`.
 `verified=true` không được mô tả là dữ liệu traffic live.
 
-Khi `tripSpec.startDate` có giá trị, Finder còn gọi OpenTripPlanner theo
-ngày của `PlanDay` và giờ kết thúc item đầu. Route có ít nhất một transit section
+Khi preference/constraint cần transit, Finder gọi OpenTripPlanner theo ngày của
+`PlanDay` và giờ kết thúc item đầu. Route có ít nhất một transit section
 mới được nhận; itinerary chỉ đi bộ bị loại. Nếu
 `tripSpec.transport.preferredModes` chứa `bus` hoặc `train`, transit khả thi trở
-thành leg chính. Nếu không, nó xuất hiện trong `transportLeg.alternatives`.
+thành leg chính. Planner không gọi OTP mặc định chỉ để tạo
+`transportLeg.alternatives` khi user không có transit preference.
 `avoidModes` loại mode tương ứng trước khi chọn. Transit option có
 `source=opentripplanner_transit`, geometry, duration gồm cả thời gian chờ và
 `details.transitModes`/`details.lines`/`details.agencies`. `details.segments`
@@ -972,6 +981,22 @@ Planning job phải công bố stage như `exploring`, `planning`, `finding`,
 - `assumptions` và `warnings`;
 - `checkReport`;
 - `sourceRefs` thay vì sao chép toàn bộ nội dung nguồn.
+
+## Admin review place dedupe
+
+- `GET /api/admin/knowledge-graph/place-dedupe/review`: trả các nhóm
+  `needs_review` theo trang với `offset`, `limit` (mặc định 50) và bộ lọc
+  `query` tùy chọn để admin so sánh bản ghi và chọn canonical entity.
+- `POST /api/admin/knowledge-graph/place-dedupe/review/{groupId}/merge`:
+  nhận `{ "canonicalEntityId": "..." }`, yêu cầu JWT role `admin` và CSRF.
+  Hệ thống gộp mềm các entity còn lại về canonical, giữ alias và đánh dấu
+  `merged_into_entity_id`; không xóa entity gốc. Response chỉ trả quyết định
+  vừa xử lý thay vì tải lại toàn bộ hàng chờ.
+- `POST /api/admin/knowledge-graph/place-dedupe/review/{groupId}/dismiss`:
+  yêu cầu JWT role `admin` và CSRF, ghi nhận quyết định không merge bằng cách
+  lưu quyết định vào Knowledge Graph, bỏ nhóm khỏi hàng chờ hiện tại và trả
+  quyết định vừa xử lý. GET và script regenerate tự loại các nhóm đã merge hoặc
+  đã có quyết định này khỏi `needs_review.json`.
 
 ## Contract mục tiêu: Marketplace
 

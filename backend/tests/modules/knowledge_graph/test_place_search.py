@@ -7,6 +7,7 @@ from app.modules.knowledge_graph.model import (
     KnowledgeRelationship,
 )
 from app.modules.knowledge_graph.place_search import KnowledgeGraphPlaceSearchRepository
+from app.modules.knowledge_graph.place_repository import KnowledgeGraphPlaceRepository
 from app.modules.knowledge_graph.text import normalize_knowledge_text
 
 
@@ -148,6 +149,63 @@ def test_search_returns_no_graph_result_when_destination_is_unknown(
     )
 
     assert results == []
+
+
+def test_planner_repository_redirects_soft_merged_place_to_canonical(
+    db_session: Session,
+) -> None:
+    db_session.add_all(
+        [
+            _entity("place-canonical", "Temple of Literature", "TravelPlace"),
+            _entity("place-merged", "Temple of Literature", "TravelPlace"),
+            _property("place-canonical", "catalog_status", "active"),
+            _property("place-canonical", "region_key", "vn,ha-noi"),
+            _property("place-canonical", "latitude", "21.028"),
+            _property("place-canonical", "longitude", "105.835"),
+            _property("place-merged", "catalog_status", "merged"),
+            _property(
+                "place-merged", "merged_into_entity_id", "place-canonical"
+            ),
+            _property("place-merged", "region_key", "vn,ha-noi"),
+            _property("place-merged", "latitude", "21.028"),
+            _property("place-merged", "longitude", "105.835"),
+        ]
+    )
+    db_session.commit()
+
+    repository = KnowledgeGraphPlaceRepository(db_session)
+
+    assert repository.get("place-merged").id == "place-canonical"
+    assert [
+        place.id
+        for place in repository.list_for_place_selection("vn,ha-noi")
+    ] == ["place-canonical"]
+
+
+def test_planner_repository_prioritizes_travel_places_before_food_when_bounded(
+    db_session: Session,
+) -> None:
+    db_session.add_all(
+        [
+            _entity("drink_dessert_001", "Cafe đầu danh sách", "DrinkDessert"),
+            _entity("travel_place_001", "Bảo tàng Hà Nội", "TravelPlace"),
+            _property("drink_dessert_001", "catalog_status", "active"),
+            _property("drink_dessert_001", "region_key", "vn,ha-noi"),
+            _property("drink_dessert_001", "latitude", "21.030"),
+            _property("drink_dessert_001", "longitude", "105.850"),
+            _property("travel_place_001", "catalog_status", "active"),
+            _property("travel_place_001", "region_key", "vn,ha-noi"),
+            _property("travel_place_001", "latitude", "21.031"),
+            _property("travel_place_001", "longitude", "105.851"),
+        ]
+    )
+    db_session.commit()
+
+    results = KnowledgeGraphPlaceRepository(db_session).list_for_place_selection(
+        "vn,ha-noi", limit=1
+    )
+
+    assert [place.id for place in results] == ["travel_place_001"]
 
 
 def test_search_repairs_legacy_cp437_utf8_text_at_projection_boundary(

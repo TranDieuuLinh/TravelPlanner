@@ -6,6 +6,8 @@ from app.modules.plans.domain.entities import PlanItem
 from app.modules.plans.place_selector.place_tool import (
     SelectablePlace,
     PlaceSelectionTool,
+    is_dine_in_meal_venue,
+    is_coffee_place,
     place_category,
     selection_relevance_score,
 )
@@ -35,6 +37,7 @@ class MealStopSelector:
         second = activities[-1]
         selected: dict[str, SelectablePlace | None] = {}
         used = set(excluded_place_ids)
+        coffee_used = any(is_coffee_place(activity) for activity in activities)
         for role, terms in (
             ("breakfast_meal", ["breakfast", "bakery", "food"]),
             ("lunch_meal", ["lunch", "local food", "restaurant"]),
@@ -46,6 +49,17 @@ class MealStopSelector:
                 excluded_place_ids=used,
                 bbox_filter=bbox_filter,
             )
+            candidates = [
+                candidate
+                for candidate in candidates
+                if self._appropriate_for_role(candidate, role)
+            ]
+            if coffee_used:
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if not is_coffee_place(candidate)
+                ]
             chosen = self._choose(
                 candidates,
                 role=role,
@@ -56,10 +70,28 @@ class MealStopSelector:
             )
             selected[role] = chosen
             if chosen is not None:
+                coffee_used = coffee_used or is_coffee_place(chosen)
                 used.add(chosen.stable_ref)
                 if chosen.place_id is not None:
                     used.add(chosen.place_id)
         return selected
+
+    @staticmethod
+    def _appropriate_for_role(candidate: SelectablePlace, role: str) -> bool:
+        if role == "breakfast_meal":
+            return True
+        place_type = f" {candidate.place_type.casefold()} "
+        return not any(
+            marker in place_type
+            for marker in (
+                " bakery ",
+                " cafe ",
+                " coffee ",
+                " dessert ",
+                " ice cream ",
+                " tea house ",
+            )
+        )
 
     def _candidates(
         self,
@@ -87,6 +119,7 @@ class MealStopSelector:
             candidate
             for candidate in candidates
             if place_category(candidate) == "food_drink"
+            and is_dine_in_meal_venue(candidate)
         ]
 
     def _choose(

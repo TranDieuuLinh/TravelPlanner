@@ -12,11 +12,24 @@ from app.modules.plans.domain.entities import Plan
 terminal_logger = logging.getLogger("uvicorn.error")
 
 
+class PlanTimingSubstage(BaseModel):
+    key: str
+    label: str
+    duration_seconds: float = Field(alias="durationSeconds")
+    details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+    model_config = {"populate_by_name": True}
+
+
 class PlanTimingStage(BaseModel):
     key: str
     label: str
     duration_seconds: float = Field(alias="durationSeconds")
     details: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    sub_stages: list[PlanTimingSubstage] = Field(
+        default_factory=list,
+        alias="subStages",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -47,6 +60,7 @@ class PlanTimingTrace:
         started_at: float,
         *,
         details: dict[str, Any] | None = None,
+        sub_stages: list[PlanTimingSubstage] | None = None,
     ) -> None:
         self.stages.append(
             PlanTimingStage(
@@ -54,6 +68,7 @@ class PlanTimingTrace:
                 label=label,
                 durationSeconds=_seconds(time.perf_counter() - started_at),
                 details=details or {},
+                subStages=sub_stages or [],
             )
         )
         if self.on_update is not None:

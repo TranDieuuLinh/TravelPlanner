@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
-
 RouteTransportMode = Literal["pedestrian", "car"]
 
 
@@ -23,6 +22,7 @@ class TravelTimeMatrix:
     travel_times_seconds: list[list[int | None]]
     provider: str
     fetched_at: datetime
+    distances_meters: list[list[int | None]] | None = None
 
 
 class RouteProvider(Protocol):
@@ -34,6 +34,18 @@ class RouteProvider(Protocol):
         transport_mode: RouteTransportMode,
         departure_time: datetime | None = None,
     ) -> RouteCalculation | None: ...
+
+
+class BatchRouteProvider(RouteProvider, Protocol):
+    """Road provider that can enrich one ordered day in a single request."""
+
+    def calculate_many(
+        self,
+        coordinates: list[tuple[float, float]],
+        *,
+        transport_mode: RouteTransportMode,
+        departure_time: datetime | None = None,
+    ) -> list[RouteCalculation] | None: ...
 
 
 class TransitRouteProvider(Protocol):

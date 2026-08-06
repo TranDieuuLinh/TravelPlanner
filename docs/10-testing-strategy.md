@@ -24,15 +24,22 @@ Sử dụng pytest cho domain và service:
 - timing TripThemePlanner/PlaceSelector có tổng wall-clock, đủ stage Planner, PlaceSelector và
   CheckOverall, không chứa prompt hoặc payload provider;
 - không persist candidate unresolved hoặc thiếu latitude/longitude;
-- candidate `needs_review` không được bàn giao vào Planner, kể cả khi provider
-  trả tọa độ đại diện;
+- candidate `needs_review` không được xếp lịch, nhưng luôn được bàn giao vào
+  `unscheduledPlaces` với `identity_needs_review`, tên gốc, URL, `candidateId`
+  và `topMatches`; Planner không tạo venue thay thế;
 - điều phối luồng tạo plan;
 - TripThemePlanner trả requirement toàn chuyến và backend chỉ sinh bucket ngày trung
   tính; URL provenance không có `sourceDay` được phép đổi ngày theo tuyến;
 - itinerary optimizer gom activity gần nhau giữa các ngày, giữ source-day anchor,
   dùng matrix khi có và bảo toàn thứ tự khi provider lỗi;
+- route enrichment batch ordered stop theo ngày, ánh xạ đúng từng leg, dùng
+  Haversine prefilter cho walking và chỉ gọi transit theo preference/constraint;
 - route-first giữ ba meal anchor, cho phép hơn hai activity khi duration và
   transition còn vừa, đồng thời đưa activity tràn thời gian vào danh sách chưa xếp;
+- Finder chỉ chạy sau khi hết URL place phù hợp trong window, ưu tiên diversity,
+  không thêm quá một coffee/ngày và không thêm coffee nếu ngày đã có cafe URL;
+- record KG `catalog_status=merged` bị loại khỏi search, lookup ID cũ redirect
+  sang `merged_into_entity_id` và duplicate cùng landmark không tạo ambiguity;
 - URL chỉ có quán ăn vẫn ưu tiên ba source meal vào đúng anchor, dùng Finder bù
   ít nhất một activity giữa breakfast–lunch và lunch–dinner dù chế độ thay thế
   source bị tắt, đồng thời giữ provenance của toàn bộ source Place;
@@ -78,10 +85,11 @@ Chạy test FastAPI với database cô lập:
 - Explorer persistence phải chứng minh caption/STT/OCR/context cùng nằm trong
   một `source_documents`, evidence bám đúng import node và provider snapshot chỉ
   giữ một ảnh;
-- note contract phải chứng minh import node không có display-note column;
-  source summary/provenance/user note round-trip qua plan revision, mutation chỉ
-  cho sửa `personalNotes`, và itinerary/map popup tạo cùng presentation từ
-  `notes`, `noteSources`, `personalNotes`;
+- note contract phải chứng minh import node không có display-note column; từng
+  source note có text tiếng Việt và provenance riêng round-trip qua plan
+  revision, mutation chỉ cho sửa `personalNotes`, và itinerary/map popup tạo
+  cùng presentation từ `notes`, `noteSources`, `personalNotes`; finder từ
+  provider không được mang nhãn video;
 - Top-K Knowledge Graph phải test cả alias đã review, auto-resolve có margin và
   hai chi nhánh cùng tên. Case chi nhánh phải giữ `branch_ambiguous`, không gọi
   Google, rồi chuyển lựa chọn `route_proximity` vào plan item mà không sửa node;

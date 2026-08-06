@@ -92,6 +92,75 @@ def test_valhalla_route_parses_summary_shape_and_uses_no_api_key(
     }
 
 
+def test_valhalla_route_batches_an_ordered_day_into_one_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[dict[str, Any]] = []
+    first_shape = _encode_polyline(
+        [(21.0300, 105.8500), (21.0310, 105.8510)],
+        precision=6,
+    )
+    second_shape = _encode_polyline(
+        [(21.0310, 105.8510), (21.0500, 105.8700)],
+        precision=6,
+    )
+
+    class FakeClient:
+        def __init__(self, **_: Any) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def post(self, url: str, *, json: dict[str, Any]) -> httpx.Response:
+            request = httpx.Request("POST", url, json=json)
+            requests.append(json)
+            return httpx.Response(
+                200,
+                request=request,
+                json={
+                    "trip": {
+                        "summary": {"length": 2.5, "time": 600},
+                        "legs": [
+                            {
+                                "summary": {"length": 0.9, "time": 180},
+                                "shape": first_shape,
+                            },
+                            {
+                                "summary": {"length": 1.6, "time": 420},
+                                "shape": second_shape,
+                            },
+                        ],
+                    }
+                },
+            )
+
+    monkeypatch.setattr(
+        "app.integrations.routing.valhalla.httpx.Client",
+        FakeClient,
+    )
+    provider = ValhallaRouteProvider(base_url="http://valhalla:8002")
+
+    routes = provider.calculate_many(
+        [
+            (21.0300, 105.8500),
+            (21.0310, 105.8510),
+            (21.0500, 105.8700),
+        ],
+        transport_mode="car",
+    )
+
+    assert routes is not None
+    assert [route.distance_meters for route in routes] == [900, 1600]
+    assert [route.duration_seconds for route in routes] == [180, 420]
+    assert len(requests) == 1
+    assert len(requests[0]["locations"]) == 3
+    assert requests[0]["costing"] == "auto"
+
+
 def test_valhalla_matrix_parses_unreachable_pairs_without_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -149,9 +218,11 @@ def test_valhalla_matrix_parses_unreachable_pairs_without_key(
 
     assert result is not None
     assert result.travel_times_seconds == [[0, None], [60, 0]]
+    assert result.distances_meters == [[0, None], [1200, 0]]
     assert result.provider == "valhalla_matrix"
     assert requests[0]["costing"] == "auto"
     assert requests[0]["verbose"] is False
+    assert requests[0]["units"] == "kilometers"
     assert requests[0]["date_time"] == {
         "type": 3,
         "value": "2026-08-01T09:00",

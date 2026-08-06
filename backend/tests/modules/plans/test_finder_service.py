@@ -684,6 +684,13 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
         place_type="restaurant",
     )
     catalog_places = {
+        "catalog-cafe": _place(
+            "catalog-cafe",
+            "Cafe Finder không được thêm",
+            tags=["cafe", "coffee"],
+            intensity="light",
+            place_type="cafe",
+        ),
         "catalog-museum": _place(
             "catalog-museum",
             "Bảo tàng Phụ nữ Việt Nam",
@@ -770,7 +777,70 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
     assert day_items["lunch_meal"].place_id == "source-lunch"
     assert day_items["lunch_meal"].source == "selected_place"
     assert all(item.place_id != "catalog-lunch" for item in result.days[0].items)
+    assert all(item.place_id != "catalog-cafe" for item in result.days[0].items)
     assert result.unscheduled_places == []
+
+
+def test_finder_adds_at_most_one_coffee_stop_per_day() -> None:
+    catalog = {
+        "cafe-one": _place(
+            "cafe-one",
+            "Coffee One",
+            tags=["cafe", "coffee"],
+            intensity="light",
+            place_type="cafe",
+        ),
+        "cafe-two": _place(
+            "cafe-two",
+            "Coffee Two",
+            tags=["cafe", "coffee"],
+            intensity="light",
+            place_type="cafe",
+        ),
+        "museum": _place(
+            "museum",
+            "Local Museum",
+            tags=["culture"],
+            intensity="light",
+            place_type="museum",
+        ),
+        "gallery": _place(
+            "gallery",
+            "Local Gallery",
+            tags=["culture"],
+            intensity="light",
+            place_type="museum",
+        ),
+    }
+    finder = PlaceSelectorService(
+        FakeFinderPlaceTool(catalog, search_order=list(catalog)),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
+    )
+    macro_plan = _macro_plan().model_copy(deep=True)
+    macro_plan.selection_days[0].theme = "Coffee and culture"
+    macro_plan.selection_days[0].focus_tags = ["coffee", "culture"]
+    macro_plan.selection_days[0].allocated_selected_place_refs = []
+
+    result = finder.fill_main_plan(
+        macro_plan,
+        _intent(),
+        [],
+        allow_finder_gap_fill=True,
+    )
+
+    coffee_items = [
+        item
+        for item in result.days[0].items
+        if item.place_id in {"cafe-one", "cafe-two"}
+    ]
+    assert len(coffee_items) == 1
+    non_food_non_coffee = [
+        item
+        for item in result.days[0].items
+        if item.timeline_category == "activity"
+        and item.place_id in {"museum", "gallery"}
+    ]
+    assert len(non_food_non_coffee) == 2
 
 
 def test_route_first_url_food_only_fills_daytime_activity_gaps() -> None:
@@ -859,20 +929,14 @@ def test_route_first_url_food_only_fills_daytime_activity_gaps() -> None:
     )
 
     items = result.days[0].items
-    assert [item.timeline_category for item in items] == [
-        "food",
-        "activity",
-        "food",
-        "activity",
-        "food",
-    ]
-    assert [item.role for item in items] == [
+    assert [
+        item.role for item in items if item.timeline_category == "food"
+    ] == [
         "breakfast_meal",
-        "main_activity_1",
         "lunch_meal",
-        "main_activity_2",
         "dinner_meal",
     ]
+    assert sum(item.timeline_category == "activity" for item in items) == 2
     assert {item.place_id for item in items if item.timeline_category == "food"} == {
         place.place_id for place in source_meals
     }

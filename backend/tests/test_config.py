@@ -11,6 +11,7 @@ def test_settings_accept_dedicated_application_database() -> None:
     )
 
     assert settings.database_url.endswith("/vsf_travel")
+    assert settings.gemini_price_model == "gemini-3.5-flash-lite"
 
 
 @pytest.mark.parametrize("database_name", ["postgres", "POSTGRES"])

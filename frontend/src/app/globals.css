@@ -325,6 +325,9 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobTimingStepIndex { display: grid; width: 17px; height: 17px; place-items: center; border-radius: 50%; background: #f6f7fb; color: #365f5a; font-size: .47rem; font-weight: 900; }
 .backgroundJobTimingStepCopy { display: grid; gap: 2px; min-width: 0; }
 .backgroundJobTimingStepCopy > small { overflow-wrap: anywhere; color: #172033; font-size: .47rem; line-height: 1.35; }
+.backgroundJobTimingSubsteps { display: grid; gap: 2px; margin-top: 2px; padding-left: 7px; border-left: 2px solid #e4e7f0; }
+.backgroundJobTimingSubsteps > span { display: flex; justify-content: space-between; gap: 8px; color: #52606d; font-size: .48rem; }
+.backgroundJobTimingSubsteps b { font-size: .47rem; }
 .backgroundJobTiming { display: grid; gap: 12px; }
 .backgroundJobTimingSummary { display: grid; gap: 8px; border: 1px solid #f6f7fb; border-radius: 10px; padding: 9px; background: #ffffff; }
 .backgroundJobTimingSummary > header, .backgroundJobSourceTiming > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -999,6 +1002,14 @@ h1, h2, h3, p { margin-top: 0; }
 .tripSummaryIntro .tripSummaryLabel { color: rgba(255, 255, 255, .6); }
 .tripSummaryIntro h3 { overflow: hidden; color: white; font-size: 1.5rem; text-overflow: ellipsis; white-space: nowrap; }
 .tripSummaryIntro p { margin-top: 4px; color: rgba(255, 255, 255, .66); }
+.regionStoryPanel { display: grid; gap: 8px; margin: 14px 18px 0; border: 1px solid rgba(54, 95, 90, .16); border-radius: 12px; padding: 12px 14px; background: #f5faf8; }
+.regionStoryPanel > span { color: var(--brand); font-size: .62rem; font-weight: 850; letter-spacing: .02em; text-transform: uppercase; }
+.regionStoryItem { display: grid; gap: 5px; }
+.regionStoryItem p { color: #27423e; font-size: .72rem; line-height: 1.55; }
+.regionStoryItem details { color: var(--muted); font-size: .58rem; }
+.regionStoryItem summary { width: fit-content; cursor: pointer; font-weight: 750; }
+.regionStoryItem q { display: block; margin-top: 5px; border-left: 2px solid rgba(54, 95, 90, .24); padding-left: 8px; line-height: 1.5; }
+.regionStoryItem a { width: fit-content; color: var(--brand); font-size: .58rem; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
 .tripQuickFacts { display: grid; grid-template-columns: repeat(3,1fr); padding: 14px 10px; }
 .tripQuickFacts div { display: grid; gap: 3px; min-width: 0; border-right: 1px solid var(--line); padding: 0 10px; }
 .tripQuickFacts div:last-child { border-right: 0; }
@@ -4074,6 +4085,26 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
 .cardHeader { display: flex; gap: 10px; margin-bottom: 12px; }
 .pendingCard h2 { font-size: 1.35rem; margin-bottom: 8px; }
 .pendingCard .description { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
+
+.placeReviewToolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 18px 0 24px; }
+.placeReviewToolbar input { width: min(100%, 460px); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: white; color: var(--ink); }
+.placeReviewToolbar span { color: var(--muted); font-size: .78rem; font-weight: 700; }
+.placeReviewGrid { display: grid; gap: 18px; margin-bottom: 60px; }
+.placeReviewLoadMore { display: flex; justify-content: center; margin: -38px 0 56px; }
+.placeReviewCard { border: 1px solid var(--line); border-radius: 16px; background: white; padding: 20px; box-shadow: 0 8px 24px rgba(23, 32, 51, .04); }
+.placeReviewCardHeader { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.placeReviewCardHeader code { color: var(--muted); font-size: .65rem; }
+.placeReviewReasons { display: block; margin-top: 8px; color: var(--muted); font-size: .75rem; }
+.placeReviewRecords { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.placeReviewRecord { display: grid; gap: 5px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 13px; background: #fbfcfb; cursor: pointer; }
+.placeReviewRecord.selected { border-color: var(--brand); background: #f1f8f4; box-shadow: 0 0 0 2px rgba(54, 95, 90, .1); }
+.placeReviewRecordTitle { display: flex; align-items: center; gap: 8px; }
+.placeReviewRecordTitle input { margin: 0; accent-color: var(--brand); }
+.placeReviewRecord strong { color: var(--ink); }
+.placeReviewRecord span { color: var(--muted); font-size: .75rem; line-height: 1.35; }
+.placeReviewRecord .placeReviewRecordTitle strong { color: var(--ink); font-size: .9rem; }
+.placeReviewRecord small { overflow: hidden; color: #87918f; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.placeReviewActions { display: flex; justify-content: flex-end; gap: 10px; }
 .metaRow { display: flex; flex-wrap: wrap; gap: 20px; font-size: 0.82rem; color: var(--ink); margin-bottom: 16px; border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); padding: 10px 0; }
 .snapshotBox { background: var(--canvas); padding: 16px; border-radius: 12px; font-size: 0.82rem; margin-bottom: 16px; }
 .snapshotBox ul { margin: 8px 0 12px 20px; padding: 0; }

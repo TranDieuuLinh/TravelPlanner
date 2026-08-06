@@ -13,6 +13,7 @@ from app.modules.users.router import router as users_router
 from app.modules.travel_groups.router import router as travel_groups_router
 from app.modules.knowledge_graph.router import router as knowledge_graph_router
 from app.modules.knowledge_graph.routes.admin_entities import router as kg_admin_entities_router
+from app.modules.knowledge_graph.routes.admin_place_dedupe import router as kg_admin_place_dedupe_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth_router)
@@ -27,4 +28,5 @@ api_router.include_router(orders_router)
 api_router.include_router(planning_runs_router)
 api_router.include_router(knowledge_graph_router)
 api_router.include_router(kg_admin_entities_router)
+api_router.include_router(kg_admin_place_dedupe_router)
 api_router.include_router(travel_groups_router)

@@ -45,6 +45,7 @@ class ValhallaTravelTimeMatrixProvider:
                 else "auto"
             ),
             "verbose": False,
+            "units": "kilometers",
         }
         if departure_time is not None:
             body["date_time"] = {
@@ -58,7 +59,7 @@ class ValhallaTravelTimeMatrixProvider:
                     json=body,
                 )
             response.raise_for_status()
-            matrix = _parse_matrix(
+            matrix, distances = _parse_matrix(
                 response.json(),
                 expected_size=len(coordinates),
             )
@@ -68,6 +69,7 @@ class ValhallaTravelTimeMatrixProvider:
             travel_times_seconds=matrix,
             provider=self.provider_name,
             fetched_at=datetime.now(timezone.utc),
+            distances_meters=distances,
         )
 
 
@@ -75,7 +77,7 @@ def _parse_matrix(
     payload: Any,
     *,
     expected_size: int,
-) -> list[list[int | None]]:
+) -> tuple[list[list[int | None]], list[list[int | None]] | None]:
     if not isinstance(payload, dict):
         raise ValueError("Valhalla matrix response must be an object.")
     result = payload.get("sources_to_targets")
@@ -91,10 +93,27 @@ def _parse_matrix(
         )
     ):
         raise ValueError("Valhalla matrix dimensions do not match inputs.")
-    return [
+    parsed_durations = [
         [_duration(value) for value in row]
         for row in durations
     ]
+    distances = result.get("distances")
+    parsed_distances = None
+    if distances is not None:
+        if (
+            not isinstance(distances, list)
+            or len(distances) != expected_size
+            or any(
+                not isinstance(row, list) or len(row) != expected_size
+                for row in distances
+            )
+        ):
+            raise ValueError("Valhalla distance matrix dimensions do not match inputs.")
+        parsed_distances = [
+            [_distance_meters(value) for value in row]
+            for row in distances
+        ]
+    return parsed_durations, parsed_distances
 
 
 def _duration(value: Any) -> int | None:
@@ -103,4 +122,13 @@ def _duration(value: Any) -> int | None:
     parsed = round(float(value))
     if parsed < 0:
         raise ValueError("Valhalla matrix duration cannot be negative.")
+    return parsed
+
+
+def _distance_meters(value: Any) -> int | None:
+    if value is None:
+        return None
+    parsed = round(float(value) * 1000)
+    if parsed < 0:
+        raise ValueError("Valhalla matrix distance cannot be negative.")
     return parsed

@@ -107,10 +107,14 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - AI revision theo ngày, khung giờ hoặc item chưa khóa; luôn bảo toàn item khóa.
 - Version history cơ bản, optimistic concurrency và khôi phục version.
 - Giao diện lịch trình và bản đồ responsive.
-- Ghi chú khu vực hiển thị riêng dưới tiêu đề điểm đến; mỗi activity có một
-  source summary chỉ đọc trong `PlanItem.notes`, nhãn nguồn trong
-  `PlanItem.noteSources` và `personalNotes` có thể chỉnh sửa. Itinerary và map
-  popup dùng cùng snapshot, không lưu thêm một bản display note riêng.
+- Câu chuyện khu vực từ URL hiển thị riêng dưới tiêu đề điểm đến khi creator có
+  nhận xét/tip thực sự áp dụng cho cả vùng; mỗi story giữ evidence span và URL,
+  và bị ẩn nếu chỉ nhắc tên vùng. Mỗi activity chỉ hiển
+  thị câu chuyện/mẹo có ích từ creator hoặc nguồn tham khảo trong
+  `PlanItem.noteSources` và `personalNotes` có thể chỉnh sửa. Địa chỉ, rating,
+  giờ mở cửa và metadata provider dùng field/UI có cấu trúc, không lặp lại thành
+  ghi chú. `PlanItem.notes` chỉ tương thích revision cũ; itinerary và map popup
+  dùng cùng snapshot.
 - Truy cập offline ở chế độ đọc cho plan đã chọn.
 - Trạng thái hoàn thành/tiến độ đơn giản.
 

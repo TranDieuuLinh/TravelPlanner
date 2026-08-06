@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from app.modules.plans.chat_model import TripChat, TripChatMessage
@@ -249,20 +249,36 @@ class UrlImportJobRepository:
         self.db.commit()
         return result.rowcount or 0
 
-    def claim_next(self) -> UrlImportJob | None:
+    def claim_next(self, *, max_concurrency: int = 1) -> UrlImportJob | None:
+        if self.db.get_bind().dialect.name == "postgresql":
+            # Multiple worker slots may enter claim_next together. Serialize
+            # only this short claim transaction so every slot observes the
+            # running rows committed by the previous claimant. Processing
+            # itself remains concurrent after this lock is released.
+            self.db.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtext('vsf:url-import-worker:claim'))"
+                )
+            )
         running_count = self.db.scalar(
             select(func.count()).select_from(UrlImportJob).where(
                 UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                 UrlImportJob.processing_status == "running"
             )
         )
-        if running_count:
+        if (running_count or 0) >= max(1, max_concurrency):
             return None
+        running_chat_ids = select(UrlImportJob.chat_id).where(
+            UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
+            UrlImportJob.processing_status == "running",
+        )
         statement = (
             select(UrlImportJob)
             .where(
                 UrlImportJob.import_kind.in_(WORKER_IMPORT_KINDS),
                 UrlImportJob.processing_status == "queued",
+                UrlImportJob.chat_id.not_in(running_chat_ids),
             )
             .order_by(
                 UrlImportJob.created_at.asc(),
@@ -294,6 +310,59 @@ class UrlImportJobRepository:
         self.db.commit()
         self.db.refresh(job)
         return job
+
+    def succeed_batch(self, batch_id: str | None, *, revision: int) -> None:
+        """Complete every source child after one shared batch planning run."""
+        if not batch_id:
+            return
+        jobs = list(self.db.scalars(
+            select(UrlImportJob).where(
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.batch_id == batch_id,
+                UrlImportJob.processing_status.in_(("queued", "running")),
+            )
+        ))
+        if not jobs:
+            return
+        chat = self.db.get(TripChat, jobs[0].chat_id)
+        finished_at = datetime.now(UTC)
+        for job in jobs:
+            job.processing_status = "succeeded"
+            job.processing_phase = "complete"
+            job.status = "succeeded"
+            job.result_revision = revision
+            job.explorer_timing = (
+                chat.latest_explorer_timing if chat is not None else None
+            )
+            job.planner_timing = (
+                chat.latest_planner_timing if chat is not None else None
+            )
+            job.finished_at = finished_at
+        self.db.flush()
+        self._sync_batch_turn(batch_id, revision=revision)
+        self.db.commit()
+
+    def fail_batch(self, batch_id: str | None, *, code: str, message: str) -> None:
+        if not batch_id:
+            return
+        jobs = list(self.db.scalars(
+            select(UrlImportJob).where(
+                UrlImportJob.import_kind == "explorer_job",
+                UrlImportJob.batch_id == batch_id,
+                UrlImportJob.processing_status.in_(("queued", "running")),
+            )
+        ))
+        finished_at = datetime.now(UTC)
+        for job in jobs:
+            job.processing_status = "failed"
+            job.processing_phase = "complete"
+            job.status = "failed"
+            job.error_code = code[:64]
+            job.error_message = message
+            job.finished_at = finished_at
+        self.db.flush()
+        self._sync_batch_turn(batch_id)
+        self.db.commit()
 
     def mark_exploring(self, job_id: str) -> None:
         job = self.db.get(UrlImportJob, job_id)

@@ -9,6 +9,7 @@ from app.modules.plans.domain.entities import (
     PlaceSelectionResult,
     PlaceSelectionUsage,
     PlaceSelectionBlueprint,
+    Plan,
     PlanDay,
     PlanItem,
     PlanTransportLeg,
@@ -70,6 +71,12 @@ from app.modules.plans.place_selector.time_windows import (
 
 
 class PlaceSelectorService:
+    _FINDER_ACTIVITY_LIMIT_BY_PACE = {
+        TravelPace.relaxed: 2,
+        TravelPace.balanced: 3,
+        TravelPace.packed: 4,
+    }
+
     def __init__(
         self,
         place_tool: PlaceSelectionTool | None = None,
@@ -249,7 +256,16 @@ class PlaceSelectorService:
         user_status: UserStatus | None = None,
         plan_status: PlaceSelectionStatus | None = None,
         allow_place_suggestions: bool = True,
+        allow_finder_gap_fill: bool | None = None,
+        allow_replace_source_places: bool = False,
     ) -> PlaceSelectionResult:
+        # Keep the pre-agent-contract keyword working for domain tests and
+        # internal callers. Source-backed places are never replaced here;
+        # ``allow_replace_source_places`` is accepted only for compatibility
+        # with the public planning contract.
+        if allow_finder_gap_fill is not None:
+            allow_place_suggestions = allow_finder_gap_fill
+        del allow_replace_source_places
         normalized_selected = self._fill_nearby_graph_experiences(
             self._normalize_selected_places(selected_places),
             region_key=selection_blueprint.region_key or intent.destination,
@@ -319,6 +335,8 @@ class PlaceSelectorService:
     def fill_agent_plan(
         self,
         selection_input: PlaceSelectionInput,
+        *,
+        enrich_routes: bool = True,
     ) -> PlaceSelectionOutput:
         # Day creation belongs to PlaceSelector. TripThemePlanner supplies only
         # trip-wide requirements and never returns calendar structure.
@@ -366,6 +384,7 @@ class PlaceSelectorService:
             },
             intent_interests=selection_input.intent.interests,
             travel_style=selection_input.intent.travel_style,
+            enrich_routes=enrich_routes,
         )
         committed_place_count = sum(
             item.place_id is not None or item.source == "selected_place"
@@ -694,6 +713,7 @@ class PlaceSelectorService:
         avoid_modes: set[str],
         intent_interests: list[str],
         travel_style: str,
+        enrich_routes: bool = True,
     ) -> PlaceSelectionResult:
         committed_user_status = user_status.model_copy(deep=True)
         committed_plan_status = plan_status.model_copy(deep=True)
@@ -734,6 +754,7 @@ class PlaceSelectorService:
                 avoid_modes=avoid_modes,
                 intent_interests=intent_interests,
                 travel_style=travel_style,
+                enrich_routes=enrich_routes,
             )
 
         for brief in selection_blueprint.selection_days:
@@ -754,7 +775,10 @@ class PlaceSelectorService:
                         day=brief.day,
                         theme=brief.theme,
                         strategy="reference_only",
-                        items=[],
+                        items=[
+                            self._build_generic_meal_item(anchor)
+                            for anchor in MEAL_ANCHORS
+                        ],
                         transportLegs=[],
                     )
                 )
@@ -908,6 +932,7 @@ class PlaceSelectorService:
                             ),
                             *day_items,
                         ],
+                        current_day_items=day_items,
                         bbox_filter=(
                             area_profile.bbox if area_profile is not None else None
                         ),
@@ -1315,6 +1340,7 @@ class PlaceSelectorService:
         avoid_modes: set[str],
         intent_interests: list[str],
         travel_style: str,
+        enrich_routes: bool,
     ) -> PlaceSelectionResult:
         """Fill meal-anchored daily timelines without an activity-count quota."""
 
@@ -1343,7 +1369,10 @@ class PlaceSelectorService:
                         day=brief.day,
                         theme=brief.theme,
                         strategy="reference_only",
-                        items=[],
+                        items=[
+                            self._build_generic_meal_item(anchor)
+                            for anchor in MEAL_ANCHORS
+                        ],
                         transportLegs=[],
                     )
                 )
@@ -1375,12 +1404,29 @@ class PlaceSelectorService:
             plan_status.day_usage = PlaceSelectionUsage()
             day_items: list[PlanItem] = []
             activity_number = 0
+            finder_activity_limit = self._FINDER_ACTIVITY_LIMIT_BY_PACE.get(
+                brief.pace,
+                3,
+            )
             for available_window_index, available_window in enumerate(ACTIVITY_WINDOWS):
                 cursor = available_window.start_minutes
                 while (
                     available_window.end_minutes - cursor
                     >= MINIMUM_FILLABLE_GAP_MINUTES
                 ):
+                    remaining_source_refs = [
+                        ref
+                        for ref in activity_brief.allocated_selected_place_refs
+                        if ref in plan_status.remaining_selected_place_ids
+                    ]
+                    # Finder fills a useful day, not every remaining minute.
+                    # Explicit URL/user stops remain exempt so source evidence
+                    # is never discarded just to satisfy this comfort limit.
+                    if (
+                        activity_number >= finder_activity_limit
+                        and not remaining_source_refs
+                    ):
+                        break
                     remaining_minutes = available_window.end_minutes - cursor
                     activity_number += 1
                     role = f"main_activity_{activity_number}"
@@ -1416,11 +1462,7 @@ class PlaceSelectorService:
                     ]
                     candidate = None
                     candidate_start = cursor
-                    remaining_refs = [
-                        ref
-                        for ref in activity_brief.allocated_selected_place_refs
-                        if ref in plan_status.remaining_selected_place_ids
-                    ]
+                    remaining_refs = remaining_source_refs
                     for preferred_ref in remaining_refs:
                         selected = selected_by_ref.get(preferred_ref)
                         if selected is None or not hint_matches_activity_window(
@@ -1488,6 +1530,7 @@ class PlaceSelectorService:
                                 strict_day_theme=False,
                                 enforce_opening_hours=True,
                                 occupied_items=occupied_items,
+                                current_day_items=day_items,
                                 bbox_filter=(
                                     area_profile.bbox
                                     if area_profile is not None
@@ -1520,6 +1563,7 @@ class PlaceSelectorService:
                                 strict_day_theme=False,
                                 enforce_opening_hours=True,
                                 occupied_items=occupied_items,
+                                current_day_items=day_items,
                                 bbox_filter=(
                                     area_profile.bbox
                                     if area_profile is not None
@@ -1676,6 +1720,7 @@ class PlaceSelectorService:
                                 *activities,
                                 *meal_items,
                             ],
+                            current_day_items=[*activities, *meal_items],
                             bbox_filter=(
                                 area_profile.bbox if area_profile is not None else None
                             ),
@@ -1686,11 +1731,12 @@ class PlaceSelectorService:
                     candidate = meal_candidates.get(role)
                 if candidate is None:
                     message = (
-                        f"Day {day.day} omits unresolved meal slot {role} "
-                        "after route-based fallback search."
+                        f"Day {day.day} uses a generic meal anchor for {role} "
+                        "because no verified food venue resolved."
                     )
                     warnings.append(message)
                     plan_status.warnings.append(message)
+                    meal_items.append(self._build_generic_meal_item(anchor))
                     continue
                 meal_item = self._build_activity_item(
                     candidate,
@@ -1720,7 +1766,12 @@ class PlaceSelectorService:
                 ),
             )
 
-            routed_items, transport_legs = self.route_optimizer.optimize(
+            day_route_optimizer = (
+                self.route_optimizer
+                if enrich_routes
+                else GeographicRouteOptimizer()
+            )
+            routed_items, transport_legs = day_route_optimizer.optimize(
                 ordered_items,
                 preserve_order=True,
                 day=day.day,
@@ -1760,7 +1811,7 @@ class PlaceSelectorService:
                 )
                 warnings.append(message)
                 plan_status.warnings.append(message)
-                routed_items, transport_legs = self.route_optimizer.optimize(
+                routed_items, transport_legs = day_route_optimizer.optimize(
                     routed_items,
                     preserve_order=True,
                     day=day.day,
@@ -1787,6 +1838,7 @@ class PlaceSelectorService:
             trip_start_date=trip_start_date,
             preferred_modes=preferred_modes,
             avoid_modes=avoid_modes,
+            enrich_routes=enrich_routes,
         )
         if overflow_for_retry:
             message = (
@@ -1930,6 +1982,91 @@ class PlaceSelectorService:
         )
         return result.items, result.overflow_items
 
+    def enrich_plan_routes(self, plan: Plan) -> Plan:
+        """Replace coarse legs with provider-backed routes after first response."""
+        context = plan.route_enrichment_context
+        preferred_modes = set(context.preferred_modes if context else [])
+        avoid_modes = set(context.avoid_modes if context else [])
+        trip_start_date = context.trip_start_date if context else None
+        warnings = list(plan.warnings)
+        unscheduled = list(plan.unscheduled_places)
+        plan_status = plan.final_plan_status.model_copy(deep=True)
+        enriched_days: list[PlanDay] = []
+        for day in plan.days:
+            routed, legs = self.route_optimizer.optimize(
+                day.items,
+                preserve_order=True,
+                day=day.day,
+                trip_start_date=trip_start_date,
+                preferred_modes=preferred_modes,
+                avoid_modes=avoid_modes,
+            )
+            fit = self.timeline_fitter.fit(
+                routed,
+                legs,
+                day=day.day,
+                warnings=warnings,
+                plan_status=plan_status,
+            )
+            for item in fit.overflow_items:
+                unscheduled.append(
+                    UnscheduledPlace(
+                        placeId=item.place_id,
+                        name=item.name,
+                        day=day.day,
+                        reasonCode="detailed_route_overflow",
+                        reason="Detailed route time no longer fits within the day.",
+                        address=item.address,
+                        latitude=item.latitude,
+                        longitude=item.longitude,
+                        placeType=item.place_type,
+                        tags=item.tags,
+                        sourceRefs=item.source_refs,
+                        sourceProvider=item.source_provider,
+                        sourceActivity=item.source_activity,
+                    )
+                )
+            fitted_pairs = {
+                (origin.item_id, destination.item_id)
+                for origin, destination in zip(fit.items, fit.items[1:])
+            }
+            fitted_legs = [
+                leg
+                for leg in legs
+                if (leg.from_item_id, leg.to_item_id) in fitted_pairs
+            ]
+            enriched_days.append(
+                day.model_copy(
+                    update={
+                        "items": fit.items,
+                        "transport_legs": fitted_legs,
+                    }
+                )
+            )
+
+        all_legs = [leg for day in enriched_days for leg in day.transport_legs]
+        plan_status.trip_usage = plan_status.trip_usage.model_copy(
+            update={
+                "travel_minutes": sum(
+                    leg.estimated_duration_minutes for leg in all_legs
+                ),
+                "walking_minutes": sum(
+                    leg.estimated_duration_minutes
+                    for leg in all_legs
+                    if leg.mode == "walk"
+                ),
+            }
+        )
+        return plan.model_copy(
+            update={
+                "days": enriched_days,
+                "warnings": list(dict.fromkeys(warnings)),
+                "unscheduled_places": unscheduled,
+                "final_plan_status": plan_status,
+                "route_enrichment_status": "completed",
+            }
+        )
+
     def _retry_overflow_on_other_day(
         self,
         days: list[PlanDay],
@@ -1938,6 +2075,7 @@ class PlaceSelectorService:
         trip_start_date: str | None,
         preferred_modes: set[str],
         avoid_modes: set[str],
+        enrich_routes: bool = True,
     ) -> tuple[list[PlanDay], list[PlanItem]]:
         """Try each overflow activity once in another feasible day.
 
@@ -1975,7 +2113,12 @@ class PlaceSelectorService:
                         item.role or "",
                     ),
                 )
-                routed, legs = self.route_optimizer.optimize(
+                route_optimizer = (
+                    self.route_optimizer
+                    if enrich_routes
+                    else GeographicRouteOptimizer()
+                )
+                routed, legs = route_optimizer.optimize(
                     merged,
                     preserve_order=True,
                     day=day.day,
@@ -2217,6 +2360,7 @@ class PlaceSelectorService:
                 or candidate.description
                 or None
             ),
+            noteSources=candidate.note_sources,
             contextPlaces=candidate.context_places,
             personalNotes=candidate.personal_notes,
             imageUrls=candidate.image_urls,
@@ -2239,7 +2383,13 @@ class PlaceSelectorService:
         selected_source: bool,
     ) -> str:
         """Keep experience semantics separate from the timeline slot name."""
-        if block.kind == "meal" or place_category(candidate) == "food_drink":
+        if block.kind == "meal":
+            # The concrete anchor role is structural: TimelineFitter uses it
+            # to keep breakfast/lunch/dinner as separators between activity
+            # windows. Collapsing every anchor to ``meal`` made lunch drift
+            # behind afternoon activities.
+            return block.role
+        if place_category(candidate) == "food_drink":
             return "meal"
         category = candidate.experience_category
         if category in {
@@ -2318,6 +2468,25 @@ class PlaceSelectorService:
             source="finder_rule",
             durationMinutes=block.duration_minutes,
             notes="Khoảng nghỉ này không cần địa điểm cụ thể.",
+        )
+
+    @staticmethod
+    def _build_generic_meal_item(anchor) -> PlanItem:
+        names = {
+            "breakfast_meal": "Ăn sáng",
+            "lunch_meal": "Ăn trưa",
+            "dinner_meal": "Ăn tối",
+        }
+        return PlanItem(
+            itemId=str(uuid4()),
+            name=names[anchor.role],
+            timeWindow=anchor.time_window,
+            placeType="meal",
+            timelineCategory="food",
+            role=anchor.role,
+            source="finder_rule",
+            durationMinutes=anchor.duration_minutes,
+            notes="Meal anchor chưa có địa điểm đã xác minh.",
         )
 
     def _normalize_selected_places(

@@ -164,6 +164,7 @@ def get_plan_service(
     statistics = AutoPlaceStatisticsService(
         place_repository,
         project_dir / "database" / "generated" / "place_region_statistics.json",
+        prefer_snapshot_for_planner=True,
     )
     llm_client = get_llm_client()
     planning_runs = PlanningRunRepository(db)
@@ -197,6 +198,7 @@ def get_plan_service(
         statistics,
         llm_client,
         graph_research_service=graph_research_service,
+        skip_statistics_for_explicit_intent=True,
     )
     place_selector = PlaceSelectorService(
         RepositoryPlaceSelectionTool(place_repository),
@@ -259,6 +261,8 @@ def _get_place_resolver(
                 timeout_seconds=(settings.google_maps_scraper_timeout_seconds),
                 max_alias_queries=(settings.google_maps_scraper_max_alias_queries),
                 max_concurrency=(settings.google_maps_scraper_max_concurrency),
+                cache_ttl_seconds=(settings.google_maps_scraper_cache_ttl_seconds),
+                cache_max_entries=(settings.google_maps_scraper_cache_max_entries),
             )
     if place_repository is not None:
         repository_context_factory = None
@@ -329,28 +333,36 @@ def _get_itinerary_optimizer():
 
 
 def _get_nearby_route_cost_provider():
-    """Adapt the configured route provider for bounded nearby discovery."""
-    route_provider = _get_route_optimizer().route_provider
-    if route_provider is None:
+    """Batch nearby costs through the configured travel-time matrix."""
+    optimizer = _get_route_optimizer()
+    matrix_provider = optimizer.matrix_provider
+    if matrix_provider is None:
         return None
 
-    def route_cost(origin, destination):
-        if (
-            origin.latitude is None
-            or origin.longitude is None
-            or destination.latitude is None
-            or destination.longitude is None
-        ):
-            return None
-        result = route_provider.calculate(
-            (origin.latitude, origin.longitude),
-            (destination.latitude, destination.longitude),
-            transport_mode="pedestrian",
-            departure_time=None,
-        )
-        return result.distance_meters / 1000.0 if result is not None else None
+    class NearbyMatrixCostProvider:
+        def calculate_many(self, origin, destinations):
+            places = [origin, *destinations]
+            if any(
+                place.latitude is None or place.longitude is None
+                for place in places
+            ):
+                return None
+            result = matrix_provider.calculate(
+                [(place.latitude, place.longitude) for place in places],
+                transport_mode="pedestrian",
+                departure_time=None,
+            )
+            if result is None or result.distances_meters is None:
+                return None
+            first_row = result.distances_meters[0]
+            if len(first_row) != len(places):
+                return None
+            return [
+                None if value is None else value / 1000.0
+                for value in first_row[1:]
+            ]
 
-    return route_cost
+    return NearbyMatrixCostProvider()
 
 
 def get_current_location_route_service() -> CurrentLocationRouteService:

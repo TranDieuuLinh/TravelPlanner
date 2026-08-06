@@ -1,8 +1,9 @@
-"""Research grounded admission prices for Knowledge Graph TravelPlace nodes.
+"""Research sourced admission prices for Knowledge Graph TravelPlace nodes.
 
-The command uses Gemini Google Search grounding with the configured API-key
-pool. It is resumable through a JSONL cache, defaults to a database dry-run and
-only persists schema-validated results that cite grounded web sources.
+The command uses either Gemini Google Search grounding or a configured web
+search provider followed by structured Gemini extraction. It is resumable
+through a JSONL cache, defaults to a database dry-run and only persists
+schema-validated results that cite web sources.
 """
 
 from __future__ import annotations
@@ -14,8 +15,9 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 
@@ -26,6 +28,11 @@ if str(BACKEND_DIR) not in sys.path:
 from app.core.config import settings  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.integrations.llm.provider import GeminiLLMClient  # noqa: E402
+from app.integrations.search import (  # noqa: E402
+    GooglePlaywrightSearchProvider,
+    TavilySearchProvider,
+    WebSearchProvider,
+)
 from app.modules.knowledge_graph.model import (  # noqa: E402
     KnowledgeEntity,
     KnowledgeProperty,
@@ -35,6 +42,7 @@ from app.modules.knowledge_graph.price_research import (  # noqa: E402
     TravelPlacePriceCandidate,
     TravelPlacePriceOutcome,
     research_travel_place_price,
+    research_travel_place_price_with_web_search,
 )
 from app.modules.knowledge_graph.repositories.kg_repository import (  # noqa: E402
     KnowledgeGraphRepository,
@@ -51,8 +59,6 @@ RESEARCH_PROPERTY_KEYS = {
     "admission_price",
 }
 TERMINAL_CACHE_STATUSES = {
-    PriceResearchStatus.verified_price,
-    PriceResearchStatus.verified_free,
     PriceResearchStatus.not_found,
     PriceResearchStatus.ambiguous,
 }
@@ -73,6 +79,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument(
+        "--search-provider",
+        choices=("google_playwright", "gemini_grounded", "tavily"),
+        default=settings.price_search_provider,
+    )
+    parser.add_argument(
+        "--min-interval-seconds",
+        type=float,
+        default=settings.gemini_price_min_interval_seconds,
+        help="Minimum delay between Gemini request starts; default is 4 seconds.",
+    )
     parser.add_argument("--min-review-count", type=int, default=0)
     parser.add_argument(
         "--place-type",
@@ -200,18 +217,66 @@ async def fetch_outcomes(
     llm_client: GeminiLLMClient,
     model_name: str,
     concurrency: int,
+    search_provider: WebSearchProvider | None = None,
+    on_outcome: Callable[[TravelPlacePriceOutcome], None] | None = None,
 ) -> list[TravelPlacePriceOutcome]:
-    semaphore = asyncio.Semaphore(max(1, min(concurrency, 4)))
+    queue: asyncio.Queue[CandidateRecord] = asyncio.Queue()
+    for record in records:
+        queue.put_nowait(record)
+    quota_limited = asyncio.Event()
+    outcomes: list[TravelPlacePriceOutcome] = []
 
-    async def fetch(record: CandidateRecord) -> TravelPlacePriceOutcome:
-        async with semaphore:
-            return await research_travel_place_price(
-                record.candidate,
-                llm_client=llm_client,
-                model_name=model_name,
+    async def worker() -> None:
+        while not quota_limited.is_set():
+            try:
+                record = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            outcome = (
+                await research_travel_place_price_with_web_search(
+                    record.candidate,
+                    search_provider=search_provider,
+                    llm_client=llm_client,
+                    model_name=model_name,
+                )
+                if search_provider is not None
+                else await research_travel_place_price(
+                    record.candidate,
+                    llm_client=llm_client,
+                    model_name=model_name,
+                )
             )
+            outcomes.append(outcome)
+            if on_outcome is not None:
+                on_outcome(outcome)
+            if outcome.error == "gemini_quota_limited":
+                quota_limited.set()
+            queue.task_done()
 
-    return list(await asyncio.gather(*(fetch(record) for record in records)))
+    worker_count = min(max(1, concurrency), 4, len(records))
+    if worker_count:
+        await asyncio.gather(*(worker() for _ in range(worker_count)))
+    return outcomes
+
+
+def is_terminal_cached_outcome(outcome: TravelPlacePriceOutcome) -> bool:
+    if outcome.status in {
+        PriceResearchStatus.verified_price,
+        PriceResearchStatus.verified_free,
+    }:
+        return outcome.can_apply
+    return outcome.status in TERMINAL_CACHE_STATUSES
+
+
+def count_admission_prices(session: Session) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(KnowledgeProperty)
+            .where(KnowledgeProperty.key == "admission_price")
+        )
+        or 0
+    )
 
 
 def apply_outcomes(
@@ -224,6 +289,16 @@ def apply_outcomes(
     stats: Counter[str] = Counter()
     repo = KnowledgeGraphRepository(session)
     for outcome in outcomes:
+        if (
+            outcome.status
+            in {
+                PriceResearchStatus.verified_price,
+                PriceResearchStatus.verified_free,
+            }
+            and not outcome.has_grounded_source
+        ):
+            stats["missing_grounded_source_skipped"] += 1
+            continue
         if not outcome.can_apply:
             continue
         existing = {
@@ -257,11 +332,17 @@ def main() -> int:
         raise SystemExit("--limit must be positive")
     if not 1 <= args.concurrency <= 4:
         raise SystemExit("--concurrency must be between 1 and 4")
+    if not 0 <= args.min_interval_seconds <= 60:
+        raise SystemExit("--min-interval-seconds must be between 0 and 60")
     if args.min_review_count < 0:
         raise SystemExit("--min-review-count cannot be negative")
     if not settings.gemini_price_key_pool:
         raise SystemExit(
             "GEMINI_PRICE_API_KEYS or GEMINI_API_KEY is missing from backend/.env"
+        )
+    if args.search_provider == "tavily" and not settings.tavily_api_key:
+        raise SystemExit(
+            "TAVILY_API_KEY is required when --search-provider=tavily"
         )
 
     session = SessionLocal()
@@ -297,38 +378,70 @@ def main() -> int:
             for record in records
             if args.refresh
             or record.candidate.entity_id not in cache
-            or cache[record.candidate.entity_id].status not in TERMINAL_CACHE_STATUSES
+            or not is_terminal_cached_outcome(cache[record.candidate.entity_id])
         ][: args.limit]
         aggregate["scheduled"] = len(pending)
         llm_client = GeminiLLMClient(
             settings.gemini_price_key_pool,
             args.model,
-            min_interval_seconds=settings.gemini_min_interval_seconds,
+            min_interval_seconds=args.min_interval_seconds,
         )
+        if args.search_provider == "google_playwright":
+            web_search_provider: WebSearchProvider | None = (
+                GooglePlaywrightSearchProvider(
+                    work_dir=settings.google_maps_scraper_work_dir,
+                    timeout_seconds=settings.google_web_search_timeout_seconds,
+                    min_interval_seconds=(
+                        settings.google_web_search_min_interval_seconds
+                    ),
+                )
+            )
+        elif args.search_provider == "tavily":
+            web_search_provider = TavilySearchProvider(
+                settings.tavily_api_key or "",
+                timeout_seconds=settings.tavily_timeout_seconds,
+            )
+        else:
+            web_search_provider = None
+        effective_concurrency = (
+            1 if web_search_provider is not None else args.concurrency
+        )
+        aggregate["effective_concurrency"] = effective_concurrency
+
+        def persist_outcome(outcome: TravelPlacePriceOutcome) -> None:
+            if not args.no_cache_write:
+                append_cache(args.cache_file, [outcome])
+                aggregate["cache_records_written"] += 1
+            aggregate[outcome.status.value] += 1
+            if outcome.error:
+                aggregate[f"error:{outcome.error}"] += 1
+            aggregate.update(
+                apply_outcomes(
+                    session,
+                    [outcome],
+                    apply=args.apply,
+                    overwrite=args.overwrite,
+                )
+            )
+
         outcomes = asyncio.run(
             fetch_outcomes(
                 pending,
                 llm_client=llm_client,
                 model_name=args.model,
-                concurrency=args.concurrency,
+                concurrency=effective_concurrency,
+                search_provider=web_search_provider,
+                on_outcome=persist_outcome,
             )
         )
-        if not args.no_cache_write:
-            append_cache(args.cache_file, outcomes)
-            aggregate["cache_records_written"] += len(outcomes)
-        aggregate.update(outcome.status.value for outcome in outcomes)
-        aggregate.update(
-            f"error:{outcome.error}"
+        quota_deferred = len(pending) - len(outcomes)
+        if quota_deferred > 0 and any(
+            outcome.error == "gemini_quota_limited"
             for outcome in outcomes
-            if outcome.error
-        )
-        aggregate.update(
-            apply_outcomes(
-                session,
-                outcomes,
-                apply=args.apply,
-                overwrite=args.overwrite,
-            )
+        ):
+            aggregate["quota_limited_deferred"] += quota_deferred
+        aggregate["admission_price_in_database"] = count_admission_prices(
+            session
         )
     finally:
         session.close()
@@ -338,6 +451,7 @@ def main() -> int:
             {
                 "status": "applied" if args.apply else "dry_run",
                 "cacheFile": str(args.cache_file),
+                "searchProvider": args.search_provider,
                 **dict(sorted(aggregate.items())),
             },
             ensure_ascii=False,

@@ -174,6 +174,16 @@ function TimingStages({
                     {details.map(([key, value]) => `${detailKeyLabel(key)}: ${detailLabel(value)}`).join(" · ")}
                   </small>
                 ) : null}
+                {"subStages" in stage && stage.subStages?.length ? (
+                  <span className="backgroundJobTimingSubsteps">
+                    {stage.subStages.map((substage) => (
+                      <span key={`${stage.key}-${substage.key}`}>
+                        <span>{substage.label}</span>
+                        <b>{timingLabel(Math.max(0, substage.durationSeconds))}</b>
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </span>
               <b>{timingLabel(Math.max(0, stage.durationSeconds))}</b>
             </li>
@@ -515,7 +525,13 @@ export function BackgroundUrlJobs({
       }
     }
 
-    const refreshNow = () => {
+    const refreshNow = (event: Event) => {
+      const enqueuedJobs = (event as CustomEvent<UrlImportJob[]>).detail;
+      if (Array.isArray(enqueuedJobs)) {
+        for (const job of enqueuedJobs) {
+          statusesRef.current.set(job.id, job.status);
+        }
+      }
       if (timer) clearTimeout(timer);
       void refresh();
     };
@@ -578,7 +594,9 @@ export function BackgroundUrlJobs({
           ? current.map((item) => item.id === updated.id ? updated : item)
           : [updated, ...current]);
         router.push(`/planner?chatId=${encodeURIComponent(updated.chatId)}`);
-        window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+        window.dispatchEvent(new CustomEvent("vsf:url-job-enqueued", {
+          detail: [updated]
+        }));
       }
     } catch (caught) {
       setActionError({

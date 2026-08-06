@@ -129,6 +129,10 @@ class MainPlanFromExplorerCreate(BaseModel):
         list[PlaceCandidateReview],
         Field(default_factory=list, alias="candidateReviews"),
     ]
+    region_stories: Annotated[
+        list[PlanNoteSource],
+        Field(default_factory=list, alias="regionStories"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
@@ -172,6 +176,10 @@ class MainPlanFromTripIntentCreate(BaseModel):
         list[PlaceCandidateReview],
         Field(default_factory=list, alias="candidateReviews"),
     ]
+    region_stories: Annotated[
+        list[PlanNoteSource],
+        Field(default_factory=list, alias="regionStories"),
+    ]
     region_key: Annotated[str | None, Field(default=None, alias="regionKey")]
     user_status: Annotated[UserStatus, Field(alias="userStatus")] = Field(
         default_factory=UserStatus
@@ -210,6 +218,7 @@ class MainPlanFromTripIntentCreate(BaseModel):
             userId=self.user_id,
             selectedPlaces=self.selected_places,
             candidateReviews=self.candidate_reviews,
+            regionStories=self.region_stories,
             regionKey=self.region_key,
             userStatus=self.user_status,
             preferenceProfile=self.preference_profile,

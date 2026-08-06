@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterator
 
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -27,10 +27,13 @@ from app.modules.knowledge_graph.text import (
     repair_cp437_utf8_mojibake,
 )
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
+from app.modules.places.eligibility import place_record_is_search_eligible
 from app.modules.places.model import KnowledgeEntityImage
 
 
 SEARCHABLE_ALIAS_STATUSES = {"imported", "verified", "active", "approved"}
+VERIFIED_ALIAS_STATUSES = {"verified", "active", "approved"}
+PROJECTION_BATCH_SIZE = 1_000
 
 
 @dataclass(frozen=True)
@@ -74,14 +77,32 @@ class KnowledgeGraphPlaceRepository:
         self.session = session
 
     def get(self, entity_id: str) -> KnowledgeGraphPlaceRecord | None:
-        entity = self.session.scalar(
-            select(KnowledgeEntity).where(
-                KnowledgeEntity.id == entity_id,
-                KnowledgeEntity.entity_type.in_(PLACE_TYPES),
+        current_id = entity_id
+        visited: set[str] = set()
+        while current_id not in visited:
+            visited.add(current_id)
+            entity = self.session.scalar(
+                select(KnowledgeEntity).where(
+                    KnowledgeEntity.id == current_id,
+                    KnowledgeEntity.entity_type.in_(PLACE_TYPES),
+                )
             )
-        )
-        records = self._project([entity] if entity is not None else [])
-        return records[0] if records else None
+            records = self._project([entity] if entity is not None else [])
+            if not records:
+                return None
+            record = records[0]
+            if record.status != "merged":
+                return record
+            merged_into = self.session.scalar(
+                select(KnowledgeProperty.value).where(
+                    KnowledgeProperty.entity_id == current_id,
+                    KnowledgeProperty.key == "merged_into_entity_id",
+                )
+            )
+            if not merged_into:
+                return None
+            current_id = merged_into
+        return None
 
     def list_for_place_selection(
         self, region_key: str, *, limit: int = 10000
@@ -227,33 +248,88 @@ class KnowledgeGraphPlaceRepository:
     def _list_by_region(
         self, region_key: str, *, limit: int
     ) -> list[KnowledgeGraphPlaceRecord]:
-        region_property = KnowledgeProperty
-        entities = list(
-            self.session.scalars(
-                select(KnowledgeEntity)
-                .join(
-                    region_property,
-                    region_property.entity_id == KnowledgeEntity.id,
-                )
-                .where(
-                    KnowledgeEntity.entity_type.in_(PLACE_TYPES),
-                    region_property.key == "region_key",
-                    or_(
-                        region_property.value == region_key,
-                        region_property.value.like(f"{region_key},%"),
-                        region_property.value.like(f"{region_key}:%"),
-                    ),
-                )
-                .distinct()
-                .order_by(KnowledgeEntity.id)
-                .limit(limit)
+        region_predicate = KnowledgeEntity.properties.any(
+            and_(
+                KnowledgeProperty.key == "region_key",
+                or_(
+                    KnowledgeProperty.value == region_key,
+                    KnowledgeProperty.value.like(f"{region_key},%"),
+                    KnowledgeProperty.value.like(f"{region_key}:%"),
+                ),
             )
         )
+        tourism_predicate = _place_type_matches(
+            "museum",
+            "tourist attraction",
+            "historical",
+            "landmark",
+            "monument",
+            "temple",
+            "pagoda",
+            "place of worship",
+            "church",
+            "art gallery",
+            "park",
+            "garden",
+            "scenic",
+        )
+        dining_predicate = _place_type_matches(
+            "restaurant",
+            "cafe",
+            "coffee",
+            "bakery",
+            "bistro",
+            "food court",
+            "fast food",
+            "noodle",
+            "eatery",
+            "diner",
+            "dessert",
+            "ice cream",
+            "tea house",
+        )
+        base = select(KnowledgeEntity).where(
+            KnowledgeEntity.entity_type.in_(PLACE_TYPES),
+            region_predicate,
+        )
+        tourism_limit = max(1, round(limit * 0.55))
+        dining_limit = max(0, min(limit - tourism_limit, round(limit * 0.35)))
+        support_limit = max(0, limit - tourism_limit - dining_limit)
+        entities = [
+            *self.session.scalars(
+                base.where(tourism_predicate)
+                .order_by(KnowledgeEntity.id)
+                .limit(tourism_limit)
+            ),
+            *self.session.scalars(
+                base.where(dining_predicate)
+                .order_by(KnowledgeEntity.id)
+                .limit(dining_limit)
+            ),
+            *self.session.scalars(
+                base.where(~tourism_predicate, ~dining_predicate)
+                .order_by(KnowledgeEntity.id)
+                .limit(support_limit)
+            ),
+        ]
+        if len(entities) < limit:
+            selected_ids = [entity.id for entity in entities]
+            fallback = base
+            if selected_ids:
+                fallback = fallback.where(KnowledgeEntity.id.not_in(selected_ids))
+            entities.extend(
+                self.session.scalars(
+                    fallback.order_by(
+                        KnowledgeEntity.entity_type != "TravelPlace",
+                        KnowledgeEntity.id,
+                    ).limit(limit - len(entities))
+                )
+            )
         return self._active(self._project(entities))
 
     @staticmethod
     def _active(records: list[KnowledgeGraphPlaceRecord]) -> list[KnowledgeGraphPlaceRecord]:
-        return [record for record in records if record.status == "active"]
+        return [record for record in records if place_record_is_search_eligible(record)]
 
     def _project(
         self, entities: list[KnowledgeEntity]
@@ -262,36 +338,49 @@ class KnowledgeGraphPlaceRepository:
             return []
         entity_ids = [entity.id for entity in entities]
         properties: dict[str, dict[str, str]] = {entity_id: {} for entity_id in entity_ids}
-        for prop in self.session.scalars(
-            select(KnowledgeProperty).where(KnowledgeProperty.entity_id.in_(entity_ids))
-        ):
-            properties[prop.entity_id][prop.key] = prop.value
+        for entity_id_batch in _batches(entity_ids, PROJECTION_BATCH_SIZE):
+            for prop in self.session.scalars(
+                select(KnowledgeProperty).where(
+                    KnowledgeProperty.entity_id.in_(entity_id_batch)
+                )
+            ):
+                properties[prop.entity_id][prop.key] = prop.value
 
         aliases: dict[str, list[str]] = {entity_id: [] for entity_id in entity_ids}
-        for alias in self.session.scalars(
-            select(KnowledgeAlias).where(
-                KnowledgeAlias.entity_id.in_(entity_ids),
-                KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
-            )
-        ):
-            aliases[alias.entity_id].append(alias.alias)
+        verified_aliases: dict[str, list[str]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
+        for entity_id_batch in _batches(entity_ids, PROJECTION_BATCH_SIZE):
+            for alias in self.session.scalars(
+                select(KnowledgeAlias).where(
+                    KnowledgeAlias.entity_id.in_(entity_id_batch),
+                    KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                )
+            ):
+                aliases[alias.entity_id].append(alias.alias)
+                if alias.status in VERIFIED_ALIAS_STATUSES:
+                    verified_aliases[alias.entity_id].append(alias.alias)
 
         images: dict[str, list[KnowledgeGraphImage]] = {
             entity_id: [] for entity_id in entity_ids
         }
-        for image in self.session.scalars(
-            select(KnowledgeEntityImage)
-            .where(KnowledgeEntityImage.entity_id.in_(entity_ids))
-            .order_by(KnowledgeEntityImage.id)
-        ):
-            if image.entity_id and image.image_url:
-                images[image.entity_id].append(KnowledgeGraphImage(image.image_url))
+        for entity_id_batch in _batches(entity_ids, PROJECTION_BATCH_SIZE):
+            for image in self.session.scalars(
+                select(KnowledgeEntityImage)
+                .where(KnowledgeEntityImage.entity_id.in_(entity_id_batch))
+                .order_by(KnowledgeEntityImage.id)
+            ):
+                if image.entity_id and image.image_url:
+                    images[image.entity_id].append(
+                        KnowledgeGraphImage(image.image_url)
+                    )
 
         return [
             _record_from_entity(
                 entity,
                 properties[entity.id],
                 aliases[entity.id],
+                verified_aliases[entity.id],
                 images[entity.id],
             )
             for entity in entities
@@ -302,6 +391,7 @@ def _record_from_entity(
     entity: KnowledgeEntity,
     props: dict[str, str],
     aliases: list[str],
+    verified_aliases: list[str],
     images: list[KnowledgeGraphImage],
 ) -> KnowledgeGraphPlaceRecord:
     metadata = _repair_text_tree(_json_object(props.get("metadata")))
@@ -314,6 +404,7 @@ def _record_from_entity(
     )
     metadata.setdefault("tags", _tags(props))
     metadata.setdefault("aliases", aliases)
+    metadata.setdefault("verifiedAliases", verified_aliases)
     return KnowledgeGraphPlaceRecord(
         id=entity.id,
         name=repair_cp437_utf8_mojibake(entity.canonical_name),
@@ -345,6 +436,17 @@ def _record_from_entity(
 def _text(value: str | None) -> str | None:
     value = repair_cp437_utf8_mojibake((value or "").strip())
     return value or None
+
+
+def _place_type_matches(*markers: str):
+    return KnowledgeEntity.properties.any(
+        and_(
+            KnowledgeProperty.key.in_(("place_type", "place_category")),
+            or_(
+                *(KnowledgeProperty.value.ilike(f"%{marker}%") for marker in markers)
+            ),
+        )
+    )
 
 
 def _repair_text_tree(value: Any) -> Any:
@@ -405,3 +507,8 @@ def _tags(props: dict[str, str]) -> list[str]:
         props.get("accommodation_type"),
     ]
     return [value for value in values if value]
+
+
+def _batches(values: list[str], size: int) -> Iterator[list[str]]:
+    for index in range(0, len(values), size):
+        yield values[index:index + size]

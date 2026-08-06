@@ -166,8 +166,7 @@ class AreaSurveyService:
             return empty
 
         claims = self._nearby_claims(anchor.place_id, region_key, interests)
-        candidates: list[NearbyExperienceCandidate] = []
-        seen: set[tuple[str, str]] = set()
+        eligible: list[tuple[object, SelectablePlace, float]] = []
         for claim in claims:
             place_ref = claim.anchorPlace
             if place_ref is None or place_ref.id == anchor.place_id:
@@ -179,9 +178,20 @@ class AreaSurveyService:
                 (anchor.latitude, anchor.longitude),
                 (place.latitude, place.longitude),
             ) if anchor.latitude is not None and anchor.longitude is not None else None
-            if distance is None:
+            # A road route cannot be shorter than straight-line distance. Filter
+            # before provider work so distant graph candidates create no calls.
+            if distance is None or distance > radius_km:
                 continue
-            route_cost = self._route_cost_km(anchor, place, distance)
+            eligible.append((claim, place, distance))
+
+        route_costs = self._route_costs_km(
+            anchor,
+            [place for _, place, _ in eligible],
+            [distance for _, _, distance in eligible],
+        )
+        candidates: list[NearbyExperienceCandidate] = []
+        seen: set[tuple[str, str]] = set()
+        for (claim, place, distance), route_cost in zip(eligible, route_costs):
             if route_cost > radius_km:
                 continue
             activity = claim.activity or claim.object
@@ -276,6 +286,34 @@ class AreaSurveyService:
             return float(value)
         except (TypeError, ValueError):
             return fallback
+
+    def _route_costs_km(
+        self,
+        origin: SelectablePlace,
+        destinations: list[SelectablePlace],
+        fallbacks: list[float],
+    ) -> list[float]:
+        provider = self.route_cost_provider
+        if provider is None or not destinations:
+            return fallbacks
+        calculate_many = getattr(provider, "calculate_many", None)
+        if callable(calculate_many):
+            try:
+                values = calculate_many(origin, destinations)
+            except (TypeError, ValueError):
+                return fallbacks
+            if values is None or len(values) != len(destinations):
+                return fallbacks
+            return [
+                fallback if value is None else float(value)
+                for value, fallback in zip(values, fallbacks)
+            ]
+        # Compatibility for tests and non-production adapters. Production uses
+        # calculate_many and never enters this per-candidate fallback.
+        return [
+            self._route_cost_km(origin, destination, fallback)
+            for destination, fallback in zip(destinations, fallbacks)
+        ]
 
     def survey(self, region_key: str) -> AreaSurveyResult:
         """Khảo sát khu vực và trả về AreaProfile."""

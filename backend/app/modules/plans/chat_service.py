@@ -73,6 +73,34 @@ class TripChatService:
     def get(self, chat_id: str, user: User) -> TripChatRead:
         return self._read(self.repository.get(chat_id, user.id))
 
+    def enrich_routes(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã thay đổi trước khi hoàn tất tuyến đường.",
+            )
+        if chat.current_plan is None:
+            raise AppError(409, "PLAN_NOT_READY", "Lịch trình chưa sẵn sàng.")
+        plan = Plan.model_validate(chat.current_plan)
+        if plan.route_enrichment_status == "completed":
+            return self._read(chat)
+        enriched = self.plan_service.enrich_plan_routes(plan)
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=None,
+            plan_payload=enriched.model_dump(mode="json", by_alias=True),
+            revision=chat.revision + 1,
+        )
+        return self._read(saved)
+
     def delete(self, chat_id: str, user: User) -> None:
         self.repository.delete(chat_id, user.id)
 
@@ -166,6 +194,7 @@ class TripChatService:
         )
         intake_id = None if destination_changed else chat.current_intake_id
         preference_profile = TravelerProfileRepository(self.repository.db).get(user.id)
+        current_context = self._current_context(chat)
 
         next_plan, planner_timing = (
             await self.plan_service.create_main_plan_from_trip_intent_with_timing(
@@ -179,7 +208,15 @@ class TripChatService:
                     allowFinderGapFill=True,
                     allowReplaceSourcePlaces=False,
                     expandDaysToFitSelectedPlaces=False,
-                )
+                ),
+                reuse_theme_plan=(
+                    current_plan
+                    if _theme_inputs_unchanged(
+                        current_context.trip_intent if current_context else None,
+                        normalized_intent,
+                    )
+                    else None
+                ),
             )
         )
         next_plan = next_plan.model_copy(update={"id": current_plan.id})
@@ -215,6 +252,7 @@ class TripChatService:
         initial_destination: str,
         urls: list[str],
         images: list[ImageUploadPayload],
+        initial_trip_days: int | None = None,
         force_url_refresh: bool = False,
         turn_id: str | None = None,
         on_explore_complete: Callable[[ExplorerTimingReport | None], None]
@@ -239,6 +277,7 @@ class TripChatService:
             initial_destination=initial_destination,
             urls=urls,
             images=images,
+            initial_trip_days=initial_trip_days,
             force_url_refresh=force_url_refresh,
             turn_id=turn_id,
             on_explore_complete=on_explore_complete,
@@ -255,6 +294,7 @@ class TripChatService:
         initial_destination: str,
         urls: list[str],
         images: list[ImageUploadPayload],
+        initial_trip_days: int | None = None,
         force_url_refresh: bool = False,
         turn_id: str | None = None,
         on_explore_complete: Callable[[ExplorerTimingReport | None], None]
@@ -303,7 +343,7 @@ class TripChatService:
             if current_context is not None
             else ExploreTripSpecInput()
         )
-        requested_days = _explicit_day_count(content)
+        requested_days = initial_trip_days or _explicit_day_count(content)
         requests_more_days = requested_days is None and _requests_more_days(content)
         if requested_days is not None:
             trip_spec.days = requested_days
@@ -391,6 +431,15 @@ class TripChatService:
             planner_timing,
         ) = await self.plan_service.create_main_plan_from_trip_intent_with_timing(
             planner_input,
+            reuse_theme_plan=(
+                current_plan
+                if current_plan is not None
+                and _theme_inputs_unchanged(
+                    current_context.trip_intent if current_context else None,
+                    explore.explorer.trip_intent,
+                )
+                else None
+            ),
             **planner_kwargs,
         )
         if current_plan is not None:
@@ -721,7 +770,8 @@ class TripChatService:
                     ),
                     allowFinderGapFill=True,
                     allowReplaceSourcePlaces=False,
-                )
+                ),
+                reuse_theme_plan=current_plan,
             )
             next_plan = next_plan.model_copy(update={"id": current_plan.id})
             self.plan_service.repository.save(next_plan)
@@ -1181,6 +1231,21 @@ def _requests_more_days(content: str) -> bool:
             "tăng số ngày",
             "kéo dài chuyến",
         )
+    )
+
+
+def _theme_inputs_unchanged(
+    current: TripIntent | None,
+    incoming: TripIntent,
+) -> bool:
+    """Compare the canonical intent/spec inputs consumed by TripThemePlanner."""
+    if current is None:
+        return False
+    return (
+        current.to_planning_intent().model_dump(mode="json", by_alias=True)
+        == incoming.to_planning_intent().model_dump(mode="json", by_alias=True)
+        and current.to_trip_spec().model_dump(mode="json", by_alias=True)
+        == incoming.to_trip_spec().model_dump(mode="json", by_alias=True)
     )
 
 

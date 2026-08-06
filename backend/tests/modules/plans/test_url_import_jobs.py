@@ -349,7 +349,7 @@ def test_worker_times_out_job_instead_of_blocking_queue(
     assert timed_out.error_code == "URL_IMPORT_TIMEOUT"
 
 
-def test_worker_rolls_back_failed_transaction_and_continues_queue(
+def test_worker_rolls_back_failed_batch_transaction_without_replanning_sibling(
     registered_client,
     db_session,
 ) -> None:
@@ -391,16 +391,86 @@ def test_worker_rolls_back_failed_transaction_and_continues_queue(
     worker._process = fail_first_transaction  # type: ignore[method-assign]
 
     assert asyncio.run(worker.run_once()) is True
-    assert asyncio.run(worker.run_once()) is True
+    assert asyncio.run(worker.run_once()) is False
 
     db_session.expire_all()
     failed = db_session.get(UrlImportJob, jobs[0]["id"])
-    completed = db_session.get(UrlImportJob, jobs[1]["id"])
+    sibling = db_session.get(UrlImportJob, jobs[1]["id"])
     assert failed is not None
     assert failed.status == "failed"
     assert failed.error_code == "URL_IMPORT_FAILED"
-    assert completed is not None
-    assert completed.status == "succeeded"
+    assert sibling is not None
+    assert sibling.status == "failed"
+    assert sibling.error_code == "URL_IMPORT_FAILED"
+
+
+def test_queue_can_claim_different_chats_but_serializes_each_chat(
+    registered_client,
+    db_session,
+) -> None:
+    first_chat = _create_chat(registered_client)
+    second_chat = _create_chat(registered_client)
+    first_jobs = registered_client.post(
+        f"/api/trip-chats/{first_chat}/url-jobs",
+        data={
+            "content": "https://example.com/a1 https://example.com/a2",
+            "expectedRevision": "0",
+        },
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"]
+    second_job = registered_client.post(
+        f"/api/trip-chats/{second_chat}/url-jobs",
+        data={"content": "https://example.com/b1", "expectedRevision": "0"},
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"][0]
+    repository = UrlImportJobRepository(db_session)
+
+    first = repository.claim_next(max_concurrency=3)
+    second = repository.claim_next(max_concurrency=3)
+
+    assert first is not None and first.id == first_jobs[0]["id"]
+    assert second is not None and second.id == second_job["id"]
+    assert repository.claim_next(max_concurrency=3) is None
+
+
+def test_worker_combines_source_batch_into_one_planning_call(
+    registered_client,
+    db_session,
+    monkeypatch,
+) -> None:
+    chat_id = _create_chat(registered_client)
+    jobs = registered_client.post(
+        f"/api/trip-chats/{chat_id}/url-jobs",
+        data={
+            "content": "Dùng cả hai nguồn",
+            "expectedRevision": "0",
+            "urls": ["https://example.com/one", "https://example.com/two"],
+        },
+        headers=csrf_headers(registered_client),
+    ).json()["jobs"]
+    captured: list[dict[str, object]] = []
+
+    async def fake_amend(_service, _chat_id, _user, **kwargs):
+        captured.append(kwargs)
+        kwargs["on_explore_complete"](None)
+        return SimpleNamespace(revision=1)
+
+    monkeypatch.setattr(worker_module, "get_plan_service", lambda _db: object())
+    monkeypatch.setattr(worker_module, "get_plan_mutation_service", lambda _db: object())
+    monkeypatch.setattr(worker_module.TripChatService, "amend", fake_amend)
+    worker = UrlImportJobWorker(lambda: db_session)
+
+    assert asyncio.run(worker.run_once()) is True
+    assert len(captured) == 1
+    assert captured[0]["urls"] == [
+        "https://example.com/one",
+        "https://example.com/two",
+    ]
+    db_session.expire_all()
+    assert [db_session.get(UrlImportJob, job["id"]).status for job in jobs] == [
+        "succeeded",
+        "succeeded",
+    ]
 
 
 def test_worker_loop_survives_iteration_failure(db_session) -> None:

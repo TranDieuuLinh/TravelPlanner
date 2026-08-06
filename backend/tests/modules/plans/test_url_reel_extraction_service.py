@@ -38,6 +38,7 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
 )
 from app.modules.plans.explorer.tools.url_reels.service import (
     UrlReelExtractionService,
+    _grounded_region_story,
 )
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     GeminiAudioSpeechToText,
@@ -155,6 +156,29 @@ def build_service(media: FakeMedia | FailingMedia) -> UrlReelExtractionService:
     )
 
 
+def test_region_story_requires_exact_source_evidence() -> None:
+    accepted = _grounded_region_story(
+        story=(
+            "Creator mô tả Hà Nội phù hợp cho một ngày đầu tiên đi bộ chậm rãi."
+        ),
+        evidence="a perfect first day in Hanoi",
+        source_text="Old Quarter, citadel — a perfect first day in Hanoi.",
+        evidence_type="caption",
+        destination="Hà Nội",
+    )
+    rejected = _grounded_region_story(
+        story="Creator khuyên nên đi Hà Nội vào mùa thu.",
+        evidence="best in autumn",
+        source_text="A perfect first day in Hanoi.",
+        evidence_type="caption",
+        destination="Hà Nội",
+    )
+
+    assert accepted is not None
+    assert accepted.evidence == "a perfect first day in Hanoi"
+    assert rejected is None
+
+
 def test_automatically_removes_owned_artifacts_after_extraction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -260,6 +284,46 @@ def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
 
     assert result.speech_to_text.status == "ok"
     assert result.timings["prepareSourceWall"] >= 0
+
+
+def test_tiktok_does_not_overlap_metadata_and_media_requests(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    metadata_finished = Event()
+
+    class TikTokLoader(FakeLoader):
+        def load_metadata(self, url: str) -> UrlMetadata:
+            calls.append("metadata")
+            metadata_finished.set()
+            return super().load_metadata(url)
+
+    class TikTokMedia(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            assert metadata_finished.is_set()
+            calls.append("media")
+            return super().prepare(url, work_dir)
+
+    service = UrlReelExtractionService(
+        loader=TikTokLoader(),
+        media=TikTokMedia(),
+        speech_to_text=FakeSpeechToText(),
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.tiktok.com/@creator/video/123",
+            workDir=tmp_path,
+        )
+    )
+
+    assert calls == ["metadata", "media"]
+    assert result.speech_to_text.status == "ok"
 
 
 def test_youtube_caption_skips_media_and_gemini_stt(tmp_path: Path) -> None:
@@ -903,6 +967,8 @@ def test_audio_stt_requests_and_validates_structured_observations(
     assert set(config["responseJsonSchema"]["required"]) == {
         "transcript",
         "observations",
+        "regionStory",
+        "regionStoryEvidence",
     }
     assert result.text == "On day two, visit Cafe Dinh for egg coffee."
     assert result.observations[0].model_dump(by_alias=True) == {

@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from app.modules.plans.domain.entities import ExperienceCategory, PreferredTimeWindow
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -478,6 +479,10 @@ class SelectablePlace(BaseModel):
     region_key: str = Field(alias="regionKey")
     description: str | None = None
     notes: str | None = None
+    note_sources: list[PlanNoteSource] = Field(
+        default_factory=list,
+        alias="noteSources",
+    )
     context_places: list[str] = Field(default_factory=list, alias="contextPlaces")
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     place_group: str | None = Field(default=None, alias="placeGroup")
@@ -642,6 +647,34 @@ class RepositoryPlaceSelectionTool:
 
         query_terms = _normalized_terms(target_tags)
         query_categories = semantic_categories(query_terms)
+        coffee_requested = any(
+            marker in f" {_normalize_text(term)} "
+            for term in target_tags
+            for marker in (
+                " cafe ",
+                " coffee ",
+                " ca phe ",
+                " cafe hopping ",
+                " coffee hopping ",
+            )
+        )
+        non_food_activity_query = bool(
+            query_categories.intersection(
+                {"attraction", "entertainment", "nature", "shopping"}
+            )
+        ) and "food_drink" not in query_categories and not coffee_requested
+        if non_food_activity_query:
+            places = [
+                place
+                for place in places
+                if place_category(place) != "food_drink"
+                and not is_coffee_place(place)
+            ]
+        if query_categories == {"food_drink"}:
+            # Food-related provider catalogs also contain ingredient shops,
+            # packaging vendors and cooking schools. They are relevant to the
+            # word "food", but cannot serve as a travel meal stop.
+            places = [place for place in places if is_dine_in_meal_venue(place)]
         description_ranked = sorted(
             places,
             key=lambda place: (
@@ -819,6 +852,40 @@ def semantic_categories(terms: set[str]) -> set[str]:
 
 def place_category(place: SelectablePlace) -> str | None:
     normalized_name = _normalize_text(place.name)
+    place_type = _normalize_text(place.place_type).replace(" ", "_")
+    padded_place_type = f"_{place_type}_"
+    if any(
+        marker in padded_place_type
+        for marker in (
+            "_hotel_",
+            "_homestay_",
+            "_hostel_",
+            "_motel_",
+            "_resort_",
+            "_apartment_",
+            "_lodging_",
+            "_guest_house_",
+        )
+    ):
+        return "accommodation"
+    if any(
+        marker in padded_place_type
+        for marker in (
+            "_restaurant_",
+            "_food_",
+            "_bakery_",
+            "_ice_cream_",
+            "_dessert_",
+            "_juice_",
+            "_tea_",
+            "_bingsu_",
+            "_snack_",
+            "_confectionery_",
+            "_bar_",
+            "_pub_",
+        )
+    ):
+        return "food_drink"
     if re.search(
         r"(^| )(ga|station|terminal|ben pha)( |$)",
         normalized_name,
@@ -839,7 +906,6 @@ def place_category(place: SelectablePlace) -> str | None:
         )
     ):
         return "attraction"
-    place_type = _normalize_text(place.place_type).replace(" ", "_")
     if place_type in PLACE_TYPE_CATEGORY:
         return PLACE_TYPE_CATEGORY[place_type]
     group = _normalize_text(place.place_group or "")
@@ -848,6 +914,76 @@ def place_category(place: SelectablePlace) -> str | None:
     values = _normalized_terms([place.place_type, *place.tags])
     categories = semantic_categories(values)
     return sorted(categories)[0] if categories else None
+
+
+def is_coffee_place(place: Any) -> bool:
+    """Return whether a venue represents a coffee/cafe stop.
+
+    Cafe remains a valid itinerary activity.  This predicate is deliberately
+    separate from ``place_category`` so the selector can limit only Finder
+    repetition without reclassifying URL-backed cafe experiences as meals.
+    """
+
+    values = _normalize_text(
+        " ".join(
+            str(value)
+            for value in (
+                getattr(place, "name", ""),
+                getattr(place, "place_type", ""),
+                *list(getattr(place, "tags", []) or []),
+            )
+            if value
+        )
+    )
+    padded = f" {values} "
+    return any(
+        marker in padded
+        for marker in (
+            " cafe ",
+            " coffee ",
+            " coffee shop ",
+            " ca phe ",
+            " quan cafe ",
+            " quan ca phe ",
+        )
+    )
+
+
+def is_dine_in_meal_venue(place: Any) -> bool:
+    """Return whether a food result is a venue where a traveler can eat."""
+
+    place_type = f" {_normalize_text(getattr(place, 'place_type', ''))} "
+    rejected_markers = (
+        " supplier ",
+        " supply ",
+        " store ",
+        " supermarket ",
+        " grocery ",
+        " school ",
+        " package ",
+        " manufacturer ",
+        " wholesaler ",
+        " distributor ",
+        " soup kitchen ",
+    )
+    if any(marker in place_type for marker in rejected_markers):
+        return False
+    accepted_markers = (
+        " restaurant ",
+        " cafe ",
+        " coffee ",
+        " bakery ",
+        " bistro ",
+        " food court ",
+        " fast food ",
+        " noodle ",
+        " eatery ",
+        " diner ",
+        " dessert ",
+        " ice cream ",
+        " tea house ",
+    )
+    return any(marker in place_type for marker in accepted_markers)
 
 
 def _description_relevance(

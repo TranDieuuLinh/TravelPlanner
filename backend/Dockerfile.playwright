@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY scripts/google_maps_scraper_worker.js ./google_maps_scraper_worker.js
 COPY scripts/google_maps_place_lookup.js ./google_maps_place_lookup.js
+COPY scripts/google_web_search.js ./google_web_search.js
 
 RUN mkdir -p /work \
     && chown -R node:node /worker /work /ms-playwright

@@ -40,7 +40,11 @@ from app.modules.knowledge_graph.research.schema import (
 )
 from app.modules.plans.domain.entities import TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
-from app.modules.plans.dto.agent_contracts import SelectedPlaceContext, TripPlanningSpec
+from app.modules.plans.dto.agent_contracts import (
+    SelectedPlaceContext,
+    TripPlanningSpec,
+    TripThemeDraft,
+)
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 from app.modules.preferences.schema import LongTermPreferenceProfile
 
@@ -295,6 +299,17 @@ class _GraphThemeScriptedLLM:
         self.macro_calls = 0
         self.macro_payloads: list[str] = []
         self.system_prompts: list[str] = []
+        self.response_schemas: list[dict] = []
+
+    async def generate_structured_json(
+        self,
+        system_prompt: str,
+        user_payload: str,
+        *,
+        response_schema: dict,
+    ) -> str:
+        self.response_schemas.append(response_schema)
+        return await self.generate_json(system_prompt, user_payload)
 
     async def generate_json(self, system_prompt: str, user_payload: str) -> str:
         envelope = json.loads(user_payload)
@@ -445,6 +460,7 @@ class TestRequiredAnchorSelection:
             ],
         )
         service, orchestrator = _build_service(llm)
+        timing_stages = []
 
         from app.modules.plans.dto.agent_contracts import TripPlanningSpec
 
@@ -454,6 +470,7 @@ class TestRequiredAnchorSelection:
                 trip_spec=TripPlanningSpec(days=2),
                 region_key="vn,ha-noi",
                 selected_places=[],
+                on_timing_stage=timing_stages.append,
             )
         )
 
@@ -469,6 +486,14 @@ class TestRequiredAnchorSelection:
         assert requirement.recommended_visit_minutes == 60
         assert llm.macro_calls == 1
         assert orchestrator.calls == 1
+        assert llm.response_schemas == [TripThemeDraft.model_json_schema()]
+        assert "requiredOutputShape" not in json.loads(llm.macro_payloads[0])
+        assert [stage.key for stage in timing_stages[:3]] == [
+            "regionStatistics",
+            "graphResearch",
+            "graphProjection",
+        ]
+        assert timing_stages[1].details["candidateCount"] > 0
 
 
 class TestChooseOneSelection:

@@ -29,7 +29,9 @@ from app.modules.plans.explorer.place_policy import (
     is_schedulable_place,
 )
 from app.modules.plans.domain.plan_notes import (
-    compose_plan_source_note,
+    PlanNoteSource,
+    compose_video_place_note,
+    select_creator_story_evidence,
     source_note_provenance,
 )
 from app.modules.plans.explorer.schema import (
@@ -118,6 +120,10 @@ class ExplorerPersistenceRepository:
         )
         self.session.add(import_job)
         self.session.flush()
+        # Source artifacts, provenance and the review snapshot are the critical
+        # hand-off to Planner. Commit them before optional KG matching so a
+        # slow or malformed enrichment cannot roll the intake back.
+        self.session.commit()
 
         area_matches, area_entity, area_identity_status = self._match_knowledge_entities(
             destination,
@@ -236,6 +242,12 @@ class ExplorerPersistenceRepository:
             ) else "not_required"
         self.session.commit()
 
+    def critical_intake_exists(self, intake_id: str) -> bool:
+        """Recover the session after enrichment failure and verify the hand-off."""
+        self.session.rollback()
+        row = self.session.get(KnowledgeGraphImport, intake_id)
+        return row is not None and row.import_kind == "explorer_intake"
+
     def load_candidate_reviews(self, intake_id: str | None) -> list[PlaceCandidateReview]:
         if intake_id is None:
             return []
@@ -336,26 +348,25 @@ class ExplorerPersistenceRepository:
                 ]
                 if document is not None
             ]
-            provider_description = _optional_text(snapshot.get("description"))
-            source_note = compose_plan_source_note(
+            place_name = str(snapshot.get("name") or node.canonical_name)
+            video_note = compose_video_place_note(
+                place_name=place_name,
                 source_activity=node.source_activity,
                 source_evidence=dict(node.source_evidence or {}),
-                provider_description=provider_description,
+            )
+            video_evidence = select_creator_story_evidence(
+                place_name=place_name,
+                source_evidence=dict(node.source_evidence or {}),
             )
             note_sources = source_note_provenance(
                 source_refs=source_refs,
                 evidence_types=list((node.source_evidence or {}).keys()),
-                provider=node.provider,
-                provider_ref=(
-                    _optional_text(snapshot.get("googleMapsUrl"))
-                    or _optional_text(snapshot.get("externalId"))
-                ),
-                provider_fetched_at=snapshot.get("fetchedAt"),
-                include_provider=bool(provider_description),
+                video_note=video_note,
+                video_evidence=video_evidence if video_note else None,
             )
             output.append(
                 SelectedPlaceCreate(
-                    name=str(snapshot.get("name") or node.canonical_name),
+                    name=place_name,
                     placeId=(
                         route_selection.get("entityId") if route_selection is not None
                         else node.selected_entity_id
@@ -397,7 +408,7 @@ class ExplorerPersistenceRepository:
                         else "low" if node.identity_status == "branch_ambiguous"
                         else "medium"
                     ),
-                    notes=source_note,
+                    notes=video_note,
                     noteSources=note_sources,
                     imageUrls=_image_urls_from_snapshot(snapshot),
                     rating=snapshot.get("rating"),
@@ -409,7 +420,93 @@ class ExplorerPersistenceRepository:
                     sourceDurationMinutes=node.source_duration_minutes,
                 )
             )
+        if not output:
+            # The review snapshot is part of the critical transaction. It is
+            # sufficient for planning while optional KG node enrichment is
+            # unavailable or waiting to be retried.
+            for raw_review in import_job.candidate_reviews or []:
+                review = PlaceCandidateReview.model_validate(raw_review)
+                if (
+                    review.status != "resolved"
+                    or review.latitude is None
+                    or review.longitude is None
+                ):
+                    continue
+                output.append(
+                    SelectedPlaceCreate(
+                        name=review.resolved_name or review.name,
+                        address=review.address,
+                        priority=_priority_from_confidence(review.confidence),
+                        mustVisit=True,
+                        preferenceLevel="must_visit",
+                        regionKey=normalize_region_key(
+                            review.search_region or import_job.destination or ""
+                        ),
+                        tags=[canonical_place_category(review.category.value)],
+                        latitude=review.latitude,
+                        longitude=review.longitude,
+                        sourceRefs=review.source_urls,
+                        sourceProvider=review.provider,
+                        sourceOrder=review.source_order,
+                        sourceDay=review.source_day,
+                        sourceTimeHint=review.source_time_hint,
+                        sourceActivity=review.source_activity,
+                        sourceDurationMinutes=review.source_duration_minutes,
+                    )
+                )
         return output
+
+    def load_region_stories(
+        self,
+        intake_id: str,
+        user_id: str | None,
+    ) -> list[PlanNoteSource]:
+        """Load destination-level creator stories from validated source documents."""
+
+        import_job = self.session.get(KnowledgeGraphImport, intake_id)
+        if (
+            import_job is None
+            or import_job.import_kind != "explorer_intake"
+            or import_job.created_by != _numeric_user_id(user_id)
+        ):
+            return []
+        document_ids = {
+            document_id
+            for document_id in self.session.scalars(
+                select(KnowledgeGraphImportNode.source_document_id).where(
+                    KnowledgeGraphImportNode.import_id == intake_id,
+                    KnowledgeGraphImportNode.source_document_id.is_not(None),
+                )
+            )
+            if document_id is not None
+        }
+        if import_job.source_document_id is not None:
+            document_ids.add(import_job.source_document_id)
+
+        stories: list[PlanNoteSource] = []
+        for document_id in sorted(document_ids):
+            document = self.session.get(SourceDocument, document_id)
+            if document is None:
+                continue
+            raw_story = (document.extracted_context_json or {}).get("regionStory")
+            if not isinstance(raw_story, dict):
+                continue
+            text = _optional_text(raw_story.get("text"))
+            evidence = _optional_text(raw_story.get("evidence"))
+            evidence_type = _optional_text(raw_story.get("evidenceType"))
+            if not text or not evidence or evidence_type not in {"caption", "stt"}:
+                continue
+            stories.append(
+                PlanNoteSource(
+                    type="url",
+                    text=text,
+                    evidence=evidence,
+                    ref=document.canonical_url,
+                    evidenceTypes=[evidence_type],
+                    fetchedAt=document.fetched_at,
+                )
+            )
+        return stories
 
     def load_cached_url_result(self, url: str) -> UrlReelExtractionResult | None:
         source_url = _artifact_source_url(url)
@@ -721,10 +818,39 @@ class ExplorerPersistenceRepository:
             for prop in property_rows:
                 properties_by_entity.setdefault(prop.entity_id, {})[prop.key] = prop.value
 
+        # Soft-merged rows remain in ``knowledge_entities`` so historical
+        # foreign keys keep working.  Resolver search must collapse them to the
+        # canonical entity before Top-K ranking, otherwise one landmark appears
+        # twice with equal scores and is incorrectly reported as ambiguous.
+        redirected_candidates: dict[str, KnowledgeEntity] = {}
+        for entity in candidate_by_id.values():
+            properties = properties_by_entity.get(entity.id, {})
+            if properties.get("catalog_status") != "merged":
+                redirected_candidates[entity.id] = entity
+                continue
+            canonical_id = properties.get("merged_into_entity_id")
+            if not canonical_id or canonical_id == entity.id:
+                continue
+            canonical = self.session.get(KnowledgeEntity, canonical_id)
+            if canonical is not None:
+                redirected_candidates[canonical.id] = canonical
+        candidate_by_id = redirected_candidates
+
+        missing_property_ids = set(candidate_by_id) - set(properties_by_entity)
+        if missing_property_ids:
+            for prop in self.session.scalars(
+                select(KnowledgeProperty).where(
+                    KnowledgeProperty.entity_id.in_(missing_property_ids)
+                )
+            ):
+                properties_by_entity.setdefault(prop.entity_id, {})[prop.key] = prop.value
+
         ranked: list[tuple[float, float, KnowledgeEntity, list[str], dict[str, str]]] = []
         normalized_region = _normalized(region)
         for entity in candidate_by_id.values():
             if entity.status not in {"verified", "active"}:
+                continue
+            if properties_by_entity.get(entity.id, {}).get("catalog_status") == "merged":
                 continue
             approved_aliases = [
                 alias.alias for alias in entity.aliases

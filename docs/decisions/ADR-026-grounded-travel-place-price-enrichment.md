@@ -22,16 +22,36 @@ lỗi thời. Repo đã có Gemini client với structured output, retry và poo
 4. Output bị ràng buộc bởi schema. Application kiểm tra amount, currency, range,
    exact-identity decision và source index. Giá/free không có grounded source
    không được apply.
-5. Lưu snapshot đầy đủ trong `knowledge_properties.admission_price`; chiếu giá
-   đại diện VND vào `admission_fee_vnd` để tương thích research tool hiện tại.
-   Không quy đổi ngoại tệ.
-6. Cache JSONL giữ kết quả tối thiểu để resume. Database chỉ nhận
+5. Chỉ lưu giá vé vào cửa tiêu chuẩn ban ngày cho một người lớn trong snapshot
+   `knowledge_properties.admission_price`. `minAmount`, `maxAmount` và
+   `representativeAmount` cùng một giá; không trộn giá trẻ em/ưu tiên/VIP/tour
+   đêm, combo, phương tiện hoặc dịch vụ phụ trợ. Không quy đổi ngoại tệ.
+6. Cache JSONL giữ kết quả tối thiểu để resume. Mỗi outcome được cache và commit
+   riêng ngay khi request hoàn tất thay vì chờ toàn bộ batch. Database chỉ nhận
    `verified_price`/`verified_free`; `not_found`, `ambiguous` và provider error
    không trở thành giá canonical.
 7. `GEMINI_PRICE_API_KEYS` là pool riêng tùy chọn, fallback về
    `GEMINI_API_KEY`. Client round-robin sau request thành công, cooldown `429`
    và disable `401/403`; không ghi credential hoặc raw provider response vào log.
 8. Không ghi đè giá có sẵn trừ khi operator truyền `--overwrite`.
+9. Worker pool giữ tối đa bốn request đồng thời. Tầng repository kiểm tra lại
+   grounded source HTTP(S), kể cả outcome đọc từ cache, trước khi upsert.
+10. Price request mặc định được giãn bốn giây giữa lần bắt đầu. Khi client đã
+    thử pool mà outcome vẫn quota-limited, worker ngừng claim entity mới và hoãn
+    phần còn lại. Summary cuối lệnh đếm trực tiếp số `admission_price` trong DB.
+11. CLI mặc định dùng `gemini-3.5-flash-lite`. Model inference và Search
+    grounding có quota riêng; price research chỉ hoạt động khi project có quota
+    cho Google Search grounding. Stable Gemini 2.5 không được xem là fallback
+    cho project mới khi provider trả `model no longer available to new users`.
+12. Google Playwright SERP adapter chỉ là opt-in diagnostic fallback. Nó chạy
+    tuần tự, không bypass CAPTCHA/block và không apply kết quả khi search bị
+    chặn. Live test local bị chặn ở cả headless/headed, nên chưa thay provider
+    grounded mặc định và chưa được coi là production-ready.
+13. Thêm Tavily basic search sau `WebSearchProvider` làm fallback có key. Adapter
+    không yêu cầu answer/raw content, chỉ trả title/URL/snippet; Gemini chạy
+    structured output không-grounding và application vẫn kiểm tra source index.
+    Thiếu `TAVILY_API_KEY` phải fail-fast. Free quota chỉ dùng cho batch nhỏ;
+    operator phải đánh giá chi phí trước khi chạy toàn catalog.
 
 ## Hệ quả
 

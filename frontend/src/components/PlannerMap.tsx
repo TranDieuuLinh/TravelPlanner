@@ -962,16 +962,14 @@ export function PlannerMap({
       popupContent.append(header, details);
 
       const notePresentation = planItemNotePresentation(place);
-      if (notePresentation.sourceText || notePresentation.personalText) {
+      if (notePresentation.sourceNotes.length || notePresentation.personalText) {
         const notes = document.createElement("section");
         notes.className = "candidateMapPopupNotes";
-        if (notePresentation.sourceText) {
+        for (const sourceNote of notePresentation.sourceNotes) {
           const notesLabel = document.createElement("small");
-          notesLabel.style.whiteSpace = "pre-line";
-          notesLabel.textContent =
-            notePresentation.sourceLabel ?? "Thông tin bổ sung";
+          notesLabel.textContent = sourceNote.label;
           const description = document.createElement("p");
-          description.textContent = notePresentation.sourceText;
+          description.textContent = sourceNote.text;
           notes.append(notesLabel, description);
         }
         if (notePresentation.personalText) {

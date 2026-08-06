@@ -19,6 +19,7 @@ from app.modules.plans.place_selector.place_tool import (
     SelectablePlace,
     PlaceSelectionTool,
     _normalize_text,
+    is_coffee_place,
     place_category,
     place_matches_categories,
     selection_relevance_score,
@@ -36,15 +37,29 @@ from app.modules.plans.trip_theme_planner.opening_hours_parser import (
 
 
 NON_TOURISM_PLACE_TYPES = {
+    "cemetery",
+    "community_center",
+    "congregation",
     "courthouse",
+    "cultural_center",
     "embassy",
+    "education_center",
     "fire_station",
+    "funeral_home",
     "hospital",
     "local_government_office",
     "police",
     "post_office",
     "school",
     "university",
+    "village_hall",
+}
+MIN_NON_FOOD_ACTIVITIES_PER_DAY = 2
+CATEGORY_DISCOVERY_TERMS = {
+    "attraction": ("museum", "history", "heritage", "landmark", "temple"),
+    "nature": ("park", "garden", "walking"),
+    "shopping": ("market", "local market"),
+    "entertainment": ("theatre", "performance"),
 }
 
 
@@ -73,6 +88,7 @@ class CandidateSelectionContext:
     strict_day_theme: bool = True
     enforce_opening_hours: bool = True
     occupied_items: list[PlanItem] = field(default_factory=list)
+    current_day_items: list[PlanItem] = field(default_factory=list)
     bbox_filter: tuple[float, float, float, float] | None = None
 
 
@@ -209,6 +225,14 @@ class CandidateSelector:
             ):
                 return None
             candidate = self._selected_to_candidate(selected, context.brief)
+            if is_coffee_place(candidate) and any(
+                is_coffee_place(item) for item in context.current_day_items
+            ):
+                context.rejected_selected_places[candidate.stable_ref] = CandidateRejection(
+                    "daily_coffee_limit",
+                    "Mỗi ngày chỉ xếp tối đa một điểm cà phê.",
+                )
+                return None
             if (
                 context.block.kind != "meal"
                 and place_category(candidate) == "food_drink"
@@ -257,6 +281,14 @@ class CandidateSelector:
                         [
                             *sorted(query_categories),
                             *(
+                                discovery_term
+                                for category in sorted(query_categories)
+                                for discovery_term in CATEGORY_DISCOVERY_TERMS.get(
+                                    category,
+                                    (),
+                                )
+                            ),
+                            *(
                                 term
                                 for term in search_terms
                                 if (
@@ -269,6 +301,19 @@ class CandidateSelector:
                         ]
                     )
                 )
+            if self._needs_non_food_activity(context):
+                catalog_search_terms = [
+                    term
+                    for term in catalog_search_terms
+                    if not self._is_coffee_search_term(term)
+                ]
+                if not catalog_search_terms:
+                    catalog_search_terms = [
+                        "culture",
+                        "history",
+                        "nature",
+                        "sightseeing",
+                    ]
             selected_place_ids = {
                 place.place_id
                 for place in context.selected_by_ref.values()
@@ -315,12 +360,39 @@ class CandidateSelector:
             context.plan_status,
         )
 
+        has_current_coffee = any(
+            is_coffee_place(item) for item in context.current_day_items
+        )
+        finder_coffee_allowed = self._finder_coffee_allowed(context)
+        if has_current_coffee:
+            unique_candidates = [
+                candidate
+                for candidate in unique_candidates
+                if not is_coffee_place(candidate)
+            ]
+        elif not finder_coffee_allowed:
+            unique_candidates = [
+                candidate
+                for candidate in unique_candidates
+                if candidate.stable_ref in context.selected_by_ref
+                or not is_coffee_place(candidate)
+            ]
+
+        if self._needs_non_food_activity(context):
+            unique_candidates = [
+                candidate
+                for candidate in unique_candidates
+                if candidate.stable_ref in context.selected_by_ref
+                or not is_coffee_place(candidate)
+            ]
+
         # Prefer a new semantic category/activity, while retaining candidates
         # when the catalog is genuinely sparse.
         used_tags = {tag.casefold() for tag in context.plan_status.visited_tag_counts}
         unique_candidates.sort(
             key=lambda candidate: (
                 candidate.stable_ref not in context.selected_by_ref,
+                self._day_place_type_repeated(candidate, context.current_day_items),
                 bool(used_tags.intersection(tag.casefold() for tag in candidate.tags)),
             )
         )
@@ -365,6 +437,86 @@ class CandidateSelector:
                 continue
             return candidate
         return None
+
+    def _finder_coffee_allowed(self, context: CandidateSelectionContext) -> bool:
+        if context.block.kind == "meal":
+            return True
+
+        # A URL/user-selected cafe owns the day's coffee experience even when
+        # it is scheduled in a later activity window. Finder must not add a
+        # second cafe before the source stop is reached.
+        for ref in context.brief.allocated_selected_place_refs:
+            selected = context.selected_by_ref.get(ref)
+            if selected is None:
+                continue
+            candidate = self._selected_to_candidate(selected, context.brief)
+            if is_coffee_place(candidate):
+                return False
+
+        return not any(is_coffee_place(item) for item in context.current_day_items)
+
+    @staticmethod
+    def _needs_non_food_activity(context: CandidateSelectionContext) -> bool:
+        if context.block.kind == "meal":
+            return False
+        count = sum(
+            item.timeline_category == "activity" and not is_coffee_place(item)
+            for item in context.current_day_items
+        )
+        return count < MIN_NON_FOOD_ACTIVITIES_PER_DAY
+
+    @staticmethod
+    def _is_coffee_search_term(value: str) -> bool:
+        normalized = _normalize_text(value)
+        return any(
+            marker in f" {normalized} "
+            for marker in (
+                " cafe ",
+                " coffee ",
+                " ca phe ",
+                " cafe hopping ",
+                " coffee hopping ",
+                " cafe tour ",
+                " coffee tour ",
+            )
+        )
+
+    @staticmethod
+    def _explicit_coffee_tour(context: CandidateSelectionContext) -> bool:
+        text = _normalize_text(
+            " ".join(
+                [
+                    context.brief.theme,
+                    *context.brief.focus_tags,
+                    *context.intent_interests,
+                    context.travel_style,
+                ]
+            )
+        )
+        return any(
+            marker in text
+            for marker in (
+                "coffee tour",
+                "cafe tour",
+                "cafe hopping",
+                "coffee hopping",
+                "tour ca phe",
+                "kham pha quan ca phe",
+            )
+        )
+
+    @staticmethod
+    def _day_place_type_repeated(
+        candidate: SelectablePlace,
+        current_day_items: list[PlanItem],
+    ) -> bool:
+        candidate_type = _normalize_text(candidate.place_type)
+        if not candidate_type:
+            return False
+        return any(
+            _normalize_text(item.place_type) == candidate_type
+            for item in current_day_items
+        )
 
     def _duplicates_existing_identity(
         self,
@@ -555,12 +707,7 @@ class CandidateSelector:
         ]
         if not strict_day_theme:
             compatible_focus_tags = list(brief.focus_tags)
-            route_first_categories = semantic_categories(
-                set([*compatible_focus_tags, *primary_values])
-            )
-            fallback_values = (
-                [] if route_first_categories else [*intent_interests, travel_style]
-            )
+            fallback_values = [*intent_interests, travel_style]
         else:
             fallback_values = []
         return list(
@@ -622,9 +769,9 @@ class CandidateSelector:
             global_categories = semantic_categories(set(intent_interests or []))
             return for_slot(
                 primary_categories
-                or focus_categories
-                or global_categories
-                or semantic_categories(set(fallback_terms))
+                | focus_categories
+                | global_categories
+                | semantic_categories(set(fallback_terms))
             )
         return for_slot(
             primary_categories
@@ -668,6 +815,7 @@ class CandidateSelector:
                             selected.preferred_time_windows
                         ),
                         "notes": selected.notes,
+                        "note_sources": list(selected.note_sources),
                         "image_urls": (
                             list(selected.image_urls) or stored_place.image_urls
                         ),
@@ -715,6 +863,7 @@ class CandidateSelector:
             sourceDurationMinutes=selected.source_duration_minutes,
             preferredTimeWindows=selected.preferred_time_windows,
             notes=selected.notes,
+            noteSources=selected.note_sources,
             contextPlaces=selected.context_places,
             personalNotes=selected.personal_notes,
             imageUrls=selected.image_urls,
@@ -896,8 +1045,6 @@ class CandidateSelector:
         normalized = f" {_normalize_text(candidate.name)} "
         markers = (
             " restaurant ",
-            " cafe ",
-            " coffee ",
             " bakery ",
             " bistro ",
             " kitchen ",
@@ -927,6 +1074,9 @@ class CandidateSelector:
                 " ticket office ",
                 " booking office ",
                 " information counter ",
+                " nha van hoa ",
+                " nghia trang ",
+                " funeral ",
             )
         )
 

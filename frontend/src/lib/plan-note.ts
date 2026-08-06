@@ -38,18 +38,13 @@ export function formatPlanNote(value: unknown): string | null {
 }
 
 const NOTE_SOURCE_LABELS: Record<string, string> = {
-  url: "Từ video tham khảo",
-  image: "Từ ảnh tham khảo",
-  google_maps: "Google Maps",
-  place_provider: "Nguồn địa điểm",
+  url: "Câu chuyện từ video",
+  image: "Chi tiết từ ảnh tham khảo",
   creator: "Từ creator"
 };
 
 function inferredNoteSources(
-  item: {
-    sourceRefs?: string[];
-    sourceProvider?: string | null;
-  }
+  item: { sourceRefs?: string[] }
 ): PlanNoteSource[] {
   const sources: PlanNoteSource[] = [];
   for (const ref of item.sourceRefs ?? []) {
@@ -59,12 +54,6 @@ function inferredNoteSources(
       sources.push({ type: "image", ref, evidenceTypes: ["ocr"] });
     }
   }
-  if (
-    sources.length === 0 &&
-    ["google_maps", "google_maps_scraper"].includes(item.sourceProvider ?? "")
-  ) {
-    sources.push({ type: "google_maps" });
-  }
   return sources;
 }
 
@@ -72,24 +61,35 @@ export function formatNoteSources(
   sources: PlanNoteSource[] | null | undefined
 ): string | null {
   const labels = (sources ?? [])
+    .filter(
+      (source) =>
+        source.type !== "google_maps" && source.type !== "place_provider"
+    )
     .map((source) => NOTE_SOURCE_LABELS[source.type] ?? "Nguồn tham khảo")
     .filter((label, index, values) => values.indexOf(label) === index);
   return labels.length ? labels.join("\n") : null;
 }
 
 export type PlanItemNotePresentation = {
+  sourceNotes: PresentedSourceNote[];
   sourceLabel: string | null;
   sourceText: string | null;
   personalText: string | null;
 };
 
+export type PresentedSourceNote = {
+  type: string;
+  label: string;
+  text: string;
+};
+
 type NoteBearingItem = {
+  name?: string;
   notes?: string | null;
   noteSources?: PlanNoteSource[];
   personalNotes?: string | null;
   sourceActivity?: string | null;
   sourceRefs?: string[];
-  sourceProvider?: string | null;
 };
 
 /** One shared note view-model for itinerary cards and map marker popups. */
@@ -99,13 +99,121 @@ export function planItemNotePresentation(
   const sources = item.noteSources?.length
     ? item.noteSources
     : inferredNoteSources(item);
-  const sourceLabel = formatNoteSources(sources);
-  const sourceText =
-    formatPlanNote(item.notes) ??
-    (sourceLabel ? formatPlanNote(item.sourceActivity) : null);
+
+  const sourceNotes = sources
+    // Provider facts already have dedicated UI (address, rating, hours and
+    // links). Repeating them as prose makes the note area look informative
+    // without adding any planning value.
+    .filter(
+      (source) =>
+        source.type !== "google_maps" && source.type !== "place_provider"
+    )
+    .map((source): PresentedSourceNote | null => {
+      const label = NOTE_SOURCE_LABELS[source.type] ?? "Nguồn tham khảo";
+      const fallback = fallbackSourceNote(item, source.type);
+      const text = vietnameseSourceText(source.text, fallback);
+      if (
+        source.type === "url" &&
+        text &&
+        (!looksVietnamese(
+          text.replaceAll(item.name?.trim() || "địa điểm này", "")
+        ) ||
+          !isUsefulCreatorStory(text, item.name?.trim() || "địa điểm này"))
+      ) {
+        return null;
+      }
+      return text ? { type: source.type, label, text } : null;
+    })
+    .filter((note): note is PresentedSourceNote => Boolean(note))
+    .filter(
+      (note, index, notes) =>
+        notes.findIndex(
+          (candidate) =>
+            candidate.type === note.type && candidate.text === note.text
+        ) === index
+    );
+
+  const firstSourceNote = sourceNotes[0] ?? null;
   return {
-    sourceLabel: sourceText ? sourceLabel ?? "Thông tin bổ sung" : null,
-    sourceText,
+    sourceNotes,
+    // Kept for callers reading older single-note presentation fields.
+    sourceLabel: firstSourceNote?.label ?? null,
+    sourceText: firstSourceNote?.text ?? null,
     personalText: formatPlanNote(item.personalNotes)
   };
+}
+
+function fallbackSourceNote(
+  item: NoteBearingItem,
+  sourceType: string
+): string | null {
+  const name = item.name?.trim() || "địa điểm này";
+  if (sourceType === "url") {
+    const activity = formatPlanNote(item.sourceActivity);
+    return activity &&
+      looksVietnamese(activity.replaceAll(name, "")) &&
+      isUsefulCreatorStory(activity, name)
+      ? activity
+      : null;
+  }
+  if (sourceType === "image") {
+    return `Ảnh tham khảo có thông tin về ${name}.`;
+  }
+  return formatPlanNote(item.notes);
+}
+
+function isUsefulCreatorStory(value: string, placeName: string): boolean {
+  const normalize = (text: string) =>
+    text
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[đĐ]/g, "d")
+      .toLocaleLowerCase("vi")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const normalized = normalize(value);
+  const name = normalize(placeName);
+  if (
+    [
+      "video tham khao co nhac den",
+      "video co nhac den",
+      "creator co nhac den",
+      "tham quan dia diem",
+      "kham pha dia diem"
+    ].some((pattern) => normalized.includes(pattern))
+  ) {
+    return false;
+  }
+  const withoutName = name ? normalized.replace(name, "").trim() : normalized;
+  return !["", "tham quan", "kham pha", "ghe", "den"].includes(withoutName);
+}
+
+function vietnameseSourceText(
+  value: string | null | undefined,
+  fallback: string | null
+): string | null {
+  const text = formatPlanNote(value);
+  return text && looksVietnamese(text) ? text : fallback;
+}
+
+function looksVietnamese(value: string): boolean {
+  if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/iu.test(value)) {
+    return true;
+  }
+  const normalized = ` ${value.toLocaleLowerCase("vi")} `;
+  return [
+    " tham quan ",
+    " khám phá ",
+    " thưởng thức ",
+    " ghé ",
+    " ăn ",
+    " uống ",
+    " ngắm ",
+    " thử ",
+    " rút ",
+    " địa điểm ",
+    " dữ liệu ",
+    " video ",
+    " tại "
+  ].some((word) => normalized.includes(word));
 }

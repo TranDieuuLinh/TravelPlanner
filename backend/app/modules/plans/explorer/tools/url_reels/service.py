@@ -5,6 +5,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 import httpx
 
@@ -24,6 +25,7 @@ from app.modules.plans.explorer.tools.url_reels.media import UrlReelMediaExtract
 from app.modules.plans.explorer.tools.url_reels.schema import (
     FrameVisionResult,
     MediaArtifacts,
+    RegionSourceStory,
     SpeechToTextResult,
     UrlReelExtractionResult,
     UrlReelInput,
@@ -131,6 +133,27 @@ class UrlReelExtractionService:
                     "youtubeTranscriptUnavailable": 1.0,
                     "mediaDownloadSkipped": 1.0,
                 }
+        elif platform == "tiktok":
+            # TikTok may challenge a client that opens the metadata request and
+            # the media download at the same time.  Each branch already has up
+            # to three yt-dlp/browser attempts, so overlapping them can create
+            # a burst of requests and make an otherwise public video look
+            # unavailable.  Resolve metadata first and hand the completed
+            # result to the media/signal branch so the two TikTok fetches never
+            # overlap.
+            metadata, metadata_duration = load_metadata()
+            metadata_future: Future[tuple[UrlMetadata, float]] = Future()
+            metadata_future.set_result((metadata, metadata_duration))
+            (
+                artifacts,
+                media_timings,
+                prefetched_speech_result,
+                prefetched_vision_result,
+            ) = self._prepare_media_and_extract_signals(
+                payload,
+                work_dir,
+                metadata_future,
+            )
         else:
             with ThreadPoolExecutor(max_workers=2) as executor:
                 metadata_future = executor.submit(load_metadata)
@@ -186,9 +209,18 @@ class UrlReelExtractionService:
                 structure_result.duration_seconds
             )
             timings["captionStructuringUsed"] = 1.0
-            if structure_result.status == "ok" and structure_result.observations:
+            if structure_result.status == "ok":
                 speech_result = speech_result.model_copy(
-                    update={"observations": structure_result.observations}
+                    update={
+                        "observations": (
+                            structure_result.observations
+                            or speech_result.observations
+                        ),
+                        "region_story": structure_result.region_story,
+                        "region_story_evidence": (
+                            structure_result.region_story_evidence
+                        ),
+                    }
                 )
                 expected_place_count = (
                     structure_result.expected_place_count
@@ -268,6 +300,21 @@ class UrlReelExtractionService:
         if prefetched_speech_result is None and prefetched_vision_result is None:
             timings["extractSignalsWall"] = time.perf_counter() - start
 
+        metadata_story_result = None
+        if (
+            platform in {"tiktok", "instagram"}
+            and self.caption_structurer is not None
+            and (metadata.description or "").strip()
+        ):
+            metadata_story_result = self.caption_structurer.structure(
+                caption=metadata.description or "",
+                metadata=metadata,
+                destination=effective_destination,
+            )
+            timings["regionStoryStructuring"] = (
+                metadata_story_result.duration_seconds
+            )
+
         context_arguments = {
             "metadata": metadata,
             "transcript": speech_result.text,
@@ -290,6 +337,25 @@ class UrlReelExtractionService:
             )
         context_start = time.perf_counter()
         context = self.context_extractor.extract(**context_arguments)
+        region_story = None
+        if metadata_story_result is not None and metadata_story_result.status == "ok":
+            region_story = _grounded_region_story(
+                story=metadata_story_result.region_story,
+                evidence=metadata_story_result.region_story_evidence,
+                source_text=metadata.description or "",
+                evidence_type="caption",
+                destination=effective_destination,
+            )
+        if region_story is None:
+            region_story = _grounded_region_story(
+                story=speech_result.region_story,
+                evidence=speech_result.region_story_evidence,
+                source_text=speech_result.text,
+                evidence_type="stt",
+                destination=effective_destination,
+            )
+        if region_story is not None:
+            context = context.model_copy(update={"region_story": region_story})
         if (
             timings.get("captionStructuringUsed") == 1.0
             and not speech_result.observations
@@ -460,3 +526,40 @@ def _expected_place_count(*texts: str | None) -> int | None:
             if 1 <= count <= 100:
                 return count
     return None
+
+
+def _grounded_region_story(
+    *,
+    story: str,
+    evidence: str,
+    source_text: str,
+    evidence_type: Literal["caption", "stt"],
+    destination: str | None,
+) -> RegionSourceStory | None:
+    """Accept a region story only when its exact evidence exists in the source."""
+
+    story = " ".join(story.split()).strip()
+    evidence = " ".join(evidence.split()).strip()
+    normalized_source = " ".join(source_text.casefold().split())
+    normalized_evidence = " ".join(evidence.casefold().split())
+    if not story or len(evidence) < 8 or normalized_evidence not in normalized_source:
+        return None
+    story_key = re.sub(r"[^\w]+", " ", story.casefold()).strip()
+    destination_key = re.sub(
+        r"[^\w]+",
+        " ",
+        (destination or "").casefold(),
+    ).strip()
+    if not story_key or story_key == destination_key:
+        return None
+    if not re.search(
+        r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]",
+        story.casefold(),
+    ):
+        return None
+    return RegionSourceStory(
+        text=story,
+        evidence=evidence,
+        evidenceType=evidence_type,
+        confidence=0.85,
+    )

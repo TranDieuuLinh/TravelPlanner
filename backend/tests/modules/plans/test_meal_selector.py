@@ -60,6 +60,49 @@ def test_meal_relevance_is_decided_before_route_distance() -> None:
     assert chosen.place_id == "far-local-lunch"
 
 
+def test_meal_selector_rejects_food_suppliers_stores_and_schools() -> None:
+    places = [
+        _food("supplier", "Drink supplier", 21.03, 105.801, "Catering food and drink supplier"),
+        _food("store", "Organic store", 21.03, 105.802, "Organic food store"),
+        _food("school", "Cooking school", 21.03, 105.803, "Culinary school"),
+        _food("restaurant", "Actual restaurant", 21.03, 105.804, "Vietnamese restaurant"),
+    ]
+    selector = MealStopSelector(_PlaceTool(places))
+
+    candidates = selector._candidates(
+        region_key="vn,ha-noi",
+        target_tags=["local food", "restaurant"],
+        excluded_place_ids=set(),
+        bbox_filter=None,
+    )
+
+    assert [candidate.place_id for candidate in candidates] == ["restaurant"]
+
+
+def test_meal_selector_uses_at_most_one_coffee_venue_per_day() -> None:
+    places = [
+        _food("coffee-one", "Coffee one", 21.03, 105.801, "Cafe"),
+        _food("coffee-two", "Coffee two", 21.03, 105.802, "Coffee shop"),
+        _food("restaurant-one", "Restaurant one", 21.03, 105.803, "Restaurant"),
+        _food("restaurant-two", "Restaurant two", 21.03, 105.804, "Restaurant"),
+    ]
+    selector = MealStopSelector(_PlaceTool(places))
+
+    selected = selector.select_for_day(
+        region_key="vn,ha-noi",
+        activities=[
+            _activity("activity-1", 21.03, 105.80),
+            _activity("activity-2", 21.03, 105.82),
+        ],
+        excluded_place_ids={"activity-1", "activity-2"},
+    )
+
+    assert sum(
+        place is not None and "coffee" in place.name.casefold()
+        for place in selected.values()
+    ) <= 1
+
+
 def _activity(place_id: str, latitude: float, longitude: float) -> PlanItem:
     return PlanItem(
         placeId=place_id,

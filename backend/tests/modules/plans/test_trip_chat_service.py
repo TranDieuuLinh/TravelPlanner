@@ -144,6 +144,7 @@ class _FakePlanService:
         self.raw_requests: list[str] = []
         self.explore_kwargs: list[dict] = []
         self.plan_payloads: list[MainPlanFromExplorerCreate] = []
+        self.reuse_theme_plans: list[Plan | None] = []
         self.candidate_reviews: list[PlaceCandidateReview] = []
         self.forced_destination: str | None = None
         self._count = 0
@@ -187,7 +188,9 @@ class _FakePlanService:
     async def create_main_plan_from_trip_intent_with_timing(
         self,
         payload: MainPlanFromTripIntentCreate,
+        **kwargs,
     ) -> tuple[Plan, PlanTimingReport]:
+        self.reuse_theme_plans.append(kwargs.get("reuse_theme_plan"))
         planner_payload = payload.to_planner_input()
         self.plan_payloads.append(planner_payload)
         self._count += 1
@@ -333,6 +336,8 @@ def test_chat_amendment_keeps_one_plan_identity_and_history(
     assert "Latest user amendment: Thêm một quán cà phê" in fake_plans.raw_requests[1]
     assert fake_plans.plan_payloads[1].selected_places[0].name == "Old Cafe"
     assert fake_plans.plan_payloads[1].selected_places[0].source_day == 1
+    assert fake_plans.reuse_theme_plans[0] is None
+    assert fake_plans.reuse_theme_plans[1] is not None
     revisions = list(
         db_session.scalars(
             select(TripRevision).order_by(

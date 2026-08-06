@@ -8,7 +8,7 @@ from app.modules.plans.domain.enums import (
     PlanStatus,
     TravelPace,
 )
-from app.modules.plans.timing import PlanTimingTrace
+from app.modules.plans.timing import PlanTimingSubstage, PlanTimingTrace
 
 
 def test_planner_timing_is_logged_to_terminal(caplog) -> None:
@@ -30,6 +30,18 @@ def test_planner_timing_is_logged_to_terminal(caplog) -> None:
         days=[PlanDay(day=1, theme="Đi bộ", items=[])],
     )
 
+    trace.add_stage(
+        "tripThemePlanner",
+        "Trip theme",
+        trace.started_at,
+        sub_stages=[
+            PlanTimingSubstage(
+                key="llmGenerate",
+                label="Gemini generate",
+                durationSeconds=0.25,
+            )
+        ],
+    )
     report = trace.finish(plan)
 
     terminal_lines = [
@@ -45,3 +57,4 @@ def test_planner_timing_is_logged_to_terminal(caplog) -> None:
     assert payload["totalSeconds"] == report.total_seconds
     assert payload["dayCount"] == 1
     assert payload["itemCount"] == 0
+    assert payload["stages"][0]["subStages"][0]["key"] == "llmGenerate"

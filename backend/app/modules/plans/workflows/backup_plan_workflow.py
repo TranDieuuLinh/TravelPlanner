@@ -95,6 +95,7 @@ class BackupPlanWorkflow:
             status=PlanStatus.checking,
             title=f"Phương án dự phòng cho {main_plan.destination}",
             destination=main_plan.destination,
+            regionStories=main_plan.region_stories,
             parentPlanId=main_plan.id,
             intent=backup_intent,
             tripThemes=main_plan.trip_themes,

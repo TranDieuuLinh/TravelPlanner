@@ -45,7 +45,10 @@ from app.modules.plans.routing.current_location_service import (
 )
 from app.modules.plans.routing.optimizer import RouteUnavailableError
 from app.modules.plans.service import PlanService
-from app.modules.plans.destination_inference import infer_destination_from_urls
+from app.modules.plans.destination_inference import (
+    infer_destination_from_text,
+    infer_destination_from_urls,
+)
 from app.modules.users.model import User
 
 router = APIRouter(prefix="/plans", tags=["plans"])
@@ -175,6 +178,15 @@ def current_location_route(
     ],
 ) -> PlanTransportLeg:
     return service.calculate(payload)
+
+
+@router.post("/{plan_id}/routes/enrich", response_model=PlanRead)
+def enrich_plan_routes(
+    plan_id: str,
+    service: Annotated[PlanService, Depends(get_plan_service)],
+    _current_user: Annotated[User, Depends(require_csrf)],
+) -> PlanRead:
+    return service.enrich_plan_routes(service.repository.get(plan_id))
 
 
 @router.post(
@@ -444,6 +456,9 @@ def _attach_authenticated_preference(
 
 def _infer_destination(raw_request: str) -> str:
     cleaned = raw_request.strip()
+    known_destination = infer_destination_from_text(cleaned)
+    if known_destination:
+        return known_destination
     day_match = re.search(r"(\d+)\s*(ngày|day|days)", cleaned, flags=re.IGNORECASE)
     destination = re.sub(
         r"^(tạo|lap|lập|make|create)\s+(cho tôi\s+)?(lịch trình|lich trinh|plan)\s*",
@@ -451,11 +466,32 @@ def _infer_destination(raw_request: str) -> str:
         cleaned,
         flags=re.IGNORECASE,
     )
+    destination = re.sub(
+        r"^(tôi|mình|toi|minh|i)\s+(muốn|muon|cần|can|want|need)\s+"
+        r"(đi|di|du lịch|du lich|travel(?:\s+to)?)\s+",
+        "",
+        destination,
+        flags=re.IGNORECASE,
+    )
     if day_match:
         destination = destination.replace(day_match.group(0), "")
     destination = re.split(r",|\.|\n", destination)[0]
     destination = re.sub(r"\b(đi|di|ở|o|tại|tai|cho|trong)\b", "", destination, flags=re.IGNORECASE)
-    return destination.strip()
+    destination = destination.strip(" -:")
+    # A destination fallback must be a compact place label, never the whole
+    # natural-language request. Source extraction can infer a missing region
+    # later from metadata or resolved place names.
+    if len(destination.split()) > 5 or len(destination) > 80:
+        return ""
+    if re.search(
+        r"\b(video|itinerary|lịch trình|lich trinh|địa điểm|dia diem|bản đồ|ban do|"
+        r"thêm|them|ưu tiên|uu tien|chỉnh|chinh|sửa|sua|xóa|xoa|món|mon|"
+        r"nguồn|source|prompt|yêu cầu|yeu cau)\b",
+        destination,
+        flags=re.IGNORECASE,
+    ):
+        return ""
+    return destination
 
 
 def _infer_destination_from_urls(urls: list[str]) -> str:

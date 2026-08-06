@@ -92,11 +92,14 @@ Số activity không bị giới hạn theo count hoặc pace. Nếu một activ
 PlaceSelector thử đúng một ngày khả thi khác trước khi giữ `UnscheduledPlace`.
 Stop URL/OCR luôn được giữ trong plan hoặc `UnscheduledPlace`; ngày/thứ tự nguồn
 được ưu tiên nhưng có thể spill sang ngày kế tiếp khi ngày nguồn hết capacity.
-Chỉ khi allocation và thứ tự cuối cùng đã chốt, legacy route gateway mới
-bổ sung walking/car/transit leg chi tiết. Theme ngày là tín hiệu mềm và không nằm
+Chỉ khi allocation và thứ tự cuối cùng đã chốt, route gateway mới batch ordered
+stop của từng ngày qua Valhalla. Haversine lọc các leg chắc chắn quá xa để đi bộ;
+auto batch chỉ chạy khi walking không thực dụng hoặc user ưu tiên car. OTP chỉ
+nằm trong critical path khi preference/constraint cần transit hoặc road route
+không khả dụng. Theme ngày là tín hiệu mềm và không nằm
 trong hàm mục tiêu route. Biến cấu hình `ITINERARY_OPTIMIZER_MODE` vẫn được nhận
 để tương thích triển khai nhưng không còn chọn một day-planning algorithm khác.
-Xem ADR-012 và ADR-024.
+Xem ADR-012, ADR-024 và ADR-028.
 `timeWindow` route-first là giờ lịch thực, không còn là marker thứ tự giả.
 
 ### Pipeline Explorer intake hiện tại
@@ -210,9 +213,11 @@ do từ chối/timeout. `providerCounts` vì vậy đếm provider thực sự �
 vì chỉ provider cuối cùng. Timing không ghi query đầy đủ hoặc provider payload.
 
 URL gửi từ trip chat đã đăng nhập không còn giữ HTTP request mở. Router tách mỗi
-URL thành một `UrlImportJob` bền vững và trả `202 Accepted`; worker trong cùng
-deployment lấy FIFO đúng một job tại một thời điểm rồi chạy Explorer, resolve,
-TripThemePlanner/PlaceSelector và lưu revision mới của chat. Job đang `running` được đưa lại về
+URL thành một `UrlImportJob` bền vững và trả `202 Accepted`; các URL trong cùng
+request giữ source job riêng để theo dõi nhưng cùng `batchId`, và worker chỉ gọi
+Explorer/Planner một lần bằng toàn bộ source của batch. Runtime có nhiều worker
+slot (mặc định 3, tối đa 8) để xử lý các chat khác nhau đồng thời, nhưng chỉ cho
+phép một writer chạy trên mỗi `chatId` nhằm giữ revision tuần tự. Job đang `running` được đưa lại về
 `queued` khi worker khởi động lại. Mỗi job có deadline cấu hình; job vượt
 deadline chuyển sang `failed` để không khóa FIFO và có thể được user retry
 riêng. User có thể dừng và xóa job `running`; worker hủy task đang xử lý, giải
@@ -233,6 +238,22 @@ Router đồng thời tạo một `TripChatMessage` user ở trạng thái `queu
 commit batch. `batchId` của các job trỏ tới lifecycle ID của message này; worker
 truyền lại ID khi lưu revision để chỉ nối assistant response, không ghi trùng user
 message. Vì vậy lịch sử hiển thị request ngay cả khi Explorer chưa hoàn tất.
+
+Google Maps fallback giữ semaphore provider độc lập và dùng cache TTL có giới
+hạn trong process cho cả kết quả thành công lẫn miss. Query trùng trong TTL
+không mở lại Playwright; cache mặc định 10 phút và tối đa 512 entry.
+
+Khi TripIntent/TripSpec của revision không đổi, Planner tái sử dụng
+`tripThemes`, `requiredExperiences` và assumptions của revision trước;
+PlaceSelector, route/check và persistence vẫn chạy lại với tập địa điểm mới.
+Explorer commit source document, provenance và review snapshot trước phần KG
+matching phụ. Nếu enrichment phụ lỗi, plan vẫn có thể dùng review snapshot đã
+lưu; timing đánh dấu `enrichmentDegraded` để vận hành retry sau.
+
+Conversation Supervisor có thể trả `intakePatch` bị khóa schema gồm
+`destination` và `days` cho intent tạo/tạo lại plan. Explorer ưu tiên patch này
+và chỉ fallback về parser cũ cho field chưa có; Supervisor không được mutate
+plan hoặc gửi patch cho intent không thuộc planning.
 
 Guest dùng hàng chờ FIFO trong memory của AppShell cho cả prompt thuần và URL,
 gọi cùng endpoint Explorer -> TripThemePlanner/PlaceSelector mà không tạo trip

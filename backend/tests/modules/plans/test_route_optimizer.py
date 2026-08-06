@@ -78,9 +78,7 @@ def test_route_optimizer_uses_valhalla_walking_route_for_short_leg() -> None:
     assert legs[0].source == "valhalla_routing"
     assert legs[0].verified is True
     assert legs[0].fetched_at is not None
-    assert [option.mode for option in legs[0].alternatives] == [
-        "ride_hailing"
-    ]
+    assert [option.mode for option in legs[0].alternatives] == ["ride_hailing"]
 
 
 def test_route_optimizer_uses_valhalla_car_route_when_walk_is_too_long() -> None:
@@ -182,9 +180,7 @@ def test_route_optimizer_exposes_transit_as_alternative_for_dated_trip() -> None
         "public_transit",
     ]
     assert legs[0].alternatives[1].details["lines"] == ["31"]
-    assert transit.departure_times[0].isoformat() == (
-        "2026-08-01T10:00:00+07:00"
-    )
+    assert transit.departure_times[0].isoformat() == ("2026-08-01T10:00:00+07:00")
 
 
 def test_route_optimizer_exposes_current_transit_for_undated_trip() -> None:
@@ -233,6 +229,64 @@ def test_route_optimizer_selects_transit_when_user_prefers_bus() -> None:
     ]
 
 
+def test_route_optimizer_batches_road_modes_and_skips_default_transit() -> None:
+    provider = FakeBatchRouteProvider()
+    transit = FakeTransitRouteProvider()
+    optimizer = GeographicRouteOptimizer(provider, transit)
+
+    _, legs = optimizer.optimize(
+        [
+            _item("A", "09:00-10:00", 21.0300, 105.8500),
+            _item("B", "10:30-11:30", 21.0310, 105.8510),
+            _item("C", "13:00-14:00", 21.0500, 105.8700),
+        ],
+        preserve_order=True,
+    )
+
+    assert provider.requested_batches == ["pedestrian", "car"]
+    assert provider.single_requests == []
+    assert [leg.mode for leg in legs] == ["walk", "ride_hailing"]
+    assert transit.departure_times == []
+
+
+def test_batched_route_optimizer_queries_transit_when_user_prefers_bus() -> None:
+    provider = FakeBatchRouteProvider()
+    transit = FakeTransitRouteProvider()
+    optimizer = GeographicRouteOptimizer(provider, transit)
+
+    _, legs = optimizer.optimize(
+        [
+            _item("A", "09:00-10:00", 21.0300, 105.8500),
+            _item("B", "10:30-11:30", 21.0310, 105.8510),
+            _item("C", "13:00-14:00", 21.0500, 105.8700),
+        ],
+        preserve_order=True,
+        preferred_modes={"bus"},
+    )
+
+    assert [leg.mode for leg in legs] == ["public_transit", "public_transit"]
+    assert len(transit.departure_times) == 2
+
+
+def test_batched_route_optimizer_uses_transit_when_car_is_avoided() -> None:
+    provider = FakeBatchRouteProvider()
+    transit = FakeTransitRouteProvider()
+    optimizer = GeographicRouteOptimizer(provider, transit)
+
+    _, legs = optimizer.optimize(
+        [
+            _item("A", "09:00-10:00", 21.0300, 105.8500),
+            _item("B", "10:30-11:30", 21.0500, 105.8700),
+        ],
+        preserve_order=True,
+        avoid_modes={"car"},
+    )
+
+    assert provider.requested_batches == []
+    assert legs[0].mode == "public_transit"
+    assert len(transit.departure_times) == 1
+
+
 class FakeRouteProvider:
     def __init__(self, *, walking_distance: int) -> None:
         self.walking_distance = walking_distance
@@ -261,6 +315,55 @@ class FakeRouteProvider:
             provider="valhalla_routing",
             fetched_at=datetime.now(timezone.utc),
         )
+
+
+class FakeBatchRouteProvider:
+    def __init__(self) -> None:
+        self.requested_batches: list[str] = []
+        self.single_requests: list[str] = []
+
+    def calculate(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        *,
+        transport_mode: str,
+        departure_time: datetime | None = None,
+    ) -> RouteCalculation:
+        del origin, destination, departure_time
+        self.single_requests.append(transport_mode)
+        raise AssertionError("Planner route enrichment should use calculate_many")
+
+    def calculate_many(
+        self,
+        coordinates: list[tuple[float, float]],
+        *,
+        transport_mode: str,
+        departure_time: datetime | None = None,
+    ) -> list[RouteCalculation]:
+        del departure_time
+        self.requested_batches.append(transport_mode)
+        if transport_mode == "pedestrian":
+            distances = [900, 2800]
+            durations = [600, 1800]
+        else:
+            distances = [1100, 1600]
+            durations = [180, 300]
+        return [
+            RouteCalculation(
+                distance_meters=distance,
+                duration_seconds=duration,
+                geometry_coordinates=[origin, destination],
+                provider="valhalla_routing",
+                fetched_at=datetime.now(timezone.utc),
+            )
+            for origin, destination, distance, duration in zip(
+                coordinates,
+                coordinates[1:],
+                distances,
+                durations,
+            )
+        ]
 
 
 class FakeTransitRouteProvider:

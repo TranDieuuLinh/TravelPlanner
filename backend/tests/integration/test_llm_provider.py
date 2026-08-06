@@ -4,7 +4,7 @@ import asyncio
 import httpx
 import pytest
 
-from app.integrations.llm.provider import GeminiLLMClient
+from app.integrations.llm.provider import GeminiLLMClient, StubLLMClient
 
 
 class FakeAsyncClient:
@@ -281,6 +281,20 @@ def test_gemini_passes_structured_output_schema(monkeypatch) -> None:
         ]
         == schema
     )
+
+
+def test_stub_rejects_non_supervisor_structured_generation() -> None:
+    with pytest.raises(RuntimeError, match="No LLM provider configured"):
+        asyncio.run(
+            StubLLMClient().generate_structured_json(
+                "system",
+                "payload",
+                response_schema={
+                    "type": "object",
+                    "properties": {"tripThemes": {"type": "array"}},
+                },
+            )
+        )
 
 
 def test_gemini_grounded_json_returns_sources_and_search_queries(monkeypatch) -> None:

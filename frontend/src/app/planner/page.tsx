@@ -34,6 +34,8 @@ import {
   deleteUrlImportJob,
   deleteTripChat,
   enqueueTripChatUrls,
+  enrichPlanRoutes,
+  enrichTripChatRoutes,
   exploreFullIntake,
   getTripChat,
   listTripChats,
@@ -96,6 +98,10 @@ import {
 } from "@/lib/planner-chat-navigation";
 import { dragAutoScrollVelocity } from "@/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/lib/url-only-input";
+import {
+  sourceProviderKind,
+  type SourceProviderKind,
+} from "@/lib/source-provider";
 
 type ChatMessage = {
   id: number | string;
@@ -619,6 +625,7 @@ function Planner() {
   const activeChatIdRef = useRef<string | null>(null);
   const chatLoadControllerRef = useRef<AbortController | null>(null);
   const activeRequestIdRef = useRef(0);
+  const routeEnrichmentRequestRef = useRef<string | null>(null);
   const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
   const [tripIntentVersion, setTripIntentVersion] = useState(0);
@@ -1007,6 +1014,43 @@ function Planner() {
   }, [chatCollapsed, clampFloatingChatRect, plan]);
 
   useEffect(() => {
+    if (
+      !activeChatId ||
+      !plan ||
+      plan.routeEnrichmentStatus !== "pending"
+    ) {
+      return;
+    }
+    const requestKey = `${activeChatId}:${chatRevision}`;
+    if (routeEnrichmentRequestRef.current === requestKey) return;
+    routeEnrichmentRequestRef.current = requestKey;
+    let cancelled = false;
+
+    void enrichTripChatRoutes({
+      chatId: activeChatId,
+      expectedRevision: chatRevision,
+    })
+      .then((updated) => {
+        if (cancelled || activeChatIdRef.current !== updated.id) return;
+        applyTripChatBackgroundResult(updated);
+      })
+      .catch(async (requestError) => {
+        if (cancelled || activeChatIdRef.current !== activeChatId) return;
+        if (requestError instanceof APIError && requestError.status === 409) {
+          try {
+            const latest = await getTripChat(activeChatId);
+            if (!cancelled) applyTripChatBackgroundResult(latest);
+          } catch {
+            // A later chat refresh can retry route enrichment.
+          }
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChatId, chatRevision, plan]);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current != null)
         window.clearTimeout(toastTimerRef.current);
@@ -1251,8 +1295,7 @@ function Planner() {
     day: number;
     itemId: string | null;
     itemName: string;
-    sourceNote: string | null;
-    sourceLabel: string | null;
+    sourceNotes: ReturnType<typeof planItemNotePresentation>["sourceNotes"];
     personalNotes: string;
   } | null>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -3590,7 +3633,9 @@ function Planner() {
           ),
         ]);
         setTripChats(await listTripChats());
-        window.dispatchEvent(new Event("vsf:url-job-enqueued"));
+        window.dispatchEvent(new CustomEvent("vsf:url-job-enqueued", {
+          detail: queuedJobs
+        }));
         setMessages((current) => [
           ...current,
           {
@@ -3677,6 +3722,15 @@ function Planner() {
         allowReplaceSourcePlaces: nextExploreResult.allowReplaceSourcePlaces,
       });
       setPlan(generation.plan);
+      if (generation.plan.routeEnrichmentStatus === "pending") {
+        void enrichPlanRoutes(generation.plan.id)
+          .then((enriched) => {
+            if (activeRequestIdRef.current === requestId) setPlan(enriched);
+          })
+          .catch(() => {
+            // The coarse plan remains usable; a later refresh can retry.
+          });
+      }
       setInitialPlanningActive(false);
       setWorkflowStage("ready");
       setSelectedMapPlaceKey(null);
@@ -4795,6 +4849,36 @@ function Planner() {
                           </p>
                         </div>
                       </div>
+                      {displayedPlan.regionStories?.some((story) => story.text) ? (
+                        <div className="regionStoryPanel">
+                          <span>Câu chuyện về khu vực</span>
+                          {displayedPlan.regionStories
+                            .filter((story) => story.text)
+                            .map((story, storyIndex) => (
+                              <div
+                                className="regionStoryItem"
+                                key={`${story.ref ?? "region-story"}-${storyIndex}`}
+                              >
+                                <p>{story.text}</p>
+                                {story.evidence ? (
+                                  <details>
+                                    <summary>Bằng chứng từ nguồn</summary>
+                                    <q>{story.evidence}</q>
+                                  </details>
+                                ) : null}
+                                {story.ref?.startsWith("http") ? (
+                                  <a
+                                    href={story.ref}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                  >
+                                    Xem video nguồn
+                                  </a>
+                                ) : null}
+                              </div>
+                            ))}
+                        </div>
+                      ) : null}
                       <div
                         className="tripQuickFacts"
                         aria-label="Thông tin chuyến đi"
@@ -5243,14 +5327,11 @@ function Planner() {
                                 const displayNotes = formatPlanNote(item.notes);
                                 const notePresentation =
                                   planItemNotePresentation(item);
-                                const sourceActivityNote =
-                                  notePresentation.sourceText;
+                                const sourceNotes = notePresentation.sourceNotes;
                                 const personalNotes =
                                   notePresentation.personalText;
-                                const activityNoteCount = [
-                                  sourceActivityNote,
-                                  personalNotes,
-                                ].filter(Boolean).length;
+                                const activityNoteCount =
+                                  sourceNotes.length + (personalNotes ? 1 : 0);
                                  const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
                                  const quickActionKey = `${displayedPlanDay.day}:${item.itemId ?? itemIndex}`;
                                 const displayItemName = itineraryDisplayName(
@@ -5360,10 +5441,7 @@ function Planner() {
                                     (value) => {
                                       const category =
                                         categoryFromPlaceType(value);
-                                      return (
-                                        category === "food" ||
-                                        category === "cafe"
-                                      );
+                                      return category === "food";
                                     }
                                   );
                                 const sourceLabel = itinerarySourceLabel(
@@ -5411,9 +5489,7 @@ function Planner() {
                                                 day: displayedPlanDay.day,
                                                 itemId: item.itemId ?? null,
                                                 itemName: item.name,
-                                                sourceNote: sourceActivityNote,
-                                                sourceLabel:
-                                                  notePresentation.sourceLabel,
+                                                sourceNotes,
                                                 personalNotes:
                                                   personalNotes ?? "",
                                               }
@@ -5479,15 +5555,18 @@ function Planner() {
                                         );
                                       }}
                                     >
-                                      {noteEditor.sourceNote ? (
+                                      {noteEditor.sourceNotes.length ? (
                                         <div className="activityNotesReferences">
-                                          <section>
-                                            <strong>
-                                              {noteEditor.sourceLabel ??
-                                                "Thông tin bổ sung"}
-                                            </strong>
-                                            <p>{noteEditor.sourceNote}</p>
-                                          </section>
+                                          {noteEditor.sourceNotes.map(
+                                            (sourceNote, sourceNoteIndex) => (
+                                              <section
+                                                key={`${sourceNote.type}-${sourceNoteIndex}`}
+                                              >
+                                                <strong>{sourceNote.label}</strong>
+                                                <p>{sourceNote.text}</p>
+                                              </section>
+                                            )
+                                          )}
                                         </div>
                                       ) : null}
                                       <label
@@ -7019,7 +7098,7 @@ function UnscheduledPlacesSection({
             );
             const isFoodStop = categories.some((value) => {
               const category = categoryFromPlaceType(value);
-              return category === "food" || category === "cafe";
+              return category === "food";
             });
             const sourceLabel = itinerarySourceLabel(
               place.sourceRefs ?? [],
@@ -7029,7 +7108,7 @@ function UnscheduledPlacesSection({
             return (
               <div
                 className="itineraryItemDragWrapper"
-                key={`${place.placeId ?? place.name}-${index}`}
+                key={`${place.candidateId ?? place.placeId ?? place.name}-${index}`}
               >
                 <article
                   className={`itineraryStop unscheduledPlaceStop ${
@@ -7125,6 +7204,15 @@ function UnscheduledPlacesSection({
                         <span>Chưa xếp</span>
                         <strong>{place.reason}</strong>
                       </div>
+                      {place.reasonCode === "identity_needs_review" &&
+                      (place.topMatches?.length ?? 0) > 0 ? (
+                        <p className="unscheduledPlaceContext">
+                          Kết quả cần xác nhận: {place.topMatches
+                            ?.slice(0, 3)
+                            .map((match) => match.name)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
                       {place.day != null || place.sourceActivity ? (
                         <p className="unscheduledPlaceContext">
                           {place.day != null
@@ -7465,6 +7553,7 @@ function itinerarySourceLabel(
       continue;
     }
     const provider = sourceProviderKind(sourceRef, sourceProvider);
+    if (!provider) continue;
     return {
       kind: "url",
       text: `${sourceProviderLabel(provider)} URL`,
@@ -7481,37 +7570,6 @@ function itinerarySourceLabel(
     };
   }
   return null;
-}
-
-type SourceProviderKind = "youtube" | "tiktok" | "instagram" | "url";
-
-function sourceProviderKind(
-  sourceUrl: string,
-  sourceProvider: string | null | undefined
-): SourceProviderKind {
-  const normalizedProvider = sourceProvider?.toLowerCase() ?? "";
-  if (normalizedProvider.includes("youtube")) return "youtube";
-  if (normalizedProvider.includes("tiktok")) return "tiktok";
-  if (normalizedProvider.includes("instagram")) return "instagram";
-  try {
-    const hostname = new URL(sourceUrl).hostname.toLowerCase();
-    if (
-      hostname === "youtu.be" ||
-      hostname === "youtube.com" ||
-      hostname.endsWith(".youtube.com")
-    ) {
-      return "youtube";
-    }
-    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) {
-      return "tiktok";
-    }
-    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) {
-      return "instagram";
-    }
-    return "url";
-  } catch {
-    return "url";
-  }
 }
 
 function sourceProviderLabel(provider: SourceProviderKind): string {

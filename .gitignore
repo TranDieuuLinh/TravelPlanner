@@ -26,6 +26,7 @@ backend/var/*.jsonl
 backend/var/user-post-media/
 backend/var/knowledge-graph-imports/
 backend/var/knowledge-graph-imports.json
+backend/var/place-dedupe/
 backend/.runlogs/
 
 database/backups/

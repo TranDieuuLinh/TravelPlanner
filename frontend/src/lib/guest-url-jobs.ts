@@ -2,6 +2,7 @@
 
 import {
   createPlanFromExplorer,
+  enrichPlanRoutes,
   exploreFullIntake,
   type ExploreResponse,
   type ExplorerTimingReport,
@@ -116,6 +117,22 @@ async function processQueue(): Promise<void> {
           window.dispatchEvent(new CustomEvent(GUEST_URL_JOB_RESULT_EVENT, {
             detail: completed
           }));
+        }
+        if (generation.plan.routeEnrichmentStatus === "pending") {
+          void enrichPlanRoutes(generation.plan.id)
+            .then((enrichedPlan) => {
+              const enriched = replace(next.id, {
+                result: { ...result, plan: enrichedPlan }
+              });
+              if (enriched && typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent(GUEST_URL_JOB_RESULT_EVENT, {
+                  detail: enriched
+                }));
+              }
+            })
+            .catch(() => {
+              // Keep the already delivered coarse plan available for retry.
+            });
         }
       } catch (caught) {
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;

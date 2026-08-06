@@ -50,6 +50,15 @@ class SupervisorOption(BaseModel):
 SupervisorOperation = PlanEditorOperation
 
 
+class SupervisorIntakePatch(BaseModel):
+    """Small, validated intake facts the Explorer can consume directly."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    destination: str | None = Field(default=None, min_length=1, max_length=120)
+    days: int | None = Field(default=None, ge=1, le=30)
+
+
 class SupervisorOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -65,6 +74,10 @@ class SupervisorOutput(BaseModel):
     operations: list[SupervisorOperation] = Field(default_factory=list, max_length=1)
     requires_confirmation: bool = Field(default=False, alias="requiresConfirmation")
     agent: ConversationAgentName | None = None
+    intake_patch: SupervisorIntakePatch | None = Field(
+        default=None,
+        alias="intakePatch",
+    )
 
 
 @dataclass(frozen=True)
@@ -76,6 +89,7 @@ class ConversationDecision:
     message: str | None
     options: tuple[dict[str, str], ...]
     agent: ConversationAgentName | None = None
+    intake_patch: dict[str, object] | None = None
 
 
 class ConversationSupervisorError(RuntimeError):
@@ -202,6 +216,7 @@ _SYSTEM_PROMPT = (
     "Chỉ trả về không hoặc một operation. Với add_place, cung cấp name ngắn gọn và day khi biết; nếu không thì clarify. Với move_place, gồm itemId, day và toDay. Với update_place, chỉ gồm itemId, day và name khi người dùng yêu cầu rõ đổi tên/thay địa điểm. Với remove/lock/unlock, gồm itemId và day.\n"
     "Dùng regenerate_plan cho yêu cầu cân bằng lại, làm một ngày nhẹ hơn, đổi ràng buộc lớn của chuyến hoặc tạo lại plan. Đặt requiresConfirmation=true khi plan hiện tại sẽ bị tạo lại trên diện rộng hoặc điểm đến/thời lượng có thể thay đổi. Chỉ dùng explain_plan, validate_plan và undo cho yêu cầu tương ứng. Chat routing cho backup plan tạm thời chưa khả dụng; dùng unsupported cho yêu cầu đó. Dùng unsupported khi VSF không có hành động phù hợp.\n"
     "Đặt agent=information_finder cho ask_place/ask_travel_information/travel_advice/explain_plan, explorer cho create_plan, main_planner cho regenerate_plan, plan_editor cho mutation item, và null cho clarify/validate_plan/undo/unsupported/create_backup. Explorer sẽ hỏi lại nếu thiếu destination; nếu intake đã đủ thì Explorer tiếp tục gọi planning pipeline. Server sẽ thực thi mapping này.\n"
+    "Với create_plan/regenerate_plan, nếu tin nhắn mới nói rõ destination hoặc số ngày thì điền intakePatch tương ứng. Không đoán field còn thiếu; với intent khác intakePatch phải là null.\n"
     "responseText là tiếng Việt hiển thị cho người dùng. Giữ ngắn gọn, ấm áp và có thể hành động: xác nhận yêu cầu, nêu điều đã biết, rồi hỏi tối đa một câu còn thiếu. Nếu dữ liệu thực tế không có trong currentPlan, không trình bày như đã xác minh. options phải là nhãn tiếng Việt ngắn và tin nhắn người dùng có thể gửi.\n"
     "Ví dụ: 'bạn là ai?' -> travel_advice; 'lên kế hoạch Hà Nội 2 ngày' khi chưa có plan -> create_plan; 'thêm Làng Bắc vào ngày 2' -> chỉ add_place với contract item/day khớp; 'xóa chỗ đó' -> clarify vì mục tiêu nhập nhằng; 'làm lại lịch trình nhẹ hơn' -> regenerate_plan và requiresConfirmation=true.\n"
 )
@@ -308,6 +323,13 @@ def _validated_decision(
         raise ConversationSupervisorError(
             "Gemini selected an agent that does not match the intent."
         )
+    if result.intake_patch is not None and result.intent not in {
+        "create_plan",
+        "regenerate_plan",
+    }:
+        raise ConversationSupervisorError(
+            "Gemini returned an intake patch for a non-planning intent."
+        )
 
     return ConversationDecision(
         intent=result.intent,
@@ -317,6 +339,13 @@ def _validated_decision(
         message=message,
         options=tuple(option.model_dump() for option in result.options),
         agent=expected_agent,
+        intake_patch=(
+            result.intake_patch.model_dump(
+                mode="json", by_alias=True, exclude_none=True
+            )
+            if result.intake_patch is not None
+            else None
+        ),
     )
 
 

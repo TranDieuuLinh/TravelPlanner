@@ -11,6 +11,8 @@ export type OpeningHourEntry = {
 
 export type PlanNoteSource = {
   type: string;
+  text?: string | null;
+  evidence?: string | null;
   ref?: string | null;
   evidenceTypes?: string[];
   fetchedAt?: string | null;
@@ -121,6 +123,7 @@ export type PlanDay = {
 };
 export type UnscheduledPlace = {
   placeId?: string | null;
+  candidateId?: string | null;
   name: string;
   day?: number | null;
   reasonCode: string;
@@ -135,17 +138,40 @@ export type UnscheduledPlace = {
   sourceActivity?: string | null;
   rating?: number | null;
   reviewCount?: number | null;
+  topMatches?: Array<{
+    rank: number;
+    matchSource:
+      | "url_snapshot"
+      | "verified_alias"
+      | "places_db"
+      | "knowledge_graph"
+      | "external_provider";
+    provider: string;
+    placeId?: string | null;
+    externalId?: string | null;
+    name: string;
+    selected: boolean;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    score: number;
+    scoreComponents: Record<string, number>;
+    rejectionReasons: string[];
+    fetchedAt?: string | null;
+  }>;
 };
 export type TravelPlan = {
   id: string;
   title: string;
   destination: string;
+  regionStories?: PlanNoteSource[];
   kind: "main" | "backup";
   days: PlanDay[];
   planningAssumptions?: string[];
   warnings?: string[];
   unscheduledPlaces?: UnscheduledPlace[];
   checkReport?: { status: string; summary: string } | null;
+  routeEnrichmentStatus?: "not_required" | "pending" | "completed" | "failed";
 };
 
 export type FeatureMapItem = {
@@ -237,11 +263,17 @@ export type PlaceCandidateReview = {
   }>;
   topMatches: Array<{
     rank: number;
-    matchSource: "url_snapshot" | "verified_alias" | "places_db" | "external_provider";
+    matchSource:
+      | "url_snapshot"
+      | "verified_alias"
+      | "places_db"
+      | "knowledge_graph"
+      | "external_provider";
     provider: string;
     placeId?: string | null;
     externalId?: string | null;
     name: string;
+    selected: boolean;
     address?: string | null;
     latitude?: number | null;
     longitude?: number | null;
@@ -427,11 +459,15 @@ export type ExplorerTimingReport = {
   logFile?: string | null;
 };
 
-export type PlanTimingStage = {
+export type PlanTimingSubstage = {
   key: string;
   label: string;
   durationSeconds: number;
   details: Record<string, string | number | boolean | null>;
+};
+
+export type PlanTimingStage = PlanTimingSubstage & {
+  subStages?: PlanTimingSubstage[];
 };
 
 export type PlanTimingReport = {
@@ -661,6 +697,22 @@ export async function getPlanFeatureMap(): Promise<FeatureMapItem[]> {
   return apiFetch<FeatureMapItem[]>("/plans/feature-map");
 }
 
+export async function enrichTripChatRoutes(input: {
+  chatId: string;
+  expectedRevision: number;
+}): Promise<TripChat> {
+  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/routes/enrich`, {
+    method: "POST",
+    body: JSON.stringify({ expectedRevision: input.expectedRevision })
+  });
+}
+
+export async function enrichPlanRoutes(planId: string): Promise<TravelPlan> {
+  return apiFetch<TravelPlan>(`/plans/${planId}/routes/enrich`, {
+    method: "POST"
+  });
+}
+
 export async function calculateCurrentLocationRoute(
   input: CurrentLocationRouteInput
 ): Promise<TransportLeg> {
@@ -873,6 +925,10 @@ export async function enqueueTripChatImages(input: {
 
 export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
   return apiFetch<UrlImportJobBatch>("/url-import-jobs");
+}
+
+export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
+  return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
 }
 
 export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {

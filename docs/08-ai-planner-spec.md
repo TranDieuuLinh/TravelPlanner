@@ -83,13 +83,23 @@ relevance; nguyên tắc này áp dụng cho activity và meal. Route optimizer 
 bổ/thứ tự các Place đã qua bước chọn, không được biến một Place kém phù hợp hơn
 thành lựa chọn chính chỉ vì nó gần hơn.
 
+Nearby graph survey dùng Haversine để loại candidate ngoài bán kính rồi lấy
+route cost cho toàn shortlist bằng một matrix request; matrix lỗi thì giữ
+Haversine thay vì gọi point-to-point tuần tự. Khi tạo Main Plan, route matrix và
+coarse leg vẫn bảo đảm thứ tự/timeline sơ bộ trong critical path. Detailed leg,
+geometry và provider verification chạy bằng request enrichment riêng sau
+response đầu, dùng optimistic revision và chạy lại timeline/Checker trước khi
+đánh dấu `routeEnrichmentStatus=completed`.
+
 TripThemePlanner không còn dùng research LLM hoặc place-catalog research tool
 legacy.
 Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
 evidence theo ontology v7 thành `graphCandidateCatalog`; sau đó LLM tạo
 `TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
 assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
-cầu model sửa output lỗi tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
+cầu Gemini tạo JSON bằng `responseJsonSchema` của `TripThemeDraft`, rồi vẫn
+kiểm tra ID graph, region và các invariant nghiệp vụ phía server. Chỉ output
+không thể chuẩn hóa an toàn mới yêu cầu model sửa, tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
 phân bổ Place, capacity và `UnscheduledPlace` bằng domain rule deterministic.
 Khi không cấu hình LLM, runtime Planner không tự rơi về kế hoạch template.
 
@@ -133,9 +143,10 @@ tự nguồn. Hard constraint của user vẫn được ưu tiên hơn URL, và 
 phải xuất hiện trong `UnscheduledPlace`/warning thay vì bị thay thế âm thầm.
 
 Timeline route-first áp cùng invariant cho raw prompt và URL: mỗi ngày có ba
-meal anchor `breakfast_meal`, `lunch_meal`, `dinner_meal`; phải có ít nhất một
-activity trong khoảng breakfast–lunch và ít nhất một activity trong khoảng
-lunch–dinner. Quán ăn từ URL được ưu tiên chiếm meal anchor phù hợp. Việc tắt
+meal anchor `breakfast_meal`, `lunch_meal`, `dinner_meal`; mỗi khoảng
+breakfast–lunch, lunch–dinner và dinner–21:00 được lấp bằng bao nhiêu activity
+cũng được miễn `duration + travel + buffer` còn vừa, không áp quota số lượng.
+Quán ăn từ URL được ưu tiên chiếm meal anchor phù hợp. Việc tắt
 gợi ý thay thế source không được tắt gap filling: khi URL thiếu activity,
 PlaceSelector được phép thêm một Place đã xác minh với
 `source=finder_suggestion` vào từng khoảng ban ngày còn trống. Gap filling không
@@ -321,6 +332,9 @@ của Extractor.
 
 TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
 
+- runtime bỏ qua region statistics khi Explorer đã cung cấp interest,
+  must-visit Place hoặc selected Place; statistics chỉ là fallback cho yêu cầu
+  khám phá còn mơ hồ và không được quét toàn bộ catalog trong request rõ intent;
 - chọn nguồn định hướng theo thứ tự: interest/ràng buộc chuyến hiện tại,
   selected Place đã xác nhận, long-term profile có hiệu lực, rồi mới đến
   special experience đặc trưng của điểm đến;
@@ -366,11 +380,21 @@ thi, không được suy ra từ recommendation.
 
 PlaceSelector điền item cụ thể:
 
+- mỗi ngày phải giữ đúng ba meal anchor: breakfast, lunch và dinner;
+- mỗi ngày phải có ít nhất hai activity non-food, ưu tiên một activity trước
+  lunch và một activity sau lunch; café không được tính vào mức tối thiểu này;
+- tối đa một café mỗi ngày, kể cả khi intent chứa cafe hopping;
+- ice cream, dessert, juice, tea, bakery và các biến thể provider tương ứng là
+  food/drink, không được dùng để lấp activity slot;
+- khi thiếu candidate non-food đã xác minh, để lại free-time/warning thay vì
+  thay thế bằng một điểm ăn uống không đúng mục đích;
+
 - theme và day-part goal được dùng để tạo shortlist rộng, không còn là ràng buộc
   cứng ngăn activity phù hợp được chuyển sang ngày gần hơn về địa lý;
 
-- với intake có URL hoặc ảnh/OCR, xếp candidate từ nguồn trước; PlaceSelector chỉ bổ
-  sung catalog vào ngày hoàn toàn chưa có stop nguồn;
+- với intake có URL hoặc ảnh/OCR, xếp candidate nguồn tương thích trước trong
+  từng meal/activity window; chỉ gọi Finder cho gap sau khi không còn candidate
+  nguồn phù hợp với window đó;
 - PlaceSelector loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
   kể cả khi provider ID khác nhưng tên chuẩn hóa/biến thể alias cho thấy cùng
   một địa điểm;
@@ -397,14 +421,19 @@ PlaceSelector điền item cụ thể:
 - `cafe`/`coffee shop` là stop trải nghiệm thuộc activity pool, không
   được dùng làm breakfast/lunch/dinner chỉ vì provider gắn nhóm
   `food_drink`;
+- coffee do Finder thêm tối đa một stop/ngày và bằng 0 nếu ngày đã có coffee từ
+  URL; chỉ bỏ giới hạn khi intent nói rõ coffee tour/cafe hopping. Category
+  Finder chưa xuất hiện trong ngày được ưu tiên để tăng diversity;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
-- lấy route pedestrian/auto từ Valhalla sau khi xếp stop; leg provider có
+- batch ordered stop của từng ngày qua Valhalla sau khi xếp stop; Haversine chỉ
+  prefilter pedestrian, còn quyết định walk dùng route provider không quá
+  1.500 m. Auto batch chạy khi walking không thực dụng hoặc user ưu tiên car; leg provider có
   geometry, `fetchedAt`, `source=valhalla_routing`, `verified=true`, còn lỗi
   provider fallback về ước tính địa lý `verified=false`;
-- với trip có `startDate`, lấy thêm OpenTripPlanner theo giờ kết thúc stop;
-  chọn transit khi user ưu tiên bus/train, nếu không giữ làm alternative; không
-  gọi timetable hiện tại cho trip chưa có ngày;
+- lấy OpenTripPlanner theo giờ kết thúc stop khi user ưu tiên/bắt buộc transit,
+  tránh car mà walking không thực dụng, hoặc road route không khả dụng; không
+  gọi OTP mặc định chỉ để tạo alternative;
 - chỉ thêm địa điểm mới từ place provider khi cần hoàn thiện ngày và phải đánh
   dấu đây là đề xuất của hệ thống;
 - đưa địa điểm không xếp được vào `UnscheduledPlace` với reason code.
@@ -509,12 +538,25 @@ tuyến đường hoặc danh tính địa điểm.
   URL place chưa có representative coordinates không xuất hiện trong plan;
   proposal/evidence vẫn ở import node và phần thiếu được PlaceSelector điền bằng
   Place đã chuẩn hóa khi policy cho phép.
-- `sourceActivity` là mô tả hành động ngắn có evidence, không phải nơi sao chép
-  nguyên caption hoặc transcript.
-- Sau place resolution, một composer giới hạn độ dài kết hợp `sourceActivity`,
-  evidence STT/OCR ngắn và provider description được phép thành
-  `PlanItem.notes`. Bước này không gọi Gemini lần nữa; Gemini có thể đã được dùng
-  ở extraction/structuring. Provenance được lưu riêng trong `noteSources`.
+- `sourceActivity` là tóm tắt ngắn bằng tiếng Việt về câu chuyện, mẹo hoặc hành
+  động tại đúng place mà creator thực sự kể; không sao chép nguyên caption/
+  transcript và không tạo câu rỗng nghĩa kiểu “video có nhắc đến địa điểm”. Một
+  place story chỉ được lưu khi có evidence span của đúng place chứa thông tin
+  có nghĩa ngoài tên place; span được lưu trong `noteSources[].evidence`.
+- Extractor có thể tạo `regionStory` riêng khi creator kể về không khí, nhịp đi,
+  lời khuyên áp dụng toàn vùng, lý do vùng đáng ghé hoặc cách các điểm kết nối.
+  Model phải trả `regionStoryEvidence` là span nguyên văn; backend chỉ nhận khi
+  span đó tồn tại trong caption/transcript và không chỉ là tên destination.
+  Story hợp lệ được lưu trong `Plan.regionStories`, không nhân bản vào từng item.
+- Sau place resolution, composer tạo từng ghi chú nguồn độc lập trong
+  `PlanItem.noteSources`: ghi chú video chỉ dùng `sourceActivity` có nội dung
+  hữu ích thuộc đúng place. Nếu source không có câu chuyện/mẹo place-specific thì
+  UI không hiện source note. Address, rating, review count, opening hours và link
+  provider chỉ hiển thị bằng field/UI có cấu trúc, không tạo provider note. Copy
+  hiển thị là tiếng Việt và không phát lại caption/transcript hay summary cấp
+  hành trình. `PlanItem.notes` gộp chỉ
+  được giữ để đọc revision cũ. Bước này không gọi Gemini lần nữa; Gemini có thể
+  đã được dùng ở extraction/structuring.
 - Không âm thầm bỏ địa điểm đã xác nhận; phải xếp hoặc trả về `UnscheduledPlace`.
 - Mỗi ngày có ba meal anchor và số activity phụ thuộc ngân sách thời gian. Restaurant/food URL
   thay meal suggestion và không chiếm activity slot; cafe/coffee vẫn là
@@ -582,7 +624,14 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 - Pool price research đọc `GEMINI_PRICE_API_KEYS` khi có, nếu không dùng toàn bộ
   key trong `GEMINI_API_KEY`. Client round-robin cả sau request thành công,
   cooldown key trả `429` và disable key trả `401/403`. Nhiều key không mặc định
-  làm tăng quota nếu chúng thuộc cùng Google project.
+  làm tăng quota nếu chúng thuộc cùng Google project. Price batch mặc định giãn
+  bốn giây giữa thời điểm bắt đầu request để giảm burst RPM. Nếu một outcome chỉ
+  còn lỗi quota sau khi client đã thử pool key, worker ngừng claim địa điểm mới,
+  chờ các request đang chạy và hoãn phần còn lại tới lần chạy sau.
+- Price CLI có thể dùng `--search-provider tavily` khi Gemini Google Search
+  grounding không có quota. Tavily chỉ trả search result đã chuẩn hóa; Gemini
+  chạy structured output không-grounding và code vẫn xác minh source index/URL.
+  Thiếu `TAVILY_API_KEY` phải fail-fast.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.

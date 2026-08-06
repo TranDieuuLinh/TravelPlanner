@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
@@ -220,6 +220,18 @@ class PlanItem(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    @field_validator("note_sources")
+    @classmethod
+    def omit_provider_notes(
+        cls,
+        sources: list[PlanNoteSource],
+    ) -> list[PlanNoteSource]:
+        return [
+            source
+            for source in sources
+            if source.type not in {"google_maps", "place_provider"}
+        ]
+
     @model_validator(mode="before")
     @classmethod
     def populate_timeline_category(cls, value):
@@ -436,6 +448,7 @@ class PlaceSelectionStatus(BaseModel):
 
 class UnscheduledPlace(BaseModel):
     place_id: str | None = Field(default=None, alias="placeId")
+    candidate_id: str | None = Field(default=None, alias="candidateId")
     name: str
     day: int | None = None
     reason_code: str = Field(alias="reasonCode")
@@ -450,6 +463,7 @@ class UnscheduledPlace(BaseModel):
     source_activity: str | None = Field(default=None, alias="sourceActivity")
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0, alias="reviewCount")
+    top_matches: list[dict] = Field(default_factory=list, alias="topMatches")
 
     model_config = {"populate_by_name": True}
 
@@ -492,12 +506,24 @@ class CheckReport(BaseModel):
     summary: str
 
 
+class RouteEnrichmentContext(BaseModel):
+    trip_start_date: str | None = Field(default=None, alias="tripStartDate")
+    preferred_modes: list[str] = Field(default_factory=list, alias="preferredModes")
+    avoid_modes: list[str] = Field(default_factory=list, alias="avoidModes")
+
+    model_config = {"populate_by_name": True}
+
+
 class Plan(BaseModel):
     id: str
     kind: PlanKind
     status: PlanStatus
     title: str
     destination: str
+    region_stories: list[PlanNoteSource] = Field(
+        default_factory=list,
+        alias="regionStories",
+    )
     parent_plan_id: str | None = Field(default=None, alias="parentPlanId")
     intent: TravelIntent
     trip_themes: list[TripThemeRequirement] = Field(
@@ -531,6 +557,25 @@ class Plan(BaseModel):
     )
     warnings: list[str] = Field(default_factory=list)
     check_report: CheckReport | None = Field(default=None, alias="checkReport")
+    route_enrichment_status: Literal[
+        "not_required", "pending", "completed", "failed"
+    ] = Field(default="not_required", alias="routeEnrichmentStatus")
+    route_enrichment_context: RouteEnrichmentContext | None = Field(
+        default=None,
+        alias="routeEnrichmentContext",
+    )
+
+    @field_validator("region_stories")
+    @classmethod
+    def omit_provider_region_notes(
+        cls,
+        sources: list[PlanNoteSource],
+    ) -> list[PlanNoteSource]:
+        return [
+            source
+            for source in sources
+            if source.type not in {"google_maps", "place_provider"}
+        ]
 
     @model_validator(mode="before")
     @classmethod

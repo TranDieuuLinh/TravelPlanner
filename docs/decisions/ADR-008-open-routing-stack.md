@@ -1,6 +1,6 @@
 # ADR-008: Routing tự vận hành với Valhalla và OpenTripPlanner
 
-- Trạng thái: Đã chấp nhận
+- Trạng thái: Được thay thế một phần bởi ADR-028 cho route enrichment của plan
 - Ngày: 2026-07-31
 - Thay thế phần quyết định provider trong ADR-002
 
@@ -18,9 +18,9 @@ thể thay adapter mà không đổi contract domain.
 - Luồng `/day-directions` giữ nguyên thứ tự itinerary; không gọi matrix hoặc
   shortest-path optimizer. Valhalla/OTP chỉ tính mode và route cho từng leg theo
   thứ tự đã lưu.
-- Với mỗi leg, lấy cả route `pedestrian` và `auto` nếu user không loại trừ mode;
-  ngưỡng 1.500 m chỉ chọn route road chính, route còn lại được giữ trong
-  `PlanTransportLeg.alternatives`.
+- Luồng chỉ đường tương tác vẫn có thể lấy cả route `pedestrian` và `auto` cho
+  từng leg. Route enrichment khi tạo plan được ADR-028 thay bằng batch theo ngày,
+  Haversine prefilter và transit theo preference để tránh fan-out provider.
 - Dùng OpenTripPlanner GTFS GraphQL API cho public transit theo lịch.
 - Place resolution dùng catalog nội bộ rồi Google Maps Playwright; Valhalla và
   OTP không phải POI geocoder.

@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
 const { lookupQueries } = require("./google_maps_place_lookup");
+const { searchGoogleWeb } = require("./google_web_search");
 
 const workDir = process.env.GOOGLE_MAPS_SCRAPER_WORK_DIR || "/work";
 const requestedConcurrency = Number.parseInt(
@@ -130,13 +131,19 @@ async function processJob(page, job) {
   try {
     const rawRequest = await fs.promises.readFile(job.processingPath, "utf8");
     let queries;
+    let requestKind = "google_maps";
+    let webQuery = "";
+    let resultLimit = 8;
     let createdAtMs;
     let deadlineAtMs;
     if (job.processingPath.endsWith(".json")) {
       const request = JSON.parse(rawRequest);
+      requestKind = String(request.kind || "google_maps");
       queries = Array.isArray(request.queries)
         ? request.queries.map((value) => String(value).trim()).filter(Boolean)
         : [];
+      webQuery = String(request.query || "").trim();
+      resultLimit = Math.min(Math.max(Number(request.limit) || 8, 1), 10);
       createdAtMs = Number(request.createdAtMs) || Date.now();
       deadlineAtMs = Number(request.deadlineAtMs) || Date.now();
     } else {
@@ -164,9 +171,14 @@ async function processJob(page, job) {
       cancelled = true;
       page.close().catch(() => {});
     }, 100);
-    const results = await lookupQueries(page, queries, {
-      shouldContinue: () => !isCancelled(),
-    });
+    const results = requestKind === "google_web_search"
+      ? await searchGoogleWeb(page, webQuery, {
+          limit: resultLimit,
+          shouldContinue: () => !isCancelled(),
+        })
+      : await lookupQueries(page, queries, {
+          shouldContinue: () => !isCancelled(),
+        });
     if (isCancelled()) {
       return;
     }

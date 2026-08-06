@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from difflib import SequenceMatcher
 import json
 import math
@@ -8,6 +9,7 @@ import os
 import re
 import signal
 import tempfile
+import threading
 import time
 import unicodedata
 import uuid
@@ -19,7 +21,13 @@ from typing import Any, Callable, ContextManager, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.modules.places.address import (
+    address_numbers,
+    address_tokens,
+    normalize_address,
+)
 from app.modules.places.category import canonical_place_category
+from app.modules.places.eligibility import place_record_is_search_eligible
 from app.modules.knowledge_graph.text import repair_cp437_utf8_mojibake
 from app.modules.plans.destination_inference import usable_destination
 from app.modules.plans.explorer.schema import PlaceMatchOption, UnifiedPlaceCandidate
@@ -661,7 +669,8 @@ class DatabasePlaceResolver(PlaceResolver):
         started_at = time.perf_counter()
         search_region = _effective_search_region(candidate, destination)
         lookup_queries = _candidate_lookup_names(candidate)
-        ranked = self._ranked_records(candidate, destination=destination)
+        ranked_all = self._ranked_records_all(candidate, destination=destination)
+        ranked = ranked_all[: self.top_k]
         if not ranked:
             return _with_provider_attempt(
                 _unresolved(
@@ -685,11 +694,13 @@ class DatabasePlaceResolver(PlaceResolver):
             ranked,
             minimum_margin=self.minimum_margin,
         )
+        exact_unique = _select_exact_unique_record(candidate, ranked_all)
         best_score, record = ranked[0]
         if (
             len(ranked) > 1
             and best_score - ranked[1][0] < self.minimum_margin
             and equivalent_duplicate is None
+            and exact_unique is None
         ):
             return _with_provider_attempt(
                 _unresolved(
@@ -704,7 +715,9 @@ class DatabasePlaceResolver(PlaceResolver):
             )
         if equivalent_duplicate is not None:
             record = equivalent_duplicate
-        if best_score <= self.minimum_score:
+        if exact_unique is not None:
+            record = exact_unique
+        if best_score <= self.minimum_score and exact_unique is None:
             return _with_provider_attempt(
                 _unresolved(
                     candidate,
@@ -742,12 +755,16 @@ class DatabasePlaceResolver(PlaceResolver):
                 search_region=search_region,
                 provider=self.provider_name,
                 reason=(
-                    "collapsed_equivalent_duplicate"
-                    if equivalent_duplicate is not None
+                    "exact_unique_database_match"
+                    if exact_unique is not None
                     else (
-                        "matched_source_location"
-                        if used_source_location and len(ranked) > 1
-                        else None
+                        "collapsed_equivalent_duplicate"
+                        if equivalent_duplicate is not None
+                        else (
+                            "matched_source_location"
+                            if used_source_location and len(ranked) > 1
+                            else None
+                        )
                     )
                 ),
             ).model_copy(
@@ -879,6 +896,17 @@ class DatabasePlaceResolver(PlaceResolver):
         *,
         destination: str,
     ) -> list[tuple[float, PlaceLookupRecord]]:
+        return self._ranked_records_all(
+            candidate,
+            destination=destination,
+        )[: self.top_k]
+
+    def _ranked_records_all(
+        self,
+        candidate: UnifiedPlaceCandidate,
+        *,
+        destination: str,
+    ) -> list[tuple[float, PlaceLookupRecord]]:
         from app.modules.plans.trip_theme_planner.region_context import (
             normalize_search_region_key,
         )
@@ -912,7 +940,7 @@ class DatabasePlaceResolver(PlaceResolver):
             if _database_record_is_eligible(candidate, record)
         ]
         ranked.sort(key=lambda item: (-item[0], item[1].id))
-        return ranked[: self.top_k]
+        return ranked
 
 
 class KnowledgeGraphPlaceResolver(DatabasePlaceResolver):
@@ -1095,6 +1123,8 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
     """Resolve aliases with the Playwright google-maps-scraper worker."""
 
     provider_name = "google_maps_scraper"
+    _search_cache: "OrderedDict[tuple[str, ...], tuple[float, GoogleMapsSearchBatch]]" = OrderedDict()
+    _search_cache_lock = threading.Lock()
 
     def __init__(
         self,
@@ -1105,6 +1135,8 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         max_alias_queries: int = 2,
         max_concurrency: int = 2,
         minimum_score: float = DEFAULT_PLACE_RESOLUTION_MINIMUM_SCORE,
+        cache_ttl_seconds: float = 600.0,
+        cache_max_entries: int = 512,
     ) -> None:
         if not executable and work_dir is None:
             raise ValueError(
@@ -1116,6 +1148,12 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         # Explorer may try one observed name and one contextual fallback only.
         self.max_alias_queries = max(1, min(2, max_alias_queries))
         self.max_concurrency = max(1, max_concurrency)
+        self.cache_ttl_seconds = max(0.0, cache_ttl_seconds)
+        self.cache_max_entries = max(0, cache_max_entries)
+        self._inflight_searches: dict[
+            tuple[str, ...],
+            asyncio.Task[GoogleMapsSearchBatch | list[dict[str, Any]]],
+        ] = {}
         if not 0.0 <= minimum_score <= 1.0:
             raise ValueError("minimum_score must be between 0 and 1")
         self.minimum_score = minimum_score
@@ -1397,6 +1435,36 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
     ) -> GoogleMapsSearchBatch | list[dict[str, Any]]:
         if not queries:
             return GoogleMapsSearchBatch()
+        cache_key = tuple(queries)
+        cached = self._cached_search(cache_key)
+        if cached is not None:
+            return cached
+        task = self._inflight_searches.get(cache_key)
+        if task is None:
+            task = asyncio.create_task(self._search_uncached(queries))
+            self._inflight_searches[cache_key] = task
+            task.add_done_callback(
+                lambda completed, key=cache_key: (
+                    self._inflight_searches.pop(key, None)
+                    if self._inflight_searches.get(key) is completed
+                    else None
+                )
+            )
+        # One cancelled candidate must not cancel the shared provider lookup
+        # still awaited by another candidate in this intake.
+        result = await asyncio.shield(task)
+        batch = (
+            result
+            if isinstance(result, GoogleMapsSearchBatch)
+            else GoogleMapsSearchBatch(results=result)
+        )
+        self._store_cached_search(cache_key, batch)
+        return result
+
+    async def _search_uncached(
+        self,
+        queries: list[str],
+    ) -> GoogleMapsSearchBatch | list[dict[str, Any]]:
         if self.work_dir is not None:
             return await self._search_via_worker(queries)
         if not self.executable:
@@ -1464,6 +1532,43 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
                 ),
                 execution_seconds=time.perf_counter() - started_at,
             )
+
+    def _cached_search(
+        self,
+        key: tuple[str, ...],
+    ) -> GoogleMapsSearchBatch | None:
+        if self.cache_ttl_seconds <= 0 or self.cache_max_entries <= 0:
+            return None
+        now = time.monotonic()
+        with self._search_cache_lock:
+            cached = self._search_cache.get(key)
+            if cached is None:
+                return None
+            expires_at, batch = cached
+            if expires_at <= now:
+                self._search_cache.pop(key, None)
+                return None
+            self._search_cache.move_to_end(key)
+            return batch.model_copy(
+                deep=True,
+                update={"queue_wait_seconds": 0.0, "execution_seconds": 0.0},
+            )
+
+    def _store_cached_search(
+        self,
+        key: tuple[str, ...],
+        batch: GoogleMapsSearchBatch,
+    ) -> None:
+        if self.cache_ttl_seconds <= 0 or self.cache_max_entries <= 0:
+            return
+        with self._search_cache_lock:
+            self._search_cache[key] = (
+                time.monotonic() + self.cache_ttl_seconds,
+                batch.model_copy(deep=True),
+            )
+            self._search_cache.move_to_end(key)
+            while len(self._search_cache) > self.cache_max_entries:
+                self._search_cache.popitem(last=False)
 
     async def _search_via_worker(
         self,
@@ -2089,6 +2194,54 @@ def _database_name_similarity(
     )
 
 
+def _select_exact_unique_record(
+    candidate: UnifiedPlaceCandidate,
+    ranked: list[tuple[float, PlaceLookupRecord]],
+) -> PlaceLookupRecord | None:
+    """Return one safe exact identity even when optional score signals are absent."""
+    candidate_names = {
+        _normalized(value)
+        for value in (
+            candidate.name,
+            candidate.original_name,
+            *(alias.value for alias in candidate.observed_aliases),
+        )
+        if value and _normalized(value)
+    }
+    if not candidate_names:
+        return None
+
+    exact_records: list[PlaceLookupRecord] = []
+    for _, record in ranked:
+        metadata = (
+            record.metadata_json
+            if isinstance(record.metadata_json, dict)
+            else {}
+        )
+        verified_aliases, _ = _verified_aliases_from_metadata(metadata)
+        verified_names = {
+            _normalized(value)
+            for value in (record.name, *verified_aliases)
+            if value and _normalized(value)
+        }
+        if candidate_names.isdisjoint(verified_names):
+            continue
+        try:
+            latitude = float(record.latitude)
+            longitude = float(record.longitude)
+        except (TypeError, ValueError):
+            continue
+        if (
+            not -90 <= latitude <= 90
+            or not -180 <= longitude <= 180
+            or (latitude == 0.0 and longitude == 0.0)
+        ):
+            continue
+        exact_records.append(record)
+
+    return exact_records[0] if len(exact_records) == 1 else None
+
+
 def _select_equivalent_duplicate_record(
     candidate: UnifiedPlaceCandidate,
     ranked: list[tuple[float, PlaceLookupRecord]],
@@ -2122,22 +2275,15 @@ def _select_equivalent_duplicate_record(
     if any(_normalized(record.name) != canonical_name for record in tied[1:]):
         return None
 
-    place_type = _normalized(tied[0].place_type)
-    region_key = getattr(tied[0], "region_key", "")
     if any(
-        _normalized(record.place_type) != place_type
-        or getattr(record, "region_key", "") != region_key
+        not _equivalent_duplicate_place_types(tied[0], record)
         for record in tied[1:]
     ):
         return None
-    localities = [
-        _normalized(record.primary_area or record.address or "")
-        for record in tied
-    ]
     if any(
-        left and right and left not in right and right not in left
-        for index, left in enumerate(localities)
-        for right in localities[index + 1 :]
+        not _equivalent_duplicate_locations(left, right)
+        for index, left in enumerate(tied)
+        for right in tied[index + 1 :]
     ):
         return None
 
@@ -2165,13 +2311,63 @@ def _select_equivalent_duplicate_record(
     return max(tied, key=quality)
 
 
+def _equivalent_duplicate_place_types(
+    left: PlaceLookupRecord,
+    right: PlaceLookupRecord,
+) -> bool:
+    left_type = _normalized(left.place_type)
+    right_type = _normalized(right.place_type)
+    if left_type == right_type:
+        return True
+    left_category = canonical_place_category(left.place_type)
+    right_category = canonical_place_category(right.place_type)
+    return left_category != "other" and left_category == right_category
+
+
+def _equivalent_duplicate_locations(
+    left: PlaceLookupRecord,
+    right: PlaceLookupRecord,
+) -> bool:
+    left_region = getattr(left, "region_key", "") or ""
+    right_region = getattr(right, "region_key", "") or ""
+    regions_compatible = (
+        left_region == right_region
+        or left_region.endswith(",unmapped")
+        or right_region.endswith(",unmapped")
+    )
+    if not regions_compatible:
+        return False
+
+    left_locality = normalize_address(left.primary_area or left.address or "")
+    right_locality = normalize_address(right.primary_area or right.address or "")
+    if (
+        not left_locality
+        or not right_locality
+        or left_locality in right_locality
+        or right_locality in left_locality
+    ):
+        return True
+
+    left_address = left.address or ""
+    right_address = right.address or ""
+    left_numbers = address_numbers(left_address)
+    right_numbers = address_numbers(right_address)
+    shared_address_tokens = address_tokens(left_address).intersection(
+        address_tokens(right_address)
+    )
+    return bool(
+        left_numbers
+        and right_numbers
+        and left_numbers.intersection(right_numbers)
+        and shared_address_tokens
+    )
+
+
 def _database_record_is_eligible(
     candidate: UnifiedPlaceCandidate,
     record: PlaceLookupRecord,
 ) -> bool:
-    if record.latitude is None or record.longitude is None:
-        return False
-    if getattr(record, "status", "active") != "active":
+    if not place_record_is_search_eligible(record):
         return False
     if _authoritative_address_conflicts(candidate, record):
         return False
@@ -2201,19 +2397,16 @@ def _authoritative_address_conflicts(
     if not record_address:
         return False
 
-    source_numbers = set(re.findall(r"\b\d+[A-Za-z]?\b", source_address))
-    record_numbers = set(re.findall(r"\b\d+[A-Za-z]?\b", record_address))
+    source_numbers = address_numbers(source_address)
+    record_numbers = address_numbers(record_address)
     if source_numbers and record_numbers and source_numbers.isdisjoint(record_numbers):
         return True
 
-    source_tokens = set(_name_tokens(source_address))
-    record_tokens = set(_name_tokens(record_address))
-    meaningful_source_tokens = {
-        token for token in source_tokens if len(token) >= 4
-    }
+    meaningful_source_tokens = address_tokens(source_address)
+    record_tokens = address_tokens(record_address)
     return bool(
-        meaningful_source_tokens
-        and record_tokens
+        len(meaningful_source_tokens) >= 2
+        and len(record_tokens) >= 2
         and not meaningful_source_tokens.intersection(record_tokens)
     )
 

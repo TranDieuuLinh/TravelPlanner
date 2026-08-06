@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import math
 import re
 import time
@@ -8,6 +9,7 @@ import unicodedata
 from uuid import uuid4
 
 from app.modules.plans.domain.entities import DestinationStay, Plan, UnscheduledPlace
+from app.modules.plans.domain.enums import PlanStatus
 from app.modules.plans.destination_inference import (
     infer_destination_from_place_names,
     infer_destination_from_text,
@@ -91,6 +93,7 @@ from app.shared.errors import AppError
 
 
 DEFAULT_TRIP_DAYS = 3
+logger = logging.getLogger(__name__)
 
 
 class PlanService:
@@ -857,31 +860,54 @@ class PlanService:
             post_processing_start,
         )
         persistence_start = time.perf_counter()
+        enrichment_degraded = False
         if self.explorer_persistence is not None:
-            self.explorer_persistence.save(
-                intake_id=intake_id,
-                user_id=payload.user_state.user_id,
-                destination=explorer.intent.destination,
-                resolutions=canonical_resolutions,
-                candidate_reviews=candidate_reviews,
-                url_results=url_reel_results,
-            )
+            try:
+                self.explorer_persistence.save(
+                    intake_id=intake_id,
+                    user_id=payload.user_state.user_id,
+                    destination=explorer.intent.destination,
+                    resolutions=canonical_resolutions,
+                    candidate_reviews=candidate_reviews,
+                    url_results=url_reel_results,
+                )
+            except Exception:
+                if not self.explorer_persistence.critical_intake_exists(intake_id):
+                    raise
+                # The source/review snapshot is already durable. KG matching is
+                # auxiliary and may be retried without failing plan creation.
+                enrichment_degraded = True
+                logger.exception(
+                    "Explorer KG enrichment degraded after critical persistence",
+                    extra={"intake_id": intake_id},
+                )
             trace.persisted_count = len(schedulable_candidates)
         if (
             preference_user_id is not None
             and self.traveler_profile_repository is not None
         ):
-            self.traveler_profile_repository.save(
-                preference_user_id,
-                effective_profile,
-                evidence_intake_id=intake_id,
-            )
-            self.traveler_profile_repository.commit()
+            try:
+                self.traveler_profile_repository.save(
+                    preference_user_id,
+                    effective_profile,
+                    evidence_intake_id=intake_id,
+                )
+                self.traveler_profile_repository.commit()
+            except Exception:
+                self.traveler_profile_repository.db.rollback()
+                enrichment_degraded = True
+                logger.exception(
+                    "Traveler preference enrichment degraded",
+                    extra={"intake_id": intake_id, "user_id": preference_user_id},
+                )
         trace.record_stage(
             "persistence",
             "Lưu Explorer intake",
             persistence_start,
-            details={"persistedPlaceCount": trace.persisted_count},
+            details={
+                "persistedPlaceCount": trace.persisted_count,
+                "enrichmentDegraded": enrichment_degraded,
+            },
         )
         timing_report = self._write_timing_report(
             trace,
@@ -1013,10 +1039,13 @@ class PlanService:
         payload: MainPlanFromTripIntentCreate,
         *,
         on_timing_update: Callable[[PlanTimingReport], None] | None = None,
+        reuse_theme_plan: Plan | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         """Canonical Explorer hand-off; projection happens at this boundary."""
         return await self.create_main_plan_from_explorer_with_timing(
-            payload.to_planner_input(), on_timing_update=on_timing_update
+            payload.to_planner_input(),
+            on_timing_update=on_timing_update,
+            reuse_theme_plan=reuse_theme_plan,
         )
 
     async def create_main_plan_from_explorer_with_timing(
@@ -1024,8 +1053,10 @@ class PlanService:
         payload: MainPlanFromExplorerCreate,
         *,
         on_timing_update: Callable[[PlanTimingReport], None] | None = None,
+        reuse_theme_plan: Plan | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         selected_places = list(payload.selected_places)
+        region_stories = list(payload.region_stories)
         if payload.intake_id and self.explorer_persistence is not None:
             selected_places = _merge_selected_places(
                 selected_places,
@@ -1034,6 +1065,18 @@ class PlanService:
                     payload.user_id,
                 ),
             )
+            load_region_stories = getattr(
+                self.explorer_persistence,
+                "load_region_stories",
+                None,
+            )
+            if callable(load_region_stories):
+                persisted_region_stories = load_region_stories(
+                    payload.intake_id,
+                    payload.user_id,
+                )
+                if persisted_region_stories:
+                    region_stories = persisted_region_stories
         # URL-backed places are source requirements, not optional suggestions.
         # Grow an unlocked trip until every resolved source place has capacity.
         # An explicit duration/date range is a hard boundary and keeps overflow
@@ -1052,10 +1095,15 @@ class PlanService:
                     }
                 )
         workflow_payload = payload.model_copy(
-            update={"selected_places": selected_places}
+            update={
+                "selected_places": selected_places,
+                "region_stories": region_stories,
+            }
         )
         plan, timing_report = await self.main_workflow.run_from_explorer_with_timing(
-            workflow_payload, on_timing_update=on_timing_update
+            workflow_payload,
+            on_timing_update=on_timing_update,
+            reuse_theme_plan=reuse_theme_plan,
         )
         if not workflow_payload.allow_replace_source_places:
             plan = _ensure_url_place_coverage(plan, selected_places)
@@ -1104,6 +1152,28 @@ class PlanService:
         plan = await self.main_workflow.run_from_context(payload)
         self.repository.save(plan)
         return plan
+
+    def enrich_plan_routes(self, plan: Plan) -> Plan:
+        """Complete provider route detail without rerunning theme or selection."""
+        if plan.route_enrichment_status == "completed":
+            return plan
+        enriched = self.main_workflow.place_selector.enrich_plan_routes(plan)
+        check_report = self.main_workflow.checker.check(enriched)
+        final_status = (
+            PlanStatus.locked
+            if check_report.status == "passed"
+            else PlanStatus.failed
+            if check_report.status == "failed"
+            else PlanStatus.draft
+        )
+        enriched = enriched.model_copy(
+            update={
+                "status": final_status,
+                "check_report": check_report,
+            }
+        )
+        self.repository.save(enriched)
+        return enriched
 
     async def create_backup_plan(
         self, plan_id: str, payload: BackupPlanCreate

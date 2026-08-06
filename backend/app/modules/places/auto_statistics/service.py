@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,12 +44,14 @@ class AutoPlaceStatisticsService:
         output_path: Path,
         *,
         stale_after_days: int = 30,
+        prefer_snapshot_for_planner: bool = False,
     ) -> None:
         if stale_after_days < 1:
             raise ValueError("stale_after_days must be at least 1")
         self.repository = repository
         self.output_path = output_path.resolve()
         self.stale_after_days = stale_after_days
+        self.prefer_snapshot_for_planner = prefer_snapshot_for_planner
 
     def refresh(self, *, force: bool = False) -> AutoStatisticsRefreshResult:
         source_signature = self.repository.source_signature()
@@ -103,7 +105,11 @@ class AutoPlaceStatisticsService:
         *,
         force: bool = False,
     ) -> PlannerRegionStatisticsResult:
-        del force
+        if self.prefer_snapshot_for_planner and not force:
+            snapshot = self._read_planner_snapshot(region_key)
+            if snapshot is not None:
+                return snapshot
+
         source_signature = self.repository.source_signature(region_key)
         generated_at = utc_now()
         stale_before = generated_at - timedelta(days=self.stale_after_days)
@@ -129,6 +135,66 @@ class AutoPlaceStatisticsService:
                 16,
             ),
             algorithm_version=ALGORITHM_VERSION,
+            generated_at=generated_at.isoformat(),
+            source_fingerprint=fingerprint,
+        )
+
+    def _read_planner_snapshot(
+        self,
+        region_key: str,
+    ) -> PlannerRegionStatisticsResult | None:
+        existing = self._read_existing(self.output_path)
+        if not existing or existing.get("algorithmVersion") != ALGORITHM_VERSION:
+            return None
+
+        generated_at_text = existing.get("generatedAt")
+        if not isinstance(generated_at_text, str):
+            return None
+        try:
+            generated_at = datetime.fromisoformat(
+                generated_at_text.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return None
+        if generated_at.tzinfo is None:
+            generated_at = generated_at.replace(tzinfo=timezone.utc)
+        if utc_now() - generated_at > timedelta(days=self.stale_after_days):
+            return None
+
+        all_regions = existing.get("regions")
+        if not isinstance(all_regions, list):
+            return None
+        regions = [
+            region
+            for region in all_regions
+            if isinstance(region, dict)
+            and isinstance(region.get("regionKey"), str)
+            and (
+                region["regionKey"] == region_key
+                or region["regionKey"].startswith(f"{region_key},")
+                or region["regionKey"].startswith(f"{region_key}:")
+            )
+        ]
+        if not any(region.get("regionKey") == region_key for region in regions):
+            return None
+
+        source = existing.get("source")
+        if not isinstance(source, dict):
+            return None
+        fingerprint = source.get("fingerprint")
+        if not isinstance(fingerprint, str) or not fingerprint:
+            return None
+
+        return PlannerRegionStatisticsResult(
+            status="snapshot",
+            region_key=region_key,
+            regions=regions,
+            snapshot_id=f"snapshot-{fingerprint[:24]}",
+            catalog_version=int(
+                hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:15],
+                16,
+            ),
+            algorithm_version=str(existing["algorithmVersion"]),
             generated_at=generated_at.isoformat(),
             source_fingerprint=fingerprint,
         )

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
+from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
@@ -11,6 +14,7 @@ from app.modules.knowledge_graph.research import (
     TrustLevel,
 )
 from app.modules.plans.domain.entities import (
+    RegionSnapshotReference,
     TravelIntent,
     TripThemeRequirement,
 )
@@ -27,6 +31,7 @@ from app.modules.plans.dto.agent_contracts import (
     PlanWorkingState,
     RequiredExperience,
     RequiredExperienceSelectionPolicy,
+    RegionStatisticsContext,
     SelectedPlaceContext,
     TripPlanningSpec,
 )
@@ -56,12 +61,36 @@ from app.modules.plans.trip_theme_planner.region_context import (
     PlannerStatisticsProvider,
     load_region_statistics_context,
 )
+from app.modules.plans.timing import PlanTimingSubstage
 from app.modules.preferences.schema import (
     LongTermPreferenceProfile,
 )
 
 logger = logging.getLogger(__name__)
 TRIP_THEME_MAX_REPAIR_ATTEMPTS = 3
+
+
+def _record_timing_stage(
+    callback: Callable[[PlanTimingSubstage], None] | None,
+    key: str,
+    label: str,
+    started_at: float,
+    *,
+    details: dict[str, str | int | float | bool | None] | None = None,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        PlanTimingSubstage(
+            key=key,
+            label=label,
+            durationSeconds=round(
+                max(0.0, time.perf_counter() - started_at),
+                4,
+            ),
+            details=details or {},
+        )
+    )
 
 
 def _candidate_matches_requirement(
@@ -233,9 +262,13 @@ class TripThemePlannerService:
         llm: LLMClient,
         graph_research_service: TripThemeGraphResearchService | None = None,
         graph_research_orchestrator: TripResearchOrchestrator | None = None,
+        skip_statistics_for_explicit_intent: bool = False,
     ) -> None:
         self.statistics_provider = statistics_provider
         self.llm = llm
+        self.skip_statistics_for_explicit_intent = (
+            skip_statistics_for_explicit_intent
+        )
         self.graph_research_service = (
             graph_research_service
             if graph_research_service is not None
@@ -255,7 +288,9 @@ class TripThemePlannerService:
         selected_places: list[SelectedPlaceContext],
         plan_state: PlanWorkingState | None = None,
         preference_profile: LongTermPreferenceProfile | None = None,
+        on_timing_stage: Callable[[PlanTimingSubstage], None] | None = None,
     ) -> TripThemePlanningOutput:
+        statistics_started = time.perf_counter()
         planner_input, statistics_status = self._build_input(
             mode=PlanningMode.main,
             intent=intent,
@@ -265,20 +300,34 @@ class TripThemePlannerService:
             plan_state=plan_state,
             preference_profile=preference_profile,
         )
+        _record_timing_stage(
+            on_timing_stage,
+            "regionStatistics",
+            "Tải thống kê catalog theo vùng",
+            statistics_started,
+            details={
+                "status": statistics_status,
+                "activePlaceCount": planner_input.region_context.active_place_count,
+            },
+        )
         return await self._create_plan(
             planner_input,
             statistics_status,
             preference_profile=preference_profile,
+            on_timing_stage=on_timing_stage,
         )
 
     async def create_from_agent_input(
         self,
         planner_input: TripThemePlanningInput,
+        *,
+        on_timing_stage: Callable[[PlanTimingSubstage], None] | None = None,
     ) -> TripThemePlanningOutput:
         """Execute TripThemePlanner against an explicit evaluation contract."""
         return await self._create_plan(
             planner_input,
             "provided_evaluation_context",
+            on_timing_stage=on_timing_stage,
         )
 
     def _build_input(
@@ -292,10 +341,26 @@ class TripThemePlannerService:
         plan_state: PlanWorkingState | None = None,
         preference_profile: LongTermPreferenceProfile | None = None,
     ) -> tuple[TripThemePlanningInput, str]:
-        region_context, statistics_status = load_region_statistics_context(
-            self.statistics_provider,
-            region_key,
+        has_explicit_theme_context = bool(
+            intent.interests or intent.must_visit_places or selected_places
         )
+        if self.skip_statistics_for_explicit_intent and has_explicit_theme_context:
+            region_context = RegionStatisticsContext(
+                regionKey=region_key,
+                snapshotRef=RegionSnapshotReference(
+                    regionKey=region_key,
+                    snapshotId="intent-context",
+                    catalogVersion=0,
+                    algorithmVersion="intent_context_v1",
+                    generatedAt=datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            statistics_status = "skipped_explicit_intent"
+        else:
+            region_context, statistics_status = load_region_statistics_context(
+                self.statistics_provider,
+                region_key,
+            )
         planning_intent = PlanningIntent(
             destination=intent.destination,
             travelStyle=intent.travel_style,
@@ -329,10 +394,12 @@ class TripThemePlannerService:
         statistics_status: str,
         *,
         preference_profile: LongTermPreferenceProfile | None = None,
+        on_timing_stage: Callable[[PlanTimingSubstage], None] | None = None,
     ) -> TripThemePlanningOutput:
         ready = (
             planner_input.region_context.active_place_count > 0
             or bool(planner_input.selected_places)
+            or statistics_status == "skipped_explicit_intent"
         )
         statistics_warnings = self._statistics_warnings(planner_input)
         graph_catalog = GraphCandidateCatalog()
@@ -342,6 +409,7 @@ class TripThemePlannerService:
         graph_research_blocked = False
 
         if self.graph_research_service is not None:
+            graph_research_started = time.perf_counter()
             try:
                 bundle = self.graph_research_service.research(
                     planner_input.intent,
@@ -370,6 +438,20 @@ class TripThemePlannerService:
             if bundle is not None and not isinstance(bundle, TripResearchBundle):
                 bundle = None
 
+            _record_timing_stage(
+                on_timing_stage,
+                "graphResearch",
+                "Nghiên cứu Knowledge Graph",
+                graph_research_started,
+                details={
+                    "status": "blocked" if graph_research_blocked else "completed",
+                    "candidateCount": (
+                        len(bundle.eligibleExperiences) if bundle is not None else 0
+                    ),
+                },
+            )
+
+            graph_projection_started = time.perf_counter()
             if bundle is not None:
                 try:
                     graph_catalog = project_graph_candidate_catalog(bundle)
@@ -402,6 +484,16 @@ class TripThemePlannerService:
                 graph_warnings.extend(bundle.warnings)
             else:
                 graph_catalog_notes.append("graphCandidateCount=0")
+            _record_timing_stage(
+                on_timing_stage,
+                "graphProjection",
+                "Chiếu graph evidence thành candidate catalog",
+                graph_projection_started,
+                details={
+                    "candidateCount": len(graph_catalog.candidates),
+                    "status": "blocked" if graph_research_blocked else "completed",
+                },
+            )
         else:
             graph_catalog_notes.append("graphCatalog=disabled")
 
@@ -455,23 +547,75 @@ class TripThemePlannerService:
                 ),
             )
 
-        raw = await self.llm.generate_json(
-            system_prompt=TRIP_THEME_SYSTEM_PROMPT,
-            user_payload=build_trip_theme_payload(
-                planner_input,
-                graph_candidate_catalog=graph_catalog_payload,
-            ),
+        llm_started = time.perf_counter()
+        try:
+            raw = await self.llm.generate_structured_json(
+                system_prompt=TRIP_THEME_SYSTEM_PROMPT,
+                user_payload=build_trip_theme_payload(
+                    planner_input,
+                    graph_candidate_catalog=graph_catalog_payload,
+                ),
+                response_schema=TripThemeDraft.model_json_schema(),
+            )
+        except Exception:
+            _record_timing_stage(
+                on_timing_stage,
+                "llmGenerate",
+                "Gemini tạo TripThemeDraft",
+                llm_started,
+                details={"status": "failed"},
+            )
+            raise
+        _record_timing_stage(
+            on_timing_stage,
+            "llmGenerate",
+            "Gemini tạo TripThemeDraft",
+            llm_started,
+            details={
+                "status": "completed",
+                "responseCharacters": len(raw),
+            },
         )
         repair_attempts = 0
         while True:
+            validation_started = time.perf_counter()
             try:
                 draft = self._parse_and_validate_theme_draft(
                     planner_input,
                     raw,
                     graph_catalog=graph_catalog,
                 )
+                _record_timing_stage(
+                    on_timing_stage,
+                    (
+                        "validateThemeDraft"
+                        if repair_attempts == 0
+                        else f"validateThemeRepair{repair_attempts}"
+                    ),
+                    "Validate và chuẩn hóa TripThemeDraft",
+                    validation_started,
+                    details={
+                        "status": "completed",
+                        "attempt": repair_attempts,
+                    },
+                )
                 break
             except (ValidationError, ValueError) as exc:
+                _record_timing_stage(
+                    on_timing_stage,
+                    (
+                        "validateThemeDraft"
+                        if repair_attempts == 0
+                        else f"validateThemeRepair{repair_attempts}"
+                    ),
+                    "Validate và chuẩn hóa TripThemeDraft",
+                    validation_started,
+                    details={
+                        "status": "failed",
+                        "attempt": repair_attempts,
+                        "errorType": type(exc).__name__,
+                    },
+                )
                 feedback = self._validation_feedback(exc)
                 if repair_attempts >= TRIP_THEME_MAX_REPAIR_ATTEMPTS:
                     logger.warning(
@@ -486,14 +630,40 @@ class TripThemePlannerService:
                     ) from exc
 
                 repair_attempts += 1
-                raw = await self.llm.generate_json(
-                    system_prompt=TRIP_THEME_SYSTEM_PROMPT,
-                    user_payload=build_trip_theme_repair_payload(
-                        planner_input,
-                        previous_output=raw,
-                        validation_feedback=feedback,
-                        graph_candidate_catalog=graph_catalog_payload,
-                    ),
+                repair_started = time.perf_counter()
+                try:
+                    raw = await self.llm.generate_structured_json(
+                        system_prompt=TRIP_THEME_SYSTEM_PROMPT,
+                        user_payload=build_trip_theme_repair_payload(
+                            planner_input,
+                            previous_output=raw,
+                            validation_feedback=feedback,
+                            graph_candidate_catalog=graph_catalog_payload,
+                        ),
+                        response_schema=TripThemeDraft.model_json_schema(),
+                    )
+                except Exception:
+                    _record_timing_stage(
+                        on_timing_stage,
+                        f"llmRepair{repair_attempts}",
+                        "Gemini sửa TripThemeDraft không hợp lệ",
+                        repair_started,
+                        details={
+                            "status": "failed",
+                            "attempt": repair_attempts,
+                        },
+                    )
+                    raise
+                _record_timing_stage(
+                    on_timing_stage,
+                    f"llmRepair{repair_attempts}",
+                    "Gemini sửa TripThemeDraft không hợp lệ",
+                    repair_started,
+                    details={
+                        "status": "completed",
+                        "attempt": repair_attempts,
+                        "responseCharacters": len(raw),
+                    },
                 )
 
         warnings = list(
@@ -719,6 +889,8 @@ class TripThemePlannerService:
         context = planner_input.region_context
         warnings: list[str] = []
         if context.active_place_count == 0:
+            if context.snapshot_ref.algorithm_version == "intent_context_v1":
+                return warnings
             warnings.append(
                 f"Không có Place active cho {context.region_key}; PlaceSelector chỉ "
                 "có thể dùng các địa điểm người dùng đã chọn."

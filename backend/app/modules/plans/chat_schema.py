@@ -102,6 +102,12 @@ class RetryCandidateResolutionsRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class RouteEnrichmentRequest(BaseModel):
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+
+    model_config = {"populate_by_name": True}
+
+
 class TripChatTurnCreate(BaseModel):
     content: Annotated[str, Field(min_length=1, max_length=10_000)]
     expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]

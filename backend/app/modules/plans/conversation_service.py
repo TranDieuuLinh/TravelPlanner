@@ -494,7 +494,10 @@ class ConversationTurnService:
             context.chat,
             context.turn,
             context.images,
-            planning_context=self._planning_context(context.turn.content),
+            planning_context=self._planning_context(
+                context.turn.content,
+                context.decision.intake_patch,
+            ),
         )
 
     async def _run_main_planner_agent(
@@ -504,20 +507,32 @@ class ConversationTurnService:
             context.chat,
             context.turn,
             context.images,
-            planning_context=self._planning_context(context.turn.content),
+            planning_context=self._planning_context(
+                context.turn.content,
+                context.decision.intake_patch,
+            ),
         )
 
     @staticmethod
-    def _planning_context(content: str) -> dict[str, object]:
+    def _planning_context(
+        content: str,
+        intake_patch: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         urls = list(dict.fromkeys(_extract_urls(content)))
+        patch = intake_patch or {}
         destination = (
-            _infer_destination(_remove_urls(content))
+            str(patch.get("destination") or "").strip()
+            or _infer_destination(_remove_urls(content))
             or _infer_destination_from_urls(urls)
             or "unspecified"
         )
         if _is_context_only_plan_request(content):
             destination = "unspecified"
-        return {"urls": urls, "initial_destination": destination}
+        return {
+            "urls": urls,
+            "initial_destination": destination,
+            "initial_trip_days": patch.get("days"),
+        }
 
     async def _run_information_finder_agent(
         self, context: ConversationAgentContext
@@ -628,6 +643,7 @@ class ConversationTurnService:
         initial_destination = str(
             planning_context.get("initial_destination") or "unspecified"
         )
+        initial_trip_days = planning_context.get("initial_trip_days")
         from app.modules.users.model import User as _User
 
         try:
@@ -639,6 +655,11 @@ class ConversationTurnService:
                 content=turn.content,
                 expected_revision=turn.base_revision,
                 initial_destination=initial_destination,
+                initial_trip_days=(
+                    int(initial_trip_days)
+                    if isinstance(initial_trip_days, int)
+                    else None
+                ),
                 urls=urls,
                 images=images,
                 turn_id=_turn_lifecycle_id(turn),

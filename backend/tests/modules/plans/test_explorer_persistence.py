@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.modules.knowledge_graph.model import (
 )
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
+from app.modules.plans.explorer.model import SourceDocument
 
 
 def _resolution(name: str = "Mì Quảng Bà Mua") -> PlaceResolution:
@@ -91,13 +93,82 @@ def test_explorer_persists_candidate_as_kg_import_node_with_minimal_snapshot() -
         assert len(selected) == 1
         assert selected[0].source_import_node_id == node.id
         assert selected[0].image_urls == ["https://images.example/one.jpg"]
-        assert selected[0].notes == (
-            "Ăn mì Quảng. Ăn tại Mì Quảng Bà Mua. "
-            "Quán mì Quảng ở trung tâm Hải Châu."
+        assert selected[0].notes == "Ăn mì Quảng."
+        assert selected[0].note_sources == []
+
+
+def test_explorer_loads_grounded_region_story_from_source_document() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        repository.save(
+            intake_id="intake-region",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[_resolution("Hoàng thành Thăng Long")],
         )
-        assert [source.type for source in selected[0].note_sources] == [
-            "google_maps"
-        ]
+        document = SourceDocument(
+            id="source-region",
+            canonical_url="https://example.com/hanoi-reel",
+            platform="tiktok",
+            artifacts_json={},
+            extracted_context_json={
+                "regionStory": {
+                    "text": "Creator xem đây là một ngày đầu tiên hoàn hảo ở Hà Nội.",
+                    "evidence": "A perfect first day in Hanoi",
+                    "evidenceType": "caption",
+                    "confidence": 0.85,
+                }
+            },
+        )
+        session.add(document)
+        session.flush()
+        import_job = session.get(KnowledgeGraphImport, "intake-region")
+        node = session.scalar(
+            select(KnowledgeGraphImportNode).where(
+                KnowledgeGraphImportNode.import_id == "intake-region",
+                KnowledgeGraphImportNode.type != "Area",
+            )
+        )
+        assert import_job is not None and node is not None
+        import_job.source_document_id = document.id
+        node.source_document_id = document.id
+        session.commit()
+
+        stories = repository.load_region_stories("intake-region", None)
+
+        assert len(stories) == 1
+        assert stories[0].text == (
+            "Creator xem đây là một ngày đầu tiên hoàn hảo ở Hà Nội."
+        )
+        assert stories[0].evidence == "A perfect first day in Hanoi"
+        assert stories[0].ref == "https://example.com/hanoi-reel"
+
+
+def test_explorer_keeps_critical_intake_when_kg_enrichment_fails() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+
+        def fail_matching(*args, **kwargs):
+            raise RuntimeError("enrichment unavailable")
+
+        repository._match_knowledge_entities = fail_matching  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="enrichment unavailable"):
+            repository.save(
+                intake_id="intake-degraded",
+                user_id=None,
+                destination="Đà Nẵng",
+                resolutions=[_resolution()],
+            )
+
+        assert repository.critical_intake_exists("intake-degraded") is True
+        saved = session.get(KnowledgeGraphImport, "intake-degraded")
+        assert saved is not None
+        assert saved.destination == "Đà Nẵng"
 
 
 def test_top_k_uses_reviewed_alias_and_resolves_a_clear_entity() -> None:
@@ -179,6 +250,66 @@ def test_same_name_branches_stay_for_route_selection_without_global_identity() -
         assert selected.identity_confidence == "low"
         assert selected.place_id in {"branch-hai-chau", "branch-son-tra"}
         assert selected.selection_method == "route_proximity"
+
+
+def test_soft_merged_duplicate_redirects_without_false_ambiguity() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        canonical = KnowledgeEntity(
+            id="temple-canonical",
+            canonical_name="Temple of Literature",
+            normalized_name="temple of literature",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        canonical.properties.extend(
+            [
+                KnowledgeProperty(key="catalog_status", value="active"),
+                KnowledgeProperty(key="city", value="Đà Nẵng"),
+                KnowledgeProperty(key="latitude", value="16.0592"),
+                KnowledgeProperty(key="longitude", value="108.2131"),
+            ]
+        )
+        duplicate = KnowledgeEntity(
+            id="temple-duplicate",
+            canonical_name="Temple of Literature",
+            normalized_name="temple of literature",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        duplicate.properties.extend(
+            [
+                KnowledgeProperty(key="catalog_status", value="merged"),
+                KnowledgeProperty(
+                    key="merged_into_entity_id", value="temple-canonical"
+                ),
+                KnowledgeProperty(key="city", value="Đà Nẵng"),
+                KnowledgeProperty(key="latitude", value="16.0592"),
+                KnowledgeProperty(key="longitude", value="108.2131"),
+            ]
+        )
+        session.add_all([canonical, duplicate])
+        session.commit()
+
+        ExplorerPersistenceRepository(session).save(
+            intake_id="intake-soft-merge",
+            user_id=None,
+            destination="Đà Nẵng",
+            resolutions=[_resolution("Temple of Literature")],
+        )
+
+        node = session.scalar(
+            select(KnowledgeGraphImportNode).where(
+                KnowledgeGraphImportNode.type != "Area"
+            )
+        )
+        assert node is not None
+        assert node.identity_status == "resolved"
+        assert node.selected_entity_id == "temple-canonical"
+        assert [item["entityId"] for item in node.match_candidates] == [
+            "temple-canonical"
+        ]
 
 
 def test_branch_candidates_resolve_from_kg_before_google_fallback() -> None:

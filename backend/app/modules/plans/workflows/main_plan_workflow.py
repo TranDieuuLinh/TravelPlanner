@@ -6,13 +6,18 @@ from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import (
     Plan,
+    RouteEnrichmentContext,
     TravelIntent,
     UnscheduledPlace,
     UserStatus,
 )
+from app.modules.plans.domain.plan_notes import PlanNoteSource
 from app.modules.plans.domain.enums import PlanKind, PlanStatus
 from app.modules.plans.dto.agent_contracts import (
+    AgentTrace,
     PlaceSelectionInput,
+    PlanningAgentName,
+    PlanningAgentStatus,
     TripThemePlanningOutput,
     PlanningIntent,
     PlanningMode,
@@ -22,9 +27,6 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.plans.place_selector.service import PlaceSelectorService
-from app.modules.plans.place_selector.activity_fallback import (
-    RouteAwareActivityFallback,
-)
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
@@ -35,7 +37,11 @@ from app.modules.plans.schema import (
 )
 from app.shared.errors import AppError
 from app.modules.preferences.schema import LongTermPreferenceProfile
-from app.modules.plans.timing import PlanTimingReport, PlanTimingTrace
+from app.modules.plans.timing import (
+    PlanTimingReport,
+    PlanTimingSubstage,
+    PlanTimingTrace,
+)
 
 
 class MainPlanWorkflow:
@@ -72,6 +78,7 @@ class MainPlanWorkflow:
             allow_replace_source_places=False,
             source="direct",
             candidate_reviews=[],
+            region_stories=[],
         )
 
     async def run_from_explorer(
@@ -86,6 +93,7 @@ class MainPlanWorkflow:
         payload: MainPlanFromExplorerCreate,
         *,
         on_timing_update: Callable[[PlanTimingReport], None] | None = None,
+        reuse_theme_plan: Plan | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         trace = PlanTimingTrace(on_update=on_timing_update)
         prepare_started_at = time.perf_counter()
@@ -128,12 +136,14 @@ class MainPlanWorkflow:
             timing_trace=trace,
             source="explorer",
             candidate_reviews=payload.candidate_reviews,
+            region_stories=payload.region_stories,
             user_id=(
                 int(payload.user_id)
                 if payload.user_id and payload.user_id.isdigit()
                 else None
             ),
             intake_id=payload.intake_id,
+            reuse_theme_plan=reuse_theme_plan,
         )
         return plan, trace.finish(plan)
 
@@ -169,6 +179,7 @@ class MainPlanWorkflow:
             allow_replace_source_places=False,
             source="context",
             candidate_reviews=[],
+            region_stories=[],
         )
 
     async def _run_planning(
@@ -185,9 +196,11 @@ class MainPlanWorkflow:
         allow_replace_source_places: bool,
         source: str,
         candidate_reviews: list[PlaceCandidateReview],
+        region_stories: list[PlanNoteSource],
         user_id: int | None = None,
         intake_id: str | None = None,
         timing_trace: PlanTimingTrace | None = None,
+        reuse_theme_plan: Plan | None = None,
     ) -> Plan:
         run_id = None
         if self.planning_runs is not None:
@@ -232,6 +245,8 @@ class MainPlanWorkflow:
                 run_id=run_id,
                 timing_trace=timing_trace,
                 candidate_reviews=candidate_reviews,
+                region_stories=region_stories,
+                reuse_theme_plan=reuse_theme_plan,
             )
         except Exception as exc:
             if self.planning_runs is not None and run_id is not None:
@@ -282,16 +297,38 @@ class MainPlanWorkflow:
         run_id: str | None,
         timing_trace: PlanTimingTrace | None,
         candidate_reviews: list[PlaceCandidateReview],
+        region_stories: list[PlanNoteSource],
+        reuse_theme_plan: Plan | None = None,
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
         theme_started = time.perf_counter()
-        theme_output = await self.trip_theme_planner.create_trip_themes(
-            intent,
-            trip_spec=trip_spec,
-            region_key=region_key,
-            selected_places=selected_places,
-            preference_profile=preference_profile,
-        )
+        theme_sub_stages: list[PlanTimingSubstage] = []
+        if reuse_theme_plan is None:
+            theme_output = await self.trip_theme_planner.create_trip_themes(
+                intent,
+                trip_spec=trip_spec,
+                region_key=region_key,
+                selected_places=selected_places,
+                preference_profile=preference_profile,
+                on_timing_stage=(
+                    theme_sub_stages.append if timing_trace is not None else None
+                ),
+            )
+        else:
+            theme_output = TripThemePlanningOutput(
+                mode=PlanningMode.main,
+                tripSpec=trip_spec,
+                tripThemes=reuse_theme_plan.trip_themes,
+                requiredExperiences=reuse_theme_plan.required_experiences,
+                assumptions=reuse_theme_plan.planning_assumptions,
+                warnings=[],
+                trace=AgentTrace(
+                    agent=PlanningAgentName.trip_theme_planner,
+                    status=PlanningAgentStatus.completed,
+                    summary="Tái sử dụng theme vì đầu vào theme không đổi.",
+                    notes=["themeReuse=true"],
+                ),
+            )
         if timing_trace is not None:
             timing_trace.add_stage(
                 "tripThemePlanner",
@@ -302,8 +339,14 @@ class MainPlanWorkflow:
                     "selectedPlaceCount": len(selected_places),
                     "inputSelectedPlaceCount": len(selected_places),
                     "requiredExperienceCount": len(theme_output.required_experiences),
-                    "dataSource": "Knowledge Graph DB + LLM",
+                    "dataSource": (
+                        "Plan revision trước"
+                        if reuse_theme_plan is not None
+                        else "Knowledge Graph DB + LLM"
+                    ),
+                    "reused": reuse_theme_plan is not None,
                 },
+                sub_stages=theme_sub_stages,
             )
         if self.planning_runs is not None and run_id is not None:
             self.planning_runs.add_stage(
@@ -319,7 +362,10 @@ class MainPlanWorkflow:
                     "preferenceProfile": preference_profile,
                 },
                 output_data=theme_output,
-                metadata={"trace": theme_output.trace},
+                metadata={
+                    "trace": theme_output.trace,
+                    "reused": reuse_theme_plan is not None,
+                },
             )
         if not theme_output.trip_themes_ready:
             raise AppError(
@@ -353,7 +399,13 @@ class MainPlanWorkflow:
             allowReplaceSourcePlaces=allow_replace_source_places,
         )
         selection_started = time.perf_counter()
-        selection_output = self.place_selector.fill_agent_plan(selection_input)
+        defer_route_enrichment = bool(
+            getattr(self.place_selector.route_optimizer, "supports_fixed_anchors", False)
+        )
+        selection_output = self.place_selector.fill_agent_plan(
+            selection_input,
+            enrich_routes=not defer_route_enrichment,
+        )
         if timing_trace is not None:
             timing_trace.add_stage(
                 "placeSelector",
@@ -379,16 +431,10 @@ class MainPlanWorkflow:
                 metadata={"trace": selection_output.trace},
             )
         assemble_started = time.perf_counter()
-        fallback_recommendations = RouteAwareActivityFallback(
-            self.place_selector.place_tool
-        ).recommend(
-            days=selection_output.final_days,
-            reviews=candidate_reviews,
-            region_key=region_key,
-        )
+        review_unscheduled = self._needs_review_unscheduled(candidate_reviews)
         unscheduled_places = self._merge_unscheduled_places(
             theme_output,
-            [*selection_output.unscheduled_places, *fallback_recommendations],
+            [*selection_output.unscheduled_places, *review_unscheduled],
         )
         plan = Plan(
             id=str(uuid4()),
@@ -396,6 +442,7 @@ class MainPlanWorkflow:
             status=PlanStatus.checking,
             title=f"Kế hoạch cho {intent.destination}",
             destination=intent.destination,
+            regionStories=region_stories,
             intent=intent,
             tripThemes=theme_output.trip_themes,
             requiredExperiences=theme_output.required_experiences,
@@ -409,6 +456,22 @@ class MainPlanWorkflow:
                 *theme_output.warnings,
                 *selection_output.warnings,
             ],
+            routeEnrichmentStatus=(
+                "pending" if defer_route_enrichment else "completed"
+            ),
+            routeEnrichmentContext=(
+                RouteEnrichmentContext(
+                    tripStartDate=trip_spec.start_date,
+                    preferredModes=[
+                        mode.value for mode in trip_spec.transport.preferred_modes
+                    ],
+                    avoidModes=[
+                        mode.value for mode in trip_spec.transport.avoid_modes
+                    ],
+                )
+                if defer_route_enrichment
+                else None
+            ),
         )
         if timing_trace is not None:
             timing_trace.add_stage(
@@ -450,6 +513,7 @@ class MainPlanWorkflow:
         final_status = (
             PlanStatus.locked
             if check_report.status == "passed"
+            and plan.route_enrichment_status == "completed"
             else PlanStatus.failed
             if check_report.status == "failed"
             else PlanStatus.draft
@@ -500,6 +564,46 @@ class MainPlanWorkflow:
         merged = list(selection_unscheduled)
         unique: dict[str, UnscheduledPlace] = {}
         for item in merged:
-            key = item.place_id or item.name.casefold()
+            key = item.candidate_id or item.place_id or item.name.casefold()
             unique.setdefault(key, item)
         return list(unique.values())
+
+    @staticmethod
+    def _needs_review_unscheduled(
+        reviews: list[PlaceCandidateReview],
+    ) -> list[UnscheduledPlace]:
+        """Keep unresolved URL venues visible without inventing a replacement.
+
+        A ``needs_review`` venue is an identity decision, not an activity-name
+        query.  The user must choose one of its resolver matches before it can
+        become a schedulable Place.
+        """
+
+        output: list[UnscheduledPlace] = []
+        for review in reviews:
+            if review.status != "needs_review":
+                continue
+            reason = (
+                "Cần chọn đúng địa điểm từ các kết quả khớp trước khi thêm "
+                "vào lịch trình."
+                if review.top_matches
+                else "Chưa xác định được địa điểm cụ thể từ nguồn URL."
+            )
+            output.append(
+                UnscheduledPlace(
+                    candidateId=review.candidate_id,
+                    name=review.name,
+                    day=review.source_day,
+                    reasonCode="identity_needs_review",
+                    reason=reason,
+                    placeType=review.category.value,
+                    sourceRefs=review.source_urls,
+                    sourceProvider=review.provider,
+                    sourceActivity=review.source_activity,
+                    topMatches=[
+                        match.model_dump(mode="json", by_alias=True)
+                        for match in review.top_matches
+                    ],
+                )
+            )
+        return output

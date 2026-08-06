@@ -58,8 +58,26 @@ class Settings(BaseSettings):
     gemini_caption_api_keys: str | None = None
     gemini_price_api_keys: str | None = None
     gemini_model: str = "gemini-3.1-flash-lite"
-    gemini_price_model: str | None = None
+    gemini_price_model: str | None = "gemini-3.5-flash-lite"
     gemini_min_interval_seconds: float = Field(default=0.0, ge=0.0)
+    gemini_price_min_interval_seconds: float = Field(
+        default=4.0,
+        ge=0.0,
+        le=60.0,
+    )
+    price_search_provider: str = "gemini_grounded"
+    google_web_search_timeout_seconds: float = Field(
+        default=60.0,
+        ge=10.0,
+        le=180.0,
+    )
+    google_web_search_min_interval_seconds: float = Field(
+        default=8.0,
+        ge=0.0,
+        le=120.0,
+    )
+    tavily_api_key: str | None = None
+    tavily_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
     gemini_caption_timeout_seconds: float = Field(
         default=60.0,
         ge=5.0,
@@ -105,6 +123,7 @@ class Settings(BaseSettings):
         ge=30.0,
         le=3600.0,
     )
+    url_import_worker_concurrency: int = Field(default=3, ge=1, le=8)
     youtube_transcript_min_interval_seconds: float = Field(
         default=1.0,
         ge=0.0,
@@ -150,6 +169,12 @@ class Settings(BaseSettings):
         default=2,
         ge=1,
         le=4,
+    )
+    google_maps_scraper_cache_ttl_seconds: float = Field(
+        default=600.0, ge=0.0, le=86_400.0
+    )
+    google_maps_scraper_cache_max_entries: int = Field(
+        default=512, ge=0, le=10_000
     )
     database_place_resolver_top_k: int = Field(default=5, ge=1, le=50)
     database_place_resolver_max_concurrency: int = Field(
@@ -248,6 +273,15 @@ class Settings(BaseSettings):
         if self.itinerary_optimizer_mode not in {"route_first", "legacy"}:
             raise ValueError(
                 "ITINERARY_OPTIMIZER_MODE must be route_first or legacy"
+            )
+        if self.price_search_provider not in {
+            "google_playwright",
+            "gemini_grounded",
+            "tavily",
+        }:
+            raise ValueError(
+                "PRICE_SEARCH_PROVIDER must be google_playwright, "
+                "gemini_grounded or tavily"
             )
         if bool(self.youtube_transcript_worker_url) != bool(
             self.youtube_transcript_worker_token

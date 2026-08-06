@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -11,9 +12,11 @@ SOURCE_NOTE_PART_MAX_LENGTH = 180
 
 
 class PlanNoteSource(BaseModel):
-    """Provenance for the read-only source note stored in a plan snapshot."""
+    """One read-only, source-owned note stored in a plan snapshot."""
 
     type: str = Field(min_length=1, max_length=40)
+    text: str | None = Field(default=None, max_length=SOURCE_NOTE_MAX_LENGTH)
+    evidence: str | None = Field(default=None, max_length=500)
     ref: str | None = Field(default=None, max_length=2048)
     evidence_types: list[str] = Field(
         default_factory=list,
@@ -64,12 +67,10 @@ def source_note_provenance(
     *,
     source_refs: list[str],
     evidence_types: list[str],
-    provider: str | None = None,
-    provider_ref: str | None = None,
-    provider_fetched_at: datetime | str | None = None,
-    include_provider: bool = False,
+    video_note: str | None = None,
+    video_evidence: str | None = None,
 ) -> list[PlanNoteSource]:
-    """Build stable note labels without storing another copy of note text."""
+    """Build independently displayable notes with their stable provenance."""
 
     normalized_evidence = list(dict.fromkeys(
         value.strip().casefold()
@@ -82,6 +83,8 @@ def source_note_provenance(
             sources.append(
                 PlanNoteSource(
                     type="url",
+                    text=video_note,
+                    evidence=video_evidence,
                     ref=ref,
                     evidenceTypes=normalized_evidence,
                 )
@@ -90,26 +93,6 @@ def source_note_provenance(
             sources.append(
                 PlanNoteSource(type="image", ref=ref, evidenceTypes=["ocr"])
             )
-
-    if include_provider and provider:
-        provider_type = (
-            "google_maps"
-            if provider in {"google_maps", "google_maps_scraper"}
-            else "place_provider"
-        )
-        fetched_at = provider_fetched_at
-        if isinstance(fetched_at, str):
-            try:
-                fetched_at = datetime.fromisoformat(fetched_at)
-            except ValueError:
-                fetched_at = None
-        sources.append(
-            PlanNoteSource(
-                type=provider_type,
-                ref=provider_ref,
-                fetchedAt=fetched_at,
-            )
-        )
 
     deduped: list[PlanNoteSource] = []
     seen_sources: set[tuple[str, str | None]] = set()
@@ -122,10 +105,63 @@ def source_note_provenance(
     return deduped
 
 
+def compose_video_place_note(
+    *,
+    place_name: str,
+    source_activity: str | None,
+    source_evidence: dict[str, str] | None = None,
+) -> str | None:
+    """Return only useful creator context; provenance alone is not a note."""
+
+    activity = _clean_note_part(source_activity)
+    language_sample = (
+        re.sub(re.escape(place_name), "", activity, flags=re.IGNORECASE)
+        if activity
+        else ""
+    )
+    if (
+        not activity
+        or not _looks_vietnamese(language_sample)
+        or select_creator_story_evidence(
+            place_name=place_name,
+            source_evidence=source_evidence,
+        )
+        is None
+    ):
+        return None
+    if _is_low_value_creator_note(activity, place_name=place_name):
+        return None
+    return _truncate_note(activity)
+
+
+def select_creator_story_evidence(
+    *,
+    place_name: str,
+    source_evidence: dict[str, str] | None,
+) -> str | None:
+    """Choose a place-scoped span that says more than the place name itself."""
+
+    place_key = _ascii_note_key(place_name)
+    candidates: list[tuple[int, str]] = []
+    for value in (source_evidence or {}).values():
+        evidence = " ".join(str(value).split()).strip()
+        evidence_key = _ascii_note_key(evidence)
+        if not evidence or not evidence_key:
+            continue
+        residue = evidence_key.replace(place_key, " ").strip() if place_key else evidence_key
+        residue = re.sub(r"\s+", " ", residue)
+        if len(residue) < 8:
+            continue
+        candidates.append((len(residue), evidence))
+    return max(candidates, default=(0, ""), key=lambda item: item[0])[1] or None
+
+
 def merge_note_sources(*groups: list[PlanNoteSource]) -> list[PlanNoteSource]:
     merged: list[PlanNoteSource] = []
     seen: set[tuple[str, str | None]] = set()
     for source in (source for group in groups for source in group):
+        if source.type in {"google_maps", "place_provider"}:
+            continue
         key = (source.type, source.ref)
         if key in seen:
             continue
@@ -155,3 +191,57 @@ def _clean_note_part(value: str | None) -> str | None:
 
 def _dedupe_key(value: str) -> str:
     return re.sub(r"[^\w]+", " ", value.casefold()).strip()
+
+
+def _truncate_note(value: str) -> str:
+    if len(value) <= SOURCE_NOTE_MAX_LENGTH:
+        return value
+    shortened = value[: SOURCE_NOTE_MAX_LENGTH + 1].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return f"{shortened}…"
+
+
+def _looks_vietnamese(value: str) -> bool:
+    if re.search(r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", value.casefold()):
+        return True
+    normalized = f" {value.casefold()} "
+    return any(
+        word in normalized
+        for word in (
+            " tham quan ",
+            " khám phá ",
+            " thưởng thức ",
+            " ghé ",
+            " ăn ",
+            " uống ",
+            " ngắm ",
+            " thử ",
+            " rút ",
+        )
+    )
+
+
+def _is_low_value_creator_note(value: str, *, place_name: str) -> bool:
+    """Reject labels and tautologies that do not help someone visit the place."""
+
+    normalized = _ascii_note_key(value)
+    normalized_name = _ascii_note_key(place_name)
+    generic_patterns = (
+        "video tham khao co nhac den",
+        "video co nhac den",
+        "creator co nhac den",
+        "tham quan dia diem",
+        "kham pha dia diem",
+    )
+    if any(pattern in normalized for pattern in generic_patterns):
+        return True
+    without_name = normalized.replace(normalized_name, "").strip() if normalized_name else normalized
+    return without_name in {"", "tham quan", "kham pha", "ghe", "den"}
+
+
+def _ascii_note_key(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", value.casefold()).replace("đ", "d")
+    return re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        "".join(char for char in decomposed if not unicodedata.combining(char)),
+    ).strip()

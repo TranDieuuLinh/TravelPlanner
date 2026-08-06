@@ -64,9 +64,11 @@ FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
 
 Giá vé TravelPlace được làm giàu theo batch bằng
 `scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
-lưu trong property JSON `admission_price`; giá đại diện bằng VND được chiếu thêm
-vào `admission_fee_vnd` để các research tool hiện tại đọc được. JSON giữ khoảng
-giá, đơn vị tính, thời điểm lấy, model, confidence và danh sách nguồn. Kết quả
+lưu trong property JSON `admission_price`. Snapshot chỉ giữ giá vé vào cửa tiêu
+chuẩn ban ngày cho một người lớn; `minAmount`, `maxAmount` và
+`representativeAmount` cùng một giá, không trộn giá trẻ em/ưu tiên/VIP/tour đêm
+hoặc dịch vụ phụ trợ. JSON còn giữ đơn vị tính, thời điểm lấy, model, confidence
+và danh sách nguồn. Kết quả
 không tìm thấy, nhập nhằng hoặc lỗi provider chỉ nằm trong cache resume, không
 được ghi thành giá của entity. Script mặc định không thay đổi database và chỉ
 ghi khi operator truyền `--apply`.
@@ -88,25 +90,30 @@ ghi khi operator truyền `--apply`.
   recommendation; đây là timing preference mềm có provenance, không phải giờ mở
   cửa và không tin giá trị timing do LLM tự trả.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
+- `Plan.regionStories`: câu chuyện/tip cấp destination từ creator, tách khỏi
+  place note. Mỗi phần tử giữ text tiếng Việt, evidence span nguyên văn, URL và
+  loại evidence; không có nội dung region-specific thì mảng rỗng.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
-  địa điểm, một source summary chỉ đọc trong `notes`, provenance không chứa text
-  trong `noteSources`, lời nhắc user trong `personalNotes`, ảnh catalog,
+  địa điểm, source summary gộp trong `notes` chỉ để tương thích revision cũ,
+  câu chuyện/mẹo chỉ đọc tách theo nguồn trong `noteSources` (gồm text tiếng
+  Việt, URL, loại evidence và freshness), lời nhắc user trong `personalNotes`, ảnh catalog,
   rating/số lượt đánh giá khi có dữ liệu thật và `sourceDay` khi item bắt nguồn
   từ itinerary tham khảo. `notes` và `personalNotes` không ghi đè nhau; cả
-  itinerary lẫn map popup đọc trực tiếp cùng snapshot này.
+  itinerary lẫn map popup đọc trực tiếp cùng snapshot này. Metadata provider
+  như địa chỉ, rating và giờ mở cửa không được diễn đạt lại thành note.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
   Mỗi ngày route-first giữ ba meal anchor sáng, trưa và tối. Quán ăn đã resolve
   từ URL được ưu tiên vào đúng anchor theo timing cue; anchor chưa có venue dùng
   item `finder_rule` tổng quát để giữ cấu trúc bữa ăn mà không giả mạo một địa
-  điểm. Với intake URL, PlaceSelector được phép thêm `finder_suggestion` vào
-  khoảng sáng và chiều còn thiếu nhưng không được thay thế hoặc làm mất
-  `SelectedPlace` có provenance URL.
-- `UnscheduledPlace` cũng mang location/catalog metadata tối thiểu khi là gợi ý
-  `activity_fallback_recommendation`. Gợi ý này được tạo sau khi route đã có,
-  liên kết source activity để giải thích nhu cầu nhưng dùng provenance
-  `route_aware_activity_fallback`; nó không biến venue suy luận thành claim của
-  URL và người dùng phải chủ động kéo/thêm vào lịch.
+  điểm. Với intake URL, PlaceSelector tiếp tục thêm `finder_suggestion` vào mọi
+  khoảng sáng, chiều và tối trước 21:00 còn đủ `duration + travel + buffer`,
+  nhưng chỉ sau khi đã thử hết URL place tương thích và không được thay thế
+  hoặc làm mất `SelectedPlace` có provenance URL.
+- Candidate URL `needs_review` được giữ trong `UnscheduledPlace` với
+  `reasonCode=identity_needs_review`, tên gốc, `candidateId`, URL nguồn và
+  `topMatches`. Planner không tự tìm một venue khác để thay candidate chưa xác
+  định danh tính.
 - `PlanTransportLeg`: điểm đầu/cuối, mode, distance, duration, geometry,
   `source`, `verified` và `fetchedAt`. Leg provider có provenance
   `valhalla_routing` hoặc `opentripplanner_transit`; fallback địa lý phải giữ
@@ -350,9 +357,12 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   cafe/coffee vẫn là activity. PlaceSelector suggestion chỉ dùng capacity còn trống và
   không được chiếm chỗ của URL place. Revision URL tiếp theo phải phục hồi cả
   URL place đã resolve từ Explorer history, kể cả khi revision cũ chưa xếp được.
+  Finder ưu tiên category chưa xuất hiện; riêng coffee do Finder thêm tối đa một
+  lần mỗi ngày và không thêm nếu ngày đó đã có coffee từ URL, trừ khi user yêu
+  cầu rõ coffee tour/cafe hopping.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
-  được lưu hay đưa vào timeline; PlaceSelector được phép bổ sung địa điểm đã chuẩn hóa
-  thay thế.
+  được đưa vào timeline; candidate có nguồn được giữ để review và PlaceSelector
+  không bổ sung địa điểm khác như một bản thay thế của candidate đó.
 - Heading dạng `thành phố - N ngày` được giữ thành `DestinationStay`, không
   resolve thành stop. Khi URL chỉ có stay và chưa có venue cụ thể, PlaceSelector không
   tự thêm place; plan giữ các ngày trống trong đúng thành phố.

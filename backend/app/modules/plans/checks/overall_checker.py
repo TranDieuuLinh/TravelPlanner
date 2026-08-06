@@ -129,6 +129,7 @@ class OverallChecker:
 
     def _quality_issues(self, plan: Plan) -> list[CheckIssue]:
         issues: list[CheckIssue] = []
+        issues.extend(self._daily_composition_issues(plan))
         main_items = [
             item for day in plan.days for item in day.items
             if self._is_main_activity(item)
@@ -157,6 +158,53 @@ class OverallChecker:
         issues.extend(self._timing_issues(plan))
         issues.extend(self._opening_hours_issues(plan))
         issues.extend(self._nearby_evidence_issues(plan))
+        return issues
+
+    def _daily_composition_issues(self, plan: Plan) -> list[CheckIssue]:
+        issues: list[CheckIssue] = []
+        required_meals = {"breakfast_meal", "lunch_meal", "dinner_meal"}
+        for day in plan.days:
+            meal_roles = {
+                (item.role or "").casefold()
+                for item in day.items
+                if (item.role or "").casefold() in required_meals
+            }
+            if meal_roles != required_meals:
+                missing = sorted(required_meals - meal_roles)
+                issues.append(self._issue(
+                    "daily_meal_structure_invalid", "error",
+                    f"Day {day.day} must contain breakfast, lunch, and dinner anchors.",
+                    [self._item_id(item) for item in day.items],
+                    [f"missing={','.join(missing) or 'none'}"],
+                    "Restore exactly one breakfast, lunch, and dinner anchor.",
+                    "selector",
+                ))
+
+            non_food_activities = [
+                item for item in day.items
+                if item.timeline_category == "activity"
+                and not self._is_food_drink(item)
+            ]
+            if len(non_food_activities) < 2:
+                issues.append(self._issue(
+                    "insufficient_daily_non_food_activities", "error",
+                    f"Day {day.day} contains fewer than two non-food activities.",
+                    [self._item_id(item) for item in non_food_activities],
+                    [f"nonFoodActivities={len(non_food_activities)}", "minimum=2"],
+                    "Fill one verified non-food activity before lunch and one after lunch.",
+                    "selector",
+                ))
+
+            coffee_items = [item for item in day.items if self._is_coffee(item)]
+            if len(coffee_items) > 1:
+                issues.append(self._issue(
+                    "daily_coffee_limit_exceeded", "error",
+                    f"Day {day.day} contains more than one coffee stop.",
+                    [self._item_id(item) for item in coffee_items],
+                    [f"coffeeStops={len(coffee_items)}", "maximum=1"],
+                    "Keep the best route-compatible coffee stop and refill the others with non-food activities.",
+                    "selector",
+                ))
         return issues
 
     def _required_experience_issues(self, plan: Plan) -> list[CheckIssue]:
@@ -265,8 +313,14 @@ class OverallChecker:
 
     @staticmethod
     def _is_food_drink(item) -> bool:
-        markers = {"food", "food_drink", "restaurant", "cafe", "coffee", "bakery", "bar", "drink", "dessert", "meal"}
-        return item.timeline_category == "food" or bool(markers.intersection({item.place_type.casefold(), *(tag.casefold() for tag in item.tags)}))
+        text = " ".join([item.place_type, *item.tags]).casefold().replace("_", " ")
+        markers = ("food", "restaurant", "cafe", "coffee", "bakery", "bar", "drink", "dessert", "meal", "ice cream", "juice", "tea", "bingsu", "snack")
+        return item.timeline_category == "food" or any(marker in text for marker in markers)
+
+    @staticmethod
+    def _is_coffee(item) -> bool:
+        text = " ".join([item.name, item.place_type, *item.tags]).casefold()
+        return any(marker in text for marker in ("cafe", "coffee", "cà phê", "ca phe"))
 
     @staticmethod
     def _is_main_activity(item) -> bool:

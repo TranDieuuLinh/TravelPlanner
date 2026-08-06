@@ -10,6 +10,7 @@ from app.modules.knowledge_graph.place_repository import KnowledgeGraphPlaceRepo
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import (
     RetryCandidateResolutionsRequest,
+    RouteEnrichmentRequest,
     TripChatCreate,
     TripChatRead,
     TripChatSummaryRead,
@@ -95,6 +96,20 @@ def get_trip_chat(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> TripChatRead:
     return service.get(chat_id, current_user)
+
+
+@router.post("/{chat_id}/plan/routes/enrich", response_model=TripChatRead)
+def enrich_trip_chat_routes(
+    chat_id: str,
+    payload: RouteEnrichmentRequest,
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return service.enrich_routes(
+        chat_id,
+        current_user,
+        expected_revision=payload.expected_revision,
+    )
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)

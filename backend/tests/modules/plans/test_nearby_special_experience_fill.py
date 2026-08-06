@@ -84,16 +84,24 @@ def test_located_in_child_is_context_only():
 
 
 def test_production_nearby_route_adapter_returns_provider_distance(monkeypatch):
-    class RouteProvider:
-        def calculate(self, origin, destination, *, transport_mode, departure_time):
+    class MatrixProvider:
+        calls = 0
+
+        def calculate(self, coordinates, *, transport_mode, departure_time):
+            self.calls += 1
             assert transport_mode == "pedestrian"
             assert departure_time is None
-            return SimpleNamespace(distance_meters=2400)
+            assert len(coordinates) == 2
+            return SimpleNamespace(
+                distances_meters=[[0, 2400], [2400, 0]],
+            )
+
+    matrix = MatrixProvider()
 
     monkeypatch.setattr(
         dependencies,
         "_get_route_optimizer",
-        lambda: SimpleNamespace(route_provider=RouteProvider()),
+        lambda: SimpleNamespace(matrix_provider=matrix),
     )
     provider = dependencies._get_nearby_route_cost_provider()
     origin = SelectablePlace(
@@ -102,4 +110,43 @@ def test_production_nearby_route_adapter_returns_provider_distance(monkeypatch):
     )
     destination = origin.model_copy(update={"place_id": "b", "name": "B"})
 
-    assert provider(origin, destination) == 2.4
+    assert provider.calculate_many(origin, [destination]) == [2.4]
+    assert matrix.calls == 1
+
+
+def test_nearby_survey_batches_provider_costs_after_haversine_prefilter():
+    anchor = SelectablePlace(
+        placeId="anchor", name="Anchor", placeType="attraction",
+        regionKey="vn,hanoi", latitude=21.028, longitude=105.852,
+    )
+    nearby = anchor.model_copy(
+        update={"place_id": "nearby", "name": "Nearby", "longitude": 105.86}
+    )
+    far = anchor.model_copy(
+        update={"place_id": "far", "name": "Far", "latitude": 22.0}
+    )
+
+    class Graph:
+        def discover_nearby_experiences(self, *args, **kwargs):
+            return [
+                _claim("near", "nearby", "activity-near", "Nearby"),
+                _claim("far", "far", "activity-far", "Far"),
+            ]
+
+    class BatchCosts:
+        calls = 0
+
+        def calculate_many(self, origin, destinations):
+            self.calls += 1
+            assert [item.place_id for item in destinations] == ["nearby"]
+            return [1.2]
+
+    costs = BatchCosts()
+    result = AreaSurveyService(
+        FakePlaceTool([anchor, nearby, far]),
+        graph_repository=Graph(),
+        route_cost_provider=costs,
+    ).survey_near_anchor(anchor, radius_km=5.0)
+
+    assert [item.place.place_id for item in result.candidates] == ["nearby"]
+    assert costs.calls == 1
