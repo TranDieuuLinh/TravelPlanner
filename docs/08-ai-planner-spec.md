@@ -386,7 +386,9 @@ recommendation và không loại candidate trong PlaceSelector runtime hiện t�
 
 PlaceSelector điền item cụ thể:
 
-- mỗi ngày phải giữ đúng ba meal anchor: breakfast, lunch và dinner;
+- mỗi ngày phải giữ đúng ba meal anchor: breakfast, lunch và dinner. Trong
+  runtime tạm thời, MealSelector không lọc theo category/provider type; nó chọn
+  theo meal tag, tránh trùng và chi phí tuyến;
 - mỗi ngày phải có ít nhất hai activity non-food, ưu tiên một activity trước
   lunch và một activity sau lunch; café không được tính vào mức tối thiểu này;
 - tối đa một café mỗi ngày, kể cả khi intent chứa cafe hopping;

@@ -6,9 +6,7 @@ from app.modules.plans.domain.entities import PlanItem
 from app.modules.plans.place_selector.place_tool import (
     SelectablePlace,
     PlaceSelectionTool,
-    is_dine_in_meal_venue,
     is_coffee_place,
-    place_category,
     selection_relevance_score,
 )
 
@@ -49,11 +47,6 @@ class MealStopSelector:
                 excluded_place_ids=used,
                 bbox_filter=bbox_filter,
             )
-            candidates = [
-                candidate
-                for candidate in candidates
-                if self._appropriate_for_role(candidate, role)
-            ]
             if coffee_used:
                 candidates = [
                     candidate
@@ -75,23 +68,6 @@ class MealStopSelector:
                 if chosen.place_id is not None:
                     used.add(chosen.place_id)
         return selected
-
-    @staticmethod
-    def _appropriate_for_role(candidate: SelectablePlace, role: str) -> bool:
-        if role == "breakfast_meal":
-            return True
-        place_type = f" {candidate.place_type.casefold()} "
-        return not any(
-            marker in place_type
-            for marker in (
-                " bakery ",
-                " cafe ",
-                " coffee ",
-                " dessert ",
-                " ice cream ",
-                " tea house ",
-            )
-        )
 
     def _candidates(
         self,
@@ -115,12 +91,7 @@ class MealStopSelector:
                 excluded_place_ids=excluded_place_ids,
                 limit=self.candidate_limit,
             )
-        return [
-            candidate
-            for candidate in candidates
-            if place_category(candidate) == "food_drink"
-            and is_dine_in_meal_venue(candidate)
-        ]
+        return candidates
 
     def _choose(
         self,
