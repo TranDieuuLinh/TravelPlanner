@@ -12,6 +12,14 @@ const VIETNAMESE_NOTE_TRANSLATIONS: Record<string, string> = {
   "withdraw money": "Rút tiền",
   "eat dessert and wait for sightseeing bus":
     "Ăn món tráng miệng và chờ xe buýt tham quan",
+  "explore cute cafés, shops, and a night market":
+    "Khám phá các quán cà phê xinh xắn, cửa hàng và chợ đêm",
+  "nature viewpoint hike":
+    "Đi bộ đường dài đến điểm ngắm cảnh thiên nhiên",
+  "purchase the audio guide as the show is in vietnamese":
+    "Mua hướng dẫn âm thanh vì chương trình biểu diễn bằng tiếng Việt",
+  "relaxing head spa treatment that leaves hair shining":
+    "Thư giãn với liệu trình spa đầu giúp tóc bóng mượt",
   "no place is required for this break block":
     "Khoảng nghỉ này không cần địa điểm cụ thể"
 };
@@ -37,8 +45,18 @@ export function formatPlanNote(value: unknown): string | null {
   return VIETNAMESE_NOTE_TRANSLATIONS[lookupKey] ?? note;
 }
 
+/**
+ * Formats generated source context for the Vietnamese UI.
+ *
+ * Known legacy English values are translated above. Unknown non-Vietnamese
+ * model output remains visible until a translation is available.
+ */
+export function formatSourceNoteForDisplay(value: unknown): string | null {
+  return formatPlanNote(value);
+}
+
 const NOTE_SOURCE_LABELS: Record<string, string> = {
-  url: "Câu chuyện từ video",
+  url: "Gợi ý từ nguồn tham khảo",
   image: "Chi tiết từ ảnh tham khảo",
   creator: "Từ creator"
 };

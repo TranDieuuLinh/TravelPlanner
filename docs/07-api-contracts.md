@@ -119,6 +119,14 @@ client không được tự chọn role.
   geocoding bên ngoài và không bị giới hạn bởi batch preload của Planner.
 - `POST /api/plans/{planId}/backup`
 
+### Đánh giá địa điểm
+
+- `GET /api/places/{placeId}/reviews?rating={1..5}&limit={n}&offset={n}`: đọc
+  review địa điểm đã nhập theo `knowledge_entities.id`. `rating` là bộ lọc tùy
+  chọn; response trả `items`, `total`, `hasMore` và `ratingCounts` của toàn bộ
+  review để UI hiển thị phân bố 1–5 sao. Endpoint chỉ đọc snapshot có provenance
+  đã lưu trong bảng `reviews`; không gọi Google Maps trong request UI.
+
 ### Trip chat và lịch sử chỉnh sửa
 
 Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
@@ -205,8 +213,9 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
 - `DELETE /api/trip-chats/{chatId}/plan/days/{day}/items/{itemId}`: xóa item.
 - `DELETE /api/trip-chats/{chatId}/plan/unscheduled-places`: xóa một địa điểm
   khỏi danh sách chưa xếp. Request dùng `multipart/form-data` với
-  `expectedRevision`, `name` và `placeId` tùy chọn; backend lưu một plan revision
-  mới và chỉ cho phép chủ trip chat thao tác.
+  `expectedRevision`, `name`, `placeId` tùy chọn và `candidateId` tùy chọn.
+  Client ưu tiên gửi `candidateId` để chỉ xóa đúng observation chưa xác nhận;
+  backend lưu một plan revision mới và chỉ cho phép chủ trip chat thao tác.
 - `PUT /api/trip-chats/{chatId}/plan/days/{day}/items/reorder`: lưu thứ tự item
   mới của một ngày. Request dùng `multipart/form-data` với `expectedRevision`
   và các field `itemIds` lặp lại theo đúng thứ tự hiển thị mong muốn.

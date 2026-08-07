@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   formatNoteSources,
   formatPlanNote,
+  formatSourceNoteForDisplay,
   planItemNotePresentation
 } from "./plan-note.ts";
 
@@ -12,6 +13,35 @@ test("translates known itinerary notes into Vietnamese", () => {
   assert.equal(
     formatPlanNote("Eat dessert and wait for sightseeing bus."),
     "Ăn món tráng miệng và chờ xe buýt tham quan"
+  );
+});
+
+test("translates known source notes and preserves unknown English notes", () => {
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "explore cute cafés, shops, and a night market"
+    ),
+    "Khám phá các quán cà phê xinh xắn, cửa hàng và chợ đêm"
+  );
+  assert.equal(
+    formatSourceNoteForDisplay("nature viewpoint hike"),
+    "Đi bộ đường dài đến điểm ngắm cảnh thiên nhiên"
+  );
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "purchase the audio guide as the show is in vietnamese"
+    ),
+    "Mua hướng dẫn âm thanh vì chương trình biểu diễn bằng tiếng Việt"
+  );
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "relaxing head spa treatment that leaves hair shining"
+    ),
+    "Thư giãn với liệu trình spa đầu giúp tóc bóng mượt"
+  );
+  assert.equal(
+    formatSourceNoteForDisplay("A new untranslated generated note"),
+    "A new untranslated generated note"
   );
 });
 
@@ -48,11 +78,11 @@ test("presents source and personal notes without merging their ownership", () =>
       sourceNotes: [
         {
           type: "url",
-          label: "Câu chuyện từ video",
+          label: "Gợi ý từ nguồn tham khảo",
           text: "Creator gọi cà phê trứng vào buổi sáng và dặn nên gọi ít đường."
         }
       ],
-      sourceLabel: "Câu chuyện từ video",
+      sourceLabel: "Gợi ý từ nguồn tham khảo",
       sourceText: "Creator gọi cà phê trứng vào buổi sáng và dặn nên gọi ít đường.",
       personalText: "Nhớ gọi ít đường."
     }
@@ -79,7 +109,7 @@ test("infers a source label for legacy plan revisions", () => {
       { type: "url" },
       { type: "place_provider" }
     ]),
-    "Câu chuyện từ video"
+    "Gợi ý từ nguồn tham khảo"
   );
 });
 
