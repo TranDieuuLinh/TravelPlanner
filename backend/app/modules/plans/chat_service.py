@@ -37,8 +37,13 @@ from app.modules.users.model import User
 from app.shared.errors import AppError
 
 
+class _PlaceImage(Protocol):
+    image_url: str
+
+
 class _AddressedPlace(Protocol):
     address: str | None
+    images: list[_PlaceImage]
 
 
 class _PlaceAddressRepository(Protocol):
@@ -662,13 +667,25 @@ class TripChatService:
         ]
         for day in hydrated.days:
             for item in day.items:
+                stored = None
+                if (
+                    item.place_id
+                    and self.place_repository is not None
+                    and (not item.address or not item.image_urls)
+                ):
+                    stored = self.place_repository.get(item.place_id)
+                    if stored is not None and not item.address and stored.address:
+                        item.address = stored.address
+                    if stored is not None and not item.image_urls:
+                        item.image_urls = list(
+                            dict.fromkeys(
+                                image.image_url
+                                for image in stored.images
+                                if image.image_url
+                            )
+                        )
                 if item.address:
                     continue
-                if item.place_id and self.place_repository is not None:
-                    stored = self.place_repository.get(item.place_id)
-                    if stored is not None and stored.address:
-                        item.address = stored.address
-                        continue
                 matching_review = next(
                     (
                         review
@@ -1040,6 +1057,7 @@ class TripChatService:
         expected_revision: int,
         name: str,
         place_id: str | None = None,
+        candidate_id: str | None = None,
     ) -> TripChatRead:
         chat = self.repository.get(chat_id, user.id)
         if chat.revision != expected_revision:
@@ -1060,6 +1078,7 @@ class TripChatService:
             plan,
             name=name,
             place_id=place_id,
+            candidate_id=candidate_id,
         )
         self.plan_service.repository.save(result.plan)
 

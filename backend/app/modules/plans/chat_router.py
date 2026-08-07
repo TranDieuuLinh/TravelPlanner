@@ -348,6 +348,7 @@ def remove_trip_chat_unscheduled_place(
     service: Annotated[TripChatService, Depends(get_trip_chat_service)],
     current_user: Annotated[User, Depends(require_csrf)],
     place_id: Annotated[str | None, Form(alias="placeId")] = None,
+    candidate_id: Annotated[str | None, Form(alias="candidateId")] = None,
 ) -> TripChatRead:
     return service.remove_unscheduled_place(
         chat_id,
@@ -355,6 +356,7 @@ def remove_trip_chat_unscheduled_place(
         expected_revision=expected_revision,
         name=name,
         place_id=place_id,
+        candidate_id=candidate_id,
     )
 
 

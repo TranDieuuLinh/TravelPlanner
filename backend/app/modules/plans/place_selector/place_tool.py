@@ -760,6 +760,20 @@ class RepositoryPlaceSelectionTool:
     def _to_selectable_place(self, place: Any) -> SelectablePlace:
         metadata = place.metadata_json or {}
         tags = read_tags(place)
+        image_urls = list(
+            dict.fromkeys(
+                [
+                    str(image.image_url)
+                    for image in (getattr(place, "images", None) or [])
+                    if getattr(image, "image_url", None)
+                ]
+                + [
+                    str(image_url)
+                    for image_url in (metadata.get("imageUrls", []) or [])
+                    if image_url
+                ]
+            )
+        )
         minimum_duration = _minimum_duration_minutes(metadata)
         if minimum_duration is None and place.typical_duration_minutes:
             minimum_duration = max(15, place.typical_duration_minutes // 2)
@@ -825,11 +839,7 @@ class RepositoryPlaceSelectionTool:
             priceLevel=read_price_level(place),
             rating=read_rating(place),
             reviewCount=read_review_count(place),
-            imageUrls=[
-                str(image_url)
-                for image_url in metadata.get("imageUrls", [])
-                if image_url
-            ],
+            imageUrls=image_urls,
             dataConfidence=place.data_confidence,
             sourceProvider=place.source_platform,
             sourceLink=place.source_link,
