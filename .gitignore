@@ -7,6 +7,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.runlogs/
 node_modules/
 .next/
 .next-dev
@@ -19,9 +20,10 @@ coverage/
 *.sqlite3
 
 # Local knowledge-graph database dumps (too large for GitHub)
+*.sql
 database/kg_dump.sql
 database/kg_dump_v7.sql
-database/vsf_travel_full_20260805_1548.sql
+database/travelplanner_full_20260805_1548.sql
 backend/var/*.jsonl
 backend/var/user-post-media/
 backend/var/knowledge-graph-imports/

@@ -100,7 +100,7 @@ class PlanTimingTrace:
         if self.on_update is not None:
             self.on_update(report)
         terminal_logger.info(
-            "VSF_TIMING planner %s",
+            "TRAVELPLANNER_TIMING planner %s",
             json.dumps(
                 {
                     "event": "planner_timing",

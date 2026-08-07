@@ -26,6 +26,13 @@ class InformationFinderAgent:
         intent = _intent(context)
         if intent == "explain_plan":
             return _explain_plan(context)
+        if intent == "travel_advice":
+            response_text = _decision_response(context)
+            if response_text:
+                return InformationFinderResponse(
+                    message=response_text,
+                    blocks=[{"type": "text", "text": response_text}],
+                )
         query = _query(context)
         if query is None:
             return _clarification(context)
@@ -58,7 +65,22 @@ class InformationFinderAgent:
 def _intent(context: Any) -> str:
     data = getattr(context, "data", {}) or {}
     decision = getattr(context, "decision", None)
-    return str(data.get("information_intent") or data.get("informationIntent") or getattr(decision, "information_intent", None) or ("explain_plan" if getattr(decision, "intent", None) == "explain_plan" else "ask_place"))
+    return str(
+        data.get("information_intent")
+        or data.get("informationIntent")
+        or getattr(decision, "information_intent", None)
+        or getattr(decision, "intent", None)
+        or "ask_place"
+    )
+
+
+def _decision_response(context: Any) -> str | None:
+    decision = getattr(context, "decision", None)
+    value = getattr(decision, "message", None)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value or None
 
 
 def _destination(context: Any) -> str | None:

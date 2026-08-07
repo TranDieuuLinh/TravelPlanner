@@ -20,9 +20,9 @@ def test_register_sets_session_and_returns_current_user(client: TestClient) -> N
     assert response.status_code == 201
     assert response.json()["user"]["email"] == "traveler@example.com"
     assert response.json()["user"]["role"] == "traveler"
-    assert client.cookies.get("vsf_access")
-    assert client.cookies.get("vsf_refresh")
-    assert client.cookies.get("vsf_csrf")
+    assert client.cookies.get("travelplanner_access")
+    assert client.cookies.get("travelplanner_refresh")
+    assert client.cookies.get("travelplanner_csrf")
 
     me = client.get("/api/me")
     assert me.status_code == 200
@@ -85,8 +85,8 @@ def test_login_uses_one_error_for_unknown_email_and_wrong_password(client: TestC
 
 
 def test_refresh_rotates_token_and_rejects_reuse(registered_client: TestClient) -> None:
-    old_refresh = registered_client.cookies.get("vsf_refresh")
-    old_csrf = registered_client.cookies.get("vsf_csrf")
+    old_refresh = registered_client.cookies.get("travelplanner_refresh")
+    old_csrf = registered_client.cookies.get("travelplanner_csrf")
     assert old_refresh and old_csrf
 
     refreshed = registered_client.post(
@@ -94,10 +94,10 @@ def test_refresh_rotates_token_and_rejects_reuse(registered_client: TestClient) 
         headers={"X-CSRF-Token": old_csrf},
     )
     assert refreshed.status_code == 200
-    assert registered_client.cookies.get("vsf_refresh") != old_refresh
+    assert registered_client.cookies.get("travelplanner_refresh") != old_refresh
 
-    registered_client.cookies.set("vsf_refresh", old_refresh)
-    registered_client.cookies.set("vsf_csrf", old_csrf)
+    registered_client.cookies.set("travelplanner_refresh", old_refresh)
+    registered_client.cookies.set("travelplanner_csrf", old_csrf)
     reused = registered_client.post(
         "/api/auth/refresh",
         headers={"X-CSRF-Token": old_csrf},
@@ -113,7 +113,7 @@ def test_logout_revokes_session_and_clears_cookies(registered_client: TestClient
     )
 
     assert response.status_code == 204
-    assert registered_client.cookies.get("vsf_access") is None
+    assert registered_client.cookies.get("travelplanner_access") is None
     assert registered_client.get("/api/me").status_code == 401
 
 

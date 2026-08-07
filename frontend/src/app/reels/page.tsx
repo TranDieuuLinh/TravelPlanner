@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAuth } from "@/components/AuthProvider";
-import { mockExplorePosts } from "@/data/demo";
-import { APIError } from "@/lib/api";
-import { searchListings } from "@/lib/marketplace";
-import { createCheckoutSession } from "@/lib/orders";
-import { getTravelGroups, joinTravelGroup } from "@/lib/travel-groups";
-import { getExplorePosts } from "@/lib/users";
-import type { ListingSummary, ListingVersion } from "@/types/marketplace";
-import type { ExplorePost } from "@/types/profile";
-import type { TravelGroup } from "@/types/travel-groups";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { mockExplorePosts } from "@/features/explore/demo";
+import { APIError } from "@/shared/api/client";
+import { searchListings } from "@/features/marketplace/api";
+import { createCheckoutSession } from "@/features/orders/api";
+import { getTravelGroups, joinTravelGroup } from "@/features/travel-groups/api";
+import { getExplorePosts } from "@/features/profile/api";
+import type { ListingSummary, ListingVersion } from "@/features/marketplace/types";
+import type { ExplorePost } from "@/features/profile/types";
+import type { TravelGroup } from "@/features/travel-groups/types";
 
 const categoryLabels: Record<string, string> = {
   budget: "Tiết kiệm",
@@ -284,7 +284,7 @@ export default function ReelsPage() {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(window.localStorage.getItem("vsf-promotion-cart") ?? "[]");
+      const saved = JSON.parse(window.localStorage.getItem("travelplanner-promotion-cart") ?? "[]");
       if (Array.isArray(saved)) setCartIds(saved.filter((id): id is string => typeof id === "string"));
     } catch {
       setCartIds([]);
@@ -358,13 +358,13 @@ export default function ReelsPage() {
   const viewerOpen = viewerIndex !== null;
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("vsf:reel-viewer-change", {
+    window.dispatchEvent(new CustomEvent("travelplanner:reel-viewer-change", {
       detail: { open: viewerOpen },
     }));
 
     return () => {
       if (viewerOpen) {
-        window.dispatchEvent(new CustomEvent("vsf:reel-viewer-change", {
+        window.dispatchEvent(new CustomEvent("travelplanner:reel-viewer-change", {
           detail: { open: false },
         }));
       }
@@ -390,7 +390,7 @@ export default function ReelsPage() {
 
   function persistCart(nextIds: string[]) {
     setCartIds(nextIds);
-    window.localStorage.setItem("vsf-promotion-cart", JSON.stringify(nextIds));
+    window.localStorage.setItem("travelplanner-promotion-cart", JSON.stringify(nextIds));
   }
 
   function toggleCart(planId: string) {
@@ -616,7 +616,7 @@ export default function ReelsPage() {
         <section aria-labelledby="community-posts-title" className="communityExploreSection">
           <div className="communityExploreHeading">
             <div>
-              <span>Cộng đồng VSF</span>
+              <span>Cộng đồng TravelPlanner</span>
               <h2 id="community-posts-title">Khoảnh khắc mới nhất</h2>
             </div>
             {user ? <button onClick={() => router.push("/profile")} type="button">＋ Đăng bài</button> : null}

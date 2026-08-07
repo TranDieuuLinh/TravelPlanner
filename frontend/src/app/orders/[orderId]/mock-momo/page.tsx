@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError, apiFetch } from "@/lib/api";
-import { getOrderDetail } from "@/lib/orders";
-import type { OrderDetail } from "@/types/orders";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError, apiFetch } from "@/shared/api/client";
+import { getOrderDetail } from "@/features/orders/api";
+import type { OrderDetail } from "@/features/orders/types";
 
 export default function MockMoMoPage() {
   const params = useParams();
@@ -106,7 +106,7 @@ export default function MockMoMoPage() {
           <div className="orderMetaBox">
             <div className="metaRow">
               <span>Đơn vị chấp nhận:</span>
-              <strong>VSF Travel Planner</strong>
+              <strong>TravelPlanner</strong>
             </div>
             <div className="metaRow">
               <span>Mã đơn hàng:</span>

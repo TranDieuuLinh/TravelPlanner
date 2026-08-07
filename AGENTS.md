@@ -1,11 +1,11 @@
 # AGENTS.md
 
-Đây là điểm bắt đầu dành cho các coding agent làm việc với VSF Travel Planner.
+Đây là điểm bắt đầu dành cho các coding agent làm việc với TravelPlanner.
 Phải đọc file này trước khi thay đổi code.
 
 ## Tóm tắt sản phẩm
 
-VSF Travel Planner có hai năng lực cùng nằm trong MVP. Năng lực cốt lõi là biến
+TravelPlanner có hai năng lực cùng nằm trong MVP. Năng lực cốt lõi là biến
 URL video hoặc nội dung tham khảo thành địa điểm và ngữ cảnh có nguồn, để người
 dùng xác nhận trước khi Planner tạo Main Plan, kiểm tra tính khả thi và tạo
 Backup Plan riêng khi cần. Năng lực Marketplace cho phép creator xuất bản và bán
@@ -64,7 +64,7 @@ API.
 - Dữ liệu nghiệp vụ phải được lưu thông qua repository. Repository trong bộ nhớ
   chỉ phù hợp cho prototype và test.
 - Runtime và migration không được kết nối vào database bảo trì mặc định
-  `postgres`. Phải dùng database ứng dụng riêng (hiện là `vsf_travel`); database
+  `postgres`. Phải dùng database ứng dụng riêng (hiện là `travelplanner`); database
   test tích hợp cũng phải có tên riêng.
 - Plan đã mua phải tạo ra một bản sao cá nhân; chỉnh sửa bản sao không được thay
   đổi phiên bản creator đã xuất bản.

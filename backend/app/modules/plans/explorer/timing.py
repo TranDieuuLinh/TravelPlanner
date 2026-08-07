@@ -332,7 +332,7 @@ class ExplorerTimingLogger:
             for attempt in terminal_payload.get("providerAttempts", [])
         ]
         terminal_logger.info(
-            "VSF_TIMING explorer %s",
+            "TRAVELPLANNER_TIMING explorer %s",
             json.dumps(
                 terminal_payload,
                 ensure_ascii=False,

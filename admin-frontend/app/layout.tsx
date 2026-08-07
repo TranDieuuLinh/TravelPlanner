@@ -9,7 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
     requestHeaders.get("x-forwarded-proto") ??
     (host?.startsWith("localhost") ? "http" : "https");
   const origin = host ? `${protocol}://${host}` : "http://localhost:3001";
-  const title = "VSF Planning Control";
+  const title = "TravelPlanner Control";
   const description =
     "Internal observability console for Explorer, Planner, Finder and Checker.";
   return {

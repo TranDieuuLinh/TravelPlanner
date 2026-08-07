@@ -13,9 +13,9 @@ from app.modules.users.repository import UserRepository
 from app.modules.users.schema import UserRole
 from app.shared.errors import AppError
 
-ACCESS_COOKIE = "vsf_access"
-REFRESH_COOKIE = "vsf_refresh"
-CSRF_COOKIE = "vsf_csrf"
+ACCESS_COOKIE = "travelplanner_access"
+REFRESH_COOKIE = "travelplanner_refresh"
+CSRF_COOKIE = "travelplanner_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 
 

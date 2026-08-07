@@ -21,7 +21,7 @@ def _set_creator_verified(db: Session, email: str) -> User:
 
 def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -> None:
     """
-    Kiểm thử E2E tổng hợp nghiệm thu cuối cùng (Mục 16 - docs/12-roadmap-person-c.md),
+    Kiểm thử E2E tổng hợp nghiệm thu Auth, Profile và Marketplace,
     bao phủ toàn bộ chuỗi nghiệp vụ Marketplace từ Tuần 1 đến Tuần 6.
     """
     # =========================================================================
@@ -42,7 +42,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         json={"email": "chau_creator@example.com", "password": "Password123!"},
     )
     assert login_creator.status_code == 200
-    csrf_creator = login_creator.cookies.get("vsf_csrf") or ""
+    csrf_creator = login_creator.cookies.get("travelplanner_csrf") or ""
 
     # =========================================================================
     # BƯỚC 2: Gửi creator application
@@ -70,7 +70,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "chau_creator@example.com", "password": "Password123!"},
     )
-    csrf_creator = login_creator.cookies.get("vsf_csrf") or ""
+    csrf_creator = login_creator.cookies.get("travelplanner_csrf") or ""
 
     draft_res = client.post(
         "/api/creator/listings",
@@ -115,7 +115,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "admin_e2e@example.com", "password": "Password123!"},
     )
-    csrf_admin = login_admin.cookies.get("vsf_csrf") or ""
+    csrf_admin = login_admin.cookies.get("travelplanner_csrf") or ""
 
     approve_listing = client.post(
         f"/api/admin/listings/{version_v1_id}/review",
@@ -130,7 +130,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "chau_creator@example.com", "password": "Password123!"},
     )
-    csrf_creator = login_creator.cookies.get("vsf_csrf") or ""
+    csrf_creator = login_creator.cookies.get("travelplanner_csrf") or ""
 
     publish_res = client.post(
         f"/api/creator/listings/{listing_id}/publish",
@@ -156,7 +156,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         json={"email": "buyer_e2e@example.com", "password": "Password123!"},
     )
     assert login_buyer.status_code == 200
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
 
     list_public = client.get("/api/listings?query=Đà Nẵng")
     assert list_public.status_code == 200
@@ -194,7 +194,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "orderId": order_id,
         "requestId": f"req_e2e_{order_id}",
         "amount": 299000,
-        "orderInfo": "Thanh toan VSF Travel Planner E2E",
+        "orderInfo": "Thanh toan TravelPlanner E2E",
         "orderType": "momo_wallet",
         "transId": 246813579,
         "resultCode": 0,
@@ -250,7 +250,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "chau_creator@example.com", "password": "Password123!"},
     )
-    csrf_creator = login_creator.cookies.get("vsf_csrf") or ""
+    csrf_creator = login_creator.cookies.get("travelplanner_csrf") or ""
 
     # Creator cập nhật listing sang v2
     update_res = client.patch(
@@ -272,7 +272,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "buyer_e2e@example.com", "password": "Password123!"},
     )
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
 
     rev_res = client.post(
         f"/api/listings/{listing_id}/reviews",
@@ -302,7 +302,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
         "/api/auth/login",
         json={"email": "admin_e2e@example.com", "password": "Password123!"},
     )
-    csrf_admin = login_admin.cookies.get("vsf_csrf") or ""
+    csrf_admin = login_admin.cookies.get("travelplanner_csrf") or ""
 
     # Admin chọn dismiss report
     resolve_res = client.post(
@@ -337,7 +337,7 @@ def test_person_c_e2e_acceptance_flow(client: TestClient, db_session: Session) -
     assert matching_plan_refunded["copiedPlanId"] == copied_plan_id  # Bảo toàn bản copy!
 
     # Buyer bị block không gửi được đánh giá sau khi đã refund
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
     rev_after_refund = client.post(
         f"/api/listings/{listing_id}/reviews",
         json={"rating": 1, "comment": "Đã hoàn tiền"},

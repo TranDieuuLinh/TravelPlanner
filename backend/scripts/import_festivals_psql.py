@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--csv",
         type=str,
-        default="K:/VSF/VSF_TravelPlanner/auto-crawl/festival-detail.csv",
+        default="K:/travelplanner/auto-crawl/festival-detail.csv",
         help="Path to CSV file",
     )
     parser.add_argument(
@@ -108,8 +108,8 @@ if __name__ == "__main__":
         "psql",
         "-h", args.host,
         "-p", args.port,
-        "-U", "vsf",
-        "-d", "vsf_travel",
+        "-U", "travelplanner",
+        "-d", "travelplanner",
         "-c",
         f"\\COPY festivals (id, source_id, source_url, name, venue, scale_level, timing, province, district, deity, ceremony_part, festival_part, festival_type, documentation, protection_measure, registration_time, recurrence, listed_year, metadata, created_at, updated_at) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t', NULL '\\\\N')"
     ]
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         input=output.getvalue(),
         capture_output=True,
         text=True,
-        env={"PGPASSWORD": "vsf", **subprocess.os.environ}
+        env={"PGPASSWORD": "travelplanner", **subprocess.os.environ}
     )
 
     if result.returncode != 0:

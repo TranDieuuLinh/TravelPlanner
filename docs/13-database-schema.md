@@ -1,6 +1,6 @@
 # Database schema
 
-Tài liệu này mô tả database mục tiêu cho VSF Travel dựa trên codebase hiện tại và
+Tài liệu này mô tả database mục tiêu cho TravelPlanner dựa trên codebase hiện tại và
 danh sách bảng chính đã chốt. Bảng trạng thái bên dưới phân biệt phần đã có
 model/migration với schema mục tiêu chưa triển khai.
 

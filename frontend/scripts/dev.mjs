@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 
 const projectRoot = process.cwd();
 const devOutputLink = join(projectRoot, ".next-dev");
-const devOutputTarget = join(tmpdir(), "VSF_TravelPlanner_next-dev");
+const devOutputTarget = join(tmpdir(), "travelplanner_next-dev");
 const nodeModules = join(projectRoot, "node_modules");
 const nextCli = join(nodeModules, "next", "dist", "bin", "next");
 

@@ -257,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--csv",
         type=str,
-        default="K:/VSF/VSF_TravelPlanner/auto-crawl/festival-detail.csv",
+        default="K:/travelplanner/auto-crawl/festival-detail.csv",
         help="Path to CSV file",
     )
     parser.add_argument(

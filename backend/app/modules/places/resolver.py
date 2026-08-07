@@ -264,7 +264,7 @@ class GoogleMapsSearchClient:
         if not self.executable:
             raise ValueError("Google Maps scraper executable is missing.")
         with tempfile.TemporaryDirectory(
-            prefix="vsf-gmaps-search-"
+            prefix="travelplanner-gmaps-search-"
         ) as temp_dir:
             temp_path = Path(temp_dir)
             input_path = temp_path / "queries.txt"
@@ -1019,7 +1019,7 @@ def _database_resolution(
         fetchedAt=record.source_fetched_at,
         attribution=(
             _optional_text(metadata.get("attribution"))
-            or "VSF Travel place catalog"
+            or "TravelPlanner place catalog"
         ),
     )
 
@@ -1470,7 +1470,7 @@ class GoogleMapsScraperPlaceResolver(PlaceResolver):
         if not self.executable:
             raise ValueError("Google Maps scraper executable is missing.")
         with tempfile.TemporaryDirectory(
-            prefix="vsf-google-maps-"
+            prefix="travelplanner-google-maps-"
         ) as temp_dir:
             temp_path = Path(temp_dir)
             input_path = temp_path / "queries.txt"

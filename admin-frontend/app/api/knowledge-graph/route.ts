@@ -42,7 +42,7 @@ async function hasAdminSession(request: NextRequest): Promise<boolean> {
 }
 
 function hasValidCsrf(request: NextRequest): boolean {
-  const cookieValue = request.cookies.get("vsf_csrf")?.value;
+  const cookieValue = request.cookies.get("travelplanner_csrf")?.value;
   const headerValue = request.headers.get("x-csrf-token");
   if (!cookieValue || !headerValue) return false;
   try {

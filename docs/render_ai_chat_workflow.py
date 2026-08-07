@@ -121,7 +121,7 @@ def pill(x: int, y: int, label: str, fill: str, color: str) -> int:
 
 
 # Header
-draw.text((90, 60), "VSF Travel — Current AI Chat Workflow", font=font(52, bold=True), fill=INK)
+draw.text((90, 60), "TravelPlanner — Current AI Chat Workflow", font=font(52, bold=True), fill=INK)
 draw.text(
     (92, 126),
     "One UI send creates a new intake, then a deterministic travel plan.",

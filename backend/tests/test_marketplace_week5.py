@@ -135,7 +135,7 @@ def test_buyer_review_flow_and_permissions(client: TestClient, db_session: Sessi
         "/api/auth/login",
         json={"email": "other_traveler@example.com", "password": "Password123!"},
     )
-    csrf_other = login_other.cookies.get("vsf_csrf") or ""
+    csrf_other = login_other.cookies.get("travelplanner_csrf") or ""
 
     forbidden_rev = client.post(
         f"/api/listings/{plan.id}/reviews",
@@ -150,7 +150,7 @@ def test_buyer_review_flow_and_permissions(client: TestClient, db_session: Sessi
         "/api/auth/login",
         json={"email": "buyer_week5@example.com", "password": "Password123!"},
     )
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
 
     review_res = client.post(
         f"/api/listings/{plan.id}/reviews",
@@ -193,7 +193,7 @@ def test_listing_report_and_admin_moderation(client: TestClient, db_session: Ses
         "/api/auth/login",
         json={"email": "buyer_week5@example.com", "password": "Password123!"},
     )
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
 
     report_res = client.post(
         f"/api/listings/{plan.id}/reports",
@@ -221,7 +221,7 @@ def test_listing_report_and_admin_moderation(client: TestClient, db_session: Ses
         "/api/auth/login",
         json={"email": "admin_week5@example.com", "password": "Password123!"},
     )
-    csrf_admin = login_admin.cookies.get("vsf_csrf") or ""
+    csrf_admin = login_admin.cookies.get("travelplanner_csrf") or ""
 
     # 3. Admin queries reports
     admin_rep_res = client.get("/api/admin/reports")
@@ -263,7 +263,7 @@ def test_admin_order_refund_and_audit_events(client: TestClient, db_session: Ses
         "/api/auth/login",
         json={"email": "admin_refund@example.com", "password": "Password123!"},
     )
-    csrf_admin = login_admin.cookies.get("vsf_csrf") or ""
+    csrf_admin = login_admin.cookies.get("travelplanner_csrf") or ""
 
     # 1. Admin refunds order
     refund_res = client.post(
@@ -285,7 +285,7 @@ def test_admin_order_refund_and_audit_events(client: TestClient, db_session: Ses
     assert plans_buyer[0]["copiedPlanId"] == "my_copied_plan_dl_001"  # Copied plan preserved!
 
     # 3. Buyer cannot review after refund
-    csrf_buyer = login_buyer.cookies.get("vsf_csrf") or ""
+    csrf_buyer = login_buyer.cookies.get("travelplanner_csrf") or ""
     rev_after_refund = client.post(
         f"/api/listings/{plan.id}/reviews",
         json={"rating": 5, "comment": "Thử đánh giá sau khi hoàn tiền."},
@@ -299,7 +299,7 @@ def test_admin_order_refund_and_audit_events(client: TestClient, db_session: Ses
         "/api/auth/login",
         json={"email": "admin_refund@example.com", "password": "Password123!"},
     )
-    csrf_admin = login_admin.cookies.get("vsf_csrf") or ""
+    csrf_admin = login_admin.cookies.get("travelplanner_csrf") or ""
 
     refund_again = client.post(
         f"/api/admin/orders/{order.id}/refund",

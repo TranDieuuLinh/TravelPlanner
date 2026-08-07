@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 _CREATE_STRIP_FUNCTION = r"""
-CREATE FUNCTION pg_temp.vsf_strip_provider_plan_notes(payload jsonb)
+CREATE FUNCTION pg_temp.travelplanner_strip_provider_plan_notes(payload jsonb)
 RETURNS jsonb
 LANGUAGE sql
 IMMUTABLE
@@ -84,7 +84,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE trip_chats
-        SET current_plan = pg_temp.vsf_strip_provider_plan_notes(current_plan::jsonb)::json
+        SET current_plan = pg_temp.travelplanner_strip_provider_plan_notes(current_plan::jsonb)::json
         WHERE current_plan IS NOT NULL
           AND (
               current_plan::text LIKE '%\"type\": \"place_provider\"%'
@@ -95,7 +95,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE trip_revisions
-        SET plan_payload = pg_temp.vsf_strip_provider_plan_notes(plan_payload::jsonb)::json
+        SET plan_payload = pg_temp.travelplanner_strip_provider_plan_notes(plan_payload::jsonb)::json
         WHERE plan_payload IS NOT NULL
           AND (
               plan_payload::text LIKE '%\"type\": \"place_provider\"%'
@@ -106,7 +106,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE marketplace_plan_versions
-        SET preview_snapshot = pg_temp.vsf_strip_provider_plan_notes(
+        SET preview_snapshot = pg_temp.travelplanner_strip_provider_plan_notes(
             preview_snapshot::jsonb
         )::json
         WHERE preview_snapshot IS NOT NULL

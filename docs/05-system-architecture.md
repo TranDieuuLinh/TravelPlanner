@@ -32,7 +32,7 @@ không phải cấu hình ứng dụng. Container backend chạy Alembic trướ
 động FastAPI; ứng dụng không dùng `create_all()` để âm thầm thay đổi schema.
 Database bảo trì mặc định `postgres` không được dùng cho runtime, migration hay
 test tích hợp. Mỗi môi trường phải trỏ `DATABASE_URL` tới database ứng dụng riêng;
-database local/Docker hiện tại là `vsf_travel`. Backend từ chối khởi động nếu URL
+database local/Docker hiện tại là `travelplanner`. Backend từ chối khởi động nếu URL
 trỏ tới database `postgres`.
 Docker dùng image `pgvector/pgvector:0.8.2-pg16` để các development volume từng
 áp dụng migration embedding đã revert vẫn đọc được kiểu `vector`. Runtime hiện
@@ -287,10 +287,12 @@ Trip chat URL message -> url_import_jobs (queued) -> single worker
 ## Ranh giới frontend
 
 - `src/app/`: route, layout và kết hợp page.
-- `src/modules/<feature>/`: component, API client, schema và type do từng tính
-  năng sở hữu.
-- `src/lib/`: hạ tầng dùng chung như HTTP transport.
-- `src/config/`: cấu hình môi trường đã được kiểm tra.
+- `src/features/<feature>/`: API client, component, hook, type và utility do
+  từng tính năng sở hữu. Module hiện tại gồm `auth`, `explore`, `marketplace`,
+  `orders`, `places`, `planner`, `profile` và `travel-groups`.
+- `src/shared/`: hạ tầng không thuộc riêng feature nào, hiện gồm HTTP transport.
+- `src/components/`: component cấp ứng dụng hoặc visual dùng chung; không đặt
+  component nghiệp vụ mới ở đây.
 
 Server state phải nằm trong API/query boundary của feature; trạng thái tạm thời
 của trình chỉnh sửa nằm trong editor feature. Không được sao chép validation của

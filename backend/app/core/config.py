@@ -17,9 +17,9 @@ def _gemini_keys(value: str | None) -> tuple[str, ...]:
 
 
 class Settings(BaseSettings):
-    app_name: str = "VSF Travel API"
+    app_name: str = "TravelPlanner API"
     app_env: str = "local"
-    database_url: str = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
+    database_url: str = "postgresql+psycopg://travelplanner:travelplanner@localhost:5432/travelplanner"
     backend_cors_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001"
     )
@@ -312,7 +312,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must not use the PostgreSQL maintenance "
                 "database 'postgres'; configure a dedicated application "
-                "database such as 'vsf_travel'"
+                "database such as 'travelplanner'"
             )
         if self.app_env not in {"local", "test"}:
             if self.jwt_secret == "local-only-change-me":

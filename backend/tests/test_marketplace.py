@@ -20,7 +20,7 @@ def test_traveler_cannot_create_listing(client: TestClient, db_session: Session)
     # Register a traveler
     res = client.post("/api/auth/register", json={"email": "traveler1@example.com", "password": "Password123!", "fullName": "Traveler One"})
     assert res.status_code == 201
-    csrf = res.cookies.get("vsf_csrf") or ""
+    csrf = res.cookies.get("travelplanner_csrf") or ""
 
     # Try creating listing
     create_res = client.post(
@@ -42,7 +42,7 @@ def test_creator_listing_full_workflow(client: TestClient, db_session: Session) 
     # 1. Register user and make them creator
     creator_res = client.post("/api/auth/register", json={"email": "creator1@example.com", "password": "Password123!", "fullName": "Creator One"})
     assert creator_res.status_code == 201
-    creator_csrf = creator_res.cookies.get("vsf_csrf") or ""
+    creator_csrf = creator_res.cookies.get("travelplanner_csrf") or ""
 
     creator_user = set_user_role(db_session, "creator1@example.com", "creator")
 
@@ -186,7 +186,7 @@ def test_cannot_edit_other_creator_listing(client: TestClient, db_session: Sessi
     # Creator A
     res_a = client.post("/api/auth/register", json={"email": "creatorA@example.com", "password": "Password123!", "fullName": "Creator A"})
     assert res_a.status_code == 201, f"res_a status: {res_a.status_code}, body: {res_a.text}"
-    csrf_a = res_a.cookies.get("vsf_csrf") or ""
+    csrf_a = res_a.cookies.get("travelplanner_csrf") or ""
     set_user_role(db_session, "creatorA@example.com", "creator")
 
     create_res = client.post(
@@ -198,7 +198,7 @@ def test_cannot_edit_other_creator_listing(client: TestClient, db_session: Sessi
 
     # Creator B
     res_b = client.post("/api/auth/register", json={"email": "creatorB@example.com", "password": "Password123!", "fullName": "Creator B"})
-    csrf_b = res_b.cookies.get("vsf_csrf") or ""
+    csrf_b = res_b.cookies.get("travelplanner_csrf") or ""
     set_user_role(db_session, "creatorB@example.com", "creator")
 
     # Creator B tries to update listing A

@@ -1,4 +1,4 @@
-"""Golden conversation cases for the VSF Travel Supervisor.
+"""Golden conversation cases for the TravelPlanner Supervisor.
 
 These cases test the contract around a conversational model rather than
 pretending a mocked model proves model quality. They cover customer support,

@@ -124,8 +124,8 @@ class MoMoAdapter:
 
         request_body = {
             "partnerCode": self.partner_code,
-            "partnerName": "VSF Travel Planner",
-            "storeId": "VSF_Store",
+            "partnerName": "TravelPlanner",
+            "storeId": "TravelPlanner_Store",
             "requestId": request_id,
             "amount": amount,
             "orderId": order_id,
