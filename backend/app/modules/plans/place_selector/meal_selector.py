@@ -270,7 +270,18 @@ class MealStopSelector:
         ).casefold()
         if any(
             re.search(rf"\b{term}\b", text)
-            for term in ("supplier", "store", "supermarket", "school", "market")
+            for term in (
+                "supplier",
+                "store",
+                "supermarket",
+                "school",
+                "market",
+                "distributor",
+                "exporter",
+                "showroom",
+                "wholesaler",
+                "factory",
+            )
         ):
             return False
         return is_meal_place(
