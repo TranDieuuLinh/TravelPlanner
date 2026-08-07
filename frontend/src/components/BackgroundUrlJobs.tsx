@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteUrlImportJob,
@@ -73,6 +74,26 @@ function timingLabel(totalSeconds: number) {
   return totalSeconds < 10
     ? `${totalSeconds.toFixed(2)} giây`
     : `${totalSeconds.toFixed(1)} giây`;
+}
+
+function preciseElapsedLabel(totalSeconds: number) {
+  const normalized = Math.max(0, totalSeconds);
+  if (normalized < 60) return timingLabel(normalized);
+  const minutes = Math.floor(normalized / 60);
+  const seconds = normalized - minutes * 60;
+  return `${minutes} phút ${seconds.toFixed(seconds < 10 ? 1 : 0).padStart(seconds < 10 ? 4 : 2, "0")} giây`;
+}
+
+function stageShareLabel(durationSeconds: number, totalSeconds: number) {
+  if (totalSeconds <= 0) return "0%";
+  return `${Math.round((Math.max(0, durationSeconds) / totalSeconds) * 100)}%`;
+}
+
+function sortedSlowStages(stages: Array<ExplorerTimingStage | PlanTimingStage>, limit = 3) {
+  return [...stages]
+    .filter((stage) => stage.durationSeconds > 0)
+    .sort((left, right) => right.durationSeconds - left.durationSeconds)
+    .slice(0, limit);
 }
 
 function detailLabel(value: string | number | boolean | null) {
@@ -152,10 +173,12 @@ function statusLabel(job: DisplayJob, now: number) {
 
 function TimingStages({
   label,
-  stages
+  stages,
+  totalSeconds
 }: {
   label: string;
   stages: Array<ExplorerTimingStage | PlanTimingStage>;
+  totalSeconds?: number;
 }) {
   if (stages.length === 0) return null;
   return (
@@ -185,7 +208,10 @@ function TimingStages({
                   </span>
                 ) : null}
               </span>
-              <b>{timingLabel(Math.max(0, stage.durationSeconds))}</b>
+              <span className="backgroundJobTimingDuration">
+                <b>{timingLabel(Math.max(0, stage.durationSeconds))}</b>
+                {totalSeconds ? <small>{stageShareLabel(stage.durationSeconds, totalSeconds)}</small> : null}
+              </span>
             </li>
           );
         })}
@@ -273,7 +299,7 @@ function ProviderAttempts({
                 <span><b>Tra cứu</b> {lookupCount} {isKnowledgeGraph ? "tên" : "truy vấn"}</span>
                 <span><b>Chờ</b> {timingLabel(attempt.queueWaitSeconds)}</span>
                 <span><b>Chạy</b> {timingLabel(attempt.executionSeconds)}</span>
-              <span><b>Kết quả</b> {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
+                <span><b>Kết quả</b> {attempt.outcome === "resolved" || attempt.outcome === "cache_hit"
                   ? attempt.outcome === "cache_hit" ? "đã dùng cache" : "đã xác định"
                   : attempt.rejectionReason ?? attempt.outcome}</span>
               </div>
@@ -305,14 +331,54 @@ function JobTimingDetails({
   sourceUrl: string;
 }) {
   if (!explorer && !planner && !running) return null;
+  const completedTotalSeconds = (explorer?.totalSeconds ?? 0) + (planner?.totalSeconds ?? 0);
+  const visibleTotalSeconds = completedTotalSeconds > 0 ? completedTotalSeconds : elapsed;
+  const slowPlannerStages = sortedSlowStages(planner?.stages ?? []);
+  const slowExplorerStages = sortedSlowStages(explorer?.stages ?? []);
 
   return (
     <div className="backgroundJobTiming">
+      {visibleTotalSeconds > 0 ? (
+        <section className="backgroundJobTimingOverview">
+          <header>
+            <strong>Thời gian xử lý</strong>
+            <b>{preciseElapsedLabel(visibleTotalSeconds)}</b>
+          </header>
+          <div className="backgroundJobTimingBars">
+            {explorer ? (
+              <span style={{ "--share": `${stageShareLabel(explorer.totalSeconds, visibleTotalSeconds)}` } as CSSProperties}>
+                <b>Explorer</b>
+                <small>{timingLabel(explorer.totalSeconds)} · {stageShareLabel(explorer.totalSeconds, visibleTotalSeconds)}</small>
+              </span>
+            ) : null}
+            {planner ? (
+              <span style={{ "--share": `${stageShareLabel(planner.totalSeconds, visibleTotalSeconds)}` } as CSSProperties}>
+                <b>Planner + Finder</b>
+                <small>{timingLabel(planner.totalSeconds)} · {stageShareLabel(planner.totalSeconds, visibleTotalSeconds)}</small>
+              </span>
+            ) : null}
+          </div>
+          {slowPlannerStages.length || slowExplorerStages.length ? (
+            <div className="backgroundJobSlowStages">
+              <small>Chậm nhất</small>
+              {[...slowPlannerStages, ...slowExplorerStages]
+                .sort((left, right) => right.durationSeconds - left.durationSeconds)
+                .slice(0, 3)
+                .map((stage) => (
+                  <span key={`slow-${stage.key}`}>
+                    {stage.label}
+                    <b>{timingLabel(stage.durationSeconds)}</b>
+                  </span>
+                ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {explorer ? (
         <section className="backgroundJobTimingSummary">
           <header>
             <strong>Kết quả địa điểm</strong>
-            <b>{timingLabel(explorer.totalSeconds)}</b>
+            <b>{preciseElapsedLabel(explorer.totalSeconds)}</b>
           </header>
           <div className="backgroundJobTimingChips">
             <span>
@@ -327,7 +393,7 @@ function JobTimingDetails({
             resolved={explorer.resolvedProviderCounts}
           />
           <ProviderAttempts attempts={explorer.providerAttempts} />
-          <TimingStages label="Các bước Explorer" stages={explorer.stages} />
+          <TimingStages label="Các bước Explorer" stages={explorer.stages} totalSeconds={explorer.totalSeconds} />
           {explorer.sources.map((source) => (
             <section
               className="backgroundJobSourceTiming"
@@ -335,7 +401,7 @@ function JobTimingDetails({
             >
               <header>
                 <strong>URL {source.sourceIndex} · {source.platform}</strong>
-                <b>{timingLabel(source.totalSeconds)}</b>
+                <b>{preciseElapsedLabel(source.totalSeconds)}</b>
               </header>
               <small>
                 Cache URL {sourceLabel(sourceUrl)}: {cacheStatusLabel(source.cacheStatus)}
@@ -384,7 +450,7 @@ function JobTimingDetails({
                 processed={source.providerCounts}
                 resolved={source.resolvedProviderCounts}
               />
-              <TimingStages label="Chi tiết URL" stages={source.stages} />
+              <TimingStages label="Chi tiết URL" stages={source.stages} totalSeconds={source.totalSeconds} />
             </section>
           ))}
         </section>
@@ -406,7 +472,7 @@ function JobTimingDetails({
         <section className="backgroundJobTimingSummary">
           <header>
             <strong>{planner.status === "running" ? "Planner + Finder đang chạy" : "Planner + Finder"}</strong>
-            <b>{timingLabel(planner.totalSeconds)}</b>
+            <b>{preciseElapsedLabel(planner.totalSeconds)}</b>
           </header>
           <div className="backgroundJobTimingChips">
             {planner.status === "running" ? (
@@ -421,7 +487,7 @@ function JobTimingDetails({
               </>
             )}
           </div>
-          <TimingStages label="Các bước Planner + Finder" stages={planner.stages} />
+          <TimingStages label="Các bước Planner + Finder" stages={planner.stages} totalSeconds={planner.totalSeconds} />
         </section>
       ) : running && explorer ? (
         <section className="backgroundJobTimingSummary backgroundJobTimingPending">
@@ -565,6 +631,8 @@ export function BackgroundUrlJobs({
         : { step: 3, label: "Lập kế hoạch" }
     : null;
   const activeCount = running + queued + activeTurns.length;
+  if (placement === "planner-chat" && activeCount === 0) return null;
+
   const primaryElapsed = primaryTurn
     ? Math.max(0, Math.floor((now - Date.parse(primaryTurn.createdAt)) / 1000))
     : primaryRunningJob

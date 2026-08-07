@@ -9,6 +9,7 @@ from app.modules.auth.dependencies import get_current_user, require_csrf
 from app.modules.knowledge_graph.place_repository import KnowledgeGraphPlaceRepository
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import (
+    ConfirmCandidateResolutionRequest,
     RetryCandidateResolutionsRequest,
     RouteEnrichmentRequest,
     TripChatCreate,
@@ -259,6 +260,25 @@ async def retry_trip_chat_candidate_resolutions(
         chat_id,
         current_user,
         expected_revision=payload.expected_revision,
+    )
+
+
+@router.post(
+    "/{chat_id}/candidate-resolutions/confirm",
+    response_model=TripChatRead,
+)
+async def confirm_trip_chat_candidate_resolution(
+    chat_id: str,
+    payload: ConfirmCandidateResolutionRequest,
+    service: Annotated[TripChatService, Depends(get_trip_chat_service)],
+    current_user: Annotated[User, Depends(require_csrf)],
+) -> TripChatRead:
+    return await service.confirm_candidate_resolution(
+        chat_id,
+        current_user,
+        expected_revision=payload.expected_revision,
+        candidate_id=payload.candidate_id,
+        match_rank=payload.match_rank,
     )
 
 

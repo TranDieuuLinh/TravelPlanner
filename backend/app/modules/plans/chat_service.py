@@ -797,6 +797,134 @@ class TripChatService:
         self.repository.db.commit()
         return self._read(saved)
 
+    async def confirm_candidate_resolution(
+        self,
+        chat_id: str,
+        user: User,
+        *,
+        expected_revision: int,
+        candidate_id: str,
+        match_rank: int,
+    ) -> TripChatRead:
+        chat = self.repository.get(chat_id, user.id)
+        if chat.revision != expected_revision:
+            raise AppError(
+                409,
+                "VERSION_CONFLICT",
+                "Lịch trình đã được cập nhật ở phiên khác. Hãy tải lại trước khi chọn địa điểm.",
+            )
+        if chat.current_trip_intent is None or chat.current_plan is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_EXPLORER",
+                "Chưa có kết quả Explorer để xác nhận địa điểm.",
+            )
+        explorer = self._current_context(chat)
+        if explorer is None:
+            raise AppError(
+                400,
+                "NO_ACTIVE_TRIP_INTENT",
+                "Chưa có Trip Intent đã lưu cho cuộc trò chuyện này.",
+            )
+        review = next(
+            (
+                item
+                for item in explorer.candidate_reviews
+                if item.candidate_id == candidate_id
+            ),
+            None,
+        )
+        if review is None or review.status != "needs_review":
+            raise AppError(
+                404,
+                "CANDIDATE_NOT_REVIEWABLE",
+                "Địa điểm này không còn cần xác nhận.",
+            )
+        match = next(
+            (item for item in review.top_matches if item.rank == match_rank),
+            None,
+        )
+        if match is None:
+            raise AppError(
+                404,
+                "MATCH_NOT_FOUND",
+                "Không tìm thấy kết quả khớp đã chọn cho địa điểm này.",
+            )
+        if match.latitude is None or match.longitude is None:
+            raise AppError(
+                422,
+                "MATCH_MISSING_LOCATION",
+                "Kết quả này chưa có tọa độ nên chưa thể thêm vào lịch trình.",
+            )
+
+        confirmed_review = review.model_copy(
+            update={
+                "status": "resolved",
+                "resolution_reason": "user_confirmed_top_match",
+                "provider": match.provider,
+                "resolved_name": match.name,
+                "address": match.address,
+                "latitude": match.latitude,
+                "longitude": match.longitude,
+                "has_representative_location": True,
+                "resolution_confidence": max(review.resolution_confidence, match.score),
+                "confidence": max(review.confidence, match.score),
+                "top_matches": [
+                    candidate.model_copy(
+                        update={"selected": candidate.rank == match.rank}
+                    )
+                    for candidate in review.top_matches
+                ],
+            }
+        )
+        reviews = [
+            confirmed_review if item.candidate_id == candidate_id else item
+            for item in explorer.candidate_reviews
+        ]
+        updated_explorer = explorer.model_copy(update={"candidate_reviews": reviews})
+        current_plan = Plan.model_validate(chat.current_plan)
+        selected_places = [
+            *self._selected_places_from(current_plan),
+            _selected_place_from_review(confirmed_review),
+        ]
+        next_plan, planner_timing = (
+            await self.plan_service.create_main_plan_from_trip_intent_with_timing(
+                MainPlanFromTripIntentCreate(
+                    tripIntent=updated_explorer.trip_intent,
+                    intakeId=chat.current_intake_id,
+                    userId=str(user.id),
+                    selectedPlaces=selected_places,
+                    candidateReviews=updated_explorer.candidate_reviews,
+                    preferenceProfile=(
+                        updated_explorer.preference_snapshot.effective_profile
+                    ),
+                    allowFinderGapFill=True,
+                    allowReplaceSourcePlaces=False,
+                ),
+                reuse_theme_plan=current_plan,
+            )
+        )
+        next_plan = next_plan.model_copy(update={"id": current_plan.id})
+        self.plan_service.repository.save(next_plan)
+
+        revision = chat.revision + 1
+        saved = self.repository.save_plan_mutation(
+            chat,
+            action_summary=(
+                f"Đã chọn {match.name} cho {review.name} "
+                f"(bản sửa đổi {revision})."
+            ),
+            plan_payload=next_plan.model_dump(mode="json", by_alias=True),
+            planner_timing_payload=planner_timing.model_dump(
+                mode="json",
+                by_alias=True,
+            ),
+            revision=revision,
+        )
+        self.repository.replace_candidate_reviews(saved, reviews)
+        self.repository.db.commit()
+        return self._read(saved)
+
     async def add_item(
         self,
         chat_id: str,

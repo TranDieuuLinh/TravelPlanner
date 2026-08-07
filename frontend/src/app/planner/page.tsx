@@ -28,6 +28,7 @@ import { APIError } from "@/lib/api";
 import {
   addTripChatItem,
   calculateDayDirections,
+  confirmTripChatCandidateResolution,
   createTripChat,
   createPlanFromExplorer,
   deleteAllTripChats,
@@ -1291,6 +1292,9 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
+  const [resolvingCandidateKey, setResolvingCandidateKey] = useState<string | null>(
+    null
+  );
   const [noteEditor, setNoteEditor] = useState<{
     day: number;
     itemId: string | null;
@@ -4101,6 +4105,35 @@ function Planner() {
     );
   }
 
+  async function handleConfirmCandidateResolution(
+    place: UnscheduledPlace,
+    matchRank: number
+  ) {
+    if (!activeChatId || !place.candidateId || mutatingItem) return;
+    const key = `${place.candidateId}:${matchRank}`;
+    setMutatingItem(true);
+    setResolvingCandidateKey(key);
+    setError("");
+    try {
+      const updated = await confirmTripChatCandidateResolution({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        candidateId: place.candidateId,
+        matchRank,
+      });
+      applyTripChat(updated);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Không thể xác nhận địa điểm này."
+      );
+    } finally {
+      setResolvingCandidateKey(null);
+      setMutatingItem(false);
+    }
+  }
+
   function handleUrlPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pastedText = event.clipboardData.getData("text").trim();
     if (!parseUrlOnlyInput(pastedText).ok) return;
@@ -6372,7 +6405,10 @@ function Planner() {
                         (activePlanDay == null &&
                           (displayedPlan.unscheduledPlaces?.length ?? 0) > 0) ? (
                           <UnscheduledPlacesSection
+                            disabled={mutatingItem}
+                            onConfirmCandidate={handleConfirmCandidateResolution}
                             places={displayedPlan.unscheduledPlaces ?? []}
+                            resolvingKey={resolvingCandidateKey}
                           />
                         ) : null}
                       </div>
@@ -7070,9 +7106,15 @@ function Planner() {
 }
 
 function UnscheduledPlacesSection({
+  disabled = false,
+  onConfirmCandidate,
   places,
+  resolvingKey,
 }: {
+  disabled?: boolean;
+  onConfirmCandidate?: (place: UnscheduledPlace, matchRank: number) => void;
   places: UnscheduledPlace[];
+  resolvingKey?: string | null;
 }) {
   if (places.length === 0) {
     return (
@@ -7206,12 +7248,51 @@ function UnscheduledPlacesSection({
                       </div>
                       {place.reasonCode === "identity_needs_review" &&
                       (place.topMatches?.length ?? 0) > 0 ? (
-                        <p className="unscheduledPlaceContext">
-                          Kết quả cần xác nhận: {place.topMatches
-                            ?.slice(0, 3)
-                            .map((match) => match.name)
-                            .join(" · ")}
-                        </p>
+                        <div
+                          aria-label={`Chọn địa điểm đúng cho ${displayName}`}
+                          className="unscheduledMatchPicker"
+                        >
+                          <span>Kết quả cần xác nhận</span>
+                          <div className="unscheduledMatchList">
+                            {place.topMatches?.slice(0, 3).map((match) => {
+                              const buttonKey = `${place.candidateId ?? ""}:${match.rank}`;
+                              const canChoose = Boolean(
+                                onConfirmCandidate &&
+                                place.candidateId &&
+                                match.latitude != null &&
+                                match.longitude != null
+                              );
+                              const handleChoice = onConfirmCandidate;
+                              return (
+                                <button
+                                  className="unscheduledMatchButton"
+                                  disabled={disabled || !canChoose}
+                                  key={`${match.rank}-${match.name}`}
+                                  onClick={() => {
+                                    if (canChoose && handleChoice) {
+                                      handleChoice(place, match.rank);
+                                    }
+                                  }}
+                                  title={
+                                    canChoose
+                                      ? `Chọn ${match.name}`
+                                      : "Kết quả này thiếu tọa độ"
+                                  }
+                                  type="button"
+                                >
+                                  <strong>
+                                    {resolvingKey === buttonKey
+                                      ? "Đang chọn..."
+                                      : match.name}
+                                  </strong>
+                                  {match.address ? (
+                                    <small>{match.address}</small>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       ) : null}
                       {place.day != null || place.sourceActivity ? (
                         <p className="unscheduledPlaceContext">

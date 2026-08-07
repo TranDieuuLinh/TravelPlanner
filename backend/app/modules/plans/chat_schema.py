@@ -102,6 +102,14 @@ class RetryCandidateResolutionsRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ConfirmCandidateResolutionRequest(BaseModel):
+    expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
+    candidate_id: Annotated[str, Field(min_length=1, alias="candidateId")]
+    match_rank: Annotated[int, Field(ge=1, alias="matchRank")]
+
+    model_config = {"populate_by_name": True}
+
+
 class RouteEnrichmentRequest(BaseModel):
     expected_revision: Annotated[int, Field(ge=0, alias="expectedRevision")]
 

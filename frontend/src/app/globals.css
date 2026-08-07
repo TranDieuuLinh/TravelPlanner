@@ -328,7 +328,23 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobTimingSubsteps { display: grid; gap: 2px; margin-top: 2px; padding-left: 7px; border-left: 2px solid #e4e7f0; }
 .backgroundJobTimingSubsteps > span { display: flex; justify-content: space-between; gap: 8px; color: #52606d; font-size: .48rem; }
 .backgroundJobTimingSubsteps b { font-size: .47rem; }
+.backgroundJobTimingDuration { display: grid; justify-items: end; gap: 1px; font-variant-numeric: tabular-nums; }
+.backgroundJobTimingDuration small { color: #52606d; font-size: .45rem; font-weight: 800; }
 .backgroundJobTiming { display: grid; gap: 12px; }
+.backgroundJobTimingOverview { display: grid; gap: 8px; border: 1px solid #e4e7f0; border-radius: 10px; padding: 10px; background: #f6f7fb; }
+.backgroundJobTimingOverview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.backgroundJobTimingOverview > header strong { color: #172033; font-size: .64rem; text-transform: uppercase; }
+.backgroundJobTimingOverview > header b { color: #365f5a; font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobTimingBars { display: grid; gap: 5px; }
+.backgroundJobTimingBars > span { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; overflow: hidden; border-radius: 8px; padding: 7px 8px; background: #ffffff; }
+.backgroundJobTimingBars > span::before { position: absolute; inset: 0 auto 0 0; width: var(--share); background: rgba(54, 95, 90, .12); content: ""; }
+.backgroundJobTimingBars b, .backgroundJobTimingBars small { position: relative; z-index: 1; }
+.backgroundJobTimingBars b { overflow: hidden; color: #172033; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobTimingBars small { color: #365f5a; font-size: .52rem; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobSlowStages { display: grid; gap: 4px; }
+.backgroundJobSlowStages > small { color: #52606d; font-size: .48rem; font-weight: 850; text-transform: uppercase; }
+.backgroundJobSlowStages > span { display: flex; justify-content: space-between; gap: 10px; border-radius: 7px; padding: 5px 7px; background: #ffffff; color: #172033; font-size: .5rem; line-height: 1.3; }
+.backgroundJobSlowStages b { color: #365f5a; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .backgroundJobTimingSummary { display: grid; gap: 8px; border: 1px solid #f6f7fb; border-radius: 10px; padding: 9px; background: #ffffff; }
 .backgroundJobTimingSummary > header, .backgroundJobSourceTiming > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .backgroundJobTimingSummary > header strong, .backgroundJobSourceTiming > header strong { color: #365f5a; font-size: .61rem; }
@@ -346,7 +362,14 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobProviderAttempts { color: #172033; font-size: .52rem; }
 .backgroundJobProviderAttempts summary { cursor: pointer; font-weight: 800; }
 .backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; }
-.backgroundJobProviderAttemptList > div { display: grid; grid-template-columns: minmax(90px,1.2fr) minmax(90px,1fr) minmax(150px,2fr) repeat(4,minmax(55px,auto)); gap: 5px; align-items: center; padding: 5px 6px; border-radius: 7px; background: #ffffff; }
+.backgroundJobProviderAttemptList > div { display: grid; gap: 5px; padding: 7px; border-radius: 7px; background: #ffffff; }
+.backgroundJobAttemptHeader, .backgroundJobAttemptMeta, .backgroundJobAttemptQueries { min-width: 0; }
+.backgroundJobAttemptHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.backgroundJobAttemptHeader span { color: #365f5a; font-size: .48rem; font-weight: 800; white-space: nowrap; }
+.backgroundJobAttemptMeta { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; }
+.backgroundJobAttemptMeta span { display: grid; gap: 1px; border-radius: 6px; padding: 4px 5px; background: #f6f7fb; color: #172033; }
+.backgroundJobAttemptMeta b, .backgroundJobAttemptQueries b { color: #52606d; font-size: .43rem; text-transform: uppercase; }
+.backgroundJobAttemptQueries { display: grid; gap: 2px; color: #172033; overflow-wrap: anywhere; }
 .backgroundJobProviderAttemptList strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .backgroundJobSourceTiming { display: grid; gap: 6px; border-top: 1px solid #f6f7fb; padding-top: 8px; }
 .backgroundJobSourceTiming > small { color: #172033; font-size: .5rem; line-height: 1.4; }
@@ -369,7 +392,7 @@ h1, h2, h3, p { margin-top: 0; }
   .backgroundJobsPanel > summary { width: 100%; }
   .backgroundJobsList { width: calc(100vw - 24px); max-height: calc(100dvh - 136px); }
   .backgroundJobProviders { grid-template-columns: 1fr; }
-  .backgroundJobProviderAttemptList > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .backgroundJobAttemptMeta { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 .appBody { min-height: calc(100vh - 64px); }
 .mobileNav { display: none; }
@@ -14010,7 +14033,7 @@ svg {
   grid-row: 1;
   min-width: 0;
   padding-left: 8px;
-  padding-right: 0;
+  padding-right: 38px;
   order: 0;
 }
 
@@ -14024,7 +14047,7 @@ svg {
 /* Keep settings, source, and place type on one evenly spaced vertical rail. */
 .itinerary .itineraryPlaceQuickActions {
   top: 12px;
-  right: -12px;
+  right: 12px;
   bottom: 12px;
   align-items: center;
   justify-content: space-between;
@@ -16408,6 +16431,61 @@ svg {
 .itinerary .unscheduledPlaceReason > strong {
   color: #5c4b43;
   white-space: normal;
+}
+
+.itinerary .unscheduledMatchPicker {
+  display: grid;
+  gap: 7px;
+}
+
+.itinerary .unscheduledMatchPicker > span {
+  color: #934b2b;
+  font-size: .56rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.itinerary .unscheduledMatchList {
+  display: grid;
+  gap: 6px;
+}
+
+.itinerary .unscheduledMatchButton {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d9b9a5;
+  border-radius: 8px;
+  background: #fffdfb;
+  color: #2f3d39;
+  padding: 8px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.itinerary .unscheduledMatchButton:hover:not(:disabled),
+.itinerary .unscheduledMatchButton:focus-visible {
+  border-color: #2f7d6d;
+  box-shadow: 0 0 0 3px rgba(47, 125, 109, .14);
+  outline: none;
+}
+
+.itinerary .unscheduledMatchButton:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+
+.itinerary .unscheduledMatchButton strong {
+  font-size: .62rem;
+  line-height: 1.25;
+}
+
+.itinerary .unscheduledMatchButton small {
+  color: #6c7d78;
+  font-size: .55rem;
+  line-height: 1.35;
 }
 
 .itinerary .unscheduledPlacesEmpty {

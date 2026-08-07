@@ -889,6 +889,25 @@ export async function retryTripChatCandidateResolutions(input: {
   );
 }
 
+export async function confirmTripChatCandidateResolution(input: {
+  chatId: string;
+  expectedRevision: number;
+  candidateId: string;
+  matchRank: number;
+}): Promise<TripChat> {
+  return apiFetch<TripChat>(
+    `/trip-chats/${input.chatId}/candidate-resolutions/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        candidateId: input.candidateId,
+        matchRank: input.matchRank,
+      })
+    }
+  );
+}
+
 export async function enqueueTripChatUrls(input: {
   chatId: string;
   content: string;
