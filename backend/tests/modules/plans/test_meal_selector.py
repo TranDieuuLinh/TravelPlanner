@@ -103,6 +103,30 @@ def test_meal_selector_uses_at_most_one_coffee_venue_per_day() -> None:
     ) <= 1
 
 
+def test_meals_are_bounded_by_activity_radius_before_quality_ranking() -> None:
+    places = [
+        _food("near", "Near restaurant", 21.03, 105.801, "restaurant").model_copy(
+            update={"rating": 4.2, "reviewCount": 40}
+        ),
+        _food("far", "Far restaurant", 21.08, 105.88, "restaurant").model_copy(
+            update={"rating": 4.9, "reviewCount": 5000}
+        ),
+    ]
+    selector = MealStopSelector(_PlaceTool(places))
+
+    selected = selector.select_for_day(
+        region_key="vn,ha-noi",
+        activities=[
+            _activity("activity-1", 21.03, 105.80),
+            _activity("activity-2", 21.03, 105.82),
+        ],
+        excluded_place_ids={"activity-1", "activity-2"},
+    )
+
+    assert selected["breakfast_meal"] is not None
+    assert selected["breakfast_meal"].place_id == "near"
+
+
 def _activity(place_id: str, latitude: float, longitude: float) -> PlanItem:
     return PlanItem(
         placeId=place_id,

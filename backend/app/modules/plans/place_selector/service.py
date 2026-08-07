@@ -49,6 +49,7 @@ from app.modules.plans.place_selector.skeleton_builder import (
 from app.modules.plans.place_selector.status_tracker import PlaceSelectionStatusTracker
 from app.modules.plans.place_selector.timeline_fitter import TimelineFitter
 from app.modules.plans.place_selector.meal_selector import MealStopSelector
+from app.modules.plans.place_selector.meal_node_planner import MealNodePlanner
 from app.modules.plans.itinerary_optimizer import ItineraryOptimizer
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.explorer.place_policy import is_meal_place
@@ -91,6 +92,7 @@ class PlaceSelectorService:
         graph_repository=None,
         nearby_radius_km: float = 5.0,
         nearby_route_cost_provider=None,
+        meal_node_planner: MealNodePlanner | None = None,
     ) -> None:
         if max_candidates_per_block < 1:
             raise ValueError("max_candidates_per_block must be at least 1")
@@ -114,7 +116,11 @@ class PlaceSelectorService:
         self.status_tracker = status_tracker or PlaceSelectionStatusTracker(
             self.place_tool
         )
-        self.meal_selector = meal_selector or MealStopSelector(self.place_tool)
+        self.meal_selector = meal_selector or MealStopSelector(
+            self.place_tool,
+            graph_repository=graph_repository,
+            meal_node_planner=meal_node_planner,
+        )
         self._area_survey_cache: dict[str, AreaProfile] = {}
         self._area_survey_service: AreaSurveyService | None = None
         self.graph_repository = graph_repository
@@ -1669,6 +1675,7 @@ class PlaceSelectorService:
                     ),
                 },
                 bbox_filter=(area_profile.bbox if area_profile is not None else None),
+                interests=intent_interests,
             )
             meal_items: list[PlanItem] = []
             for anchor in MEAL_ANCHORS:

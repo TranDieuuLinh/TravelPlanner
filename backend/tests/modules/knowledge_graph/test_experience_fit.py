@@ -17,6 +17,7 @@ from app.modules.knowledge_graph.model import (
 from app.modules.knowledge_graph.research import (
     BudgetLevel,
     CheckStatus,
+    DimensionCheck,
     ExperienceFitInput,
     ExperienceFitOutput,
     ScopeResolutionRepository,

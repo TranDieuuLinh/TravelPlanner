@@ -363,7 +363,8 @@ class TestScopeResolution:
         input_data = ScopeResolveInput(destination="Hà Nội", maxDepth=1)
         result = kg_resolve_scope(populated_repo, input_data)
 
-        assert len(result.ancestors) == 0
+        assert len(result.ancestors) == 1
+        assert result.ancestors[0].id == "area_vietnam"
         assert len(result.includedAreas) == 2
 
     def test_resolve_scope_respects_result_limit(self, populated_repo: ScopeResolutionRepository) -> None:
@@ -431,5 +432,5 @@ class TestScopeResolutionIntegration:
         assert result.rootArea is not None
         assert result.rootArea.type == "AreaAdm0"
         assert len(result.ancestors) == 0
-        assert len(result.includedAreas) == 2
+        assert len(result.includedAreas) == 3
         assert len(result.selectedPlaceAreas) == 1

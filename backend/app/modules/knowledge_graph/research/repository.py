@@ -87,6 +87,44 @@ class ScopeResolutionRepository:
         count = self.db.scalar(select(func.count(KnowledgeEntity.id))) or 0
         return count == 0
 
+    def list_meal_item_nodes(self, *, limit: int = 100) -> list[KnowledgeEntity]:
+        """Return canonical food/drink nodes for a bounded planner query."""
+        return list(
+            self.db.scalars(
+                select(KnowledgeEntity)
+                .where(KnowledgeEntity.entity_type.in_(("FoodItem", "DrinkItem")))
+                .order_by(KnowledgeEntity.entity_type, KnowledgeEntity.canonical_name)
+                .limit(limit)
+            ).all()
+        )
+
+    def list_places_offering_items(
+        self,
+        item_ids: list[str],
+        *,
+        limit: int = 250,
+    ) -> list[KnowledgeEntity]:
+        """Resolve graph Places connected to FoodItem/DrinkItem via OFFERS_ITEM."""
+        if not item_ids:
+            return []
+        place = aliased(KnowledgeEntity)
+        return list(
+            self.db.scalars(
+                select(place)
+                .join(
+                    KnowledgeRelationship,
+                    KnowledgeRelationship.from_entity_id == place.id,
+                )
+                .where(
+                    KnowledgeRelationship.to_entity_id.in_(item_ids),
+                    KnowledgeRelationship.relationship_type == "OFFERS_ITEM",
+                    place.entity_type.in_(PLACE_TYPES),
+                )
+                .order_by(KnowledgeRelationship.id)
+                .limit(limit)
+            ).all()
+        )
+
     # --- Area resolution ---
 
     def resolve_area_by_name(self, destination: str) -> KnowledgeEntity | None:

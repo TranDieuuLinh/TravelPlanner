@@ -219,8 +219,8 @@ class TestConflictedExcluded:
             "c1",
             rank=1,
             predicate="SPECIAL_EXPERIENCE",
-            object_id="place_a",
-            object_type="TravelPlace",
+            object_id="activity_a",
+            object_type="Activity",
             supported=False,
         )
         ranked = ranked.model_copy(

@@ -467,7 +467,7 @@ class TestRequiredAnchorSelection:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
                 on_timing_stage=timing_stages.append,
@@ -528,7 +528,7 @@ class TestChooseOneSelection:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -574,7 +574,7 @@ class TestOpenCandidateSelection:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -632,7 +632,7 @@ class TestInvalidIdRepair:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -674,7 +674,7 @@ class TestThreeFailedRepairs:
             asyncio.run(
                 service.create_trip_themes(
                     _intent(),
-                    trip_spec=TripPlanningSpec(days=2),
+                    trip_spec=TripPlanningSpec(days=1),
                     region_key="vn,ha-noi",
                     selected_places=[],
                 )
@@ -731,7 +731,7 @@ class TestGraphCatalogInPayload:
         asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -792,7 +792,7 @@ class TestGraphCutoverEvaluations:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent_without_interests(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -806,14 +806,24 @@ class TestGraphCutoverEvaluations:
     def test_confirmed_places_take_priority_over_long_term_profile(self) -> None:
         llm = _GraphThemeScriptedLLM(
             trip_themes=_trip_themes(),
-            required_experiences=[],
+            required_experiences=[
+                {
+                    "requirementId": "req-confirmed-coffee",
+                    "theme": "Coffee tour",
+                    "selectionPolicy": "required_anchor",
+                    "anchorPlaceIds": ["place-cafe-giang"],
+                    "evidenceClaimIds": ["claim-coffee-tour"],
+                    "sourceRefs": ["https://example.com/cafe-source"],
+                    "reason": "Use the graph-backed coffee experience.",
+                }
+            ],
         )
         service, _ = _build_service(llm)
 
         asyncio.run(
             service.create_trip_themes(
                 _intent_without_interests(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[
                     SelectedPlaceContext(
@@ -833,14 +843,24 @@ class TestGraphCutoverEvaluations:
     def test_long_term_profile_is_used_before_destination_defaults(self) -> None:
         llm = _GraphThemeScriptedLLM(
             trip_themes=_trip_themes(),
-            required_experiences=[],
+            required_experiences=[
+                {
+                    "requirementId": "req-profile-coffee",
+                    "theme": "Coffee tour",
+                    "selectionPolicy": "required_anchor",
+                    "anchorPlaceIds": ["place-cafe-giang"],
+                    "evidenceClaimIds": ["claim-coffee-tour"],
+                    "sourceRefs": ["https://example.com/cafe-source"],
+                    "reason": "Use the graph-backed coffee experience.",
+                }
+            ],
         )
         service, _ = _build_service(llm)
 
         asyncio.run(
             service.create_trip_themes(
                 _intent_without_interests(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
                 preference_profile=LongTermPreferenceProfile(
@@ -873,7 +893,7 @@ class TestGraphCutoverEvaluations:
         output = asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[],
             )
@@ -889,7 +909,17 @@ class TestGraphCutoverEvaluations:
     def test_private_notes_never_enter_llm_payload(self) -> None:
         llm = _GraphThemeScriptedLLM(
             trip_themes=_trip_themes(),
-            required_experiences=[],
+            required_experiences=[
+                {
+                    "requirementId": "req-private-note-coffee",
+                    "theme": "Coffee tour",
+                    "selectionPolicy": "required_anchor",
+                    "anchorPlaceIds": ["place-cafe-giang"],
+                    "evidenceClaimIds": ["claim-coffee-tour"],
+                    "sourceRefs": ["https://example.com/cafe-source"],
+                    "reason": "Use the graph-backed coffee experience.",
+                }
+            ],
         )
         service, _ = _build_service(llm)
         secret = "PRIVATE-NOTE-MUST-NOT-CROSS"
@@ -897,7 +927,7 @@ class TestGraphCutoverEvaluations:
         asyncio.run(
             service.create_trip_themes(
                 _intent(),
-                trip_spec=TripPlanningSpec(days=2),
+                trip_spec=TripPlanningSpec(days=1),
                 region_key="vn,ha-noi",
                 selected_places=[
                     SelectedPlaceContext(

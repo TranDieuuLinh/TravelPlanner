@@ -19,6 +19,7 @@ from app.modules.knowledge_graph.research import (
     CheckStatus,
     ScopeResolutionRepository,
     TripResearchInput,
+    TravelBudget,
 )
 from app.modules.knowledge_graph.research.orchestrator import (
     GraphResearchOrchestrator,
@@ -40,7 +41,7 @@ def integration_session(db_session: Session) -> Session:
     - area_hanoi (AreaAdm1) -> area_vietnam
     - area_hoan_kiem (AreaAdm2) -> area_hanoi
     - place_temple (TravelPlace) -> area_hoan_kiem
-    - place_cafe (Cafe) -> area_hoan_kiem
+    - place_cafe (DrinkDessert) -> area_hoan_kiem
     - place_restaurant (Restaurant) -> area_hoan_kiem
     - place_museum (TravelPlace) -> area_hoan_kiem (with booking_required=true, no URL)
     """
@@ -77,7 +78,7 @@ def integration_session(db_session: Session) -> Session:
             id="place_cafe",
             canonical_name="Cafe Giảng",
             normalized_name="cafe giang",
-            entity_type="Cafe",
+            entity_type="DrinkDessert",
             status="verified",
         ),
         KnowledgeEntity(
@@ -95,6 +96,21 @@ def integration_session(db_session: Session) -> Session:
             status="verified",
         ),
     ]
+    entities.extend(
+        KnowledgeEntity(
+            id=activity_id,
+            canonical_name=name,
+            normalized_name=name.casefold().replace(" ", "_"),
+            entity_type="Activity",
+            status="verified",
+        )
+        for activity_id, name in (
+            ("activity_temple", "Temple visit"),
+            ("activity_cafe", "Coffee experience"),
+            ("activity_restaurant", "Local food experience"),
+            ("activity_museum", "Museum visit"),
+        )
+    )
     for entity in entities:
         db_session.add(entity)
 
@@ -129,30 +145,50 @@ def integration_session(db_session: Session) -> Session:
             relationship_type="LOCATED_IN",
             to_entity_id="area_hoan_kiem",
         ),
-        # Special experiences
+        # Schema v7 special experience path: Area -> Activity -> Place.
         KnowledgeRelationship(
             from_entity_id="area_hanoi",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_temple",
+            to_entity_id="activity_temple",
             source="https://vietnamtourism.gov.vn",
         ),
         KnowledgeRelationship(
             from_entity_id="area_hanoi",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_cafe",
+            to_entity_id="activity_cafe",
             source="https://wikipedia.org",
         ),
         KnowledgeRelationship(
             from_entity_id="area_hanoi",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_restaurant",
+            to_entity_id="activity_restaurant",
             source="https://tripadvisor.com",
         ),
         KnowledgeRelationship(
             from_entity_id="area_hanoi",
             relationship_type="SPECIAL_EXPERIENCE",
-            to_entity_id="place_museum",
+            to_entity_id="activity_museum",
             source="https://official.gov.vn",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_temple",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_temple",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_cafe",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_cafe",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_restaurant",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_restaurant",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_museum",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_museum",
         ),
     ]
     for rel in relationships:
@@ -261,10 +297,12 @@ class TestOrchestratorIntegration:
             input_data,
         )
 
-        # Restaurant should be in conflicted
-        if result.conflictedExperiences:
-            conflicted_types = [c.claim.object.type for c in result.conflictedExperiences]
-            assert "Restaurant" in conflicted_types
+        # Schema v7 exposes Activity as the claim object; the targeted place
+        # remains available in the claim path.
+        assert any(
+            c.claim.object.id == "activity_restaurant"
+            for c in result.conflictedExperiences
+        )
 
     def test_booking_required_without_url_conflict(
         self, integration_repo: ScopeResolutionRepository
@@ -282,13 +320,13 @@ class TestOrchestratorIntegration:
             input_data,
         )
 
-        # Museum should be conflicted (booking required, no URL)
-        if result.conflictedExperiences:
-            museum_conflicted = any(
-                c.claim.object.id == "place_museum"
-                for c in result.conflictedExperiences
-            )
-            assert museum_conflicted
+        # Museum should be conflicted (booking required, no URL). The v7
+        # claim object is the Activity and TARGETS_PLACE carries the venue.
+        assert any(
+            c.claim.object.id == "activity_museum"
+            and "place_museum" in c.claim.path
+            for c in result.conflictedExperiences
+        )
 
     def test_trace_counts_accurate(
         self, integration_repo: ScopeResolutionRepository
@@ -365,7 +403,7 @@ class TestOrchestratorIntegration:
             destination="Hà Nội",
             days=3,
             partySize=2,
-            budget=BudgetLevel.MEDIUM,
+            budget=TravelBudget(level=BudgetLevel.MEDIUM),
         )
 
         result = orchestrate_trip_research(
@@ -452,6 +490,5 @@ class TestOrchestratorIntegration:
 
         top5 = result.eligibleExperiences[:5]
         if len(top5) >= 3:
-            types = [e.claim.object.type for e in top5]
-            # Not all should be the same type
-            assert len(set(types)) > 1 or len(top5) < 3
+            activity_ids = [e.claim.object.id for e in top5]
+            assert len(set(activity_ids)) > 1
