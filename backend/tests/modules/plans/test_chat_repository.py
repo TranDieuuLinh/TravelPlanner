@@ -161,6 +161,7 @@ def test_conversation_mutation_persists_snapshot_and_diff(db_session):
     assert snapshot is not None
     assert snapshot.intake_id == "intake-1"
     assert snapshot.trip_intent_payload == {"destination": "Hanoi", "days": 2}
+    assert reloaded.messages[-1].message_kind == "plan_update"
     assert reloaded.messages[-1].content_blocks == blocks
 
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +14,9 @@ from app.integrations.llm.base import LLMClient
 
 from .reader import PlaceSearchReader
 from .schema import InformationAnswer, InformationQuery, InformationResult
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -82,35 +87,88 @@ class InformationFinderAgent:
         )
         try:
             if grounded:
-                generated = await self.llm.generate_grounded_structured_json(
-                    system_prompt,
-                    json.dumps(payload, ensure_ascii=False),
-                    response_schema=schema,
-                )
-                answer = InformationAnswer.model_validate_json(generated.text)
-                blocks: list[dict[str, Any]] = [
-                    {"type": "text", "text": answer.answer}
-                ]
-                if generated.sources:
-                    blocks.append(
-                        {
-                            "type": "sources",
-                            "sources": [
-                                {"title": source.title, "url": source.uri}
-                                for source in generated.sources
-                            ],
+                try:
+                    generated = await self.llm.generate_grounded_structured_json(
+                        system_prompt,
+                        json.dumps(payload, ensure_ascii=False),
+                        response_schema=schema,
+                    )
+                    answer = InformationAnswer.model_validate_json(generated.text)
+                    blocks: list[dict[str, Any]] = [
+                        {"type": "text", "text": answer.answer}
+                    ]
+                    if generated.sources:
+                        blocks.append(
+                            {
+                                "type": "sources",
+                                "sources": [
+                                    {"title": source.title, "url": source.uri}
+                                    for source in generated.sources
+                                ],
+                            }
+                        )
+                    else:
+                        answer = answer.model_copy(
+                            update={
+                                "answer": (
+                                    f"{answer.answer}\n\n"
+                                    f"{_freshness_notice(query)}"
+                                )
+                            }
+                        )
+                        blocks[0]["text"] = answer.answer
+                        blocks.append(
+                            {
+                                "type": "warning",
+                                "code": "GROUNDING_SOURCES_UNAVAILABLE",
+                                "message": "Không có nguồn grounding để đối chiếu.",
+                                "freshness": "unknown/stale",
+                            }
+                        )
+                    return InformationFinderResponse(answer.answer, blocks)
+                except (
+                    RuntimeError,
+                    ValidationError,
+                    ValueError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    # Grounded search can have a separate quota or capability
+                    # failure from normal structured generation. Keep the chat
+                    # useful, but label the fallback as unverified/currentness
+                    # unknown instead of presenting it as grounded.
+                    logger.warning(
+                        "Grounded information answer failed; using an ungrounded fallback",
+                        extra={"error_type": type(exc).__name__},
+                    )
+                    raw = await self.llm.generate_structured_json(
+                        _answer_system_prompt(
+                            grounded=False,
+                            explaining_plan=plan_payload is not None,
+                        ),
+                        json.dumps(payload, ensure_ascii=False),
+                        response_schema=schema,
+                    )
+                    answer = InformationAnswer.model_validate_json(raw)
+                    answer = answer.model_copy(
+                        update={
+                            "answer": f"{answer.answer}\n\n{_freshness_notice(query)}"
                         }
                     )
-                else:
-                    blocks.append(
-                        {
-                            "type": "warning",
-                            "code": "GROUNDING_SOURCES_UNAVAILABLE",
-                            "message": "Không có nguồn grounding để đối chiếu.",
-                            "freshness": "unknown/stale",
-                        }
+                    return InformationFinderResponse(
+                        answer.answer,
+                        [
+                            {"type": "text", "text": answer.answer},
+                            {
+                                "type": "warning",
+                                "code": "GROUNDING_UNAVAILABLE",
+                                "message": (
+                                    "Không thể kiểm tra nguồn mới lúc này; "
+                                    "hãy xác minh thông tin có thể thay đổi."
+                                ),
+                                "freshness": "unknown/stale",
+                            },
+                        ],
                     )
-                return InformationFinderResponse(answer.answer, blocks)
 
             raw = await self.llm.generate_structured_json(
                 system_prompt,
@@ -283,14 +341,33 @@ def _answer_system_prompt(*, grounded: bool, explaining_plan: bool) -> str:
     if grounded:
         return (
             "Bạn là InformationFinderAgent của TravelPlanner. Trả lời câu hỏi du lịch "
-            "cần dữ liệu mới bằng tiếng Việt, dựa trên Google Search grounding. Nêu rõ "
+            "cần dữ liệu mới bằng cùng ngôn ngữ với câu hỏi của người dùng, dựa trên "
+            "Google Search grounding. Nêu rõ "
             "điểm chưa chắc chắn và không bịa nguồn. Chỉ trả JSON khớp schema."
         )
     return (
         "Bạn là InformationFinderAgent của TravelPlanner. Trả lời câu hỏi tư vấn, văn hóa, "
-        "fun fact hoặc lưu ý du lịch bằng tiếng Việt rõ ràng và hữu ích. Không trình bày "
+        "fun fact hoặc lưu ý du lịch bằng cùng ngôn ngữ với câu hỏi của người dùng, rõ ràng "
+        "và hữu ích. Không trình bày "
         "thông tin thời gian thực như đã được xác minh. Chỉ trả JSON khớp schema."
     )
+
+
+def _freshness_notice(query: str) -> str:
+    vietnamese_characters = (
+        r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệ"
+        r"íìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]"
+    )
+    vietnamese = bool(
+        re.search(vietnamese_characters, query.casefold())
+        or re.search(
+            r"\b(?:mình|tôi|bạn|làm sao|thế nào|ở đâu|việt nam)\b",
+            query.casefold(),
+        )
+    )
+    if vietnamese:
+        return "Lưu ý: mình chưa thể kiểm tra nguồn mới; hãy xác minh chi tiết có thể thay đổi."
+    return "Note: I could not verify live sources, so please confirm details that may change."
 
 
 def _llm_unavailable(*, grounded: bool) -> InformationFinderResponse:

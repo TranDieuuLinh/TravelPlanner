@@ -543,6 +543,17 @@ Giá đầy đủ và giá đại diện được lưu trong cùng snapshot `adm
 tự đổi ngoại tệ và không dùng giá danh mục chung để giả làm giá của một địa điểm
 cụ thể.
 
+CLI `crawl_data/crawl_admission_prices.py` là biến thể batch dùng cùng public
+web-page reader của Explorer. Search provider chỉ khám phá candidate URL; mỗi
+URL sau đó được kiểm tra SSRF/redirect/content limit, tải bằng `httpx` và rút
+main text bằng Trafilatura trước khi Gemini xác minh giá. Khi static fetch bị
+chặn, CLI có thể dùng snippet/rendered text có provenance của search provider;
+`--strict-static` tắt fallback này. Các guard dry-run, `--apply`, `--overwrite`,
+grounded HTTP(S) source và schema `admission_price` vẫn dùng chung với price
+crawler hiện có. Batch chạy một place tại một thời điểm và mặc định giãn tối
+thiểu năm giây giữa hai lần bắt đầu tải target page; operator có thể tăng bằng
+`--crawl-delay-seconds` mà không thay đổi timer riêng của Gemini.
+
 ## Tích hợp đặt dịch vụ
 
 Bắt đầu bằng deep link hoặc một tích hợp đối tác. Tách nội dung lịch trình khỏi

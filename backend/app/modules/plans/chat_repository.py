@@ -157,7 +157,7 @@ class TripChatRepository:
                     attachment_names=[],
                     plan_revision=revision,
                     turn_id=turn_id,
-                    message_kind=("turn_response" if turn_id else "text"),
+                    message_kind="plan_update",
                     created_at=now,
                 ),
                 TripRevision(
@@ -332,6 +332,7 @@ class TripChatRepository:
                     sequence=next_sequence,
                     attachment_names=[],
                     plan_revision=revision,
+                    message_kind="plan_update",
                     created_at=now,
                 ),
             )
@@ -733,7 +734,7 @@ class TripChatRepository:
                     attachment_names=[],
                     plan_revision=revision,
                     turn_id=turn.lifecycle_id,
-                    message_kind="turn_response",
+                    message_kind="plan_update",
                     content_blocks=list(assistant_blocks),
                     assistant_blocks=list(assistant_blocks),
                     created_at=now,

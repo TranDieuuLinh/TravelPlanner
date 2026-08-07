@@ -322,6 +322,11 @@ class TestConversationContext:
             messages=[
                 SimpleNamespace(role="user", content="  hello  "),
                 SimpleNamespace(role="assistant", content="hi back"),
+                SimpleNamespace(
+                    role="assistant",
+                    content="Đã cập nhật lịch trình.",
+                    message_kind="plan_update",
+                ),
                 SimpleNamespace(role="system", content="sys"),  # filtered out
                 SimpleNamespace(role="user", content=""),  # filtered out
             ],
@@ -354,6 +359,7 @@ class TestConversationContext:
         assert len(ctx["recentMessages"]) == 2
         assert all("role" in m and "content" in m for m in ctx["recentMessages"])
         assert all(m["role"] in {"user", "assistant"} for m in ctx["recentMessages"])
+        assert all("Đã cập nhật lịch trình" not in m["content"] for m in ctx["recentMessages"])
         assert len(ctx["recentActionHistory"]) == 1  # only completed
 
 

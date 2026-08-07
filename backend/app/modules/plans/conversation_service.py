@@ -1122,6 +1122,7 @@ def _conversation_context(
         for message in list(chat.messages)[-8:]
         if message.role in {"assistant", "user"}
         and message.content.strip()
+        and getattr(message, "message_kind", "text") != "plan_update"
         and (
             exclude_turn_id is None
             or getattr(message, "turn_id", None) != exclude_turn_id

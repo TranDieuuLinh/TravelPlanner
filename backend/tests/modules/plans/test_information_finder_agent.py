@@ -44,6 +44,14 @@ class FakeLLM:
         )
 
 
+class GroundingFailureLLM(FakeLLM):
+    async def generate_grounded_structured_json(
+        self, system_prompt, user_payload, *, response_schema
+    ):
+        self.calls.append(("grounded", json.loads(user_payload), response_schema))
+        raise RuntimeError("grounding quota unavailable")
+
+
 def candidate():
     return InformationCandidate(
         candidateId="maps:cafe-1",
@@ -129,6 +137,31 @@ def test_travel_information_uses_grounded_llm_and_returns_sources():
     assert response.message == "Ngày mai có khả năng mưa."
     assert llm.calls[0][0] == "grounded"
     assert any(block["type"] == "sources" for block in response.blocks)
+
+
+def test_travel_information_falls_back_to_answer_when_grounding_fails():
+    llm = GroundingFailureLLM(
+        "Foreign visitors can buy a prepaid SIM after presenting a passport."
+    )
+    response = asyncio.run(
+        InformationFinderAgent(llm=llm).run(
+            context(
+                "How do I buy a SIM card in Vietnam as a foreigner?",
+                information_intent="ask_travel_information",
+            )
+        )
+    )
+
+    assert response.message.startswith("Foreign visitors")
+    assert "could not verify live sources" in response.message
+    assert [call[0] for call in llm.calls] == ["grounded", "structured"]
+    warning = next(block for block in response.blocks if block["type"] == "warning")
+    assert warning == {
+        "type": "warning",
+        "code": "GROUNDING_UNAVAILABLE",
+        "message": "Không thể kiểm tra nguồn mới lúc này; hãy xác minh thông tin có thể thay đổi.",
+        "freshness": "unknown/stale",
+    }
 
 
 def test_explain_plan_uses_sources_and_does_not_change_revision():

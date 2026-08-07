@@ -152,7 +152,9 @@ chạy, output của version cũ không được ghi và job được xếp lạ
   an toàn. Một batch URL/ảnh dùng lifecycle ID của user message làm `batchId`
   chung cho các source job con, nên request được lưu trước khi worker chạy và
   assistant response không tạo lại user message. Không còn bảng
-  `trip_chat_turns` sao chép lại content/attachment.
+  `trip_chat_turns` sao chép lại content/attachment. Assistant message xác nhận
+  thao tác tạo/sửa plan dùng `messageKind=plan_update`: vẫn được lưu để audit
+  nhưng không hiển thị trong transcript Q&A của Planner.
 - `TripRevision`: snapshot bất biến gồm `planPayload`, `tripIntentPayload` và
   `intakeId` sau mỗi lần tạo hoặc sửa plan thành công.
 - `KnowledgeGraphImport`: envelope dùng chung cho URL/image job, Explorer intake

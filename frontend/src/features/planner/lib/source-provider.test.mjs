@@ -18,18 +18,29 @@ test("recognizes supported social source URLs", () => {
   );
 });
 
-test("recognizes an explicit webpage source and legacy URL-only revisions", () => {
+test("recognizes webpage sources before and after place resolution", () => {
   assert.equal(sourceProviderKind("https://example.com/guide", "web_page"), "url");
   assert.equal(sourceProviderKind("https://example.com/guide", null), "url");
+  assert.equal(
+    sourceProviderKind(
+      "https://vietnam.travel/things-to-do/11-must-see-attractions-ha-noi",
+      "database"
+    ),
+    "url"
+  );
+  assert.equal(
+    sourceProviderKind("https://example.com/guide", "knowledge_graph"),
+    "url"
+  );
 });
 
-test("does not assign an icon to unsupported source providers", () => {
+test("does not assign a website icon to place-provider links", () => {
   assert.equal(
-    sourceProviderKind("https://example.com/place", "database"),
+    sourceProviderKind("https://maps.google.com/place", "google_maps_scraper"),
     null
   );
   assert.equal(
-    sourceProviderKind("https://maps.google.com/place", "google_maps_scraper"),
+    sourceProviderKind("https://www.google.com/maps/place/example", "database"),
     null
   );
   assert.equal(sourceProviderKind("fixture://source", "web_page"), null);

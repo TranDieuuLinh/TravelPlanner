@@ -7014,6 +7014,7 @@ code { border-radius: 5px; padding: 4px 6px; background: var(--canvas); font-fam
 }
 
 .itinerary .itineraryPlaceContent {
+  position: relative;
   align-content: start;
   gap: 9px;
 }
@@ -13698,6 +13699,20 @@ svg {
   color: #a7256d;
 }
 
+.itinerary .itinerarySourceIconLink--url {
+  border-color: #b9d8d1;
+  background: #ffffff;
+  color: #28685e;
+  box-shadow: 0 1px 3px rgb(24 82 72 / 12%);
+}
+
+.itinerary .itinerarySourceIconLink--url:hover,
+.itinerary .itinerarySourceIconLink--url:focus-visible {
+  border-color: #7fb7ab;
+  background: #ffffff;
+  color: #174f46;
+}
+
 .itinerary .itinerarySourceIconLink--tiktok svg {
   width: 17px;
   height: 17px;
@@ -14133,15 +14148,19 @@ svg {
   order: 0;
 }
 
-/* Keep settings, source, and place type on one evenly spaced vertical rail. */
+/* Keep settings, source, and place type together near the card's top-right. */
 .itinerary .itineraryPlaceQuickActions {
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
+  top: 0;
+  right: 0;
+  bottom: auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0;
+  justify-content: flex-start;
+  gap: 8px;
   padding-left: 0;
+}
+
+.itinerary .itineraryPlaceQuickActions > .itineraryTypeIcon {
+  margin-top: 0;
 }
 
 .itinerary .itineraryQuickActionMenuButton {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -327,6 +328,36 @@ class TestSupervisorDecide:
         assert decision.intent == "travel_advice"
         assert llm.calls == 1
         assert llm.last_payload["conversationContext"]["currentTripIntent"]["destination"] == "unspecified"
+
+    def test_post_plan_travel_question_stays_an_information_request(self):
+        question = "How do I buy a SIM card in Vietnam as a foreigner?"
+        llm = FakeLLM(
+            {
+                "intent": "ask_travel_information",
+                "confidence": 0.99,
+                "arguments": {
+                    "kind": "information",
+                    "query": question,
+                    "requiresFreshness": True,
+                },
+            }
+        )
+
+        decision = asyncio.run(
+            ConstrainedConversationSupervisor(llm).decide(
+                question,
+                _make_plan(),
+            )
+        )
+
+        assert decision.intent == "ask_travel_information"
+        assert decision.operation is None
+        assert decision.requires_confirmation is False
+        assert decision.information_request == {
+            "kind": "information",
+            "query": question,
+            "requiresFreshness": True,
+        }
 
     async def test_schema_sent_to_llm_has_no_agent_or_response_text(self):
         llm = FakeLLM(

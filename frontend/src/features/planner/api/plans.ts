@@ -523,6 +523,9 @@ export type TripChatMessage = {
   content: string;
   attachmentNames: string[];
   planRevision: number | null;
+  turnId?: string | null;
+  messageKind?: string;
+  contentBlocks?: Array<Record<string, unknown>>;
   createdAt: string;
 };
 

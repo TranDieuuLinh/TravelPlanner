@@ -108,6 +108,7 @@ import {
 import { dragAutoScrollVelocity } from "@/features/planner/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
+import { visibleConversationMessages } from "@/features/planner/lib/conversation-messages";
 import {
   sourceProviderKind,
   type SourceProviderKind,
@@ -300,9 +301,6 @@ const CHAT_RESIZE_HANDLES: ReadonlyArray<{
   { direction: "w", label: "Đổi chiều rộng từ cạnh trái" },
   { direction: "nw", label: "Đổi kích thước từ góc trên bên trái" },
 ];
-const LEGACY_EDITOR_NOTIFICATION_PATTERN =
-  /^(?:Đã (?:thêm địa điểm|cập nhật thông tin địa điểm|xóa địa điểm|sắp xếp lại thứ tự địa điểm|chọn phương tiện)|Đã xóa địa điểm .* khỏi danh sách chưa xếp lịch)/i;
-
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -456,40 +454,6 @@ function buildGuidedIntakeRequest(answers: GuidedIntakeAnswers): string {
   return details.length
     ? `Giúp mình lên kế hoạch chuyến đi.\n${details.join("\n")}`
     : "Giúp mình tạo một chuyến đi mới từ các nguồn đã nhập.";
-}
-
-const LEGACY_TRIP_THEME_ERROR = "TripThemePlanner cannot create trip themes";
-const FRIENDLY_TRIP_THEME_ERROR =
-  "Mình chưa thể lập lịch trình vì điểm đến này chưa có đủ địa điểm phù hợp; bạn hãy chọn một địa điểm cụ thể hoặc thử điểm đến khác.";
-
-function normalizeAssistantMessage(content: string): string {
-  return content.includes(LEGACY_TRIP_THEME_ERROR)
-    ? FRIENDLY_TRIP_THEME_ERROR
-    : content;
-}
-
-function visibleConversationMessages(chat: TripChat): ChatMessage[] {
-  return chat.messages
-    .filter(
-      (message) =>
-        !(
-          message.role === "assistant" &&
-          message.planRevision != null &&
-          LEGACY_EDITOR_NOTIFICATION_PATTERN.test(message.content.trim())
-        )
-    )
-    .map((message) => ({
-      id: message.id,
-      role: message.role,
-      text: [
-        normalizeAssistantMessage(message.content),
-        message.attachmentNames.length
-          ? `📎 ${message.attachmentNames.length} ảnh`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    }));
 }
 
 export default function PlannerPage() {
@@ -5996,6 +5960,7 @@ function Planner() {
                                                     />
                                                   ) : null}
                                                 </div>
+                                              </header>
                                                 <div className="itineraryPlaceQuickActions">
                                                   {sourceLabel?.url ? (
                                                     <a
@@ -6124,7 +6089,6 @@ function Planner() {
                                                     </div>
                                                   ) : null}
                                                 </div>
-                                              </header>
                                               {itemNoteAction}
                                             </div>
                                           </div>
@@ -7231,6 +7195,7 @@ function UnscheduledPlacesSection({
                             />
                           ) : null}
                         </div>
+                      </header>
                         <div className="itineraryPlaceQuickActions">
                           {sourceLabel?.url ? (
                             <a
@@ -7274,7 +7239,6 @@ function UnscheduledPlacesSection({
                             )}
                           </span>
                         </div>
-                      </header>
                       {place.address ? (
                         <p className="unscheduledPlaceAddress">
                           {place.address}
@@ -7658,7 +7622,7 @@ function sourceProviderLabel(provider: SourceProviderKind): string {
   if (provider === "youtube") return "YouTube";
   if (provider === "tiktok") return "TikTok";
   if (provider === "instagram") return "Instagram";
-  return "Nguồn";
+  return "Website";
 }
 
 function compactSourceUrl(sourceUrl: string): string {
@@ -7726,8 +7690,8 @@ function SourceProviderIcon({ provider }: { provider: SourceProviderKind }) {
   }
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1l-.8.8" />
-      <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.8 12h16.4M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5S14.2 18.2 12 20.5M12 3.5C9.8 5.8 8.7 8.6 8.7 12s1.1 6.2 3.3 8.5" />
     </svg>
   );
 }
