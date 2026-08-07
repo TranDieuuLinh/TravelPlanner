@@ -116,7 +116,7 @@ def test_admin_can_execute_checker_golden_case(
 
     response = admin.post(
         "/api/admin/planning-runs/golden/cases/CHK-001/run",
-        headers={"X-CSRF-Token": admin.cookies.get("vsf_csrf")},
+        headers={"X-CSRF-Token": admin.cookies.get("travelplanner_csrf")},
     )
 
     assert response.status_code == 200
@@ -141,7 +141,7 @@ def test_invalid_golden_input_returns_inspectable_execution_failure(
 
     response = admin.post(
         "/api/admin/planning-runs/golden/cases/FND-002/run",
-        headers={"X-CSRF-Token": admin.cookies.get("vsf_csrf")},
+        headers={"X-CSRF-Token": admin.cookies.get("travelplanner_csrf")},
     )
 
     assert response.status_code == 200

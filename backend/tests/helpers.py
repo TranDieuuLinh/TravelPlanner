@@ -2,6 +2,6 @@ from fastapi.testclient import TestClient
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
-    token = client.cookies.get("vsf_csrf")
+    token = client.cookies.get("travelplanner_csrf")
     assert token
     return {"X-CSRF-Token": token}

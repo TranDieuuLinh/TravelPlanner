@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
+import { APIError } from "@/shared/api/client";
 import {
   getCreatorListings,
   publishListing,
   submitListing,
   unpublishListing,
-} from "@/lib/marketplace";
-import type { ListingDetail } from "@/types/marketplace";
+} from "@/features/marketplace/api";
+import type { ListingDetail } from "@/features/marketplace/types";
 
 export default function CreatorListingsPage() {
   const router = useRouter();

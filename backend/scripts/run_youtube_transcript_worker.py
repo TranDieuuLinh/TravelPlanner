@@ -35,7 +35,7 @@ class TranscriptWorkerResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-app = FastAPI(title="VSF Residential YouTube Transcript Worker")
+app = FastAPI(title="TravelPlanner Residential YouTube Transcript Worker")
 extractor = YouTubeTranscriptExtractor()
 
 

@@ -50,7 +50,7 @@ def test_join_is_authenticated_csrf_protected_and_idempotent(
     group_id = registered_client.get("/api/travel-groups", params={"query": "Nhật"}).json()["items"][0]["id"]
     assert registered_client.put(f"/api/travel-groups/{group_id}/membership").status_code == 403
 
-    csrf = registered_client.cookies.get("vsf_csrf")
+    csrf = registered_client.cookies.get("travelplanner_csrf")
     headers = {"X-CSRF-Token": csrf}
     joined = registered_client.put(f"/api/travel-groups/{group_id}/membership", headers=headers)
     assert joined.status_code == 200
@@ -85,7 +85,7 @@ def test_public_group_detail_is_readable_and_signed_in_users_can_post(
     assert empty_detail.json()["posts"] == []
     assert empty_detail.json()["totalPosts"] == 0
 
-    csrf = registered_client.cookies.get("vsf_csrf")
+    csrf = registered_client.cookies.get("travelplanner_csrf")
     created = registered_client.post(
         f"/api/travel-groups/{group_id}/posts",
         headers={"X-CSRF-Token": csrf},
@@ -110,7 +110,7 @@ def test_group_posting_requires_authentication_csrf_and_non_blank_content(
         f"/api/travel-groups/{group_id}/posts", json={"content": "Xin chào"}
     ).status_code == 403
 
-    csrf = registered_client.cookies.get("vsf_csrf")
+    csrf = registered_client.cookies.get("travelplanner_csrf")
     blank = registered_client.post(
         f"/api/travel-groups/{group_id}/posts",
         headers={"X-CSRF-Token": csrf},

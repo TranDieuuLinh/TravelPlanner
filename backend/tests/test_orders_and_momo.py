@@ -105,7 +105,7 @@ def test_checkout_session_and_copy_flow(client: TestClient, db_session: Session)
     # 1. Register buyer
     res = client.post("/api/auth/register", json={"email": "buyer1@example.com", "password": "Password123!", "fullName": "Buyer One"})
     assert res.status_code == 201
-    csrf = res.cookies.get("vsf_csrf") or ""
+    csrf = res.cookies.get("travelplanner_csrf") or ""
 
     # 2. Create Checkout Session
     checkout_res = client.post(

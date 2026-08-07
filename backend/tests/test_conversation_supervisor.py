@@ -468,6 +468,28 @@ class TestSupervisorDecide:
         assert "code" in (decision.message or "")
         assert llm.calls == 0
 
+    async def test_origin_question_does_not_start_planning_or_call_llm(self):
+        llm = _FakeLLM([])
+        supervisor = ConstrainedConversationSupervisor(llm=llm)
+
+        decision = await supervisor.decide("bạn đến từ đâu?", None)
+
+        assert decision.intent == "travel_advice"
+        assert "không có quê quán" in (decision.message or "")
+        assert llm.calls == 0
+
+    async def test_greeting_with_plan_request_still_enters_intake(self):
+        llm = _FakeLLM([])
+        supervisor = ConstrainedConversationSupervisor(llm=llm)
+
+        decision = await supervisor.decide(
+            "xin chào, lên kế hoạch Hà Nội 2 ngày giúp tôi",
+            None,
+        )
+
+        assert decision.intent == "create_plan"
+        assert llm.calls == 0
+
     async def test_clear_plan_request_enters_intake_instead_of_repeated_clarify(self):
         llm = _FakeLLM([])
         supervisor = ConstrainedConversationSupervisor(llm=llm)

@@ -1,11 +1,11 @@
 <mxfile host="app.diagrams.net" modified="2026-07-27T00:00:00.000Z" agent="Codex" version="24.7.17" type="device">
-  <diagram id="vsf-database-erd" name="VSF Database ERD">
+  <diagram id="travelplanner-database-erd" name="TravelPlanner Database ERD">
     <mxGraphModel dx="2400" dy="1700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1900" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
 
-        <mxCell id="title" value="VSF Travel Planner — Target Database ERD" style="text;html=1;align=left;verticalAlign=middle;fontSize=26;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="1">
+        <mxCell id="title" value="TravelPlanner — Target Database ERD" style="text;html=1;align=left;verticalAlign=middle;fontSize=26;fontStyle=1;fontColor=#172B4D;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="700" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="subtitle" value="Nguồn: docs/13-database-schema.md  •  PostgreSQL modular monolith  •  Cập nhật 2026-07-27" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontColor=#5E6C84;" vertex="1" parent="1">

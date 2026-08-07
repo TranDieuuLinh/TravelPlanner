@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterator
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (

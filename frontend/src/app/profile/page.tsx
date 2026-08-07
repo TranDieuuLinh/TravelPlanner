@@ -3,23 +3,23 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
   type CountryFootprint,
   ProfileVisitedMap,
-} from "@/components/ProfileVisitedMap";
-import { APIError } from "@/lib/api";
-import { getPurchasedPlans, getUserFavorites } from "@/lib/marketplace";
+} from "@/features/profile/components/ProfileVisitedMap";
+import { APIError } from "@/shared/api/client";
+import { getPurchasedPlans, getUserFavorites } from "@/features/marketplace/api";
 import {
   createProfilePost,
   deleteTravelerProfile,
   getProfileShowcase,
   getTravelerProfile,
   type TravelerProfile,
-} from "@/lib/users";
-import type { BuyerPlan, ListingSummary } from "@/types/marketplace";
-import type { ProfileShowcase } from "@/types/profile";
+} from "@/features/profile/api";
+import type { BuyerPlan, ListingSummary } from "@/features/marketplace/types";
+import type { ProfileShowcase } from "@/features/profile/types";
 
 type ProfileTab = "achievements" | "posts" | "saved" | "purchased";
 
@@ -584,7 +584,7 @@ function MarketplaceProfileGrid({ items }: { items: ListingSummary[] }) {
         const image = item.currentVersion.mediaUrls[0];
         return (
           <article key={item.id}>
-            {image ? <img alt={item.currentVersion.title} src={image} /> : <div className="profileListingPlaceholder">VSF</div>}
+            {image ? <img alt={item.currentVersion.title} src={image} /> : <div className="profileListingPlaceholder">TravelPlanner</div>}
             <div>
               <small>{item.currentVersion.destination} · {item.currentVersion.durationDays} ngày</small>
               <h3>{item.currentVersion.title}</h3>

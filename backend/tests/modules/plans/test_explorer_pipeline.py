@@ -755,11 +755,11 @@ def test_explorer_timing_is_returned_and_appended_without_raw_content(
     terminal_lines = [
         record.getMessage()
         for record in caplog.records
-        if record.getMessage().startswith("VSF_TIMING explorer ")
+        if record.getMessage().startswith("TRAVELPLANNER_TIMING explorer ")
     ]
     assert len(terminal_lines) == 1
     terminal_payload = json.loads(
-        terminal_lines[0].removeprefix("VSF_TIMING explorer ")
+        terminal_lines[0].removeprefix("TRAVELPLANNER_TIMING explorer ")
     )
     assert terminal_payload["event"] == "explorer_timing"
     assert terminal_payload["providerCounts"] == {"fake_places": 2}

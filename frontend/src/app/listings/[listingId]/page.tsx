@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
-import { addFavorite, getPublicListingDetail, removeFavorite } from "@/lib/marketplace";
-import { createCheckoutSession } from "@/lib/orders";
-import type { ListingDetail } from "@/types/marketplace";
+import { APIError } from "@/shared/api/client";
+import { addFavorite, getPublicListingDetail, removeFavorite } from "@/features/marketplace/api";
+import { createCheckoutSession } from "@/features/orders/api";
+import type { ListingDetail } from "@/features/marketplace/types";
 
 export default function ListingDetailPage() {
   const params = useParams();

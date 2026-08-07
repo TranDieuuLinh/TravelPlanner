@@ -4,14 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError } from "@/shared/api/client";
 import {
   createTravelGroupPost,
   getTravelGroup,
   joinTravelGroup,
-} from "@/lib/travel-groups";
-import type { TravelGroupDetail, TravelGroupPost } from "@/types/travel-groups";
+} from "@/features/travel-groups/api";
+import type { TravelGroupDetail, TravelGroupPost } from "@/features/travel-groups/types";
 
 function MembersIcon() {
   return (
@@ -165,7 +165,7 @@ export default function TravelGroupPage() {
         <div className="pageWidth groupHeroInner">
           <Link className="groupBackLink" href="/reels">← Nhóm du lịch</Link>
           <div className="groupHeroArt">
-            <Image alt="Chim cánh cụt VSF ôm quả địa cầu" height={220} priority src="/images/penguin-globe-logo.png" width={220} />
+            <Image alt="Chim cánh cụt TravelPlanner ôm quả địa cầu" height={220} priority src="/images/penguin-globe-logo.png" width={220} />
           </div>
           <div className="groupHeroCopy">
             <span><GlobeIcon /> Nhóm công khai</span>

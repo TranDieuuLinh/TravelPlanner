@@ -270,11 +270,11 @@ def test_queue_claims_only_one_job_until_it_finishes(
     terminal_lines = [
         record.getMessage()
         for record in caplog.records
-        if record.getMessage().startswith("VSF_TIMING url_job ")
+        if record.getMessage().startswith("TRAVELPLANNER_TIMING url_job ")
     ]
     assert len(terminal_lines) == 1
     timing_payload = json.loads(
-        terminal_lines[0].removeprefix("VSF_TIMING url_job ")
+        terminal_lines[0].removeprefix("TRAVELPLANNER_TIMING url_job ")
     )
     assert timing_payload["event"] == "url_job_timing"
     assert timing_payload["status"] == "succeeded"

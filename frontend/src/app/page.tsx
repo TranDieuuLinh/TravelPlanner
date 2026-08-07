@@ -4,9 +4,9 @@ import Image from "next/image";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { searchListings } from "@/lib/marketplace";
-import type { ListingSummary } from "@/types/marketplace";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { searchListings } from "@/features/marketplace/api";
+import type { ListingSummary } from "@/features/marketplace/types";
 
 const landingFont = Plus_Jakarta_Sans({
   display: "swap",
@@ -123,7 +123,7 @@ function ProductPreview() {
 
   return (
     <div
-      aria-label="Bản xem trước quy trình tạo kế hoạch của VSF Travel"
+      aria-label="Bản xem trước quy trình tạo kế hoạch của TravelPlanner"
       className="landingProductPreview"
       onPointerCancel={resetPreviewTilt}
       onPointerLeave={resetPreviewTilt}
@@ -145,7 +145,7 @@ function ProductPreview() {
         <span className="landingMapPin landingMapPinEnd">B</span>
       </div>
       <Image
-        alt="Các nhân vật VSF khám phá những điểm đến Việt Nam"
+        alt="Các nhân vật TravelPlanner khám phá những điểm đến Việt Nam"
         className="landingHeroCrew"
         height={640}
         priority
@@ -175,7 +175,7 @@ function ProductPreview() {
         </div>
       </div>
       <div className="landingPreviewAssistant">
-        <Image alt="Trợ lý VSF" height={72} src="/images/penguin-plan.png" width={52} />
+        <Image alt="Trợ lý TravelPlanner" height={72} src="/images/penguin-plan.png" width={52} />
         <span>Giữ lại các điểm bạn thích,<br />mình sẽ xếp lại tuyến.</span>
       </div>
     </div>
@@ -224,10 +224,10 @@ export default function HomePage() {
         <div className="landingHeroCopy">
           <span className="landingKicker"><span className="landingKickerDot" /> Lập kế hoạch du lịch cùng AI</span>
           <h1><span>Ý tưởng thành</span><br />hành trình.</h1>
-          <p className="landingHeroLead">Dán một video hoặc kể điều bạn thích. VSF giúp bạn gom địa điểm, xếp tuyến và tạo một lịch trình vừa với cách bạn muốn đi.</p>
+          <p className="landingHeroLead">Dán một video hoặc kể điều bạn thích. TravelPlanner giúp bạn gom địa điểm, xếp tuyến và tạo một lịch trình vừa với cách bạn muốn đi.</p>
           <div className="landingHeroActions">
             <Link className="landingButton landingButtonPrimary" href={plannerHref}>Lên lịch trình của tôi <ArrowIcon /></Link>
-            <a className="landingButton landingButtonQuiet" href="#how-it-works">Xem VSF hoạt động</a>
+            <a className="landingButton landingButtonQuiet" href="#how-it-works">Xem TravelPlanner hoạt động</a>
           </div>
           <div className="landingHeroSignals" aria-label="Các lợi ích chính">
             <span><ShieldIcon /> Nguồn rõ ràng</span>
@@ -238,7 +238,7 @@ export default function HomePage() {
         <ProductPreview />
       </section>
 
-      <section className="landingValueStrip" aria-label="Chuỗi giá trị của VSF Travel">
+      <section className="landingValueStrip" aria-label="Chuỗi giá trị của TravelPlanner">
         <div className="pageWidth landingValueInner">
           <span>Video và ý tưởng</span><i>→</i><span>Địa điểm đã xác nhận</span><i>→</i><span>Lộ trình phù hợp</span><i>→</i><strong>Plan của bạn</strong>
         </div>
@@ -248,7 +248,7 @@ export default function HomePage() {
         <div className="landingSectionIntro">
           <span className="landingKicker">Cách hoạt động</span>
           <h2>Bắt đầu nhẹ nhàng. Đi với một plan rõ ràng.</h2>
-          <p>Không cần điền một form dài. Bạn chia sẻ ý tưởng, VSF làm rõ phần còn thiếu và để bạn quyết định những điểm thực sự quan trọng.</p>
+          <p>Không cần điền một form dài. Bạn chia sẻ ý tưởng, TravelPlanner làm rõ phần còn thiếu và để bạn quyết định những điểm thực sự quan trọng.</p>
         </div>
         <div className="landingStepsGrid">
           <StepCard number="01" icon={<LinkIcon />} title="Đưa cảm hứng vào" description="Dán URL video, nội dung tham khảo hoặc bắt đầu bằng một yêu cầu tự nhiên." />
@@ -260,7 +260,7 @@ export default function HomePage() {
       <section className="landingSection landingProofSection pageWidth">
         <div className="landingProofVisual">
           <div className="landingChatBubble landingChatBubbleUser">Tôi muốn đi Hà Nội 3 ngày, thích văn hóa, cà phê và đi thong thả.</div>
-          <div className="landingChatBubble landingChatBubbleAssistant"><Image alt="Trợ lý VSF" height={44} src="/images/penguin-chat.png" width={38} /><span><strong>Đã hiểu</strong><br />Hà Nội · 3 ngày · Văn hóa · Cà phê · Nhịp độ thong thả</span></div>
+          <div className="landingChatBubble landingChatBubbleAssistant"><Image alt="Trợ lý TravelPlanner" height={44} src="/images/penguin-chat.png" width={38} /><span><strong>Đã hiểu</strong><br />Hà Nội · 3 ngày · Văn hóa · Cà phê · Nhịp độ thong thả</span></div>
           <div className="landingPreferenceChips"><span>Hà Nội</span><span>3 ngày</span><span>Văn hóa</span><span>Đi thong thả</span></div>
         </div>
         <div className="landingProofCopy">
@@ -308,7 +308,7 @@ export default function HomePage() {
       </section>
 
       <section className="landingCreatorSection pageWidth" id="for-creators">
-        <div className="landingCreatorVisual"><Image alt="Chim cánh cụt VSF đang chuẩn bị kế hoạch" height={320} src="/images/penguin-plan.png" width={230} /></div>
+        <div className="landingCreatorVisual"><Image alt="Chim cánh cụt TravelPlanner đang chuẩn bị kế hoạch" height={320} src="/images/penguin-plan.png" width={230} /></div>
         <div className="landingCreatorCopy"><span className="landingKicker">Dành cho creator</span><h2>Biến trải nghiệm địa phương thành một hành trình có cấu trúc.</h2><p>Bắt đầu từ video, tuyến đường hoặc plan bạn đã có. Bổ sung ngữ cảnh, nguồn và cách kể của riêng bạn để chia sẻ với cộng đồng.</p><Link className="landingTextLink" href={user ? "/creator/listings/new" : "/login?next=%2Fcreator%2Flistings%2Fnew"}>Khám phá Creator Studio <ArrowIcon /></Link></div>
       </section>
 

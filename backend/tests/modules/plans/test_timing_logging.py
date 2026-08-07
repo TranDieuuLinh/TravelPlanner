@@ -47,11 +47,11 @@ def test_planner_timing_is_logged_to_terminal(caplog) -> None:
     terminal_lines = [
         record.getMessage()
         for record in caplog.records
-        if record.getMessage().startswith("VSF_TIMING planner ")
+        if record.getMessage().startswith("TRAVELPLANNER_TIMING planner ")
     ]
     assert len(terminal_lines) == 1
     payload = json.loads(
-        terminal_lines[0].removeprefix("VSF_TIMING planner ")
+        terminal_lines[0].removeprefix("TRAVELPLANNER_TIMING planner ")
     )
     assert payload["event"] == "planner_timing"
     assert payload["totalSeconds"] == report.total_seconds

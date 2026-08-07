@@ -1,5 +1,5 @@
 {
-  "name": "vsf-travel-frontend",
+  "name": "travelplanner-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:api": "node --experimental-strip-types --test src/lib/api.test.mjs",
-    "test:transport": "node --experimental-strip-types --test src/lib/transport-options.test.mjs",
+    "test:api": "node --experimental-strip-types --test src/shared/api/client.test.mjs",
+    "test:planner": "node --experimental-strip-types --test src/features/planner/lib/*.test.mjs",
+    "test:transport": "node --experimental-strip-types --test src/features/planner/lib/transport-options.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

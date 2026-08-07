@@ -1,6 +1,6 @@
-# VSF Travel Planner
+# TravelPlanner
 
-VSF Travel Planner biến nguồn cảm hứng du lịch thành lịch trình có thể sử dụng
+TravelPlanner biến nguồn cảm hứng du lịch thành lịch trình có thể sử dụng
 thực tế. Người dùng có thể dán URL video hoặc nội dung tham khảo, kiểm tra các
 địa điểm được hệ thống trích xuất, bổ sung ngày đi, ngân sách và ràng buộc, sau
 đó nhận Main Plan đã được kiểm tra cùng Backup Plan riêng khi cần.
@@ -35,7 +35,7 @@ Xem [Phạm vi MVP](docs/04-mvp-scope.md) để biết ranh giới phát triển
 ## Cấu trúc kho mã
 
 ```text
-VSF_TravelPlanner/
+travelplanner/
 ├── README.md
 ├── AGENTS.md
 ├── docs/
@@ -51,15 +51,22 @@ VSF_TravelPlanner/
 │   ├── 10-testing-strategy.md
 │   ├── 11-security-and-privacy.md
 │   ├── 12-roadmap.md
-│   ├── 12-roadmap-person-c.md
 │   ├── assets/
 │   ├── glossary.md
 │   └── decisions/
 ├── frontend/
+│   └── src/
+│       ├── app/                   # Next.js routes và layout
+│       ├── features/              # Module theo domain
+│       ├── shared/                # HTTP client/hạ tầng dùng chung
+│       └── components/            # App shell và visual dùng chung
 ├── admin-frontend/               # Console nội bộ quan sát planning runs
 ├── backend/
 └── docker-compose.yml
 ```
+
+Sơ đồ chi tiết trách nhiệm của từng module nằm trong
+[`docs/16-codebase-module-map.md`](docs/16-codebase-module-map.md).
 
 ## Chạy dự án trên máy cá nhân
 

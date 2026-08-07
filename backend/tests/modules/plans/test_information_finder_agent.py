@@ -31,11 +31,40 @@ def candidate():
     )
 
 
-def context(content="cafe", **data):
+def context(
+    content="cafe",
+    *,
+    decision_intent="ask_place",
+    decision_message=None,
+    **data,
+):
     chat = SimpleNamespace(destination="Hanoi", revision=4)
     turn = SimpleNamespace(content=content)
-    decision = SimpleNamespace(intent="travel_advice", options=())
+    decision = SimpleNamespace(
+        intent=decision_intent,
+        message=decision_message,
+        options=(),
+    )
     return ConversationAgentContext(chat, turn, decision, None, data=data)
+
+
+def test_travel_advice_uses_the_supervisor_response_without_searching():
+    reader = FakeReader(InformationResult(kind="empty", message="unused"))
+    response = asyncio.run(
+        InformationFinderAgent(reader).run(
+            context(
+                "xin chào",
+                decision_intent="travel_advice",
+                decision_message="Chào bạn! Mình giúp gì được cho bạn?",
+            )
+        )
+    )
+
+    assert response.message == "Chào bạn! Mình giúp gì được cho bạn?"
+    assert response.blocks == [
+        {"type": "text", "text": "Chào bạn! Mình giúp gì được cho bạn?"}
+    ]
+    assert reader.calls == []
 
 
 def test_place_query_calls_reader_and_returns_candidate_blocks():

@@ -15877,7 +15877,7 @@ svg {
   }
 }
 
-/* Keep the VSF assistant visually continuous and keep source import available
+/* Keep the TravelPlanner assistant visually continuous and keep source import available
    after a plan has been created. This final override intentionally follows all
    Planner layouts so the header, conversation, and composer share one surface. */
 .plannerChat:not(.is-collapsed) {
@@ -17006,7 +17006,7 @@ svg {
 }
 
 /* Landing contrast direction: editorial travel, warm paper, deep ink, and a
-   single electric CTA color. This keeps the VSF mascot while moving the page
+   single electric CTA color. This keeps the TravelPlanner mascot while moving the page
    away from a low-contrast pastel dashboard treatment. */
 .landingPage {
   --landing-ink: #13211e;

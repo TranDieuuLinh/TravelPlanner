@@ -29,11 +29,7 @@ if str(BACKEND_DIR) not in sys.path:
 from app.core.config import settings  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.integrations.llm.provider import GeminiLLMClient  # noqa: E402
-from app.integrations.search import (  # noqa: E402
-    GoogleSeleniumSearchProvider,
-    TavilySearchProvider,
-    WebSearchProvider,
-)
+from app.integrations.search.base import WebSearchProvider  # noqa: E402
 from app.modules.knowledge_graph.model import (  # noqa: E402
     KnowledgeEntity,
     KnowledgeProperty,
@@ -388,6 +384,10 @@ def main() -> int:
             min_interval_seconds=args.min_interval_seconds,
         )
         if args.search_provider == "google_selenium":
+            from app.integrations.search.google_selenium import (
+                GoogleSeleniumSearchProvider,
+            )
+
             web_search_provider: WebSearchProvider | None = (
                 GoogleSeleniumSearchProvider(
                     timeout_seconds=settings.google_web_search_timeout_seconds,
@@ -403,6 +403,8 @@ def main() -> int:
                 )
             )
         elif args.search_provider == "tavily":
+            from app.integrations.search.tavily import TavilySearchProvider
+
             web_search_provider = TavilySearchProvider(
                 settings.tavily_api_key or "",
                 timeout_seconds=settings.tavily_timeout_seconds,
