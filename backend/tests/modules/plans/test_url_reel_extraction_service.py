@@ -1928,6 +1928,46 @@ def test_frame_ocr_retries_failed_parallel_batch_and_keeps_other_results(
     )
 
 
+def test_frame_ocr_fails_over_failed_batch_to_another_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.frame_vision.settings."
+        "url_reel_vision_batch_size",
+        2,
+    )
+    attempts: list[tuple[int, str]] = []
+
+    class KeyFailingVision(GeminiReelFrameVision):
+        def _analyze_batch(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+            api_key: str,
+        ) -> FrameVisionResult:
+            first_frame = int(frame_paths[0].stem.rsplit("_", 1)[-1])
+            attempts.append((first_frame, api_key))
+            if first_frame == 3 and api_key == "bad-key":
+                raise RuntimeError("credential rejected")
+            return FrameVisionResult(
+                text=f"batch-{first_frame}",
+                places=[f"Place {first_frame}"],
+                status="ok",
+            )
+
+    result = KeyFailingVision(api_key=["bad-key", "good-key"]).analyze(
+        [Path(f"frame_{index:03d}.jpg") for index in range(1, 5)],
+        destination="Hanoi",
+    )
+
+    assert attempts.count((3, "bad-key")) == 2
+    assert (3, "good-key") in attempts
+    assert result.places == ["Place 1", "Place 3"]
+    assert result.status == "ok"
+    assert result.error is None
+
+
 def test_service_combines_stt_and_frame_ocr(tmp_path: Path) -> None:
     class MediaWithFrame(FakeMedia):
         def prepare(
@@ -2491,6 +2531,76 @@ def test_context_extractor_rejects_unsupported_ocr_logos() -> None:
     assert context.extracted_places == ["Cafe Giảng"]
     assert context.extracted_place_details[0].search_region == "Hanoi"
     assert context.extracted_place_details[0].confidence == 0.72
+
+
+def test_context_extractor_keeps_numbered_activities_and_day_trip_city() -> None:
+    context = UrlReelContextExtractor().extract(
+        metadata=UrlMetadata(
+            originalUrl="https://www.instagram.com/reels/example",
+            canonicalUrl="https://www.instagram.com/reels/example",
+            platform="instagram",
+            title="Things to do in Hanoi",
+        ),
+        transcript="",
+        destination="Hanoi",
+        expected_place_count=6,
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="Train Street",
+                evidence="1. Train Street",
+                entityType="venue",
+            ),
+            FrameVisionObservation(
+                order=2,
+                placeName="The Note Coffee",
+                evidence="2. The Note Coffee",
+                entityType="venue",
+            ),
+            FrameVisionObservation(
+                order=3,
+                placeName="Explore the Old Quarter",
+                evidence="3. Explore the Old Quarter",
+                activity="Explore cafes, shops, and the night market",
+                entityType="activity",
+            ),
+            FrameVisionObservation(
+                order=4,
+                placeName="Ninh Binh",
+                evidence="4. Daytrip to Ninh Binh",
+                activity="Take a day trip",
+                entityType="city",
+            ),
+            FrameVisionObservation(
+                order=5,
+                placeName="Water Puppet Show",
+                evidence="5. Water Puppet Show",
+                activity="Watch a water puppet show",
+                entityType="activity",
+            ),
+            FrameVisionObservation(
+                order=6,
+                placeName="Head Spa",
+                evidence="6. Head Spa",
+                activity="Book a relaxing head spa",
+                entityType="activity",
+            ),
+        ],
+    )
+
+    assert context.extracted_places == [
+        "Train Street",
+        "The Note Coffee",
+        "Explore the Old Quarter",
+        "Ninh Binh",
+        "Water Puppet Show",
+        "Head Spa",
+    ]
+    assert [
+        detail.entity_type for detail in context.extracted_place_details
+    ] == ["venue", "venue", "activity", "city", "activity", "activity"]
+    assert context.extraction_coverage == 1.0
+    assert context.coverage_status == "sufficient"
 
 
 def test_context_extractor_preserves_numbered_youtube_list_and_splits_stops() -> None:

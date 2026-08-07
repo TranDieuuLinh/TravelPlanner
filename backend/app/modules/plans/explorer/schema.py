@@ -244,7 +244,7 @@ class UnifiedPlaceCandidate(BaseModel):
         Field(default=None, ge=15, le=720, alias="sourceDurationMinutes"),
     ]
     entity_type: Annotated[
-        Literal["venue", "sub_place"],
+        Literal["venue", "sub_place", "activity", "city"],
         Field(default="venue", alias="entityType"),
     ]
     parent_place: Annotated[
@@ -336,7 +336,7 @@ class PlaceCandidateReview(BaseModel):
     ]
     retryable: bool = True
     entity_type: Annotated[
-        Literal["venue", "sub_place"],
+        Literal["venue", "sub_place", "activity", "city"],
         Field(default="venue", alias="entityType"),
     ]
     authority: Literal["high", "medium", "low"] = "medium"

@@ -1,7 +1,9 @@
-# ADR-026: Làm giàu giá TravelPlace bằng Gemini Search grounding
+# ADR-026: Làm giàu giá TravelPlace có nguồn
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-08-06
+- Cập nhật: 2026-08-07, Selenium thay Playwright và trở thành search provider
+  mặc định cho price crawler.
 
 ## Bối cảnh
 
@@ -14,8 +16,10 @@ lỗi thời. Repo đã có Gemini client với structured output, retry và poo
 
 1. Thêm CLI batch, resumable, dry-run mặc định; không thêm request web dài vào
    luồng Planner của người dùng.
-2. Dùng Gemini Google Search grounding sau interface `LLMClient`. Provider trả
-   model JSON cùng danh sách `groundingChunks`; domain không nhận raw search
+2. Search nằm sau `WebSearchProvider`, extraction nằm sau `LLMClient`. Mặc định
+   Selenium tìm `giá vé của <canonical name>`, mở kết quả organic đầu tiên và
+   chuyển text đã render cùng URL sang Gemini structured output. Gemini Search
+   grounding và Tavily vẫn là provider tùy chọn; domain không nhận raw provider
    payload.
 3. Prompt mang canonical name, địa chỉ, vùng và source identity. Web content là
    untrusted data; model phải từ chối khi identity hoặc giá nhập nhằng.
@@ -43,10 +47,10 @@ lỗi thời. Repo đã có Gemini client với structured output, retry và poo
     grounding có quota riêng; price research chỉ hoạt động khi project có quota
     cho Google Search grounding. Stable Gemini 2.5 không được xem là fallback
     cho project mới khi provider trả `model no longer available to new users`.
-12. Google Playwright SERP adapter chỉ là opt-in diagnostic fallback. Nó chạy
-    tuần tự, không bypass CAPTCHA/block và không apply kết quả khi search bị
-    chặn. Live test local bị chặn ở cả headless/headed, nên chưa thay provider
-    grounded mặc định và chưa được coi là production-ready.
+12. Google Selenium adapter chạy tuần tự, không bypass consent, CAPTCHA, paywall
+    hoặc block và không apply kết quả khi search bị chặn. Page content được giới
+    hạn trước khi gửi LLM và luôn là dữ liệu không tin cậy. Credential Gemini
+    chỉ đọc từ environment, không được hard-code hoặc log.
 13. Thêm Tavily basic search sau `WebSearchProvider` làm fallback có key. Adapter
     không yêu cầu answer/raw content, chỉ trả title/URL/snippet; Gemini chạy
     structured output không-grounding và application vẫn kiểm tra source index.

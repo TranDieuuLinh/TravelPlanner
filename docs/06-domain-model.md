@@ -63,7 +63,7 @@ FK `entity_id` tới `knowledge_entities`. Các bảng `places`, `place_images`,
 `place_opening_hours` và `place_amenities` không còn tồn tại.
 
 Giá vé TravelPlace được làm giàu theo batch bằng
-`scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
+`tool-crawl/crawl-price/enrich_travel_place_prices.py`. Kết quả có nguồn grounded hợp lệ được
 lưu trong property JSON `admission_price`. Snapshot chỉ giữ giá vé vào cửa tiêu
 chuẩn ban ngày cho một người lớn; `minAmount`, `maxAmount` và
 `representativeAmount` cùng một giá, không trộn giá trẻ em/ưu tiên/VIP/tour đêm

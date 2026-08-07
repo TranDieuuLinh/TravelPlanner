@@ -540,7 +540,9 @@ class UrlReelContextExtractor:
             speech_observations or [],
             key=lambda item: item.order,
         ):
-            if observation.entity_type not in {"venue", "sub_place"}:
+            if observation.entity_type not in {
+                "venue", "sub_place", "activity", "city"
+            }:
                 continue
             candidate_name = (
                 observation.parent_place
@@ -565,7 +567,9 @@ class UrlReelContextExtractor:
         )
         observed_visual_names: set[str] = set()
         for observation in ordered_visual_observations:
-            if observation.entity_type not in {"venue", "sub_place"}:
+            if observation.entity_type not in {
+                "venue", "sub_place", "activity", "city"
+            }:
                 continue
             candidate_name = (
                 observation.parent_place
@@ -1180,7 +1184,9 @@ class UrlReelContextExtractor:
                 else observation.place_name
             ): observation
             for observation in speech_observations or []
-            if observation.entity_type in {"venue", "sub_place"}
+            if observation.entity_type in {
+                "venue", "sub_place", "activity", "city"
+            }
         }
         transcript_days = (
             [None for _place in places]
@@ -1333,7 +1339,24 @@ class UrlReelContextExtractor:
                 and speech_observation.authority != "high"
             ):
                 continue
-            if self._is_unsupported_ocr_logo(place, source_evidence):
+            observed_entity_type = (
+                speech_observation.entity_type
+                if speech_observation is not None
+                else observation.entity_type
+                if observation is not None
+                else "venue"
+            )
+            candidate_entity_type = (
+                observed_entity_type
+                if observed_entity_type
+                in {"venue", "sub_place", "activity", "city"}
+                else "venue"
+            )
+            if self._is_unsupported_ocr_logo(
+                place,
+                source_evidence,
+                entity_type=candidate_entity_type,
+            ):
                 continue
             local_evidence = " ".join(source_evidence.values()) or place
             source_day = transcript_days[order - 1]
@@ -1453,12 +1476,7 @@ class UrlReelContextExtractor:
                     sourceTimeHint=source_time_hint,
                     sourceActivity=source_activity,
                     sourceDurationMinutes=source_duration_minutes,
-                    entityType=(
-                        speech_observation.entity_type
-                        if speech_observation is not None
-                        and speech_observation.entity_type in {"venue", "sub_place"}
-                        else "venue"
-                    ),
+                    entityType=candidate_entity_type,
                     aliases=(
                         list(
                             dict.fromkeys(
@@ -1476,6 +1494,8 @@ class UrlReelContextExtractor:
                     parentPlace=(
                         speech_observation.parent_place
                         if speech_observation is not None
+                        else observation.parent_place
+                        if observation is not None
                         else None
                     ),
                     authority=(
@@ -1509,8 +1529,12 @@ class UrlReelContextExtractor:
         self,
         place: str,
         source_evidence: dict[str, str],
+        *,
+        entity_type: str,
     ) -> bool:
         """Drop a logo guess when OCR evidence never names that venue."""
+        if entity_type not in {"venue", "sub_place"}:
+            return False
         if set(source_evidence) != {"ocr"}:
             return False
         place_tokens = self._dedupe_key(place)

@@ -1,9 +1,9 @@
 from .base import WebSearchProvider, WebSearchResult
-from .google_playwright import GooglePlaywrightSearchProvider
+from .google_selenium import GoogleSeleniumSearchProvider
 from .tavily import TavilySearchProvider
 
 __all__ = [
-    "GooglePlaywrightSearchProvider",
+    "GoogleSeleniumSearchProvider",
     "TavilySearchProvider",
     "WebSearchProvider",
     "WebSearchResult",

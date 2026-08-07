@@ -21,7 +21,8 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPOSITORY_DIR = Path(__file__).resolve().parents[2]
+BACKEND_DIR = REPOSITORY_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -29,7 +30,7 @@ from app.core.config import settings  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.integrations.llm.provider import GeminiLLMClient  # noqa: E402
 from app.integrations.search import (  # noqa: E402
-    GooglePlaywrightSearchProvider,
+    GoogleSeleniumSearchProvider,
     TavilySearchProvider,
     WebSearchProvider,
 )
@@ -81,7 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument(
         "--search-provider",
-        choices=("google_playwright", "gemini_grounded", "tavily"),
+        choices=("google_selenium", "gemini_grounded", "tavily"),
         default=settings.price_search_provider,
     )
     parser.add_argument(
@@ -100,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cache-file",
         type=Path,
-        default=Path("var/travel-place-price-research-v1.jsonl"),
+        default=BACKEND_DIR / "var" / "travel-place-price-research-v1.jsonl",
     )
     parser.add_argument(
         "--refresh",
@@ -386,13 +387,18 @@ def main() -> int:
             args.model,
             min_interval_seconds=args.min_interval_seconds,
         )
-        if args.search_provider == "google_playwright":
+        if args.search_provider == "google_selenium":
             web_search_provider: WebSearchProvider | None = (
-                GooglePlaywrightSearchProvider(
-                    work_dir=settings.google_maps_scraper_work_dir,
+                GoogleSeleniumSearchProvider(
                     timeout_seconds=settings.google_web_search_timeout_seconds,
                     min_interval_seconds=(
                         settings.google_web_search_min_interval_seconds
+                    ),
+                    page_load_wait_seconds=(
+                        settings.google_selenium_page_load_wait_seconds
+                    ),
+                    post_search_delay_seconds=(
+                        settings.google_selenium_post_search_delay_seconds
                     ),
                 )
             )
