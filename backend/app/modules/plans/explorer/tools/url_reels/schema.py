@@ -66,9 +66,13 @@ class SpeechToTextObservation(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     address_hint: str | None = Field(default=None, alias="addressHint")
     parent_place: str | None = Field(default=None, alias="parentPlace")
-    evidence_source: Literal["metadata", "caption", "stt"] = Field(
+    evidence_source: Literal["metadata", "caption", "stt", "ocr"] = Field(
         default="stt",
         alias="evidenceSource",
+    )
+    source_evidence: dict[str, str] = Field(
+        default_factory=dict,
+        alias="sourceEvidence",
     )
     authority: Literal["high", "medium", "low"] = "medium"
 

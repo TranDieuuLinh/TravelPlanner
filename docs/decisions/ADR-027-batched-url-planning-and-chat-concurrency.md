@@ -22,8 +22,9 @@ worker mà không khóa theo chat sẽ tạo nhiều writer cạnh tranh cùng r
   không đổi; các stage chọn địa điểm, route và check vẫn chạy lại.
 - Commit Explorer source/review snapshot trước KG enrichment phụ để lỗi
   enrichment không rollback critical hand-off.
-- Supervisor chỉ được chuyển tiếp `intakePatch` có schema; service vẫn sở hữu
-  validation, authorization và persistence.
+- Supervisor chỉ được chuyển tiếp planning arguments có schema; service chiếu
+  chúng thành intake patch nội bộ và vẫn sở hữu validation, authorization cùng
+  persistence. Contract classifier-only chi tiết được thay thế bởi ADR-029.
 
 ## Hệ quả
 

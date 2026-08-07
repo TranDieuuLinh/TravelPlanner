@@ -113,17 +113,9 @@ class ConversationAgentDispatcher:
         self,
         context: ConversationAgentContext,
     ) -> Any:
-        expected = agent_for_conversation_intent(context.decision.intent)
-        if expected is None:
+        agent = agent_for_conversation_intent(context.decision.intent)
+        if agent is None:
             raise ValueError(
                 f"Intent {context.decision.intent!r} does not route to an agent"
             )
-        # Legacy callers did not carry an agent field. They still route via
-        # this server-owned mapping; an explicitly supplied wrong agent is
-        # rejected.
-        if context.decision.agent is not None and context.decision.agent != expected:
-            raise ValueError(
-                f"Agent {context.decision.agent!r} does not match intent "
-                f"{context.decision.intent!r}"
-            )
-        return await self.dispatch(expected, context)
+        return await self.dispatch(agent, context)

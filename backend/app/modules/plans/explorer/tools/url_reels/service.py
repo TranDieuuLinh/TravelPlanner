@@ -32,6 +32,10 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlMetadata,
 )
 from app.modules.plans.explorer.tools.url_reels.speech_to_text import GeminiAudioSpeechToText
+from app.modules.plans.explorer.tools.url_reels.source_observation_fuser import (
+    SourceObservationFuser,
+    SourceObservationFusionResult,
+)
 from app.modules.plans.explorer.tools.url_reels.utils import (
     canonicalize_url,
     detect_platform,
@@ -54,6 +58,7 @@ class UrlReelExtractionService:
         frame_vision: GeminiReelFrameVision | None = None,
         youtube_transcript: YouTubeTranscriptExtractor | None = None,
         caption_structurer: CaptionStructurer | None = None,
+        source_observation_fuser: SourceObservationFuser | None = None,
         web_page: WebPageExtractionService | None = None,
     ) -> None:
         self.loader = loader or UrlReelLoader()
@@ -65,6 +70,7 @@ class UrlReelExtractionService:
             youtube_transcript or YouTubeTranscriptExtractor()
         )
         self.caption_structurer = caption_structurer
+        self.source_observation_fuser = source_observation_fuser
         self.web_page = web_page or (
             WebPageExtractionService(text_structurer=caption_structurer)
             if caption_structurer is not None
@@ -192,12 +198,50 @@ class UrlReelExtractionService:
             metadata.description,
             speech_result.text,
         )
+        if expected_place_count is None and vision_result.observations:
+            observed_orders = {
+                observation.order
+                for observation in vision_result.observations
+                if observation.order is not None
+            }
+            if 1 in observed_orders and len(observed_orders) >= 2:
+                expected_place_count = max(observed_orders)
+
+        fusion_result: SourceObservationFusionResult | None = None
+        if self.source_observation_fuser is not None:
+            fusion_result = self.source_observation_fuser.fuse(
+                transcript=speech_result.text,
+                visual_text=vision_result.text,
+                visual_observations=vision_result.observations,
+                metadata=metadata,
+                expected_place_count=expected_place_count,
+                destination_hint=effective_destination,
+            )
+            timings["sourceObservationFusion"] = fusion_result.duration_seconds
+            if fusion_result.status == "ok":
+                timings["sourceObservationFusionUsed"] = 1.0
+                speech_result = speech_result.model_copy(
+                    update={
+                        "observations": fusion_result.observations,
+                        "region_story": fusion_result.region_story,
+                        "region_story_evidence": (
+                            fusion_result.region_story_evidence
+                        ),
+                    }
+                )
+                expected_place_count = (
+                    fusion_result.expected_place_count
+                    or expected_place_count
+                )
+            elif fusion_result.status == "failed":
+                timings["sourceObservationFusionFailed"] = 1.0
         if (
             platform == "youtube"
             and speech_result.status == "ok"
             and speech_result.text
             and not speech_result.observations
             and self.caption_structurer is not None
+            and self.source_observation_fuser is None
             and not _metadata_has_authoritative_blueprint(metadata)
         ):
             structure_result = self.caption_structurer.structure(
@@ -304,6 +348,7 @@ class UrlReelExtractionService:
         if (
             platform in {"tiktok", "instagram"}
             and self.caption_structurer is not None
+            and self.source_observation_fuser is None
             and (metadata.description or "").strip()
         ):
             metadata_story_result = self.caption_structurer.structure(
@@ -335,20 +380,32 @@ class UrlReelExtractionService:
             context_arguments["visual_observations"] = (
                 vision_result.observations
             )
-            if expected_place_count is None:
-                observed_orders = {
-                    observation.order
-                    for observation in vision_result.observations
-                    if observation.order is not None
-                }
-                if 1 in observed_orders and len(observed_orders) >= 2:
-                    expected_place_count = max(observed_orders)
-                    context_arguments["expected_place_count"] = (
-                        expected_place_count
-                    )
         context_start = time.perf_counter()
         context = self.context_extractor.extract(**context_arguments)
         region_story = None
+        if (
+            fusion_result is not None
+            and fusion_result.status == "ok"
+            and fusion_result.region_story
+        ):
+            evidence_source = fusion_result.region_story_evidence_source
+            source_text = {
+                "metadata": "\n".join(
+                    value
+                    for value in (metadata.title or "", metadata.description or "")
+                    if value
+                ),
+                "caption": metadata.description or "",
+                "stt": speech_result.text,
+                "ocr": vision_result.text,
+            }.get(evidence_source, "")
+            region_story = _grounded_region_story(
+                story=fusion_result.region_story,
+                evidence=fusion_result.region_story_evidence,
+                source_text=source_text,
+                evidence_type=evidence_source or "stt",
+                destination=effective_destination,
+            )
         if metadata_story_result is not None and metadata_story_result.status == "ok":
             region_story = _grounded_region_story(
                 story=metadata_story_result.region_story,

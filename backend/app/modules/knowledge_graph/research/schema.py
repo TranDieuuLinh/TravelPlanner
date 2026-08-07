@@ -100,6 +100,18 @@ class GraphStats(BaseModel):
     areaAdm2Count: int = Field(description="Number of AreaAdm2 entities")
 
 
+class SpecialtyMealCandidate(BaseModel):
+    """Bounded meal venue projected from destination graph relationships."""
+
+    activityId: str
+    activityName: str
+    placeId: str
+    itemId: str | None = None
+    itemName: str | None = None
+    selectionPath: str = Field(pattern=r"^(target_place|offers_item)$")
+    bestTimeSlots: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Experience Fit Evaluation schemas
 # ---------------------------------------------------------------------------

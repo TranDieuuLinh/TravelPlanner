@@ -43,10 +43,13 @@ class PlaceSelectionStatusTracker:
         plan_status.visited_region_counts[candidate.region_key] = (
             plan_status.visited_region_counts.get(candidate.region_key, 0) + 1
         )
-        if place_category(candidate) == "food_drink" and candidate.place_type:
+        if (
+            place_category(candidate) in {"Restaurant", "DrinkDessert"}
+            and candidate.place_type
+        ):
             place_type = candidate.place_type.strip()
-            if place_type and place_type not in plan_status.used_food_drink_place_types:
-                plan_status.used_food_drink_place_types.append(place_type)
+            if place_type and place_type not in plan_status.used_food_place_types:
+                plan_status.used_food_place_types.append(place_type)
         duration = candidate_duration(candidate, block)
         is_meal = block.kind == "meal"
         self.increment_usage(

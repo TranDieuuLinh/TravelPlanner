@@ -21,7 +21,7 @@ TAG_ALIASES = {
     "fast_food": "food",
     "fastfood": "food",
     "food_court": "food",
-    "food_drink": "food",
+    "drinkdessert": "food",
     "local_food": "food",
     "do_an_vat": "food",
     "o_an_vat": "food",
@@ -168,7 +168,12 @@ class RegionAccumulator:
                     place.typical_duration_minutes
                 )
 
-        place_group = _normalized_label(place.metadata.get("placeGroup"))
+        raw_place_group = place.metadata.get("placeGroup")
+        place_group = (
+            raw_place_group
+            if raw_place_group in {"Restaurant", "DrinkDessert"}
+            else _normalized_label(raw_place_group)
+        )
         if place_group:
             _increment(self.place_group_counts, place_group)
 

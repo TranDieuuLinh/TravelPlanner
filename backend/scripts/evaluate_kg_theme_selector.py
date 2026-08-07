@@ -160,7 +160,9 @@ def _old_food_heavy_plan(counts: dict[str, int]) -> bool:
     items = [PlanItem(itemId=f"food-{i}", name="Food", timeWindow="09:00-10:00", placeType="restaurant", timelineCategory="activity") for i in range(counts["foodCount"])]
     items += [PlanItem(itemId="museum", name="Museum", timeWindow="10:00-11:00", placeType="museum", timelineCategory="activity") for _ in range(counts["nonFoodCount"])]
     plan = Plan(id="legacy-food-heavy", kind=PlanKind.main, status=PlanStatus.checking, title="Regression", destination="Hanoi", intent=TravelIntent(destination="Hanoi", days=1, budget=BudgetLevel.medium, travelStyle="local", pace=TravelPace.balanced), days=[PlanDay(day=1, theme="Culture", items=items)])
-    return "food_drink_dominates_main_activities" in {issue.code for issue in OverallChecker().check(plan).issues}
+    return "food_stops_dominate_main_activities" in {
+        issue.code for issue in OverallChecker().check(plan).issues
+    }
 
 
 if __name__ == "__main__":

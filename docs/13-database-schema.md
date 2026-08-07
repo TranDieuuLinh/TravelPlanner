@@ -18,6 +18,7 @@ model/migration với schema mục tiêu chưa triển khai.
 | `knowledge_graph_import_edges` | Implemented | Quan hệ graph đề xuất, chỉ promote sau review |
 | `trip_chats` | Implemented | Trạng thái hiện hành, gồm TripIntent draft/current JSON đã validate |
 | `trip_chat_messages` | Implemented | Message và lifecycle turn dùng chung một row user request |
+| `preference_observation_jobs` | Implemented | Durable observer job, unique theo message ID, migration `20260807_0047` |
 | `trip_revisions` | Implemented | Snapshot bất biến `trip_intent_payload + plan_payload + intake_id`, migration `20260805_0036` |
 | `knowledge_graph_imports.explorer_timing`, `planner_timing` | Implemented | Snapshot timing riêng cho Explorer job |
 | `place_external_refs` | Planned | Tham chiếu và độ mới dữ liệu từ place provider |
@@ -83,6 +84,23 @@ Hồ sơ cá nhân hóa dài hạn, một bản ghi cho mỗi user.
 
 `traveler_preference_signal_sources` lưu các source type theo từng signal,
 không dùng mảng JSON trong signal.
+
+### `preference_observation_jobs`
+
+Outbox bền vững nối user turn đã hoàn tất với preference observer. Bảng không
+lưu content; worker đọc `trip_chat_messages` qua FK và cascade delete khi chat
+bị xóa.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | string PK | Opaque job ID |
+| `message_id` | FK unique | Idempotency key và nguồn message |
+| `user_id` | integer FK | Owner dùng để cô lập profile |
+| `status` | varchar | queued, running, completed, failed, skipped |
+| `attempts` | integer | Số lần worker claim |
+| `error_code`, `error_message` | nullable | Lỗi kỹ thuật đã giới hạn, không chứa raw chat |
+| `started_at`, `completed_at` | timestamptz nullable | Lifecycle worker |
+| `created_at`, `updated_at` | timestamptz | Audit thời gian |
 
 ### `places`
 
@@ -185,7 +203,10 @@ vết planning run, không phải khóa ngoại tới một bảng snapshot.
   hoạt động để Planner tạo `MacroPlan`/`DayBrief`.
 
 Tag phải được chuẩn hóa và gộp alias trước khi đếm, ví dụ
-`cafe, coffee_shop -> coffee` và `restaurant, food_drink -> food`. Một Place chỉ
+`cafe, coffee_shop -> coffee`. Luồng URL, Knowledge Graph và Planner dùng chung
+`ontologyType` canonical (`Restaurant`, `DrinkDessert`, `TravelPlace`,
+`Accommodation`). Category `food` chỉ phục vụ cách trình bày và icon chung trên
+UI, không tham gia quyết định nghiệp vụ. Một Place chỉ
 được tính một lần cho mỗi tag chuẩn hóa. Tag không có dạng semantic như số điện
 thoại hoặc chuỗi địa chỉ phải bị loại khỏi thống kê Planner.
 

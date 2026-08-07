@@ -58,7 +58,7 @@ SCATTERED_CATEGORIES: frozenset[str] = frozenset(
 # Categories whose items default to "meal" (lunch/dinner) treatment. We keep
 # them out of the day-style vote because attaching a restaurant to a day
 # must not by itself force the day into scattered shape.
-MEAL_CATEGORIES: frozenset[str] = frozenset({"food_drink"})
+MEAL_CATEGORIES: frozenset[str] = frozenset({"Restaurant"})
 # Quick stops may be activities (notably cafe/coffee) or short food visits.
 # They shape a scattered day without becoming a breakfast/lunch/dinner meal.
 QUICK_BITE_PLACE_TYPES: frozenset[str] = frozenset(
@@ -101,7 +101,7 @@ def classify_place(place: SelectablePlace) -> str | None:
     ``None`` means the place cannot influence the day-style decision
     (accommodation, transport, regular restaurant, or unknown category).
 
-    ``food_drink`` places are normally treated as meals and excluded. Quick
+    ``Restaurant`` places are normally treated as meals and excluded. Quick
     stops such as cafes remain activities but push the day towards
     ``scattered_day``.
     """

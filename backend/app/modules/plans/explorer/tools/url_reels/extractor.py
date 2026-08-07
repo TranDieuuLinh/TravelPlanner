@@ -1325,6 +1325,9 @@ class UrlReelContextExtractor:
                 if value
             }
             if speech_observation is not None:
+                for source, value in speech_observation.source_evidence.items():
+                    if source in {"metadata", "caption", "stt", "ocr"} and value:
+                        source_evidence[source] = value
                 evidence_key = speech_observation.evidence_source
                 if evidence_key == "metadata":
                     source_evidence.pop("stt", None)
@@ -1332,6 +1335,9 @@ class UrlReelContextExtractor:
                 elif evidence_key == "caption":
                     source_evidence.pop("stt", None)
                     source_evidence["caption"] = speech_observation.evidence
+                elif evidence_key == "ocr":
+                    source_evidence.pop("stt", None)
+                    source_evidence["ocr"] = speech_observation.evidence
             if (
                 has_authoritative_caption_list
                 and set(source_evidence) == {"stt"}

@@ -87,19 +87,25 @@ class StubLLMClient(LLMClient):
             response = {
                 "intent": "clarify",
                 "confidence": 0.9,
-                "responseText": "Mình cần biết rõ bạn muốn tư vấn hay thay đổi mục nào trong lịch trình.",
-                "clarifyingQuestion": "Bạn muốn xem giải thích, thêm địa điểm, hay chỉnh sửa một điểm cụ thể?",
-                "options": [
-                    {"label": "Tư vấn", "value": "Tư vấn về lịch trình hiện tại"},
-                    {"label": "Thêm địa điểm", "value": "Thêm một địa điểm vào lịch trình"},
-                    {"label": "Chỉnh sửa", "value": "Chỉnh sửa một địa điểm trong lịch trình"},
-                ],
+                "arguments": {
+                    "kind": "clarification",
+                    "question": "Bạn muốn xem giải thích, thêm địa điểm, hay chỉnh sửa một điểm cụ thể?",
+                    "options": [
+                        {"label": "Tư vấn", "value": "Tư vấn về lịch trình hiện tại"},
+                        {"label": "Thêm địa điểm", "value": "Thêm một địa điểm vào lịch trình"},
+                        {"label": "Chỉnh sửa", "value": "Chỉnh sửa một địa điểm trong lịch trình"},
+                    ],
+                },
             }
         else:
+            query = str(payload.get("userMessage") or "Tư vấn du lịch").strip()
             response = {
                 "intent": "travel_advice",
                 "confidence": 0.85,
-                "responseText": "Mình có thể tư vấn điểm đến hoặc hỗ trợ bạn lên lịch trình. Bạn muốn hỏi điều gì?",
+                "arguments": {
+                    "kind": "information",
+                    "query": query,
+                },
             }
         return json.dumps(response, ensure_ascii=False)
 

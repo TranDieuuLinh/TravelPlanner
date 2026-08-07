@@ -6,9 +6,10 @@ Does not modify data.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.modules.knowledge_graph.model import (
@@ -27,6 +28,7 @@ from app.modules.knowledge_graph.research.schema import (
     PLACE_TYPES,
     Recommendation,
     RecommendationPriority,
+    SpecialtyMealCandidate,
     TrustLevel,
 )
 
@@ -124,6 +126,138 @@ class ScopeResolutionRepository:
                 .limit(limit)
             ).all()
         )
+
+    def list_specialty_meal_candidates(
+        self,
+        region_key: str,
+        *,
+        limit: int = 250,
+    ) -> list[SpecialtyMealCandidate]:
+        """Project destination dining experiences to concrete meal venues.
+
+        Direct ``TARGETS_PLACE`` anchors are returned first. Generic dining
+        experiences can expand through ``INVOLVES_ITEM`` and ``OFFERS_ITEM``.
+        The query stays bounded and only traverses venues located in scope.
+        """
+        parts = [part.strip() for part in region_key.split(",") if part.strip()]
+        destination = parts[1] if len(parts) >= 2 and parts[0] == "vn" else region_key
+        area = self.resolve_area_by_name(destination.replace("-", " "))
+        if area is None:
+            return []
+        area_ids = self.get_scope_area_ids(area.id)
+        special_edges = self.query_special_experiences_in_scope(area_ids, limit=limit)
+        activity_ids = list(dict.fromkeys(edge.to_entity_id for edge in special_edges))
+        if not activity_ids:
+            return []
+
+        property_rows = self.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id.in_(activity_ids),
+                KnowledgeProperty.key.in_(("activity_category", "best_time_slots")),
+            )
+        ).all()
+        properties: dict[str, dict[str, str]] = {}
+        for row in property_rows:
+            properties.setdefault(row.entity_id, {})[row.key] = row.value
+        dining_ids = [
+            activity_id
+            for activity_id in activity_ids
+            if properties.get(activity_id, {}).get("activity_category") == "dining"
+        ]
+        if not dining_ids:
+            return []
+
+        entities = self.get_entities_by_ids(dining_ids)
+        direct_edges = self.query_activity_targets_place(dining_ids, limit=limit)
+        candidates: list[SpecialtyMealCandidate] = []
+        seen_places: set[str] = set()
+
+        def time_slots(activity_id: str) -> list[str]:
+            raw = properties.get(activity_id, {}).get("best_time_slots")
+            if not raw:
+                return []
+            try:
+                values = json.loads(raw)
+            except (TypeError, ValueError):
+                return []
+            return [
+                f"{value['start']}-{value['end']}"
+                for value in values
+                if isinstance(value, dict) and value.get("start") and value.get("end")
+            ]
+
+        for edge in direct_edges:
+            activity = entities.get(edge.from_entity_id)
+            if activity is None or edge.to_entity_id in seen_places:
+                continue
+            seen_places.add(edge.to_entity_id)
+            candidates.append(
+                SpecialtyMealCandidate(
+                    activityId=activity.id,
+                    activityName=activity.canonical_name,
+                    placeId=edge.to_entity_id,
+                    selectionPath="target_place",
+                    bestTimeSlots=time_slots(activity.id),
+                )
+            )
+
+        involves = list(
+            self.db.scalars(
+                select(KnowledgeRelationship).where(
+                    KnowledgeRelationship.from_entity_id.in_(dining_ids),
+                    KnowledgeRelationship.relationship_type == "INVOLVES_ITEM",
+                )
+            ).all()
+        )
+        item_ids = list(dict.fromkeys(edge.to_entity_id for edge in involves))
+        if not item_ids or len(candidates) >= limit:
+            return candidates[:limit]
+        item_entities = self.get_entities_by_ids(item_ids)
+        activity_by_item = {edge.to_entity_id: edge.from_entity_id for edge in involves}
+
+        offer = aliased(KnowledgeRelationship)
+        located = aliased(KnowledgeRelationship)
+        place = aliased(KnowledgeEntity)
+        offer_rows = self.db.execute(
+            select(offer.from_entity_id, offer.to_entity_id)
+            .join(place, place.id == offer.from_entity_id)
+            .join(
+                located,
+                (located.from_entity_id == offer.from_entity_id)
+                & (located.relationship_type == "LOCATED_IN"),
+            )
+            .where(
+                offer.relationship_type == "OFFERS_ITEM",
+                offer.to_entity_id.in_(item_ids),
+                located.to_entity_id.in_(area_ids),
+                place.entity_type == "Restaurant",
+            )
+            .order_by(offer.id)
+            .limit(limit)
+        ).all()
+        for place_id, item_id in offer_rows:
+            if place_id in seen_places:
+                continue
+            activity_id = activity_by_item.get(item_id)
+            activity = entities.get(activity_id) if activity_id else None
+            item = item_entities.get(item_id)
+            if activity is None or item is None:
+                continue
+            seen_places.add(place_id)
+            candidates.append(
+                SpecialtyMealCandidate(
+                    activityId=activity.id,
+                    activityName=activity.canonical_name,
+                    placeId=place_id,
+                    itemId=item.id,
+                    itemName=item.canonical_name,
+                    selectionPath="offers_item",
+                    bestTimeSlots=time_slots(activity.id),
+                )
+            )
+            if len(candidates) >= limit:
+                break
+        return candidates
 
     # --- Area resolution ---
 
@@ -536,7 +670,7 @@ class ScopeResolutionRepository:
                             ],
                         )
                         warnings.append(
-                            f"Downgraded 'must' priority for claim due to inferred source"
+                            "Downgraded 'must' priority for claim due to inferred source"
                         )
 
                     recommendations.append(rec)

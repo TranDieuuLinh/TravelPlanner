@@ -222,10 +222,16 @@ instruction.
    không được nhân lên qua toàn bộ pool. YouTube
    Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook
    Reels tải media công khai tạm thời rồi
-   Gemini Audio trả `transcript` cùng structured STT observations bằng
-   `responseJsonSchema`; frame vision trả structured OCR observations trên frame
-   lấy mẫu. STT và frame vision chạy song song. OCR cũng chạy trên
-   ảnh/screenshot do người dùng upload.
+   Gemini Audio chạy ở chế độ ASR transcript-only bằng `responseJsonSchema` nhỏ;
+   frame vision trả structured OCR observations trên frame lấy mẫu. STT và frame
+   vision chạy song song. Khi cả hai hoàn tất, một Gemini Text structured-output
+   nhận transcript, OCR observations, caption/metadata, expected count và
+   destination hint để tạo source observations hợp nhất. Mỗi evidence phải
+   grounded trong đúng source; destination hint không phải evidence và model
+   không được chọn canonical identity. Description chỉ xuất hiện một lần dưới
+   caption; OCR observations được compact và raw OCR text chỉ được gửi khi số
+   observation chưa đạt expected coverage. OCR cũng chạy trên ảnh/screenshot do
+   người dùng upload.
    Nếu metadata công khai của URL có `place`, `venue` hoặc `location`, giá trị
    này được tạo thành candidate ưu tiên trước caption/STT/OCR và giữ evidence
    `metadata`; địa chỉ/city trong metadata được dùng làm hint cho resolver.
@@ -252,8 +258,10 @@ instruction.
    rồi chuyển thành place candidate. Metadata location cụ thể làm anchor; tên
    STT/OCR khác spelling được giữ trong `observedAliases`. Nếu tên candidate dính thêm câu review,
    bước gộp chỉ phục hồi nhãn ngắn hơn khi nhãn đó xuất hiện nguyên vẹn trong
-   evidence STT/OCR và tự vượt qua policy chống caption rác. Khi structured STT đã có, Python không
-   suy diễn place/day/activity từ transcript tự do.
+   evidence STT/OCR và tự vượt qua policy chống caption rác. Khi structured
+   fusion thành công, Python không suy diễn place/day/activity từ transcript tự
+   do; fusion lỗi thì fallback hiện tại vẫn giữ kết quả nguồn riêng. Duration
+   của lượt fusion vẫn xuất hiện trong source timing để chẩn đoán latency.
    Address/person/city không được chuyển thành stop. Address được gắn vào venue;
    sub-place có parent rõ ràng được gộp về venue cha. Parser fallback nhận marker
    `number/no.` và `số/thứ` bằng chữ hoặc số.
@@ -375,11 +383,12 @@ trả trạng thái cần upload screenshot. Media video thành công vẫn ch�
 trong thư mục tạm và xoá sau request. Video OCR dùng
 `gemini-3.5-flash-lite`, mặc định không quá một frame mỗi giây, tối đa 72 frame
 rộng 960 px theo batch tối đa 10 ảnh ở media resolution medium. Gemini Audio
-trả transcript cùng observation gồm order/place/evidence/day/time/activity/
-duration/confidence và search region explicit. Candidate từ STT và frame vision
-được gộp; một nguồn không loại bỏ candidate chỉ xuất hiện ở nguồn còn lại. OCR
-ưu tiên tên hiển thị và thứ tự frame; STT ưu tiên day/time/activity/duration/
-search region; evidence ngắn của hai nguồn được giữ tách biệt. Mỗi stop giữ
+chỉ trả transcript; Gemini Text fusion tạo observation gồm
+order/place/evidence/day/time/activity/duration/confidence và search region
+explicit từ toàn bộ source signal. Một nguồn không loại bỏ candidate chỉ xuất
+hiện ở nguồn còn lại. OCR ưu tiên spelling/tên hiển thị; transcript ASR ưu tiên
+day/time/activity/duration/search region; evidence ngắn của metadata, caption,
+STT và OCR được giữ tách biệt. Mỗi stop giữ
 extraction confidence riêng theo evidence; place resolution tạo resolution
 confidence riêng theo provider và chất lượng match, không sao chép một
 confidence chung của cả video cho mọi stop. Không
@@ -540,3 +549,20 @@ Bắt đầu bằng deep link hoặc một tích hợp đối tác. Tách nội 
 xếp hạng thương mại, công khai nội dung tài trợ và đo tỷ lệ chuyển đổi từ lịch
 trình
 đến booking mà không âm thầm thay đổi tuyến đường của user.
+## Matrix dùng trong lập kế hoạch
+
+Capacity preflight tạo một matrix cho các địa điểm nguồn đã resolve nhằm chọn
+số ngày và cụm địa lý mà không gọi lại AI Planner. Matrix ưu tiên provider đã
+cấu hình; nếu thiếu provider hoặc tọa độ thì dùng ước lượng geodesic/thời gian
+chuyển mặc định có provenance rõ ràng.
+
+Matrix preflight không được gọi là final global matrix: RequiredExperience,
+Finder và meal candidate có thể chỉ xuất hiện ở PlaceSelector, nên bước tối ưu
+tuyến cuối vẫn có thể cần matrix rộng hơn. Timing phải ghi hai lớp này riêng để
+không che giấu số lần gọi provider.
+
+MealSelector không đưa toàn bộ restaurant catalog vào route matrix. Nó tải một
+pool bounded từ `SPECIAL_EXPERIENCE/TARGETS_PLACE`, mở rộng
+`INVOLVES_ITEM/OFFERS_ITEM` khi cần, rồi dùng tọa độ để prefilter và phân bổ
+toàn chuyến. Final route chỉ nhận các venue đã chọn; vì vậy fallback hàng nghìn
+venue không tạo một matrix toàn cục thứ hai.

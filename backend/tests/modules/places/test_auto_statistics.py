@@ -40,10 +40,10 @@ def test_statistics_roll_up_regions_and_separate_mock_prices() -> None:
                     "cafe",
                     "coffee_shop",
                     "food",
-                    "food_drink",
+                    "Restaurant",
                     "0987654321",
                 ],
-                "placeGroup": "food_drink",
+                "placeGroup": "Restaurant",
                 "indoorOutdoor": "indoor",
                 "weatherSensitivity": "low",
                 "bookingRequired": False,
@@ -101,7 +101,7 @@ def test_statistics_roll_up_regions_and_separate_mock_prices() -> None:
         "medianMinutes": 60,
         "sampleSize": 1,
     }
-    assert city["placeGroupCounts"] == {"attraction": 1, "food_drink": 1}
+    assert city["placeGroupCounts"] == {"Restaurant": 1, "attraction": 1}
     assert city["bookingRequirementCounts"] == {
         "required": 1,
         "notRequired": 1,

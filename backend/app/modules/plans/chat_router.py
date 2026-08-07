@@ -90,6 +90,18 @@ def list_active_trip_chat_turns(
     return [TripChatTurnRead.model_validate(turn) for turn in service.list_active_turns(current_user)]
 
 
+@router.get("/planner-runs", response_model=list[TripChatTurnRead])
+def list_trip_chat_planner_runs(
+    service: Annotated[ConversationTurnService, Depends(get_conversation_turn_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[TripChatTurnRead]:
+    """Return active and recent persisted raw-prompt Planner timing runs."""
+    return [
+        TripChatTurnRead.model_validate(turn)
+        for turn in service.list_planner_runs(current_user)
+    ]
+
+
 @router.get("/{chat_id}", response_model=TripChatRead)
 def get_trip_chat(
     chat_id: str,

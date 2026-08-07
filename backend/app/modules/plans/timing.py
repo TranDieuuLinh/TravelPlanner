@@ -53,6 +53,29 @@ class PlanTimingTrace:
     stages: list[PlanTimingStage] = field(default_factory=list)
     on_update: Callable[[PlanTimingReport], None] | None = None
 
+    def add_completed_stage(
+        self,
+        key: str,
+        label: str,
+        *,
+        duration_seconds: float,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Attach work completed immediately before this trace was created."""
+
+        duration_seconds = max(0.0, duration_seconds)
+        self.started_at -= duration_seconds
+        self.stages.append(
+            PlanTimingStage(
+                key=key,
+                label=label,
+                durationSeconds=_seconds(duration_seconds),
+                details=details or {},
+            )
+        )
+        if self.on_update is not None:
+            self.on_update(self.snapshot())
+
     def add_stage(
         self,
         key: str,

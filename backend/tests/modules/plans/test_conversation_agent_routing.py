@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from app.modules.plans.conversation_agents import (
     ConversationAgentContext,
@@ -12,14 +13,12 @@ from app.modules.plans.conversation_agents import (
 )
 from app.modules.plans.conversation_supervisor import (
     ConversationDecision,
-    _deterministic_decision,
     _validated_decision,
     SupervisorOutput,
-    ConversationSupervisorError,
 )
 
 
-def _decision(intent: str, agent: str | None = None) -> ConversationDecision:
+def _decision(intent: str) -> ConversationDecision:
     return ConversationDecision(
         intent=intent,  # type: ignore[arg-type]
         confidence=1.0,
@@ -29,9 +28,8 @@ def _decision(intent: str, agent: str | None = None) -> ConversationDecision:
             else None
         ),
         requires_confirmation=False,
-        message="ok",
-        options=(),
-        agent=agent,  # type: ignore[arg-type]
+        clarification_question=None,
+        clarification_options=(),
     )
 
 
@@ -65,23 +63,6 @@ def test_information_finder_and_plan_editor_routes_are_server_allowlisted(intent
     assert agent_for_conversation_intent(intent) == agent
 
 
-def test_dispatcher_rejects_intent_agent_mismatch() -> None:
-    dispatcher = ConversationAgentDispatcher(
-        {
-            "information_finder": lambda context: _async_result("finder"),
-            "plan_editor": lambda context: _async_result("editor"),
-        }
-    )
-    context = ConversationAgentContext(
-        chat=None,
-        turn=None,
-        decision=_decision("ask_place", "plan_editor"),
-        plan=None,
-    )
-    with pytest.raises(ValueError, match="does not match"):
-        asyncio.run(dispatcher.dispatch_for_decision(context))
-
-
 def test_ask_place_dispatches_read_only_information_finder() -> None:
     calls: list[str] = []
 
@@ -95,7 +76,7 @@ def test_ask_place_dispatches_read_only_information_finder() -> None:
             ConversationAgentContext(
                 chat=None,
                 turn=None,
-                decision=_decision("ask_place", "information_finder"),
+                decision=_decision("ask_place"),
                 plan=None,
             )
         )
@@ -117,7 +98,7 @@ def test_edit_request_dispatches_plan_editor() -> None:
             ConversationAgentContext(
                 chat=None,
                 turn=None,
-                decision=_decision("add_place", "plan_editor"),
+                decision=_decision("add_place"),
                 plan=SimpleNamespace(),
             )
         )
@@ -152,7 +133,7 @@ def test_planning_request_dispatches_exactly_one_agent(intent, expected_agent) -
             ConversationAgentContext(
                 chat=None,
                 turn=None,
-                decision=_decision(intent, expected_agent),
+                decision=_decision(intent),
                 plan=None,
             )
         )
@@ -162,25 +143,33 @@ def test_planning_request_dispatches_exactly_one_agent(intent, expected_agent) -
     assert result == ("explored" if expected_agent == "explorer" else "planned")
 
 
-def test_backup_is_deterministically_unsupported_in_chat() -> None:
-    decision = _deterministic_decision("create backup", None, None)
-    assert decision is not None
+def test_unsupported_intent_has_no_agent_or_operation() -> None:
+    decision = _validated_decision(
+        SupervisorOutput.model_validate(
+            {
+                "intent": "unsupported",
+                "confidence": 0.99,
+                "arguments": {
+                    "kind": "command",
+                    "reason": "Backup trong chat hiện chưa được hỗ trợ.",
+                },
+            }
+        ),
+        None,
+    )
     assert decision.intent == "unsupported"
-    assert decision.agent is None
     assert decision.operation is None
 
 
-def test_supervisor_repairs_mismatched_agent_by_rejecting_it() -> None:
-    output = SupervisorOutput.model_validate(
-        {
-            "intent": "ask_place",
-            "confidence": 0.95,
-            "responseText": "ok",
-            "agent": "plan_editor",
-        }
-    )
-    with pytest.raises(ConversationSupervisorError, match="does not match"):
-        _validated_decision(output, None)
+def test_supervisor_rejects_arguments_that_do_not_match_intent() -> None:
+    with pytest.raises(ValidationError, match="requires 'information' arguments"):
+        SupervisorOutput.model_validate(
+            {
+                "intent": "ask_place",
+                "confidence": 0.95,
+                "arguments": {"kind": "command"},
+            }
+        )
 
 
 def test_supervisor_forwards_validated_intake_patch() -> None:
@@ -188,9 +177,11 @@ def test_supervisor_forwards_validated_intake_patch() -> None:
         {
             "intent": "create_plan",
             "confidence": 0.98,
-            "responseText": "Mình sẽ lên lịch trình.",
-            "agent": "explorer",
-            "intakePatch": {"destination": "Hà Nội", "days": 4},
+            "arguments": {
+                "kind": "planning",
+                "destination": "Hà Nội",
+                "days": 4,
+            },
         }
     )
 
@@ -199,19 +190,15 @@ def test_supervisor_forwards_validated_intake_patch() -> None:
     assert decision.intake_patch == {"destination": "Hà Nội", "days": 4}
 
 
-def test_supervisor_rejects_intake_patch_for_non_planning_intent() -> None:
-    output = SupervisorOutput.model_validate(
-        {
-            "intent": "travel_advice",
-            "confidence": 0.98,
-            "responseText": "Thông tin tham khảo.",
-            "agent": "information_finder",
-            "intakePatch": {"days": 4},
-        }
-    )
-
-    with pytest.raises(ConversationSupervisorError, match="non-planning"):
-        _validated_decision(output, None)
+def test_supervisor_rejects_planning_arguments_for_advice() -> None:
+    with pytest.raises(ValidationError, match="requires 'information' arguments"):
+        SupervisorOutput.model_validate(
+            {
+                "intent": "travel_advice",
+                "confidence": 0.98,
+                "arguments": {"kind": "planning", "days": 4},
+            }
+        )
 
 
 async def _async_result(value: str) -> str:

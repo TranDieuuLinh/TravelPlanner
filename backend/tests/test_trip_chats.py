@@ -114,6 +114,51 @@ def test_active_turn_is_restored_and_listed_for_background_loading(
     assert restored_chat.json()["turns"][0]["id"] == created_turn.json()["id"]
 
 
+def test_completed_raw_prompt_planner_timing_is_listed_for_later_review(
+    registered_client,
+    db_session,
+) -> None:
+    chat = registered_client.post(
+        "/api/trip-chats",
+        json={"title": "Huế raw prompt"},
+        headers=csrf_headers(registered_client),
+    ).json()
+    created = registered_client.post(
+        f"/api/trip-chats/{chat['id']}/turns",
+        json={
+            "content": "Lập lịch trình Huế 2 ngày",
+            "expectedRevision": 0,
+            "clientTurnId": "saved-raw-prompt-timing",
+            "attachmentNames": [],
+        },
+        headers=csrf_headers(registered_client),
+    ).json()
+    turn = db_session.get(TripChatMessage, created["id"])
+    assert turn is not None
+    turn.intent = "create_plan"
+    turn.status = "completed"
+    turn.result_summary = {
+        "planRevision": 1,
+        "plannerTiming": {
+            "status": "completed",
+            "totalSeconds": 3.25,
+            "stages": [],
+            "dayCount": 2,
+            "itemCount": 4,
+            "transportLegCount": 2,
+            "unscheduledCount": 0,
+            "warningCount": 0,
+        },
+    }
+    db_session.commit()
+
+    assert registered_client.get("/api/trip-chats/active-turns").json() == []
+    runs = registered_client.get("/api/trip-chats/planner-runs")
+    assert runs.status_code == 200
+    assert runs.json()[0]["id"] == created["id"]
+    assert runs.json()[0]["resultSummary"]["plannerTiming"]["totalSeconds"] == 3.25
+
+
 def test_user_cannot_read_another_users_trip_chat(registered_client) -> None:
     created = registered_client.post(
         "/api/trip-chats",

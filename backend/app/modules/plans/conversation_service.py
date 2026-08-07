@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -11,6 +13,7 @@ from app.modules.plans.chat_model import TripChat, TripChatMessage
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_service import TripChatService
 from app.integrations.llm.factory import get_llm_client
+from app.integrations.llm.base import LLMClient
 from app.modules.plans.conversation_supervisor import (
     ConstrainedConversationSupervisor,
     ConversationDecision,
@@ -35,17 +38,20 @@ from app.modules.plans.plan_editor import (
 )
 from app.modules.plans.plan_editor.agent import PlanEditorAgent
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
+from app.modules.preferences.observation_repository import (
+    PreferenceObservationJobRepository,
+)
 from app.modules.plans.router import (
     _extract_urls,
     _infer_destination,
     _infer_destination_from_urls,
-    _normalize_urls,
     _remove_urls,
 )
 from app.modules.users.model import User
 from app.shared.errors import AppError
 
 logger = logging.getLogger(__name__)
+terminal_logger = logging.getLogger("uvicorn.error")
 
 
 class ConversationTurnService:
@@ -63,12 +69,19 @@ class ConversationTurnService:
         mutation_service: PlanMutationService,
         supervisor: ConstrainedConversationSupervisor | None = None,
         information_finder_reader: PlaceSearchReader | None = None,
+        information_finder_llm: LLMClient | None = None,
+        preference_jobs: PreferenceObservationJobRepository | None = None,
     ) -> None:
         self.repository = repository
         self.trip_chat_service = trip_chat_service
         self.mutation_service = mutation_service
-        self.supervisor = supervisor or ConstrainedConversationSupervisor(get_llm_client())
-        self.information_finder_agent = InformationFinderAgent(information_finder_reader)
+        runtime_llm = information_finder_llm or get_llm_client()
+        self.supervisor = supervisor or ConstrainedConversationSupervisor(runtime_llm)
+        self.information_finder_agent = InformationFinderAgent(
+            information_finder_reader,
+            runtime_llm,
+        )
+        self.preference_jobs = preference_jobs
         self.plan_editor_agent = (
             PlanEditorAgent(
                 repository,
@@ -95,6 +108,9 @@ class ConversationTurnService:
 
     def list_active_turns(self, user: User) -> list[TripChatMessage]:
         return self.repository.list_active_turns_for_user(user.id)
+
+    def list_planner_runs(self, user: User) -> list[TripChatMessage]:
+        return self.repository.list_planner_runs_for_user(user.id)
 
     def _recover_stale_turns(self, chat_id: str) -> None:
         expire = getattr(self.repository, "expire_stale_turns", None)
@@ -126,13 +142,21 @@ class ConversationTurnService:
             )
         chat = self.repository.get(chat_id, user.id)
         self._recover_stale_turns(chat_id)
-        return self.repository.create_turn(
+        turn = self.repository.create_turn(
             chat,
             client_turn_id=client_turn_id or str(uuid4()),
             content=content.strip(),
             attachment_names=attachment_names,
             expected_revision=expected_revision,
+            commit=self.preference_jobs is None,
         )
+        if self.preference_jobs is not None:
+            self.preference_jobs.enqueue(
+                message_id=turn.id,
+                user_id=user.id,
+                commit=True,
+            )
+        return turn
 
     async def execute(
         self,
@@ -292,8 +316,8 @@ class ConversationTurnService:
             # A confirmed turn has already passed the confirmation gate.  The
             # remaining fields are only used while presenting the proposal.
             requires_confirmation=False,
-            message=None,
-            options=(),
+            clarification_question=None,
+            clarification_options=(),
         )
         try:
             return await asyncio.wait_for(
@@ -383,11 +407,13 @@ class ConversationTurnService:
             return self._save_response(
                 chat,
                 turn,
-                decision.message or "Mình cần bạn chọn một phương án trước khi tiếp tục.",
+                decision.clarification_question
+                or "Mình cần bạn chọn một phương án trước khi tiếp tục.",
                 blocks,
             )
 
         if decision.intent in {"travel_advice", "ask_place", "ask_travel_information"}:
+            information_request = decision.information_request or {}
             return await self.agent_dispatcher.dispatch_for_decision(
                 ConversationAgentContext(
                     chat=chat,
@@ -396,11 +422,20 @@ class ConversationTurnService:
                     plan=plan,
                     images=images,
                     confirmed=confirmed,
-                    data={"information_intent": decision.intent},
+                    data={
+                        "information_intent": decision.intent,
+                        "query": information_request.get("query") or turn.content,
+                        "topic": information_request.get("topic"),
+                        "requires_freshness": information_request.get(
+                            "requiresFreshness",
+                            False,
+                        ),
+                    },
                 )
             )
 
         if decision.intent == "explain_plan":
+            information_request = decision.information_request or {}
             return await self.agent_dispatcher.dispatch_for_decision(
                 ConversationAgentContext(
                     chat=chat,
@@ -409,12 +444,15 @@ class ConversationTurnService:
                     plan=plan,
                     images=images,
                     confirmed=confirmed,
-                    data={"information_intent": "explain_plan"},
+                    data={
+                        "information_intent": "explain_plan",
+                        "query": information_request.get("query") or turn.content,
+                    },
                 ),
             )
 
         if decision.intent == "create_backup":
-            message = decision.message or (
+            message = (
                 "Luồng tạo phương án dự phòng trong chat hiện chưa được hỗ trợ. "
                 "Bạn có thể dùng endpoint backup riêng."
             )
@@ -454,7 +492,7 @@ class ConversationTurnService:
             return self._undo(chat, turn)
 
         if decision.intent == "unsupported":
-            message = decision.message or "Yêu cầu này hiện chưa được hỗ trợ trong Planner."
+            message = "Yêu cầu này hiện chưa được hỗ trợ trong Planner."
             return self._save_response(
                 chat,
                 turn,
@@ -646,6 +684,10 @@ class ConversationTurnService:
         initial_trip_days = planning_context.get("initial_trip_days")
         from app.modules.users.model import User as _User
 
+        planner_run_started_at = time.perf_counter()
+        planner_run_status = "failed"
+        planner_run_error_code: str | None = None
+        result = None
         try:
             result = await self.trip_chat_service.generate_plan_revision(
                 chat_id=chat.id,
@@ -663,8 +705,24 @@ class ConversationTurnService:
                 urls=urls,
                 images=images,
                 turn_id=_turn_lifecycle_id(turn),
+                on_explore_complete=lambda timing: self._record_turn_timing(
+                    turn,
+                    "explorerTiming",
+                    timing,
+                ),
+                on_planner_timing=lambda timing: self._record_turn_timing(
+                    turn,
+                    "plannerTiming",
+                    timing,
+                ),
             )
+            planner_run_status = "succeeded"
+        except asyncio.CancelledError:
+            planner_run_status = "cancelled"
+            planner_run_error_code = "TURN_TIMEOUT"
+            raise
         except ValueError as exc:
+            planner_run_error_code = "DESTINATION_UNRECOGNIZED"
             if "region_key" in str(exc):
                 raise AppError(
                     422,
@@ -676,6 +734,7 @@ class ConversationTurnService:
                 ) from exc
             raise
         except AppError as exc:
+            planner_run_error_code = exc.code
             if exc.code == "TRIP_THEME_INPUT_INSUFFICIENT":
                 raise AppError(
                     422,
@@ -689,6 +748,7 @@ class ConversationTurnService:
                 ) from exc
             raise
         except RuntimeError as exc:
+            planner_run_error_code = "PLAN_GENERATION_FAILED"
             raise AppError(
                 502,
                 "PLAN_GENERATION_FAILED",
@@ -697,6 +757,24 @@ class ConversationTurnService:
                     "Bạn hãy thử lại sau ít phút; lịch trình hiện tại chưa bị thay đổi."
                 ),
             ) from exc
+        finally:
+            _log_prompt_planner_timing(
+                turn_id=_turn_lifecycle_id(turn),
+                source_type="url_prompt" if urls else "raw_prompt",
+                status=planner_run_status,
+                wall_seconds=time.perf_counter() - planner_run_started_at,
+                explorer_timing=(
+                    result.latest_explorer_timing
+                    if result is not None
+                    else turn.result_summary.get("explorerTiming")
+                ),
+                planner_timing=(
+                    result.latest_planner_timing
+                    if result is not None
+                    else turn.result_summary.get("plannerTiming")
+                ),
+                error_code=planner_run_error_code,
+            )
         if (
             result.current_plan is None
             and result.current_trip_intent is not None
@@ -707,7 +785,10 @@ class ConversationTurnService:
                 turn,
                 status="completed",
                 assistant_blocks=blocks,
-                result_summary={"planRevision": result.revision},
+                result_summary={
+                    **(turn.result_summary or {}),
+                    "planRevision": result.revision,
+                },
             )
         return self.repository.update_turn(
             turn,
@@ -725,8 +806,26 @@ class ConversationTurnService:
                     "undoAvailable": result.revision > 1,
                 }
             ],
-            result_summary={"planRevision": result.revision},
+            result_summary={
+                **(turn.result_summary or {}),
+                "planRevision": result.revision,
+            },
         )
+
+    def _record_turn_timing(
+        self,
+        turn: TripChatMessage,
+        key: str,
+        timing: Any | None,
+    ) -> None:
+        if timing is None:
+            return
+        payload = _timing_payload(timing)
+        if payload is None:
+            return
+        summary = dict(turn.result_summary or {})
+        summary[key] = payload
+        self.repository.update_turn(turn, result_summary=summary)
 
     async def _mutate(
         self,
@@ -994,14 +1093,14 @@ def _clarification_blocks(
     blocks: list[dict] = [
         {
             "type": "text",
-            "text": decision.message or "Bạn muốn làm gì tiếp?",
+            "text": decision.clarification_question or "Bạn muốn làm gì tiếp?",
         }
     ]
-    if decision.options:
+    if decision.clarification_options:
         blocks.append(
             {
                 "type": "optionSelector",
-                "options": list(decision.options),
+                "options": list(decision.clarification_options),
             }
         )
     return blocks
@@ -1191,6 +1290,69 @@ def _confirmation_preview(
     if item is not None and item.locked:
         return f"{item.name} đang được khóa. Hãy xác nhận nếu bạn vẫn muốn thay đổi địa điểm này."
     return "Thay đổi này có phạm vi lớn hoặc khó hoàn tác. Hãy xác nhận để tiếp tục."
+
+
+def _log_prompt_planner_timing(
+    *,
+    turn_id: str,
+    source_type: str,
+    status: str,
+    wall_seconds: float,
+    explorer_timing: Any | None,
+    planner_timing: Any | None,
+    error_code: str | None,
+) -> None:
+    """Emit one correlated, prompt-free timing record for a Planner turn."""
+
+    try:
+        planner_payload = _timing_payload(planner_timing)
+        explorer_payload = _timing_payload(explorer_timing)
+        terminal_logger.info(
+            "TRAVELPLANNER_TIMING prompt_planner %s",
+            json.dumps(
+                {
+                    "event": "prompt_planner_timing",
+                    "turnId": turn_id,
+                    "sourceType": source_type,
+                    "status": status,
+                    "wallSeconds": round(max(0.0, wall_seconds), 3),
+                    "explorerSeconds": _timing_total_seconds(explorer_payload),
+                    "plannerSeconds": _timing_total_seconds(planner_payload),
+                    # Planner timing only contains bounded stage metrics and
+                    # counts. Never add the raw prompt or source URL here.
+                    "plannerTiming": planner_payload,
+                    "errorCode": error_code,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+    except Exception:
+        logger.warning(
+            "Could not emit timing for Planner turn %s.",
+            turn_id,
+            exc_info=True,
+        )
+
+
+def _timing_payload(value: Any | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json", by_alias=True)
+    return None
+
+
+def _timing_total_seconds(value: dict[str, Any] | None) -> float | None:
+    if value is None:
+        return None
+    raw_value = value.get("totalSeconds", value.get("total_seconds"))
+    if isinstance(raw_value, (int, float)):
+        return round(max(0.0, float(raw_value)), 4)
+    return None
 
 
 def _find_item(plan: Plan, item_id: str):

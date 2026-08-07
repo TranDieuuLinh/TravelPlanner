@@ -25,6 +25,12 @@ from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     preload_audio_model,
 )
 from app.modules.plans.url_job_worker import UrlImportJobWorker
+from app.integrations.llm.factory import get_llm_client
+from app.modules.preferences.extractor import (
+    DeterministicPreferenceExtractor,
+    StructuredLLMPreferenceExtractor,
+)
+from app.modules.preferences.observation_worker import PreferenceObservationWorker
 from app.shared.errors import AppError
 from app.shared.schemas import APIMessage
 
@@ -46,13 +52,31 @@ async def lifespan(app: FastAPI):
     worker_task = asyncio.create_task(
         url_worker.run_forever(), name="url-import-worker"
     )
+    preference_extractor = (
+        StructuredLLMPreferenceExtractor(get_llm_client())
+        if settings.gemini_api_key
+        else DeterministicPreferenceExtractor()
+    )
+    preference_worker = PreferenceObservationWorker(
+        SessionLocal,
+        preference_extractor,
+        poll_interval_seconds=settings.preference_observer_poll_interval_seconds,
+        max_attempts=settings.preference_observer_max_attempts,
+    )
+    app.state.preference_observation_worker = preference_worker
+    preference_worker_task = asyncio.create_task(
+        preference_worker.run_forever(), name="preference-observation-worker"
+    )
     try:
         yield
     finally:
         worker_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await worker_task
+        preference_worker_task.cancel()
+        for task in (worker_task, preference_worker_task):
+            with suppress(asyncio.CancelledError):
+                await task
         del app.state.url_import_worker
+        del app.state.preference_observation_worker
 
     if getattr(settings, "preload_url_reel_models", False):
         try:

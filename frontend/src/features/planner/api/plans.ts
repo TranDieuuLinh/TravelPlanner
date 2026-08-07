@@ -18,6 +18,12 @@ export type PlanNoteSource = {
   fetchedAt?: string | null;
 };
 
+export type KnowledgePlaceType =
+  | "TravelPlace"
+  | "Restaurant"
+  | "DrinkDessert"
+  | "Accommodation";
+
 export type PlanItem = {
   itemId?: string | null;
   placeId?: string | null;
@@ -27,6 +33,7 @@ export type PlanItem = {
   placeType: string;
   role?: string | null;
   timelineCategory?: "activity" | "food" | "break";
+  ontologyType?: KnowledgePlaceType | null;
   source: string;
   sourceRefs: string[];
   sourceProvider?: string | null;
@@ -152,7 +159,6 @@ export type DayDirectionsInput = {
 };
 export type PlanDay = {
   day: number;
-  theme: string;
   items: PlanItem[];
   transportLegs: TransportLeg[];
 };
@@ -268,6 +274,7 @@ export type PlaceCandidateReview = {
   candidateId: string;
   name: string;
   category: PlaceCategory;
+  ontologyType?: KnowledgePlaceType | null;
   status: "resolved" | "needs_review" | "merged" | "ignored";
   resolutionReason?: string | null;
   provider?: string | null;
@@ -392,6 +399,7 @@ export type ExplorerContext = {
 export type ExplorePlace = {
   name: string;
   category: PlaceCategory;
+  ontologyType?: KnowledgePlaceType | null;
   placeId?: string | null;
   address?: string | null;
   latitude?: number | null;
@@ -721,6 +729,7 @@ export async function createPlanFromExplorer(input: {
         preferenceLevel: place.preferenceLevel ?? "preferred",
         latitude: place.latitude ?? null,
         longitude: place.longitude ?? null,
+        ontologyType: place.ontologyType ?? null,
         tags: [place.category, ...(place.attributes ?? [])],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
         notes: place.notes ?? null,
@@ -882,6 +891,10 @@ export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
 
 export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
   return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
+}
+
+export async function listTripChatPlannerRuns(): Promise<TripChatTurn[]> {
+  return apiFetch<TripChatTurn[]>("/trip-chats/planner-runs");
 }
 
 export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {

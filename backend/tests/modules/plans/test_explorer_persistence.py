@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
@@ -171,6 +172,65 @@ def test_explorer_keeps_critical_intake_when_kg_enrichment_fails() -> None:
         assert saved.destination == "Đà Nẵng"
 
 
+def test_persistence_reuses_place_resolution_without_kg_rematch() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        matched_names: list[str] = []
+
+        def record_area_match(name: str, **_kwargs):
+            matched_names.append(name)
+            return [], None, "unresolved"
+
+        repository._match_knowledge_entities = record_area_match  # type: ignore[method-assign]
+        repository.save(
+            intake_id="intake-no-rematch",
+            user_id=None,
+            destination="Đà Nẵng",
+            resolutions=[_resolution()],
+        )
+
+        assert matched_names == ["Đà Nẵng"]
+
+
+def test_critical_persistence_retries_transient_serialization_failure() -> None:
+    class SerializationFailure(Exception):
+        pgcode = "40001"
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        original = repository._save_source_documents
+        attempts = 0
+
+        def fail_once(results_by_url):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OperationalError(
+                    "source document serialization failure",
+                    {},
+                    SerializationFailure(),
+                )
+            return original(results_by_url)
+
+        repository._save_source_documents = fail_once  # type: ignore[method-assign]
+        metrics = repository.save(
+            intake_id="intake-retry",
+            user_id=None,
+            destination="Đà Nẵng",
+            resolutions=[],
+        )
+
+        assert attempts == 2
+        assert metrics["transactionRetryCount"] == 1
+        assert metrics["nodeCount"] == 1
+        assert metrics["edgeCount"] == 0
+        assert session.get(KnowledgeGraphImport, "intake-retry") is not None
+
+
 def test_top_k_uses_reviewed_alias_and_resolves_a_clear_entity() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -192,9 +252,15 @@ def test_top_k_uses_reviewed_alias_and_resolves_a_clear_entity() -> None:
         session.add(entity)
         session.commit()
 
-        ExplorerPersistenceRepository(session).save(
+        repository = ExplorerPersistenceRepository(session)
+        resolution = repository.resolve_from_knowledge_graph(
+            _resolution("Ba Mua Noodles").candidate,
+            destination="Đà Nẵng",
+        )
+        assert resolution is not None
+        repository.save(
             intake_id="intake-alias", user_id=None, destination="Đà Nẵng",
-            resolutions=[_resolution("Ba Mua Noodles")],
+            resolutions=[resolution],
         )
         node = session.scalar(select(KnowledgeGraphImportNode).where(
             KnowledgeGraphImportNode.type != "Area"
@@ -228,9 +294,15 @@ def test_same_name_branches_stay_for_route_selection_without_global_identity() -
             session.add(entity)
         session.commit()
 
-        ExplorerPersistenceRepository(session).save(
+        repository = ExplorerPersistenceRepository(session)
+        resolution = repository.resolve_from_knowledge_graph(
+            _resolution().candidate,
+            destination="Đà Nẵng",
+        )
+        assert resolution is not None
+        repository.save(
             intake_id="intake-branches", user_id=None, destination="Đà Nẵng",
-            resolutions=[_resolution()],
+            resolutions=[resolution],
         )
         node = session.scalar(select(KnowledgeGraphImportNode).where(
             KnowledgeGraphImportNode.type != "Area"
@@ -292,11 +364,17 @@ def test_soft_merged_duplicate_redirects_without_false_ambiguity() -> None:
         session.add_all([canonical, duplicate])
         session.commit()
 
-        ExplorerPersistenceRepository(session).save(
+        repository = ExplorerPersistenceRepository(session)
+        resolution = repository.resolve_from_knowledge_graph(
+            _resolution("Temple of Literature").candidate,
+            destination="Đà Nẵng",
+        )
+        assert resolution is not None
+        repository.save(
             intake_id="intake-soft-merge",
             user_id=None,
             destination="Đà Nẵng",
-            resolutions=[_resolution("Temple of Literature")],
+            resolutions=[resolution],
         )
 
         node = session.scalar(

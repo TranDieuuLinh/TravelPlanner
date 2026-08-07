@@ -269,6 +269,12 @@ có thể đồng thời mua plan, tổ chức chuyến đi và tạo nội dung
   `traveler_profiles` và `traveler_preference_signals`. Mỗi signal có nguồn,
   explicit/inferred, confidence, số lần quan sát, trạng thái và intake evidence
   gần nhất. Signal suy luận phải được quan sát lặp lại trước khi ảnh hưởng plan.
+  Mỗi user turn tạo một `PreferenceObservationJob` idempotent theo message ID
+  trong cùng transaction. Worker chỉ claim sau khi turn hoàn tất, dùng
+  `PreferenceExtractor` structured-output rồi áp policy trước khi merge profile.
+  Job chỉ tham chiếu message, không sao chép raw chat; profile chỉ giữ signal đã
+  chuẩn hóa và message ID gần nhất làm provenance. Preference giới hạn cho một
+  chuyến không được thăng cấp thành preference global.
 - `ImportJob`: tiến độ, bước hiện tại, lỗi có thể retry và kết quả từng phần.
 
 Quan hệ chính:
@@ -352,14 +358,26 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   Khi user chưa khóa số ngày hoặc khoảng ngày đi, Planner tự tăng số ngày, tối
   đa giới hạn schema, để tạo đủ capacity. Khi duration/date đã được user nêu rõ,
   Planner giữ nguyên duration và đưa overflow vào `UnscheduledPlace`; UI phải
-  cho thêm thủ công hoặc tạo prompt yêu cầu AI xếp lại. Stop restaurant/food
-  dùng tối đa ba meal anchor mỗi ngày và không chiếm ngân sách thời gian activity;
+  cho thêm thủ công hoặc tạo prompt yêu cầu AI xếp lại. Stop nhà hàng/quán ăn
+  thuộc node `Restaurant` dùng tối đa ba meal anchor mỗi ngày và không chiếm
+  ngân sách thời gian activity; node `DrinkDessert` không được lấp meal. Với
+  place chưa qua graph, bằng chứng món chính được dùng làm fallback. `food` chỉ
+  là category trình bày để UI dùng chung icon cho các stop ăn uống, không phải
+  node type và không đủ điều kiện lấp meal;
   cafe/coffee vẫn là activity. PlaceSelector suggestion chỉ dùng capacity còn trống và
   không được chiếm chỗ của URL place. Revision URL tiếp theo phải phục hồi cả
   URL place đã resolve từ Explorer history, kể cả khi revision cũ chưa xếp được.
   Finder ưu tiên category chưa xuất hiện; riêng coffee do Finder thêm tối đa một
   lần mỗi ngày và không thêm nếu ngày đó đã có coffee từ URL, trừ khi user yêu
   cầu rõ coffee tour/cafe hopping.
+- Meal venue do Planner bổ sung được chọn ở cấp toàn chuyến sau khi số ngày và
+  cụm activity đã có. Candidate ưu tiên đường
+  `Area -> SPECIAL_EXPERIENCE -> Activity -> TARGETS_PLACE -> Restaurant`;
+  experience dining tổng quát được mở rộng qua
+  `Activity -> INVOLVES_ITEM -> Item` và
+  `Restaurant -> OFFERS_ITEM -> Item`. Catalog được tải bounded một lần, venue
+  và món đã dùng bị loại trên toàn chuyến; Gemini không nằm trong đường chọn
+  meal chính.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
   được đưa vào timeline; candidate có nguồn được giữ để review và PlaceSelector
   không bổ sung địa điểm khác như một bản thay thế của candidate đó.

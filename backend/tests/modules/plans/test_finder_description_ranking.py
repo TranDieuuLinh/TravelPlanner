@@ -28,7 +28,7 @@ def test_description_retrieval_then_structured_reranking_prefers_nature() -> Non
                 description=(
                     "Nhà hàng gần thiên nhiên Cát Bà, phù hợp sau chuyến hiking."
                 ),
-                group="food_drink",
+                group="Restaurant",
                 tags=["food", "restaurant"],
             ),
             _place(
@@ -129,7 +129,7 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
                 "restaurant",
                 "vn,hai-phong,cat-ba-town",
                 description="Nhà hàng hải sản tại Cát Bà.",
-                group="food_drink",
+                group="Restaurant",
                 tags=["food", "restaurant", "seafood"],
             ),
             _place(

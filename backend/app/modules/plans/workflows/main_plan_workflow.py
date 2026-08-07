@@ -94,8 +94,17 @@ class MainPlanWorkflow:
         *,
         on_timing_update: Callable[[PlanTimingReport], None] | None = None,
         reuse_theme_plan: Plan | None = None,
+        capacity_preflight: tuple[float, dict[str, object]] | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         trace = PlanTimingTrace(on_update=on_timing_update)
+        if capacity_preflight is not None:
+            duration_seconds, details = capacity_preflight
+            trace.add_completed_stage(
+                "capacityPreflight",
+                "CapacityPreflight chọn số ngày và gom cụm",
+                duration_seconds=duration_seconds,
+                details=details,
+            )
         prepare_started_at = time.perf_counter()
         intent = TravelIntent(
             destination=payload.intent.destination,
@@ -446,7 +455,12 @@ class MainPlanWorkflow:
             intent=intent,
             tripThemes=theme_output.trip_themes,
             requiredExperiences=theme_output.required_experiences,
-            days=selection_output.final_days,
+            # Day themes are no longer part of the planning/output contract.
+            # Clear the legacy compatibility field at the assembly boundary.
+            days=[
+                day.model_copy(update={"theme": None})
+                for day in selection_output.final_days
+            ],
             initialUserStatus=user_status,
             finalUserStatus=selection_output.final_user_status,
             finalPlanStatus=selection_output.final_plan_status,

@@ -735,10 +735,7 @@ class TripThemePlannerService:
                     ],
                 ]
             })
-        themes, normalized = self._normalize_trip_themes(
-            draft.trip_themes,
-            days=planner_input.trip_spec.days,
-        )
+        themes, normalized = self._normalize_trip_themes(draft.trip_themes)
         allowed_region_prefixes = {
             planner_input.region_context.region_key,
             *(
@@ -782,8 +779,9 @@ class TripThemePlannerService:
             planner_input,
         )
 
+        selection_policy = build_theme_selection_policy(planner_input)
         required_count = min(
-            planner_input.trip_spec.days,
+            int(selection_policy["minimumRequiredExperiences"]),
             len(graph_catalog.candidates),
         )
         if required_count and len(required_experiences) < required_count:
@@ -792,7 +790,6 @@ class TripThemePlannerService:
                 f"{required_count} graph candidates for this trip."
             )
 
-        selection_policy = build_theme_selection_policy(planner_input)
         trusted_special_candidates = [
             candidate
             for candidate in graph_catalog.candidates
@@ -815,8 +812,8 @@ class TripThemePlannerService:
         warnings.extend(diversity_warnings)
         if normalized:
             warnings.append(
-                "Yêu cầu chủ đề đã được chuẩn hóa theo sức chứa hai "
-                "hoạt động chính mỗi ngày; điểm ăn uống được dành cho "
+                "Tín hiệu trải nghiệm toàn chuyến đã được chuẩn hóa thành "
+                "một pool đa dạng có giới hạn; điểm ăn uống được dành cho "
                 "các khung bữa ăn riêng."
             )
         return draft.model_copy(
@@ -830,19 +827,30 @@ class TripThemePlannerService:
     @staticmethod
     def _normalize_trip_themes(
         themes: list[TripThemeRequirement],
-        *,
-        days: int,
     ) -> tuple[list[TripThemeRequirement], bool]:
-        capacity = days * 2
+        # Trip signals are stable when the solver changes the trip duration.
+        # This is a bounded variety pool, not a per-day activity quota.
+        capacity = 6
         remaining = capacity
         normalized: list[TripThemeRequirement] = []
         changed = False
         for requirement in themes:
+            meal_theme_tags = {
+                "food",
+                "food_drink",
+                "meal",
+                "restaurant",
+                "local food",
+                "local cuisine",
+            }
             meal_tags = [
-                tag for tag in requirement.focus_tags if is_meal_place(tags=[tag])
+                tag
+                for tag in requirement.focus_tags
+                if tag.casefold() in meal_theme_tags
+                or is_meal_place(tags=[tag])
             ]
             non_meal_tags = [
-                tag for tag in requirement.focus_tags if not is_meal_place(tags=[tag])
+                tag for tag in requirement.focus_tags if tag not in meal_tags
             ]
             if (meal_tags and not non_meal_tags) or (
                 not requirement.focus_tags

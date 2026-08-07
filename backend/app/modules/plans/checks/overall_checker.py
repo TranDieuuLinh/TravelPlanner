@@ -4,6 +4,7 @@ from typing import Any
 from app.modules.plans.domain.entities import CheckReport, CheckIssue, Plan
 from app.modules.plans.domain.constraint_policy import constraint_policy_rejection
 from app.modules.plans.domain.validators import find_empty_days
+from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.place_selector.timeline_policy import MEAL_ANCHORS
 
 
@@ -101,7 +102,7 @@ class OverallChecker:
             else "warning"
             if any(issue.severity == "warning" and issue.code in {
                 "insufficient_main_experience_diversity",
-                "food_drink_dominates_main_activities",
+                "food_stops_dominate_main_activities",
                 "required_experience_missing",
                 "special_experience_not_preserved",
                 "selected_place_unscheduled",
@@ -134,7 +135,7 @@ class OverallChecker:
             item for day in plan.days for item in day.items
             if self._is_main_activity(item)
         ]
-        food_items = [item for item in main_items if self._is_food_drink(item)]
+        food_items = [item for item in main_items if self._is_food_stop(item)]
         non_food_items = [item for item in main_items if item not in food_items]
         if len(main_items) >= 3 and len(non_food_items) < 2:
             issues.append(self._issue(
@@ -147,10 +148,10 @@ class OverallChecker:
             ))
         if len(main_items) >= 3 and len(food_items) / len(main_items) >= 0.75:
             issues.append(self._issue(
-                "food_drink_dominates_main_activities", "warning",
+                "food_stops_dominate_main_activities", "warning",
                 "Food and drink account for at least 75% of the main activities.",
                 [self._item_id(item) for item in food_items],
-                [f"foodDrinkActivities={len(food_items)}", f"mainActivities={len(main_items)}", "threshold=75%"],
+                [f"foodActivities={len(food_items)}", f"mainActivities={len(main_items)}", "threshold=75%"],
                 "Planner should reserve main-activity capacity for diverse non-food experiences; Selector should refill from graph-backed candidates.",
                 "planner",
             ))
@@ -164,6 +165,38 @@ class OverallChecker:
         issues: list[CheckIssue] = []
         required_meals = {"breakfast_meal", "lunch_meal", "dinner_meal"}
         for day in plan.days:
+            visible_stops = [
+                item for item in day.items if item.timeline_category != "break"
+            ]
+            adjacent_restaurants = [
+                (left, right)
+                for left, right in zip(visible_stops, visible_stops[1:])
+                if self._is_restaurant(left) and self._is_restaurant(right)
+            ]
+            if adjacent_restaurants:
+                affected_items = [
+                    item
+                    for pair in adjacent_restaurants
+                    for item in pair
+                ]
+                issues.append(self._issue(
+                    "adjacent_restaurant_stops", "error",
+                    (
+                        f"Day {day.day} contains consecutive restaurant stops "
+                        "without an activity or DrinkDessert stop between them."
+                    ),
+                    list(dict.fromkeys(self._item_id(item) for item in affected_items)),
+                    [
+                        f"{self._item_id(left)}->{self._item_id(right)}"
+                        for left, right in adjacent_restaurants
+                    ],
+                    (
+                        "Insert at least one activity or DrinkDessert stop between "
+                        "the restaurants, or move one restaurant to another day."
+                    ),
+                    "selector",
+                ))
+
             meal_roles = {
                 (item.role or "").casefold()
                 for item in day.items
@@ -183,7 +216,7 @@ class OverallChecker:
             non_food_activities = [
                 item for item in day.items
                 if item.timeline_category == "activity"
-                and not self._is_food_drink(item)
+                and not self._is_food_stop(item)
             ]
             if len(non_food_activities) < 2:
                 issues.append(self._issue(
@@ -240,7 +273,7 @@ class OverallChecker:
             else:
                 matched = matches[0]
                 category = self._value(requirement, "category")
-                if category not in {None, "meal", "food"} and self._is_food_drink(matched):
+                if category not in {None, "meal", "food"} and self._is_food_stop(matched):
                     issues.append(self._issue(
                         "special_experience_not_preserved", "error",
                         f"Required special experience {requirement_id or 'unknown'} was replaced by a food/drink item.",
@@ -312,10 +345,18 @@ class OverallChecker:
         return [str(item) for item in result]
 
     @staticmethod
-    def _is_food_drink(item) -> bool:
+    def _is_food_stop(item) -> bool:
         text = " ".join([item.place_type, *item.tags]).casefold().replace("_", " ")
         markers = ("food", "restaurant", "cafe", "coffee", "bakery", "bar", "drink", "dessert", "meal", "ice cream", "juice", "tea", "bingsu", "snack")
         return item.timeline_category == "food" or any(marker in text for marker in markers)
+
+    @staticmethod
+    def _is_restaurant(item) -> bool:
+        return is_meal_place(
+            tags=[item.place_type, *item.tags],
+            source_activity=item.source_activity or item.name,
+            ontology_type=item.ontology_type,
+        )
 
     @staticmethod
     def _is_coffee(item) -> bool:

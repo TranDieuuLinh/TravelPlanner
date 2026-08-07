@@ -313,7 +313,7 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobCopy strong { overflow: hidden; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
 .backgroundJobCopy small { color: var(--muted); font-size: .59rem; }
 .backgroundJobDetails { display: grid; gap: 10px; border-top: 1px solid #f6f7fb; padding: 10px 12px 12px 42px; background: #ffffff; }
-.backgroundJobMeta { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.backgroundJobMeta { display: grid; gap: 8px; }
 .backgroundJobMeta > span { display: grid; gap: 2px; }
 .backgroundJobMeta small { color: #172033; font-size: .5rem; font-weight: 750; text-transform: uppercase; }
 .backgroundJobMeta strong { color: #365f5a; font-size: .58rem; }
@@ -331,6 +331,24 @@ h1, h2, h3, p { margin-top: 0; }
 .backgroundJobTimingDuration { display: grid; justify-items: end; gap: 1px; font-variant-numeric: tabular-nums; }
 .backgroundJobTimingDuration small { color: #52606d; font-size: .45rem; font-weight: 800; }
 .backgroundJobTiming { display: grid; gap: 12px; }
+.backgroundJobTimingTotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.backgroundJobTimingTotal span { color: #52606d; font-size: .52rem; font-weight: 850; text-transform: uppercase; }
+.backgroundJobTimingTotal strong { color: #365f5a; font-size: .72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobPipeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.backgroundJobPipelineStep { position: relative; display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 8px; padding-bottom: 12px; }
+.backgroundJobPipelineStep:last-child { padding-bottom: 0; }
+.backgroundJobPipelineStep:not(:last-child)::before { position: absolute; top: 22px; bottom: 0; left: 10px; width: 2px; background: #e4e7f0; content: ""; }
+.backgroundJobPipelineIndex { z-index: 1; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #365f5a; color: #ffffff; font-size: .53rem; font-weight: 900; }
+.backgroundJobPipelineStep.running .backgroundJobPipelineIndex { background: #e4e7f0; color: #365f5a; }
+.backgroundJobPipelineStep > section { min-width: 0; border: 1px solid #e4e7f0; border-radius: 10px; padding: 9px; background: #ffffff; }
+.backgroundJobPipelineStep > section > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.backgroundJobPipelineStep > section > header > span { display: grid; min-width: 0; gap: 3px; }
+.backgroundJobPipelineStep > section > header strong { color: #172033; font-size: .61rem; }
+.backgroundJobPipelineStep > section > header small { color: #52606d; font-size: .49rem; line-height: 1.4; }
+.backgroundJobPipelineStep > section > header > b { color: #365f5a; font-size: .57rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobStepDetails { margin-top: 7px; border-top: 1px solid #f0f1f5; padding-top: 6px; color: #172033; }
+.backgroundJobStepDetails > summary { cursor: pointer; color: #365f5a; font-size: .51rem; font-weight: 850; list-style-position: inside; }
+.backgroundJobStepDetails > div { display: grid; gap: 10px; margin-top: 8px; }
 .backgroundJobTimingOverview { display: grid; gap: 8px; border: 1px solid #e4e7f0; border-radius: 10px; padding: 10px; background: #f6f7fb; }
 .backgroundJobTimingOverview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .backgroundJobTimingOverview > header strong { color: #172033; font-size: .64rem; text-transform: uppercase; }

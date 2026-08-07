@@ -3,11 +3,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.integrations.llm.factory import get_llm_client, get_ocr_llm_client
 from app.integrations.routing import (
     OpenTripPlannerTransitProvider,
@@ -39,6 +40,9 @@ from app.modules.plans.explorer.tools.url_reels.caption_structurer import (
     GeminiCaptionStructurer,
 )
 from app.modules.plans.explorer.tools.url_reels.service import UrlReelExtractionService
+from app.modules.plans.explorer.tools.url_reels.source_observation_fuser import (
+    GeminiSourceObservationFuser,
+)
 from app.modules.plans.explorer.tools.url_reels.transcript_cache import (
     SqlAlchemyYouTubeTranscriptCache,
 )
@@ -56,7 +60,6 @@ from app.modules.plans.information_finder import (
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
-from app.modules.plans.place_selector.meal_node_planner import MealNodePlanner
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.graph_research import (
     TripThemeGraphResearchService,
@@ -77,6 +80,45 @@ from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.preferences.repository import TravelerProfileRepository
+from app.modules.preferences.schema import PreferenceSnapshot
+from app.modules.preferences.observation_repository import (
+    PreferenceObservationJobRepository,
+)
+
+
+def _persist_traveler_profile(
+    user_id: int,
+    snapshot: PreferenceSnapshot,
+    intake_id: str,
+) -> None:
+    """Write learned preferences outside the Explorer critical-path session."""
+    with SessionLocal() as db:
+        repository = TravelerProfileRepository(db)
+        try:
+            if db.get_bind().dialect.name == "postgresql":
+                db.execute(
+                    text(
+                        "SELECT pg_advisory_xact_lock("
+                        "hashtext(:lock_key))"
+                    ),
+                    {"lock_key": f"travelplanner:traveler-profile:{user_id}"},
+                )
+            # Re-read after acquiring the per-user transaction lock so two
+            # background Explorer jobs cannot overwrite each other's signals.
+            profile = PreferenceLearningService().merge(
+                repository.get(user_id),
+                snapshot,
+            )
+            repository.save(
+                user_id,
+                profile,
+                evidence_intake_id=intake_id,
+            )
+            repository.commit()
+        except Exception:
+            db.rollback()
+            raise
+
 
 if TYPE_CHECKING:
     from app.modules.plans.conversation_service import ConversationTurnService
@@ -154,6 +196,7 @@ def get_conversation_turn_service(
         mutation_service=get_plan_mutation_service(db),
         supervisor=supervisor,
         information_finder_reader=get_information_finder_reader(db),
+        preference_jobs=PreferenceObservationJobRepository(db),
     )
 
 
@@ -206,7 +249,6 @@ def get_plan_service(
         route_optimizer=_get_itinerary_optimizer(),
         graph_repository=kg_repo,
         nearby_route_cost_provider=_get_nearby_route_cost_provider(),
-        meal_node_planner=MealNodePlanner(llm_client, kg_repo),
     )
     main_workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
@@ -227,6 +269,7 @@ def get_plan_service(
         url_reels=UrlReelExtractionService(
             youtube_transcript=youtube_transcript,
             caption_structurer=GeminiCaptionStructurer(),
+            source_observation_fuser=GeminiSourceObservationFuser(),
         ),
         # Resolve against canonical Knowledge Graph entities/aliases first;
         # only misses or low-confidence matches reach Playwright; catalog
@@ -241,6 +284,7 @@ def get_plan_service(
         explorer_persistence=ExplorerPersistenceRepository(db),
         preference_learning=PreferenceLearningService(),
         traveler_profile_repository=TravelerProfileRepository(db),
+        background_preference_writer=_persist_traveler_profile,
         explorer_timing_logger=ExplorerTimingLogger(settings.explorer_timing_log_path),
         planning_runs=planning_runs,
     )

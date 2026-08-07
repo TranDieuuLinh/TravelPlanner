@@ -401,7 +401,11 @@ class AreaSurveyService:
         # 6. Diversity metrics
         category_entropy = self._compute_entropy(distribution)
         unique_categories = len(distribution)
-        has_food_scene = "food_drink" in distribution and distribution["food_drink"] >= 3
+        has_food_scene = (
+            distribution.get("Restaurant", 0)
+            + distribution.get("DrinkDessert", 0)
+            >= 3
+        )
         has_nature = "nature" in distribution and distribution["nature"] >= 2
         has_culture = "attraction" in distribution and distribution["attraction"] >= 2
 
@@ -723,7 +727,10 @@ class AreaSurveyService:
 
         # Về ẩm thực
         if has_food_scene:
-            food_count = distribution.get("food_drink", 0)
+            food_count = (
+                distribution.get("Restaurant", 0)
+                + distribution.get("DrinkDessert", 0)
+            )
             insights.append(f"Có {food_count} địa điểm ẩm thực, thuận tiện cho việc ăn uống.")
 
         # Về thiên nhiên

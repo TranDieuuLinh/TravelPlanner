@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from sqlalchemy import select
 
 from app.modules.preferences.model import TravelerPreferenceSignal
@@ -11,6 +12,12 @@ from app.modules.preferences.schema import (
     PreferenceSnapshot,
 )
 from app.modules.preferences.service import PreferenceLearningService
+from app.modules.preferences.extractor import (
+    DeterministicPreferenceExtractor,
+    PreferenceObservation,
+    PreferenceObservationResult,
+    PreferencePolicy,
+)
 from app.modules.users.repository import UserRepository
 
 
@@ -99,6 +106,63 @@ def test_preference_learning_rejects_sensitive_trait_inference() -> None:
     )
 
     assert profile.scores == {}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Tui cũng chả thích đi du lịch tới nơi đông ngừo đâu",
+        "Mình không thích nơi đông người",
+        "I don't like crowded places",
+    ],
+)
+def test_explicit_chat_crowd_avoidance_is_normalized(content: str) -> None:
+    result = asyncio.run(DeterministicPreferenceExtractor().extract(content))
+    snapshot = PreferencePolicy().to_snapshot(result)
+    profile = PreferenceLearningService().merge({}, snapshot)
+
+    signal = snapshot.signals[0]
+    assert signal.dimension == PreferenceDimension.setting
+    assert signal.value == "uncrowded"
+    assert signal.origin == "explicit"
+    assert signal.source_types == ["trip_chat"]
+    assert profile.top_values() == ["uncrowded"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Mùa đông người ta thường đi đâu?",
+        "Nơi này khá đông người.",
+        "Mình thích nơi đông người.",
+    ],
+)
+def test_chat_crowd_mentions_without_explicit_dislike_are_not_saved(
+    content: str,
+) -> None:
+    result = asyncio.run(DeterministicPreferenceExtractor().extract(content))
+    snapshot = PreferencePolicy().to_snapshot(result)
+
+    assert snapshot.signals == []
+
+
+def test_trip_scoped_observation_is_not_promoted_to_long_term_profile() -> None:
+    snapshot = PreferencePolicy().to_snapshot(
+        PreferenceObservationResult(
+            observations=[
+                PreferenceObservation(
+                    dimension="setting",
+                    value="uncrowded",
+                    score=1.0,
+                    confidence=0.99,
+                    scope="trip",
+                    explicitness="explicit",
+                )
+            ]
+        )
+    )
+
+    assert snapshot.signals == []
 
 
 def test_traveler_profile_repository_persists_signal_provenance(

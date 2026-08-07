@@ -26,6 +26,9 @@ vừa một ngày. Pace cũng không phải bằng chứng trực tiếp cho cap
 - Activity lấp các khoảng 09:00–12:00, 13:00–18:00 và 19:00–21:00.
 - Không giới hạn activity theo count hoặc pace. Capacity được tính từ duration
   nguồn, duration catalog hoặc fallback 90 phút, cộng transition.
+- Hai stop `Restaurant` không được đứng liền nhau trong thứ tự hiển thị của một
+  ngày. Phải có ít nhất một `activity` hoặc `DrinkDessert` ở giữa; `break` hay
+  khoảng trống không được xem là stop phân cách. Checker coi vi phạm là lỗi.
 - Candidate được kiểm tra giờ mở cửa tại khung dự kiến khi dữ liệu có sẵn.
 - Sau route enrichment, timeline được fit lại bằng duration của route leg. Khi
   thiếu leg provider, dùng transition estimate 15 phút và giữ trạng thái route

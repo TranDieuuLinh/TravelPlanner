@@ -8,6 +8,7 @@ from app.modules.plans.domain.enums import (
     PlanStatus,
     TravelPace,
 )
+from app.modules.plans.conversation_service import _log_prompt_planner_timing
 from app.modules.plans.timing import PlanTimingSubstage, PlanTimingTrace
 
 
@@ -58,3 +59,67 @@ def test_planner_timing_is_logged_to_terminal(caplog) -> None:
     assert payload["dayCount"] == 1
     assert payload["itemCount"] == 0
     assert payload["stages"][0]["subStages"][0]["key"] == "llmGenerate"
+
+
+def test_timing_can_include_preflight_completed_before_workflow_trace() -> None:
+    trace = PlanTimingTrace()
+
+    trace.add_completed_stage(
+        "capacityPreflight",
+        "Capacity preflight",
+        duration_seconds=0.25,
+        details={"preflightMatrixBuildCount": 1},
+    )
+
+    assert trace.stages[0].duration_seconds == 0.25
+    assert trace.stages[0].details["preflightMatrixBuildCount"] == 1
+    assert trace.snapshot().total_seconds >= 0.25
+
+
+def test_raw_prompt_planner_timing_is_correlated_without_prompt_text(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    _log_prompt_planner_timing(
+        turn_id="turn-raw-1",
+        source_type="raw_prompt",
+        status="succeeded",
+        wall_seconds=2.75,
+        explorer_timing={"totalSeconds": 0.5},
+        planner_timing={
+            "status": "completed",
+            "totalSeconds": 2.0,
+            "stages": [
+                {
+                    "key": "placeSelector",
+                    "label": "Place selector",
+                    "durationSeconds": 1.25,
+                    "details": {"selectedPlaceCount": 3},
+                    "subStages": [],
+                }
+            ],
+            "dayCount": 2,
+            "itemCount": 3,
+            "transportLegCount": 1,
+            "unscheduledCount": 0,
+            "warningCount": 0,
+        },
+        error_code=None,
+    )
+
+    line = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith(
+            "TRAVELPLANNER_TIMING prompt_planner "
+        )
+    )
+    payload = json.loads(
+        line.removeprefix("TRAVELPLANNER_TIMING prompt_planner ")
+    )
+    assert payload["event"] == "prompt_planner_timing"
+    assert payload["turnId"] == "turn-raw-1"
+    assert payload["sourceType"] == "raw_prompt"
+    assert payload["explorerSeconds"] == 0.5
+    assert payload["plannerSeconds"] == 2.0
+    assert payload["plannerTiming"]["stages"][0]["key"] == "placeSelector"
+    assert "prompt" not in payload

@@ -32,6 +32,7 @@ from app.modules.preferences.model import (
     TravelerPreferenceSignalSource,
     TravelerProfile,
 )
+from app.modules.preferences.observation_model import PreferenceObservationJob
 from app.modules.users.model import User
 from app.modules.travel_groups.model import TravelGroup, TravelGroupMembership, TravelGroupPost
 from app.modules.knowledge_graph.model import (
@@ -70,6 +71,7 @@ __all__ = [
     "PlaceReview",
     "PlanningRun",
     "PlanningRunStage",
+    "PreferenceObservationJob",
     "Report",
     "Review",
     "SourceDocument",

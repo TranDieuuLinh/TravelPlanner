@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from threading import Lock
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -22,9 +22,6 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
 
 class _GeminiAudioOutput(BaseModel):
     transcript: str
-    observations: list[SpeechToTextObservation]
-    region_story: str = Field(default="", alias="regionStory")
-    region_story_evidence: str = Field(default="", alias="regionStoryEvidence")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
@@ -305,16 +302,11 @@ class GeminiAudioSpeechToText:
         audio_bytes = audio_path.read_bytes()
         mime_type = "audio/mpeg" if audio_path.suffix.lower() == ".mp3" else "audio/wav"
         prompt_parts = [
-            "Transcribe this travel reel audio and extract structured travel-stop observations.",
+            "Transcribe this travel reel audio faithfully.",
             "Return only JSON matching the supplied schema.",
             "Prefer real travel place names over similar-sounding generic words.",
-            "Preserve sequence words, day references, time-of-day cues, recommended activities, dishes, prices, durations, and alternatives exactly when spoken.",
-            "Create an observation when the speech identifies a specific place. Also create one when it clearly recommends a venue-independent travel activity or local dish (for example egg coffee) but gives no venue: use the concise activity or dish as placeName and repeat it in activity so the planner can find a clearly labeled nearby recommendation later. Do not do this for vague verbs such as eat, drink, visit, or relax. Keep evidence as a short verbatim span supporting that observation, not the whole transcript.",
-            "Use one-based chronological order. Use null for dayNumber or durationMinutes when the audio does not state them. Set activity to a concise Vietnamese creator-story summary for this place: what the creator did or recommends, plus any grounded reason, sequence, tip, dish, viewpoint, or timing detail. Do not merely translate 'visit/explore this place' and do not say only that the place was mentioned. Use an empty string when the source gives no useful place-specific story.",
-            "Set searchRegion to a city or province only when the speech explicitly assigns that stop or day trip to it; otherwise use an empty string.",
-            "Confidence measures confidence in the place extraction from 0 to 1.",
-            "Classify entityType as venue, sub_place, address, city, person, activity, food, or unknown. Preserve explicitly numbered activities and day-trip cities as candidates even when no specific venue is named. Put street/locality text in addressHint on its venue instead of creating an address stop. Preserve the original proper name, add spelling variants to aliases, and set parentPlace when a sub-place belongs to a named venue. Set evidenceSource to stt and authority to medium.",
-            "When the creator expresses a meaningful overall perspective about the destination or region—such as its atmosphere, travel rhythm, area-wide advice, why it is interesting, or how the itinerary fits together—write a one- or two-sentence Vietnamese regionStory. Copy the shortest exact spoken span that supports it into regionStoryEvidence. Leave both empty when the audio only names the destination or gives place-specific details.",
+            "Preserve sequence words, day references, time-of-day cues, place names, dishes, prices, durations, and alternatives exactly when spoken.",
+            "Do not summarize, translate, classify, extract observations, or add facts that are not audible.",
         ]
         if language:
             prompt_parts.append(f"The expected speech languages are: {language}. Preserve the language that is actually spoken.")
@@ -323,7 +315,7 @@ class GeminiAudioSpeechToText:
         if chunk_index is not None and chunk_count is not None:
             prompt_parts.append(
                 f"This is chronological audio chunk {chunk_index} of "
-                f"{chunk_count}. Extract only evidence audible in this chunk."
+                f"{chunk_count}. Transcribe only speech audible in this chunk."
             )
 
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent"
@@ -343,102 +335,14 @@ class GeminiAudioSpeechToText:
             ],
             "generationConfig": {
                 "temperature": 0.0,
-                "maxOutputTokens": 8192,
+                "maxOutputTokens": 4096,
                 "responseMimeType": "application/json",
                 "responseJsonSchema": {
                     "type": "object",
                     "properties": {
                         "transcript": {"type": "string"},
-                        "regionStory": {"type": "string"},
-                        "regionStoryEvidence": {"type": "string"},
-                        "observations": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "order": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                    },
-                                    "placeName": {"type": "string"},
-                                    "evidence": {"type": "string"},
-                                    "dayNumber": {
-                                        "anyOf": [
-                                            {
-                                                "type": "integer",
-                                                "minimum": 1,
-                                                "maximum": 30,
-                                            },
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                    "timeHint": {"type": "string"},
-                                    "activity": {"type": "string"},
-                                    "searchRegion": {"type": "string"},
-                                    "durationMinutes": {
-                                        "anyOf": [
-                                            {
-                                                "type": "integer",
-                                                "minimum": 15,
-                                                "maximum": 720,
-                                            },
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                    "confidence": {
-                                        "type": "number",
-                                        "minimum": 0,
-                                        "maximum": 1,
-                                    },
-                                    "entityType": {
-                                        "type": "string",
-                                        "enum": ["venue", "sub_place", "address", "city", "person", "activity", "food", "unknown"],
-                                    },
-                                    "aliases": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                    },
-                                    "addressHint": {
-                                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                                    },
-                                    "parentPlace": {
-                                        "anyOf": [{"type": "string"}, {"type": "null"}],
-                                    },
-                                    "evidenceSource": {
-                                        "type": "string",
-                                        "enum": ["stt"],
-                                    },
-                                    "authority": {
-                                        "type": "string",
-                                        "enum": ["medium"],
-                                    },
-                                },
-                                "required": [
-                                    "order",
-                                    "placeName",
-                                    "evidence",
-                                    "dayNumber",
-                                    "timeHint",
-                                    "activity",
-                                    "durationMinutes",
-                                    "confidence",
-                                    "entityType",
-                                    "aliases",
-                                    "addressHint",
-                                    "parentPlace",
-                                    "evidenceSource",
-                                    "authority",
-                                ],
-                                "additionalProperties": False,
-                            },
-                        },
                     },
-                    "required": [
-                        "transcript",
-                        "observations",
-                        "regionStory",
-                        "regionStoryEvidence",
-                    ],
+                    "required": ["transcript"],
                     "additionalProperties": False,
                 },
             },
@@ -483,9 +387,7 @@ class GeminiAudioSpeechToText:
             ) from exc
         return SpeechToTextResult(
             text=structured.transcript,
-            observations=structured.observations,
-            regionStory=structured.region_story,
-            regionStoryEvidence=structured.region_story_evidence,
+            observations=[],
             source="gemini_audio",
             language=language,
             languageProbability=None,

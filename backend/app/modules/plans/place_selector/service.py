@@ -49,7 +49,6 @@ from app.modules.plans.place_selector.skeleton_builder import (
 from app.modules.plans.place_selector.status_tracker import PlaceSelectionStatusTracker
 from app.modules.plans.place_selector.timeline_fitter import TimelineFitter
 from app.modules.plans.place_selector.meal_selector import MealStopSelector
-from app.modules.plans.place_selector.meal_node_planner import MealNodePlanner
 from app.modules.plans.itinerary_optimizer import ItineraryOptimizer
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.explorer.place_policy import is_meal_place
@@ -72,12 +71,6 @@ from app.modules.plans.place_selector.time_windows import (
 
 
 class PlaceSelectorService:
-    _FINDER_ACTIVITY_LIMIT_BY_PACE = {
-        TravelPace.relaxed: 2,
-        TravelPace.balanced: 3,
-        TravelPace.packed: 4,
-    }
-
     def __init__(
         self,
         place_tool: PlaceSelectionTool | None = None,
@@ -92,7 +85,6 @@ class PlaceSelectorService:
         graph_repository=None,
         nearby_radius_km: float = 5.0,
         nearby_route_cost_provider=None,
-        meal_node_planner: MealNodePlanner | None = None,
     ) -> None:
         if max_candidates_per_block < 1:
             raise ValueError("max_candidates_per_block must be at least 1")
@@ -119,7 +111,6 @@ class PlaceSelectorService:
         self.meal_selector = meal_selector or MealStopSelector(
             self.place_tool,
             graph_repository=graph_repository,
-            meal_node_planner=meal_node_planner,
         )
         self._area_survey_cache: dict[str, AreaProfile] = {}
         self._area_survey_service: AreaSurveyService | None = None
@@ -201,7 +192,11 @@ class PlaceSelectorService:
                     continue
                 # A graph-backed offer may be a meal/supporting stop. It is never
                 # promoted to a main experience unless SPECIAL_EXPERIENCE exists.
-                is_meal = place_category(candidate) == "food_drink"
+                is_meal = is_meal_place(
+                    tags=[candidate.place_type, *candidate.tags],
+                    source_activity=candidate.name,
+                    ontology_type=candidate.ontology_type,
+                )
                 candidate_bucket = "meal" if is_meal else nearby.predicate
                 if nearby_category_counts.get(candidate_bucket, 0) >= 2:
                     continue
@@ -490,7 +485,7 @@ class PlaceSelectorService:
                                     targetArea=selection_input.region_key,
                                 )
                             )
-                        ) == "food_drink"
+                        ) == "Restaurant"
                         else selected.experience_category or requirement.category
                     )
                     selected = selected.model_copy(
@@ -565,7 +560,7 @@ class PlaceSelectorService:
         claim_ids = list(dict.fromkeys([*candidate.claim_ids, *requirement.claim_ids]))
         category = (
             ExperienceCategory.meal
-            if place_category(candidate) == "food_drink"
+            if place_category(candidate) == "Restaurant"
             else requirement.category
         )
         return SelectedPlaceContext(
@@ -577,6 +572,7 @@ class PlaceSelectorService:
             latitude=candidate.latitude,
             longitude=candidate.longitude,
             tags=candidate.tags,
+            ontologyType=candidate.ontology_type,
             sourceRefs=source_refs,
             claimIds=claim_ids,
             activityId=candidate.activity_id or requirement.activity_id,
@@ -624,6 +620,7 @@ class PlaceSelectorService:
             meal = is_meal_place(
                 tags=place.tags,
                 source_activity=place.source_activity,
+                ontology_type=place.ontology_type,
             ) and "cafe" not in {tag.casefold() for tag in place.tags}
             cost = activity_allocation_cost(place.source_duration_minutes)
             eligible_days = [
@@ -686,7 +683,7 @@ class PlaceSelectorService:
             selectionDays=[
                 PlaceSelectionDay(
                     day=day,
-                    theme="Tối ưu theo tuyến",
+                    theme="",
                     targetArea=(
                         stay_by_day[day].name
                         if day in stay_by_day
@@ -858,7 +855,7 @@ class PlaceSelectorService:
             tentative_plan_status.current_day = brief.day
             tentative_plan_status.current_strategy = skeleton.strategy
             tentative_plan_status.day_usage = PlaceSelectionUsage()
-            tentative_plan_status.used_food_drink_place_types = []
+            tentative_plan_status.used_food_place_types = []
             day_items: list[PlanItem] = []
             committed_activities: dict[str, tuple[SelectablePlace, DayBlock]] = {}
             deferred_slot_warnings: list[str] = []
@@ -1389,10 +1386,16 @@ class PlaceSelectorService:
             selected_meals = [
                 place
                 for place in allocated_places
-                if place_category(
-                    self.candidate_selector._selected_to_candidate(place, brief)
+                if is_meal_place(
+                    tags=[
+                        self.candidate_selector._selected_to_candidate(
+                            place, brief
+                        ).place_type,
+                        *place.tags,
+                    ],
+                    source_activity=place.source_activity or place.name,
+                    ontology_type=place.ontology_type,
                 )
-                == "food_drink"
             ]
             selected_meals_by_day[brief.day] = selected_meals
             selected_activities = [
@@ -1410,10 +1413,6 @@ class PlaceSelectorService:
             plan_status.day_usage = PlaceSelectionUsage()
             day_items: list[PlanItem] = []
             activity_number = 0
-            finder_activity_limit = self._FINDER_ACTIVITY_LIMIT_BY_PACE.get(
-                brief.pace,
-                3,
-            )
             for available_window_index, available_window in enumerate(ACTIVITY_WINDOWS):
                 cursor = available_window.start_minutes
                 while (
@@ -1425,14 +1424,6 @@ class PlaceSelectorService:
                         for ref in activity_brief.allocated_selected_place_refs
                         if ref in plan_status.remaining_selected_place_ids
                     ]
-                    # Finder fills a useful day, not every remaining minute.
-                    # Explicit URL/user stops remain exempt so source evidence
-                    # is never discarded just to satisfy this comfort limit.
-                    if (
-                        activity_number >= finder_activity_limit
-                        and not remaining_source_refs
-                    ):
-                        break
                     remaining_minutes = available_window.end_minutes - cursor
                     activity_number += 1
                     role = f"main_activity_{activity_number}"
@@ -1649,34 +1640,37 @@ class PlaceSelectorService:
         briefs_by_day = {
             brief.day: brief for brief in selection_blueprint.selection_days
         }
+        activities_by_day = {
+            day.day: [
+                item
+                for item in day.items
+                if item.timeline_category == "activity"
+                or item.ontology_type == "DrinkDessert"
+            ]
+            for day in activity_days
+        }
+        selected_meal_place_refs = {
+            ref
+            for places in selected_meals_by_day.values()
+            for place in places
+            for ref in (place.stable_ref, place.place_id)
+            if ref is not None
+        }
+        trip_meal_candidates = self.meal_selector.select_for_trip(
+            region_key=selection_blueprint.region_key,
+            activities_by_day=activities_by_day,
+            excluded_place_ids={*used_refs, *selected_meal_place_refs},
+            interests=intent_interests,
+        )
         for day in activity_days:
             brief = briefs_by_day[day.day]
-            activities = [
-                item for item in day.items if item.timeline_category == "activity"
-            ]
+            activities = activities_by_day[day.day]
             selected_meal_refs = self._selected_meal_role_refs(
                 selected_meals_by_day.get(day.day, [])
             )
             region_key = brief.target_region_key or brief.target_area
             area_profile = self._get_area_profile(region_key) if region_key else None
-            meal_candidates = self.meal_selector.select_for_day(
-                region_key=region_key,
-                activities=activities,
-                excluded_place_ids={
-                    *used_refs,
-                    *(
-                        place.stable_ref
-                        for place in selected_meals_by_day.get(day.day, [])
-                    ),
-                    *(
-                        place.place_id
-                        for place in selected_meals_by_day.get(day.day, [])
-                        if place.place_id is not None
-                    ),
-                },
-                bbox_filter=(area_profile.bbox if area_profile is not None else None),
-                interests=intent_interests,
-            )
+            meal_candidates = trip_meal_candidates.get(day.day, {})
             meal_items: list[PlanItem] = []
             for anchor in MEAL_ANCHORS:
                 role = anchor.role
@@ -1686,7 +1680,7 @@ class PlaceSelectorService:
                     duration_minutes=anchor.duration_minutes,
                     activity=False,
                     kind="meal",
-                    candidate_category="food_drink",
+                    candidate_category="Restaurant",
                 )
                 selected_meal_ref = selected_meal_refs.get(role)
                 candidate = None
@@ -1703,7 +1697,7 @@ class PlaceSelectorService:
                                 activity=False,
                                 preferred_ref=selected_meal_ref,
                                 kind="meal",
-                                candidate_category="food_drink",
+                                candidate_category="Restaurant",
                             ),
                             selected_by_ref=selected_by_ref,
                             plan_status=plan_status,
@@ -1829,10 +1823,7 @@ class PlaceSelectorService:
             completed_days.append(
                 day.model_copy(
                     update={
-                        "theme": self._route_cluster_theme(
-                            selection_blueprint,
-                            activities,
-                        ),
+                        "theme": None,
                         "items": routed_items,
                         "transport_legs": transport_legs,
                     }
@@ -2052,6 +2043,9 @@ class PlaceSelectorService:
             )
 
         all_legs = [leg for day in enriched_days for leg in day.transport_legs]
+        route_enrichment_failed = any(
+            leg.source == "geodesic_estimate" for leg in all_legs
+        )
         plan_status.trip_usage = plan_status.trip_usage.model_copy(
             update={
                 "travel_minutes": sum(
@@ -2070,7 +2064,9 @@ class PlaceSelectorService:
                 "warnings": list(dict.fromkeys(warnings)),
                 "unscheduled_places": unscheduled,
                 "final_plan_status": plan_status,
-                "route_enrichment_status": "completed",
+                "route_enrichment_status": (
+                    "failed" if route_enrichment_failed else "completed"
+                ),
             }
         )
 
@@ -2326,7 +2322,8 @@ class PlaceSelectorService:
     ) -> PlanItem:
         timeline_category = (
             "food"
-            if block.kind == "meal" or place_category(candidate) == "food_drink"
+            if block.kind == "meal"
+            or place_category(candidate) in {"Restaurant", "DrinkDessert"}
             else "activity"
         )
         role = self._explicit_role(candidate, block, selected_source=selected_source)
@@ -2359,6 +2356,7 @@ class PlaceSelectorService:
             routeScore=candidate.route_score,
             identityConfidence=candidate.identity_confidence,
             tags=candidate.tags,
+            ontologyType=candidate.ontology_type,
             latitude=candidate.latitude,
             longitude=candidate.longitude,
             notes=(
@@ -2396,8 +2394,10 @@ class PlaceSelectorService:
             # windows. Collapsing every anchor to ``meal`` made lunch drift
             # behind afternoon activities.
             return block.role
-        if place_category(candidate) == "food_drink":
+        if place_category(candidate) == "Restaurant":
             return "meal"
+        if place_category(candidate) == "DrinkDessert":
+            return "supporting_stop"
         category = candidate.experience_category
         if category in {
             ExperienceCategory.main_experience,
@@ -2444,6 +2444,7 @@ class PlaceSelectorService:
             placeType=selected.tags[0] if selected.tags else "selected_place",
             regionKey=selected.region_key or fallback_region_key,
             tags=list(selected.tags),
+            ontologyType=selected.ontology_type,
         )
 
     def _build_non_activity_item(self, block: DayBlock) -> PlanItem:

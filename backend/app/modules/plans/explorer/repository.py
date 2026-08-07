@@ -3,13 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -28,6 +30,7 @@ from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
 )
+from app.modules.knowledge_graph.ontology import canonical_place_node_type
 from app.modules.plans.domain.plan_notes import (
     PlanNoteSource,
     compose_video_place_note,
@@ -78,6 +81,38 @@ def _artifact_source_url(url: str, platform: str | None = None) -> str:
     return canonicalize_url(url)
 
 
+def _group_source_results(
+    results: list[UrlReelExtractionResult],
+) -> dict[str, list[UrlReelExtractionResult]]:
+    """Validate/canonicalize before opening the persistence transaction."""
+    grouped: dict[str, list[UrlReelExtractionResult]] = {}
+    for result in results:
+        source_url = _artifact_source_url(
+            result.metadata.canonical_url or result.url,
+            result.platform,
+        )
+        grouped.setdefault(source_url, []).append(result)
+    return grouped
+
+
+def _retryable_persistence_error(exc: DBAPIError) -> bool:
+    original = getattr(exc, "orig", None)
+    sqlstate = (
+        getattr(original, "sqlstate", None)
+        or getattr(original, "pgcode", None)
+    )
+    if sqlstate in {"40001", "40P01", "55P03"}:
+        return True
+    if isinstance(exc, IntegrityError):
+        constraint_name = getattr(
+            getattr(original, "diag", None),
+            "constraint_name",
+            None,
+        )
+        return constraint_name == "uq_source_documents_canonical_url"
+    return "database is locked" in str(original).casefold()
+
+
 class ExplorerPersistenceRepository:
     """Persist Explorer output as source documents and reviewable KG proposals."""
 
@@ -93,10 +128,85 @@ class ExplorerPersistenceRepository:
         resolutions: list[PlaceResolution],
         candidate_reviews: list[PlaceCandidateReview] | None = None,
         url_results: list[UrlReelExtractionResult] | None = None,
-    ) -> None:
-        documents = self._save_source_documents(url_results or [])
+    ) -> dict[str, int | float]:
+        persistence_started_at = time.perf_counter()
+        transaction_retry_count = 0
+        source_results = _group_source_results(url_results or [])
+        documents: dict[str, SourceDocument]
+        import_job: KnowledgeGraphImport
+        for attempt in range(3):
+            try:
+                self._lock_source_urls(list(source_results))
+                documents = self._save_source_documents(source_results)
+                import_job = self._build_import_job(
+                    intake_id=intake_id,
+                    user_id=user_id,
+                    destination=destination,
+                    candidate_reviews=candidate_reviews or [],
+                    documents=documents,
+                )
+                self.session.add(import_job)
+                self.session.flush()
+                # Source artifacts, provenance and the review snapshot are the
+                # critical hand-off to Planner. Commit them before optional KG
+                # staging so a malformed enrichment cannot roll the intake back.
+                self.session.commit()
+                break
+            except DBAPIError as exc:
+                self.session.rollback()
+                if attempt == 2 or not _retryable_persistence_error(exc):
+                    raise
+                transaction_retry_count += 1
+                time.sleep(0.05 * (attempt + 1))
+        else:  # pragma: no cover - the loop either breaks or raises.
+            raise RuntimeError("Explorer critical persistence retry exhausted")
+
+        critical_seconds = time.perf_counter() - persistence_started_at
+        node_metrics: dict[str, int | float] = {}
+        for attempt in range(3):
+            try:
+                node_metrics = self._save_import_nodes(
+                    import_job=import_job,
+                    intake_id=intake_id,
+                    destination=destination,
+                    resolutions=resolutions,
+                    documents=documents,
+                )
+                commit_started_at = time.perf_counter()
+                self.session.commit()
+                enrichment_commit_seconds = time.perf_counter() - commit_started_at
+                return {
+                    "sourceDocumentCount": len(documents),
+                    **node_metrics,
+                    "criticalTransactionSeconds": round(critical_seconds, 4),
+                    "enrichmentCommitSeconds": round(
+                        enrichment_commit_seconds,
+                        4,
+                    ),
+                    "transactionRetryCount": transaction_retry_count,
+                    "totalPersistenceSeconds": round(
+                        time.perf_counter() - persistence_started_at,
+                        4,
+                    ),
+                }
+            except DBAPIError as exc:
+                self.session.rollback()
+                if attempt == 2 or not _retryable_persistence_error(exc):
+                    raise
+                transaction_retry_count += 1
+                time.sleep(0.05 * (attempt + 1))
+
+    def _build_import_job(
+        self,
+        *,
+        intake_id: str,
+        user_id: str | None,
+        destination: str,
+        candidate_reviews: list[PlaceCandidateReview],
+        documents: dict[str, SourceDocument],
+    ) -> KnowledgeGraphImport:
         numeric_user_id = _numeric_user_id(user_id)
-        import_job = KnowledgeGraphImport(
+        return KnowledgeGraphImport(
             id=intake_id,
             import_kind="explorer_intake",
             source_label=destination,
@@ -115,16 +225,20 @@ class ExplorerPersistenceRepository:
             destination=destination,
             candidate_reviews=[
                 review.model_dump(mode="json", by_alias=True)
-                for review in (candidate_reviews or [])
+                for review in candidate_reviews
             ],
         )
-        self.session.add(import_job)
-        self.session.flush()
-        # Source artifacts, provenance and the review snapshot are the critical
-        # hand-off to Planner. Commit them before optional KG matching so a
-        # slow or malformed enrichment cannot roll the intake back.
-        self.session.commit()
 
+    def _save_import_nodes(
+        self,
+        *,
+        import_job: KnowledgeGraphImport,
+        intake_id: str,
+        destination: str,
+        resolutions: list[PlaceResolution],
+        documents: dict[str, SourceDocument],
+    ) -> dict[str, int | float]:
+        projection_started_at = time.perf_counter()
         area_matches, area_entity, area_identity_status = self._match_knowledge_entities(
             destination,
             aliases=[destination],
@@ -160,20 +274,23 @@ class ExplorerPersistenceRepository:
             decision="pending",
             validation_issues=[], required_properties=[], optional_properties=[],
         )
-        self.session.add(area_node)
-        persisted_count = 1
-        persisted_edges = 0
+        nodes: list[KnowledgeGraphImportNode] = []
+        edges: list[KnowledgeGraphImportEdge] = []
         for resolution in resolutions:
             if not _is_persistable_resolution(resolution, destination=destination):
                 continue
             candidate = resolution.candidate
             source_url = _candidate_source_url(candidate)
             document = documents.get(_artifact_source_url(source_url)) if source_url else None
-            matches, matched_entity, identity_status = self._match_knowledge_entities(
-                resolution.name,
-                aliases=[candidate.name, *candidate.search_names],
-                expected_type=_knowledge_entity_type(resolution.place_type),
-                region=candidate.search_region or destination,
+            # Resolution already performed the canonical KG lookup (and, when
+            # necessary, the external-provider fallback).  Persist that
+            # decision instead of repeating exact/alias/fuzzy KG queries for
+            # every place on the latency-sensitive Explorer path.
+            matches = _resolution_match_candidates(resolution)
+            selected_entity_id = _selected_knowledge_entity_id(resolution)
+            identity_status = _resolution_identity_status(
+                resolution,
+                selected_entity_id=selected_entity_id,
             )
             provider_snapshot = _provider_snapshot(resolution)
             candidate_key = _shared_candidate_key(candidate, destination)
@@ -182,8 +299,8 @@ class ExplorerPersistenceRepository:
                 import_id=intake_id,
                 temp_id=venue_temp_id,
                 entity_id=(
-                    matched_entity.id
-                    if matched_entity is not None
+                    selected_entity_id
+                    if selected_entity_id is not None
                     else f"place_{hashlib.sha1(candidate_key.encode()).hexdigest()[:20]}"
                 ),
                 type=_knowledge_entity_type(resolution.place_type),
@@ -192,11 +309,15 @@ class ExplorerPersistenceRepository:
                 properties={},
                 evidence=list(dict.fromkeys(candidate.source_evidence.values())),
                 confidence=float(candidate.confidence),
-                match_status="existing" if matched_entity is not None else "new",
+                match_status=("existing" if selected_entity_id is not None else "new"),
                 match_candidates=matches,
-                selected_entity_id=(matched_entity.id if matched_entity is not None else None),
+                selected_entity_id=selected_entity_id,
                 identity_status=identity_status,
-                selection_method=("knowledge_top_k" if matched_entity is not None else None),
+                selection_method=(
+                    "knowledge_top_k"
+                    if resolution.provider == "knowledge_graph"
+                    else "provider_resolution"
+                ),
                 candidate_key=candidate_key,
                 candidate_name=candidate.name,
                 search_region=candidate.search_region or destination,
@@ -217,8 +338,8 @@ class ExplorerPersistenceRepository:
                 optional_properties=[],
                 source_document_id=document.id if document is not None else None,
             )
-            self.session.add(node)
-            self.session.add(KnowledgeGraphImportEdge(
+            nodes.append(node)
+            edges.append(KnowledgeGraphImportEdge(
                 import_id=intake_id,
                 temp_id=f"located-in-{uuid4().hex[:16]}",
                 from_ref=venue_temp_id,
@@ -232,15 +353,35 @@ class ExplorerPersistenceRepository:
                 decision="pending",
                 validation_issues=[],
             ))
-            persisted_count += 1
-            persisted_edges += 1
-        import_job.node_count = persisted_count
-        import_job.edge_count = persisted_edges
-        if persisted_count:
-            import_job.review_status = "pending" if any(
-                node.selected_entity_id is None for node in import_job.nodes
-            ) else "not_required"
-        self.session.commit()
+        all_nodes = [area_node, *nodes]
+        projection_seconds = time.perf_counter() - projection_started_at
+        flush_started_at = time.perf_counter()
+        self.session.add_all([*all_nodes, *edges])
+        self.session.flush()
+        flush_seconds = time.perf_counter() - flush_started_at
+        import_job.node_count = len(all_nodes)
+        import_job.edge_count = len(edges)
+        import_job.review_status = (
+            "pending"
+            if any(node.selected_entity_id is None for node in all_nodes)
+            else "not_required"
+        )
+        return {
+            "nodeCount": len(all_nodes),
+            "edgeCount": len(edges),
+            "projectionSeconds": round(projection_seconds, 4),
+            "batchFlushSeconds": round(flush_seconds, 4),
+        }
+
+    def _lock_source_urls(self, canonical_urls: list[str]) -> None:
+        """Serialize insert/update decisions, including rows not created yet."""
+        if not canonical_urls or self.session.get_bind().dialect.name != "postgresql":
+            return
+        for canonical_url in sorted(set(canonical_urls)):
+            self.session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                {"lock_key": f"travelplanner:source-document:{canonical_url}"},
+            )
 
     def critical_intake_exists(self, intake_id: str) -> bool:
         """Recover the session after enrichment failure and verify the hand-off."""
@@ -382,9 +523,11 @@ class ExplorerPersistenceRepository:
                         )
                     ),
                     tags=list(dict.fromkeys([
+                        node.type,
                         canonical_place_category(snapshot.get("placeType")),
                         *(node.attributes or []),
                     ])),
+                    ontologyType=canonical_place_node_type(node.type),
                     latitude=snapshot.get("latitude"),
                     longitude=snapshot.get("longitude"),
                     sourceRefs=source_refs,
@@ -443,6 +586,10 @@ class ExplorerPersistenceRepository:
                             review.search_region or import_job.destination or ""
                         ),
                         tags=[canonical_place_category(review.category.value)],
+                        ontologyType=(
+                            review.ontology_type
+                            or canonical_place_node_type(review.category.value)
+                        ),
                         latitude=review.latitude,
                         longitude=review.longitude,
                         sourceRefs=review.source_urls,
@@ -692,85 +839,100 @@ class ExplorerPersistenceRepository:
 
     def _save_source_documents(
         self,
-        results: list[UrlReelExtractionResult],
+        results_by_url: dict[str, list[UrlReelExtractionResult]],
     ) -> dict[str, SourceDocument]:
-        documents: dict[str, SourceDocument] = {}
-        for result in results:
-            source_url = _artifact_source_url(
-                result.metadata.canonical_url or result.url,
-                result.platform,
-            )
-            row = self.session.scalar(
-                select(SourceDocument).where(SourceDocument.canonical_url == source_url)
-            )
+        if not results_by_url:
+            return {}
+        statement = select(SourceDocument).where(
+            SourceDocument.canonical_url.in_(list(results_by_url))
+        )
+        if self.session.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        documents = {
+            document.canonical_url: document
+            for document in self.session.scalars(statement)
+        }
+        new_documents: list[SourceDocument] = []
+        for source_url, results in results_by_url.items():
+            row = documents.get(source_url)
             if row is None:
+                first_result = results[0]
                 row = SourceDocument(
                     id=str(uuid4()),
                     canonical_url=source_url,
-                    platform=result.platform,
+                    platform=first_result.platform,
                     artifacts_json={},
                     extracted_context_json={},
                 )
-                self.session.add(row)
-            artifacts = dict(row.artifacts_json or {})
-            speech = result.speech_to_text
-            if speech.status == "ok" and speech.text.strip():
-                artifact_type = (
-                    "webpage" if speech.source == "web_page_text"
-                    else "caption" if speech.source.startswith("youtube_captions")
-                    else "stt"
-                )
-                text = (
-                    "\n".join(
-                        observation.evidence.strip()
-                        for observation in speech.observations
-                        if observation.evidence.strip()
-                    )
-                    if artifact_type == "webpage" else speech.text.strip()
-                )
-                if text:
-                    by_language = dict(artifacts.get(artifact_type) or {})
-                    by_language[speech.language or "_"] = {
-                        "text": text,
-                        "source": speech.source or artifact_type,
-                        "metadata": {
-                            "observations": [
-                                item.model_dump(mode="json", by_alias=True)
-                                for item in speech.observations
-                            ],
-                            "audioDurationSeconds": speech.audio_duration_seconds,
-                            "chunkCount": speech.chunk_count,
-                        },
-                    }
-                    artifacts[artifact_type] = by_language
-            vision = result.frame_vision
-            if vision.status in {"ok", "partial"} and vision.text.strip():
-                artifacts["ocr"] = {
-                    "_": {
-                        "text": vision.text.strip(),
-                        "source": "frame_vision",
-                        "metadata": {
-                            "places": list(vision.places),
-                            "observations": [
-                                item.model_dump(mode="json", by_alias=True)
-                                for item in vision.observations
-                            ],
-                        },
-                    }
-                }
-            extracted_context = result.extracted_context.model_dump(
-                mode="json", by_alias=True
-            )
-            extracted_context["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
-            row.platform = result.platform
-            row.artifacts_json = artifacts
-            row.extracted_context_json = extracted_context
-            row.extractor_version = str(URL_EXTRACTION_CACHE_VERSION)
-            row.artifact_hash = _artifact_hash(artifacts)
-            row.fetched_at = datetime.now(timezone.utc)
-            self.session.flush()
-            documents[source_url] = row
+                documents[source_url] = row
+                new_documents.append(row)
+            for result in results:
+                self._merge_source_result(row, result)
+        self.session.add_all(new_documents)
+        self.session.flush()
         return documents
+
+    @staticmethod
+    def _merge_source_result(
+        row: SourceDocument,
+        result: UrlReelExtractionResult,
+    ) -> None:
+        artifacts = dict(row.artifacts_json or {})
+        speech = result.speech_to_text
+        if speech.status == "ok" and speech.text.strip():
+            artifact_type = (
+                "webpage" if speech.source == "web_page_text"
+                else "caption" if speech.source.startswith("youtube_captions")
+                else "stt"
+            )
+            content_text = (
+                "\n".join(
+                    observation.evidence.strip()
+                    for observation in speech.observations
+                    if observation.evidence.strip()
+                )
+                if artifact_type == "webpage" else speech.text.strip()
+            )
+            if content_text:
+                by_language = dict(artifacts.get(artifact_type) or {})
+                by_language[speech.language or "_"] = {
+                    "text": content_text,
+                    "source": speech.source or artifact_type,
+                    "metadata": {
+                        "observations": [
+                            item.model_dump(mode="json", by_alias=True)
+                            for item in speech.observations
+                        ],
+                        "audioDurationSeconds": speech.audio_duration_seconds,
+                        "chunkCount": speech.chunk_count,
+                    },
+                }
+                artifacts[artifact_type] = by_language
+        vision = result.frame_vision
+        if vision.status in {"ok", "partial"} and vision.text.strip():
+            artifacts["ocr"] = {
+                "_": {
+                    "text": vision.text.strip(),
+                    "source": "frame_vision",
+                    "metadata": {
+                        "places": list(vision.places),
+                        "observations": [
+                            item.model_dump(mode="json", by_alias=True)
+                            for item in vision.observations
+                        ],
+                    },
+                }
+            }
+        extracted_context = result.extracted_context.model_dump(
+            mode="json", by_alias=True
+        )
+        extracted_context["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
+        row.platform = result.platform
+        row.artifacts_json = artifacts
+        row.extracted_context_json = extracted_context
+        row.extractor_version = str(URL_EXTRACTION_CACHE_VERSION)
+        row.artifact_hash = _artifact_hash(artifacts)
+        row.fetched_at = datetime.now(timezone.utc)
 
     def _match_knowledge_entities(
         self,
@@ -970,15 +1132,57 @@ def _is_schedulable_snapshot(
     )
 
 
+def _resolution_match_candidates(resolution: PlaceResolution) -> list[dict]:
+    """Project resolver Top-K output into the persisted import-node shape."""
+    return [
+        {
+            "entityId": option.place_id,
+            "canonicalName": option.name,
+            "type": resolution.place_type,
+            "score": round(float(option.score), 4),
+            "matchedRules": list(option.score_components),
+            "latitude": option.latitude,
+            "longitude": option.longitude,
+            "address": option.address,
+            "provider": option.provider,
+            "externalId": option.external_id,
+            "selected": option.selected,
+        }
+        for option in resolution.match_options
+    ]
+
+
+def _selected_knowledge_entity_id(resolution: PlaceResolution) -> str | None:
+    if resolution.provider != "knowledge_graph":
+        return None
+    if resolution.place_id:
+        return resolution.place_id
+    return next(
+        (
+            option.place_id
+            for option in resolution.match_options
+            if option.selected and option.place_id
+        ),
+        None,
+    )
+
+
+def _resolution_identity_status(
+    resolution: PlaceResolution,
+    *,
+    selected_entity_id: str | None,
+) -> str:
+    if resolution.resolution_reason == "branch_ambiguous":
+        return "branch_ambiguous"
+    if selected_entity_id is not None:
+        return "resolved"
+    # External-provider identity is sufficient for the current private plan,
+    # but it is not silently promoted to a canonical KG identity.
+    return "unresolved"
+
+
 def _knowledge_entity_type(place_type: str | None) -> str:
-    category = canonical_place_category(place_type)
-    if category in {"food", "restaurant"}:
-        return "Restaurant"
-    if category in {"cafe", "drink_dessert"}:
-        return "DrinkDessert"
-    if category in {"hotel", "accommodation"}:
-        return "Accommodation"
-    return "TravelPlace"
+    return canonical_place_node_type(place_type)
 
 
 def _compatible_entity_types(expected_type: str) -> set[str]:

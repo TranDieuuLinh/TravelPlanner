@@ -5,7 +5,78 @@ and their property requirements. These are derived from the CSV/YAML knowledge
 graph package used by the travel domain.
 """
 
-from typing import TypedDict
+import re
+import unicodedata
+from typing import Literal, TypeAlias, TypedDict
+
+
+KnowledgePlaceType: TypeAlias = Literal[
+    "TravelPlace",
+    "Restaurant",
+    "DrinkDessert",
+    "Accommodation",
+]
+
+
+def canonical_place_node_type(value: str | None) -> KnowledgePlaceType:
+    """Normalize provider/legacy labels to the canonical place ontology."""
+    decomposed = unicodedata.normalize("NFD", (value or "").casefold())
+    normalized = "_".join(
+        re.findall(
+            r"[a-z0-9]+",
+            "".join(
+                character
+                for character in decomposed
+                if unicodedata.category(character) != "Mn"
+            ).replace("đ", "d"),
+        )
+    )
+    padded = f"_{normalized}_"
+    if normalized in {"drinkdessert", "drink_dessert", "cafe"} or any(
+        f"_{marker}_" in padded
+        for marker in (
+            "coffee",
+            "bakery",
+            "cake",
+            "dessert",
+            "ice_cream",
+            "gelato",
+            "bingsu",
+            "che",
+            "tea",
+            "juice",
+            "snack",
+        )
+    ):
+        return "DrinkDessert"
+    if normalized == "restaurant" or any(
+        f"_{marker}_" in padded
+        for marker in (
+            "restaurant",
+            "nha_hang",
+            "quan_an",
+            "fast_food",
+            "food_court",
+            "meal_takeaway",
+            "seafood",
+            "pho",
+            "bun",
+            "com",
+            "mien",
+            "chao",
+            "hu_tieu",
+            "mi_quang",
+            "banh_mi",
+            "lau",
+        )
+    ):
+        return "Restaurant"
+    if normalized in {"accommodation", "hotel"} or any(
+        f"_{marker}_" in padded
+        for marker in ("homestay", "hostel", "motel", "resort", "lodging")
+    ):
+        return "Accommodation"
+    return "TravelPlace"
 
 
 class NodeTypeProperties(TypedDict):

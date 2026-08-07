@@ -2,14 +2,16 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode
 } from "react";
+import { authLoadFailureAction } from "@/features/auth/lib/session-recovery";
 import { APIError, apiFetch } from "@/shared/api/client";
+
+const SESSION_RETRY_DELAY_MS = 3_000;
 
 export type UserRole = "traveler" | "host" | "creator" | "admin";
 export type UserStatus = "active" | "inactive" | "banned";
@@ -52,25 +54,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadUser = useCallback(async () => {
-    try {
-      setUser(await apiFetch<CurrentUser>("/me"));
-    } catch (error) {
-      if (
-        !(error instanceof APIError) ||
-        ![0, 401, 403].includes(error.status)
-      ) {
+  useEffect(() => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        void loadUser();
+      }, SESSION_RETRY_DELAY_MS);
+    };
+
+    const loadUser = async () => {
+      try {
+        const currentUser = await apiFetch<CurrentUser>("/me");
+        if (cancelled) return;
+        setUser(currentUser);
+        setLoading(false);
+      } catch (error) {
+        if (cancelled) return;
+        const action = authLoadFailureAction(
+          error instanceof APIError ? error.status : undefined
+        );
+        if (action === "retry") {
+          scheduleRetry();
+          return;
+        }
+        if (action === "clear-session") {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        setLoading(false);
         throw error;
       }
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    };
 
-  useEffect(() => {
+    const retryNow = () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+      void loadUser();
+    };
+
+    window.addEventListener("online", retryNow);
     void loadUser();
-  }, [loadUser]);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      window.removeEventListener("online", retryNow);
+    };
+  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,

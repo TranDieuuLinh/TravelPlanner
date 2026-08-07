@@ -16,7 +16,6 @@ import {
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/features/auth/components/AuthProvider";
-import { BackgroundUrlJobs } from "@/features/planner/components/BackgroundUrlJobs";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
   PlannerChatComposer,
@@ -1031,10 +1030,14 @@ function Planner() {
   }, [chatCollapsed, clampFloatingChatRect, plan]);
 
   useEffect(() => {
+    const hasLegacyCoarseRoutes = plan?.days.some((day) =>
+      day.transportLegs.some((leg) => leg.source === "geodesic_estimate")
+    );
     if (
       !activeChatId ||
       !plan ||
-      plan.routeEnrichmentStatus !== "pending"
+      (plan.routeEnrichmentStatus !== "pending" &&
+        !(plan.routeEnrichmentStatus === "completed" && hasLegacyCoarseRoutes))
     ) {
       return;
     }
@@ -4755,11 +4758,6 @@ function Planner() {
                     : undefined
                 }
               >
-                <BackgroundUrlJobs
-                  authenticated={Boolean(user)}
-                  enabled={!authLoading}
-                  placement="planner-chat"
-                />
                 <PlannerChatHeader
                   collapsed={chatCollapsed}
                   contentId="planner-chat-content"

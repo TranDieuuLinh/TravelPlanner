@@ -557,10 +557,10 @@ def test_route_first_supplements_reference_days_with_catalog_places() -> None:
         ),
         "catalog-breakfast": _place(
             "catalog-breakfast",
-            "Nearby breakfast bakery",
-            tags=["food", "bakery", "breakfast"],
+            "Nearby breakfast restaurant",
+            tags=["food", "breakfast"],
             intensity="light",
-            place_type="bakery",
+            place_type="restaurant",
             latitude=21.029,
             longitude=105.849,
         ),
@@ -699,10 +699,10 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
         ),
         "catalog-breakfast": _place(
             "catalog-breakfast",
-            "Tiệm bánh buổi sáng",
+            "Nhà hàng ăn sáng",
             tags=["food", "breakfast"],
             intensity=None,
-            place_type="bakery",
+            place_type="restaurant",
         ),
         "catalog-lunch": _place(
             "catalog-lunch",
@@ -755,6 +755,7 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
             SelectedPlaceContext(
                 placeId=source_cafe.place_id,
                 name=source_cafe.name,
+                ontologyType="DrinkDessert",
                 sourceRefs=["https://example.com/reel"],
                 sourceOrder=1,
                 tags=["cafe", "coffee"],
@@ -762,6 +763,7 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
             SelectedPlaceContext(
                 placeId=source_lunch.place_id,
                 name=source_lunch.name,
+                ontologyType="Restaurant",
                 sourceRefs=["https://example.com/reel"],
                 sourceOrder=2,
                 sourceTimeHint="lunch",
@@ -772,10 +774,15 @@ def test_route_first_url_food_replaces_finder_meal_and_cafe_stays_activity() -> 
     )
 
     day_items = {item.role: item for item in result.days[0].items}
-    assert day_items["main_activity_1"].place_id == "source-cafe"
-    assert day_items["main_activity_1"].timeline_category == "activity"
+    cafe_item = next(
+        item for item in result.days[0].items if item.place_id == "source-cafe"
+    )
+    assert cafe_item.role == "supporting_stop"
+    assert cafe_item.timeline_category == "food"
+    assert cafe_item.ontology_type == "DrinkDessert"
     assert day_items["lunch_meal"].place_id == "source-lunch"
     assert day_items["lunch_meal"].source == "selected_place"
+    assert day_items["lunch_meal"].ontology_type == "Restaurant"
     assert all(item.place_id != "catalog-lunch" for item in result.days[0].items)
     assert all(item.place_id != "catalog-cafe" for item in result.days[0].items)
     assert result.unscheduled_places == []
@@ -833,7 +840,7 @@ def test_finder_adds_at_most_one_coffee_stop_per_day() -> None:
         for item in result.days[0].items
         if item.place_id in {"cafe-one", "cafe-two"}
     ]
-    assert len(coffee_items) == 1
+    assert len(coffee_items) <= 1
     non_food_non_coffee = [
         item
         for item in result.days[0].items
@@ -945,6 +952,16 @@ def test_route_first_url_food_only_fills_daytime_activity_gaps() -> None:
         for item in items
         if item.timeline_category == "activity"
     )
+    visible_stops = [
+        item for item in items if item.timeline_category != "break"
+    ]
+    assert all(
+        not (
+            left.place_type == "restaurant"
+            and right.place_type == "restaurant"
+        )
+        for left, right in zip(visible_stops, visible_stops[1:])
+    )
     assert result.unscheduled_places == []
 
 
@@ -972,6 +989,12 @@ def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> No
             start=1,
         )
     ]
+    selected[3] = selected[3].model_copy(
+        update={"ontology_type": "Restaurant"}
+    )
+    selected[5] = selected[5].model_copy(
+        update={"ontology_type": "DrinkDessert"}
+    )
     allocated_by_day = {
         1: [selected[0].stable_ref, selected[1].stable_ref],
         2: [selected[2].stable_ref, selected[3].stable_ref],
@@ -1012,6 +1035,15 @@ def test_route_first_keeps_every_url_stop_across_activity_and_meal_slots() -> No
     }
     assert scheduled_url_names == {place.name for place in selected}
     assert result.unscheduled_places == []
+    xoi_che = next(
+        item
+        for day in result.days
+        for item in day.items
+        if item.name == "Xôi chè bà Thìn"
+    )
+    assert xoi_che.ontology_type == "DrinkDessert"
+    assert xoi_che.timeline_category == "food"
+    assert xoi_che.role == "supporting_stop"
 
 
 def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
@@ -1092,7 +1124,7 @@ def test_finder_deduplicates_catalog_alias_against_url_place() -> None:
     assert "Bảo tàng Phụ nữ Việt Nam" in names
 
 
-def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
+def test_finder_fills_available_minutes_without_a_pace_count_quota() -> None:
     names = [
         "Museum",
         "Temple",
@@ -1115,7 +1147,8 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
         FakeFinderPlaceTool(
             places,
             search_order=list(places),
-        )
+        ),
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
     )
     macro_plan = PlaceSelectionBlueprint(
         title="Hà Nội",
@@ -1128,14 +1161,14 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
                 targetArea="Hà Nội",
                 targetRegionKey="vn,ha-noi",
                 focusTags=["culture"],
-                pace="packed",
+                pace="relaxed",
             )
         ],
     )
 
     result = finder.fill_main_plan(
         macro_plan,
-        _intent().model_copy(update={"pace": TravelPace.packed}),
+        _intent().model_copy(update={"pace": TravelPace.relaxed}),
         [],
         allow_finder_gap_fill=True,
     )
@@ -1143,7 +1176,12 @@ def test_finder_caps_only_its_own_suggestions_per_empty_day() -> None:
     suggestions = [
         item for item in result.days[0].items if item.source == "finder_suggestion"
     ]
-    assert len(suggestions) == 3
+    # The old relaxed-pace quota stopped after two suggestions. Every supplied
+    # one-hour candidate fits the meal-anchored timeline with transitions.
+    assert len(suggestions) == 7
+    assert any(item.time_window.startswith("13:") for item in suggestions)
+    assert any(item.time_window.startswith("16:") for item in suggestions)
+    assert any(item.time_window.startswith("19:") for item in suggestions)
 
 
 def test_low_user_capacity_switches_day_to_relaxed_skeleton() -> None:

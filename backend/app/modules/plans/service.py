@@ -22,6 +22,7 @@ from app.modules.places.resolver import (
     ProvisionalPlaceResolver,
 )
 from app.modules.places.category import canonical_place_category
+from app.modules.knowledge_graph.ontology import canonical_place_node_type
 from app.modules.places.alias_enricher import PlaceAliasEnricher
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.explorer.place_candidate_aggregator import (
@@ -81,6 +82,12 @@ from app.modules.plans.schema import (
     PlanningContextCreate,
     SelectedPlaceCreate,
 )
+from app.modules.plans.solver.candidate_pool import (
+    build_selected_place_pool,
+    selected_place_identity,
+)
+from app.modules.plans.solver.cluster_first_repair import ClusterFirstRepairSolver
+from app.modules.plans.solver.contracts import PlanningSolver
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.dto.agent_contracts import (
@@ -89,11 +96,17 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.preferences.service import PreferenceLearningService
 from app.modules.preferences.repository import TravelerProfileRepository
+from app.modules.preferences.schema import PreferenceSnapshot
 from app.shared.errors import AppError
 
 
 DEFAULT_TRIP_DAYS = 3
 logger = logging.getLogger(__name__)
+BackgroundPreferenceWriter = Callable[
+    [int, PreferenceSnapshot, str],
+    None,
+]
+_background_preference_tasks: set[asyncio.Task[None]] = set()
 
 
 class PlanService:
@@ -110,6 +123,8 @@ class PlanService:
         explorer_persistence: ExplorerPersistenceRepository | None = None,
         preference_learning: PreferenceLearningService | None = None,
         traveler_profile_repository: TravelerProfileRepository | None = None,
+        background_preference_writer: BackgroundPreferenceWriter | None = None,
+        planning_solver: PlanningSolver | None = None,
         explorer_timing_logger: ExplorerTimingLogger | None = None,
         place_alias_enricher: PlaceAliasEnricher | None = None,
         planning_runs: PlanningRunRepository | None = None,
@@ -127,6 +142,8 @@ class PlanService:
         self.explorer_persistence = explorer_persistence
         self.preference_learning = preference_learning or PreferenceLearningService()
         self.traveler_profile_repository = traveler_profile_repository
+        self.background_preference_writer = background_preference_writer
+        self.planning_solver = planning_solver or ClusterFirstRepairSolver()
         self.explorer_timing_logger = explorer_timing_logger
         self.place_alias_enricher = place_alias_enricher
         self.planning_runs = planning_runs
@@ -862,9 +879,10 @@ class PlanService:
         )
         persistence_start = time.perf_counter()
         enrichment_degraded = False
+        persistence_details: dict[str, str | int | float | bool | None] = {}
         if self.explorer_persistence is not None:
             try:
-                self.explorer_persistence.save(
+                saved_details = self.explorer_persistence.save(
                     intake_id=intake_id,
                     user_id=payload.user_state.user_id,
                     destination=explorer.intent.destination,
@@ -872,6 +890,8 @@ class PlanService:
                     candidate_reviews=candidate_reviews,
                     url_results=url_reel_results,
                 )
+                if isinstance(saved_details, dict):
+                    persistence_details.update(saved_details)
             except Exception:
                 if not self.explorer_persistence.critical_intake_exists(intake_id):
                     raise
@@ -883,24 +903,22 @@ class PlanService:
                     extra={"intake_id": intake_id},
                 )
             trace.persisted_count = len(schedulable_candidates)
+        preference_persistence = "not_applicable"
         if (
             preference_user_id is not None
-            and self.traveler_profile_repository is not None
+            and self.background_preference_writer is not None
         ):
-            try:
-                self.traveler_profile_repository.save(
+            task = asyncio.create_task(
+                self._persist_traveler_profile_in_background(
                     preference_user_id,
-                    effective_profile,
-                    evidence_intake_id=intake_id,
-                )
-                self.traveler_profile_repository.commit()
-            except Exception:
-                self.traveler_profile_repository.db.rollback()
-                enrichment_degraded = True
-                logger.exception(
-                    "Traveler preference enrichment degraded",
-                    extra={"intake_id": intake_id, "user_id": preference_user_id},
-                )
+                    preference_snapshot,
+                    intake_id,
+                ),
+                name=f"traveler-profile-{preference_user_id}-{intake_id}",
+            )
+            _background_preference_tasks.add(task)
+            task.add_done_callback(_background_preference_tasks.discard)
+            preference_persistence = "background_scheduled"
         trace.record_stage(
             "persistence",
             "Lưu Explorer intake",
@@ -908,6 +926,8 @@ class PlanService:
             details={
                 "persistedPlaceCount": trace.persisted_count,
                 "enrichmentDegraded": enrichment_degraded,
+                "preferencePersistence": preference_persistence,
+                **persistence_details,
             },
         )
         timing_report = self._write_timing_report(
@@ -922,6 +942,23 @@ class PlanService:
             allowReplaceSourcePlaces=False,
             timingReport=timing_report,
         )
+
+    async def _persist_traveler_profile_in_background(
+        self,
+        user_id: int,
+        snapshot: PreferenceSnapshot,
+        intake_id: str,
+    ) -> None:
+        writer = self.background_preference_writer
+        if writer is None:
+            return
+        try:
+            await asyncio.to_thread(writer, user_id, snapshot, intake_id)
+        except Exception:
+            logger.exception(
+                "Traveler preference background persistence degraded",
+                extra={"intake_id": intake_id, "user_id": user_id},
+            )
 
     def _write_timing_report(
         self,
@@ -1078,23 +1115,51 @@ class PlanService:
                 )
                 if persisted_region_stories:
                     region_stories = persisted_region_stories
-        # URL-backed places are source requirements, not optional suggestions.
-        # Grow an unlocked trip until every resolved source place has capacity.
-        # An explicit duration/date range is a hard boundary and keeps overflow
-        # visible in UnscheduledPlace instead.
-        if payload.expand_days_to_fit_selected_places:
-            required_days = _required_days_for_selected_places(
-                selected_places,
-                pace=payload.intent.pace.value,
+        # Resolve day capacity and geographic assignment once, before the LLM
+        # theme and PlaceSelector stages. This replaces full workflow retries
+        # for 3/4/5/6... days with one deterministic in-memory solve.
+        preflight_started = time.perf_counter()
+        requested_days = payload.trip_spec.days
+        pool = build_selected_place_pool(selected_places)
+        optimizer = getattr(
+            self.main_workflow.place_selector,
+            "route_optimizer",
+            None,
+        )
+        matrix_provider = getattr(optimizer, "matrix_provider", None)
+        solution = self.planning_solver.solve(
+            pool,
+            requested_days=payload.trip_spec.days,
+            days_locked=not payload.expand_days_to_fit_selected_places,
+            matrix_provider=matrix_provider,
+        )
+        assigned_days = solution.candidate_day
+        selected_places = [
+            place.model_copy(
+                update={
+                    "source_day": (
+                        place.source_day
+                        if not payload.expand_days_to_fit_selected_places
+                        and place.source_day is not None
+                        else assigned_days.get(selected_place_identity(place))
+                        or place.source_day
+                    ),
+                }
             )
-            if required_days > payload.trip_spec.days:
-                payload = payload.model_copy(
-                    update={
-                        "trip_spec": payload.trip_spec.model_copy(
-                            update={"days": required_days}
-                        ),
-                    }
-                )
+            for place in selected_places
+        ]
+        if (
+            payload.expand_days_to_fit_selected_places
+            and solution.day_count != payload.trip_spec.days
+        ):
+            payload = payload.model_copy(
+                update={
+                    "trip_spec": payload.trip_spec.model_copy(
+                        update={"days": solution.day_count}
+                    ),
+                }
+            )
+        preflight_seconds = time.perf_counter() - preflight_started
         workflow_payload = payload.model_copy(
             update={
                 "selected_places": selected_places,
@@ -1105,44 +1170,23 @@ class PlanService:
             workflow_payload,
             on_timing_update=on_timing_update,
             reuse_theme_plan=reuse_theme_plan,
+            capacity_preflight=(
+                preflight_seconds,
+                {
+                    "candidateCount": len(pool.candidates),
+                    "requestedDays": requested_days,
+                    "selectedDays": solution.day_count,
+                    "daysLocked": not payload.expand_days_to_fit_selected_places,
+                    "unscheduledCandidateCount": len(
+                        solution.unscheduled_candidate_ids
+                    ),
+                    "matrixProvider": solution.matrix.provider,
+                    "preflightMatrixBuildCount": 1,
+                },
+            ),
         )
         if not workflow_payload.allow_replace_source_places:
             plan = _ensure_url_place_coverage(plan, selected_places)
-        # Duration capacity handles normal overflow. Calculated route legs can
-        # still make a day miss its next meal anchor; retry with extra days
-        # rather than returning that source place as optional/unscheduled. Hard
-        # policy rejections are intentionally not bypassed.
-        for _ in range(3 if payload.expand_days_to_fit_selected_places else 0):
-            retryable_url_overflow = _retryable_url_unscheduled_places(
-                plan,
-                selected_places,
-            )
-            if not retryable_url_overflow or workflow_payload.trip_spec.days >= 30:
-                break
-            required_days = _required_days_for_selected_places(
-                selected_places,
-                pace=payload.intent.pace.value,
-            )
-            extra_days = max(1, required_days - workflow_payload.trip_spec.days)
-            next_days = min(
-                30,
-                workflow_payload.trip_spec.days + extra_days,
-            )
-            workflow_payload = workflow_payload.model_copy(
-                update={
-                    "trip_spec": workflow_payload.trip_spec.model_copy(
-                        update={"days": next_days}
-                    ),
-                    "allow_finder_gap_fill": True,
-                    "allow_replace_source_places": False,
-                }
-            )
-            (
-                plan,
-                timing_report,
-            ) = await self.main_workflow.run_from_explorer_with_timing(workflow_payload)
-            if not workflow_payload.allow_replace_source_places:
-                plan = _ensure_url_place_coverage(plan, selected_places)
         self.repository.save(plan)
         return plan, timing_report
 
@@ -1156,7 +1200,11 @@ class PlanService:
 
     def enrich_plan_routes(self, plan: Plan) -> Plan:
         """Complete provider route detail without rerunning theme or selection."""
-        if plan.route_enrichment_status == "completed":
+        if plan.route_enrichment_status == "completed" and not any(
+            leg.source == "geodesic_estimate"
+            for day in plan.days
+            for leg in day.transport_legs
+        ):
             return plan
         enriched = self.main_workflow.place_selector.enrich_plan_routes(plan)
         check_report = self.main_workflow.checker.check(enriched)
@@ -1279,6 +1327,7 @@ def _timed_stop_coverage_days(stops) -> int:
         if is_meal_place(
             tags=[str(category_value)] if category_value else [],
             source_activity=getattr(stop, "source_activity", None),
+            ontology_type=getattr(stop, "ontology_type", None),
         ):
             meal_count += 1
             continue
@@ -1386,6 +1435,7 @@ def _selected_place_from_resolution(
             source.url or source.type.value for source in resolution.candidate.sources
         ],
         sourceProvider=resolution.provider,
+        ontologyType=canonical_place_node_type(resolution.place_type),
     )
 
 
@@ -1484,6 +1534,11 @@ def _prefer_selected_place(
                 )
             ),
             "tags": list(dict.fromkeys([*current.tags, *incoming.tags])),
+            "ontology_type": (
+                preferred.ontology_type
+                or current.ontology_type
+                or incoming.ontology_type
+            ),
             "notes": preferred.notes or current.notes or incoming.notes,
             "note_sources": merge_note_sources(
                 current.note_sources,
@@ -1498,83 +1553,6 @@ def _prefer_selected_place(
             "source_day": current.source_day or incoming.source_day,
         }
     )
-
-
-def _required_days_for_selected_places(
-    selected_places: list[SelectedPlaceCreate],
-    *,
-    pace: str,
-) -> int:
-    del pace
-    meal_capacity = len(MEAL_ANCHORS)
-    activity_minutes_by_day: dict[int, int] = {}
-    meals_by_day: dict[int, int] = {}
-    required_days = 1
-    ordered_places = sorted(
-        selected_places,
-        key=lambda place: (
-            place.source_day or 1,
-            place.source_order or 10_000,
-            place.name.casefold(),
-        ),
-    )
-    for place in ordered_places:
-        slot_kind = (
-            "meal"
-            if is_meal_place(
-                tags=place.tags,
-                source_activity=place.source_activity,
-            )
-            else "activity"
-        )
-        day = place.source_day or 1
-        if slot_kind == "meal":
-            while day < 30 and meals_by_day.get(day, 0) >= meal_capacity:
-                day += 1
-            meals_by_day[day] = meals_by_day.get(day, 0) + 1
-        else:
-            cost = activity_allocation_cost(place.source_duration_minutes)
-            while (
-                day < 30
-                and activity_minutes_by_day.get(day, 0) + cost > DAILY_ACTIVITY_MINUTES
-            ):
-                day += 1
-            activity_minutes_by_day[day] = activity_minutes_by_day.get(day, 0) + cost
-        required_days = max(required_days, day)
-    return min(30, required_days)
-
-
-def _retryable_url_unscheduled_places(
-    plan: Plan,
-    selected_places: list[SelectedPlaceCreate],
-) -> list[UnscheduledPlace]:
-    retryable_reasons = {
-        "insufficient_time",
-        "no_day_capacity",
-        "no_available_slot",
-        "planner_omitted_selected_place",
-        "source_day_out_of_range",
-        "timeline_overflow",
-    }
-    url_place_ids = {
-        place.place_id
-        for place in selected_places
-        if place.place_id and _has_url_source_ref(place.source_refs)
-    }
-    url_place_names = {
-        "".join(_selected_place_tokens(place.name))
-        for place in selected_places
-        if _has_url_source_ref(place.source_refs)
-    }
-    return [
-        item
-        for item in plan.unscheduled_places
-        if item.reason_code in retryable_reasons
-        and (
-            (item.place_id is not None and item.place_id in url_place_ids)
-            or "".join(_selected_place_tokens(item.name)) in url_place_names
-        )
-    ]
 
 
 def _ensure_url_place_coverage(
@@ -1772,6 +1750,7 @@ def _place_candidate_review(
         ),
         name=candidate.name,
         category=ItineraryItemCategory(canonical_place_category(resolution.place_type)),
+        ontologyType=canonical_place_node_type(resolution.place_type),
         status="resolved" if schedulable else "needs_review",
         resolutionReason=(
             None

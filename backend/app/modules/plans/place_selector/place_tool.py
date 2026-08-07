@@ -8,8 +8,13 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.modules.knowledge_graph.ontology import (
+    KnowledgePlaceType,
+    canonical_place_node_type,
+)
 from app.modules.plans.domain.entities import ExperienceCategory, PreferredTimeWindow
 from app.modules.plans.domain.plan_notes import PlanNoteSource
+from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.trip_theme_planner.place_metadata import (
     GOOGLE_TYPES_CATEGORY,
     read_description,
@@ -42,9 +47,6 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
     "attraction": {
         "architecture",
         "attraction",
-        "cafe",
-        "coffee",
-        "coffee shop",
         "culture",
         "di tich",
         "heritage",
@@ -99,7 +101,7 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "san golf",
         "bowling",
     },
-    "food_drink": {
+    "Restaurant": {
         "am thuc",
         "culinary",
         "cuisine",
@@ -190,6 +192,23 @@ SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
         "mon noi tieng",
         "am thuc dan gian",
     },
+    "DrinkDessert": {
+        "cafe",
+        "coffee",
+        "coffee shop",
+        "ca phe",
+        "bakery",
+        "cake",
+        "dessert",
+        "ice cream",
+        "gelato",
+        "bingsu",
+        "che",
+        "tea",
+        "bubble tea",
+        "juice",
+        "snack",
+    },
     "nature": {
         "beach",
         "bien",
@@ -270,7 +289,6 @@ PLACE_GROUP_CATEGORY: dict[str, str] = {
     "attraction": "attraction",
     "entertainment": "entertainment",
     "experience": "attraction",
-    "food_drink": "food_drink",
     "shopping": "shopping",
     "wellness": "entertainment",
 }
@@ -279,24 +297,24 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     # OpenStreetMap / legacy place_type values that pre-date the Google CSV.
     "aerodrome": "transport",
     "apartment": "accommodation",
-    "bakery": "food_drink",
-    "bar": "food_drink",
+    "bakery": "DrinkDessert",
+    "bar": "DrinkDessert",
     "beach": "nature",
-    "biergarten": "food_drink",
+    "biergarten": "DrinkDessert",
     "bus_station": "transport",
-    "cafe": "attraction",
+    "cafe": "DrinkDessert",
     "camp_site": "nature",
     "cave_entrance": "nature",
     "cinema": "entertainment",
-    "coffee": "attraction",
-    "fast_food": "food_drink",
+    "coffee": "DrinkDessert",
+    "fast_food": "Restaurant",
     "ferry_terminal": "transport",
-    "food_court": "food_drink",
+    "food_court": "Restaurant",
     "garden": "nature",
     "guest_house": "accommodation",
     "hostel": "accommodation",
     "hotel": "accommodation",
-    "ice_cream": "food_drink",
+    "ice_cream": "DrinkDessert",
     "marketplace": "shopping",
     "marina": "transport",
     "motel": "accommodation",
@@ -304,8 +322,8 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "nightclub": "entertainment",
     "park": "nature",
     "peak": "nature",
-    "pub": "food_drink",
-    "restaurant": "food_drink",
+    "pub": "DrinkDessert",
+    "restaurant": "Restaurant",
     "station": "transport",
     "supermarket": "shopping",
     "theatre": "entertainment",
@@ -321,18 +339,18 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "amusement_park": "entertainment",
     "aquarium": "entertainment",
     "art_gallery": "attraction",
-    "barbecue_area": "food_drink",
+    "barbecue_area": "Restaurant",
     "bowling_alley": "entertainment",
     "book_store": "shopping",
     "bridge": "attraction",
-    "cafe;bakery": "attraction",
+    "cafe;bakery": "DrinkDessert",
     "campground": "nature",
     "casino": "entertainment",
     "cemetery": "attraction",
     "church": "attraction",
     "city_hall": "attraction",
     "clothing_store": "shopping",
-    "coffee_shop": "attraction",
+    "coffee_shop": "DrinkDessert",
     "convenience_store": "shopping",
     "courthouse": "attraction",
     "cultural_center": "attraction",
@@ -349,7 +367,7 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "library": "attraction",
     "local_government_office": "attraction",
     "lodging": "accommodation",
-    "meal_takeaway": "food_drink",
+    "meal_takeaway": "Restaurant",
     "memorial": "attraction",
     "monument": "attraction",
     "mosque": "attraction",
@@ -365,7 +383,7 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "point_of_interest": "attraction",
     "police": "transport",
     "post_office": "transport",
-    "restaurant;cafe": "food_drink",
+    "restaurant;cafe": "Restaurant",
     "rv_park": "accommodation",
     "school": "attraction",
     "scenic_spot": "nature",
@@ -383,54 +401,54 @@ PLACE_TYPE_CATEGORY: dict[str, str] = {
     "zoo": "entertainment",
     # Common Vietnamese-language category strings produced by the
     # ``auto-crawl`` pipeline (CSV ``places.csv`` ``category`` column).
-    "nha_hang": "food_drink",
-    "quan_an": "food_drink",
-    "quan_nhau": "food_drink",
-    "quan_cafe": "attraction",
-    "quan_coffee": "attraction",
-    "quan_tra": "food_drink",
-    "tiem_banh": "food_drink",
-    "tiem_an_vat": "food_drink",
-    "an_vat": "food_drink",
-    "do_an_vat": "food_drink",
-    "o_an_vat": "food_drink",
-    "hai_san": "food_drink",
-    "lau": "food_drink",
-    "bingsu": "food_drink",
-    "che": "food_drink",
-    "pho": "food_drink",
-    "bun": "food_drink",
-    "com": "food_drink",
-    "mien": "food_drink",
-    "banh_mi": "food_drink",
-    "banh": "food_drink",
-    "banh_xeo": "food_drink",
-    "bun_cha": "food_drink",
-    "bun_bo": "food_drink",
-    "bun_dau": "food_drink",
-    "bun_thang": "food_drink",
-    "bun_rieu": "food_drink",
-    "com_tam": "food_drink",
-    "com_ga": "food_drink",
-    "com_nieu": "food_drink",
-    "nem_ran": "food_drink",
-    "chao": "food_drink",
-    "chao_long": "food_drink",
-    "mien_ga": "food_drink",
-    "hu_tieu": "food_drink",
-    "mi_quang": "food_drink",
-    "pho_bo": "food_drink",
-    "pho_ga": "food_drink",
-    "banh_cuon": "food_drink",
-    "banh_chung": "food_drink",
-    "banh_my": "food_drink",
-    "banh_xeo": "food_drink",
-    "bun_oc": "food_drink",
-    "oc": "food_drink",
-    "oc_bu": "food_drink",
-    "an_sang": "food_drink",
-    "an_trua": "food_drink",
-    "an_toi": "food_drink",
+    "nha_hang": "Restaurant",
+    "quan_an": "Restaurant",
+    "quan_nhau": "Restaurant",
+    "quan_cafe": "DrinkDessert",
+    "quan_coffee": "DrinkDessert",
+    "quan_tra": "DrinkDessert",
+    "tiem_banh": "DrinkDessert",
+    "tiem_an_vat": "DrinkDessert",
+    "an_vat": "DrinkDessert",
+    "do_an_vat": "DrinkDessert",
+    "o_an_vat": "DrinkDessert",
+    "hai_san": "Restaurant",
+    "lau": "Restaurant",
+    "bingsu": "DrinkDessert",
+    "che": "DrinkDessert",
+    "pho": "Restaurant",
+    "bun": "Restaurant",
+    "com": "Restaurant",
+    "mien": "Restaurant",
+    "banh_mi": "Restaurant",
+    "banh": "DrinkDessert",
+    "banh_xeo": "Restaurant",
+    "bun_cha": "Restaurant",
+    "bun_bo": "Restaurant",
+    "bun_dau": "Restaurant",
+    "bun_thang": "Restaurant",
+    "bun_rieu": "Restaurant",
+    "com_tam": "Restaurant",
+    "com_ga": "Restaurant",
+    "com_nieu": "Restaurant",
+    "nem_ran": "Restaurant",
+    "chao": "Restaurant",
+    "chao_long": "Restaurant",
+    "mien_ga": "Restaurant",
+    "hu_tieu": "Restaurant",
+    "mi_quang": "Restaurant",
+    "pho_bo": "Restaurant",
+    "pho_ga": "Restaurant",
+    "banh_cuon": "Restaurant",
+    "banh_chung": "Restaurant",
+    "banh_my": "Restaurant",
+    "banh_xeo": "Restaurant",
+    "bun_oc": "Restaurant",
+    "oc": "Restaurant",
+    "oc_bu": "Restaurant",
+    "an_sang": "Restaurant",
+    "an_trua": "Restaurant",
+    "an_toi": "Restaurant",
     "di_tich": "attraction",
     "den_chua": "attraction",
     "chua": "attraction",
@@ -487,6 +505,9 @@ class SelectablePlace(BaseModel):
     personal_notes: str | None = Field(default=None, alias="personalNotes")
     place_group: str | None = Field(default=None, alias="placeGroup")
     tags: list[str] = Field(default_factory=list)
+    ontology_type: KnowledgePlaceType | None = Field(
+        default=None, alias="ontologyType"
+    )
     latitude: float | None = None
     longitude: float | None = None
     typical_duration_minutes: int | None = Field(
@@ -662,15 +683,17 @@ class RepositoryPlaceSelectionTool:
             query_categories.intersection(
                 {"attraction", "entertainment", "nature", "shopping"}
             )
-        ) and "food_drink" not in query_categories and not coffee_requested
+        ) and not query_categories.intersection(
+            {"Restaurant", "DrinkDessert"}
+        ) and not coffee_requested
         if non_food_activity_query:
             places = [
                 place
                 for place in places
-                if place_category(place) != "food_drink"
+                if place_category(place) not in {"Restaurant", "DrinkDessert"}
                 and not is_coffee_place(place)
             ]
-        if query_categories == {"food_drink"}:
+        if query_categories == {"Restaurant"}:
             # Food-related provider catalogs also contain ingredient shops,
             # packaging vendors and cooking schools. They are relevant to the
             # word "food", but cannot serve as a travel meal stop.
@@ -791,6 +814,11 @@ class RepositoryPlaceSelectionTool:
                 else None
             ),
             tags=[str(tag) for tag in tags if isinstance(tag, str)],
+            ontologyType=canonical_place_node_type(
+                metadata.get("ontologyType")
+                or metadata.get("ontology_type")
+                or place.place_type
+            ),
             sourceRefs=(
                 [
                     str(ref)
@@ -861,6 +889,8 @@ def semantic_categories(terms: set[str]) -> set[str]:
 
 
 def place_category(place: SelectablePlace) -> str | None:
+    if place.ontology_type in {"Restaurant", "DrinkDessert"}:
+        return place.ontology_type
     normalized_name = _normalize_text(place.name)
     place_type = _normalize_text(place.place_type).replace(" ", "_")
     padded_place_type = f"_{place_type}_"
@@ -881,8 +911,6 @@ def place_category(place: SelectablePlace) -> str | None:
     if any(
         marker in padded_place_type
         for marker in (
-            "_restaurant_",
-            "_food_",
             "_bakery_",
             "_ice_cream_",
             "_dessert_",
@@ -895,7 +923,12 @@ def place_category(place: SelectablePlace) -> str | None:
             "_pub_",
         )
     ):
-        return "food_drink"
+        return "DrinkDessert"
+    if any(
+        marker in padded_place_type
+        for marker in ("_restaurant_", "_fast_food_", "_food_court_")
+    ):
+        return "Restaurant"
     if re.search(
         r"(^| )(ga|station|terminal|ben pha)( |$)",
         normalized_name,
@@ -907,6 +940,12 @@ def place_category(place: SelectablePlace) -> str | None:
             " cafe ",
             " coffee ",
             " coffee shop ",
+        )
+    ):
+        return "DrinkDessert"
+    if any(
+        marker in f" {normalized_name} "
+        for marker in (
             " train street ",
             " cathedral ",
             " church ",
@@ -960,7 +999,7 @@ def is_coffee_place(place: Any) -> bool:
 
 
 def is_dine_in_meal_venue(place: Any) -> bool:
-    """Return whether a food result is a venue where a traveler can eat."""
+    """Return whether a venue can serve a main meal, not dessert or drinks."""
 
     place_type = f" {_normalize_text(getattr(place, 'place_type', ''))} "
     rejected_markers = (
@@ -978,22 +1017,14 @@ def is_dine_in_meal_venue(place: Any) -> bool:
     )
     if any(marker in place_type for marker in rejected_markers):
         return False
-    accepted_markers = (
-        " restaurant ",
-        " cafe ",
-        " coffee ",
-        " bakery ",
-        " bistro ",
-        " food court ",
-        " fast food ",
-        " noodle ",
-        " eatery ",
-        " diner ",
-        " dessert ",
-        " ice cream ",
-        " tea house ",
+    return is_meal_place(
+        tags=[
+            str(getattr(place, "place_type", "")),
+            *[str(tag) for tag in (getattr(place, "tags", []) or [])],
+        ],
+        source_activity=str(getattr(place, "name", "")),
+        ontology_type=getattr(place, "ontology_type", None),
     )
-    return any(marker in place_type for marker in accepted_markers)
 
 
 def _description_relevance(
@@ -1029,7 +1060,8 @@ def _structured_rerank_score(
         "accommodation": -60,
         "attraction": 40,
         "entertainment": 30,
-        "food_drink": 0,
+        "Restaurant": 0,
+        "DrinkDessert": 0,
         "nature": 40,
         "shopping": 20,
     }.get(category or "", 0)

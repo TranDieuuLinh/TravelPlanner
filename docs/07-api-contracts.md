@@ -331,6 +331,15 @@ nhật ký timing dưới đúng URL thay vì hiển thị trong cột chat Plan
 bại, các URL sau vẫn tiếp tục và UI cho retry riêng. URL mạng nội bộ/private bị
 từ chối trước khi enqueue.
 
+Với turn tạo plan từ raw prompt, backend ghi snapshot `explorerTiming` và
+`plannerTiming` vào `resultSummary` của turn trong lúc xử lý để panel task nền
+hiển thị cùng cấu trúc stage như URL job. `GET /api/trip-chats/planner-runs`
+trả các turn đang chạy và tối đa 12 run gần nhất đã có `plannerTiming`, nên timer
+vẫn mở xem được sau khi raw prompt hoàn tất. Terminal phát một JSON line tương quan
+theo `turnId` với `sourceType=raw_prompt`; URL worker dùng
+`event=url_job_timing`. Hai log đều chứa `plannerTiming` chi tiết nhưng không
+chứa raw prompt, URL đầy đủ hoặc provider payload.
+
 Guest không gọi các endpoint `/url-import-jobs`: AppShell giữ queue trong memory
 và lần lượt gọi Explorer intake rồi `main/from-explorer`. Kết quả/timing chỉ nằm
 trong runtime trình duyệt, không tạo trip chat, job row hoặc plan revision trong
@@ -449,6 +458,26 @@ log chủ động loại field này cùng tên candidate. Report không chứa r
 URL đầy đủ, transcript, OCR text, provider payload hay credential. Runtime nối mỗi report thành một dòng JSON tại
 `backend/var/explorer-timings.jsonl`; dùng
 `cd backend && python scripts/show_explorer_timing.py` để xem lần gần nhất.
+Stage persistence có detail `preferencePersistence=background_scheduled` khi
+effective profile đã được truyền trực tiếp cho Planner còn phần ghi preference
+mới học được chuyển sang session nền. Failure của write nền được log an toàn và
+không đổi kết quả Explorer đã lưu. Cùng stage có thể trả
+`sourceDocumentCount`, `nodeCount`, `edgeCount`, `projectionSeconds`,
+`batchFlushSeconds`, `criticalTransactionSeconds`,
+`enrichmentCommitSeconds`, `transactionRetryCount` và
+`totalPersistenceSeconds`; đây chỉ là count/duration, không chứa source payload.
+Mỗi user turn đồng thời enqueue một `PreferenceObservationJob` chỉ chứa
+`messageId + userId`; worker chỉ xử lý turn `completed`, nên API vẫn trả assistant
+response mà không chờ preference extraction. Production dùng structured
+`PreferenceExtractor`, local/test dùng adapter deterministic cùng contract.
+Policy chặn trait nhạy cảm, confidence thấp và scope không phải global trước khi
+merge Traveler Profile với source type `trip_chat`. Merge profile và trạng thái
+job được commit atomically; unique message ID khiến retry không tăng observation
+hai lần. Job không tăng revision TripIntent và không sao chép raw message.
+Source timing có thể thêm stage `sourceObservationFusion`: Gemini Text hợp nhất
+transcript ASR, OCR observation và caption/metadata sau nhánh STT + vision song
+song. Report chỉ chứa duration/status; transcript, OCR text và evidence vẫn bị
+loại khỏi timing log.
 Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `details` an toàn;
 đồng thời tách `processed` từ `resolved` cho từng provider ở cấp intake và từng
 URL. Trong khi HTTP Explorer vẫn đang chạy, UI chỉ hiển thị tổng timer và trạng
@@ -464,6 +493,13 @@ Mỗi phần tử địa điểm có `category` với một trong các giá tr�
 Candidate có thể có `attributes` chuẩn hóa và mặc định
 `preferenceLevel=preferred`. Khi evidence không
 đủ để phân loại, backend dùng `other`:
+
+`category` chỉ là nhãn discovery/UI và không quyết định loại node. Sau resolver,
+`candidateReviews`, `selectedPlaces` và `PlanItem` dùng thêm `ontologyType` với
+một format canonical duy nhất: `TravelPlace`, `Restaurant`, `DrinkDessert` hoặc
+`Accommodation`. Planner dùng `ontologyType` cho quy tắc nghiệp vụ; không dùng
+`food` thay cho node type. `timelineCategory: "food"` chỉ là category trình bày
+để UI dùng chung icon cho `Restaurant` và `DrinkDessert`.
 
 ```json
 {
@@ -791,6 +827,7 @@ phần context mà không chạy lại Explorer qua
     {
       "placeId": "place_123",
       "name": "Văn Miếu",
+      "ontologyType": "TravelPlace",
       "mustVisit": true,
       "sourceRefs": ["source_123"]
     }

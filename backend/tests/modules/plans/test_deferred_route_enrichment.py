@@ -33,6 +33,18 @@ class BatchRouteProvider:
         ]
 
 
+class UnavailableBatchRouteProvider:
+    def calculate_many(
+        self,
+        coordinates,
+        *,
+        transport_mode,
+        departure_time=None,
+    ):
+        del coordinates, transport_mode, departure_time
+        return None
+
+
 def test_deferred_enrichment_replaces_coarse_leg_in_separate_step() -> None:
     provider = BatchRouteProvider()
     selector = PlaceSelectorService(
@@ -93,3 +105,54 @@ def test_deferred_enrichment_replaces_coarse_leg_in_separate_step() -> None:
     assert enriched.route_enrichment_status == "completed"
     assert enriched.days[0].transport_legs[0].verified is True
     assert enriched.days[0].transport_legs[0].source == "valhalla_routing"
+
+
+def test_deferred_enrichment_is_failed_when_only_coarse_fallback_remains() -> None:
+    selector = PlaceSelectorService(
+        route_optimizer=RouteFirstItineraryOptimizer(
+            GeographicRouteOptimizer(UnavailableBatchRouteProvider())
+        )
+    )
+    first = PlanItem(
+        itemId="a",
+        name="A",
+        timeWindow="09:00-10:00",
+        placeType="attraction",
+        latitude=21.028,
+        longitude=105.852,
+    )
+    second = PlanItem(
+        itemId="b",
+        name="B",
+        timeWindow="10:30-11:30",
+        placeType="attraction",
+        latitude=21.030,
+        longitude=105.858,
+    )
+    plan = Plan(
+        id="plan-failed-route",
+        kind=PlanKind.main,
+        status=PlanStatus.draft,
+        title="Unavailable route",
+        destination="Hà Nội",
+        intent=TravelIntent(
+            destination="Hà Nội",
+            days=1,
+            budget=BudgetLevel.medium,
+            travelStyle="local",
+            pace=TravelPace.balanced,
+        ),
+        days=[
+            PlanDay(
+                day=1,
+                theme="Test",
+                items=[first, second],
+            )
+        ],
+        routeEnrichmentStatus="pending",
+    )
+
+    enriched = selector.enrich_plan_routes(plan)
+
+    assert enriched.route_enrichment_status == "failed"
+    assert enriched.days[0].transport_legs[0].source == "geodesic_estimate"

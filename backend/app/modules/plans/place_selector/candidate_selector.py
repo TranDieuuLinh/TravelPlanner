@@ -15,6 +15,7 @@ from app.modules.plans.domain.entities import (
     UserStatus,
 )
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
+from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.place_selector.place_tool import (
     SelectablePlace,
     PlaceSelectionTool,
@@ -121,13 +122,13 @@ class CandidateSelector:
         self.place_tool = place_tool
         self.max_candidates_per_block = max_candidates_per_block
 
-    def _filter_repeated_food_drink(
+    def _filter_repeated_food_places(
         self,
         candidates: list[SelectablePlace],
         selected_by_ref: dict,
         plan_status: PlaceSelectionStatus,
     ) -> list[SelectablePlace]:
-        """Drop PlaceSelector-suggested food_drink places that look like duplicates of
+        """Drop suggested Restaurant/DrinkDessert places that look like duplicates of
         an already-accepted place in the same day. Two places count as
         duplicates only when they share the same ``place_type`` AND their
         ``description`` overlap (by token count) meets the configured
@@ -135,7 +136,7 @@ class CandidateSelector:
         explicitly asked for them.
         """
 
-        used_types = set(plan_status.used_food_drink_place_types or [])
+        used_types = set(plan_status.used_food_place_types or [])
         if not used_types:
             return candidates
         filtered: list[SelectablePlace] = []
@@ -143,7 +144,7 @@ class CandidateSelector:
             if candidate.stable_ref in selected_by_ref:
                 filtered.append(candidate)
                 continue
-            if place_category(candidate) != "food_drink":
+            if place_category(candidate) not in {"Restaurant", "DrinkDessert"}:
                 filtered.append(candidate)
                 continue
             candidate_type = (
@@ -152,7 +153,7 @@ class CandidateSelector:
             if not candidate_type or candidate_type not in used_types:
                 filtered.append(candidate)
                 continue
-            duplicate = self._is_food_drink_duplicate(
+            duplicate = self._is_food_place_duplicate(
                 candidate,
                 filtered,
             )
@@ -161,7 +162,7 @@ class CandidateSelector:
             filtered.append(candidate)
         return filtered
 
-    def _is_food_drink_duplicate(
+    def _is_food_place_duplicate(
         self,
         candidate: SelectablePlace,
         already_accepted: list[SelectablePlace],
@@ -177,13 +178,13 @@ class CandidateSelector:
         for accepted in already_accepted:
             if (accepted.place_type or "").strip() != candidate_type:
                 continue
-            if place_category(accepted) != "food_drink":
+            if place_category(accepted) not in {"Restaurant", "DrinkDessert"}:
                 continue
             accepted_tokens = self._description_tokens(accepted.description)
             if not accepted_tokens:
                 continue
             shared = len(candidate_tokens.intersection(accepted_tokens))
-            if shared >= self._FOOD_DRINK_DUPLICATE_TOKEN_THRESHOLD:
+            if shared >= self._FOOD_PLACE_DUPLICATE_TOKEN_THRESHOLD:
                 return True
         return False
 
@@ -196,7 +197,7 @@ class CandidateSelector:
             return set()
         return {token for token in normalized.split() if len(token) > 2}
 
-    _FOOD_DRINK_DUPLICATE_TOKEN_THRESHOLD = 3
+    _FOOD_PLACE_DUPLICATE_TOKEN_THRESHOLD = 3
 
     def select(self, context: CandidateSelectionContext) -> SelectablePlace | None:
         candidates: list[SelectablePlace] = []
@@ -235,7 +236,7 @@ class CandidateSelector:
                 return None
             if (
                 context.block.kind != "meal"
-                and place_category(candidate) == "food_drink"
+                and place_category(candidate) == "Restaurant"
             ):
                 context.rejected_selected_places[candidate.stable_ref] = CandidateRejection(
                     "slot_category_mismatch",
@@ -354,7 +355,7 @@ class CandidateSelector:
             seen.add(candidate.stable_ref)
             unique_candidates.append(candidate)
 
-        unique_candidates = self._filter_repeated_food_drink(
+        unique_candidates = self._filter_repeated_food_places(
             unique_candidates,
             context.selected_by_ref,
             context.plan_status,
@@ -407,7 +408,7 @@ class CandidateSelector:
                 continue
             if (
                 context.block.kind != "meal"
-                and place_category(candidate) == "food_drink"
+                and place_category(candidate) == "Restaurant"
             ):
                 if candidate_ref in context.selected_by_ref:
                     context.rejected_selected_places[candidate_ref] = CandidateRejection(
@@ -737,8 +738,8 @@ class CandidateSelector:
             return {block.candidate_category}
 
         def for_slot(categories: set[str]) -> set[str]:
-            if block.kind != "meal" and "food_drink" in categories:
-                non_food = categories - {"food_drink"}
+            if block.kind != "meal" and "Restaurant" in categories:
+                non_food = categories - {"Restaurant"}
                 return non_food or {
                     "attraction",
                     "entertainment",
@@ -806,6 +807,9 @@ class CandidateSelector:
                         "tags": list(
                             dict.fromkeys([*selected.tags, *stored_place.tags])
                         ),
+                        "ontology_type": (
+                            selected.ontology_type or stored_place.ontology_type
+                        ),
                         "source_order": selected.source_order,
                         "source_day": selected.source_day,
                         "source_time_hint": selected.source_time_hint,
@@ -840,6 +844,7 @@ class CandidateSelector:
             or brief.target_region_key
             or brief.target_area,
             tags=selected.tags,
+            ontologyType=selected.ontology_type,
             latitude=selected.latitude,
             longitude=selected.longitude,
             mustVisit=selected.must_visit,
@@ -924,8 +929,14 @@ class CandidateSelector:
                 "activity_category_mismatch",
                 "A service counter or ticket office is not a main activity.",
             )
-        if block.candidate_category is not None and not place_matches_categories(
-            candidate, {block.candidate_category}
+        if (
+            block.candidate_category is not None
+            and not (
+                place_category(candidate) == "DrinkDessert"
+                and block.kind != "meal"
+                and (is_selected or "DrinkDessert" in query_categories)
+            )
+            and not place_matches_categories(candidate, {block.candidate_category})
         ):
             return CandidateRejection(
                 "slot_category_mismatch",
@@ -933,6 +944,16 @@ class CandidateSelector:
                     f"Place category {category or 'unknown'} cannot fill "
                     f"the {block.candidate_category} slot."
                 ),
+            )
+        if block.kind == "meal" and not is_meal_place(
+            tags=[candidate.place_type, *candidate.tags],
+            source_activity=candidate.name,
+            ontology_type=candidate.ontology_type,
+        ):
+            return CandidateRejection(
+                "meal_venue_mismatch",
+                "Dessert, bakery, cafe, drink, snack, or generic food venues "
+                "cannot fill a main meal anchor.",
             )
         if (
             not is_selected
@@ -946,10 +967,11 @@ class CandidateSelector:
         if (
             block.kind != "meal"
             and (
-                category == "food_drink"
+                category == "Restaurant"
                 or (
                     block.role.startswith("main_activity_")
                     and self._has_strong_food_name(candidate)
+                    and category != "DrinkDessert"
                 )
             )
         ):

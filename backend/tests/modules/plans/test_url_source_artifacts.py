@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
@@ -98,6 +98,41 @@ def test_refresh_updates_document_artifacts_without_duplicate_rows() -> None:
             "Updated spoken note."
         )
         assert documents[0].artifacts_json["ocr"]["_"]["text"] == "UPDATED SIGN"
+
+
+def test_source_documents_are_deduped_and_prefetched_in_one_query() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    source_selects: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def record_source_select(_conn, _cursor, statement, _params, _context, _many):
+        normalized = statement.casefold()
+        if normalized.lstrip().startswith("select") and "source_documents" in normalized:
+            source_selects.append(statement)
+
+    first = _result()
+    duplicate = _result(
+        url="https://www.tiktok.com/@creator/video/123?utm_campaign=duplicate",
+        speech_text="Updated duplicate source.",
+    )
+    second = _result(url="https://www.tiktok.com/@creator/video/456")
+    with Session(engine) as session:
+        ExplorerPersistenceRepository(session).save(
+            intake_id="intake-prefetch",
+            user_id=None,
+            destination="Hà Nội",
+            resolutions=[],
+            url_results=[first, duplicate, second],
+        )
+        documents = list(session.scalars(select(SourceDocument)))
+
+    assert len(documents) == 2
+    assert len(source_selects) == 2  # one prefetch plus this test's final SELECT
+    by_url = {document.canonical_url: document for document in documents}
+    assert by_url[
+        "https://www.tiktok.com/@creator/video/123"
+    ].artifacts_json["stt"]["en"]["text"] == "Updated duplicate source."
 
 
 def test_delete_url_cache_removes_shared_document_but_keeps_import_history() -> None:

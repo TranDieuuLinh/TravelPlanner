@@ -49,8 +49,8 @@ def test_food_heavy_plan_reports_dominance_with_ids_and_action():
     report = OverallChecker().check(_plan(items))
     issues = {issue.code: issue for issue in report.issues}
 
-    assert "food_drink_dominates_main_activities" in issues
-    issue = issues["food_drink_dominates_main_activities"]
+    assert "food_stops_dominate_main_activities" in issues
+    issue = issues["food_stops_dominate_main_activities"]
     assert issue.severity == "warning"
     assert issue.affected_item_ids[:2] == ["food-0", "food-1"]
     assert issue.suggested_action
@@ -67,7 +67,9 @@ def test_diverse_plan_has_no_diversity_warning():
 
     report = OverallChecker().check(_plan(items))
 
-    assert "food_drink_dominates_main_activities" not in {i.code for i in report.issues}
+    assert "food_stops_dominate_main_activities" not in {
+        i.code for i in report.issues
+    }
     assert "insufficient_main_experience_diversity" not in {i.code for i in report.issues}
 
 
@@ -106,6 +108,53 @@ def test_daily_composition_rejects_missing_meal_and_non_food_activity():
     assert "daily_meal_structure_invalid" in codes
     assert "insufficient_daily_non_food_activities" in codes
     assert report.status == "failed"
+
+
+def test_daily_composition_rejects_adjacent_restaurants_without_separator():
+    report = OverallChecker().check(
+        _plan(
+            [
+                _item("breakfast", role="breakfast_meal"),
+                _item("museum", place_type="museum", category="activity"),
+                _item("park", place_type="park", category="activity"),
+                _item("lunch", role="lunch_meal"),
+                _item("dinner", role="dinner_meal"),
+            ]
+        )
+    )
+
+    issue = next(
+        issue for issue in report.issues
+        if issue.code == "adjacent_restaurant_stops"
+    )
+    assert issue.severity == "error"
+    assert issue.affected_item_ids == ["lunch", "dinner"]
+    assert issue.evidence == ["lunch->dinner"]
+    assert report.status == "failed"
+
+
+def test_drink_dessert_is_a_valid_separator_between_restaurants():
+    report = OverallChecker().check(
+        _plan(
+            [
+                _item("breakfast", role="breakfast_meal"),
+                _item("museum", place_type="museum", category="activity"),
+                _item("lunch", role="lunch_meal"),
+                _item(
+                    "egg-coffee",
+                    place_type="cafe",
+                    category="activity",
+                    ontologyType="DrinkDessert",
+                ),
+                _item("park", place_type="park", category="activity"),
+                _item("dinner", role="dinner_meal"),
+            ]
+        )
+    )
+
+    assert "adjacent_restaurant_stops" not in {
+        issue.code for issue in report.issues
+    }
 
 
 def test_missing_required_anchor_and_unpreserved_special_are_errors():
