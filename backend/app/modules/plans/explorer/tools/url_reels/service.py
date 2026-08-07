@@ -335,6 +335,17 @@ class UrlReelExtractionService:
             context_arguments["visual_observations"] = (
                 vision_result.observations
             )
+            if expected_place_count is None:
+                observed_orders = {
+                    observation.order
+                    for observation in vision_result.observations
+                    if observation.order is not None
+                }
+                if 1 in observed_orders and len(observed_orders) >= 2:
+                    expected_place_count = max(observed_orders)
+                    context_arguments["expected_place_count"] = (
+                        expected_place_count
+                    )
         context_start = time.perf_counter()
         context = self.context_extractor.extract(**context_arguments)
         region_story = None

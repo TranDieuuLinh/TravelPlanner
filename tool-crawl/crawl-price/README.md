@@ -1,17 +1,17 @@
 # Auto crawl tiền vé
 
-Package này chứa CLI nghiên cứu giá vé người lớn cho `TravelPlace` bằng Gemini
-Google Search grounding. Chỉ kết quả có identity khớp và grounded source hợp lệ
-mới được phép ghi vào `knowledge_properties.admission_price`. CLI xử lý tối đa
-bốn request đồng thời và cache/commit từng kết quả ngay khi request đó hoàn tất,
-không chờ toàn bộ batch.
+Package này chứa CLI nghiên cứu giá vé người lớn cho `TravelPlace`. Luồng mặc
+định lấy canonical name, tìm Google bằng câu `giá vé của <tên địa điểm>`, dùng
+Selenium mở kết quả organic đầu tiên, lấy text đã render rồi đưa content và URL
+đó vào Gemini để trích xuất JSON giá có schema. Chỉ kết quả khớp identity và có
+source HTTP(S) hợp lệ mới được ghi vào `knowledge_properties.admission_price`.
 
-Chạy từ thư mục `backend/`.
+Chạy từ thư mục gốc repository.
 
 Dry-run và ghi resume cache:
 
 ```bash
-.venv/bin/python scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py \
+backend/.venv/bin/python tool-crawl/crawl-price/enrich_travel_place_prices.py \
   --limit 20 \
   --min-review-count 1000 \
   --concurrency 4
@@ -20,7 +20,7 @@ Dry-run và ghi resume cache:
 Xác minh và commit giá hợp lệ vào database:
 
 ```bash
-.venv/bin/python scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py \
+backend/.venv/bin/python tool-crawl/crawl-price/enrich_travel_place_prices.py \
   --apply \
   --limit 20 \
   --min-review-count 1000 \
@@ -29,24 +29,26 @@ Xác minh và commit giá hợp lệ vào database:
 
 Cache mặc định nằm ở `backend/var/travel-place-price-research-v1.jsonl`.
 Pool key đọc từ `GEMINI_PRICE_API_KEYS`, phân tách bằng dấu phẩy, rồi fallback
-về `GEMINI_API_KEY`. Các request price mặc định bắt đầu cách nhau ít nhất bốn
+về `GEMINI_API_KEY` trong `backend/.env`; không ghi API key trực tiếp vào source.
+Các request price mặc định bắt đầu cách nhau ít nhất bốn
 giây; có thể chỉnh bằng `--min-interval-seconds`. Khi toàn bộ pool trả quota
 limited, batch ngừng cấp địa điểm mới và giữ phần còn lại cho lần chạy sau.
 Nhiều key cùng Google project không làm tăng quota project. Summary cuối lệnh
 luôn trả `admission_price_in_database` là tổng số price property hiện có trong
 PostgreSQL.
 
-Price research mặc định dùng `gemini-3.5-flash-lite`. Model inference và
-structured output có thể khả dụng trên free tier, nhưng Google Search grounding
-yêu cầu quota/billing riêng. Project không có grounded-search quota phải bật
-billing hoặc cấu hình một search provider khác; xoay model Gemini không thay thế
-được quota của tool.
+Price research mặc định dùng `gemini-3.5-flash-lite` cho structured output,
+không bật Gemini Google Search grounding khi provider là Selenium.
 
-Adapter thử nghiệm `--search-provider google_playwright` tách Google SERP search
-khỏi Gemini grounding và ép concurrency xuống 1. Adapter không bypass consent,
-CAPTCHA hoặc trang chặn automation; khi Google chặn, outcome trả
-`google_playwright_blocked` và không ghi DB. Vì cả Chromium headless lẫn headed
-đều bị chặn trên môi trường local đã kiểm tra, adapter này không phải mặc định.
+Provider mặc định `--search-provider google_selenium` cần Chrome/Chromium.
+Selenium Manager tự tìm driver phù hợp. Provider chạy tuần tự, không bypass
+consent, CAPTCHA, paywall hoặc trang chặn automation; khi Google chặn, outcome
+trả `google_selenium_blocked` và không ghi DB. Content trang bị giới hạn trước
+khi gửi vào LLM và luôn được coi là dữ liệu không tin cậy. Sau khi mở kết quả,
+provider chờ mặc định 3 giây cho trang render; sau mỗi search chờ thêm 1 giây
+trước địa điểm kế tiếp. Có thể chỉnh bằng
+`GOOGLE_SELENIUM_PAGE_LOAD_WAIT_SECONDS` và
+`GOOGLE_SELENIUM_POST_SEARCH_DELAY_SECONDS`.
 
 Fallback vận hành không dùng Gemini grounding là Tavily basic search. Tạo free
 API key, thêm vào `backend/.env` rồi chạy:
@@ -56,7 +58,7 @@ TAVILY_API_KEY=tvly-...
 ```
 
 ```bash
-.venv/bin/python scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py \
+backend/.venv/bin/python tool-crawl/crawl-price/enrich_travel_place_prices.py \
   --apply \
   --limit 10 \
   --concurrency 1 \
@@ -77,7 +79,7 @@ grounding:
 ```
 
 ```bash
-.venv/bin/python scripts/auto_crawl_tien_ve/enrich_travel_place_prices_from_sources.py \
+backend/.venv/bin/python tool-crawl/crawl-price/enrich_travel_place_prices_from_sources.py \
   --sources-file var/admission-price-sources.jsonl \
   --apply \
   --limit 20 \

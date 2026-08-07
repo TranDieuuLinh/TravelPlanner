@@ -21,7 +21,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPOSITORY_DIR = Path(__file__).resolve().parents[2]
+BACKEND_DIR = REPOSITORY_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -37,7 +38,7 @@ from app.modules.knowledge_graph.price_research import (  # noqa: E402
     TravelPlacePriceOutcome,
     research_travel_place_price_from_sources,
 )
-from scripts.auto_crawl_tien_ve.enrich_travel_place_prices import (  # noqa: E402
+from enrich_travel_place_prices import (  # noqa: E402
     RESEARCH_PROPERTY_KEYS,
     append_cache,
     apply_outcomes,
@@ -78,7 +79,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cache-file",
         type=Path,
-        default=Path("var/travel-place-price-source-extraction-v1.jsonl"),
+        default=(
+            BACKEND_DIR
+            / "var"
+            / "travel-place-price-source-extraction-v1.jsonl"
+        ),
     )
     parser.add_argument(
         "--overwrite",

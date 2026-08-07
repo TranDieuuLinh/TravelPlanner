@@ -182,7 +182,7 @@ def test_verified_status_without_public_grounded_source_cannot_apply() -> None:
 
 class FakeWebSearchProvider:
     async def search(self, query: str, *, limit: int):
-        assert "Văn Miếu" in query
+        assert query == "giá vé của Văn Miếu - Quốc Tử Giám"
         assert limit == 8
         return [
             WebSearchResult(
@@ -195,11 +195,12 @@ class FakeWebSearchProvider:
 
 class FakeStructuredClient:
     async def generate_structured_json(self, *args, **kwargs):
-        assert "Playwright" in args[0]
+        assert "Selenium" in args[0]
         payload = json.loads(args[1])
         assert payload["searchResults"][0]["uri"] == (
             "https://official.example/tickets"
         )
+        assert "70.000 VND" in payload["searchResults"][0]["content"]
         assert kwargs["response_schema"]
         return """{
           "identityMatched": true,
@@ -211,7 +212,7 @@ class FakeStructuredClient:
         }"""
 
 
-def test_playwright_search_results_are_validated_as_price_sources() -> None:
+def test_selenium_page_content_is_validated_as_price_source() -> None:
     outcome = asyncio.run(
         research_travel_place_price_with_web_search(
             _candidate(),

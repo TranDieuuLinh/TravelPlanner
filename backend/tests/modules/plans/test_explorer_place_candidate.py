@@ -5,6 +5,7 @@ from app.modules.plans.dto.agent_contracts import PlaceCandidateHint
 from app.modules.plans.explorer.place_candidate_aggregator import (
     PlaceCandidateAggregator,
 )
+from app.modules.plans.explorer.place_policy import is_schedulable_place
 from app.modules.plans.explorer.schema import (
     FullExploreRequest,
     UnifiedPlaceCandidate,
@@ -95,6 +96,60 @@ def test_explorer_input_accepts_user_travel_style() -> None:
     assert request.model_dump(mode="json", by_alias=True)["userState"][
         "travelStyle"
     ] == "adventure"
+
+
+def test_url_company_record_is_not_schedulable_place() -> None:
+    assert (
+        is_schedulable_place(
+            is_url_source=True,
+            resolution_status="resolved",
+            latitude=21.03,
+            longitude=105.84,
+            candidate_name="Công Ty TNHH Trung Tâm Văn Hoá Thể Thao Giải Trí Hà Nội",
+            resolved_name="Công Ty TNHH Trung Tâm Văn Hoá Thể Thao Giải Trí Hà Nội",
+            place_type="point_of_interest",
+            city="Hà Nội",
+            destination="Hà Nội",
+            country="Việt Nam",
+        )
+        is False
+    )
+
+
+def test_url_non_tourism_place_type_is_not_schedulable_place() -> None:
+    assert (
+        is_schedulable_place(
+            is_url_source=True,
+            resolution_status="resolved",
+            latitude=21.03,
+            longitude=105.84,
+            candidate_name="Example Office",
+            resolved_name="Example Office",
+            place_type="local_government_office",
+            city="Hà Nội",
+            destination="Hà Nội",
+            country="Việt Nam",
+        )
+        is False
+    )
+
+
+def test_url_specific_attraction_remains_schedulable_place() -> None:
+    assert (
+        is_schedulable_place(
+            is_url_source=True,
+            resolution_status="resolved",
+            latitude=21.0358,
+            longitude=105.8336,
+            candidate_name="Văn Miếu - Quốc Tử Giám",
+            resolved_name="Văn Miếu - Quốc Tử Giám",
+            place_type="tourist_attraction",
+            city="Hà Nội",
+            destination="Hà Nội",
+            country="Việt Nam",
+        )
+        is True
+    )
 
 
 def test_explorer_aggregates_all_categories_into_one_candidate_array() -> None:

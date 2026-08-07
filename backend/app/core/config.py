@@ -65,7 +65,7 @@ class Settings(BaseSettings):
         ge=0.0,
         le=60.0,
     )
-    price_search_provider: str = "gemini_grounded"
+    price_search_provider: str = "google_selenium"
     google_web_search_timeout_seconds: float = Field(
         default=60.0,
         ge=10.0,
@@ -75,6 +75,16 @@ class Settings(BaseSettings):
         default=8.0,
         ge=0.0,
         le=120.0,
+    )
+    google_selenium_page_load_wait_seconds: float = Field(
+        default=3.0,
+        ge=0.0,
+        le=30.0,
+    )
+    google_selenium_post_search_delay_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=30.0,
     )
     tavily_api_key: str | None = None
     tavily_timeout_seconds: float = Field(default=30.0, ge=5.0, le=120.0)
@@ -275,12 +285,12 @@ class Settings(BaseSettings):
                 "ITINERARY_OPTIMIZER_MODE must be route_first or legacy"
             )
         if self.price_search_provider not in {
-            "google_playwright",
+            "google_selenium",
             "gemini_grounded",
             "tavily",
         }:
             raise ValueError(
-                "PRICE_SEARCH_PROVIDER must be google_playwright, "
+                "PRICE_SEARCH_PROVIDER must be google_selenium, "
                 "gemini_grounded or tavily"
             )
         if bool(self.youtube_transcript_worker_url) != bool(

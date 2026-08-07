@@ -112,7 +112,13 @@ class FrameVisionObservation(BaseModel):
     time_hint: str | None = Field(default=None, alias="timeHint")
     activity: str | None = None
     entity_type: Literal[
-        "venue", "sub_place", "address", "city", "person", "unknown"
+        "venue",
+        "sub_place",
+        "activity",
+        "address",
+        "city",
+        "person",
+        "unknown",
     ] = Field(default="venue", alias="entityType")
     address_hint: str | None = Field(default=None, alias="addressHint")
     parent_place: str | None = Field(default=None, alias="parentPlace")
@@ -154,7 +160,7 @@ class ExtractedPlace(BaseModel):
         le=720,
         alias="sourceDurationMinutes",
     )
-    entity_type: Literal["venue", "sub_place"] = Field(
+    entity_type: Literal["venue", "sub_place", "activity", "city"] = Field(
         default="venue",
         alias="entityType",
     )

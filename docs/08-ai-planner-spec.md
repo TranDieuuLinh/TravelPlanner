@@ -203,6 +203,14 @@ model cấu hình. Không áp dụng giới hạn số place candidate có evide
 gộp; giới hạn 48 chỉ áp dụng cho số frame video được lấy mẫu.
 TikTok photo post vẫn không được tải tự động và yêu cầu upload screenshot.
 
+Danh sách “things to do” có số thứ tự không chỉ tạo candidate cho venue.
+Frame vision và STT phải giữ cả activity không nêu cơ sở cụ thể (ví dụ water
+puppet show, head spa) và city/region của day trip. Các candidate này giữ
+`sourceOrder`, `sourceActivity`, evidence và `entityType`; chúng được hiển thị
+để user xác nhận hoặc chọn cơ sở cụ thể, không được giả mạo thành venue đã xác
+minh. Chỉ address/person hoặc text chung không phải một recommendation mới bị
+loại khỏi danh sách candidate.
+
 STT fallback probe duration bằng `ffprobe`. Audio không quá 60 giây hoặc chỉ có
 một STT key vẫn dùng một request. Audio dài hơn có thể được chia cân bằng thành
 tối đa ba chunk theo thứ tự thời gian, overlap mặc định hai giây ở biên. Mặc

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -103,14 +104,23 @@ class GeminiReelFrameVision:
         for api_key in reversed(self.api_keys[-maximum_concurrency:]):
             key_pool.put(api_key)
 
-        def analyze_with_leased_key(batch: list[Path]) -> FrameVisionResult:
+        def analyze_with_leased_key(
+            batch: list[Path],
+        ) -> tuple[FrameVisionResult | None, Exception | None, str]:
             api_key = key_pool.get()
             try:
-                return self._analyze_batch_with_retry(
-                    batch,
-                    destination=destination,
-                    api_key=api_key,
-                )
+                try:
+                    return (
+                        self._analyze_batch_with_retry(
+                            batch,
+                            destination=destination,
+                            api_key=api_key,
+                        ),
+                        None,
+                        api_key,
+                    )
+                except (RuntimeError, httpx.HTTPError) as exc:
+                    return None, exc, api_key
             finally:
                 key_pool.put(api_key)
 
@@ -124,17 +134,36 @@ class GeminiReelFrameVision:
                 )
                 for batch in batches
             ]
-            batch_results: list[FrameVisionResult] = []
+            batch_results: list[FrameVisionResult | None] = [None] * len(batches)
             batch_errors: list[str] = []
             # Read futures in batch order so concurrent completion cannot
             # reorder itinerary evidence.
-            for future in futures:
-                try:
-                    batch_results.append(future.result())
-                except (RuntimeError, httpx.HTTPError) as exc:
-                    batch_errors.append(str(exc))
+            for index, future in enumerate(futures):
+                result, error, failed_key = future.result()
+                if result is not None:
+                    batch_results[index] = result
+                    continue
+                last_error = error
+                for fallback_key in reversed(self.api_keys):
+                    if fallback_key == failed_key:
+                        continue
+                    try:
+                        batch_results[index] = self._analyze_batch_with_retry(
+                            batches[index],
+                            destination=destination,
+                            api_key=fallback_key,
+                        )
+                        last_error = None
+                        break
+                    except (RuntimeError, httpx.HTTPError) as exc:
+                        last_error = exc
+                if last_error is not None:
+                    batch_errors.append(str(last_error))
 
-        if not batch_results:
+        successful_results = [
+            result for result in batch_results if result is not None
+        ]
+        if not successful_results:
             raise RuntimeError(
                 batch_errors[-1]
                 if batch_errors
@@ -143,7 +172,7 @@ class GeminiReelFrameVision:
         places: list[str] = []
         observations: list[FrameVisionObservation] = []
         seen: set[str] = set()
-        for result in batch_results:
+        for result in successful_results:
             observations_by_name = {
                 item.place_name.casefold(): item
                 for item in result.observations
@@ -160,7 +189,7 @@ class GeminiReelFrameVision:
         return FrameVisionResult(
             text="\n".join(
                 result.text
-                for result in batch_results
+                for result in successful_results
                 if result.text
             ),
             places=places,
@@ -204,11 +233,14 @@ class GeminiReelFrameVision:
         start = time.perf_counter()
         prompt = (
             "Analyze these chronological frames sampled from a travel reel. "
-            "Return one observation for each distinct, visually evidenced stop. "
-            "Preserve frame order and copy the complete exact place name without "
-            "splitting Vietnamese names. A heading such as 'địa điểm', a city, "
-            "or a generic category is not a place name. Use an empty placeName "
-            "when the frame does not visibly identify a specific venue. "
+            "Return one observation for each distinct, visually evidenced numbered "
+            "recommendation or stop. Preserve frame order and copy its complete "
+            "exact heading into placeName without splitting Vietnamese names. "
+            "When a heading displays a list number, set order to that number. "
+            "Keep a numbered activity or day-trip region even when it does not "
+            "identify a specific venue; classify it as activity or city. Use an "
+            "empty placeName only for unnumbered generic text that does not visibly "
+            "identify a specific recommendation. "
             "Transcribe the exact address, price, day, timing cue, recommended "
             "activity, dish, or booking note into evidence. "
             "Set dayNumber to the explicit day shown for that stop, or 0 when "
@@ -222,7 +254,9 @@ class GeminiReelFrameVision:
             "family friendly, outdoor, nightlife, beach, culture or nature. "
             "Distinguish sequential stops from alternatives. Do not invent text "
             "or identify a place without visual evidence. Classify entityType "
-            "as venue, sub_place, address, city, person, or unknown. Put visible "
+            "as venue, sub_place, activity, address, city, person, or unknown. "
+            "Use activity for recommendations such as a show, spa treatment, or "
+            "food experience when no specific business is named. Put visible "
             "street/locality text in addressHint on its venue instead of making "
             "it a stop, and set parentPlace for a sub-place inside a named venue."
         )
@@ -280,7 +314,7 @@ class GeminiReelFrameVision:
                                             "activity": {"type": "string"},
                                             "entityType": {
                                                 "type": "string",
-                                                "enum": ["venue", "sub_place", "address", "city", "person", "unknown"],
+                                                "enum": ["venue", "sub_place", "activity", "address", "city", "person", "unknown"],
                                             },
                                             "addressHint": {
                                                 "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -335,6 +369,12 @@ class GeminiReelFrameVision:
                 if not isinstance(observation, dict):
                     continue
                 place_name = str(observation.get("placeName", "")).strip()
+                displayed_order = re.match(
+                    r"^\s*(\d{1,3})[.)]\s+",
+                    place_name,
+                )
+                if displayed_order is not None:
+                    place_name = place_name[displayed_order.end() :].strip()
                 evidence = str(observation.get("evidence", "")).strip()
                 if place_name and any(
                     cue in evidence.casefold()
@@ -353,27 +393,38 @@ class GeminiReelFrameVision:
                     observation.get("entityType", "venue")
                 ).strip()
                 if entity_type not in {
-                    "venue", "sub_place", "address", "city", "person", "unknown"
+                    "venue",
+                    "sub_place",
+                    "activity",
+                    "address",
+                    "city",
+                    "person",
+                    "unknown",
                 }:
                     entity_type = "unknown"
                 address_hint = observation.get("addressHint")
                 parent_place = observation.get("parentPlace")
                 if (
                     place_name
-                    and entity_type in {"venue", "sub_place"}
+                    and entity_type in {"venue", "sub_place", "activity", "city"}
                     and place_name not in place_names
                 ):
+                    grounded_evidence = " | ".join(
+                        part for part in (place_name, evidence) if part
+                    )
                     place_names.append(place_name)
                     structured_observations.append(
                         FrameVisionObservation(
                             order=(
-                                observation.get("order")
+                                int(displayed_order.group(1))
+                                if displayed_order is not None
+                                else observation.get("order")
                                 if isinstance(observation.get("order"), int)
                                 and observation["order"] >= 1
                                 else None
                             ),
                             placeName=place_name,
-                            evidence=evidence,
+                            evidence=grounded_evidence,
                             dayNumber=day_number,
                             timeHint=time_hint or None,
                             activity=activity or None,

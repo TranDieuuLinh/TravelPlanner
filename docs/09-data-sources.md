@@ -476,11 +476,11 @@ Không hứa “mọi URL Reel/TikTok/Facebook đều hoạt động”; UI ph�
 
 ### Enrichment giá TravelPlace
 
-CLI `scripts/auto_crawl_tien_ve/enrich_travel_place_prices.py` dùng Gemini Google Search grounding
-để nghiên cứu giá vé công khai cho đúng entity `TravelPlace`. Query mang tên,
-địa chỉ, thành phố, quốc gia và URL identity đã có; source web luôn là dữ liệu
-không tin cậy. Model phải trả structured output và chỉ tham chiếu nguồn bằng
-index của `groundingChunks`; URL do model tự viết không được dùng làm provenance.
+CLI `tool-crawl/crawl-price/enrich_travel_place_prices.py` mặc định lấy canonical
+name của `TravelPlace`, tìm Google bằng câu `giá vé của <tên địa điểm>`, dùng
+Selenium mở kết quả organic đầu tiên và gửi text đã render cùng URL sang Gemini
+structured output. Source web luôn là dữ liệu không tin cậy; URL do model tự
+viết không được dùng làm provenance.
 
 Lệnh mặc định ưu tiên entity có nhiều review, chỉ nghiên cứu tối đa 10 entity,
 không ghi database và append kết quả đã chuẩn hóa vào JSONL cache để resume.
@@ -516,12 +516,11 @@ gọi stable Gemini 2.5, đổi xuống `gemini-2.5-flash(-lite)` không phải 
 Deployment có thể override bằng `GEMINI_PRICE_MODEL` hoặc `--model`, nhưng quota
 grounding vẫn được tính theo project.
 
-CLI có adapter opt-in `google_playwright` để chuẩn hóa title, URL và snippet từ
-Google SERP trước khi Gemini tạo structured output không-grounding. Adapter chạy
-tuần tự, không đăng nhập và không bypass consent/CAPTCHA. Trang chặn automation
-trở thành `google_playwright_blocked`, không phải nguồn hợp lệ và không được ghi
-DB. Kiểm tra local hiện tại bị Google chặn ở cả headless và headed, nên provider
-này không được bật mặc định và không được mô tả như fallback vận hành ổn định.
+CLI mặc định dùng adapter `google_selenium`. Adapter chạy tuần tự, không đăng
+nhập và không bypass consent/CAPTCHA/paywall. Trang chặn automation trở thành
+`google_selenium_blocked`, không phải nguồn hợp lệ và không được ghi DB. Content
+trang đầu tiên bị giới hạn trước khi đưa vào LLM; URL cuối sau navigation được
+giữ làm provenance. Chrome/Chromium và driver tương thích là dependency vận hành.
 
 Provider `tavily` là fallback API có key cho project không có Gemini Search
 grounding quota. Adapter gọi basic search, giới hạn tối đa 10 kết quả, không yêu

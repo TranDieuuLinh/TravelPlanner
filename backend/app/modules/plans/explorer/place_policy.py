@@ -57,6 +57,7 @@ def is_schedulable_place(
     longitude: object | None,
     candidate_name: str,
     resolved_name: str,
+    place_type: str | None = None,
     city: str | None,
     destination: str | None,
     country: str | None,
@@ -67,6 +68,12 @@ def is_schedulable_place(
     if not is_url_source:
         return resolution_status in {"resolved", "provisional"}
     if resolution_status != "resolved":
+        return False
+    if _non_travel_business_name(candidate_name) or _non_travel_business_name(
+        resolved_name
+    ):
+        return False
+    if _non_schedulable_place_type(place_type):
         return False
     if _location_identity(candidate_name) in {
         _location_identity(value)
@@ -165,3 +172,57 @@ def _location_identity(value: str) -> str:
     elif tokens[-1:] == ["vietnam"]:
         tokens = tokens[:-1]
     return "".join(tokens)
+
+
+def _non_travel_business_name(value: str) -> bool:
+    normalized = _slug(value)
+    return any(
+        marker in normalized
+        for marker in (
+            "cong-ty",
+            "cong-ty-tnhh",
+            "cty",
+            "tnhh",
+            "trach-nhiem-huu-han",
+            "joint-stock-company",
+            "limited-company",
+            "company-limited",
+            "co-ltd",
+            "ltd",
+            "llc",
+        )
+    )
+
+
+def _non_schedulable_place_type(value: str | None) -> bool:
+    normalized = _slug(value or "").replace("-", "_")
+    return normalized in {
+        "accounting",
+        "administrative_area",
+        "bank",
+        "business_center",
+        "city_hall",
+        "community_center",
+        "company",
+        "congregation",
+        "courthouse",
+        "dentist",
+        "doctor",
+        "embassy",
+        "fire_station",
+        "funeral_home",
+        "government_office",
+        "hospital",
+        "insurance_agency",
+        "lawyer",
+        "local_government_office",
+        "moving_company",
+        "office",
+        "police",
+        "post_office",
+        "real_estate_agency",
+        "school",
+        "storage",
+        "university",
+        "village_hall",
+    }

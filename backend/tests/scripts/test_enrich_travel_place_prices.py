@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+CRAWL_PRICE_DIR = (
+    Path(__file__).resolve().parents[3] / "tool-crawl" / "crawl-price"
+)
+if str(CRAWL_PRICE_DIR) not in sys.path:
+    sys.path.insert(0, str(CRAWL_PRICE_DIR))
 
 from app.integrations.llm.base import GroundedStructuredResult, GroundingSource
 from app.modules.knowledge_graph.model import KnowledgeEntity, KnowledgeProperty
@@ -10,14 +18,14 @@ from app.modules.knowledge_graph.price_research import (
     TravelPlacePriceCandidate,
     TravelPlacePriceOutcome,
 )
-from scripts.auto_crawl_tien_ve.enrich_travel_place_prices import (
+from enrich_travel_place_prices import (
     CandidateRecord,
     apply_outcomes,
     count_admission_prices,
     fetch_outcomes,
     load_candidates,
 )
-from scripts.auto_crawl_tien_ve.enrich_travel_place_prices_from_sources import (
+from enrich_travel_place_prices_from_sources import (
     load_records as load_source_records,
     load_source_rows,
 )
