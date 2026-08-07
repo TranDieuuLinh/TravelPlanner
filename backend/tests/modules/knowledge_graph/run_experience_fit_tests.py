@@ -111,7 +111,7 @@ def setup_db(use_sqlite=True):
     else:
         db_url = os.environ.get(
             "DATABASE_URL",
-            "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
+            "postgresql+psycopg://travelplanner:travelplanner@localhost:5432/travelplanner"
         )
         from app.db.base import Base
         engine = create_engine(db_url, echo=False)

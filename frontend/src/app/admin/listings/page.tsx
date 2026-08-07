@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
-import { getAdminPendingListings, reviewListingVersion } from "@/lib/marketplace";
-import type { PendingListingVersion } from "@/types/marketplace";
+import { APIError } from "@/shared/api/client";
+import { getAdminPendingListings, reviewListingVersion } from "@/features/marketplace/api";
+import type { PendingListingVersion } from "@/features/marketplace/types";
 
 export default function AdminListingsPage() {
   const router = useRouter();

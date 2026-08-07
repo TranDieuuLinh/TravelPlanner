@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
+import { APIError } from "@/shared/api/client";
 import {
   addFavorite,
   getMarketplaceCategories,
   removeFavorite,
   searchListings
-} from "@/lib/marketplace";
-import type { ListingSummary } from "@/types/marketplace";
+} from "@/features/marketplace/api";
+import type { ListingSummary } from "@/features/marketplace/types";
 
 const defaultCategories = ["food", "nature", "family", "budget", "balanced", "comfortable", "creator-picks"];
 

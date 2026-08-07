@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { BackgroundUrlJobs } from "@/components/BackgroundUrlJobs";
-import { GlobalPlannerAssistant } from "@/components/GlobalPlannerAssistant";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { BackgroundUrlJobs } from "@/features/planner/components/BackgroundUrlJobs";
+import { GlobalPlannerAssistant } from "@/features/planner/components/GlobalPlannerAssistant";
 
 type NavItem = {
   href: string;
@@ -47,9 +47,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className={landingRoute ? "topbar is-landing" : plannerRoute ? "topbar is-planner" : "topbar"}>
         <div className="topbarInner">
           <div className="brandCluster">
-            <Link aria-label="VSF Travel" className="brand" href={landingRoute ? "/" : "/reels"}>
+            <Link aria-label="TravelPlanner" className="brand" href={landingRoute ? "/" : "/reels"}>
               <h2>
-                <span>VSF</span> Travel
+                <span>Travel</span>Planner
               </h2>
             </Link>
           </div>

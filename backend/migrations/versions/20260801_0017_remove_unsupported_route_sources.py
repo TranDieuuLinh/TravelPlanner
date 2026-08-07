@@ -15,7 +15,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 _CLEAN_PLAN_SQL = """
-CREATE OR REPLACE FUNCTION vsf_remove_unsupported_transport_routes(payload jsonb)
+CREATE OR REPLACE FUNCTION travelplanner_remove_unsupported_transport_routes(payload jsonb)
 RETURNS jsonb
 LANGUAGE sql
 AS $$
@@ -99,7 +99,7 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE trip_chats
-        SET current_plan = vsf_remove_unsupported_transport_routes(
+        SET current_plan = travelplanner_remove_unsupported_transport_routes(
             current_plan::jsonb
         )::json
         WHERE current_plan IS NOT NULL
@@ -108,12 +108,12 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE trip_chat_plan_revisions
-        SET plan_payload = vsf_remove_unsupported_transport_routes(
+        SET plan_payload = travelplanner_remove_unsupported_transport_routes(
             plan_payload::jsonb
         )::json
         """
     )
-    op.execute("DROP FUNCTION vsf_remove_unsupported_transport_routes(jsonb)")
+    op.execute("DROP FUNCTION travelplanner_remove_unsupported_transport_routes(jsonb)")
 
 
 def downgrade() -> None:

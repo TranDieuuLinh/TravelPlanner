@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://lehoi.com.vn"
 LIST_PATH = "/lehoi/danhsach.aspx"
-USER_AGENT = "VSF-TravelPlanner-FestivalImporter/1.0 (public-data research)"
+USER_AGENT = "TravelPlanner-FestivalImporter/1.0 (public-data research)"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "festivals.csv"
 
 

@@ -183,7 +183,7 @@ def test_automatically_removes_owned_artifacts_after_extraction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    temporary_dir = tmp_path / "vsf_url_reel_test"
+    temporary_dir = tmp_path / "travelplanner_url_reel_test"
     monkeypatch.setattr(
         "app.modules.plans.explorer.tools.url_reels.service.TemporaryDirectory",
         lambda **_: TemporaryDirectoryStub(temporary_dir),
@@ -202,7 +202,7 @@ def test_automatically_removes_owned_artifacts_when_extraction_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    temporary_dir = tmp_path / "vsf_url_reel_failure"
+    temporary_dir = tmp_path / "travelplanner_url_reel_failure"
     monkeypatch.setattr(
         "app.modules.plans.explorer.tools.url_reels.service.TemporaryDirectory",
         lambda **_: TemporaryDirectoryStub(temporary_dir),

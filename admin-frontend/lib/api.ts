@@ -130,7 +130,7 @@ async function parseError(response: Response): Promise<APIError> {
 }
 
 async function refreshSession(): Promise<boolean> {
-  const csrf = cookie("vsf_csrf");
+  const csrf = cookie("travelplanner_csrf");
   if (!csrf) return false;
   const response = await fetch(`${API_BASE}/auth/refresh`, {
     method: "POST",
@@ -150,7 +150,7 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
   if (!["GET", "HEAD"].includes((init.method ?? "GET").toUpperCase())) {
-    const csrf = cookie("vsf_csrf");
+    const csrf = cookie("travelplanner_csrf");
     if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
   }
   let response: Response;
@@ -164,7 +164,7 @@ async function request<T>(
     throw new APIError(
       0,
       "NETWORK_ERROR",
-      "Không kết nối được backend VSF Travel."
+      "Không kết nối được backend TravelPlanner."
     );
   }
   if (
@@ -290,7 +290,7 @@ export async function saveKnowledgeGraphFile(
   fileName: KnowledgeGraphFileName,
   content: string
 ): Promise<void> {
-  const csrf = cookie("vsf_csrf");
+  const csrf = cookie("travelplanner_csrf");
   const response = await fetch("/api/knowledge-graph", {
     method: "PUT",
     credentials: "include",
@@ -306,7 +306,7 @@ export async function saveKnowledgeGraphFile(
 export async function saveKnowledgeGraphFiles(
   files: Partial<KnowledgeGraphFiles>
 ): Promise<void> {
-  const csrf = cookie("vsf_csrf");
+  const csrf = cookie("travelplanner_csrf");
   const response = await fetch("/api/knowledge-graph", {
     method: "PUT",
     credentials: "include",
@@ -843,4 +843,3 @@ export type KGOntology = {
 export function getKGOntology(): Promise<KGOntology> {
   return request("/admin/knowledge-graph/ontology");
 }
-

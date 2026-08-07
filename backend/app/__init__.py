@@ -1,1 +1,1 @@
-"""VSF Travel Planner backend application package."""
+"""TravelPlanner backend application package."""

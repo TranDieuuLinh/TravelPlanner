@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError } from "@/shared/api/client";
 
 export default function LoginPage() {
   return <Suspense fallback={<div className="routeLoading">Đang mở đăng nhập...</div>}><LoginForm /></Suspense>;
@@ -46,7 +46,7 @@ function LoginForm() {
     <main className="authPage">
       <section className="authPanel" aria-labelledby="login-title">
         <div className="authHeading">
-          <span className="eyebrow">Tài khoản VSF</span>
+          <span className="eyebrow">Tài khoản TravelPlanner</span>
           <h1 id="login-title">Đăng nhập</h1>
           <p>Tiếp tục quản lý hồ sơ và những chuyến đi của bạn.</p>
         </div>

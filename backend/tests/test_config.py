@@ -7,10 +7,10 @@ from app.core.config import Settings
 def test_settings_accept_dedicated_application_database() -> None:
     settings = Settings(
         _env_file=None,
-        database_url="postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel",
+        database_url="postgresql+psycopg://travelplanner:travelplanner@postgres:5432/travelplanner",
     )
 
-    assert settings.database_url.endswith("/vsf_travel")
+    assert settings.database_url.endswith("/travelplanner")
     assert settings.gemini_price_model == "gemini-3.5-flash-lite"
 
 
@@ -25,7 +25,7 @@ def test_settings_reject_postgres_maintenance_database(
         Settings(
             _env_file=None,
             database_url=(
-                "postgresql+psycopg://vsf:vsf@postgres:5432/"
+                "postgresql+psycopg://travelplanner:travelplanner@postgres:5432/"
                 f"{database_name}"
             ),
         )

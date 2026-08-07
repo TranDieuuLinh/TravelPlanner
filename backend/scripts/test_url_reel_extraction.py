@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Test URL reel STT extraction.")
     parser.add_argument("url", help="TikTok/Instagram/YouTube URL to test")
     parser.add_argument("--destination", default=None, help="Optional destination context, e.g. Hanoi")
-    parser.add_argument("--work-dir", default="/tmp/vsf_url_reel_test", help="Directory for temporary artifacts")
+    parser.add_argument("--work-dir", default="/tmp/travelplanner_url_reel_test", help="Directory for temporary artifacts")
     parser.add_argument("--stt-language", default="en,vi", help="Optional STT language hint, e.g. en, vi, or en,vi")
     parser.add_argument("--stt-initial-prompt", default=None, help="Optional STT vocabulary/context hint")
     return parser.parse_args()

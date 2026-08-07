@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "vsf-maps-worker-"));
+const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "travelplanner-maps-worker-"));
 process.env.GOOGLE_MAPS_SCRAPER_WORK_DIR = workDir;
 process.env.GOOGLE_MAPS_SCRAPER_STALE_ARTIFACT_SECONDS = "1";
 

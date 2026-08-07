@@ -5,16 +5,16 @@ services:
     # image so those volumes remain readable after the feature-code revert.
     image: pgvector/pgvector:0.8.2-pg16
     environment:
-      POSTGRES_DB: vsf_travel
-      POSTGRES_USER: vsf
-      POSTGRES_PASSWORD: vsf
+      POSTGRES_DB: travelplanner
+      POSTGRES_USER: travelplanner
+      POSTGRES_PASSWORD: travelplanner
     ports:
       - "5432:5432"
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vsf -d vsf_travel"]
+      test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -27,7 +27,7 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
+      DATABASE_URL: postgresql+psycopg://travelplanner:travelplanner@postgres:5432/travelplanner
       BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       APP_ENV: local
       GEMINI_MIN_INTERVAL_SECONDS: "0.0"

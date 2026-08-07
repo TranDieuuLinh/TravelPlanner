@@ -258,7 +258,7 @@ class UrlImportJobRepository:
             self.db.execute(
                 text(
                     "SELECT pg_advisory_xact_lock("
-                    "hashtext('vsf:url-import-worker:claim'))"
+                    "hashtext('travelplanner:url-import-worker:claim'))"
                 )
             )
         running_count = self.db.scalar(

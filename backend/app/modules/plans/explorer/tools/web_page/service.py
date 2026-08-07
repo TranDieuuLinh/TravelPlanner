@@ -77,7 +77,7 @@ class WebPageFetcher:
                 transport=self.transport,
                 trust_env=False,
                 headers={
-                    "User-Agent": "VSFTravelBot/1.0 (+public travel source import)",
+                    "User-Agent": "TravelPlannerBot/1.0 (+public travel source import)",
                     "Accept": "text/html,application/xhtml+xml,text/plain;q=0.8",
                 },
             ) as client:

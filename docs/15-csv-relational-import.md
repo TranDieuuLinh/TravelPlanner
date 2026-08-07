@@ -19,8 +19,8 @@ chạy `pg_dump` trước khi apply migration.
 ## 1. Backup (bắt buộc)
 
 ```powershell
-cd K:\VSF\VSF_TravelPlanner\backend
-$env:DATABASE_URL = "postgresql://vsf:vsf@localhost:5432/vsf_travel"
+cd K:\travelplanner\backend
+$env:DATABASE_URL = "postgresql://travelplanner:travelplanner@localhost:5432/travelplanner"
 pg_dump --no-owner --format=custom --file=..\database\backup_before_google_maps.dump $env:DATABASE_URL
 ```
 
@@ -43,8 +43,8 @@ mới. Các thay đổi chính:
 ## 3. Apply migration
 
 ```powershell
-cd K:\VSF\VSF_TravelPlanner\backend
-$env:DATABASE_URL = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
+cd K:\travelplanner\backend
+$env:DATABASE_URL = "postgresql+psycopg://travelplanner:travelplanner@localhost:5432/travelplanner"
 .\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
@@ -124,7 +124,7 @@ Nếu cần quay lại schema cũ, dùng `pg_dump` đã backup ở bước 1:
 
 ```powershell
 # Restore lại
-pg_restore --clean --no-owner --dbname=vsf_travel `
+pg_restore --clean --no-owner --dbname=travelplanner `
   ..\database\backup_before_google_maps.dump
 ```
 

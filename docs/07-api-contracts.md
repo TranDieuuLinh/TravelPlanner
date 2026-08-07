@@ -96,7 +96,7 @@ Request đăng ký:
 
 JWT không được trả trong JSON. Backend lưu access/refresh token trong HTTP-only
 cookie và lưu refresh token dạng hash trong `auth_sessions`. Request thay đổi dữ
-liệu gửi cookie phải đặt `X-CSRF-Token` bằng giá trị cookie `vsf_csrf`.
+liệu gửi cookie phải đặt `X-CSRF-Token` bằng giá trị cookie `travelplanner_csrf`.
 
 `GET /api/users` và `POST /api/users` được giữ cho quản trị; cả hai yêu cầu role
 admin, và `POST` yêu cầu CSRF. Đăng ký public chỉ đi qua `/api/auth/register`,

@@ -1,6 +1,6 @@
-# Golden Dataset cho VSF Travel Planner
+# Golden Dataset cho TravelPlanner
 
-Bộ dữ liệu chuẩn (Golden Dataset) dùng để kiểm thử độc lập Input/Output của từng module (Extractor, Explorer, Planner, Finder, Checker, Backup Plan) và kiểm thử toàn trình E2E trong VSF Travel Planner.
+Bộ dữ liệu chuẩn (Golden Dataset) dùng để kiểm thử độc lập Input/Output của từng module (Extractor, Explorer, Planner, Finder, Checker, Backup Plan) và kiểm thử toàn trình E2E trong TravelPlanner.
 
 ## Cấu trúc Thư mục
 

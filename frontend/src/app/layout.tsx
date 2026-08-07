@@ -4,10 +4,10 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
-import { AuthProvider } from "@/components/AuthProvider";
+import { AuthProvider } from "@/features/auth/components/AuthProvider";
 
 export const metadata: Metadata = {
-  title: "VSF Travel",
+  title: "TravelPlanner",
   description: "Khám phá plan du lịch và tạo lịch trình với AI.",
   icons: {
     icon: "/images/penguin-logo.png",

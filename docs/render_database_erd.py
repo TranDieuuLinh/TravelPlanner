@@ -235,7 +235,7 @@ def main() -> None:
     image = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(image)
 
-    draw_text(draw, (80, 55), "VSF Travel Database ERD", TITLE)
+    draw_text(draw, (80, 55), "TravelPlanner Database ERD", TITLE)
     draw_text(draw, (82, 112), "Implemented users table plus planned core/link tables for trips, marketplace, orders, payments, reviews, and achievements.", SUBTITLE, MUTED)
     capsule(draw, 1620, 60, "Implemented", IMPLEMENTED)
     capsule(draw, 1790, 60, "Planned core", PLANNED)

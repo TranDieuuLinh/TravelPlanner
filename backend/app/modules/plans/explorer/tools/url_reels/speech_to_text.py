@@ -112,7 +112,7 @@ class GeminiAudioSpeechToText:
 
         try:
             with TemporaryDirectory(
-                prefix="vsf_stt_chunks_",
+                prefix="travelplanner_stt_chunks_",
                 dir=audio_path.parent,
             ) as temporary_dir:
                 chunk_paths = self._split_audio(

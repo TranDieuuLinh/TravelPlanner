@@ -174,7 +174,10 @@ class UrlImportJobWorker:
             except Exception:
                 logger.exception("URL import job %s failed", job_id)
                 db.rollback()
-                message = "Không thể trích xuất URL này. Bạn có thể thử lại riêng tác vụ."
+                message = (
+                    "Không thể hoàn tất xử lý URL này. "
+                    "Bạn có thể thử lại riêng tác vụ."
+                )
                 if job.import_kind == "explorer_job":
                     repository.fail_batch(
                         job.batch_id, code="URL_IMPORT_FAILED", message=message
@@ -238,7 +241,7 @@ class UrlImportJobWorker:
                 3,
             )
             terminal_logger.info(
-                "VSF_TIMING url_job %s",
+                "TRAVELPLANNER_TIMING url_job %s",
                 json.dumps(
                     {
                         "event": "url_job_timing",

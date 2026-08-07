@@ -58,7 +58,7 @@ def seed_demo_marketplace(db: Session) -> None:
             role="admin",
             status="active",
             password_hash=hash_password("Password123!"),
-            bio="Quản trị viên hệ thống VSF Travel Planner.",
+            bio="Quản trị viên hệ thống TravelPlanner.",
         )
         db.add(admin)
         db.flush()

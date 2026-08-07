@@ -78,7 +78,7 @@ class UrlReelExtractionService:
         if temporary_parent is not None:
             temporary_parent.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(
-            prefix="vsf_url_reel_",
+            prefix="travelplanner_url_reel_",
             dir=temporary_parent,
         ) as temporary_dir:
             result = self._extract_in_work_dir(payload, Path(temporary_dir))

@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError } from "@/shared/api/client";
 import {
   approvePlaceMerge,
   dismissPlaceMerge,
   getPlaceReviewGroups,
   type PlaceReviewGroup,
-} from "@/lib/place-dedupe";
+} from "@/features/places/api/place-dedupe";
 
 const PAGE_SIZE = 50;
 

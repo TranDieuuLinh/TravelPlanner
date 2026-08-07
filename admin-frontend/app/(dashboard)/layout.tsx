@@ -32,7 +32,7 @@ export default function DashboardLayout({
   if (authenticated === null) {
     return (
       <main className="bootScreen">
-        <div className="bootMark">VSF</div>
+        <div className="bootMark">TravelPlanner</div>
         <p>Đang xác thực Planning Control…</p>
       </main>
     );
@@ -54,7 +54,7 @@ export default function DashboardLayout({
     <main className="appShell">
       <aside className="sidebar">
         <div className="sidebarBrand">
-          <span>VSF</span>
+          <span>TravelPlanner</span>
           <div>
             <b>Planning</b>
             <small>Control room</small>
@@ -80,7 +80,7 @@ export default function DashboardLayout({
         <div className="sidebarFoot">
           <div className="adminAvatar">{user?.fullName?.slice(0, 1) ?? "A"}</div>
           <div>
-            <b>{user?.fullName ?? "VSF Admin"}</b>
+            <b>{user?.fullName ?? "TravelPlanner Admin"}</b>
             <small>{user?.email ?? "Authenticated session"}</small>
           </div>
           <button type="button" onClick={signOut} aria-label="Đăng xuất">

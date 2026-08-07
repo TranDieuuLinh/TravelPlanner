@@ -22,7 +22,7 @@ Import Place vào PostgreSQL:
 
 ```powershell
 cd backend
-$env:DATABASE_URL = "postgresql+psycopg://vsf:vsf@localhost:5432/vsf_travel"
+$env:DATABASE_URL = "postgresql+psycopg://travelplanner:travelplanner@localhost:5432/travelplanner"
 .\.venv\Scripts\python.exe -m alembic upgrade head
 .\.venv\Scripts\python.exe scripts\import_places_to_postgres.py
 ```

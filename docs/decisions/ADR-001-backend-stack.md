@@ -21,7 +21,7 @@ Tiếp tục sử dụng modular monolith Python FastAPI với PostgreSQL.
   backend phải chạy Alembic thành công trước khi khởi động FastAPI.
 - Không dùng database bảo trì mặc định `postgres` cho runtime, migration hoặc
   test tích hợp. Mỗi môi trường dùng database ứng dụng riêng; cấu hình hiện tại
-  dùng `vsf_travel`. Settings phải fail fast khi `DATABASE_URL` trỏ tới
+  dùng `travelplanner`. Settings phải fail fast khi `DATABASE_URL` trỏ tới
   `postgres`.
 - Thêm cơ chế background job trong cùng hệ thống deploy trước khi cân nhắc tách
   service.

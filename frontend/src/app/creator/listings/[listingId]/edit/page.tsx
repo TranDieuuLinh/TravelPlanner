@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError } from "@/shared/api/client";
 import {
   getCreatorListingDetail,
   publishListing,
   submitListing,
   unpublishListing,
   updateListing,
-} from "@/lib/marketplace";
-import type { ListingDetail, ListingVersion } from "@/types/marketplace";
+} from "@/features/marketplace/api";
+import type { ListingDetail, ListingVersion } from "@/features/marketplace/types";
 
 const categories = [
   { value: "food", label: "Ẩm thực & Văn hóa" },
