@@ -350,7 +350,11 @@ class ScopeResolutionRepository:
 
         return False
 
-    def get_scope_area_ids(self, destination: str, max_depth: int = 4) -> set[str]:
+    def get_scope_area_ids_for_destination(
+        self,
+        destination: str,
+        max_depth: int = 4,
+    ) -> set[str]:
         """Get all area IDs within the geographic scope of a destination.
 
         Args:

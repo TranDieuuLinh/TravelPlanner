@@ -2,7 +2,7 @@
 
 Scope (MICRO-TASK 5.3):
 - Only ``TripResearchBundle.eligibleExperiences`` is projected.
-- Conflicted and unknown experiences are excluded from the catalog.
+- Conflicted experiences are excluded; unknown-fit evidence remains selectable.
 - The three supported graph shapes are correctly identified.
 - Claims with the same Activity (or Place) are grouped.
 - Deduplication is deterministic (tie-break by claimId).
@@ -194,7 +194,7 @@ class TestProjectCatalogEntryPoint:
 
 
 # ---------------------------------------------------------------------------
-# Exclusion: conflicted and unknown experiences
+# Exclusion: conflicted experiences
 # ---------------------------------------------------------------------------
 
 
@@ -214,7 +214,7 @@ class TestConflictedExcluded:
         catalog = project_graph_candidate_catalog(_bundle(eligible=[], conflicted=[ranked]))
         assert len(catalog.candidates) == 0
 
-    def test_unknown_fit_excluded(self) -> None:
+    def test_unknown_fit_is_selectable_without_hard_conflict(self) -> None:
         ranked = _ranked(
             "c1",
             rank=1,
@@ -223,10 +223,17 @@ class TestConflictedExcluded:
             object_type="TravelPlace",
             supported=False,
         )
-        catalog = project_graph_candidate_catalog(
-            _bundle(eligible=[], unknowns=[ranked.claim])
+        ranked = ranked.model_copy(
+            update={
+                "fit": FitResult(
+                    status=CheckStatus.UNKNOWN,
+                    hasHardConflict=False,
+                    dimensionCount=0,
+                )
+            }
         )
-        assert len(catalog.candidates) == 0
+        catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
+        assert len(catalog.candidates) == 1
 
     def test_conflicted_experiences_in_bundle_do_not_affect_output(self) -> None:
         conflicted = _ranked(

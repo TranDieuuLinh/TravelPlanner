@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING
 from app.modules.knowledge_graph.research.repository import (
     ScopeResolutionRepository,
 )
+from app.modules.knowledge_graph.research.experience_tool import (
+    kg_discover_experiences,
+)
 from app.modules.knowledge_graph.research.schema import (
     BudgetLevel,
     CheckStatus,
@@ -19,6 +22,7 @@ from app.modules.knowledge_graph.research.schema import (
     EntitySummaryFit,
     ExperienceFitInput,
     ExperienceFitOutput,
+    ExperienceDiscoveryInput,
     TransportMode,
 )
 
@@ -87,7 +91,7 @@ def _check_geographic_scope(
     destination: str,
 ) -> DimensionCheck:
     """Check if entity is within the geographic scope of the destination."""
-    scope_ids = repo.get_scope_area_ids(destination)
+    scope_ids = repo.get_scope_area_ids_for_destination(destination)
     if not scope_ids:
         return DimensionCheck(
             dimension="geographic_scope",
@@ -731,6 +735,38 @@ class EntityNotFoundError(ValueError):
     pass
 
 
+def _resolve_claim_target(
+    repo: ScopeResolutionRepository,
+    claim_id: str,
+    destination: str,
+) -> tuple[str, str | None] | None:
+    """Resolve a virtual discovery claim to its activity and scope anchor.
+
+    Discovery claim IDs are deterministic projections, not persisted entities.
+    The activity owns fit metadata while the anchor Place (or claim subject)
+    provides the geographic location for an Activity that is not LOCATED_IN.
+    """
+    bundle = kg_discover_experiences(
+        repo,
+        ExperienceDiscoveryInput(
+            destination=destination,
+            limit=50,
+            includeInferred=True,
+        ),
+    )
+    claim = next((item for item in bundle.claims if item.claimId == claim_id), None)
+    if claim is None:
+        return None
+
+    target_id = (claim.activity or claim.object).id
+    scope_entity_id = claim.subject.id
+    if claim.anchorPlace is not None:
+        scope_ids = repo.get_scope_area_ids_for_destination(destination)
+        if scope_ids and repo.is_entity_in_scope(claim.anchorPlace.id, scope_ids):
+            scope_entity_id = claim.anchorPlace.id
+    return target_id, scope_entity_id
+
+
 def kg_evaluate_experience_fit(
     repo: ScopeResolutionRepository,
     input_data: ExperienceFitInput,
@@ -759,6 +795,7 @@ def kg_evaluate_experience_fit(
         - Deterministic output ordering
     """
     entity_id: str | None = None
+    geographic_scope_entity_id: str | None = None
 
     if input_data.entityId is not None and input_data.claimId is not None:
         raise ValueError("Provide either entityId or claimId, not both.")
@@ -766,7 +803,20 @@ def kg_evaluate_experience_fit(
     if input_data.entityId is not None:
         entity_id = input_data.entityId
     elif input_data.claimId is not None:
-        entity_id = input_data.claimId
+        # Keep compatibility with older callers that used an entity ID in
+        # claimId, then resolve current virtual discovery claims when needed.
+        if repo.get_entity_by_id(input_data.claimId) is not None:
+            entity_id = input_data.claimId
+        else:
+            resolved = _resolve_claim_target(
+                repo,
+                input_data.claimId,
+                input_data.destination,
+            )
+            if resolved is not None:
+                entity_id, geographic_scope_entity_id = resolved
+            else:
+                entity_id = input_data.claimId
     else:
         raise ValueError("Must provide either entityId or claimId.")
 
@@ -775,7 +825,11 @@ def kg_evaluate_experience_fit(
         raise EntityNotFoundError(f"Entity '{entity_id}' not found in knowledge graph.")
 
     checks: list[DimensionCheck] = [
-        _check_geographic_scope(repo, entity_id, input_data.destination),
+        _check_geographic_scope(
+            repo,
+            geographic_scope_entity_id or entity_id,
+            input_data.destination,
+        ),
         _check_excluded_type(repo, entity_id, input_data.excludedPlaceTypes),
         _check_opening_hours(repo, entity_id),
         _check_typical_duration(repo, entity_id, input_data.days),

@@ -782,6 +782,16 @@ class TripThemePlannerService:
             planner_input,
         )
 
+        required_count = min(
+            planner_input.trip_spec.days,
+            len(graph_catalog.candidates),
+        )
+        if required_count and len(required_experiences) < required_count:
+            raise ValueError(
+                "requiredExperiences must contain at least "
+                f"{required_count} graph candidates for this trip."
+            )
+
         selection_policy = build_theme_selection_policy(planner_input)
         trusted_special_candidates = [
             candidate

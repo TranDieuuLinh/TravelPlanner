@@ -16,7 +16,9 @@ nên research cũ tạo hai nguồn authority và không biểu diễn đúng di
   `graphCandidateCatalog` trước khi gọi TripTheme LLM đúng một lượt.
 - Loại legacy research prompt và dependency khỏi runtime, nhưng giữ source file
   nếu module khác còn import.
-- Chỉ claim fit `supported` và không có hard conflict được chiếu vào catalog.
+- Claim không có hard conflict được chiếu vào catalog. Claim `unknown` được xếp
+  sau `supported` và giữ warning; đây là chính sách tạm thời khi catalog vận
+  hành chưa đủ dữ liệu để kết luận fit.
 - Theo ontology v7, special experience trỏ tới Activity; `TARGETS_PLACE` cung
   cấp direct anchor. `OFFERS_ACTIVITY` vẫn cung cấp các Place cùng thực hiện một
   Activity.

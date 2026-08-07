@@ -86,7 +86,7 @@ class CandidateSelectionContext:
     intent_interests: list[str]
     travel_style: str
     strict_day_theme: bool = True
-    enforce_opening_hours: bool = True
+    enforce_opening_hours: bool = False
     occupied_items: list[PlanItem] = field(default_factory=list)
     current_day_items: list[PlanItem] = field(default_factory=list)
     bbox_filter: tuple[float, float, float, float] | None = None

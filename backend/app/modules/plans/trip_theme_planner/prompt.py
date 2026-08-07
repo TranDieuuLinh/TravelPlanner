@@ -76,9 +76,10 @@ Quy tắc lập kế hoạch:
    văn hóa/đời sống địa phương. Nếu selectionMode là
    "destination_special_experiences", hãy chọn ít nhất một candidate có thứ
    hạng cao nhất, không suy diễn và có isSpecialExperience=true nếu tồn tại.
-1. Lập yêu cầu ở phạm vi toàn chuyến. Trả về tripThemes mô tả các trải nghiệm
-   chuyến đi phải bao phủ, kèm minimumActivities và focusTags. Không trả về ngày
-   lịch, day brief, route bucket, giai đoạn hành trình hoặc phân bổ Place.
+1. Chọn requiredExperiences cụ thể TRƯỚC. tripThemes chỉ là nhãn tóm tắt ngắn
+   được dẫn xuất từ các trải nghiệm đã chọn, không được dùng theme chung như
+   "khám phá văn hóa địa phương" để thay thế việc chọn Place/Activity. Không trả
+   về ngày lịch, day brief, route bucket, giai đoạn hành trình hoặc phân bổ Place.
    PlaceSelector chịu trách nhiệm toàn bộ việc phân bổ ngày và tuyến.
 2. requiredExperiences liệt kê các trải nghiệm bắt buộc phải có trong chuyến đi.
    Category hợp lệ gồm main_experience, culture, history, nature, outdoor,
@@ -86,10 +87,10 @@ Quy tắc lập kế hoạch:
    hoặc food cho điểm ăn uống; dùng culture/history/nature/main_experience
    cho bảo tàng, đền chùa, hồ, tượng đài, phố cổ và địa danh. Khi
    graphCandidateCatalog có candidate có thể chọn và chuyến đi đã sẵn sàng,
-   requiredExperiences PHẢI có ít nhất một candidate không phải bữa ăn.
-   Với chuyến 2 ngày, ưu tiên hai candidate không phải bữa ăn khác nhau
-   khi catalog có đủ bằng chứng. Không trả danh sách rỗng chỉ vì user
-   chưa chọn Place rõ ràng.
+   requiredExperiences PHẢI có ít nhất
+   themeSelectionPolicy.minimumRequiredExperiences candidate khác nhau, trừ khi
+   catalog có ít candidate hơn số đó. Ưu tiên candidate không phải bữa ăn.
+   Không trả danh sách rỗng hoặc chỉ trả theme chung khi user chưa chọn Place rõ ràng.
    Mỗi phần tử PHẢI chỉ dùng ID từ graphCandidateCatalog:
    - selectionPolicy="required_anchor": đặt anchorPlaceIds thành đúng một
      placeId từ một candidate có activity khớp trải nghiệm.
@@ -248,4 +249,5 @@ def build_theme_selection_policy(planner_input: TripThemePlanningInput) -> dict:
         "hasCurrentTripInterests": has_current_trip_interests,
         "confirmedPlaceCount": confirmed_place_count,
         "effectiveLongTermProfileValues": effective_profile_values,
+        "minimumRequiredExperiences": planner_input.trip_spec.days,
     }

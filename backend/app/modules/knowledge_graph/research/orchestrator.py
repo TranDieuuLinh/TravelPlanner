@@ -492,7 +492,8 @@ class GraphResearchOrchestrator:
             ))
             catalog_claims.append(claim)
 
-        # Add unknown candidates at the end (they are eligible but with warnings)
+        # Keep unknown-fit candidates after supported evidence so the planner can
+        # use grounded special experiences while operational data is incomplete.
         for rank_offset, candidate in enumerate(unknown_candidates):
             rank = len(ranked_experiences) + rank_offset + 1
             claim = candidate.claim
@@ -500,9 +501,17 @@ class GraphResearchOrchestrator:
                 f"UNKNOWN_FIT: Experience '{claim.object.name}' has unknown fit status"
             )
 
-            reasons: list[str] = [candidate.claim.trust.value]
+            reasons: list[str] = [candidate.claim.trust.value, "unknown_fit"]
+            if candidate.claim.recommendations:
+                priorities = [r.priority.value for r in candidate.claim.recommendations]
+                if "must" in priorities:
+                    reasons.append("special_experience")
+                elif "recommended" in priorities:
+                    reasons.append("recommended_experience")
             if candidate.is_user_selected:
                 reasons.append("user_selected_place")
+            if candidate.is_source_place:
+                reasons.append("source_place")
 
             ranked_experiences.append(RankedExperience(
                 claim=claim,
@@ -510,6 +519,7 @@ class GraphResearchOrchestrator:
                 rank=rank,
                 rankReasons=reasons,
             ))
+            catalog_claims.append(claim)
 
         # Build conflicted list
         conflicted_experiences: list[ConflictedExperience] = []

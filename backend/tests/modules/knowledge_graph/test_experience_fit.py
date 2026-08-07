@@ -29,6 +29,7 @@ from app.modules.knowledge_graph.research.experience_fit_tool import (
     _compute_overall_status,
     _is_verified_source,
 )
+from app.modules.knowledge_graph.research.experience_tool import _generate_claim_id
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,13 @@ def populated_db(db_session: Session) -> Session:
             entity_type="TravelPlace",
             status="verified",
         ),
+        KnowledgeEntity(
+            id="activity_lake_walk",
+            canonical_name="Walk around Hoan Kiem Lake",
+            normalized_name="walk around hoan kiem lake",
+            entity_type="Activity",
+            status="verified",
+        ),
     ]
     for entity in entities:
         db_session.add(entity)
@@ -138,6 +146,18 @@ def populated_db(db_session: Session) -> Session:
             from_entity_id="place_outside",
             relationship_type="LOCATED_IN",
             to_entity_id="area_sa_pa",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="area_hanoi",
+            relationship_type="SPECIAL_EXPERIENCE",
+            to_entity_id="activity_lake_walk",
+            source="https://example.test/hanoi",
+        ),
+        KnowledgeRelationship(
+            from_entity_id="activity_lake_walk",
+            relationship_type="TARGETS_PLACE",
+            to_entity_id="place_hoan_kiem_temple",
+            source="https://example.test/hanoi",
         ),
     ]
     for rel in relationships:
@@ -1042,3 +1062,29 @@ class TestClaimIdSupport:
         result = kg_evaluate_experience_fit(populated_repo, input_data)
         assert result.entity is not None
         assert result.entity.id == "place_hoan_kiem_temple"
+
+    def test_discovery_claim_id_resolves_activity_and_anchor_scope(
+        self, populated_repo: ScopeResolutionRepository
+    ) -> None:
+        claim_id = _generate_claim_id(
+            "area_hanoi",
+            "SPECIAL_EXPERIENCE",
+            "activity_lake_walk",
+            "place_hoan_kiem_temple",
+        )
+
+        result = kg_evaluate_experience_fit(
+            populated_repo,
+            ExperienceFitInput(
+                claimId=claim_id,
+                destination="Hà Nội",
+                days=3,
+            ),
+        )
+
+        assert result.entity is not None
+        assert result.entity.id == "activity_lake_walk"
+        geographic_scope = next(
+            check for check in result.checks if check.dimension == "geographic_scope"
+        )
+        assert geographic_scope.status is CheckStatus.SUPPORTED

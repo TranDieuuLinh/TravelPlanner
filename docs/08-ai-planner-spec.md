@@ -94,7 +94,9 @@ response đầu, dùng optimistic revision và chạy lại timeline/Checker tr�
 TripThemePlanner không còn dùng research LLM hoặc place-catalog research tool
 legacy.
 Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
-evidence theo ontology v7 thành `graphCandidateCatalog`; sau đó LLM tạo
+evidence `supported` hoặc `unknown` theo ontology v7 thành `graphCandidateCatalog`;
+candidate `unknown` được xếp sau evidence `supported` và giữ warning về dữ liệu
+vận hành chưa đủ. Sau đó LLM tạo
 `TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
 assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
 cầu Gemini tạo JSON bằng `responseJsonSchema` của `TripThemeDraft`, rồi vẫn
@@ -343,6 +345,10 @@ TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
   quan trọng với điểm đến, không tự động bắt buộc cho mọi user;
 - không chọn trải nghiệm lệch intent, ví dụ không bắt leo núi khi user chỉ muốn
   văn hóa và đời sống địa phương;
+- `requiredExperiences` được chọn trước: khi graph catalog có coverage, Planner
+  phải chọn tối thiểu một trải nghiệm cụ thể cho mỗi ngày, giới hạn bởi số
+  candidate thực có; `tripThemes` chỉ tóm tắt các lựa chọn này, không thay thế
+  bằng theme chung;
 - mỗi theme có focus tags, số activity tối thiểu và region mục tiêu khi có;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
@@ -375,8 +381,8 @@ Sau khi validate claim/Place/Activity ID, backend hydrate
 candidate tương ứng; mọi timing do LLM echo bị ghi đè. PlaceSelector dùng các
 window này làm preference mềm: ưu tiên một activity block chứa trọn duration,
 nhưng được fallback ngoài window khi không còn window khả thi và phải phát
-warning. `openingHours` vẫn là dữ liệu vận hành riêng dùng để kiểm tra tính khả
-thi, không được suy ra từ recommendation.
+warning. `openingHours` vẫn là dữ liệu vận hành riêng, không được suy ra từ
+recommendation và không loại candidate trong PlaceSelector runtime hiện tại.
 
 PlaceSelector điền item cụ thể:
 
@@ -403,8 +409,9 @@ PlaceSelector điền item cụ thể:
   giữa các meal anchor; không áp quota count hoặc pace;
 - PlaceSelector dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
-- ở chế độ `route_first`, PlaceSelector tạo khung giờ thật, dùng giờ mở cửa đã
-  chuẩn hóa khi có và giữ timing claim làm provenance;
+- ở chế độ `route_first`, PlaceSelector tạo khung giờ thật theo
+  `preferredTimeWindows` và giữ timing claim làm provenance; giờ mở cửa không
+  được dùng để loại candidate;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không

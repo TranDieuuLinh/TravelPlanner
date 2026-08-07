@@ -155,7 +155,7 @@ def candidate_diversity_key(candidate: GraphExperienceCandidate) -> tuple[str | 
 def project_graph_candidate_catalog(
     bundle: TripResearchBundle,
 ) -> GraphCandidateCatalog:
-    """Project supported eligible experiences without reading other bundle lists."""
+    """Project eligible experiences without reading other bundle lists."""
 
     grouped: dict[str, list[RankedExperience]] = {}
     for ranked in bundle.eligibleExperiences:
@@ -172,10 +172,7 @@ def project_graph_candidate_catalog(
 
 
 def _is_selectable(ranked: RankedExperience) -> bool:
-    if (
-        ranked.fit.status is not CheckStatus.SUPPORTED
-        or ranked.fit.hasHardConflict
-    ):
+    if ranked.fit.hasHardConflict or ranked.fit.status is CheckStatus.CONFLICTED:
         return False
     return _claim_shape(ranked.claim) is not None
 

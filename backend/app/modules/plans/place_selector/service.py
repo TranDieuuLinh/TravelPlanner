@@ -1528,7 +1528,7 @@ class PlaceSelectorService:
                                 intent_interests=intent_interests,
                                 travel_style=travel_style,
                                 strict_day_theme=False,
-                                enforce_opening_hours=True,
+                                enforce_opening_hours=False,
                                 occupied_items=occupied_items,
                                 current_day_items=day_items,
                                 bbox_filter=(
@@ -1561,7 +1561,7 @@ class PlaceSelectorService:
                                 intent_interests=intent_interests,
                                 travel_style=travel_style,
                                 strict_day_theme=False,
-                                enforce_opening_hours=True,
+                                enforce_opening_hours=False,
                                 occupied_items=occupied_items,
                                 current_day_items=day_items,
                                 bbox_filter=(
