@@ -11,6 +11,7 @@ from app.modules.profiles.router import public_router as posts_router
 from app.modules.profiles.router import router as profiles_router
 from app.modules.users.router import router as users_router
 from app.modules.travel_groups.router import router as travel_groups_router
+from app.modules.places.review_router import router as place_reviews_router
 from app.modules.knowledge_graph.router import router as knowledge_graph_router
 from app.modules.knowledge_graph.routes.admin_entities import router as kg_admin_entities_router
 from app.modules.knowledge_graph.routes.admin_place_dedupe import router as kg_admin_place_dedupe_router
@@ -30,3 +31,4 @@ api_router.include_router(knowledge_graph_router)
 api_router.include_router(kg_admin_entities_router)
 api_router.include_router(kg_admin_place_dedupe_router)
 api_router.include_router(travel_groups_router)
+api_router.include_router(place_reviews_router)

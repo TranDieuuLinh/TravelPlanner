@@ -744,10 +744,16 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
         "days": [{"day": 1, "theme": "Ẩm thực", "items": []}],
         "unscheduledPlaces": [
             {
-                "placeId": "train-street-south",
+                "candidateId": "train-street-candidate-south",
                 "name": "Hanoi Train Street (South)",
                 "reasonCode": "no_day_capacity",
                 "reason": "The fixed trip duration has no remaining slot.",
+            },
+            {
+                "candidateId": "train-street-candidate-north",
+                "name": "Hanoi Train Street (South)",
+                "reasonCode": "identity_needs_review",
+                "reason": "Cần chọn đúng địa điểm từ các kết quả khớp.",
             }
         ],
     }
@@ -758,7 +764,7 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
         f"/api/trip-chats/{chat_id}/plan/unscheduled-places",
         data={
             "expectedRevision": "1",
-            "placeId": "train-street-south",
+            "candidateId": "train-street-candidate-south",
             "name": "Hanoi Train Street (South)",
         },
         headers=csrf_headers(registered_client),
@@ -767,5 +773,8 @@ def test_user_can_remove_an_unscheduled_place_from_trip_chat(
     assert response.status_code == 200
     body = response.json()
     assert body["revision"] == 2
-    assert body["currentPlan"]["unscheduledPlaces"] == []
+    assert [
+        item["candidateId"]
+        for item in body["currentPlan"]["unscheduledPlaces"]
+    ] == ["train-street-candidate-north"]
     assert body["messages"] == []

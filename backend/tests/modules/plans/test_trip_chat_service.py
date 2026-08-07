@@ -128,9 +128,18 @@ class _MemoryPlanRepository:
 
 
 class _AddressLookup:
+    class _StoredImage:
+        def __init__(self, image_url: str) -> None:
+            self.image_url = image_url
+
     class _StoredPlace:
         def __init__(self, address: str) -> None:
             self.address = address
+            self.images = [
+                _AddressLookup._StoredImage(
+                    "https://lh3.googleusercontent.com/place-photo"
+                )
+            ]
 
     def get(self, place_id: str):
         if place_id == "place-1":
@@ -256,6 +265,9 @@ def test_chat_read_hydrates_legacy_plan_addresses_from_catalog_and_explorer() ->
     assert hydrated_catalog.days[0].items[0].address == (
         "10 Catalog Street, Hà Nội"
     )
+    assert hydrated_catalog.days[0].items[0].image_urls == [
+        "https://lh3.googleusercontent.com/place-photo"
+    ]
 
     imported_plan = _plan("Hà Nội", plan_id="imported-plan")
     imported_plan.days[0].items[0].place_id = None
