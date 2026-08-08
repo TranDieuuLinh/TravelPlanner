@@ -64,20 +64,15 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         menu_tab.click()
         time.sleep(2)
 
-        container = wait_short.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '[class*="fp2VUc"] > [class*="cRLbXd"] > [class*="dryRY"]')
-            )
+        image_selector = (
+            '[class*="fp2VUc"] [class*="cRLbXd"] '
+            '[class*="dryRY"] > div > button > img'
+        )
+        imgs = wait_short.until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, image_selector))
         )
 
         # Lấy danh sách từng phần tử ofKBgf (hỗ trợ class="ofKBgf ")
-        imgs = container.find_elements(
-            By.CSS_SELECTOR,
-            ':scope > div > button > img, :scope > div img'
-        )
-        if not imgs:
-            imgs = container.find_elements(By.CSS_SELECTOR, 'img')
-
         img_urls = []
         for img in imgs:
             src = (
