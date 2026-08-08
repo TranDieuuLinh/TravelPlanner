@@ -16,12 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-CSV_PATH = (
-    Path(__file__).parents[1]
-    / "trung-plans"
-    / "otio"
-    / "restaurants_and_drink_desserts.csv"
-)
+CSV_PATH = Path(__file__).parent / "restaurants_and_drink_desserts.csv"
 OUTPUT_CSV_PATH = Path(__file__).parent / "data_crawled.csv"
 BATCH_SIZE = 100
 CRAWL_WORKERS = max(1, int(os.environ.get("CRAWL_WORKERS", "1")))
