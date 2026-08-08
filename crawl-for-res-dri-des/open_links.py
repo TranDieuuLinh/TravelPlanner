@@ -65,31 +65,36 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         time.sleep(0.5)
 
         container = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.cRLbXd, [class*="cRLbXd"], .dryRY, [class*="dryRY"]'))
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, '.fp2VUc .cRLbXd, [class*="fp2VUc"] [class*="cRLbXd"]')
+            )
         )
 
         # Lấy danh sách từng phần tử ofKBgf (hỗ trợ class="ofKBgf ")
-        items = container.find_elements(By.CSS_SELECTOR, '.ofKBgf, [class*="ofKBgf"]')
+        imgs = container.find_elements(
+            By.CSS_SELECTOR,
+            '.dryRY > div > button > img, [class*="dryRY"] > div > button > img'
+        )
+        if not imgs:
+            imgs = container.find_elements(By.CSS_SELECTOR, 'img')
 
         img_urls = []
-        if items:
-            for item in items:
-                imgs = item.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"], img')
-                for img in imgs:
-                    src = img.get_attribute("src") or img.get_attribute("data-src")
-                    if src and not src.startswith("data:image/svg") and src not in img_urls:
-                        img_urls.append(src)
-        else:
-            imgs = container.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"]')
-            if not imgs:
-                imgs = container.find_elements(By.TAG_NAME, "img")
-            for img in imgs:
-                src = img.get_attribute("src") or img.get_attribute("data-src")
-                if src and not src.startswith("data:image/svg") and src not in img_urls:
-                    img_urls.append(src)
+        for img in imgs:
+            src = (
+                img.get_attribute("src")
+                or img.get_attribute("data-src")
+                or img.get_attribute("data-lazy-src")
+            )
+            if not src:
+                srcset = img.get_attribute("srcset") or img.get_attribute("data-srcset")
+                if srcset:
+                    src = srcset.split(",")[-1].strip().split(" ")[0]
+
+            if src and not src.startswith("data:image/svg") and src not in img_urls:
+                img_urls.append(src)
 
         result["menu_images"] = "&".join(img_urls)
-        print(f"        -> Tìm thấy {len(items)} phần tử ofKBgf, {len(img_urls)} ảnh menu")
+        print(f"        -> Tìm thấy {len(imgs)} thẻ img, {len(img_urls)} ảnh menu")
     except Exception as e:
         result["menu_images"] = ""
         print(f"        -> Lỗi lấy Menu: {e}")
