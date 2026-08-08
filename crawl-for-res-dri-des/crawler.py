@@ -120,9 +120,10 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
         menu_tab.click()
         time.sleep(0.5)
 
-        # Tìm class="fp2VUc" và lấy tất cả link ảnh
+        # Tìm thuộc tính aria-roledescription="carousel" và lấy tất cả link ảnh
+        carousel_selector = '[aria-roledescription="carousel"], [aria-roledescription*="carousel"]'
         gallery = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".fp2VUc"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, carousel_selector))
         )
         img_elements = gallery.find_elements(By.TAG_NAME, "img")
         img_urls = [

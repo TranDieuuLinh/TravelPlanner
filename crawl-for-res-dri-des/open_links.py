@@ -50,7 +50,7 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
     time.sleep(0.5)
 
     # 3. Lấy ảnh Menu
-    print("    🔍 [Step 2] Chuyển qua Tab Menu & lấy ảnh (class='fp2VUc')...")
+    print("    🔍 [Step 2] Chuyển qua Tab Menu & lấy ảnh (aria-roledescription='carousel')...")
     try:
         menu_selector = (
             '[role="tab"][aria-label="Menu"], '
@@ -64,8 +64,9 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         menu_tab.click()
         time.sleep(0.5)
 
+        carousel_selector = '[aria-roledescription="carousel"], [aria-roledescription*="carousel"]'
         gallery = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".fp2VUc"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, carousel_selector))
         )
         img_elements = gallery.find_elements(By.TAG_NAME, "img")
         img_urls = [
