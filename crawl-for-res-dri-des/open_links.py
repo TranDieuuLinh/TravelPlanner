@@ -65,11 +65,11 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         time.sleep(0.5)
 
         container = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.dryRY, [class*="dryRY"]'))
         )
 
         # Chỉ tìm ảnh NẰM TRONG container .dryRY (ưu tiên class="DaSXdd")
-        img_elements = container.find_elements(By.CSS_SELECTOR, "img.DaSXdd")
+        img_elements = container.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"]')
         if not img_elements:
             img_elements = container.find_elements(By.TAG_NAME, "img")
 

@@ -122,9 +122,9 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
 
         # Tìm container class="dryRY" và chỉ lấy ảnh thuộc container này (class="DaSXdd")
         container = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.dryRY, [class*="dryRY"]'))
         )
-        img_elements = container.find_elements(By.CSS_SELECTOR, "img.DaSXdd")
+        img_elements = container.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"]')
         if not img_elements:
             img_elements = container.find_elements(By.TAG_NAME, "img")
 
