@@ -67,18 +67,20 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         container = wait_short.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
         )
-        items = container.find_elements(By.CSS_SELECTOR, ".ofKBgf")
+
+        # Chỉ tìm ảnh NẰM TRONG container .dryRY (ưu tiên class="DaSXdd")
+        img_elements = container.find_elements(By.CSS_SELECTOR, "img.DaSXdd")
+        if not img_elements:
+            img_elements = container.find_elements(By.TAG_NAME, "img")
 
         img_urls = []
-        for item in items:
-            imgs = item.find_elements(By.TAG_NAME, "img")
-            for img in imgs:
-                src = img.get_attribute("src") or img.get_attribute("data-src")
-                if src and not src.startswith("data:image/svg"):
-                    img_urls.append(src)
+        for img in img_elements:
+            src = img.get_attribute("src") or img.get_attribute("data-src")
+            if src and not src.startswith("data:image/svg"):
+                img_urls.append(src)
 
         result["menu_images"] = "&".join(img_urls)
-        print(f"        -> Tìm thấy {len(items)} phần tử .ofKBgf, {len(img_urls)} ảnh menu")
+        print(f"        -> Tìm thấy {len(img_urls)} ảnh menu trong .dryRY")
     except Exception as e:
         result["menu_images"] = ""
         print(f"        -> Lỗi lấy Menu: {e}")

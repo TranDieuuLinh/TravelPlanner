@@ -120,25 +120,27 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
         menu_tab.click()
         time.sleep(0.5)
 
-        # Tìm class="dryRY" làm container và duyệt qua danh sách các phần tử class="ofKBgf" để lấy ảnh
+        # Tìm container class="dryRY" và chỉ lấy ảnh thuộc container này (class="DaSXdd")
         container = wait_short.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
         )
-        items = container.find_elements(By.CSS_SELECTOR, ".ofKBgf")
+        img_elements = container.find_elements(By.CSS_SELECTOR, "img.DaSXdd")
+        if not img_elements:
+            img_elements = container.find_elements(By.TAG_NAME, "img")
 
         img_urls = []
-        for item in items:
-            imgs = item.find_elements(By.TAG_NAME, "img")
-            for img in imgs:
-                src = img.get_attribute("src") or img.get_attribute("data-src")
-                if src and not src.startswith("data:image/svg"):
-                    img_urls.append(src)
+        for img in img_elements:
+            src = img.get_attribute("src") or img.get_attribute("data-src")
+            if src and not src.startswith("data:image/svg"):
+                img_urls.append(src)
 
         result["menu_images"] = "&".join(img_urls)
     except Exception:
         result["menu_images"] = ""
-    time.sleep(0.5)
+    time.sleep(0.5)  # Dừng 0.5s sau khi hoàn thành lấy ảnh Menu
 
+    # Dừng thêm 0.5s trước khi chuyển sang địa điểm/link tiếp theo
+    time.sleep(0.5)
     return result
 
 
