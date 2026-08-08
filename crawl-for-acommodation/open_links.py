@@ -59,8 +59,8 @@ def get_image_url(image: Any) -> str:
     return ""
 
 
-def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict[str, Any]:
-    """Click the source list and read the two required source entries."""
+def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]:
+    """Open an accommodation listing and read its available booking sources."""
 
     result: dict[str, Any] = {
         "price": -1,
@@ -154,7 +154,7 @@ def crawl_chunk(chunk: list[tuple[int, dict[str, str]]]) -> list[dict[str, Any]]
                 if not link:
                     continue
                 print(f"[{index}] Opening {row.get('name', 'N/A')}")
-                processed.append({**row, **process_drink_dessert(driver, link)})
+                processed.append({**row, **process_accommodation(driver, link)})
             return processed
         finally:
             driver.quit()
@@ -250,7 +250,7 @@ def main(test_mode: bool = False) -> None:
                     if not link:
                         continue
                     print(f"[{index}] Opening {row.get('name', 'N/A')}")
-                    processed.append({**row, **process_drink_dessert(driver, link)})
+                    processed.append({**row, **process_accommodation(driver, link)})
                 results.extend(processed)
                 save_results(results)
         else:
@@ -277,7 +277,7 @@ def main(test_mode: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Crawl restaurant and drink/dessert places")
+    parser = argparse.ArgumentParser(description="Crawl accommodation listings")
     parser.add_argument(
         "--test",
         action="store_true",
