@@ -16,7 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-CSV_PATH = Path(__file__).parent / "restaurants_and_drink_desserts.csv"
+CSV_PATH = Path(__file__).parent / "accomation.csv"
 OUTPUT_CSV_PATH = Path(__file__).parent / "data_crawled.csv"
 BATCH_SIZE = 100
 CRAWL_WORKERS = max(1, int(os.environ.get("CRAWL_WORKERS", "1")))
@@ -206,8 +206,19 @@ def main(test_mode: bool = False) -> None:
             return
 
     try:
-        with CSV_PATH.open(mode="r", encoding="utf-8", newline="") as file:
+        # Accept regular UTF-8 and CSV files exported with a UTF-8 BOM.
+        with CSV_PATH.open(mode="r", encoding="utf-8-sig", newline="") as file:
             rows = list(csv.DictReader(file))
+
+        if not rows:
+            print(f"No rows found in {CSV_PATH.name}")
+            return
+        if "id" not in rows[0] or not any(
+            (row.get("link") or row.get("source_url") or "").strip()
+            for row in rows
+        ):
+            print("CSV must contain an id column and at least one link/source_url value")
+            return
 
         saved_results = load_saved_results()
         saved_ids = {str(row.get("id", "")).strip() for row in saved_results}
@@ -254,9 +265,12 @@ def main(test_mode: bool = False) -> None:
 
         print("\nCrawl summary:")
         for result in results:
-            images = result["menu_images"]
+            images = result.get("menu_images", "")
             preview = f"{images[:100]}..." if images else "No menu image"
-            print(f"- {result['name']} (price: {result['price']}): {preview}")
+            print(
+                f"- {result.get('name', 'N/A')} "
+                f"(price: {result.get('price', -1)}): {preview}"
+            )
     finally:
         if driver is not None:
             driver.quit()
