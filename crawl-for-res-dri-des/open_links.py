@@ -68,19 +68,28 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
             EC.presence_of_element_located((By.CSS_SELECTOR, '.dryRY, [class*="dryRY"]'))
         )
 
-        # Chỉ tìm ảnh NẰM TRONG container .dryRY (ưu tiên class="DaSXdd")
-        img_elements = container.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"]')
-        if not img_elements:
-            img_elements = container.find_elements(By.TAG_NAME, "img")
+        # Lấy danh sách từng phần tử ofKBgf (hỗ trợ class="ofKBgf ")
+        items = container.find_elements(By.CSS_SELECTOR, '.ofKBgf, [class*="ofKBgf"]')
 
         img_urls = []
-        for img in img_elements:
-            src = img.get_attribute("src") or img.get_attribute("data-src")
-            if src and not src.startswith("data:image/svg"):
-                img_urls.append(src)
+        if items:
+            for item in items:
+                imgs = item.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"], img')
+                for img in imgs:
+                    src = img.get_attribute("src") or img.get_attribute("data-src")
+                    if src and not src.startswith("data:image/svg") and src not in img_urls:
+                        img_urls.append(src)
+        else:
+            imgs = container.find_elements(By.CSS_SELECTOR, 'img.DaSXdd, img[class*="DaSXdd"]')
+            if not imgs:
+                imgs = container.find_elements(By.TAG_NAME, "img")
+            for img in imgs:
+                src = img.get_attribute("src") or img.get_attribute("data-src")
+                if src and not src.startswith("data:image/svg") and src not in img_urls:
+                    img_urls.append(src)
 
         result["menu_images"] = "&".join(img_urls)
-        print(f"        -> Tìm thấy {len(img_urls)} ảnh menu trong .dryRY")
+        print(f"        -> Tìm thấy {len(items)} phần tử ofKBgf, {len(img_urls)} ảnh menu")
     except Exception as e:
         result["menu_images"] = ""
         print(f"        -> Lỗi lấy Menu: {e}")
