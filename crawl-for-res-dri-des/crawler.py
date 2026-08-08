@@ -73,8 +73,8 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
     Steps:
       1. Open the link and wait 0.5s.
       2. Read price from `class="mgr77e"` (default -1 if missing).
-      3. Switch to the "Menu" tab (`aria-label="Menu"`) and collect every image
-         found inside `class="fp2VUc"`. Multiple URLs are joined with `&`.
+      3. Switch to the "Menu" tab (`aria-label="Menu"` or `"Thực đơn"`) and collect
+         every image found inside `class="fp2VUc"`. Multiple URLs are joined with `&`.
     Each step pauses ~0.5s; another 0.5s is added before returning so the next
     link in the dispatcher starts on a quiet page.
     """
@@ -87,36 +87,55 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
         "menu_images": "",
     }
 
-    # 1. Open the link and let the page settle.
+    # 1. Open link and wait 0.5s
     driver.get(link)
     time.sleep(0.5)
 
-    # 2. Price block.
+    # Wait helper with short timeout so SPA has time to render
+    wait_short = WebDriverWait(driver, 5)
+
+    # 2. Lấy giá từ class="mgr77e"
     try:
-        price_el = driver.find_element(By.CSS_SELECTOR, ".mgr77e")
-        result["price"] = price_el.text.strip()
+        price_el = wait_short.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".mgr77e"))
+        )
+        val = price_el.text.strip()
+        result["price"] = val if val else -1
     except Exception:
         result["price"] = -1
     time.sleep(0.5)
 
-    # 3. Menu tab -> image gallery.
+    # 3. Lấy ảnh Menu
     try:
-        menu_tab = driver.find_element(By.CSS_SELECTOR, '[aria-label="Menu"]')
+        # Hỗ trợ cả giao diện Tiếng Anh ("Menu") và Tiếng Việt ("Thực đơn")
+        menu_selector = (
+            '[aria-label="Menu"], [aria-label="Thực đơn"], '
+            '[aria-label*="Menu"], [aria-label*="Thực đơn"], '
+            'button[data-tab-index="1"]'
+        )
+        menu_tab = wait_short.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, menu_selector))
+        )
         menu_tab.click()
         time.sleep(0.5)
 
-        gallery = driver.find_element(By.CSS_SELECTOR, ".fp2VUc")
+        # Tìm class="fp2VUc" và lấy tất cả link ảnh
+        gallery = wait_short.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".fp2VUc"))
+        )
+        img_elements = gallery.find_elements(By.TAG_NAME, "img")
         img_urls = [
-            img.get_attribute("src")
-            for img in gallery.find_elements(By.TAG_NAME, "img")
+            img.get_attribute("src") or img.get_attribute("data-src")
+            for img in img_elements
         ]
-        img_urls = [url for url in img_urls if url]
+        img_urls = [url for url in img_urls if url and not url.startswith("data:image/svg")]
         result["menu_images"] = "&".join(img_urls)
     except Exception:
         result["menu_images"] = ""
     time.sleep(0.5)
 
     return result
+
 
 
 def scrape_restaurant(driver: WebDriver, link: str, place_id: str) -> dict[str, Any]:
