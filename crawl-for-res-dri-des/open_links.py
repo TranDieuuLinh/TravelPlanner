@@ -66,14 +66,14 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
 
         container = wait_short.until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, '.fp2VUc .cRLbXd, [class*="fp2VUc"] [class*="cRLbXd"]')
+                (By.CSS_SELECTOR, '[class*="fp2VUc"] > [class*="cRLbXd"] > [class*="dryRY"]')
             )
         )
 
         # Lấy danh sách từng phần tử ofKBgf (hỗ trợ class="ofKBgf ")
         imgs = container.find_elements(
             By.CSS_SELECTOR,
-            '.dryRY > div > button > img, [class*="dryRY"] > div > button > img'
+            ':scope > div > button > img, :scope > div img'
         )
         if not imgs:
             imgs = container.find_elements(By.CSS_SELECTOR, 'img')
@@ -90,7 +90,7 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
                 if srcset:
                     src = srcset.split(",")[-1].strip().split(" ")[0]
 
-            if src and not src.startswith("data:image/svg") and src not in img_urls:
+            if src and src not in img_urls:
                 img_urls.append(src)
 
         result["menu_images"] = "&".join(img_urls)
