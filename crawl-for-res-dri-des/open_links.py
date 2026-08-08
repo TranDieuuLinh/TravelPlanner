@@ -65,7 +65,7 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         time.sleep(0.5)
 
         container = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.dryRY, [class*="dryRY"]'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.cRLbXd, [class*="cRLbXd"], .dryRY, [class*="dryRY"]'))
         )
 
         # Lấy danh sách từng phần tử ofKBgf (hỗ trợ class="ofKBgf ")

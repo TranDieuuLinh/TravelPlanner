@@ -120,9 +120,9 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
         menu_tab.click()
         time.sleep(0.5)
 
-        # Tìm container class="dryRY" và duyệt qua danh sách các phần tử class="ofKBgf" (hỗ trợ khoảng trắng ở cuối)
+        # Tìm container class="cRLbXd" (hoặc "dryRY") và duyệt qua danh sách các phần tử class="ofKBgf"
         container = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '.dryRY, [class*="dryRY"]'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, '.cRLbXd, [class*="cRLbXd"], .dryRY, [class*="dryRY"]'))
         )
         items = container.find_elements(By.CSS_SELECTOR, '.ofKBgf, [class*="ofKBgf"]')
 
