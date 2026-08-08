@@ -62,7 +62,7 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
             EC.element_to_be_clickable((By.CSS_SELECTOR, menu_selector))
         )
         menu_tab.click()
-        time.sleep(0.5)
+        time.sleep(2)
 
         container = wait_short.until(
             EC.presence_of_element_located(
