@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 import os
+import tempfile
+import argparse
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +16,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-CSV_PATH = Path(__file__).parent / "data.csv"
+CSV_PATH = (
+    Path(__file__).parents[1]
+    / "trung-plans"
+    / "otio"
+    / "restaurants_and_drink_desserts.csv"
+)
 OUTPUT_CSV_PATH = Path(__file__).parent / "data_crawled.csv"
 BATCH_SIZE = 100
+CRAWL_WORKERS = max(1, int(os.environ.get("CRAWL_WORKERS", "1")))
 WAIT_SECONDS = 5
 PAGE_DELAY_SECONDS = 0.5
 MENU_DELAY_SECONDS = 2
@@ -101,17 +110,42 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict[str, Any]
     return result
 
 
-def create_driver() -> webdriver.Chrome:
-    """Create Chrome using the configured local user profile."""
+def create_driver(
+    user_data_dir: Path | None = None,
+    headless: bool = False,
+) -> webdriver.Chrome:
+    """Create Chrome using the configured profile or an isolated worker profile."""
 
     options = Options()
-    options.add_argument("--start-maximized")
+    if headless:
+        options.add_argument("--headless=new")
+    else:
+        options.add_argument("--start-maximized")
     options.add_argument("--lang=en-US")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument(f"--user-data-dir={CHROME_USER_DATA_DIR}")
-    options.add_argument(f"--profile-directory={CHROME_PROFILE_DIR}")
+    options.add_argument(f"--user-data-dir={user_data_dir or CHROME_USER_DATA_DIR}")
+    if user_data_dir is None:
+        options.add_argument(f"--profile-directory={CHROME_PROFILE_DIR}")
     return webdriver.Chrome(options=options)
+
+
+def crawl_chunk(chunk: list[tuple[int, dict[str, str]]]) -> list[dict[str, Any]]:
+    """Crawl one batch with one isolated Chrome worker."""
+
+    with tempfile.TemporaryDirectory(prefix="travelplanner-crawl-") as profile:
+        driver = create_driver(Path(profile), headless=True)
+        try:
+            processed: list[dict[str, Any]] = []
+            for index, row in chunk:
+                link = (row.get("link") or row.get("source_url") or "").strip()
+                if not link:
+                    continue
+                print(f"[{index}] Opening {row.get('name', 'N/A')}")
+                processed.append({**row, **process_drink_dessert(driver, link)})
+            return processed
+        finally:
+            driver.quit()
 
 
 def save_results(rows: list[dict[str, Any]]) -> None:
@@ -133,40 +167,61 @@ def save_results(rows: list[dict[str, Any]]) -> None:
     print(f"Saved {len(rows)} row(s) to {OUTPUT_CSV_PATH.name}")
 
 
-def main() -> None:
+def main(test_mode: bool = False) -> None:
     if not CSV_PATH.exists():
         print(f"CSV file not found: {CSV_PATH}")
         return
 
-    try:
-        driver = create_driver()
-    except Exception as error:
-        print(f"Could not open Chrome profile: {error}")
-        print("Close all Chrome windows and run the script again.")
-        return
+    driver: webdriver.Chrome | None = None
+    if CRAWL_WORKERS == 1:
+        try:
+            driver = create_driver()
+        except Exception as error:
+            print(f"Could not open Chrome profile: {error}")
+            print("Close all Chrome windows and run the script again.")
+            return
 
     try:
         with CSV_PATH.open(mode="r", encoding="utf-8", newline="") as file:
             rows = list(csv.DictReader(file))
 
-        print(f"Found {len(rows)} link(s) in data.csv")
+        if test_mode:
+            test_rows: list[dict[str, str]] = []
+            seen_types: set[str] = set()
+            for row in rows:
+                row_type = row.get("type", "").strip() or row.get("category", "").strip()
+                if row_type not in seen_types:
+                    seen_types.add(row_type)
+                    test_rows.append(row)
+            rows = test_rows
+            print("Test mode: one row per type")
+
+        print(f"Found {len(rows)} link(s) in {CSV_PATH.name}")
         results: list[dict[str, Any]] = []
+        indexed_rows = list(enumerate(rows, start=1))
+        chunks = [
+            indexed_rows[start : start + BATCH_SIZE]
+            for start in range(0, len(indexed_rows), BATCH_SIZE)
+        ]
 
-        for index, row in enumerate(rows, start=1):
-            link = row.get("link", "").strip()
-            if not link:
-                print(f"[{index}/{len(rows)}] Missing link; skipped")
-                continue
-
-            place_id = row.get("id", "")
-            name = row.get("name", "N/A")
-            print(f"[{index}/{len(rows)}] Opening {name} (ID: {place_id})")
-
-            data = process_drink_dessert(driver, link)
-            results.append({**row, **data})
-
-            if len(results) % BATCH_SIZE == 0:
+        if CRAWL_WORKERS == 1 and driver is not None:
+            for chunk in chunks:
+                processed: list[dict[str, Any]] = []
+                for index, row in chunk:
+                    link = (row.get("link") or row.get("source_url") or "").strip()
+                    if not link:
+                        continue
+                    print(f"[{index}] Opening {row.get('name', 'N/A')}")
+                    processed.append({**row, **process_drink_dessert(driver, link)})
+                results.extend(processed)
                 save_results(results)
+        else:
+            print(f"Running {CRAWL_WORKERS} Chrome workers in parallel")
+            with ThreadPoolExecutor(max_workers=CRAWL_WORKERS) as executor:
+                futures = [executor.submit(crawl_chunk, chunk) for chunk in chunks]
+                for future in as_completed(futures):
+                    results.extend(future.result())
+                    save_results(results)
 
         save_results(results)
 
@@ -176,8 +231,16 @@ def main() -> None:
             preview = f"{images[:100]}..." if images else "No menu image"
             print(f"- {result['name']} (price: {result['price']}): {preview}")
     finally:
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Crawl restaurant and drink/dessert places")
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Crawl only one row per type for a quick validation",
+    )
+    args = parser.parse_args()
+    main(test_mode=args.test)
