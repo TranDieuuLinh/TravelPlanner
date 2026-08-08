@@ -611,6 +611,11 @@ select {
   margin: 0;
   font-size: 1.55rem;
   letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.detailHeader>div {
+  min-width: 0;
 }
 
 .detailHeader div>p:last-child {
@@ -1822,12 +1827,19 @@ select {
 .kgEntityCard h3 {
   margin: 15px 0 5px;
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 .kgEntityCard code,
 .kgEntityCard p {
   color: var(--muted);
   font-size: 0.62rem;
+}
+
+.kgEntityCard code {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 
 .kgEntityCard p {
@@ -2010,7 +2022,9 @@ select {
 .kgSectionForm select,
 .kgSectionEditList input,
 .kgSectionEditList select {
+  width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 8px 9px;
@@ -2034,6 +2048,10 @@ select {
 
 .kgPropertyEditRow {
   grid-template-columns: minmax(100px, 0.7fr) minmax(130px, 1fr) minmax(150px, 1fr) 30px;
+}
+
+.kgPropertyEditRow>* {
+  min-width: 0;
 }
 
 .kgAliasEditRow {
