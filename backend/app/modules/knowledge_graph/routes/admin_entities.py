@@ -4,9 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.modules.auth.dependencies import require_role
+from app.modules.auth.dependencies import require_csrf, require_role
 from app.modules.knowledge_graph.dependencies import get_db, get_knowledge_graph_repository
 from app.modules.knowledge_graph.model import KnowledgeAlias, KnowledgeProperty, KnowledgeRelationship
 from app.modules.knowledge_graph.repositories import KnowledgeGraphRepository
@@ -37,6 +38,7 @@ class EntitySummary(KnowledgeGraphResponse):
     status: str
     created_at: str
     updated_at: str
+    review_count: int | None = None
 
 
 class EntityListResponse(KnowledgeGraphResponse):
@@ -45,6 +47,19 @@ class EntityListResponse(KnowledgeGraphResponse):
     limit: int
     offset: int
     has_more: bool
+
+
+class EntityDeleteResponse(KnowledgeGraphResponse):
+    deleted_entity_id: str
+
+
+class LowReviewEntityResponse(KnowledgeGraphResponse):
+    threshold: int
+    entity_count: int
+
+
+class LowReviewEntityDeleteResponse(LowReviewEntityResponse):
+    deleted_entity_count: int
 
 
 class AliasDetail(KnowledgeGraphResponse):
@@ -99,6 +114,18 @@ class EntityUpdateRequest(KnowledgeGraphResponse):
     canonical_name: str | None = Field(default=None, alias="canonicalName")
     entity_type: str | None = Field(default=None, alias="entityType")
     status: str | None = None
+
+
+class EntityCreateRequest(KnowledgeGraphResponse):
+    entity_id: str = Field(alias="entityId", min_length=1, max_length=96)
+    canonical_name: str = Field(alias="canonicalName", min_length=1, max_length=255)
+    entity_type: str = Field(alias="entityType", min_length=1, max_length=80)
+    status: str = Field(default="draft", min_length=1, max_length=32)
+
+
+class EntityCopyRequest(KnowledgeGraphResponse):
+    entity_id: str = Field(alias="entityId", min_length=1, max_length=96)
+    canonical_name: str | None = Field(default=None, alias="canonicalName", max_length=255)
 
 
 class AliasUpsertRequest(KnowledgeGraphResponse):
@@ -235,6 +262,9 @@ def list_entities(
     search: str | None = None,
     entity_type: str | None = None,
     status: str | None = None,
+    exclude_names: Annotated[str, Query(alias="excludeNames", max_length=500)] = "",
+    sort_by: Annotated[str, Query(alias="sortBy")] = "name",
+    sort_direction: Annotated[str, Query(alias="sortDirection", pattern="^(asc|desc)$")] = "asc",
 ) -> EntityListResponse:
     entities, total = repo.list_entities(
         limit=limit,
@@ -242,7 +272,22 @@ def list_entities(
         search=search,
         entity_type=entity_type,
         status=status,
+        exclude_names=[term.strip() for term in exclude_names.split(",") if term.strip()],
+        sort_by=sort_by,
+        sort_direction=sort_direction,
     )
+    review_counts: dict[str, int] = {}
+    if entities:
+        for prop in repo.db.scalars(
+            select(KnowledgeProperty).where(
+                KnowledgeProperty.entity_id.in_([entity.id for entity in entities]),
+                KnowledgeProperty.key == "review_count",
+            )
+        ):
+            try:
+                review_counts[prop.entity_id] = int(float(prop.value))
+            except (TypeError, ValueError):
+                continue
     has_more = offset + len(entities) < total
     return EntityListResponse(
         items=[
@@ -253,6 +298,7 @@ def list_entities(
                 status=e.status,
                 created_at=e.created_at.isoformat() if e.created_at else "",
                 updated_at=e.updated_at.isoformat() if e.updated_at else "",
+                review_count=review_counts.get(e.id),
             )
             for e in entities
         ],
@@ -260,6 +306,57 @@ def list_entities(
         limit=limit,
         offset=offset,
         has_more=has_more,
+    )
+
+
+@router.get("/entities/low-review-count", response_model=LowReviewEntityResponse)
+def get_low_review_entity_count(
+    _: Annotated[User, Depends(require_role("admin"))],
+    repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+    threshold: Annotated[int, Query(ge=1, le=1_000_000)] = 50,
+) -> LowReviewEntityResponse:
+    return LowReviewEntityResponse(
+        threshold=threshold,
+        entity_count=len(repo.entity_ids_below_review_count(threshold)),
+    )
+
+
+@router.post("/entities", response_model=EntityDetailResponse, status_code=201)
+def create_entity(
+    payload: EntityCreateRequest,
+    user: Annotated[User, Depends(require_csrf)],
+    repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+) -> EntityDetailResponse:
+    from app.shared.errors import AppError
+
+    require_role("admin")(user)
+    entity_id = payload.entity_id.strip()
+    if repo.get_entity(entity_id) is not None:
+        raise AppError(409, "ENTITY_CONFLICT", "An entity with this ID already exists.")
+    repo.upsert_entity(
+        entity_id,
+        payload.canonical_name.strip(),
+        payload.entity_type.strip(),
+        status=payload.status.strip(),
+    )
+    repo.db.commit()
+    return _entity_detail_response(repo, entity_id)
+
+
+@router.delete("/entities/low-review-count", response_model=LowReviewEntityDeleteResponse)
+def delete_low_review_entities(
+    user: Annotated[User, Depends(require_csrf)],
+    repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+    threshold: Annotated[int, Query(ge=1, le=1_000_000)] = 50,
+) -> LowReviewEntityDeleteResponse:
+    require_role("admin")(user)
+    entity_count = len(repo.entity_ids_below_review_count(threshold))
+    deleted_entity_count = repo.delete_entities_below_review_count(threshold)
+    repo.db.commit()
+    return LowReviewEntityDeleteResponse(
+        threshold=threshold,
+        entity_count=entity_count,
+        deleted_entity_count=deleted_entity_count,
     )
 
 
@@ -311,6 +408,46 @@ def update_entity(
         repo.db.rollback()
         raise AppError(409, "ENTITY_CONFLICT", "Không thể lưu entity vì dữ liệu đã trùng hoặc không hợp lệ.") from exc
     return _entity_detail_response(repo, entity_id)
+
+
+@router.delete("/entities/{entity_id}", response_model=EntityDeleteResponse)
+def delete_entity(
+    entity_id: str,
+    user: Annotated[User, Depends(require_csrf)],
+    repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+) -> EntityDeleteResponse:
+    """Delete an entity and every alias, property, and relationship attached to it."""
+    from app.shared.errors import AppError
+
+    require_role("admin")(user)
+    if not repo.delete_entity(entity_id):
+        raise AppError(404, "ENTITY_NOT_FOUND", "Entity not found.")
+    repo.db.commit()
+    return EntityDeleteResponse(deleted_entity_id=entity_id)
+
+
+@router.post("/entities/{entity_id}/copy", response_model=EntityDetailResponse, status_code=201)
+def copy_entity(
+    entity_id: str,
+    payload: EntityCopyRequest,
+    user: Annotated[User, Depends(require_csrf)],
+    repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+) -> EntityDetailResponse:
+    from app.shared.errors import AppError
+
+    require_role("admin")(user)
+    new_entity_id = payload.entity_id.strip()
+    if repo.get_entity(new_entity_id) is not None:
+        raise AppError(409, "ENTITY_CONFLICT", "An entity with this ID already exists.")
+    copied = repo.copy_entity(
+        entity_id,
+        new_entity_id,
+        canonical_name=payload.canonical_name.strip() if payload.canonical_name else None,
+    )
+    if copied is None:
+        raise AppError(404, "ENTITY_NOT_FOUND", "Entity not found.")
+    repo.db.commit()
+    return _entity_detail_response(repo, copied.id)
 
 
 @router.post("/entities/{entity_id}/aliases", response_model=EntityDetailResponse)
@@ -525,6 +662,8 @@ def list_relationships(
     from_entity_id: str | None = None,
     to_entity_id: str | None = None,
     search: str | None = None,
+    sort_by: Annotated[str, Query(alias="sortBy")] = "id",
+    sort_direction: Annotated[str, Query(alias="sortDirection", pattern="^(asc|desc)$")] = "asc",
 ) -> RelationshipListResponse:
     rels, total = repo.list_relationships(
         limit=limit,
@@ -533,6 +672,8 @@ def list_relationships(
         from_entity_id=from_entity_id,
         to_entity_id=to_entity_id,
         search=search,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
     )
     has_more = offset + len(rels) < total
     return RelationshipListResponse(

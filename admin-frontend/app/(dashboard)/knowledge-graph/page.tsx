@@ -17,6 +17,11 @@ import {
   createKGRelationship,
   updateKGRelationship,
   deleteKGRelationship,
+  deleteKGEntity,
+  createKGEntity,
+  copyKGEntity,
+  deleteKGLowReviewEntities,
+  getKGLowReviewEntityCount,
   type KGStats,
   type KGEntitySummary,
   type KGEntityDetail,
@@ -50,6 +55,18 @@ export default function KnowledgeGraphPage() {
   const [stats, setStats] = useState<KGStats | null>(null);
   const [ontology, setOntology] = useState<KGOntology | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<KGEntityDetail | null>(null);
+  const [entityToDelete, setEntityToDelete] = useState<KGEntityDetail | null>(null);
+  const [deletingEntity, setDeletingEntity] = useState(false);
+  const [lowReviewEntityCount, setLowReviewEntityCount] = useState<number | null>(null);
+  const [loadingLowReviewPreview, setLoadingLowReviewPreview] = useState(false);
+  const [deletingLowReviewEntities, setDeletingLowReviewEntities] = useState(false);
+  const [creatingEntity, setCreatingEntity] = useState(false);
+  const [createEntityOpen, setCreateEntityOpen] = useState(false);
+  const [newEntity, setNewEntity] = useState({ entityId: "", canonicalName: "", entityType: "", status: "draft" });
+  const [copyEntityOpen, setCopyEntityOpen] = useState(false);
+  const [copyEntityId, setCopyEntityId] = useState("");
+  const [copyEntityName, setCopyEntityName] = useState("");
+  const [copyingEntity, setCopyingEntity] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState("");
@@ -60,6 +77,7 @@ export default function KnowledgeGraphPage() {
   const [loadingEntities, setLoadingEntities] = useState(false);
   const [totalEntities, setTotalEntities] = useState(0);
   const [entityOffset, setEntityOffset] = useState(0);
+  const [entityPage, setEntityPage] = useState(1);
   const [hasMoreEntities, setHasMoreEntities] = useState(false);
 
   // Entity filters
@@ -67,12 +85,16 @@ export default function KnowledgeGraphPage() {
   const [searchInput, setSearchInput] = useState("");
   const [entityTypeFilter, setEntityTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [excludeNames, setExcludeNames] = useState("");
+  const [entitySortBy, setEntitySortBy] = useState("name");
+  const [entitySortDirection, setEntitySortDirection] = useState<"asc" | "desc">("asc");
 
   // --- Relationships Tab State ---
   const [relationships, setRelationships] = useState<KGRelationshipSummary[]>([]);
   const [loadingRelationships, setLoadingRelationships] = useState(false);
   const [totalRelationships, setTotalRelationships] = useState(0);
   const [relOffset, setRelOffset] = useState(0);
+  const [relPage, setRelPage] = useState(1);
   const [hasMoreRelationships, setHasMoreRelationships] = useState(false);
 
   // Relationship filters
@@ -83,6 +105,8 @@ export default function KnowledgeGraphPage() {
   const [fromEntityInput, setFromEntityInput] = useState("");
   const [toEntityFilter, setToEntityFilter] = useState("");
   const [toEntityInput, setToEntityInput] = useState("");
+  const [relationshipSortBy, setRelationshipSortBy] = useState("id");
+  const [relationshipSortDirection, setRelationshipSortDirection] = useState<"asc" | "desc">("asc");
 
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const relSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,6 +122,7 @@ export default function KnowledgeGraphPage() {
     searchTimeoutRef.current = setTimeout(() => {
       if (searchInput !== search) {
         setSearch(searchInput);
+        setEntityPage(1);
         setEntityOffset(0);
         setEntities([]);
       }
@@ -115,6 +140,7 @@ export default function KnowledgeGraphPage() {
     relSearchTimeoutRef.current = setTimeout(() => {
       if (relSearchInput !== relSearch) {
         setRelSearch(relSearchInput);
+        setRelPage(1);
         setRelOffset(0);
         setRelationships([]);
       }
@@ -129,6 +155,7 @@ export default function KnowledgeGraphPage() {
     fromEntityTimeoutRef.current = setTimeout(() => {
       if (fromEntityInput !== fromEntityFilter) {
         setFromEntityFilter(fromEntityInput);
+        setRelPage(1);
         setRelOffset(0);
         setRelationships([]);
       }
@@ -143,6 +170,7 @@ export default function KnowledgeGraphPage() {
     toEntityTimeoutRef.current = setTimeout(() => {
       if (toEntityInput !== toEntityFilter) {
         setToEntityFilter(toEntityInput);
+        setRelPage(1);
         setRelOffset(0);
         setRelationships([]);
       }
@@ -179,6 +207,9 @@ export default function KnowledgeGraphPage() {
       currentSearch: string,
       currentType: string,
       currentStatus: string,
+      currentExcludeNames: string,
+      currentSortBy: string,
+      currentSortDirection: "asc" | "desc",
       append = false
     ) => {
       if (abortControllerRef.current) {
@@ -194,6 +225,9 @@ export default function KnowledgeGraphPage() {
           search: currentSearch || undefined,
           entityType: currentType || undefined,
           status: currentStatus || undefined,
+          excludeNames: currentExcludeNames || undefined,
+          sortBy: currentSortBy,
+          sortDirection: currentSortDirection,
         });
 
         if (append) {
@@ -224,6 +258,8 @@ export default function KnowledgeGraphPage() {
       currentRelType: string,
       currentFrom: string,
       currentTo: string,
+      currentSortBy: string,
+      currentSortDirection: "asc" | "desc",
       append = false
     ) => {
       setLoadingRelationships(true);
@@ -235,6 +271,8 @@ export default function KnowledgeGraphPage() {
           relationship: currentRelType || undefined,
           fromEntityId: currentFrom || undefined,
           toEntityId: currentTo || undefined,
+          sortBy: currentSortBy,
+          sortDirection: currentSortDirection,
         });
 
         if (append) {
@@ -260,22 +298,22 @@ export default function KnowledgeGraphPage() {
   useEffect(() => {
     loadStats();
     loadOntology();
-    loadEntities(0, "", "", "", false);
+    loadEntities(0, "", "", "", "", "name", "asc", false);
   }, [loadStats, loadOntology, loadEntities]);
 
   // Trigger entity list reload when filters change
   useEffect(() => {
     if (!loading) {
-      loadEntities(0, search, entityTypeFilter, statusFilter, false);
+      loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
     }
-  }, [search, entityTypeFilter, statusFilter]);
+  }, [search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, entityPage]);
 
   // Trigger relationship list reload when switching to tab or filters change
   useEffect(() => {
     if (activeTab === "relationships") {
-      loadRelationships(0, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, false);
+      loadRelationships((relPage - 1) * DEFAULT_PAGE_SIZE, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, relationshipSortBy, relationshipSortDirection, false);
     }
-  }, [activeTab, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter]);
+  }, [activeTab, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, relationshipSortBy, relationshipSortDirection, relPage]);
 
   // Load entity detail
   const loadEntityDetail = useCallback(async (entityId: string) => {
@@ -304,10 +342,121 @@ export default function KnowledgeGraphPage() {
     (updatedEntity: KGEntityDetail) => {
       setSelectedEntity(updatedEntity);
       loadStats();
-      loadEntities(0, search, entityTypeFilter, statusFilter, false);
+      loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
     },
-    [loadStats, loadEntities, search, entityTypeFilter, statusFilter]
+    [loadStats, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]
   );
+
+  const handleDeleteEntity = useCallback(async () => {
+    if (!entityToDelete) return;
+    setDeletingEntity(true);
+    setError("");
+    try {
+      await deleteKGEntity(entityToDelete.id);
+      setSelectedEntity(null);
+      setEntityToDelete(null);
+      await Promise.all([
+        loadStats(),
+        loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete entity");
+    } finally {
+      setDeletingEntity(false);
+    }
+  }, [entityToDelete, entityPage, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, statusFilter]);
+
+  const handleOpenLowReviewDelete = useCallback(async () => {
+    setLoadingLowReviewPreview(true);
+    setError("");
+    try {
+      const preview = await getKGLowReviewEntityCount(50);
+      setLowReviewEntityCount(preview.entityCount);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to count low-review entities");
+    } finally {
+      setLoadingLowReviewPreview(false);
+    }
+  }, []);
+
+  const handleDeleteLowReviewEntities = useCallback(async () => {
+    setDeletingLowReviewEntities(true);
+    setError("");
+    try {
+      await deleteKGLowReviewEntities(50);
+      setLowReviewEntityCount(null);
+      setSelectedEntity(null);
+      await Promise.all([
+        loadStats(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+      ]);
+      setEntityPage(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete low-review entities");
+    } finally {
+      setDeletingLowReviewEntities(false);
+    }
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, statusFilter]);
+
+  const handleCreateEntity = useCallback(async () => {
+    const payload = {
+      entityId: newEntity.entityId.trim(),
+      canonicalName: newEntity.canonicalName.trim(),
+      entityType: newEntity.entityType.trim(),
+      status: newEntity.status,
+    };
+    if (!payload.entityId || !payload.canonicalName || !payload.entityType) {
+      setError("Entity ID, canonical name, and type are required.");
+      return;
+    }
+    setCreatingEntity(true);
+    setError("");
+    try {
+      const created = await createKGEntity(payload);
+      setCreateEntityOpen(false);
+      setNewEntity({ entityId: "", canonicalName: "", entityType: "", status: "draft" });
+      setSelectedEntity(created);
+      setEntityPage(1);
+      await Promise.all([
+        loadStats(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create entity");
+    } finally {
+      setCreatingEntity(false);
+    }
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, newEntity, search, statusFilter]);
+
+  const handleCopyEntity = useCallback(async () => {
+    if (!selectedEntity) return;
+    const entityId = copyEntityId.trim();
+    if (!entityId) {
+      setError("A new entity ID is required.");
+      return;
+    }
+    setCopyingEntity(true);
+    setError("");
+    try {
+      const copied = await copyKGEntity(selectedEntity.id, {
+        entityId,
+        canonicalName: copyEntityName.trim() || `Copy of ${selectedEntity.canonicalName}`,
+      });
+      setCopyEntityOpen(false);
+      setCopyEntityId("");
+      setCopyEntityName("");
+      setSelectedEntity(copied);
+      setEntityPage(1);
+      await Promise.all([
+        loadStats(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to copy entity");
+    } finally {
+      setCopyingEntity(false);
+    }
+  }, [copyEntityId, copyEntityName, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, selectedEntity, statusFilter]);
 
   // Jump directly to an entity ID from anywhere (e.g. relationship card)
   const handleJumpToEntity = useCallback(
@@ -321,16 +470,16 @@ export default function KnowledgeGraphPage() {
   // Load more entities
   const handleLoadMoreEntities = useCallback(() => {
     if (!loadingEntities && hasMoreEntities) {
-      loadEntities(entityOffset, search, entityTypeFilter, statusFilter, true);
+      setEntityPage((current) => current + 1);
     }
-  }, [loadingEntities, hasMoreEntities, entityOffset, search, entityTypeFilter, statusFilter, loadEntities]);
+  }, [loadingEntities, hasMoreEntities]);
 
   // Load more relationships
   const handleLoadMoreRelationships = useCallback(() => {
     if (!loadingRelationships && hasMoreRelationships) {
-      loadRelationships(relOffset, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, true);
+      setRelPage((current) => current + 1);
     }
-  }, [loadingRelationships, hasMoreRelationships, relOffset, relSearch, relTypeFilter, fromEntityFilter, toEntityFilter, loadRelationships]);
+  }, [loadingRelationships, hasMoreRelationships]);
 
   // Reset entity filters
   const handleResetEntityFilters = useCallback(() => {
@@ -338,6 +487,7 @@ export default function KnowledgeGraphPage() {
     setSearch("");
     setEntityTypeFilter("");
     setStatusFilter("");
+    setExcludeNames("");
   }, []);
 
   // Reset relationship filters
@@ -354,8 +504,8 @@ export default function KnowledgeGraphPage() {
   // Refresh after AI import apply
   const handleApplied = useCallback(() => {
     loadStats();
-    loadEntities(0, search, entityTypeFilter, statusFilter, false);
-  }, [loadStats, loadEntities, search, entityTypeFilter, statusFilter]);
+    loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
+  }, [loadStats, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]);
 
   // List of available node types from ontology or defaults
   const availableNodeTypes = ontology?.nodeTypes?.length
@@ -509,12 +659,51 @@ export default function KnowledgeGraphPage() {
               <option value="archived">archived</option>
             </select>
 
+            <input
+              className="kgSelectFilter"
+              aria-label="Exclude entity names"
+              onChange={(event) => {
+                setExcludeNames(event.target.value);
+                setEntityPage(1);
+              }}
+              placeholder="Exclude names: coffee, cafe"
+              value={excludeNames}
+            />
+
+            <select
+              className="kgSelectFilter"
+              aria-label="Entity sort order"
+              value={`${entitySortBy}:${entitySortDirection}`}
+              onChange={(event) => {
+                const [sortBy, sortDirection] = event.target.value.split(":") as [string, "asc" | "desc"];
+                setEntitySortBy(sortBy);
+                setEntitySortDirection(sortDirection);
+                setEntityPage(1);
+              }}
+            >
+              <option value="name:asc">Name: A-Z</option>
+              <option value="name:desc">Name: Z-A</option>
+              <option value="updated_at:desc">Recently updated</option>
+              <option value="created_at:desc">Recently created</option>
+              <option value="review_count:desc">Review count: high to low</option>
+              <option value="review_count:asc">Review count: low to high</option>
+              <option value="type:asc">Type: A-Z</option>
+              <option value="status:asc">Status: A-Z</option>
+            </select>
+
             {/* Reset Button */}
-            {(search || entityTypeFilter || statusFilter) && (
+            {(search || entityTypeFilter || statusFilter || excludeNames) && (
               <button type="button" className="kgResetBtn" onClick={handleResetEntityFilters}>
                 Reset Filters
               </button>
             )}
+
+            <button type="button" className="kgMiniDanger" disabled={loadingLowReviewPreview} onClick={() => void handleOpenLowReviewDelete()}>
+              {loadingLowReviewPreview ? "Checking..." : "Delete review count < 50"}
+            </button>
+            <button type="button" className="kgSectionEdit" onClick={() => setCreateEntityOpen(true)}>
+              Create node
+            </button>
 
             <span className="kgResultCount" style={{ marginLeft: "auto" }}>
               {loadingEntities && entities.length === 0
@@ -592,21 +781,16 @@ export default function KnowledgeGraphPage() {
                         </span>
                       </div>
                       <h3>{entity.canonicalName}</h3>
+                      <small>{entity.reviewCount == null ? "No review count" : `${entity.reviewCount.toLocaleString()} reviews`}</small>
                       <code>{entity.id}</code>
                     </button>
                   ))}
 
-                  {/* Load More */}
-                  {hasMoreEntities && (
-                    <button
-                      type="button"
-                      className="kgLoadMoreButton"
-                      onClick={handleLoadMoreEntities}
-                      disabled={loadingEntities}
-                    >
-                      {loadingEntities ? "Loading..." : `Load more (${totalEntities - entityOffset} remaining)`}
-                    </button>
-                  )}
+                  <div className="kgPagination">
+                    <button type="button" className="kgLoadMoreButton" onClick={() => setEntityPage((current) => Math.max(1, current - 1))} disabled={loadingEntities || entityPage === 1}>Previous</button>
+                    <span>Page {entityPage} / {Math.max(1, Math.ceil(totalEntities / DEFAULT_PAGE_SIZE))}</span>
+                    <button type="button" className="kgLoadMoreButton" onClick={handleLoadMoreEntities} disabled={loadingEntities || !hasMoreEntities}>Next</button>
+                  </div>
                 </>
               )}
             </div>
@@ -622,6 +806,12 @@ export default function KnowledgeGraphPage() {
                   entity={selectedEntity}
                   onJumpToEntity={handleJumpToEntity}
                   onUpdated={handleEntityUpdated}
+                  onRequestDelete={() => setEntityToDelete(selectedEntity)}
+                  onRequestCopy={() => {
+                    setCopyEntityId("");
+                    setCopyEntityName(`Copy of ${selectedEntity.canonicalName}`);
+                    setCopyEntityOpen(true);
+                  }}
                   onError={setError}
                   availableNodeTypes={availableNodeTypes}
                 />
@@ -683,6 +873,24 @@ export default function KnowledgeGraphPage() {
                   {rel}
                 </option>
               ))}
+            </select>
+
+            <select
+              className="kgSelectFilter"
+              aria-label="Relationship sort order"
+              value={`${relationshipSortBy}:${relationshipSortDirection}`}
+              onChange={(event) => {
+                const [sortBy, sortDirection] = event.target.value.split(":") as [string, "asc" | "desc"];
+                setRelationshipSortBy(sortBy);
+                setRelationshipSortDirection(sortDirection);
+                setRelPage(1);
+              }}
+            >
+              <option value="id:asc">ID: low to high</option>
+              <option value="id:desc">ID: high to low</option>
+              <option value="relationship:asc">Type: A-Z</option>
+              <option value="relationship:desc">Type: Z-A</option>
+              <option value="created_at:desc">Recently created</option>
             </select>
 
             {/* From Entity ID Input */}
@@ -781,17 +989,11 @@ export default function KnowledgeGraphPage() {
                     </article>
                   ))}
 
-                  {/* Load More */}
-                  {hasMoreRelationships && (
-                    <button
-                      type="button"
-                      className="kgLoadMoreButton"
-                      onClick={handleLoadMoreRelationships}
-                      disabled={loadingRelationships}
-                    >
-                      {loadingRelationships ? "Loading..." : `Load more (${totalRelationships - relOffset} remaining)`}
-                    </button>
-                  )}
+                  <div className="kgPagination">
+                    <button type="button" className="kgLoadMoreButton" onClick={() => setRelPage((current) => Math.max(1, current - 1))} disabled={loadingRelationships || relPage === 1}>Previous</button>
+                    <span>Page {relPage} / {Math.max(1, Math.ceil(totalRelationships / DEFAULT_PAGE_SIZE))}</span>
+                    <button type="button" className="kgLoadMoreButton" onClick={handleLoadMoreRelationships} disabled={loadingRelationships || !hasMoreRelationships}>Next</button>
+                  </div>
                 </>
               )}
             </div>
@@ -805,6 +1007,71 @@ export default function KnowledgeGraphPage() {
           is handled through the admin API with pagination.
         </p>
       </footer>
+
+      {entityToDelete && (
+        <div className="kgDeleteDialogBackdrop" role="presentation">
+          <section aria-describedby="kg-delete-description" aria-labelledby="kg-delete-title" aria-modal="true" className="kgDeleteDialog" role="dialog">
+            <p className="eyebrow">Permanent action</p>
+            <h2 id="kg-delete-title">Delete {entityToDelete.canonicalName}?</h2>
+            <p id="kg-delete-description">This permanently deletes the entity, all aliases, properties, and every relationship connected to ID {entityToDelete.id}.</p>
+            <div className="kgDeleteDialogActions">
+              <button type="button" className="kgSectionEdit" disabled={deletingEntity} onClick={() => setEntityToDelete(null)}>Cancel</button>
+              <button type="button" className="kgMiniDanger" disabled={deletingEntity} onClick={() => void handleDeleteEntity()}>{deletingEntity ? "Deleting..." : "Delete entity"}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {lowReviewEntityCount !== null && (
+        <div className="kgDeleteDialogBackdrop" role="presentation">
+          <section aria-describedby="kg-low-review-delete-description" aria-labelledby="kg-low-review-delete-title" aria-modal="true" className="kgDeleteDialog" role="dialog">
+            <p className="eyebrow">Bulk permanent action</p>
+            <h2 id="kg-low-review-delete-title">Delete {lowReviewEntityCount.toLocaleString()} entities?</h2>
+            <p id="kg-low-review-delete-description">This permanently deletes every entity with a valid review_count below 50, plus its aliases, properties, and all connected relationships.</p>
+            <div className="kgDeleteDialogActions">
+              <button type="button" className="kgSectionEdit" disabled={deletingLowReviewEntities} onClick={() => setLowReviewEntityCount(null)}>Cancel</button>
+              <button type="button" className="kgMiniDanger" disabled={deletingLowReviewEntities || lowReviewEntityCount === 0} onClick={() => void handleDeleteLowReviewEntities()}>{deletingLowReviewEntities ? "Deleting..." : "Delete all"}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {createEntityOpen && (
+        <div className="kgDeleteDialogBackdrop" role="presentation">
+          <section aria-labelledby="kg-create-node-title" aria-modal="true" className="kgDeleteDialog" role="dialog">
+            <p className="eyebrow">Knowledge Graph</p>
+            <h2 id="kg-create-node-title">Create node</h2>
+            <div className="kgSectionForm kgIdentitySectionForm">
+              <label><span>Entity ID</span><input value={newEntity.entityId} onChange={(event) => setNewEntity((current) => ({ ...current, entityId: event.target.value }))} placeholder="place_example" /></label>
+              <label><span>Canonical name</span><input value={newEntity.canonicalName} onChange={(event) => setNewEntity((current) => ({ ...current, canonicalName: event.target.value }))} placeholder="Example place" /></label>
+              <label><span>Type</span><select value={newEntity.entityType} onChange={(event) => setNewEntity((current) => ({ ...current, entityType: event.target.value }))}><option value="">Select type</option>{availableNodeTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+              <label><span>Status</span><select value={newEntity.status} onChange={(event) => setNewEntity((current) => ({ ...current, status: event.target.value }))}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label>
+            </div>
+            <div className="kgDeleteDialogActions">
+              <button type="button" className="kgSectionEdit" disabled={creatingEntity} onClick={() => setCreateEntityOpen(false)}>Cancel</button>
+              <button type="button" className="save" disabled={creatingEntity} onClick={() => void handleCreateEntity()}>{creatingEntity ? "Creating..." : "Create node"}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {copyEntityOpen && selectedEntity && (
+        <div className="kgDeleteDialogBackdrop" role="presentation">
+          <section aria-labelledby="kg-copy-entity-title" aria-modal="true" className="kgDeleteDialog" role="dialog">
+            <p className="eyebrow">Copy from {selectedEntity.id}</p>
+            <h2 id="kg-copy-entity-title">Copy entity</h2>
+            <div className="kgSectionForm kgIdentitySectionForm">
+              <label><span>New entity ID</span><input value={copyEntityId} onChange={(event) => setCopyEntityId(event.target.value)} placeholder="place_example_copy" /></label>
+              <label><span>Canonical name</span><input value={copyEntityName} onChange={(event) => setCopyEntityName(event.target.value)} /></label>
+            </div>
+            <p>The copy includes aliases, properties, and outgoing relationships. The original entity remains unchanged.</p>
+            <div className="kgDeleteDialogActions">
+              <button type="button" className="kgSectionEdit" disabled={copyingEntity} onClick={() => setCopyEntityOpen(false)}>Cancel</button>
+              <button type="button" className="save" disabled={copyingEntity} onClick={() => void handleCopyEntity()}>{copyingEntity ? "Copying..." : "Create copy"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
@@ -836,12 +1103,16 @@ function EditableEntityDetailPanel({
   entity,
   onJumpToEntity,
   onUpdated,
+  onRequestDelete,
+  onRequestCopy,
   onError,
   availableNodeTypes,
 }: {
   entity: KGEntityDetail;
   onJumpToEntity: (entityId: string) => void;
   onUpdated: (entity: KGEntityDetail) => void;
+  onRequestDelete: () => void;
+  onRequestCopy: () => void;
   onError: (message: string) => void;
   availableNodeTypes: string[];
 }) {
@@ -1170,6 +1441,12 @@ function EditableEntityDetailPanel({
           <div className="kgSectionActions" style={{ marginTop: "10px" }}>
             <button type="button" className="save" disabled={isSaving} onClick={() => void saveEntity()}>
               {savingKey === "entity" ? "Saving..." : "Save entity"}
+            </button>
+            <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={onRequestDelete}>
+              Delete entity
+            </button>
+            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={onRequestCopy}>
+              Copy entity
             </button>
           </div>
         </section>
