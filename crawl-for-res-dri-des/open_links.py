@@ -50,7 +50,7 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
     time.sleep(0.5)
 
     # 3. Lấy ảnh Menu
-    print("    🔍 [Step 2] Chuyển qua Tab Menu & lấy ảnh (aria-roledescription='carousel')...")
+    print("    🔍 [Step 2] Chuyển qua Tab Menu & lấy ảnh (class='dryRY' -> class='ofKBgf')...")
     try:
         menu_selector = (
             '[role="tab"][aria-label="Menu"], '
@@ -64,18 +64,21 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
         menu_tab.click()
         time.sleep(0.5)
 
-        carousel_selector = '[aria-roledescription="carousel"], [aria-roledescription*="carousel"]'
-        gallery = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, carousel_selector))
+        container = wait_short.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
         )
-        img_elements = gallery.find_elements(By.TAG_NAME, "img")
-        img_urls = [
-            img.get_attribute("src") or img.get_attribute("data-src")
-            for img in img_elements
-        ]
-        img_urls = [url for url in img_urls if url and not url.startswith("data:image/svg")]
+        items = container.find_elements(By.CSS_SELECTOR, ".ofKBgf")
+
+        img_urls = []
+        for item in items:
+            imgs = item.find_elements(By.TAG_NAME, "img")
+            for img in imgs:
+                src = img.get_attribute("src") or img.get_attribute("data-src")
+                if src and not src.startswith("data:image/svg"):
+                    img_urls.append(src)
+
         result["menu_images"] = "&".join(img_urls)
-        print(f"        -> Tìm thấy {len(img_urls)} ảnh menu")
+        print(f"        -> Tìm thấy {len(items)} phần tử .ofKBgf, {len(img_urls)} ảnh menu")
     except Exception as e:
         result["menu_images"] = ""
         print(f"        -> Lỗi lấy Menu: {e}")

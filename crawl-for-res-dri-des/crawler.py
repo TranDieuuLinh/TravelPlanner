@@ -120,17 +120,20 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
         menu_tab.click()
         time.sleep(0.5)
 
-        # Tìm thuộc tính aria-roledescription="carousel" và lấy tất cả link ảnh
-        carousel_selector = '[aria-roledescription="carousel"], [aria-roledescription*="carousel"]'
-        gallery = wait_short.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, carousel_selector))
+        # Tìm class="dryRY" làm container và duyệt qua danh sách các phần tử class="ofKBgf" để lấy ảnh
+        container = wait_short.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".dryRY"))
         )
-        img_elements = gallery.find_elements(By.TAG_NAME, "img")
-        img_urls = [
-            img.get_attribute("src") or img.get_attribute("data-src")
-            for img in img_elements
-        ]
-        img_urls = [url for url in img_urls if url and not url.startswith("data:image/svg")]
+        items = container.find_elements(By.CSS_SELECTOR, ".ofKBgf")
+
+        img_urls = []
+        for item in items:
+            imgs = item.find_elements(By.TAG_NAME, "img")
+            for img in imgs:
+                src = img.get_attribute("src") or img.get_attribute("data-src")
+                if src and not src.startswith("data:image/svg"):
+                    img_urls.append(src)
+
         result["menu_images"] = "&".join(img_urls)
     except Exception:
         result["menu_images"] = ""
