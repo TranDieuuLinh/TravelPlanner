@@ -155,11 +155,23 @@ def save_results(rows: list[dict[str, Any]]) -> None:
             if field not in fieldnames:
                 fieldnames.append(field)
 
-    with OUTPUT_CSV_PATH.open("w", encoding="utf-8-sig", newline="") as file:
+    temp_output = OUTPUT_CSV_PATH.with_suffix(".csv.tmp")
+    with temp_output.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+    temp_output.replace(OUTPUT_CSV_PATH)
     print(f"Saved {len(rows)} row(s) to {OUTPUT_CSV_PATH.name}")
+
+
+def load_saved_results() -> list[dict[str, Any]]:
+    """Load previously saved rows so interrupted crawls can resume."""
+
+    if not OUTPUT_CSV_PATH.exists():
+        return []
+
+    with OUTPUT_CSV_PATH.open(mode="r", encoding="utf-8-sig", newline="") as file:
+        return list(csv.DictReader(file))
 
 
 def main(test_mode: bool = False) -> None:
@@ -180,6 +192,12 @@ def main(test_mode: bool = False) -> None:
         with CSV_PATH.open(mode="r", encoding="utf-8", newline="") as file:
             rows = list(csv.DictReader(file))
 
+        saved_results = load_saved_results()
+        saved_ids = {str(row.get("id", "")).strip() for row in saved_results}
+        if saved_ids:
+            rows = [row for row in rows if row.get("id", "").strip() not in saved_ids]
+            print(f"Resume mode: skipping {len(saved_ids)} saved row(s)")
+
         if test_mode:
             test_rows: list[dict[str, str]] = []
             seen_types: set[str] = set()
@@ -192,7 +210,7 @@ def main(test_mode: bool = False) -> None:
             print("Test mode: one row per type")
 
         print(f"Found {len(rows)} link(s) in {CSV_PATH.name}")
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = saved_results
         indexed_rows = list(enumerate(rows, start=1))
         chunks = [
             indexed_rows[start : start + BATCH_SIZE]
