@@ -53,9 +53,10 @@ def process_drink_dessert(driver: webdriver.Chrome, link: str) -> dict:
     print("    🔍 [Step 2] Chuyển qua Tab Menu & lấy ảnh (class='fp2VUc')...")
     try:
         menu_selector = (
-            '[aria-label="Menu"], [aria-label="Thực đơn"], '
-            '[aria-label*="Menu"], [aria-label*="Thực đơn"], '
-            'button[data-tab-index="1"]'
+            '[role="tab"][aria-label="Menu"], '
+            '[role="tab"][aria-label="Thực đơn"], '
+            '[role="tab"][aria-label*="Menu"], '
+            '[role="tab"][aria-label*="Thực đơn"]'
         )
         menu_tab = wait_short.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, menu_selector))

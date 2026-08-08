@@ -109,9 +109,10 @@ def scrape_drink_dessert(driver: WebDriver, link: str, place_id: str) -> dict[st
     try:
         # Hỗ trợ cả giao diện Tiếng Anh ("Menu") và Tiếng Việt ("Thực đơn")
         menu_selector = (
-            '[aria-label="Menu"], [aria-label="Thực đơn"], '
-            '[aria-label*="Menu"], [aria-label*="Thực đơn"], '
-            'button[data-tab-index="1"]'
+            '[role="tab"][aria-label="Menu"], '
+            '[role="tab"][aria-label="Thực đơn"], '
+            '[role="tab"][aria-label*="Menu"], '
+            '[role="tab"][aria-label*="Thực đơn"]'
         )
         menu_tab = wait_short.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, menu_selector))
