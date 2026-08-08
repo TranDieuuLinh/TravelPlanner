@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.modules.knowledge_graph.ontology import KnowledgePlaceType
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.enums import BudgetLevel, PlanKind, PlanStatus, TravelPace
 from app.modules.plans.domain.plan_notes import PlanNoteSource
@@ -189,6 +190,9 @@ class PlanItem(BaseModel):
         default=None, alias="identityConfidence"
     )
     tags: list[str] = Field(default_factory=list)
+    ontology_type: KnowledgePlaceType | None = Field(
+        default=None, alias="ontologyType"
+    )
     latitude: float | None = None
     longitude: float | None = None
     notes: str | None = None
@@ -266,7 +270,6 @@ class PlanItem(BaseModel):
                 tags.intersection(
                     {
                         "food",
-                        "food_drink",
                         "restaurant",
                         "cafe",
                         "coffee",
@@ -327,7 +330,9 @@ class PlanTransportLeg(BaseModel):
 
 class PlanDay(BaseModel):
     day: int
-    theme: str
+    # Legacy input compatibility only. New Plan/API snapshots do not expose a
+    # day theme; selection diversity is evaluated across the whole trip.
+    theme: str | None = Field(default=None, exclude=True)
     strategy: str = "anchor_led"
     items: list[PlanItem]
     transport_legs: list[PlanTransportLeg] = Field(
@@ -431,9 +436,9 @@ class PlaceSelectionStatus(BaseModel):
         default_factory=dict,
         alias="visitedRegionCounts",
     )
-    used_food_drink_place_types: list[str] = Field(
+    used_food_place_types: list[str] = Field(
         default_factory=list,
-        alias="usedFoodDrinkPlaceTypes",
+        alias="usedFoodPlaceTypes",
     )
     trip_usage: PlaceSelectionUsage = Field(default_factory=PlaceSelectionUsage, alias="tripUsage")
     day_usage: PlaceSelectionUsage = Field(default_factory=PlaceSelectionUsage, alias="dayUsage")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -36,6 +36,12 @@ class InformationQuery(_ContractModel):
         if not self.source_kinds:
             raise ValueError("sourceKinds must contain at least one source")
         return self
+
+
+class InformationAnswer(_ContractModel):
+    """LLM-authored answer returned by the InformationFinder agent."""
+
+    answer: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
 class InformationCandidate(_ContractModel):

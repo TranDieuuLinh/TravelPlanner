@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
+from app.modules.knowledge_graph.ontology import KnowledgePlaceType
 from app.modules.plans.dto.agent_contracts import (
     ItineraryItemCategory,
     PlaceCandidateHint,
@@ -260,6 +261,9 @@ class PlaceCandidateReview(BaseModel):
     candidate_id: Annotated[str, Field(alias="candidateId")]
     name: str
     category: ItineraryItemCategory = ItineraryItemCategory.other
+    ontology_type: Annotated[
+        KnowledgePlaceType | None, Field(default=None, alias="ontologyType")
+    ]
     status: Literal["resolved", "needs_review", "merged", "ignored"]
     resolution_reason: Annotated[
         str | None,

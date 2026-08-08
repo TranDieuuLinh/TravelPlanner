@@ -90,6 +90,18 @@ def list_active_trip_chat_turns(
     return [TripChatTurnRead.model_validate(turn) for turn in service.list_active_turns(current_user)]
 
 
+@router.get("/planner-runs", response_model=list[TripChatTurnRead])
+def list_trip_chat_planner_runs(
+    service: Annotated[ConversationTurnService, Depends(get_conversation_turn_service)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[TripChatTurnRead]:
+    """Return active and recent persisted raw-prompt Planner timing runs."""
+    return [
+        TripChatTurnRead.model_validate(turn)
+        for turn in service.list_planner_runs(current_user)
+    ]
+
+
 @router.get("/{chat_id}", response_model=TripChatRead)
 def get_trip_chat(
     chat_id: str,
@@ -348,6 +360,7 @@ def remove_trip_chat_unscheduled_place(
     service: Annotated[TripChatService, Depends(get_trip_chat_service)],
     current_user: Annotated[User, Depends(require_csrf)],
     place_id: Annotated[str | None, Form(alias="placeId")] = None,
+    candidate_id: Annotated[str | None, Form(alias="candidateId")] = None,
 ) -> TripChatRead:
     return service.remove_unscheduled_place(
         chat_id,
@@ -355,6 +368,7 @@ def remove_trip_chat_unscheduled_place(
         expected_revision=expected_revision,
         name=name,
         place_id=place_id,
+        candidate_id=candidate_id,
     )
 
 

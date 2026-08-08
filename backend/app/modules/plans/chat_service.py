@@ -9,6 +9,7 @@ from app.modules.plans.chat_model import TripChat
 from app.modules.plans.chat_repository import TripChatRepository
 from app.modules.plans.chat_schema import TripChatRead, TripChatSummaryRead
 from app.modules.plans.domain.entities import Plan, PlanItem
+from app.modules.knowledge_graph.ontology import canonical_place_node_type
 from app.modules.plans.dto.agent_contracts import UserPlanningState
 from app.modules.plans.explorer.schema import (
     ExploreIntakeResponse,
@@ -37,8 +38,13 @@ from app.modules.users.model import User
 from app.shared.errors import AppError
 
 
+class _PlaceImage(Protocol):
+    image_url: str
+
+
 class _AddressedPlace(Protocol):
     address: str | None
+    images: list[_PlaceImage]
 
 
 class _PlaceAddressRepository(Protocol):
@@ -90,7 +96,11 @@ class TripChatService:
         if chat.current_plan is None:
             raise AppError(409, "PLAN_NOT_READY", "Lịch trình chưa sẵn sàng.")
         plan = Plan.model_validate(chat.current_plan)
-        if plan.route_enrichment_status == "completed":
+        if plan.route_enrichment_status == "completed" and not any(
+            leg.source == "geodesic_estimate"
+            for day in plan.days
+            for leg in day.transport_legs
+        ):
             return self._read(chat)
         enriched = self.plan_service.enrich_plan_routes(plan)
         saved = self.repository.save_plan_mutation(
@@ -553,6 +563,7 @@ class TripChatService:
                 longitude=item.longitude,
                 regionKey=item.region_key,
                 tags=item.tags,
+                ontologyType=item.ontology_type,
                 sourceRefs=item.source_refs,
                 sourceProvider=item.source_provider,
                 notes=item.notes,
@@ -662,13 +673,25 @@ class TripChatService:
         ]
         for day in hydrated.days:
             for item in day.items:
+                stored = None
+                if (
+                    item.place_id
+                    and self.place_repository is not None
+                    and (not item.address or not item.image_urls)
+                ):
+                    stored = self.place_repository.get(item.place_id)
+                    if stored is not None and not item.address and stored.address:
+                        item.address = stored.address
+                    if stored is not None and not item.image_urls:
+                        item.image_urls = list(
+                            dict.fromkeys(
+                                image.image_url
+                                for image in stored.images
+                                if image.image_url
+                            )
+                        )
                 if item.address:
                     continue
-                if item.place_id and self.place_repository is not None:
-                    stored = self.place_repository.get(item.place_id)
-                    if stored is not None and stored.address:
-                        item.address = stored.address
-                        continue
                 matching_review = next(
                     (
                         review
@@ -1040,6 +1063,7 @@ class TripChatService:
         expected_revision: int,
         name: str,
         place_id: str | None = None,
+        candidate_id: str | None = None,
     ) -> TripChatRead:
         chat = self.repository.get(chat_id, user.id)
         if chat.revision != expected_revision:
@@ -1060,6 +1084,7 @@ class TripChatService:
             plan,
             name=name,
             place_id=place_id,
+            candidate_id=candidate_id,
         )
         self.plan_service.repository.save(result.plan)
 
@@ -1408,6 +1433,10 @@ def _selected_place_from_review(
         latitude=review.latitude,
         longitude=review.longitude,
         tags=[review.category.value],
+        ontologyType=(
+            review.ontology_type
+            or canonical_place_node_type(review.category.value)
+        ),
         sourceRefs=review.source_urls,
         sourceProvider=review.provider,
         sourceOrder=review.source_order,

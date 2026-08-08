@@ -1,6 +1,7 @@
 """Contracts for the Planner InformationFinder boundary."""
 
 from .schema import (
+    InformationAnswer,
     InformationCandidate,
     InformationQuery,
     InformationResult,
@@ -15,6 +16,7 @@ from .reader import (
 from .agent import InformationFinderAgent, InformationFinderResponse
 
 __all__ = [
+    "InformationAnswer",
     "InformationCandidate",
     "InformationQuery",
     "InformationResult",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import Any
 
 import pytest
@@ -38,6 +39,7 @@ from app.modules.plans.service import (
     _dedupe_place_resolutions,
     _place_candidate_review,
 )
+from app.modules.preferences.schema import PreferenceSnapshot
 from app.shared.errors import AppError
 
 
@@ -238,6 +240,29 @@ def build_service(
         url_reels=url_reels,  # type: ignore[arg-type]
         place_resolver=RecordingResolver(),  # type: ignore[arg-type]
     )
+
+
+def test_traveler_profile_writer_runs_off_the_event_loop_thread() -> None:
+    calls: list[tuple[int, PreferenceSnapshot, str, int]] = []
+
+    def writer(user_id: int, snapshot: PreferenceSnapshot, intake_id: str) -> None:
+        calls.append((user_id, snapshot, intake_id, threading.get_ident()))
+
+    service = build_service(
+        RecordingFormatter(),
+        RecordingUrlReels(),
+        RecordingImageOcr(),
+    )
+    service.background_preference_writer = writer
+    event_loop_thread = threading.get_ident()
+    snapshot = PreferenceSnapshot()
+
+    asyncio.run(
+        service._persist_traveler_profile_in_background(7, snapshot, "intake-bg")
+    )
+
+    assert calls[0][:3] == (7, snapshot, "intake-bg")
+    assert calls[0][3] != event_loop_thread
 
 
 def _url_result(

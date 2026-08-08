@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteUrlImportJob,
-  listActiveTripChatTurns,
+  listTripChatPlannerRuns,
   listUrlImportJobs,
   reprocessUrlImportJob,
   retryUrlImportJob,
@@ -28,6 +27,7 @@ import { urlPlaceCountLabel } from "@/features/planner/lib/url-place-count";
 
 const TERMINAL = new Set(["succeeded", "failed"]);
 const ACTIVE = new Set(["queued", "running"]);
+const ACTIVE_TURN = new Set(["queued", "classifying", "executing"]);
 type DisplayJob = UrlImportJob | GuestUrlImportJob;
 
 function isGuestJob(job: DisplayJob): job is GuestUrlImportJob {
@@ -84,18 +84,6 @@ function preciseElapsedLabel(totalSeconds: number) {
   return `${minutes} phút ${seconds.toFixed(seconds < 10 ? 1 : 0).padStart(seconds < 10 ? 4 : 2, "0")} giây`;
 }
 
-function stageShareLabel(durationSeconds: number, totalSeconds: number) {
-  if (totalSeconds <= 0) return "0%";
-  return `${Math.round((Math.max(0, durationSeconds) / totalSeconds) * 100)}%`;
-}
-
-function sortedSlowStages(stages: Array<ExplorerTimingStage | PlanTimingStage>, limit = 3) {
-  return [...stages]
-    .filter((stage) => stage.durationSeconds > 0)
-    .sort((left, right) => right.durationSeconds - left.durationSeconds)
-    .slice(0, limit);
-}
-
 function detailLabel(value: string | number | boolean | null) {
   if (typeof value === "boolean") return value ? "Có" : "Không";
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
@@ -148,6 +136,11 @@ function isPlanningJob(job: DisplayJob) {
   return job.phase === "planning";
 }
 
+function turnTiming<T>(turn: TripChatTurn, key: "explorerTiming" | "plannerTiming") {
+  const value = turn.resultSummary[key];
+  return value && typeof value === "object" ? value as T : null;
+}
+
 function progressStage(job: DisplayJob) {
   if (job.status === "queued") return { step: 1, label: "Chuẩn bị" };
   return isPlanningJob(job)
@@ -172,23 +165,20 @@ function statusLabel(job: DisplayJob, now: number) {
 }
 
 function TimingStages({
-  label,
   stages,
   totalSeconds
 }: {
-  label: string;
   stages: Array<ExplorerTimingStage | PlanTimingStage>;
   totalSeconds?: number;
 }) {
   if (stages.length === 0) return null;
   return (
     <section className="backgroundJobTimingGroup">
-      <strong>{label}</strong>
       <ol>
         {stages.map((stage, index) => {
           const details = Object.entries(stage.details ?? {});
           return (
-            <li key={`${label}-${stage.key}`}>
+            <li key={stage.key}>
               <span className="backgroundJobTimingStepIndex">{index + 1}</span>
               <span className="backgroundJobTimingStepCopy">
                 <span>{stage.label}</span>
@@ -210,7 +200,9 @@ function TimingStages({
               </span>
               <span className="backgroundJobTimingDuration">
                 <b>{timingLabel(Math.max(0, stage.durationSeconds))}</b>
-                {totalSeconds ? <small>{stageShareLabel(stage.durationSeconds, totalSeconds)}</small> : null}
+                {totalSeconds ? (
+                  <small>{Math.round((Math.max(0, stage.durationSeconds) / totalSeconds) * 100)}%</small>
+                ) : null}
               </span>
             </li>
           );
@@ -280,8 +272,8 @@ function ProviderAttempts({
 }) {
   if (!attempts?.length) return null;
   return (
-    <details className="backgroundJobProviderAttempts" open>
-      <summary>Chi tiết từng lần resolve ({attempts.length})</summary>
+    <details className="backgroundJobProviderAttempts">
+      <summary>{attempts.length} lần đối chiếu địa điểm</summary>
       <div className="backgroundJobProviderAttemptList">
         {attempts.map((attempt, index) => {
           const isKnowledgeGraph =
@@ -333,175 +325,84 @@ function JobTimingDetails({
   if (!explorer && !planner && !running) return null;
   const completedTotalSeconds = (explorer?.totalSeconds ?? 0) + (planner?.totalSeconds ?? 0);
   const visibleTotalSeconds = completedTotalSeconds > 0 ? completedTotalSeconds : elapsed;
-  const slowPlannerStages = sortedSlowStages(planner?.stages ?? []);
-  const slowExplorerStages = sortedSlowStages(explorer?.stages ?? []);
 
   return (
     <div className="backgroundJobTiming">
       {visibleTotalSeconds > 0 ? (
-        <section className="backgroundJobTimingOverview">
-          <header>
-            <strong>Thời gian xử lý</strong>
-            <b>{preciseElapsedLabel(visibleTotalSeconds)}</b>
-          </header>
-          <div className="backgroundJobTimingBars">
-            {explorer ? (
-              <span style={{ "--share": `${stageShareLabel(explorer.totalSeconds, visibleTotalSeconds)}` } as CSSProperties}>
-                <b>Explorer</b>
-                <small>{timingLabel(explorer.totalSeconds)} · {stageShareLabel(explorer.totalSeconds, visibleTotalSeconds)}</small>
-              </span>
-            ) : null}
-            {planner ? (
-              <span style={{ "--share": `${stageShareLabel(planner.totalSeconds, visibleTotalSeconds)}` } as CSSProperties}>
-                <b>Planner + Finder</b>
-                <small>{timingLabel(planner.totalSeconds)} · {stageShareLabel(planner.totalSeconds, visibleTotalSeconds)}</small>
-              </span>
-            ) : null}
-          </div>
-          {slowPlannerStages.length || slowExplorerStages.length ? (
-            <div className="backgroundJobSlowStages">
-              <small>Chậm nhất</small>
-              {[...slowPlannerStages, ...slowExplorerStages]
-                .sort((left, right) => right.durationSeconds - left.durationSeconds)
-                .slice(0, 3)
-                .map((stage) => (
-                  <span key={`slow-${stage.key}`}>
-                    {stage.label}
-                    <b>{timingLabel(stage.durationSeconds)}</b>
-                  </span>
-                ))}
-            </div>
-          ) : null}
-        </section>
+        <header className="backgroundJobTimingTotal">
+          <span>Tổng thời gian</span>
+          <strong>{preciseElapsedLabel(visibleTotalSeconds)}</strong>
+        </header>
       ) : null}
+      <ol className="backgroundJobPipeline">
       {explorer ? (
-        <section className="backgroundJobTimingSummary">
-          <header>
-            <strong>Kết quả địa điểm</strong>
-            <b>{preciseElapsedLabel(explorer.totalSeconds)}</b>
-          </header>
-          <div className="backgroundJobTimingChips">
-            <span>
-              {urlPlaceCountLabel(explorer)}
-            </span>
-            {explorer.candidateCount > explorer.resolvedCount ? (
-              <span>{explorer.candidateCount - explorer.resolvedCount} cần kiểm tra thêm</span>
-            ) : null}
-          </div>
-          <ProviderResults
-            processed={explorer.providerCounts}
-            resolved={explorer.resolvedProviderCounts}
-          />
-          <ProviderAttempts attempts={explorer.providerAttempts} />
-          <TimingStages label="Các bước Explorer" stages={explorer.stages} totalSeconds={explorer.totalSeconds} />
-          {explorer.sources.map((source) => (
-            <section
-              className="backgroundJobSourceTiming"
-              key={`${source.sourceIndex}-${source.platform}`}
-            >
-              <header>
-                <strong>URL {source.sourceIndex} · {source.platform}</strong>
-                <b>{preciseElapsedLabel(source.totalSeconds)}</b>
-              </header>
-              <small>
-                Cache URL {sourceLabel(sourceUrl)}: {cacheStatusLabel(source.cacheStatus)}
-                {` · tra trong ${timingLabel(source.cacheLookupSeconds ?? 0)}`}
-              </small>
-              <small>
-                {source.sampledFrames} frame · {source.speechSource === "shared_url_cache"
-                  ? "Extraction cache"
-                  : source.speechSource?.startsWith("youtube_captions")
-                    ? "YouTube caption"
-                    : "STT"} {source.speechStatus}
-                {!source.speechSource?.startsWith("youtube_captions")
-                  && source.speechSource !== "shared_url_cache"
-                  ? ` · ${source.sttChunkCount ?? 1} STT chunk`
-                  : ""}
-                {` · Vision ${source.visionStatus}`}
-                {source.cacheStatus === "hit"
-                  ? ` · ${source.extractedPlaceCount} bản ghi extraction từ cache`
-                  : ` · ${source.extractedPlaceCount} kết quả extraction thô`}
-              </small>
-              {source.expectedPlaceCount != null ? (
-                <small>
-                  Coverage {source.extractedPlaceCount}/{source.expectedPlaceCount}
-                  {source.extractionCoverage != null
-                    ? ` · ${Math.round(source.extractionCoverage * 100)}%`
-                    : ""}
-                  {source.coverageStatus ? ` · ${source.coverageStatus}` : ""}
-                </small>
-              ) : null}
-              {source.cacheStatus === "hit" ? (
-                <small>
-                  Provider bên dưới là nguồn gốc của snapshot đã resolve; không
-                  đồng nghĩa provider đã được gọi lại trong lượt này.
-                </small>
-              ) : null}
-              {source.sttAudioDurationSeconds != null || source.sttChunkDurationSeconds?.length ? (
-                <small>
-                  Audio {source.sttAudioDurationSeconds == null ? "—" : timingLabel(source.sttAudioDurationSeconds)}
-                  {source.sttChunkDurationSeconds?.length
-                    ? ` · chunk ${source.sttChunkDurationSeconds.map(timingLabel).join(", ")}`
-                    : ""}
-                  {` · ${source.sttChunkRetryCount ?? 0} retry`}
-                </small>
-              ) : null}
-              <ProviderResults
-                processed={source.providerCounts}
-                resolved={source.resolvedProviderCounts}
-              />
-              <TimingStages label="Chi tiết URL" stages={source.stages} totalSeconds={source.totalSeconds} />
-            </section>
-          ))}
-        </section>
+        <li className="backgroundJobPipelineStep">
+          <span className="backgroundJobPipelineIndex">1</span>
+          <section>
+            <header>
+              <span>
+                <strong>Tìm và xác định địa điểm</strong>
+                <small>{urlPlaceCountLabel(explorer)} · {Math.max(0, explorer.candidateCount - explorer.resolvedCount)} cần kiểm tra</small>
+              </span>
+              <b>{preciseElapsedLabel(explorer.totalSeconds)}</b>
+            </header>
+            <details className="backgroundJobStepDetails">
+              <summary>Xem chi tiết và thời gian</summary>
+              <div>
+                <TimingStages stages={explorer.stages} totalSeconds={explorer.totalSeconds} />
+                <ProviderResults processed={explorer.providerCounts} resolved={explorer.resolvedProviderCounts} />
+                <ProviderAttempts attempts={explorer.providerAttempts} />
+                {explorer.sources.map((source) => (
+                  <section className="backgroundJobSourceTiming" key={`${source.sourceIndex}-${source.platform}`}>
+                    <header>
+                      <strong>Nguồn {source.sourceIndex} · {source.platform}</strong>
+                      <b>{preciseElapsedLabel(source.totalSeconds)}</b>
+                    </header>
+                    <small>{sourceLabel(sourceUrl)} · Cache {cacheStatusLabel(source.cacheStatus)}</small>
+                    <small>
+                      {source.sampledFrames} frame · {source.speechSource?.startsWith("youtube_captions") ? "Caption" : "STT"} {source.speechStatus}
+                      {` · Vision ${source.visionStatus} · ${source.extractedPlaceCount} kết quả thô`}
+                    </small>
+                    {source.expectedPlaceCount != null ? (
+                      <small>Coverage {source.extractedPlaceCount}/{source.expectedPlaceCount}{source.extractionCoverage != null ? ` · ${Math.round(source.extractionCoverage * 100)}%` : ""}</small>
+                    ) : null}
+                    <TimingStages stages={source.stages} totalSeconds={source.totalSeconds} />
+                  </section>
+                ))}
+              </div>
+            </details>
+          </section>
+        </li>
       ) : running ? (
-        <section className="backgroundJobTimingSummary backgroundJobTimingPending">
-          <header>
-            <strong>Đang tìm và xác định địa điểm</strong>
-            <b>{elapsedLabel(elapsed)}</b>
-          </header>
-          <small>
-            Explorer đang chạy URL extraction → gộp candidate → Knowledge Graph
-            Top-K theo tên/alias → Google Maps Playwright khi KG không đủ tin cậy
-            → lưu PostgreSQL.
-            Keyword và timer chính xác của từng lượt sẽ hiện ngay khi resolve xong.
-          </small>
-        </section>
+        <li className="backgroundJobPipelineStep running">
+          <span className="backgroundJobPipelineIndex">1</span>
+          <section><header><span><strong>Đang tìm địa điểm</strong><small>Trích xuất và đối chiếu nguồn</small></span><b>{elapsedLabel(elapsed)}</b></header></section>
+        </li>
       ) : null}
       {planner ? (
-        <section className="backgroundJobTimingSummary">
-          <header>
-            <strong>{planner.status === "running" ? "Planner + Finder đang chạy" : "Planner + Finder"}</strong>
-            <b>{preciseElapsedLabel(planner.totalSeconds)}</b>
-          </header>
-          <div className="backgroundJobTimingChips">
-            {planner.status === "running" ? (
-              <span>Đã hoàn tất {planner.stages.length} bước</span>
-            ) : (
-              <>
-                <span>{planner.dayCount} ngày</span>
-                <span>{planner.itemCount} item</span>
-                <span>{planner.transportLegCount} chặng</span>
-                <span>{planner.unscheduledCount} chưa xếp</span>
-                <span>{planner.warningCount} cảnh báo</span>
-              </>
-            )}
-          </div>
-          <TimingStages label="Các bước Planner + Finder" stages={planner.stages} totalSeconds={planner.totalSeconds} />
-        </section>
+        <li className="backgroundJobPipelineStep">
+          <span className="backgroundJobPipelineIndex">2</span>
+          <section>
+            <header>
+              <span>
+                <strong>{planner.status === "running" ? "Đang tạo lịch trình" : "Tạo và kiểm tra lịch trình"}</strong>
+                <small>{planner.dayCount} ngày · {planner.itemCount} hoạt động · {planner.unscheduledCount} chưa xếp · {planner.warningCount} cảnh báo</small>
+              </span>
+              <b>{preciseElapsedLabel(planner.totalSeconds)}</b>
+            </header>
+            <details className="backgroundJobStepDetails">
+              <summary>Xem chi tiết và thời gian</summary>
+              <div><TimingStages stages={planner.stages} totalSeconds={planner.totalSeconds} /></div>
+            </details>
+          </section>
+        </li>
       ) : running && explorer ? (
-        <section className="backgroundJobTimingSummary backgroundJobTimingPending">
-          <header>
-            <strong>Planner + Finder đang chạy</strong>
-            <b>{elapsedLabel(Math.max(0, elapsed - explorer.totalSeconds))}</b>
-          </header>
-          <small>
-            TripThemePlanner (Knowledge Graph DB + LLM) → PlaceSelector
-            (Knowledge Graph DB + rules) → dựng plan → kiểm tra tính khả thi. Timer từng
-            bước sẽ được giữ lại tại đây sau khi hoàn tất.
-          </small>
-        </section>
+        <li className="backgroundJobPipelineStep running">
+          <span className="backgroundJobPipelineIndex">2</span>
+          <section><header><span><strong>Đang tạo lịch trình</strong><small>Xếp tuyến và kiểm tra tính khả thi</small></span><b>{elapsedLabel(Math.max(0, elapsed - explorer.totalSeconds))}</b></header></section>
+        </li>
       ) : null}
+      </ol>
     </div>
   );
 }
@@ -517,7 +418,7 @@ export function BackgroundUrlJobs({
 }) {
   const router = useRouter();
   const [serverJobs, setServerJobs] = useState<UrlImportJob[]>([]);
-  const [activeTurns, setActiveTurns] = useState<TripChatTurn[]>([]);
+  const [plannerRuns, setPlannerRuns] = useState<TripChatTurn[]>([]);
   const [guestJobs, setGuestJobs] = useState<GuestUrlImportJob[]>(() => listGuestUrlJobs());
   const [now, setNow] = useState(() => Date.now());
   const [panelOpen, setPanelOpen] = useState(false);
@@ -543,6 +444,8 @@ export function BackgroundUrlJobs({
     ),
     [guestJobs, serverJobs]
   );
+  const activeTurns = plannerRuns.filter((turn) => ACTIVE_TURN.has(turn.status));
+  const savedPlannerRuns = plannerRuns.filter((turn) => !ACTIVE_TURN.has(turn.status));
 
   useEffect(() => {
     if (!enabled || (!activeTurns.length && !jobs.some((job) => ACTIVE.has(job.status)))) return;
@@ -554,7 +457,7 @@ export function BackgroundUrlJobs({
   useEffect(() => {
     if (!enabled || !authenticated) {
       setServerJobs([]);
-      setActiveTurns([]);
+      setPlannerRuns([]);
       statusesRef.current.clear();
       return;
     }
@@ -565,7 +468,7 @@ export function BackgroundUrlJobs({
       try {
         const [response, turns] = await Promise.all([
           listUrlImportJobs(),
-          listActiveTripChatTurns()
+          listTripChatPlannerRuns()
         ]);
         if (cancelled) return;
         const previous = statusesRef.current;
@@ -577,14 +480,15 @@ export function BackgroundUrlJobs({
         }
         statusesRef.current = new Map(response.jobs.map((job) => [job.id, job.status]));
         setServerJobs(response.jobs);
-        setActiveTurns(turns);
+        setPlannerRuns(turns);
         window.dispatchEvent(new CustomEvent("travelplanner:url-jobs-snapshot", {
           detail: response.jobs
         }));
         window.dispatchEvent(new CustomEvent("travelplanner:active-turns-snapshot", {
           detail: turns
         }));
-        const hasActive = turns.length > 0 || response.jobs.some((job) => !TERMINAL.has(job.status));
+        const hasActive = turns.some((turn) => ACTIVE_TURN.has(turn.status))
+          || response.jobs.some((job) => !TERMINAL.has(job.status));
         timer = setTimeout(refresh, hasActive ? 1800 : 8000);
       } catch {
         if (!cancelled) timer = setTimeout(refresh, 8000);
@@ -616,9 +520,11 @@ export function BackgroundUrlJobs({
   const runningJobs = visibleJobs.filter((job) => job.status === "running");
   const running = runningJobs.length;
   const queued = visibleJobs.filter((job) => job.status === "queued").length;
-  const failed = visibleJobs.filter((job) => job.status === "failed").length;
-  const ready = visibleJobs.filter((job) => job.status === "succeeded").length;
-  if (!enabled || (visibleJobs.length === 0 && activeTurns.length === 0)) return null;
+  const failed = visibleJobs.filter((job) => job.status === "failed").length
+    + savedPlannerRuns.filter((turn) => turn.status === "failed").length;
+  const ready = visibleJobs.filter((job) => job.status === "succeeded").length
+    + savedPlannerRuns.filter((turn) => turn.status === "completed").length;
+  if (!enabled || (visibleJobs.length === 0 && plannerRuns.length === 0)) return null;
 
   const primaryRunningJob = runningJobs[0];
   const primaryStage = primaryRunningJob ? progressStage(primaryRunningJob) : null;
@@ -734,16 +640,70 @@ export function BackgroundUrlJobs({
                 ? { step: 2, label: "Khám phá" }
                 : { step: 3, label: "Lập kế hoạch" };
             const elapsed = Math.max(0, Math.floor((now - Date.parse(turn.createdAt)) / 1000));
+            const explorerTiming = turnTiming<ExplorerTimingReport>(turn, "explorerTiming");
+            const plannerTiming = turnTiming<PlanTimingReport>(turn, "plannerTiming");
             return (
-              <div className="backgroundJobRow running" key={`turn-${turn.id}`}>
-                <div className="backgroundTurnSummary">
+              <details className="backgroundJobRow running" key={`turn-${turn.id}`}>
+                <summary className="backgroundTurnSummary">
                   <span className="backgroundJobState" aria-hidden="true" />
                   <span className="backgroundJobCopy">
                     <strong>AI Planner</strong>
                     <small>Bước {stage.step}/3 · {stage.label} · {elapsedLabel(elapsed)}</small>
                   </span>
+                  <span className="backgroundJobRowChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div className="backgroundJobDetails">
+                  <JobTimingDetails
+                    explorer={explorerTiming}
+                    planner={plannerTiming}
+                    running
+                    elapsed={elapsed}
+                    sourceUrl=""
+                  />
                 </div>
-              </div>
+              </details>
+            );
+          })}
+          {savedPlannerRuns.map((turn) => {
+            const explorerTiming = turnTiming<ExplorerTimingReport>(turn, "explorerTiming");
+            const plannerTiming = turnTiming<PlanTimingReport>(turn, "plannerTiming");
+            const measuredSeconds = (explorerTiming?.totalSeconds ?? 0) + (plannerTiming?.totalSeconds ?? 0);
+            return (
+              <details
+                className={`backgroundJobRow ${turn.status === "completed" ? "succeeded" : "failed"}`}
+                key={`turn-${turn.id}`}
+              >
+                <summary>
+                  <span className="backgroundJobState" aria-hidden="true">
+                    {turn.status === "completed" ? "✓" : "!"}
+                  </span>
+                  <span className="backgroundJobCopy">
+                    <strong>AI Planner · Raw prompt</strong>
+                    <small>
+                      {turn.status === "completed" ? "Đã hoàn tất" : "Cần thử lại"}
+                      {measuredSeconds > 0 ? ` · ${preciseElapsedLabel(measuredSeconds)}` : ""}
+                    </small>
+                  </span>
+                  <span className="backgroundJobRowChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div className="backgroundJobDetails">
+                  <JobTimingDetails
+                    explorer={explorerTiming}
+                    planner={plannerTiming}
+                    running={false}
+                    elapsed={measuredSeconds}
+                    sourceUrl=""
+                  />
+                  <div className="backgroundJobActions">
+                    <button
+                      onClick={() => router.push(`/planner?chatId=${encodeURIComponent(turn.chatId)}`)}
+                      type="button"
+                    >
+                      Mở chat chuyến đi
+                    </button>
+                  </div>
+                </div>
+              </details>
             );
           })}
           {visibleJobs.map((job) => {
@@ -761,22 +721,6 @@ export function BackgroundUrlJobs({
                 </summary>
                 <div className="backgroundJobDetails">
                   <div className="backgroundJobMeta">
-                    <span>
-                      <small>Địa điểm duy nhất từ nguồn</small>
-                      <strong>
-                        {job.explorerTiming
-                          ? urlPlaceCountLabel(job.explorerTiming)
-                          : job.status === "running"
-                            ? "Đang tìm kiếm…"
-                            : job.status === "queued"
-                              ? "Chưa bắt đầu"
-                              : "Chưa có kết quả"}
-                      </strong>
-                    </span>
-                    <span>
-                      <small>Thời gian xử lý</small>
-                      <strong>{job.startedAt ? elapsedLabel(elapsedSeconds(job, now)) : "Chưa bắt đầu"}</strong>
-                    </span>
                     <span><small>Lần chạy</small><strong>{job.attemptCount}</strong></span>
                   </div>
                   <JobTimingDetails

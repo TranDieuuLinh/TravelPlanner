@@ -99,8 +99,8 @@ def _decision(
         confidence=confidence,
         operation=operation,
         requires_confirmation=requires_confirmation,
-        message=message,
-        options=options,
+        clarification_question=message,
+        clarification_options=options,
     )
 
 
@@ -322,6 +322,11 @@ class TestConversationContext:
             messages=[
                 SimpleNamespace(role="user", content="  hello  "),
                 SimpleNamespace(role="assistant", content="hi back"),
+                SimpleNamespace(
+                    role="assistant",
+                    content="Đã cập nhật lịch trình.",
+                    message_kind="plan_update",
+                ),
                 SimpleNamespace(role="system", content="sys"),  # filtered out
                 SimpleNamespace(role="user", content=""),  # filtered out
             ],
@@ -354,6 +359,7 @@ class TestConversationContext:
         assert len(ctx["recentMessages"]) == 2
         assert all("role" in m and "content" in m for m in ctx["recentMessages"])
         assert all(m["role"] in {"user", "assistant"} for m in ctx["recentMessages"])
+        assert all("Đã cập nhật lịch trình" not in m["content"] for m in ctx["recentMessages"])
         assert len(ctx["recentActionHistory"]) == 1  # only completed
 
 
@@ -373,7 +379,16 @@ class _FakeRepo:
     def get_turn(self, chat_id, user_id, turn_id):
         raise NotImplementedError
 
-    def create_turn(self, chat, *, client_turn_id, content, attachment_names, expected_revision):
+    def create_turn(
+        self,
+        chat,
+        *,
+        client_turn_id,
+        content,
+        attachment_names,
+        expected_revision,
+        commit=True,
+    ):
         self.created.append(
             {
                 "chat": chat,
@@ -381,6 +396,7 @@ class _FakeRepo:
                 "content": content,
                 "attachment_names": attachment_names,
                 "expected_revision": expected_revision,
+                "commit": commit,
             }
         )
         return SimpleNamespace(id="turn-new")
@@ -659,4 +675,36 @@ class TestExecuteTimeout:
                 "type": "errorRecovery",
                 "message": "Lượt xử lý đã hết thời gian chờ. Bạn có thể thử lại.",
             }
+        ]
+
+
+class TestChatPreferencePersistence:
+    def test_turn_and_preference_job_are_created_together(self):
+        calls: list[dict[str, Any]] = []
+
+        class _Jobs:
+            def enqueue(self, **kwargs):
+                calls.append(kwargs)
+
+        repo = _FakeRepo()
+        chat = SimpleNamespace(id="chat-1", user_id=7)
+        repo.get = lambda *args, **kwargs: chat  # type: ignore[assignment]
+        service = ConversationTurnService(
+            repository=repo,  # type: ignore[arg-type]
+            trip_chat_service=_FakeTripChatService(),  # type: ignore[arg-type]
+            mutation_service=_FakeMutationService(),  # type: ignore[arg-type]
+            preference_jobs=_Jobs(),  # type: ignore[arg-type]
+        )
+
+        turn = service.start(
+            "chat-1",
+            SimpleNamespace(id=7),
+            "Mình không thích nơi đông người",
+            expected_revision=0,
+            client_turn_id="client-7",
+        )
+
+        assert turn.id == "turn-new"
+        assert calls == [
+            {"message_id": "turn-new", "user_id": 7, "commit": True}
         ]

@@ -211,6 +211,7 @@ def test_information_finder_choice_adds_provisional_candidate_and_persists_prove
     )
     reloaded = repository.get(saved.id, owner.id)
     assert repository.get_revision(saved.id, 1).plan_payload["days"][1]["items"]
+    assert reloaded.messages[-1].message_kind == "plan_update"
     assert reloaded.messages[-1].content_blocks[0]["affectedDays"] == [2]
     reloaded_selection = repository.get_turn(saved.id, owner.id, selection.id)
     assert reloaded_selection.result_summary["sourceRefs"] == added.source_refs

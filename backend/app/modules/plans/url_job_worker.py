@@ -253,6 +253,7 @@ class UrlImportJobWorker:
                         "processingWallSeconds": processing_seconds,
                         "explorerSeconds": explorer_seconds,
                         "plannerSeconds": planner_seconds,
+                        "plannerTiming": job.planner_timing,
                         "accountedSeconds": accounted_seconds,
                         "orchestrationOverheadSeconds": round(
                             max(0.0, processing_seconds - accounted_seconds),

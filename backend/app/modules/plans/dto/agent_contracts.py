@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
+from app.modules.knowledge_graph.ontology import KnowledgePlaceType
 from app.modules.plans.domain.entities import (
     DestinationStay,
     PlaceSelectionStatus,
@@ -150,6 +151,9 @@ class SelectedPlaceContext(BaseModel):
     latitude: Annotated[float | None, Field(default=None, ge=-90, le=90)]
     longitude: Annotated[float | None, Field(default=None, ge=-180, le=180)]
     tags: list[str] = Field(default_factory=list)
+    ontology_type: Annotated[
+        KnowledgePlaceType | None, Field(default=None, alias="ontologyType")
+    ]
     source_refs: Annotated[list[str], Field(alias="sourceRefs")] = Field(
         default_factory=list
     )

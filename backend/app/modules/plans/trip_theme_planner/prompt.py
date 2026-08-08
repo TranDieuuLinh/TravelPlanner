@@ -249,5 +249,10 @@ def build_theme_selection_policy(planner_input: TripThemePlanningInput) -> dict:
         "hasCurrentTripInterests": has_current_trip_interests,
         "confirmedPlaceCount": confirmed_place_count,
         "effectiveLongTermProfileValues": effective_profile_values,
-        "minimumRequiredExperiences": planner_input.trip_spec.days,
+        # Required experiences describe trip-wide variety, not one theme per
+        # day. Day count is owned by the deterministic planning solver.
+        "minimumRequiredExperiences": min(
+            6,
+            max(1, len(planner_input.intent.interests)),
+        ),
     }

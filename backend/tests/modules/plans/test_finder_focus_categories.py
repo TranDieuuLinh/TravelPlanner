@@ -66,11 +66,11 @@ def test_attraction_does_not_contain_region_phrase_pho_co() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_user_query_maps_only_food_drink() -> None:
-    """``semantic_categories`` for the user's food query must be ``food_drink``.
+def test_user_query_maps_only_restaurant() -> None:
+    """A main-food query maps to the canonical ``Restaurant`` type.
 
     The query "food + 'Khám phá ẩm thực phố cổ' + 'Hoàn Kiếm'" should
-    resolve to ``food_drink`` only. Any ``attraction`` leak means the
+    resolve to ``Restaurant`` only. Any ``attraction`` leak means the
     search pool will include museums.
     """
 
@@ -81,17 +81,17 @@ def test_user_query_maps_only_food_drink() -> None:
     ])
     categories = semantic_categories(terms)
 
-    assert "food_drink" in categories
+    assert "Restaurant" in categories
     assert "attraction" not in categories, (
         "Query phrased around food must not leak into attraction; "
         f"got {categories!r}"
     )
 
 
-def test_cafe_is_an_activity_category_not_a_meal_category() -> None:
+def test_cafe_is_drink_dessert_not_a_meal_category() -> None:
     categories = semantic_categories({"cafe", "coffee"})
 
-    assert categories == {"attraction"}
+    assert categories == {"DrinkDessert"}
     assert place_category(
         SelectablePlace(
             placeId="cafe-dinh",
@@ -100,7 +100,7 @@ def test_cafe_is_an_activity_category_not_a_meal_category() -> None:
             regionKey="vn,ha-noi",
             tags=["cafe", "coffee"],
         )
-    ) == "attraction"
+    ) == "DrinkDessert"
 
 
 @pytest.mark.parametrize(
@@ -114,7 +114,7 @@ def test_provider_food_shop_variants_cannot_fill_activity_slots(place_type: str)
             placeType=place_type,
             regionKey="vn,ha-noi",
         )
-    ) == "food_drink"
+    ) == "DrinkDessert"
 
 
 @pytest.mark.parametrize(
@@ -146,7 +146,7 @@ def test_restaurant_type_overrides_landmark_words() -> None:
             placeType="Restaurant",
             regionKey="vn,ha-noi",
         )
-    ) == "food_drink"
+    ) == "Restaurant"
 
 
 def test_landmark_name_overrides_food_tag_from_url_activity_evidence() -> None:
@@ -230,11 +230,11 @@ def test_search_food_query_does_not_return_museums() -> None:
     places = [
         _make_place(
             "p_pho", "Phở Thìn Bờ Hồ", "restaurant",
-            place_group="food_drink", tags=("food", "local_cuisine"),
+            place_group="Restaurant", tags=("food", "local_cuisine"),
         ),
         _make_place(
             "p_buncha", "Bún Chả Đắc Kim", "restaurant",
-            place_group="food_drink", tags=("food", "local_cuisine"),
+            place_group="Restaurant", tags=("food", "local_cuisine"),
         ),
         _make_place(
             "p_hkg", "Hồ Hoàn Kiếm", "attraction",
@@ -282,7 +282,7 @@ def test_search_food_query_excludes_non_dining_food_businesses_before_limit() ->
                 f"supplier-{index}",
                 f"Food supplier {index}",
                 "Catering food and drink supplier",
-                place_group="food_drink",
+                place_group="Restaurant",
                 tags=("food", "breakfast"),
             )
             for index in range(20)
@@ -291,7 +291,7 @@ def test_search_food_query_excludes_non_dining_food_businesses_before_limit() ->
             "restaurant",
             "Phở Hà Nội",
             "Vietnamese restaurant",
-            place_group="food_drink",
+                place_group="Restaurant",
             tags=("food", "breakfast"),
         ),
     ]
@@ -317,7 +317,7 @@ def test_search_culture_query_excludes_cafes_before_ranking() -> None:
         ),
         _make_place(
             "p_restaurant", "Culture Restaurant", "restaurant",
-            place_group="food_drink", tags=("food", "culture"),
+            place_group="Restaurant", tags=("food", "culture"),
         ),
         _make_place(
             "p_museum", "Bảo tàng Hà Nội", "museum",

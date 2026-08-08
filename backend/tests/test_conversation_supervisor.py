@@ -1,13 +1,8 @@
-"""Tests for the conversation supervisor decision logic.
-
-Pure, deterministic tests covering:
-- SupervisorOutput schema validation (alias, extra, bounds)
-- _validated_decision invariants (item/day checks, confidence, locks)
-- ConstrainedConversationSupervisor.decide (LLM mocked, repair loop)
-"""
+"""Contract and safety tests for the classifier-only Conversation Supervisor."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -16,11 +11,12 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.modules.plans.conversation_supervisor import (
+    ClarificationArguments,
     ConstrainedConversationSupervisor,
-    ConversationDecision,
     ConversationSupervisorError,
-    SupervisorOption,
-    SupervisorOperation,
+    InformationArguments,
+    MutationArguments,
+    PlanningArguments,
     SupervisorOutput,
     _find_plan_item,
     _has_plan_day,
@@ -28,40 +24,18 @@ from app.modules.plans.conversation_supervisor import (
     _validated_decision,
 )
 from app.modules.plans.domain.entities import (
+    BudgetLevel,
     Plan,
     PlanDay,
     PlanItem,
     PlanKind,
     PlanStatus,
     TravelIntent,
-    BudgetLevel,
     TravelPace,
 )
 
 
-# ---------------------------------------------------------------------------
-# fixtures and helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_plan(*, item_specs: list[tuple[str, bool]] | None = None) -> Plan:
-    """Build a minimal Plan with 2 days and the requested items on day 1."""
-    items: list[PlanItem] = []
-    for idx, (item_id, locked) in enumerate(item_specs or []):
-        items.append(
-            PlanItem(
-                itemId=item_id,
-                name=f"Place {idx}",
-                timeWindow="morning",
-                placeType="restaurant",
-                timelineCategory="food",
-                locked=locked,
-            )
-        )
-    days = [
-        PlanDay(day=1, theme="Day 1", items=items),
-        PlanDay(day=2, theme="Day 2", items=[]),
-    ]
+def _make_plan(*, locked: bool = False) -> Plan:
     return Plan(
         id="plan-1",
         kind=PlanKind.main,
@@ -76,547 +50,346 @@ def _make_plan(*, item_specs: list[tuple[str, bool]] | None = None) -> Plan:
             pace=TravelPace.balanced,
         ),
         macroPlan={"title": "Trip", "destination": "Đà Lạt"},
-        days=days,
+        days=[
+            PlanDay(
+                day=1,
+                theme="Day 1",
+                items=[
+                    PlanItem(
+                        itemId="place-1",
+                        name="Place 1",
+                        timeWindow="morning",
+                        placeType="restaurant",
+                        timelineCategory="food",
+                        locked=locked,
+                    )
+                ],
+            ),
+            PlanDay(day=2, theme="Day 2", items=[]),
+        ],
     )
 
 
 @pytest.fixture(autouse=True)
 def _enable_supervisor(monkeypatch):
-    """Most tests don't care about the feature flag; enable it."""
     monkeypatch.setattr(settings, "conversation_supervisor_llm_enabled", True)
 
 
-# ---------------------------------------------------------------------------
-# SupervisorOutput schema
-# ---------------------------------------------------------------------------
-
-
-class TestSupervisorOutputSchema:
-    def test_extra_fields_are_rejected(self):
-        with pytest.raises(ValidationError):
-            SupervisorOutput.model_validate_json(
-                json.dumps(
-                    {
-                        "intent": "travel_advice",
-                        "confidence": 0.9,
-                        "responseText": "ok",
-                        "made_up_extra": "no",
-                    }
-                )
-            )
-
-    def test_alias_input_parses(self):
-        out = SupervisorOutput.model_validate_json(
-            json.dumps(
-                {
-                    "intent": "add_place",
-                    "confidence": 0.95,
-                    "responseText": "Đã thêm",
-                    "operations": [{"type": "add_place", "day": 1, "name": "Cà phê"}],
-                    "requiresConfirmation": True,
-                }
-            )
-        )
-        assert out.intent == "add_place"
-        assert out.response_text == "Đã thêm"
-        assert out.requires_confirmation is True
-        assert out.operations[0].type == "add_place"
-
-    def test_field_name_input_parses(self):
-        # populate_by_name=True should also accept the snake-case name
-        out = SupervisorOutput.model_validate(
-            {
-                "intent": "add_place",
-                "confidence": 0.9,
-                "response_text": "ok",
-            }
-        )
-        assert out.response_text == "ok"
-        assert out.requires_confirmation is False
-
-    def test_confidence_bounds(self):
-        with pytest.raises(ValidationError):
-            SupervisorOutput.model_validate(
-                {"intent": "travel_advice", "confidence": 1.5, "response_text": "ok"}
-            )
-        with pytest.raises(ValidationError):
-            SupervisorOutput.model_validate(
-                {"intent": "travel_advice", "confidence": -0.1, "response_text": "ok"}
-            )
-
-    def test_option_length_limits(self):
-        with pytest.raises(ValidationError):
-            SupervisorOption(label="x" * 121, value="ok")
-        with pytest.raises(ValidationError):
-            SupervisorOperation(type="add_place", day=1, itemId="x" * 129)
-
-    def test_clarifying_question_length_limit(self):
-        with pytest.raises(ValidationError):
-            SupervisorOutput.model_validate(
-                {
-                    "intent": "clarify",
-                    "confidence": 0.9,
-                    "responseText": "x",
-                    "clarifyingQuestion": "q" * 501,
-                }
-            )
-
-
-# ---------------------------------------------------------------------------
-# _plan_summary / _find_plan_item / _has_plan_day
-# ---------------------------------------------------------------------------
-
-
-class TestPlanHelpers:
-    def test_none_plan_returns_none_summary(self):
-        assert _plan_summary(None) is None
-
-    def test_summary_keeps_only_items_with_ids(self):
-        plan = _make_plan(item_specs=[("a", False), ("", False)])
-        summary = _plan_summary(plan)
-        assert summary is not None
-        assert summary["id"] == "plan-1"
-        assert summary["destination"] == "Đà Lạt"
-        item_ids = [item["itemId"] for item in summary["days"][0]["items"]]
-        assert item_ids == ["a"]
-
-    def test_find_item_resolves_day_and_item(self):
-        plan = _make_plan(item_specs=[("item-a", False)])
-        result = _find_plan_item(plan, "item-a")
-        assert result is not None
-        day, item = result
-        assert day == 1
-        assert item.item_id == "item-a"
-
-    def test_find_item_returns_none_when_missing(self):
-        plan = _make_plan(item_specs=[("item-a", False)])
-        assert _find_plan_item(plan, "ghost") is None
-        assert _find_plan_item(None, "x") is None
-
-    def test_has_plan_day(self):
-        plan = _make_plan()
-        assert _has_plan_day(plan, 1) is True
-        assert _has_plan_day(plan, 2) is True
-        assert _has_plan_day(plan, 3) is False
-        assert _has_plan_day(None, 1) is False
-        assert _has_plan_day(plan, None) is False
-
-
-# ---------------------------------------------------------------------------
-# _validated_decision invariants
-# ---------------------------------------------------------------------------
-
-
-def _out(**overrides: Any) -> SupervisorOutput:
-    """Build a SupervisorOutput from kwargs (snake-case fields)."""
-    base: dict[str, Any] = {
-        "intent": "add_place",
-        "confidence": 0.95,
-        "response_text": "ok",
-    }
-    base.update(overrides)
-    return SupervisorOutput.model_validate(base)
-
-
-class TestValidatedDecision:
-    def test_clarify_without_question_raises(self):
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(intent="clarify"), None,
-            )
-
-    def test_mutation_requires_exactly_one_matching_op(self):
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(_out(intent="add_place"), None)
-
-    def test_non_mutation_with_operations_raises(self):
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="travel_advice",
-                    operations=[{"type": "add_place", "day": 1, "name": "x"}],
-                ),
-                None,
-            )
-
-    def test_update_place_inherits_day_from_plan(self):
-        # update_place needs item_id, so the supervisor day can be wrong
-        # and the service overwrites it from the plan.
-        plan = _make_plan(item_specs=[("p1", False)])
-        out = _out(
-            intent="update_place",
-            operations=[{
-                "type": "update_place", "itemId": "p1", "day": 2, "name": "X",
-            }],
-        )
-        decision = _validated_decision(out, plan)
-        assert decision.operation is not None
-        assert decision.operation["itemId"] == "p1"
-        assert decision.operation["day"] == 1
-
-    def test_add_place_missing_day_raises(self):
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="add_place",
-                    operations=[{"type": "add_place", "name": "X"}],
-                ),
-                None,
-            )
-
-    def test_add_place_missing_name_raises(self):
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="add_place",
-                    operations=[{"type": "add_place", "day": 1}],
-                ),
-                None,
-            )
-
-    def test_add_place_invalid_day_raises(self):
-        # day=99 is invalid per the schema (le=30), so it never reaches
-        # the cross-check against the plan. Use day=3 instead, which is
-        # within bounds but outside the current 2-day plan.
-        plan = _make_plan()
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="add_place",
-                    operations=[{"type": "add_place", "day": 3, "name": "X"}],
-                ),
-                plan,
-            )
-
-    def test_move_place_requires_to_day(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="move_place",
-                    operations=[{"type": "move_place", "itemId": "p1", "day": 1}],
-                ),
-                plan,
-            )
-
-    def test_move_place_invalid_to_day_raises(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="move_place",
-                    operations=[{
-                        "type": "move_place", "itemId": "p1", "day": 1, "toDay": 3,
-                    }],
-                ),
-                plan,
-            )
-
-    def test_update_place_requires_name(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="update_place",
-                    operations=[{
-                        "type": "update_place", "itemId": "p1", "day": 1,
-                    }],
-                ),
-                plan,
-            )
-
-    def test_remove_requires_item_id_and_day(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="remove_place",
-                    operations=[{"type": "remove_place", "day": 1}],
-                ),
-                plan,
-            )
-
-    def test_lock_requires_item_id_and_day(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="lock_item",
-                    operations=[{"type": "lock_item", "day": 1}],
-                ),
-                plan,
-            )
-
-    def test_unknown_item_id_raises(self):
-        plan = _make_plan()
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="remove_place",
-                    operations=[{
-                        "type": "remove_place", "itemId": "ghost", "day": 1,
-                    }],
-                ),
-                plan,
-            )
-
-    def test_low_confidence_mutation_rejected(self):
-        plan = _make_plan(item_specs=[("p1", False)])
-        with pytest.raises(ConversationSupervisorError):
-            _validated_decision(
-                _out(
-                    intent="remove_place",
-                    confidence=0.5,
-                    operations=[{
-                        "type": "remove_place", "itemId": "p1", "day": 1,
-                    }],
-                ),
-                plan,
-            )
-
-    def test_locked_item_requires_confirmation(self):
-        plan = _make_plan(item_specs=[("p1", True)])
-        decision = _validated_decision(
-            _out(
-                intent="remove_place",
-                operations=[{
-                    "type": "remove_place", "itemId": "p1", "day": 1,
-                }],
-            ),
-            plan,
-        )
-        assert decision.requires_confirmation is True
-
-    def test_unlock_does_not_require_confirmation(self):
-        plan = _make_plan(item_specs=[("p1", True)])
-        decision = _validated_decision(
-            _out(
-                intent="unlock_item",
-                operations=[{
-                    "type": "unlock_item", "itemId": "p1", "day": 1,
-                }],
-            ),
-            plan,
-        )
-        assert decision.requires_confirmation is False
-
-    def test_regenerate_plan_with_existing_plan_requires_confirmation(self):
-        plan = _make_plan()
-        decision = _validated_decision(
-            _out(intent="regenerate_plan", requires_confirmation=True),
-            plan,
-        )
-        assert decision.requires_confirmation is True
-
-    def test_options_passthrough(self):
-        decision = _validated_decision(
-            SupervisorOutput.model_validate(
-                {
-                    "intent": "clarify",
-                    "confidence": 0.9,
-                    "responseText": "x",
-                    "clarifyingQuestion": "Bạn muốn làm gì?",
-                    "options": [{"label": "L1", "value": "v1"}],
-                }
-            ),
-            None,
-        )
-        assert decision.options == ({"label": "L1", "value": "v1"},)
-
-    def test_message_prefers_clarification_question(self):
-        decision = _validated_decision(
-            SupervisorOutput.model_validate(
-                {
-                    "intent": "clarify",
-                    "confidence": 0.9,
-                    "responseText": "long response",
-                    "clarifyingQuestion": "short clarifier",
-                }
-            ),
-            None,
-        )
-        assert decision.message == "short clarifier"
-
-
-# ---------------------------------------------------------------------------
-# ConstrainedConversationSupervisor.decide (LLM mocked)
-# ---------------------------------------------------------------------------
-
-
-class _FakeLLM:
-    def __init__(self, outputs: list[str]) -> None:
-        self.outputs = list(outputs)
+class FakeLLM:
+    def __init__(self, *outputs: dict[str, Any] | str) -> None:
+        self.outputs = [
+            output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
+            for output in outputs
+        ]
         self.calls = 0
-        self.last_schema = None
+        self.last_payload: dict[str, Any] | None = None
+        self.last_schema: dict[str, Any] | None = None
 
-    async def generate_structured_json(self, system_prompt, user_payload, *, response_schema):
+    async def generate_structured_json(
+        self, system_prompt, user_payload, *, response_schema
+    ):
         self.calls += 1
+        self.last_payload = json.loads(user_payload)
         self.last_schema = response_schema
         if not self.outputs:
-            raise RuntimeError("exhausted")
+            raise RuntimeError("fake LLM exhausted")
         return self.outputs.pop(0)
 
 
-class TestSupervisorDecide:
-    async def test_high_signal_capability_question_does_not_call_llm(self):
-        llm = _FakeLLM([])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
+def _output(intent: str, arguments: dict[str, Any], **overrides: Any) -> SupervisorOutput:
+    payload = {"intent": intent, "confidence": 0.95, "arguments": arguments}
+    payload.update(overrides)
+    return SupervisorOutput.model_validate(payload)
 
-        decision = await supervisor.decide("bạn code được không?", None)
 
-        assert decision.intent == "travel_advice"
-        assert "code" in (decision.message or "")
-        assert llm.calls == 0
+class TestSupervisorSchema:
+    def test_classifier_schema_has_only_decision_fields(self):
+        schema = SupervisorOutput.model_json_schema(by_alias=True)
+        assert set(schema["properties"]) == {"intent", "confidence", "arguments"}
+        assert "responseText" not in schema["properties"]
+        assert "agent" not in schema["properties"]
 
-    async def test_origin_question_does_not_start_planning_or_call_llm(self):
-        llm = _FakeLLM([])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-
-        decision = await supervisor.decide("bạn đến từ đâu?", None)
-
-        assert decision.intent == "travel_advice"
-        assert "không có quê quán" in (decision.message or "")
-        assert llm.calls == 0
-
-    async def test_greeting_with_plan_request_still_enters_intake(self):
-        llm = _FakeLLM([])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-
-        decision = await supervisor.decide(
-            "xin chào, lên kế hoạch Hà Nội 2 ngày giúp tôi",
-            None,
+    def test_information_arguments(self):
+        output = _output(
+            "travel_advice",
+            {"kind": "information", "query": "Việt Nam có gì đặc biệt?"},
         )
+        assert isinstance(output.arguments, InformationArguments)
+        assert output.arguments.query == "Việt Nam có gì đặc biệt?"
 
-        assert decision.intent == "create_plan"
-        assert llm.calls == 0
-
-    async def test_clear_plan_request_enters_intake_instead_of_repeated_clarify(self):
-        llm = _FakeLLM([])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-
-        decision = await supervisor.decide(
-            "lên kế hoạch du lịch 2 ngày giúp tôi",
-            None,
+    def test_planning_arguments(self):
+        output = _output(
+            "create_plan",
+            {"kind": "planning", "destination": "Hà Nội", "days": 3},
         )
+        assert isinstance(output.arguments, PlanningArguments)
+        assert output.arguments.days == 3
 
-        assert decision.intent == "create_plan"
-        assert decision.confidence == 1.0
-        assert llm.calls == 0
-
-    async def test_follow_up_place_requirement_enters_existing_intake(self):
-        llm = _FakeLLM([])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-
-        decision = await supervisor.decide(
-            "tôi muốn ít nhất phải thăm làng Bắc",
-            None,
-            conversation_context={
-                "currentTripIntent": {
-                    "destination": "unspecified",
-                    "timing": {"days": 2},
-                }
+    def test_mutation_arguments(self):
+        output = _output(
+            "add_place",
+            {
+                "kind": "mutation",
+                "operation": {"type": "add_place", "day": 1, "name": "Cafe"},
             },
         )
+        assert isinstance(output.arguments, MutationArguments)
 
-        assert decision.intent == "create_plan"
-        assert llm.calls == 0
+    def test_clarification_arguments(self):
+        output = _output(
+            "clarify",
+            {
+                "kind": "clarification",
+                "question": "Bạn muốn chuyến mới hay sửa chuyến này?",
+                "options": [{"label": "Chuyến mới", "value": "Tạo chuyến mới"}],
+            },
+        )
+        assert isinstance(output.arguments, ClarificationArguments)
 
-    async def test_disabled_raises(self, monkeypatch):
-        monkeypatch.setattr(settings, "conversation_supervisor_llm_enabled", False)
-        supervisor = ConstrainedConversationSupervisor(llm=_FakeLLM([]))
-        with pytest.raises(ConversationSupervisorError):
-            await supervisor.decide("hi", None)
+    @pytest.mark.parametrize(
+        ("intent", "arguments"),
+        [
+            ("travel_advice", {"kind": "planning"}),
+            ("create_plan", {"kind": "information", "query": "x"}),
+            ("clarify", {"kind": "command"}),
+            ("undo", {"kind": "mutation", "operation": {"type": "add_place", "day": 1, "name": "x"}}),
+        ],
+    )
+    def test_arguments_kind_must_match_intent(self, intent, arguments):
+        with pytest.raises(ValidationError):
+            _output(intent, arguments)
 
-    async def test_happy_path_returns_decision(self):
-        llm = _FakeLLM([
-            json.dumps({
-                "intent": "add_place",
-                "confidence": 0.92,
-                "responseText": "ok",
-                "operations": [{"type": "add_place", "day": 1, "name": "X"}],
-            })
-        ])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
+    def test_operation_type_must_match_mutation_intent(self):
+        with pytest.raises(ValidationError, match="operation type must match"):
+            _output(
+                "remove_place",
+                {
+                    "kind": "mutation",
+                    "operation": {"type": "lock_item", "itemId": "place-1", "day": 1},
+                },
+            )
+
+    def test_freshness_is_limited_to_current_information(self):
+        with pytest.raises(ValidationError, match="requiresFreshness"):
+            _output(
+                "travel_advice",
+                {
+                    "kind": "information",
+                    "query": "Việt Nam có gì đặc biệt?",
+                    "requiresFreshness": True,
+                },
+            )
+
+    def test_extra_response_text_and_agent_are_rejected(self):
+        with pytest.raises(ValidationError):
+            SupervisorOutput.model_validate(
+                {
+                    "intent": "travel_advice",
+                    "confidence": 0.9,
+                    "arguments": {"kind": "information", "query": "x"},
+                    "responseText": "old contract",
+                    "agent": "information_finder",
+                }
+            )
+
+
+class TestPlanHelpers:
+    def test_plan_summary_and_lookup(self):
         plan = _make_plan()
-        decision = await supervisor.decide("add X to day 1", plan)
-        assert isinstance(decision, ConversationDecision)
-        assert decision.intent == "add_place"
-        assert decision.confidence == 0.92
-        assert decision.operation is not None
-        assert llm.calls == 1
-        # the JSON schema sent to the LLM must be the alias form
-        assert "responseText" in llm.last_schema["properties"]
+        summary = _plan_summary(plan)
+        assert summary is not None
+        assert summary["destination"] == "Đà Lạt"
+        assert summary["days"][0]["items"][0]["itemId"] == "place-1"
+        assert _find_plan_item(plan, "place-1")[0] == 1
+        assert _find_plan_item(plan, "missing") is None
+        assert _has_plan_day(plan, 2) is True
+        assert _has_plan_day(plan, 3) is False
 
-    async def test_first_invalid_repaired_by_secondary_call(self):
-        llm = _FakeLLM([
-            "{not-json",
-            json.dumps({
-                "intent": "add_place",
-                "confidence": 0.92,
-                "responseText": "ok",
-                "operations": [{"type": "add_place", "day": 1, "name": "X"}],
-            }),
-        ])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-        plan = _make_plan()
-        decision = await supervisor.decide("add X", plan)
-        assert decision.intent == "add_place"
-        assert llm.calls == 2
 
-    async def test_two_failures_raise(self):
-        llm = _FakeLLM(["x", "y"])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-        with pytest.raises(ConversationSupervisorError):
-            await supervisor.decide("hi", None)
-        assert llm.calls == 2
-
-    async def test_llm_runtime_error_raises_supervisor_error(self):
-        class _BrokenLLM:
-            async def generate_structured_json(self, *args, **kwargs):
-                raise RuntimeError("upstream down")
-
-        supervisor = ConstrainedConversationSupervisor(llm=_BrokenLLM())
-        with pytest.raises(ConversationSupervisorError):
-            await supervisor.decide("hi", None)
-
-    async def test_decision_includes_options_as_dicts(self):
-        llm = _FakeLLM([
-            json.dumps({
-                "intent": "clarify",
-                "confidence": 0.9,
-                "responseText": "x",
-                "clarifyingQuestion": "Bạn muốn?",
-                "options": [
-                    {"label": "Tư vấn", "value": "Tư vấn thêm"},
-                ],
-            })
-        ])
-        supervisor = ConstrainedConversationSupervisor(llm=llm)
-        decision = await supervisor.decide("?", None)
-        assert dict(decision.options[0]) == {
-            "label": "Tư vấn", "value": "Tư vấn thêm",
+class TestValidatedDecision:
+    def test_information_request_is_forwarded_without_response_text(self):
+        decision = _validated_decision(
+            _output(
+                "travel_advice",
+                {"kind": "information", "query": "Việt Nam có gì đặc biệt?"},
+            ),
+            None,
+        )
+        assert decision.clarification_question is None
+        assert decision.information_request == {
+            "kind": "information",
+            "query": "Việt Nam có gì đặc biệt?",
+            "requiresFreshness": False,
         }
 
-    async def test_repair_path_uses_repair_prompt(self):
-        seen_prompts: list[str] = []
+    def test_planning_arguments_become_intake_patch(self):
+        decision = _validated_decision(
+            _output(
+                "create_plan",
+                {"kind": "planning", "destination": "Hà Nội", "days": 4},
+            ),
+            None,
+        )
+        assert decision.intake_patch == {"destination": "Hà Nội", "days": 4}
 
-        class _RecordingLLM:
-            def __init__(self):
-                self.outputs = iter([
-                    "garbage",
-                    json.dumps({
-                        "intent": "add_place",
-                        "confidence": 0.9,
-                        "responseText": "ok",
-                        "operations": [{"type": "add_place", "day": 1, "name": "X"}],
-                    }),
-                ])
+    def test_clarification_becomes_service_message_and_options(self):
+        decision = _validated_decision(
+            _output(
+                "clarify",
+                {
+                    "kind": "clarification",
+                    "question": "Bạn muốn chọn gì?",
+                    "options": [{"label": "A", "value": "a"}],
+                },
+            ),
+            None,
+        )
+        assert decision.clarification_question == "Bạn muốn chọn gì?"
+        assert decision.clarification_options == ({"label": "A", "value": "a"},)
 
-            async def generate_structured_json(self, system_prompt, user_payload, *, response_schema):
-                seen_prompts.append(system_prompt)
-                return next(self.outputs)
+    def test_add_place_must_target_existing_day(self):
+        with pytest.raises(ConversationSupervisorError, match="outside the current plan"):
+            _validated_decision(
+                _output(
+                    "add_place",
+                    {
+                        "kind": "mutation",
+                        "operation": {"type": "add_place", "day": 3, "name": "Cafe"},
+                    },
+                ),
+                _make_plan(),
+            )
 
-        supervisor = ConstrainedConversationSupervisor(llm=_RecordingLLM())
-        plan = _make_plan()
-        await supervisor.decide("hi", plan)
-        assert "đang sửa" in seen_prompts[1].lower()
+    def test_item_operation_must_target_current_plan_item(self):
+        with pytest.raises(ConversationSupervisorError, match="outside the current plan"):
+            _validated_decision(
+                _output(
+                    "remove_place",
+                    {
+                        "kind": "mutation",
+                        "operation": {"type": "remove_place", "itemId": "missing", "day": 1},
+                    },
+                ),
+                _make_plan(),
+            )
+
+    def test_low_confidence_mutation_is_rejected(self):
+        with pytest.raises(ConversationSupervisorError, match="confidence"):
+            _validated_decision(
+                _output(
+                    "remove_place",
+                    {
+                        "kind": "mutation",
+                        "operation": {"type": "remove_place", "itemId": "place-1", "day": 1},
+                    },
+                    confidence=0.7,
+                ),
+                _make_plan(),
+            )
+
+    def test_locked_item_requires_confirmation(self):
+        decision = _validated_decision(
+            _output(
+                "remove_place",
+                {
+                    "kind": "mutation",
+                    "operation": {"type": "remove_place", "itemId": "place-1", "day": 1},
+                },
+            ),
+            _make_plan(locked=True),
+        )
+        assert decision.requires_confirmation is True
+
+    def test_regenerate_existing_plan_requires_confirmation(self):
+        decision = _validated_decision(
+            _output("regenerate_plan", {"kind": "planning"}),
+            _make_plan(),
+        )
+        assert decision.requires_confirmation is True
+
+
+class TestSupervisorDecide:
+    async def test_every_turn_calls_classifier(self):
+        llm = FakeLLM(
+            {
+                "intent": "travel_advice",
+                "confidence": 0.99,
+                "arguments": {
+                    "kind": "information",
+                    "query": "Việt Nam có gì đặc biệt?",
+                },
+            }
+        )
+        decision = await ConstrainedConversationSupervisor(llm).decide(
+            "tui muốn bạn kể tui nghe Việt Nam có gì đặc biệt",
+            None,
+            conversation_context={"currentTripIntent": {"destination": "unspecified"}},
+        )
+        assert decision.intent == "travel_advice"
+        assert llm.calls == 1
+        assert llm.last_payload["conversationContext"]["currentTripIntent"]["destination"] == "unspecified"
+
+    def test_post_plan_travel_question_stays_an_information_request(self):
+        question = "How do I buy a SIM card in Vietnam as a foreigner?"
+        llm = FakeLLM(
+            {
+                "intent": "ask_travel_information",
+                "confidence": 0.99,
+                "arguments": {
+                    "kind": "information",
+                    "query": question,
+                    "requiresFreshness": True,
+                },
+            }
+        )
+
+        decision = asyncio.run(
+            ConstrainedConversationSupervisor(llm).decide(
+                question,
+                _make_plan(),
+            )
+        )
+
+        assert decision.intent == "ask_travel_information"
+        assert decision.operation is None
+        assert decision.requires_confirmation is False
+        assert decision.information_request == {
+            "kind": "information",
+            "query": question,
+            "requiresFreshness": True,
+        }
+
+    async def test_schema_sent_to_llm_has_no_agent_or_response_text(self):
+        llm = FakeLLM(
+            {
+                "intent": "create_plan",
+                "confidence": 0.99,
+                "arguments": {"kind": "planning", "destination": "Hà Nội", "days": 2},
+            }
+        )
+        await ConstrainedConversationSupervisor(llm).decide("Hà Nội 2 ngày", None)
+        assert set(llm.last_schema["properties"]) == {"intent", "confidence", "arguments"}
+
+    async def test_invalid_output_is_repaired(self):
+        llm = FakeLLM(
+            {"intent": "travel_advice", "confidence": 0.9},
+            {
+                "intent": "travel_advice",
+                "confidence": 0.9,
+                "arguments": {"kind": "information", "query": "Huế có gì hay?"},
+            },
+        )
+        decision = await ConstrainedConversationSupervisor(llm).decide("Huế có gì hay?", None)
+        assert decision.intent == "travel_advice"
+        assert llm.calls == 2
+
+    async def test_provider_failure_is_wrapped(self):
+        with pytest.raises(ConversationSupervisorError, match="could not produce"):
+            await ConstrainedConversationSupervisor(FakeLLM()).decide("hi", None)
+
+    async def test_disabled_supervisor_does_not_call_llm(self, monkeypatch):
+        monkeypatch.setattr(settings, "conversation_supervisor_llm_enabled", False)
+        llm = FakeLLM()
+        with pytest.raises(ConversationSupervisorError, match="disabled"):
+            await ConstrainedConversationSupervisor(llm).decide("hi", None)
+        assert llm.calls == 0

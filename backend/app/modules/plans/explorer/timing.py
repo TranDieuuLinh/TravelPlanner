@@ -35,6 +35,7 @@ _DURATION_LABELS = {
     "extractSignalsWall": "STT + vision song song (wall)",
     "contextExtraction": "Chuẩn hóa candidate",
     "captionStructuring": "Cấu trúc caption đa ngôn ngữ",
+    "sourceObservationFusion": "Hợp nhất observation từ nguồn",
 }
 _STAGE_ORDER = {
     "imageExtractionWall": 0,

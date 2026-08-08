@@ -55,6 +55,15 @@ chưa xác định được destination; khi destination đã đủ, nó tiếp 
 `regenerate_plan` đi vào `MainPlanningAgent`; câu hỏi thông tin đi vào
 `InformationFinderAgent`; mutation item đi vào `PlanEditorAgent`. Supervisor
 không tự chạy Explorer như một bước tiền xử lý trước khi dispatch agent khác.
+Mọi message đều đi qua structured classification của Gemini trước khi dispatch;
+runtime không dùng keyword heuristic để bỏ qua model và tự chọn intent. Sau khi
+model trả kết quả, server vẫn validate schema, intent-agent mapping, item ID,
+confidence và confirmation gate trước khi cho agent thực thi.
+Classifier chỉ trả `intent`, `confidence` và typed `arguments`; không trả
+`agent` hoặc `responseText`. Mapping agent do server sở hữu. InformationFinder
+tự gọi LLM để trả lời general advice, dùng grounded search cho dữ liệu cần độ
+mới, dùng Knowledge Graph/provider cho place search và chỉ đọc snapshot hiện
+tại khi giải thích plan.
 
 Message có URL của user đã đăng nhập được tách thành một job bền vững cho từng
 URL và trả về ngay. Worker FIFO chỉ chạy một job mỗi lần, gọi lại chính workflow
@@ -120,12 +129,18 @@ parent place và authority; không dịch toàn bộ caption hay tên riêng san
 Anh. Parser marker Anh–Việt chỉ là fallback. YouTube Shorts có
 path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook Reels dùng
 pipeline media hiện tại. URL rút gọn `youtu.be/{videoId}` không chứa tín hiệu
-Shorts nên giữ nhánh caption-only. Gemini Audio trả đồng thời `transcript` và danh sách STT observation
-bị ràng buộc bởi `responseJsonSchema`. Mỗi observation giữ
-`order`, `placeName`, evidence ngắn, day/time/activity, `searchRegion`, duration
-và confidence. Explorer dùng structured caption/STT observations, metadata và structured
-frame vision observations để tạo từng stop; Python không suy diễn candidate,
-day hay activity từ transcript tự do khi structured STT đã có. Candidate URL giữ `sourceOrder`,
+Shorts nên giữ nhánh caption-only. Gemini Audio chỉ trả `transcript` bằng một
+schema nhỏ và không còn tạo travel observation. Sau khi ASR và frame vision
+chạy song song, Gemini Text nhận transcript, structured OCR observations,
+caption/metadata, expected count và destination hint để trả danh sách source
+observation hợp nhất. Mỗi observation giữ `order`, `placeName`, evidence theo
+từng nguồn, day/time/activity, `searchRegion`, duration và confidence. Evidence
+phải xuất hiện trong đúng source; destination hint chỉ là lookup context, không
+phải evidence, và model không được chọn canonical identity hay tọa độ. Python
+validate/ground output rồi mới tạo candidate. Fusion payload không lặp
+description trong metadata và caption; raw OCR text bị bỏ khi structured OCR
+observations đã đạt expected coverage, còn coverage thiếu thì giữ raw text làm
+fallback. Candidate URL giữ `sourceOrder`,
 `sourceDay`, `sourceTimeHint`, `sourceActivity` và `sourceDurationMinutes` khi
 nguồn có nói rõ. Heading cấp thành phố/khu vực dạng `Hanoi - 2 days` được
 trích thành `destinationStay(startDay=1,endDay=2,durationDays=2)`, không phải
@@ -187,11 +202,11 @@ YouTube long-form không chạy audio STT/frame OCR nên caption structurer dùn
 `GEMINI_CAPTION_API_KEYS` riêng khi có, hoặc mượn hợp của hai pool trên. Nó chọn
 key round-robin, failover tối đa hai credential cho lỗi `401`/`403`/`429` và có
 deadline tổng mặc định 60 giây; không thử tuần tự toàn bộ pool khi mạng timeout.
-STT và frame vision chạy song song; candidate từ hai nguồn được gộp thay vì để
-một nguồn loại bỏ nguồn còn lại. Khi hai observation trùng địa điểm, OCR được
-ưu tiên cho tên hiển thị và thứ tự frame; structured STT được ưu tiên cho day,
-time hint, activity, duration và `searchRegion`. Evidence của cả hai nguồn vẫn
-được giữ tách biệt. Khi STT chuyển một ngày sang day trip vùng khác, vùng đó
+STT transcript-only và frame vision chạy song song; Gemini Text fusion gộp tín
+hiệu sau khi cả hai hoàn tất. Khi hai source cùng nói về một địa điểm, OCR được
+ưu tiên cho spelling/tên hiển thị, còn transcript ASR được ưu tiên cho day,
+time hint, activity, duration và `searchRegion`. Evidence của metadata,
+caption, STT và OCR vẫn được giữ tách biệt. Khi transcript chuyển một ngày sang day trip vùng khác, vùng đó
 trở thành `searchRegion` cho các stop của ngày mà không thay đổi trip base.
 Biến thể tên chỉ khác hậu tố destination, như `Phố đường tàu` và
 `Phố đường tàu Hà Nội`, được coi là cùng identity ngay cả khi STT/OCR
@@ -259,8 +274,9 @@ Số ngày dùng mặc định sản phẩm là 3 ngày khi user không nói rõ
 
 Structured output của extraction gồm:
 
-- `transcript` cùng structured STT `observations`; transcript phục vụ hiển thị
-  hoặc formatter context, còn candidate được tạo từ observations đã validate;
+- `transcript` từ ASR transcript-only cùng source observations do Gemini Text
+  hợp nhất từ transcript, OCR và caption/metadata; candidate chỉ được tạo từ
+  observations đã validate và có evidence grounded;
 - `placeClaims`: tên thô, alias, khu vực được nhắc đến và evidence;
 - `activityClaims`: hoạt động, món ăn hoặc trải nghiệm;
 - `timingClaims`: thời điểm nên đến, thời lượng và thứ tự được gợi ý;
@@ -394,14 +410,16 @@ recommendation và không loại candidate trong PlaceSelector runtime hiện t�
 
 PlaceSelector điền item cụ thể:
 
-- mỗi ngày phải giữ đúng ba meal anchor: breakfast, lunch và dinner. Trong
-  runtime tạm thời, MealSelector không lọc theo category/provider type; nó chọn
-  theo meal tag, tránh trùng và chi phí tuyến;
+- mỗi ngày phải giữ đúng ba meal anchor: breakfast, lunch và dinner. MealSelector
+  dùng node type `Restaurant` làm nguồn phân loại ưu tiên; `DrinkDessert` không
+  được lấp meal anchor. Với place chưa đi qua graph, nhà hàng/quán ăn hoặc venue
+  có bằng chứng món chính mới được dùng làm fallback. Category trình bày `food`
+  không phải node type và không đủ để xác định một bữa chính;
 - mỗi ngày phải có ít nhất hai activity non-food, ưu tiên một activity trước
   lunch và một activity sau lunch; café không được tính vào mức tối thiểu này;
 - tối đa một café mỗi ngày, kể cả khi intent chứa cafe hopping;
 - ice cream, dessert, juice, tea, bakery và các biến thể provider tương ứng là
-  food/drink, không được dùng để lấp activity slot;
+  food/drink, không được dùng để lấp meal anchor hoặc activity slot;
 - khi thiếu candidate non-food đã xác minh, để lại free-time/warning thay vì
   thay thế bằng một điểm ăn uống không đúng mục đích;
 
@@ -435,9 +453,9 @@ PlaceSelector điền item cụ thể:
 - stop ăn uống từ URL chiếm meal slot trước và thay thế meal suggestion
   của PlaceSelector; stop URL không được âm thầm loại khi chuyển giữa activity
   pool và meal slot;
-- `cafe`/`coffee shop` là stop trải nghiệm thuộc activity pool, không
-  được dùng làm breakfast/lunch/dinner chỉ vì provider gắn nhóm
-  `food_drink`;
+- `cafe`/`coffee shop` được chuẩn hóa thành `ontologyType=DrinkDessert`, là stop
+  trải nghiệm thuộc activity pool và không được dùng làm
+  breakfast/lunch/dinner;
 - coffee do Finder thêm tối đa một stop/ngày và bằng 0 nếu ngày đã có coffee từ
   URL; chỉ bỏ giới hạn khi intent nói rõ coffee tour/cafe hopping. Category
   Finder chưa xuất hiện trong ngày được ưu tiên để tăng diversity;
@@ -459,7 +477,12 @@ Sau khi `PlaceSelectorService` chọn Place mà chưa gọi route leg chi tiết
 `RouteFirstItineraryOptimizer` chạy ở cấp toàn chuyến.
 Nó dùng travel-time matrix để giảm tổng thời gian di chuyển bằng cách hoán đổi
 activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `MealStopSelector` cố gắng chèn
-ba bữa và lấp activity theo capacity giữa các anchor. Stop nguồn có
+ba bữa và lấp activity theo capacity giữa các anchor. MealSelector tải một
+candidate pool bounded cho toàn chuyến: `TARGETS_PLACE` của dining
+`SPECIAL_EXPERIENCE` được ưu tiên, còn experience có `INVOLVES_ITEM` mở rộng
+venue qua `OFFERS_ITEM`. Candidate được phân bổ deterministic theo khung giờ,
+độ phù hợp, chất lượng và detour địa lý; venue và meal key đã dùng không được
+lặp lại. Không gọi Gemini theo từng ngày hoặc retry meal slot. Stop nguồn có
 `sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ lại; timing nguồn là
 constraint ưu tiên và có thể spill khi ngày nguồn hết capacity. Đây là heuristic
 deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm cuối đã chốt;
@@ -652,3 +675,19 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.
+## Capacity preflight và phân bổ ngày
+
+Với trip chưa khóa số ngày, Planner không được chạy lại toàn bộ workflow cho
+từng phương án 3/4/5/6 ngày. Sau khi Explorer resolve identity, các địa điểm
+nguồn bắt buộc được đưa qua `ClusterFirstRepairSolver`. Solver dùng capacity,
+meal anchors và khoảng cách để chọn số ngày/phân cụm trong bộ nhớ, sau đó
+ThemePlanner và PlaceSelector chỉ chạy một lần.
+
+Theme là tín hiệu cấp chuyến đi, không phải contract cấp ngày. Số lượng
+`requiredExperiences` không phụ thuộc `tripSpec.days`; các ngày cần đa dạng hoạt
+động nhưng không có `dayTheme` bắt buộc. Snapshot Plan mới không phát hành field
+`days[].theme`, trong khi revision cũ vẫn đọc được.
+
+Nếu user khóa duration, solver không tự tăng ngày: optional bị loại trước và
+mandatory overflow phải xuất hiện trong `unscheduledPlaces`. Candidate
+`needs_review` không được tự xếp nhưng luôn được giữ trong danh sách này.

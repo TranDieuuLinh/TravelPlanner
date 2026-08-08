@@ -383,14 +383,21 @@ class PlanMutationService:
         *,
         name: str,
         place_id: str | None = None,
+        candidate_id: str | None = None,
     ) -> MutationResponse:
         name_key = _search_key(name)
         remaining = [
             item
             for item in plan.unscheduled_places
             if not (
-                (place_id is not None and item.place_id == place_id)
-                or _search_key(item.name) == name_key
+                (candidate_id is not None and item.candidate_id == candidate_id)
+                or (
+                    candidate_id is None
+                    and (
+                        (place_id is not None and item.place_id == place_id)
+                        or _search_key(item.name) == name_key
+                    )
+                )
             )
         ]
         if len(remaining) == len(plan.unscheduled_places):

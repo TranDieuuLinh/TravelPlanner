@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from app.modules.knowledge_graph.ontology import KnowledgePlaceType
 from app.modules.plans.explorer.schema import (
     PlaceCandidateSourceType,
     UnifiedPlaceCandidate,
@@ -117,29 +118,96 @@ def is_meal_place(
     *,
     tags: list[str],
     source_activity: str | None = None,
+    ontology_type: KnowledgePlaceType | None = None,
 ) -> bool:
-    """Classify restaurant/food stops without consuming cafe activity slots."""
+    """Return whether a venue can replace a main breakfast/lunch/dinner anchor.
+
+    The UI tag ``food`` is deliberately insufficient for meal selection because
+    it covers both Restaurant and DrinkDessert. Strong dessert/drink evidence
+    wins over generic meal tags so a cake shop tagged ``breakfast`` still cannot
+    become breakfast.
+    """
+    if ontology_type == "Restaurant":
+        return True
+    if ontology_type == "DrinkDessert":
+        return False
+
     values = " ".join([*tags, source_activity or ""]).casefold()
     normalized = _slug(values).replace("-", "_")
-    if any(marker in normalized for marker in ("cafe", "coffee", "ca_phe")):
+    padded = f"_{normalized}_"
+    normalized_tags = {
+        _slug(tag).replace("-", "_")
+        for tag in tags
+        if tag.strip()
+    }
+
+    # Knowledge Graph ontology types are authoritative when present. The
+    # provider/search buckets below are only compatibility fallbacks for places
+    # that have not passed through the graph.
+    if normalized_tags.intersection({"drinkdessert", "drink_dessert"}):
+        return False
+    if "restaurant" in normalized_tags:
+        return True
+
+    def contains(marker: str) -> bool:
+        return f"_{marker}_" in padded
+
+    if any(
+        contains(marker)
+        for marker in (
+            "cafe",
+            "coffee",
+            "ca_phe",
+            "bakery",
+            "tiem_banh",
+            "cake",
+            "pastry",
+            "dessert",
+            "ice_cream",
+            "gelato",
+            "confectionery",
+            "bingsu",
+            "che",
+            "banh_ngot",
+            "snack",
+            "an_vat",
+            "tea",
+            "tea_house",
+            "tra_sua",
+            "bubble_tea",
+            "juice",
+            "sinh_to",
+        )
+    ):
         return False
     return any(
-        marker in normalized
+        contains(marker)
         for marker in (
-            "food",
             "restaurant",
-            "meal",
-            "breakfast",
-            "lunch",
-            "dinner",
-            "bakery",
-            "seafood",
-            "street_food",
-            "local_food",
-            "am_thuc",
-            "quan_an",
             "nha_hang",
+            "quan_an",
+            "eatery",
+            "diner",
+            "bistro",
+            "food_court",
+            "fast_food",
+            "meal_takeaway",
+            "seafood",
             "hai_san",
+            "street_food",
+            "pho",
+            "bun",
+            "com",
+            "mien",
+            "chao",
+            "hu_tieu",
+            "mi_quang",
+            "banh_mi",
+            "banh_my",
+            "banh_cuon",
+            "banh_xeo",
+            "lau",
+            "do_nuong",
         )
     )
 

@@ -27,7 +27,15 @@ PLACE_AMENITY_NAME_FIELDS: tuple[str, ...] = (
 )
 
 
-PLACE_GROUP_FALLBACK = {"accommodation", "attraction", "experience", "food_drink", "shopping", "wellness"}
+PLACE_GROUP_FALLBACK = {
+    "accommodation",
+    "attraction",
+    "experience",
+    "Restaurant",
+    "DrinkDessert",
+    "shopping",
+    "wellness",
+}
 
 
 def read_tags(
@@ -137,18 +145,18 @@ GOOGLE_TYPES_CATEGORY: dict[str, str] = {
     "amusement_park": "entertainment",
     "aquarium": "entertainment",
     "art_gallery": "attraction",
-    "bakery": "food_drink",
-    "bar": "food_drink",
+    "bakery": "DrinkDessert",
+    "bar": "DrinkDessert",
     "bowling_alley": "entertainment",
     "book_store": "shopping",
-    "cafe": "food_drink",
+    "cafe": "DrinkDessert",
     "campground": "nature",
     "casino": "entertainment",
     "cemetery": "attraction",
     "church": "attraction",
     "city_hall": "attraction",
     "clothing_store": "shopping",
-    "coffee_shop": "food_drink",
+    "coffee_shop": "DrinkDessert",
     "convenience_store": "shopping",
     "courthouse": "attraction",
     "cultural_center": "attraction",
@@ -164,8 +172,8 @@ GOOGLE_TYPES_CATEGORY: dict[str, str] = {
     "library": "attraction",
     "local_government_office": "attraction",
     "lodging": "accommodation",
-    "meal_delivery": "food_drink",
-    "meal_takeaway": "food_drink",
+    "meal_delivery": "Restaurant",
+    "meal_takeaway": "Restaurant",
     "monument": "attraction",
     "mosque": "attraction",
     "movie_theater": "entertainment",
@@ -180,7 +188,7 @@ GOOGLE_TYPES_CATEGORY: dict[str, str] = {
     "point_of_interest": "attraction",
     "police": "transport",
     "post_office": "transport",
-    "restaurant": "food_drink",
+    "restaurant": "Restaurant",
     "rv_park": "accommodation",
     "school": "attraction",
     "scenic_spot": "nature",

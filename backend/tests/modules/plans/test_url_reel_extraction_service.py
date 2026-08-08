@@ -44,6 +44,11 @@ from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
     GeminiAudioSpeechToText,
     _gemini_stt_rate_limiter,
 )
+from app.modules.plans.explorer.tools.url_reels.source_observation_fuser import (
+    SourceObservationFusionResult,
+    _build_source_payload,
+    _ground_result,
+)
 from app.modules.plans.explorer.tools.url_reels.utils import detect_platform
 
 
@@ -177,6 +182,164 @@ def test_region_story_requires_exact_source_evidence() -> None:
     assert accepted is not None
     assert accepted.evidence == "a perfect first day in Hanoi"
     assert rejected is None
+
+
+def test_source_observation_fusion_keeps_only_grounded_evidence() -> None:
+    metadata = UrlMetadata(
+        originalUrl="https://example.com/reel",
+        canonicalUrl="https://example.com/reel",
+        platform="instagram",
+        title="Top 2 Hà Nội",
+        description="Điểm thứ hai là The Note Coffee.",
+    )
+    result = _ground_result(
+        SourceObservationFusionResult(
+            observations=[
+                SpeechToTextObservation(
+                    order=7,
+                    placeName="Văn Miếu - Quốc Tử Giám",
+                    evidence="đi Văn Miếu vào buổi sáng",
+                    sourceEvidence={
+                        "metadata": "",
+                        "caption": "",
+                        "stt": "đi Văn Miếu vào buổi sáng",
+                        "ocr": "VĂN MIẾU QUỐC TỬ GIÁM",
+                    },
+                    dayNumber=1,
+                    timeHint="morning",
+                    confidence=0.95,
+                    evidenceSource="stt",
+                ),
+                SpeechToTextObservation(
+                    order=8,
+                    placeName="Địa điểm không có thật",
+                    evidence="địa điểm không có thật",
+                    sourceEvidence={"stt": "địa điểm không có thật"},
+                    confidence=0.9,
+                ),
+            ],
+            expectedPlaceCount=2,
+            status="ok",
+            durationSeconds=0.1,
+        ),
+        transcript="Ngày một đi Văn Miếu vào buổi sáng.",
+        visual_text="VĂN MIẾU QUỐC TỬ GIÁM",
+        visual_observations=[],
+        metadata=metadata,
+        expected_place_count=2,
+    )
+
+    assert len(result.observations) == 1
+    observation = result.observations[0]
+    assert observation.order == 1
+    assert observation.place_name == "Văn Miếu - Quốc Tử Giám"
+    assert observation.source_evidence == {
+        "stt": "đi Văn Miếu vào buổi sáng",
+        "ocr": "VĂN MIẾU QUỐC TỬ GIÁM",
+    }
+
+
+def test_source_fusion_payload_removes_duplicate_caption_and_sufficient_ocr_text() -> None:
+    metadata = UrlMetadata(
+        originalUrl="https://example.com/reel",
+        canonicalUrl="https://example.com/reel",
+        platform="instagram",
+        title="Top 2 Hà Nội",
+        description="Văn Miếu và Hồ Hoàn Kiếm",
+        raw={"location": "Hà Nội"},
+    )
+    observations = [
+        FrameVisionObservation(
+            order=1,
+            placeName="Văn Miếu",
+            evidence="VĂN MIẾU",
+        ),
+        FrameVisionObservation(
+            order=2,
+            placeName="Hồ Hoàn Kiếm",
+            evidence="HOÀN KIẾM LAKE",
+        ),
+    ]
+
+    payload = _build_source_payload(
+        transcript="Ngày một đi Văn Miếu",
+        visual_text="VĂN MIẾU\nHOÀN KIẾM LAKE",
+        visual_observations=observations,
+        metadata=metadata,
+        expected_place_count=2,
+        destination_hint="Hà Nội",
+    )
+    sources = payload["sources"]
+
+    assert "description" not in sources["metadata"]
+    assert sources["caption"] == "Văn Miếu và Hồ Hoàn Kiếm"
+    assert sources["ocrText"] == ""
+    assert sources["ocrObservations"][0] == {
+        "order": 1,
+        "placeName": "Văn Miếu",
+        "evidence": "VĂN MIẾU",
+        "entityType": "venue",
+    }
+
+
+def test_source_fusion_payload_keeps_raw_ocr_when_structured_coverage_is_low() -> None:
+    metadata = UrlMetadata(
+        originalUrl="https://example.com/reel",
+        canonicalUrl="https://example.com/reel",
+        platform="instagram",
+    )
+    payload = _build_source_payload(
+        transcript="",
+        visual_text="VĂN MIẾU\nHỒ HOÀN KIẾM\nCHÙA TRẤN QUỐC",
+        visual_observations=[
+            FrameVisionObservation(placeName="Văn Miếu", evidence="VĂN MIẾU")
+        ],
+        metadata=metadata,
+        expected_place_count=3,
+        destination_hint="Hà Nội",
+    )
+
+    assert payload["sources"]["ocrText"] == (
+        "VĂN MIẾU\nHỒ HOÀN KIẾM\nCHÙA TRẤN QUỐC"
+    )
+
+
+def test_service_uses_unified_source_observations(tmp_path: Path) -> None:
+    class FakeFuser:
+        def fuse(self, **kwargs: object) -> SourceObservationFusionResult:
+            assert kwargs["transcript"] == "Hoan Kiem Lake"
+            assert kwargs["destination_hint"] == "Hanoi"
+            return SourceObservationFusionResult(
+                observations=[
+                    SpeechToTextObservation(
+                        order=1,
+                        placeName="Hoan Kiem Lake",
+                        evidence="Hoan Kiem Lake",
+                        sourceEvidence={"stt": "Hoan Kiem Lake"},
+                        confidence=0.95,
+                    )
+                ],
+                status="ok",
+                durationSeconds=0.2,
+            )
+
+    service = UrlReelExtractionService(
+        loader=FakeLoader(),
+        media=FakeMedia(),
+        speech_to_text=FakeSpeechToText(),
+        context_extractor=FakeContextExtractor(),
+        source_observation_fuser=FakeFuser(),  # type: ignore[arg-type]
+    )
+
+    result = service.extract(
+        UrlReelInput(url="https://example.com/video", workDir=tmp_path)
+    )
+
+    assert result.timings["sourceObservationFusionUsed"] == 1.0
+    assert result.timings["sourceObservationFusion"] == 0.2
+    assert result.speech_to_text.observations[0].source_evidence == {
+        "stt": "Hoan Kiem Lake"
+    }
 
 
 def test_automatically_removes_owned_artifacts_after_extraction(
@@ -871,12 +1034,9 @@ def test_audio_stt_rotates_comma_separated_api_keys(
                         {
                             "content": {
                                 "parts": [
-                                    {
-                                        "text": (
-                                            '{"transcript":"Xin chào Hà Nội",'
-                                            '"observations":[]}'
-                                        )
-                                    }
+                                        {
+                                            "text": '{"transcript":"Xin chào Hà Nội"}'
+                                        }
                                 ]
                             }
                         }
@@ -901,7 +1061,7 @@ def test_audio_stt_rotates_comma_separated_api_keys(
     assert result.observations == []
 
 
-def test_audio_stt_requests_and_validates_structured_observations(
+def test_audio_stt_requests_and_validates_transcript_only_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -933,18 +1093,11 @@ def test_audio_stt_requests_and_validates_structured_observations(
                         {
                             "content": {
                                 "parts": [
-                                    {
-                                        "text": (
-                                            '{"transcript":"On day two, visit '
-                                            'Cafe Dinh for egg coffee.",'
-                                            '"observations":[{"order":1,'
-                                            '"placeName":"Cafe Dinh",'
-                                            '"evidence":"visit Cafe Dinh for '
-                                            'egg coffee","dayNumber":2,'
-                                            '"timeHint":"","activity":"Drink '
-                                            'egg coffee","durationMinutes":null,'
-                                            '"confidence":0.92}]}'
-                                        )
+                                        {
+                                            "text": (
+                                                '{"transcript":"On day two, visit '
+                                                'Cafe Dinh for egg coffee."}'
+                                            )
                                     }
                                 ]
                             }
@@ -964,30 +1117,9 @@ def test_audio_stt_requests_and_validates_structured_observations(
 
     config = captured_payload["generationConfig"]
     assert config["responseMimeType"] == "application/json"
-    assert set(config["responseJsonSchema"]["required"]) == {
-        "transcript",
-        "observations",
-        "regionStory",
-        "regionStoryEvidence",
-    }
+    assert config["responseJsonSchema"]["required"] == ["transcript"]
     assert result.text == "On day two, visit Cafe Dinh for egg coffee."
-    assert result.observations[0].model_dump(by_alias=True) == {
-        "order": 1,
-        "placeName": "Cafe Dinh",
-        "evidence": "visit Cafe Dinh for egg coffee",
-        "dayNumber": 2,
-            "timeHint": "",
-            "activity": "Drink egg coffee",
-            "searchRegion": "",
-            "durationMinutes": None,
-        "confidence": 0.92,
-        "entityType": "venue",
-        "aliases": [],
-        "addressHint": None,
-        "parentPlace": None,
-        "evidenceSource": "stt",
-        "authority": "medium",
-    }
+    assert result.observations == []
 
 
 def test_youtube_caption_uses_multilingual_structurer_when_metadata_is_thin(

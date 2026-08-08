@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from types import SimpleNamespace
 
-from app.modules.places.model import Place, PlaceImage
 from app.modules.plans.domain.entities import PlaceSelectionDay, PlaceSelectionBlueprint, TravelIntent
 from app.modules.plans.domain.enums import BudgetLevel, TravelPace
 from app.modules.plans.place_selector.service import PlaceSelectorService
@@ -29,7 +28,7 @@ def test_description_retrieval_then_structured_reranking_prefers_nature() -> Non
                 description=(
                     "Nhà hàng gần thiên nhiên Cát Bà, phù hợp sau chuyến hiking."
                 ),
-                group="food_drink",
+                group="Restaurant",
                 tags=["food", "restaurant"],
             ),
             _place(
@@ -130,7 +129,7 @@ def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
                 "restaurant",
                 "vn,hai-phong,cat-ba-town",
                 description="Nhà hàng hải sản tại Cát Bà.",
-                group="food_drink",
+                group="Restaurant",
                 tags=["food", "restaurant", "seafood"],
             ),
             _place(
@@ -229,11 +228,12 @@ def _place(
     rating: float | None = None,
     review_count: int = 0,
     image_urls: list[str] | None = None,
-) -> Place:
-    return Place(
+) -> SimpleNamespace:
+    return SimpleNamespace(
         id=place_id,
         name=name,
         place_type=place_type,
+        address=None,
         region_key=region_key,
         status="active",
         latitude=20.72,
@@ -241,18 +241,17 @@ def _place(
         typical_duration_minutes=60,
         data_confidence="high",
         opening_hours=[],
-        rating=Decimal(str(rating)) if rating is not None else None,
+        rating=rating,
         review_count=review_count,
+        source_platform="google_maps",
+        source_link=None,
         metadata_json={
             "description": description,
             "placeGroup": group,
             "tags": tags,
             "activityIntensity": "light",
         },
-        images=[
-            PlaceImage(image_url=image_url)
-            for image_url in (image_urls or [])
-        ],
+        images=[SimpleNamespace(image_url=image_url) for image_url in (image_urls or [])],
     )
 
 

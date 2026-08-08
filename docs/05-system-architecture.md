@@ -168,6 +168,31 @@ Playwright đã cấu hình; kết quả ngoài vẫn phải vượt rule xác m
 tọa độ riêng. Các ngưỡng là cấu hình runtime để hiệu chỉnh bằng tập test có
 nhãn, không phải confidence do provider công bố.
 
+Khi lưu Explorer intake, repository project trực tiếp `placeId`, `matchOptions`,
+`resolutionReason` và provider snapshot từ `PlaceResolution`; nó không chạy lại
+exact/alias/fuzzy Knowledge Graph matching cho từng place vừa resolve. Chỉ Area
+của destination còn được match một lần để tạo node gốc. Profile hiện hành vẫn
+được đọc và merge đồng bộ để Planner dùng ngay trong `effectiveProfile`; việc
+ghi các preference mới học về PostgreSQL chạy nền bằng session riêng, khóa giao
+dịch theo user và không nằm trong critical path của Explorer/Planner.
+
+Trip chat dùng một durable outbox riêng cho preference learning. Khi tạo user
+turn, transaction đồng thời insert `preference_observation_jobs` với unique
+message ID nhưng không sao chép content. Worker chỉ claim khi turn đã
+`completed`, đọc message hiện hữu, gọi `PreferenceExtractor` structured-output,
+áp policy rồi commit atomically profile + trạng thái job. Runtime restart đưa
+job `running` về `queued`; retry cùng message không tăng observation hai lần.
+
+Một batch nhiều URL được canonicalize và dedupe trước transaction. Repository
+khóa theo canonical URL, prefetch toàn bộ `source_documents` bằng một query,
+merge artifact theo loại rồi flush document một lần; URL đã có được update và
+URL mới được insert dưới unique constraint `canonical_url`. Place node và
+`LOCATED_IN` edge cũng được build hết trong memory, `add_all` và flush một lần.
+Transaction vẫn atomic: lỗi làm rollback; PostgreSQL serialization failure,
+deadlock hoặc lock timeout được retry tối đa ba attempt, còn lỗi dữ liệu không
+retry. Timing persistence trả riêng số document/node/edge, projection, batch
+flush, commit, tổng thời gian và số retry.
+
 Các lookup Knowledge Graph trong cùng intake chạy qua pool tối đa 4 worker mặc
 định, mỗi worker mở một SQLAlchemy session riêng; runtime cho phép cấu hình từ
 1 đến 8. Google Maps Playwright vẫn có semaphore riêng tối đa 2 candidate, nên
@@ -178,9 +203,13 @@ tăng concurrency database không làm tăng số page Chromium đồng thời.
 - YouTube long-form (`watch`, `youtu.be`, `live`, `embed`) chỉ dùng caption công
   khai/cache/worker; không tải media và không fallback STT/OCR.
 - YouTube Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và
-  Facebook Reels dùng media tạm thời để chạy Gemini Audio STT song song với
-  frame vision/OCR. Facebook được nhận diện explicit nhưng khả năng tải vẫn phụ
-  thuộc URL công khai và connector `yt-dlp`.
+  Facebook Reels dùng media tạm thời để chạy Gemini Audio ở chế độ ASR
+  transcript-only song song với frame vision/OCR. Sau khi hai nhánh hoàn tất,
+  một Gemini Text structured-output hợp nhất transcript, OCR observation,
+  caption/metadata, expected count và destination hint thành observation có
+  provenance; destination hint không được coi là evidence. Facebook được nhận
+  diện explicit nhưng khả năng tải vẫn phụ thuộc URL công khai và connector
+  `yt-dlp`.
 - URL HTTP/HTTPS không thuộc các platform video trên đi qua connector
   `WebPageExtractionService`: backend fetch HTML công khai với timeout, giới hạn
   kích thước/redirect và kiểm tra DNS public trước từng hop; Trafilatura lấy nội
@@ -250,10 +279,14 @@ Explorer commit source document, provenance và review snapshot trước phần 
 matching phụ. Nếu enrichment phụ lỗi, plan vẫn có thể dùng review snapshot đã
 lưu; timing đánh dấu `enrichmentDegraded` để vận hành retry sau.
 
-Conversation Supervisor có thể trả `intakePatch` bị khóa schema gồm
-`destination` và `days` cho intent tạo/tạo lại plan. Explorer ưu tiên patch này
-và chỉ fallback về parser cũ cho field chưa có; Supervisor không được mutate
-plan hoặc gửi patch cho intent không thuộc planning.
+Conversation Supervisor chỉ trả `intent`, `confidence` và `arguments` phân biệt
+theo `kind`. Planning arguments có thể gồm `destination` và `days`; service
+chiếu chúng thành intake patch nội bộ cho Explorer và chỉ fallback về parser cũ
+cho field chưa có. Supervisor không trả user-facing text, không chọn agent và
+không được mutate plan. Backend sở hữu mapping intent-agent, validation,
+authorization, confirmation gate và persistence. `InformationFinderAgent` sở
+hữu lượt LLM tạo câu trả lời; câu hỏi cần độ mới dùng Gemini Google Search
+grounding, còn place search vẫn đọc Knowledge Graph/provider qua interface.
 
 Guest dùng hàng chờ FIFO trong memory của AppShell cho cả prompt thuần và URL,
 gọi cùng endpoint Explorer -> TripThemePlanner/PlaceSelector mà không tạo trip

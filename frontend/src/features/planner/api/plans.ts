@@ -18,6 +18,12 @@ export type PlanNoteSource = {
   fetchedAt?: string | null;
 };
 
+export type KnowledgePlaceType =
+  | "TravelPlace"
+  | "Restaurant"
+  | "DrinkDessert"
+  | "Accommodation";
+
 export type PlanItem = {
   itemId?: string | null;
   placeId?: string | null;
@@ -27,6 +33,7 @@ export type PlanItem = {
   placeType: string;
   role?: string | null;
   timelineCategory?: "activity" | "food" | "break";
+  ontologyType?: KnowledgePlaceType | null;
   source: string;
   sourceRefs: string[];
   sourceProvider?: string | null;
@@ -46,6 +53,41 @@ export type PlanItem = {
   latitude?: number | null;
   longitude?: number | null;
 };
+
+export type PlaceReview = {
+  id: string;
+  authorName?: string | null;
+  rating?: number | null;
+  publishedAt?: string | null;
+  whenText?: string | null;
+  language?: string | null;
+  reviewText?: string | null;
+};
+
+export type PlaceReviewPage = {
+  items: PlaceReview[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+  ratingCounts: Record<string, number>;
+};
+
+export function getPlaceReviews(
+  placeId: string,
+  options: { rating?: number | null; limit?: number; offset?: number } = {}
+): Promise<PlaceReviewPage> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 20),
+    offset: String(options.offset ?? 0),
+  });
+  if (options.rating != null) {
+    params.set("rating", String(options.rating));
+  }
+  return apiFetch<PlaceReviewPage>(
+    `/places/${encodeURIComponent(placeId)}/reviews?${params.toString()}`
+  );
+}
 export type TransportOption = {
   mode: string;
   distanceMeters: number;
@@ -117,7 +159,6 @@ export type DayDirectionsInput = {
 };
 export type PlanDay = {
   day: number;
-  theme: string;
   items: PlanItem[];
   transportLegs: TransportLeg[];
 };
@@ -233,6 +274,7 @@ export type PlaceCandidateReview = {
   candidateId: string;
   name: string;
   category: PlaceCategory;
+  ontologyType?: KnowledgePlaceType | null;
   status: "resolved" | "needs_review" | "merged" | "ignored";
   resolutionReason?: string | null;
   provider?: string | null;
@@ -357,6 +399,7 @@ export type ExplorerContext = {
 export type ExplorePlace = {
   name: string;
   category: PlaceCategory;
+  ontologyType?: KnowledgePlaceType | null;
   placeId?: string | null;
   address?: string | null;
   latitude?: number | null;
@@ -480,6 +523,9 @@ export type TripChatMessage = {
   content: string;
   attachmentNames: string[];
   planRevision: number | null;
+  turnId?: string | null;
+  messageKind?: string;
+  contentBlocks?: Array<Record<string, unknown>>;
   createdAt: string;
 };
 
@@ -686,6 +732,7 @@ export async function createPlanFromExplorer(input: {
         preferenceLevel: place.preferenceLevel ?? "preferred",
         latitude: place.latitude ?? null,
         longitude: place.longitude ?? null,
+        ontologyType: place.ontologyType ?? null,
         tags: [place.category, ...(place.attributes ?? [])],
         sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
         notes: place.notes ?? null,
@@ -849,6 +896,10 @@ export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
   return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
 }
 
+export async function listTripChatPlannerRuns(): Promise<TripChatTurn[]> {
+  return apiFetch<TripChatTurn[]>("/trip-chats/planner-runs");
+}
+
 export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {
   return apiFetch<UrlImportJob>(`/url-import-jobs/${jobId}/retry`, {
     method: "POST"
@@ -966,12 +1017,15 @@ export async function removeTripChatItem(input: {
 export async function removeTripChatUnscheduledPlace(input: {
   chatId: string;
   expectedRevision: number;
-  place: Pick<UnscheduledPlace, "name" | "placeId">;
+  place: Pick<UnscheduledPlace, "name" | "placeId" | "candidateId">;
 }): Promise<TripChat> {
   const form = new FormData();
   form.append("expectedRevision", String(input.expectedRevision));
   form.append("name", input.place.name);
   if (input.place.placeId) form.append("placeId", input.place.placeId);
+  if (input.place.candidateId) {
+    form.append("candidateId", input.place.candidateId);
+  }
 
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/unscheduled-places`, {
     method: "DELETE",

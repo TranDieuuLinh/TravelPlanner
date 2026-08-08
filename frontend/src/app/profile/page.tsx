@@ -33,6 +33,14 @@ const emptyTravelerProfile: TravelerProfile = {
   updatedAt: null,
 };
 
+const travelerPreferenceLabels: Record<string, string> = {
+  uncrowded: "nơi ít đông người",
+};
+
+function formatTravelerPreference(value: string): string {
+  return travelerPreferenceLabels[value] ?? value.replaceAll("_", " ");
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { loading, submitCreatorApplication, updateProfile, user } = useAuth();
@@ -267,7 +275,9 @@ export default function ProfilePage() {
             {travelerProfile.topPreferences.length ? (
               <p>
                 <strong>Sở thích Planner ghi nhớ:</strong>{" "}
-                {travelerProfile.topPreferences.join(", ")}
+                {travelerProfile.topPreferences
+                  .map(formatTravelerPreference)
+                  .join(", ")}
               </p>
             ) : null}
             {travelerProfile.signals.some((signal) => signal.origin === "inferred") ? (

@@ -16,7 +16,6 @@ import {
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/features/auth/components/AuthProvider";
-import { BackgroundUrlJobs } from "@/features/planner/components/BackgroundUrlJobs";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import {
   PlannerChatComposer,
@@ -24,6 +23,10 @@ import {
   PlannerChatMessages,
 } from "@/features/planner/components/PlannerChatUI";
 import { PlannerDiscoveryPanel } from "@/features/planner/components/PlannerDiscoveryPanel";
+import {
+  PlaceReviewsModal,
+  type PlaceReviewsModalPlace,
+} from "@/features/planner/components/PlaceReviewsModal";
 import { APIError } from "@/shared/api/client";
 import {
   addTripChatItem,
@@ -42,6 +45,7 @@ import {
   listTripChats,
   listUrlImportJobs,
   removeTripChatItem,
+  removeTripChatUnscheduledPlace,
   reorderTripChatItem,
   retryTripChatTransportLeg,
   searchPlaces,
@@ -90,7 +94,11 @@ import {
   visibleTransportOptions,
 } from "@/features/planner/lib/transport-options";
 import { visiblePlanDays, visiblePlanItems } from "@/features/planner/lib/visible-plan-days";
-import { formatPlanNote, planItemNotePresentation } from "@/features/planner/lib/plan-note";
+import {
+  formatPlanNote,
+  formatSourceNoteForDisplay,
+  planItemNotePresentation,
+} from "@/features/planner/lib/plan-note";
 import { planItemMapKey } from "@/features/planner/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/features/planner/lib/itinerary-order";
 import {
@@ -100,6 +108,7 @@ import {
 import { dragAutoScrollVelocity } from "@/features/planner/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
+import { visibleConversationMessages } from "@/features/planner/lib/conversation-messages";
 import {
   sourceProviderKind,
   type SourceProviderKind,
@@ -126,7 +135,6 @@ type WorkflowStage =
   | "planning"
   | "ready"
   | "failed";
-type IntakeKind = "prompt" | "image" | "url";
 type GuidedIntakeStep =
   | "destination"
   | "dates"
@@ -293,9 +301,6 @@ const CHAT_RESIZE_HANDLES: ReadonlyArray<{
   { direction: "w", label: "Đổi chiều rộng từ cạnh trái" },
   { direction: "nw", label: "Đổi kích thước từ góc trên bên trái" },
 ];
-const LEGACY_EDITOR_NOTIFICATION_PATTERN =
-  /^(?:Đã (?:thêm địa điểm|cập nhật thông tin địa điểm|xóa địa điểm|sắp xếp lại thứ tự địa điểm|chọn phương tiện)|Đã xóa địa điểm .* khỏi danh sách chưa xếp lịch)/i;
-
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -451,40 +456,6 @@ function buildGuidedIntakeRequest(answers: GuidedIntakeAnswers): string {
     : "Giúp mình tạo một chuyến đi mới từ các nguồn đã nhập.";
 }
 
-const LEGACY_TRIP_THEME_ERROR = "TripThemePlanner cannot create trip themes";
-const FRIENDLY_TRIP_THEME_ERROR =
-  "Mình chưa thể lập lịch trình vì điểm đến này chưa có đủ địa điểm phù hợp; bạn hãy chọn một địa điểm cụ thể hoặc thử điểm đến khác.";
-
-function normalizeAssistantMessage(content: string): string {
-  return content.includes(LEGACY_TRIP_THEME_ERROR)
-    ? FRIENDLY_TRIP_THEME_ERROR
-    : content;
-}
-
-function visibleConversationMessages(chat: TripChat): ChatMessage[] {
-  return chat.messages
-    .filter(
-      (message) =>
-        !(
-          message.role === "assistant" &&
-          message.planRevision != null &&
-          LEGACY_EDITOR_NOTIFICATION_PATTERN.test(message.content.trim())
-        )
-    )
-    .map((message) => ({
-      id: message.id,
-      role: message.role,
-      text: [
-        normalizeAssistantMessage(message.content),
-        message.attachmentNames.length
-          ? `📎 ${message.attachmentNames.length} ảnh`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    }));
-}
-
 export default function PlannerPage() {
   return (
     <Suspense
@@ -560,6 +531,8 @@ function Planner() {
   const [selectedMapRouteKey, setSelectedMapRouteKey] = useState<string | null>(
     null
   );
+  const [itineraryReviewPlace, setItineraryReviewPlace] =
+    useState<PlaceReviewsModalPlace | null>(null);
   const [activePlanDay, setActivePlanDay] = useState<number | null>(null);
   const [currentLocation, setCurrentLocation] =
     useState<PlannerMapCurrentLocation | null>(null);
@@ -621,14 +594,11 @@ function Planner() {
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
   const [initialPlanningActive, setInitialPlanningActive] = useState(false);
-  const [processingElapsedSeconds, setProcessingElapsedSeconds] = useState(0);
-  const [processingStartedAtMs, setProcessingStartedAtMs] = useState<number | null>(null);
   const [activePlanningJobs, setActivePlanningJobs] = useState<
     ActivePlanningJob[]
   >([]);
   const [queueingUrls, setQueueingUrls] = useState(false);
   const [error, setError] = useState("");
-  const [intakeKind, setIntakeKind] = useState<IntakeKind>("prompt");
   const [tripChats, setTripChats] = useState<TripChatSummary[]>([]);
   const [urlJobSnapshot, setUrlJobSnapshot] = useState<UrlImportJob[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -1024,10 +994,14 @@ function Planner() {
   }, [chatCollapsed, clampFloatingChatRect, plan]);
 
   useEffect(() => {
+    const hasLegacyCoarseRoutes = plan?.days.some((day) =>
+      day.transportLegs.some((leg) => leg.source === "geodesic_estimate")
+    );
     if (
       !activeChatId ||
       !plan ||
-      plan.routeEnrichmentStatus !== "pending"
+      (plan.routeEnrichmentStatus !== "pending" &&
+        !(plan.routeEnrichmentStatus === "completed" && hasLegacyCoarseRoutes))
     ) {
       return;
     }
@@ -1092,7 +1066,6 @@ function Planner() {
       if (job.chatId !== activeChatId) return;
       if (job.status === "queued" || job.status === "running") {
         setBackgroundPlanning(true);
-        setProcessingStartedAtMs(Date.parse(job.startedAt ?? job.createdAt));
         setWorkflowStage(job.status === "queued" ? "preparing" : job.explorerTiming ? "planning" : "exploring");
       } else if (job.status === "failed") {
         setBackgroundPlanning(false);
@@ -1190,9 +1163,6 @@ function Planner() {
       );
       setBackgroundPlanning(active.length > 0);
       if (active.length > 0) {
-        const oldestStart = Math.min(...active.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
-        setProcessingStartedAtMs(oldestStart);
-        setIntakeKind("url");
         setInitialPlanningActive(true);
         setWorkflowStage(
           active.every((job) => job.status === "queued")
@@ -1242,9 +1212,6 @@ function Planner() {
       setBackgroundPlanning(activeJobs.length > 0);
       setInitialPlanningActive(activeJobs.length > 0);
       if (activeJobs.length > 0) {
-        const oldestStart = Math.min(...activeJobs.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
-        setProcessingStartedAtMs(oldestStart);
-        setIntakeKind(activeJobs.some((job) => job.contextUrls.length > 0) ? "url" : "prompt");
         setWorkflowStage(
           activeJobs.every((job) => job.status === "queued")
             ? "preparing"
@@ -1301,9 +1268,18 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
-  const [resolvingCandidateKey, setResolvingCandidateKey] = useState<string | null>(
-    null
-  );
+  const [candidateResolutionProgress, setCandidateResolutionProgress] = useState<
+    Record<string, { key: string; status: "queued" | "resolving" }>
+  >({});
+  const candidateResolutionQueueRef = useRef<
+    Array<{
+      chatId: string;
+      matchRank: number;
+      place: UnscheduledPlace;
+    }>
+  >([]);
+  const candidateResolutionCandidateIdsRef = useRef(new Set<string>());
+  const candidateResolutionRunningRef = useRef(false);
   const [noteEditor, setNoteEditor] = useState<{
     day: number;
     itemId: string | null;
@@ -1315,7 +1291,6 @@ function Planner() {
   const [openQuickActionKey, setOpenQuickActionKey] = useState<string | null>(
     null
   );
-  const [openHoursKey, setOpenHoursKey] = useState<string | null>(null);
 
   useEffect(() => {
     const modalIsClosed =
@@ -1470,13 +1445,6 @@ function Planner() {
     conversationTurn.status,
     initialPlanningActive,
   ]);
-
-  useEffect(() => {
-    const turn = conversationTurn.turn;
-    if (!turn || turn.chatId !== activeChatIdRef.current) return;
-    const startedAt = Date.parse(turn.createdAt);
-    if (Number.isFinite(startedAt)) setProcessingStartedAtMs(startedAt);
-  }, [conversationTurn.turn]);
 
   function openItemEditor(
     day: number,
@@ -2139,23 +2107,6 @@ function Planner() {
     !displayedPlan &&
     (initialPlanningActive || backgroundPlanning || loading);
 
-  useEffect(() => {
-    if (!awaitingInitialPlan) {
-      setProcessingElapsedSeconds(0);
-      return;
-    }
-
-    const updateElapsed = () => {
-      setProcessingElapsedSeconds(
-        Math.max(0, Math.floor((Date.now() - (processingStartedAtMs ?? Date.now())) / 1000))
-      );
-    };
-
-    updateElapsed();
-    const timerId = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timerId);
-  }, [awaitingInitialPlan, processingStartedAtMs]);
-
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
     return (
@@ -2265,8 +2216,13 @@ function Planner() {
         item.mapKey
           ? [
               {
+                destination:
+                  displayedPlan?.destination ??
+                  displayedExploreResult?.explorer.tripIntent.destination ??
+                  "",
                 name: item.name,
                 category: categoryFromPlaceType(item.placeType),
+                placeId: item.placeId,
                 address: item.address || `Ngày ${item.day}`,
                 latitude: item.latitude ?? null,
                 longitude: item.longitude ?? null,
@@ -2292,6 +2248,7 @@ function Planner() {
       );
   }, [
     activePlanDay,
+    displayedPlan?.destination,
     displayedExploreResult?.explorer.tripIntent.timing.startDate,
     tripPlaces,
   ]);
@@ -3587,11 +3544,9 @@ function Planner() {
     }
     if (!plan) {
       setInitialPlanningActive(true);
-      setProcessingStartedAtMs(Date.now());
       setWorkflowStage(user ? "classifying" : "preparing");
     }
     if (!user) {
-      setIntakeKind(requestUrls.length > 0 ? "url" : "prompt");
       setBackgroundPlanning(true);
       const createdGuestJobs: GuestUrlImportJob[] = [];
       if (requestUrls.length > 0) {
@@ -3618,7 +3573,6 @@ function Planner() {
       return;
     }
     if (user && requestUrls.length > 0) {
-      setIntakeKind("url");
       setQueueingUrls(true);
       setBackgroundPlanning(true);
       setError("");
@@ -3700,9 +3654,6 @@ function Planner() {
     const requestId = activeRequestIdRef.current + 1;
     activeRequestIdRef.current = requestId;
     setLoading(true);
-    setIntakeKind(
-      requestUrls.length > 0 || URL_PATTERN.test(text) ? "url" : "prompt"
-    );
     setWorkflowStage("exploring");
     setError("");
     try {
@@ -3817,7 +3768,6 @@ function Planner() {
     setWorkflowStage("idle");
     setBackgroundPlanning(false);
     setInitialPlanningActive(false);
-    setProcessingStartedAtMs(null);
     setActivePlanningJobs([]);
     setChatCollapsed(false);
     setError("");
@@ -3889,14 +3839,11 @@ function Planner() {
             (job.status === "queued" || job.status === "running")
         );
         if (active.length) {
-          const oldestStart = Math.min(...active.map((job) => Date.parse(job.startedAt ?? job.createdAt)));
-          setProcessingStartedAtMs(oldestStart);
           setActivePlanningJobs(
             active.map((job) => ({ id: job.id, guest: false }))
           );
           setBackgroundPlanning(true);
           setInitialPlanningActive(!chat.currentPlan);
-          setIntakeKind("url");
           setWorkflowStage(
             active.every((job) => job.status === "queued")
               ? "preparing"
@@ -3910,7 +3857,6 @@ function Planner() {
           );
           if (activeTurn) {
             setInitialPlanningActive(!chat.currentPlan);
-            setProcessingStartedAtMs(Date.parse(activeTurn.createdAt));
             setWorkflowStage(
               activeTurn.status === "queued"
                 ? "preparing"
@@ -4141,31 +4087,108 @@ function Planner() {
     );
   }
 
-  async function handleConfirmCandidateResolution(
+  function handleConfirmCandidateResolution(
     place: UnscheduledPlace,
     matchRank: number
   ) {
-    if (!activeChatId || !place.candidateId || mutatingItem) return;
+    if (!activeChatId || !place.candidateId) return;
+    if (candidateResolutionCandidateIdsRef.current.has(place.candidateId)) return;
+
     const key = `${place.candidateId}:${matchRank}`;
+    candidateResolutionCandidateIdsRef.current.add(place.candidateId);
+    candidateResolutionQueueRef.current.push({
+      chatId: activeChatId,
+      matchRank,
+      place,
+    });
+    setCandidateResolutionProgress((current) => ({
+      ...current,
+      [place.candidateId as string]: { key, status: "queued" },
+    }));
+    setError("");
+    void drainCandidateResolutionQueue(chatRevision);
+  }
+
+  async function drainCandidateResolutionQueue(initialRevision: number) {
+    if (candidateResolutionRunningRef.current) return;
+
+    candidateResolutionRunningRef.current = true;
     setMutatingItem(true);
-    setResolvingCandidateKey(key);
+    let expectedRevision = initialRevision;
+
+    try {
+      while (candidateResolutionQueueRef.current.length > 0) {
+        const choice = candidateResolutionQueueRef.current.shift();
+        if (!choice?.place.candidateId) continue;
+
+        const candidateId = choice.place.candidateId;
+        const key = `${candidateId}:${choice.matchRank}`;
+        setCandidateResolutionProgress((current) => ({
+          ...current,
+          [candidateId]: { key, status: "resolving" },
+        }));
+
+        try {
+          const updated = await confirmTripChatCandidateResolution({
+            chatId: choice.chatId,
+            expectedRevision,
+            candidateId,
+            matchRank: choice.matchRank,
+          });
+          expectedRevision = updated.revision;
+          if (activeChatIdRef.current === choice.chatId) {
+            applyTripChat(updated);
+          }
+        } catch (caught) {
+          if (activeChatIdRef.current === choice.chatId) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Không thể xác nhận địa điểm này."
+            );
+          }
+        } finally {
+          candidateResolutionCandidateIdsRef.current.delete(candidateId);
+          setCandidateResolutionProgress((current) => {
+            const next = { ...current };
+            delete next[candidateId];
+            return next;
+          });
+        }
+      }
+    } finally {
+      candidateResolutionRunningRef.current = false;
+      setMutatingItem(false);
+    }
+  }
+
+  async function handleDismissUnscheduledPlace(place: UnscheduledPlace) {
+    if (!activeChatId || mutatingItem) return;
+    if (
+      !confirm(
+        `Không thêm “${itineraryDisplayName(place.name)}” vào kế hoạch?`
+      )
+    ) {
+      return;
+    }
+
+    setMutatingItem(true);
     setError("");
     try {
-      const updated = await confirmTripChatCandidateResolution({
+      const updated = await removeTripChatUnscheduledPlace({
         chatId: activeChatId,
         expectedRevision: chatRevision,
-        candidateId: place.candidateId,
-        matchRank,
+        place,
       });
       applyTripChat(updated);
+      showPlannerToast("Đã bỏ địa điểm khỏi kế hoạch");
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Không thể xác nhận địa điểm này."
+          : "Không thể bỏ địa điểm khỏi kế hoạch."
       );
     } finally {
-      setResolvingCandidateKey(null);
       setMutatingItem(false);
     }
   }
@@ -4699,11 +4722,6 @@ function Planner() {
                     : undefined
                 }
               >
-                <BackgroundUrlJobs
-                  authenticated={Boolean(user)}
-                  enabled={!authLoading}
-                  placement="planner-chat"
-                />
                 <PlannerChatHeader
                   collapsed={chatCollapsed}
                   contentId="planner-chat-content"
@@ -4736,38 +4754,12 @@ function Planner() {
                   />
                   {awaitingInitialPlan ? (
                     <div
-                      aria-atomic="false"
+                      aria-atomic="true"
                       aria-live="polite"
                       className="plannerInlineProcessing"
                       role="status"
                     >
-                      <span className="srOnly">
-                        Yêu cầu đang được xử lý. Bạn có thể chuyển tab; tiến
-                        trình sẽ tiếp tục ở chế độ nền.
-                      </span>
-                      <span aria-hidden="true" className="plannerLoadingPenguin">
-                        <PenguinMascot size={58} variant="search" />
-                      </span>
-                      <span className="plannerProcessingMeta">
-                        <span className="plannerProcessingCopy">
-                          <small>{processingStageLabel(workflowStage)}</small>
-                          <strong>
-                            {processingActivity(
-                              workflowStage,
-                              intakeKind,
-                              processingElapsedSeconds
-                            )}
-                          </strong>
-                          <span>
-                            <i aria-hidden="true" />
-                            Đang chạy nền · bạn có thể chuyển tab
-                          </span>
-                        </span>
-                        <span aria-hidden="true" className="plannerProcessingTimer">
-                          <span>Thời gian</span>
-                          <strong>{formatElapsedTime(processingElapsedSeconds)}</strong>
-                        </span>
-                      </span>
+                      Đang suy nghĩ
                     </div>
                   ) : null}
                   {error ? <p className="formError">{error}</p> : null}
@@ -4849,7 +4841,14 @@ function Planner() {
                     />
                   </span>
                   <div className="itineraryHeadingCopy">
-                    <strong>Kế hoạch chi tiết</strong>
+                    <div className="itineraryHeadingTitle">
+                      <strong>Kế hoạch chi tiết</strong>
+                      <span className="itineraryDestinationName">
+                        {displayedPlan?.destination ??
+                          displayedExploreResult?.explorer.tripIntent.destination ??
+                          "Chưa chọn điểm đến"}
+                      </span>
+                    </div>
                     <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
                       <small>
                         <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
@@ -4920,17 +4919,23 @@ function Planner() {
                           </p>
                         </div>
                       </div>
-                      {displayedPlan.regionStories?.some((story) => story.text) ? (
+                      {displayedPlan.regionStories?.some((story) =>
+                        formatSourceNoteForDisplay(story.text)
+                      ) ? (
                         <div className="regionStoryPanel">
                           <span>Câu chuyện về khu vực</span>
                           {displayedPlan.regionStories
-                            .filter((story) => story.text)
+                            .filter((story) =>
+                              formatSourceNoteForDisplay(story.text)
+                            )
                             .map((story, storyIndex) => (
                               <div
                                 className="regionStoryItem"
                                 key={`${story.ref ?? "region-story"}-${storyIndex}`}
                               >
-                                <p>{story.text}</p>
+                                <p>
+                                  {formatSourceNoteForDisplay(story.text)}
+                                </p>
                                 {story.evidence ? (
                                   <details>
                                     <summary>Bằng chứng từ nguồn</summary>
@@ -5552,7 +5557,6 @@ function Planner() {
                                       onClick={(event) => {
                                         event.stopPropagation();
                                         setOpenQuickActionKey(null);
-                                        setOpenHoursKey(null);
                                         setNoteEditor(
                                           isNoteEditorOpen
                                             ? null
@@ -5676,21 +5680,6 @@ function Planner() {
                                       ) : null}
                                     </form>
                                   ) : null;
-                                const openingHoursText =
-                                  formatOpeningHoursForPlanDay(
-                                    item.openingHours,
-                                    displayedPlanDay.day,
-                                    displayedExploreResult?.explorer.tripIntent
-                                      .timing.startDate
-                                  );
-                                const openingHoursSchedule =
-                                  formatOpeningHoursSchedule(item.openingHours);
-                                const activeOpeningDay =
-                                  dayOfWeekForTripDay(
-                                    displayedPlanDay.day,
-                                    displayedExploreResult?.explorer.tripIntent
-                                      .timing.startDate
-                                  ) ?? currentDayOfWeekInVietnam();
                                 return (
                                   <Fragment
                                     key={
@@ -5953,51 +5942,25 @@ function Planner() {
                                                     )}
                                                   </div>
                                                   {item.rating != null ? (
-                                                    <div
-                                                      className="itineraryPlaceRating"
-                                                      aria-label={`Đánh giá ${item.rating} trên 5`}
-                                                    >
-                                                      <span aria-hidden="true">
-                                                        ★
-                                                      </span>
-                                                      <strong>
-                                                        {item.rating.toFixed(1)}
-                                                      </strong>
-                                                      {item.reviewCount !=
-                                                        null &&
-                                                      item.reviewCount > 0 ? (
-                                                        item.sourceLink ? (
-                                                          <a
-                                                            className="itineraryGoogleReviewLink"
-                                                            href={
-                                                              item.sourceLink
-                                                            }
-                                                            onClick={(event) =>
-                                                              event.stopPropagation()
-                                                            }
-                                                            rel="noreferrer"
-                                                            target="_blank"
-                                                            title="Mở đánh giá trên Google Maps"
-                                                          >
-                                                            <small>
-                                                              {formatCompactCount(
-                                                                item.reviewCount
-                                                              )}{" "}
-                                                              lượt đánh giá
-                                                            </small>
-                                                          </a>
-                                                        ) : (
-                                                          <small>
-                                                            {formatCompactCount(
-                                                              item.reviewCount
-                                                            )}{" "}
-                                                            lượt đánh giá
-                                                          </small>
-                                                        )
-                                                      ) : null}
-                                                    </div>
+                                                    <ItineraryReviewRating
+                                                      onOpen={
+                                                        setItineraryReviewPlace
+                                                      }
+                                                      place={{
+                                                        placeId:
+                                                          item.placeId ?? "",
+                                                        name: displayItemName,
+                                                        address: item.address,
+                                                        rating: item.rating,
+                                                        reviewCount:
+                                                          item.reviewCount,
+                                                        sourceLink:
+                                                          item.sourceLink,
+                                                      }}
+                                                    />
                                                   ) : null}
                                                 </div>
+                                              </header>
                                                 <div className="itineraryPlaceQuickActions">
                                                   {sourceLabel?.url ? (
                                                     <a
@@ -6126,68 +6089,6 @@ function Planner() {
                                                     </div>
                                                   ) : null}
                                                 </div>
-                                              </header>
-                                              {openingHoursText &&
-                                              !isFoodStop ? (
-                                                <details
-                                                  className="itineraryPlaceHours"
-                                                  open={
-                                                    openHoursKey ===
-                                                    quickActionKey
-                                                  }
-                                                  onClick={(event) =>
-                                                    event.stopPropagation()
-                                                  }
-                                                >
-                                                  <summary
-                                                    onClick={(event) => {
-                                                      event.preventDefault();
-                                                      setNoteEditor(null);
-                                                      setOpenHoursKey(
-                                                        openHoursKey ===
-                                                          quickActionKey
-                                                          ? null
-                                                          : quickActionKey
-                                                      );
-                                                    }}
-                                                  >
-                                                    <span className="itineraryPlaceHoursLabel">
-                                                      Giờ mở cửa
-                                                    </span>
-                                                    <strong>
-                                                      {openingHoursText}
-                                                    </strong>
-                                                    <svg
-                                                      aria-hidden="true"
-                                                      className="itineraryPlaceHoursChevron"
-                                                      viewBox="0 0 24 24"
-                                                    >
-                                                      <path d="m7 10 5 5 5-5" />
-                                                    </svg>
-                                                  </summary>
-                                                  {openingHoursSchedule.length >
-                                                  0 ? (
-                                                    <div className="itineraryPlaceHoursSchedule">
-                                                      {openingHoursSchedule.map(
-                                                        (entry, scheduleIndex) => (
-                                                          <div
-                                                            className={
-                                                              entry.dayOfWeek ===
-                                                              activeOpeningDay
-                                                                ? "isActiveDay"
-                                                                : undefined
-                                                            }
-                                                            key={`${entry.dayOfWeek ?? "unknown"}-${scheduleIndex}`}
-                                                          >
-                                                            <span>{entry.label}</span>
-                                                            <strong>{entry.value}</strong>
-                                                          </div>
-                                                        )
-                                                      )}
-                                                    </div>
-                                                  ) : null}
-                                                </details>
-                                              ) : null}
                                               {itemNoteAction}
                                             </div>
                                           </div>
@@ -6443,10 +6344,12 @@ function Planner() {
                         (activePlanDay == null &&
                           (displayedPlan.unscheduledPlaces?.length ?? 0) > 0) ? (
                           <UnscheduledPlacesSection
+                            candidateResolutionProgress={candidateResolutionProgress}
                             disabled={mutatingItem}
                             onConfirmCandidate={handleConfirmCandidateResolution}
+                            onDismissPlace={handleDismissUnscheduledPlace}
+                            onOpenReviews={setItineraryReviewPlace}
                             places={displayedPlan.unscheduledPlaces ?? []}
-                            resolvingKey={resolvingCandidateKey}
                           />
                         ) : null}
                       </div>
@@ -6564,6 +6467,13 @@ function Planner() {
             </section>
           )}
         </div>
+
+        {itineraryReviewPlace ? (
+          <PlaceReviewsModal
+            onClose={() => setItineraryReviewPlace(null)}
+            place={itineraryReviewPlace}
+          />
+        ) : null}
 
         {editingItem ? (
           <div
@@ -7143,17 +7053,73 @@ function Planner() {
   );
 }
 
+function ItineraryReviewRating({
+  onOpen,
+  place,
+}: {
+  onOpen?: (place: PlaceReviewsModalPlace) => void;
+  place: PlaceReviewsModalPlace;
+}) {
+  const content = (
+    <>
+      <span aria-hidden="true">★</span>
+      <strong>{place.rating?.toFixed(1)}</strong>
+      {place.reviewCount != null && place.reviewCount > 0 ? (
+        <small>
+          {formatCompactCount(place.reviewCount)} lượt đánh giá
+        </small>
+      ) : null}
+    </>
+  );
+
+  if (place.placeId && onOpen) {
+    return (
+      <button
+        aria-label={`Đọc đánh giá của ${place.name}`}
+        className="itineraryPlaceRating"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(place);
+        }}
+        title="Đọc đánh giá"
+        type="button"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div
+      aria-label={`Đánh giá ${place.rating ?? 0} trên 5`}
+      className="itineraryPlaceRating"
+    >
+      {content}
+    </div>
+  );
+}
+
 function UnscheduledPlacesSection({
+  candidateResolutionProgress = {},
   disabled = false,
   onConfirmCandidate,
+  onDismissPlace,
+  onOpenReviews,
   places,
-  resolvingKey,
 }: {
+  candidateResolutionProgress?: Record<
+    string,
+    { key: string; status: "queued" | "resolving" }
+  >;
   disabled?: boolean;
   onConfirmCandidate?: (place: UnscheduledPlace, matchRank: number) => void;
+  onDismissPlace?: (place: UnscheduledPlace) => void;
+  onOpenReviews?: (place: PlaceReviewsModalPlace) => void;
   places: UnscheduledPlace[];
-  resolvingKey?: string | null;
 }) {
+  const candidateQueueActive =
+    Object.keys(candidateResolutionProgress).length > 0;
+
   if (places.length === 0) {
     return (
       <div className="unscheduledPlacesEmpty" role="status">
@@ -7173,6 +7139,9 @@ function UnscheduledPlacesSection({
       <div className="itineraryStops unscheduledPlaceList">
           {places.map((place, index) => {
             const displayName = itineraryDisplayName(place.name);
+            const sourceActivity = formatSourceNoteForDisplay(
+              place.sourceActivity
+            );
             const categories = [place.placeType, ...(place.tags ?? [])].filter(
               (value): value is string => Boolean(value)
             );
@@ -7215,22 +7184,18 @@ function UnscheduledPlacesSection({
                             <strong>{displayName}</strong>
                           </div>
                           {place.rating != null ? (
-                            <div
-                              aria-label={`Đánh giá ${place.rating} trên 5`}
-                              className="itineraryPlaceRating"
-                            >
-                              <span aria-hidden="true">★</span>
-                              <strong>{place.rating.toFixed(1)}</strong>
-                              {place.reviewCount != null &&
-                              place.reviewCount > 0 ? (
-                                <small>
-                                  {formatCompactCount(place.reviewCount)} lượt
-                                  đánh giá
-                                </small>
-                              ) : null}
-                            </div>
+                            <ItineraryReviewRating
+                              onOpen={onOpenReviews}
+                              place={{
+                                placeId: place.placeId ?? "",
+                                name: displayName,
+                                rating: place.rating,
+                                reviewCount: place.reviewCount,
+                              }}
+                            />
                           ) : null}
                         </div>
+                      </header>
                         <div className="itineraryPlaceQuickActions">
                           {sourceLabel?.url ? (
                             <a
@@ -7274,7 +7239,6 @@ function UnscheduledPlacesSection({
                             )}
                           </span>
                         </div>
-                      </header>
                       {place.address ? (
                         <p className="unscheduledPlaceAddress">
                           {place.address}
@@ -7294,6 +7258,9 @@ function UnscheduledPlacesSection({
                           <div className="unscheduledMatchList">
                             {place.topMatches?.slice(0, 3).map((match) => {
                               const buttonKey = `${place.candidateId ?? ""}:${match.rank}`;
+                              const resolutionProgress = place.candidateId
+                                ? candidateResolutionProgress[place.candidateId]
+                                : undefined;
                               const canChoose = Boolean(
                                 onConfirmCandidate &&
                                 place.candidateId &&
@@ -7304,7 +7271,11 @@ function UnscheduledPlacesSection({
                               return (
                                 <button
                                   className="unscheduledMatchButton"
-                                  disabled={disabled || !canChoose}
+                                  disabled={
+                                    !canChoose ||
+                                    Boolean(resolutionProgress) ||
+                                    (disabled && !candidateQueueActive)
+                                  }
                                   key={`${match.rank}-${match.name}`}
                                   onClick={() => {
                                     if (canChoose && handleChoice) {
@@ -7319,8 +7290,10 @@ function UnscheduledPlacesSection({
                                   type="button"
                                 >
                                   <strong>
-                                    {resolvingKey === buttonKey
-                                      ? "Đang chọn..."
+                                    {resolutionProgress?.key === buttonKey
+                                      ? resolutionProgress.status === "queued"
+                                        ? "Đã xếp hàng..."
+                                        : "Đang chọn..."
                                       : match.name}
                                   </strong>
                                   {match.address ? (
@@ -7332,16 +7305,28 @@ function UnscheduledPlacesSection({
                           </div>
                         </div>
                       ) : null}
-                      {place.day != null || place.sourceActivity ? (
+                      {place.day != null || sourceActivity ? (
                         <p className="unscheduledPlaceContext">
                           {place.day != null
                             ? `Ưu tiên Ngày ${place.day}`
                             : null}
-                          {place.day != null && place.sourceActivity
+                          {place.day != null && sourceActivity
                             ? " · "
                             : null}
-                          {place.sourceActivity}
+                          {sourceActivity}
                         </p>
+                      ) : null}
+                      {onDismissPlace ? (
+                        <div className="unscheduledPlaceActions">
+                          <button
+                            className="unscheduledDismissButton"
+                            disabled={disabled}
+                            onClick={() => onDismissPlace(place)}
+                            type="button"
+                          >
+                            Không thêm vào kế hoạch
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -7553,68 +7538,6 @@ function shortDateLabelForTripDay(
   return `${date}/${month}`;
 }
 
-function formatElapsedTime(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function processingDescription(
-  stage: WorkflowStage,
-  intakeKind: IntakeKind
-): string {
-  if (stage === "planning") {
-    return "Đang tạo khung chuyến đi, xếp địa điểm và kiểm tra lịch trình.";
-  }
-  if (intakeKind === "image") {
-    return "Đang đọc nội dung ảnh, nhận diện địa điểm và chuẩn hóa yêu cầu.";
-  }
-  return "Đang hiểu điểm đến, thời lượng, ngân sách, sở thích và ràng buộc.";
-}
-
-function processingStageLabel(stage: WorkflowStage): string {
-  if (stage === "classifying") return "Đang hiểu yêu cầu";
-  if (stage === "preparing") return "Bước 1/3 · Chuẩn bị";
-  if (stage === "planning") return "Bước 3/3 · Lập kế hoạch";
-  return "Bước 2/3 · Khám phá";
-}
-
-function processingActivity(
-  stage: WorkflowStage,
-  intakeKind: IntakeKind,
-  elapsed: number
-): string {
-  if (stage === "classifying") {
-    return "Đang chọn trợ lý phù hợp cho tin nhắn này";
-  }
-  if (stage === "preparing") {
-    return "Đang chuẩn bị yêu cầu chuyến đi";
-  }
-  if (stage === "planning") {
-    if (elapsed < 6) return "Đang tạo khung chuyến đi theo từng ngày";
-    if (elapsed < 14) return "Đang xếp địa điểm, bữa ăn và thời gian nghỉ";
-    if (elapsed < 24) return "Đang tính các chặng di chuyển";
-    return "Đang kiểm tra lịch trình và các ràng buộc";
-  }
-
-  if (intakeKind === "image") {
-    if (elapsed < 7) return "Đang đọc nội dung trong ảnh";
-    if (elapsed < 18) return "Đang nhận diện địa điểm và hoạt động";
-    return "Đang chuẩn hóa thông tin chuyến đi";
-  }
-
-  if (intakeKind === "url") {
-    if (elapsed < 6) return "Đang kiểm tra nguồn và chuẩn bị nội dung";
-    if (elapsed < 16) return "Đang đọc nội dung có thể truy cập";
-    if (elapsed < 30) return "Đang trích xuất địa điểm và ngữ cảnh";
-    return "Đang đối chiếu và xác định địa điểm";
-  }
-
-  if (elapsed < 5) return "Đang hiểu điểm đến và thời lượng";
-  if (elapsed < 12) return "Đang đọc ngân sách, sở thích và nhịp độ";
-  return "Đang chuẩn hóa yêu cầu và ràng buộc";
-}
-
 function budgetLevelLabel(
   level: ExplorerContext["tripIntent"]["budget"]["level"]
 ): string {
@@ -7699,7 +7622,7 @@ function sourceProviderLabel(provider: SourceProviderKind): string {
   if (provider === "youtube") return "YouTube";
   if (provider === "tiktok") return "TikTok";
   if (provider === "instagram") return "Instagram";
-  return "Nguồn";
+  return "Website";
 }
 
 function compactSourceUrl(sourceUrl: string): string {
@@ -7767,8 +7690,8 @@ function SourceProviderIcon({ provider }: { provider: SourceProviderKind }) {
   }
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1l-.8.8" />
-      <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.8 12h16.4M12 3.5c2.2 2.3 3.3 5.1 3.3 8.5S14.2 18.2 12 20.5M12 3.5C9.8 5.8 8.7 8.6 8.7 12s1.1 6.2 3.3 8.5" />
     </svg>
   );
 }

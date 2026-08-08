@@ -134,6 +134,10 @@ class Settings(BaseSettings):
         le=3600.0,
     )
     url_import_worker_concurrency: int = Field(default=3, ge=1, le=8)
+    preference_observer_poll_interval_seconds: float = Field(
+        default=0.75, ge=0.1, le=30.0
+    )
+    preference_observer_max_attempts: int = Field(default=3, ge=1, le=10)
     youtube_transcript_min_interval_seconds: float = Field(
         default=1.0,
         ge=0.0,

@@ -36,6 +36,9 @@ Sử dụng pytest cho domain và service:
   Haversine prefilter cho walking và chỉ gọi transit theo preference/constraint;
 - route-first giữ ba meal anchor, cho phép hơn hai activity khi duration và
   transition còn vừa, đồng thời đưa activity tràn thời gian vào danh sách chưa xếp;
+- Finder lấp timeline theo capacity phút thay vì quota activity theo pace, và
+  Checker từ chối hai Restaurant liền nhau nếu không có activity hoặc
+  DrinkDessert ở giữa;
 - Finder chỉ chạy sau khi hết URL place phù hợp trong window, ưu tiên diversity,
   không thêm quá một coffee/ngày và không thêm coffee nếu ngày đã có cafe URL;
 - record KG `catalog_status=merged` bị loại khỏi search, lookup ID cũ redirect
@@ -56,6 +59,8 @@ Sử dụng pytest cho domain và service:
 - required experience được PlaceSelector resolve thành required Place hoặc giữ
   trong `UnscheduledPlace`, không bị bỏ âm thầm;
 - lifecycle turn nằm trên user message và revision chứa cùng TripIntent snapshot
+- preference observation job được enqueue idempotent theo user message, chỉ
+  claim turn hoàn tất, không chứa raw content và retry không cộng signal hai lần;
 - structured intent edit trả sau khi persist, coalesce nhiều edit đang chờ và
   chỉ worker của intent version mới nhất được ghi plan/revision
   đã dùng để tạo plan;

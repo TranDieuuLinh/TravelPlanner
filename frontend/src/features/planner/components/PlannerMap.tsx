@@ -16,8 +16,10 @@ import {
   isWalkingMode
 } from "@/features/planner/lib/transport-options";
 import type { ExplorePlace } from "@/features/planner/api/plans";
+import { PlaceReviewsModal } from "@/features/planner/components/PlaceReviewsModal";
 
 export type PlannerMapPlace = ExplorePlace & {
+  destination: string;
   mapKey: string;
   mapOrder: number;
   dayColorKey: string;
@@ -486,6 +488,7 @@ export function PlannerMap({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapDragging, setMapDragging] = useState(false);
+  const [reviewPlace, setReviewPlace] = useState<PlannerMapPlace | null>(null);
 
   routesRef.current = routes;
 
@@ -871,18 +874,33 @@ export function PlannerMap({
       popupContent.className = "candidateMapPopup candidateMapPopup--place";
       const header = document.createElement("header");
       header.className = "candidateMapPopupHeader";
+      const destination = document.createElement("span");
+      destination.className = "candidateMapPopupDestination";
+      destination.textContent = place.destination;
       const name = document.createElement("h3");
       name.className = "candidateMapPopupTitle";
       name.textContent = `${place.mapOrder}. ${place.name}`;
       const meta = document.createElement("div");
       meta.className = "candidateMapPopupMeta";
       if (place.rating != null) {
-        const rating = document.createElement(place.sourceLink ? "a" : "span");
+        const canShowStoredReviews = Boolean(place.placeId);
+        const rating = document.createElement(
+          canShowStoredReviews ? "button" : place.sourceLink ? "a" : "span"
+        );
         rating.className = "candidateMapPopupRating";
         rating.textContent = `★ ${place.rating.toFixed(1)}${
           place.reviewCount ? ` · ${formatCompactCount(place.reviewCount)} lượt đánh giá` : ""
         }`;
-        if (place.sourceLink && rating instanceof HTMLAnchorElement) {
+        if (canShowStoredReviews && rating instanceof HTMLButtonElement) {
+          rating.type = "button";
+          rating.title = "Đọc đánh giá";
+          rating.setAttribute("aria-label", `Đọc đánh giá của ${place.name}`);
+          rating.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setReviewPlace(place);
+          });
+        } else if (place.sourceLink && rating instanceof HTMLAnchorElement) {
           rating.href = place.sourceLink;
           rating.target = "_blank";
           rating.rel = "noreferrer";
@@ -890,7 +908,7 @@ export function PlannerMap({
         }
         meta.append(rating);
       }
-      header.append(name, meta);
+      header.append(destination, name, meta);
 
       const details = document.createElement("div");
       details.className = "candidateMapPopupDetails";
@@ -1835,6 +1853,19 @@ export function PlannerMap({
           </div>
         ) : null}
       </div>
+      {reviewPlace?.placeId ? (
+        <PlaceReviewsModal
+          onClose={() => setReviewPlace(null)}
+          place={{
+            placeId: reviewPlace.placeId,
+            name: reviewPlace.name,
+            address: reviewPlace.address,
+            rating: reviewPlace.rating,
+            reviewCount: reviewPlace.reviewCount,
+            sourceLink: reviewPlace.sourceLink,
+          }}
+        />
+      ) : null}
     </section>
   );
 }

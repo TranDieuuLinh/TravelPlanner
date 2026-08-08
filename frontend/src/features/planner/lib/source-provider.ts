@@ -12,20 +12,28 @@ const WEB_PAGE_PROVIDERS = new Set([
   "website",
 ]);
 
+const PLACE_PROVIDER_HOSTS = new Set([
+  "maps.google.com",
+  "maps.app.goo.gl",
+]);
+
 /**
  * Resolve only source types that have an icon in the itinerary UI.
- * Place-resolution providers (for example, Knowledge Graph or Google Maps)
- * are deliberately not presented as URL sources.
+ * The sourceProvider field can describe the later place-resolution provider,
+ * so a normal webpage URL must primarily be recognized from sourceUrl. Direct
+ * place-provider links (for example Google Maps) are deliberately excluded.
  */
 export function sourceProviderKind(
   sourceUrl: string,
   sourceProvider: string | null | undefined
 ): SourceProviderKind | null {
   let hostname: string;
+  let pathname: string;
   try {
     const url = new URL(sourceUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     hostname = url.hostname.toLowerCase();
+    pathname = url.pathname.toLowerCase();
   } catch {
     return null;
   }
@@ -50,7 +58,16 @@ export function sourceProviderKind(
   if (normalizedProvider.includes("instagram")) return "instagram";
   if (WEB_PAGE_PROVIDERS.has(normalizedProvider)) return "url";
 
-  // Revisions created before sourceProvider was persisted contain only the URL.
-  if (!normalizedProvider) return "url";
-  return null;
+  if (
+    PLACE_PROVIDER_HOSTS.has(hostname) ||
+    ((hostname === "google.com" || hostname === "www.google.com") &&
+      pathname.startsWith("/maps"))
+  ) {
+    return null;
+  }
+
+  // Webpage candidates keep their article URL in sourceRefs, while
+  // sourceProvider is replaced by the resolver (database/Knowledge Graph/etc).
+  // Older revisions may also contain only this URL.
+  return "url";
 }

@@ -163,7 +163,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = lunch_start + 60
             b3 = DayBlock(
@@ -181,7 +181,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = dinner_start + 60
             blocks = [b1, b2, b3, b4, b5]
@@ -209,7 +209,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = lunch_start + 60 + 15
             b3 = DayBlock("support_activity", self._clock_window(cur, 120), 120, True)
@@ -225,7 +225,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = dinner_start + 60 + 15
             b6 = DayBlock(
@@ -257,7 +257,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = lunch_start + 60
             b3 = DayBlock(
@@ -277,7 +277,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = dinner_start + 60
             blocks = [b1, b2, b3, b4, b5]
@@ -307,7 +307,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = lunch_start + 60 + 15
             b4 = DayBlock("support_activity_2", self._clock_window(cur, 90), 90, True)
@@ -325,7 +325,7 @@ class DaySkeletonBuilder:
                 60,
                 False,
                 kind="meal",
-                candidate_category="food_drink",
+                candidate_category="Restaurant",
             )
             cur = dinner_start + 60 + 30
             b8 = DayBlock(
@@ -356,7 +356,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = lunch_start + 60 + 30
         b3 = DayBlock("support_activity", self._clock_window(cur, 150), 150, True)
@@ -372,7 +372,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = dinner_start + 60 + 15
         b6 = DayBlock(
@@ -479,7 +479,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = lunch_start + 60 + 30
         b3 = DayBlock("support_activity", self._clock_window(cur, 90), 90, True)
@@ -495,7 +495,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = dinner_start + 60 + 30
         b6 = DayBlock(
@@ -567,7 +567,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = lunch_start + 60 + 45
         b5 = DayBlock("stop_4", self._clock_window(cur, 45), 45, True)
@@ -583,7 +583,7 @@ class DaySkeletonBuilder:
             60,
             False,
             kind="meal",
-            candidate_category="food_drink",
+            candidate_category="Restaurant",
         )
         cur = dinner_start + 60 + 30
         b9 = DayBlock("stop_7", self._clock_window(cur, 60), 60, True, optional=True)
@@ -647,6 +647,7 @@ class DaySkeletonBuilder:
             if is_meal_place(
                 tags=place.tags,
                 source_activity=place.source_activity,
+                ontology_type=place.ontology_type,
             ):
                 anchor = MEAL_ANCHORS[min(meal_index, len(MEAL_ANCHORS) - 1)]
                 blocks.append(
@@ -657,7 +658,7 @@ class DaySkeletonBuilder:
                         activity=False,
                         preferred_ref=place.stable_ref,
                         kind="meal",
-                        candidate_category="food_drink",
+                        candidate_category="Restaurant",
                     )
                 )
                 meal_index += 1

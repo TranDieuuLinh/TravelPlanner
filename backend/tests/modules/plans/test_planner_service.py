@@ -81,6 +81,26 @@ def test_needs_review_url_candidate_is_preserved_as_unscheduled_place() -> None:
     assert item.top_matches[0]["placeId"] == "cafe-a"
 
 
+def test_needs_review_without_matches_is_still_preserved_as_unscheduled() -> None:
+    review = PlaceCandidateReview.model_validate(
+        {
+            "candidateId": "candidate-unknown",
+            "name": "Unknown place from video",
+            "category": "other",
+            "status": "needs_review",
+            "sourceUrls": ["https://example.com/video"],
+            "topMatches": [],
+        }
+    )
+
+    unscheduled = MainPlanWorkflow._needs_review_unscheduled([review])
+
+    assert len(unscheduled) == 1
+    assert unscheduled[0].candidate_id == "candidate-unknown"
+    assert unscheduled[0].reason_code == "identity_needs_review"
+    assert unscheduled[0].top_matches == []
+
+
 @pytest.mark.parametrize(
     "destination",
     [
@@ -215,7 +235,7 @@ def test_main_workflow_reuses_theme_but_reruns_downstream_planning() -> None:
     assert any(stage.key == "placeSelector" for stage in timing.stages)
 
 
-def test_city_stay_spans_two_empty_days_without_becoming_place() -> None:
+def test_city_stay_spans_two_days_without_becoming_place() -> None:
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         trip_theme_planner=_planner(FakeStatisticsProvider()),
@@ -246,8 +266,16 @@ def test_city_stay_spans_two_empty_days_without_becoming_place() -> None:
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
     assert len(plan.days) == 2
-    assert all(day.items == [] for day in plan.days)
-    assert all(day.theme == "Tối ưu theo tuyến" for day in plan.days)
+    assert all(
+        [item.role for item in day.items]
+        == ["breakfast_meal", "lunch_meal", "dinner_meal"]
+        for day in plan.days
+    )
+    assert all(day.theme is None for day in plan.days)
+    assert all(
+        "theme" not in day.model_dump(mode="json", by_alias=True)
+        for day in plan.days
+    )
 
 
 def test_trip_theme_planner_uses_snapshot_and_returns_only_themes() -> None:
@@ -521,7 +549,7 @@ def test_planner_normalizes_food_themes_and_over_capacity_requirements() -> None
     )
 
     assert [theme.theme for theme in output.trip_themes] == ["Văn hóa địa phương"]
-    assert output.trip_themes[0].minimum_activities == 2
+    assert output.trip_themes[0].minimum_activities == 4
     assert any("khung bữa ăn riêng" in warning for warning in output.warnings)
 
 
@@ -846,9 +874,13 @@ def test_main_workflow_accepts_confirmed_explorer_context() -> None:
 
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
-    assert plan.status.value == "draft"
+    assert plan.status.value == "failed"
     assert plan.check_report is not None
-    assert plan.check_report.status == "needs_backup"
+    assert plan.check_report.status == "failed"
+    assert any(
+        issue.code == "daily_meal_structure_invalid"
+        for issue in plan.check_report.issues
+    )
     assert plan.days[0].items[0].name == "Văn Miếu"
 
 
@@ -898,6 +930,7 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
     assert timing.status == "completed"
     assert timing.total_seconds >= 0
     assert [stage.key for stage in timing.stages] == [
+        "capacityPreflight",
         "preparePlanningContext",
         "tripThemePlanner",
         "placeSelector",
@@ -1206,12 +1239,16 @@ def test_main_workflow_accepts_planning_context() -> None:
         "place-van-mieu",
         "place-ho-guom",
     }
-    assert plan.status.value == "draft"
+    assert plan.status.value == "failed"
     assert plan.check_report is not None
-    assert plan.check_report.status == "needs_backup"
+    assert any(
+        issue.code == "daily_meal_structure_invalid"
+        for issue in plan.check_report.issues
+    )
+    assert plan.check_report.status == "failed"
 
 
-def test_main_workflow_keeps_plan_draft_when_place_is_unscheduled() -> None:
+def test_main_workflow_keeps_overflow_visible_when_daily_structure_fails() -> None:
     workflow = MainPlanWorkflow(
         explorer=ExplorerService(),
         trip_theme_planner=_planner(FakeStatisticsProvider()),
@@ -1237,9 +1274,9 @@ def test_main_workflow_keeps_plan_draft_when_place_is_unscheduled() -> None:
 
     plan = asyncio.run(workflow.run(payload))
 
-    assert plan.status.value == "draft"
+    assert plan.status.value == "failed"
     assert plan.check_report is not None
-    assert plan.check_report.status == "warning"
+    assert plan.check_report.status == "failed"
     assert {item.place_id for item in plan.unscheduled_places} == {"place-4"}
     assert all(
         item.reason_code in {"no_available_slot", "insufficient_time"}

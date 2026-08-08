@@ -157,7 +157,7 @@ class TripChatRepository:
                     attachment_names=[],
                     plan_revision=revision,
                     turn_id=turn_id,
-                    message_kind=("turn_response" if turn_id else "text"),
+                    message_kind="plan_update",
                     created_at=now,
                 ),
                 TripRevision(
@@ -332,6 +332,7 @@ class TripChatRepository:
                     sequence=next_sequence,
                     attachment_names=[],
                     plan_revision=revision,
+                    message_kind="plan_update",
                     created_at=now,
                 ),
             )
@@ -733,7 +734,7 @@ class TripChatRepository:
                     attachment_names=[],
                     plan_revision=revision,
                     turn_id=turn.lifecycle_id,
-                    message_kind="turn_response",
+                    message_kind="plan_update",
                     content_blocks=list(assistant_blocks),
                     assistant_blocks=list(assistant_blocks),
                     created_at=now,
@@ -886,3 +887,31 @@ class TripChatRepository:
             .order_by(TripChatMessage.created_at.desc(), TripChatMessage.id.desc())
         )
         return list(self.db.scalars(statement))
+
+    def list_planner_runs_for_user(
+        self, user_id: int, limit: int = 12
+    ) -> list[TripChatMessage]:
+        """Return active turns plus recent persisted raw-prompt timing runs."""
+
+        statement = (
+            select(TripChatMessage)
+            .join(TripChat, TripChat.id == TripChatMessage.chat_id)
+            .where(
+                TripChat.user_id == user_id,
+                TripChatMessage.client_turn_id.is_not(None),
+                ~TripChatMessage.client_turn_id.like("url-batch-%"),
+                ~TripChatMessage.client_turn_id.like("image-batch-%"),
+            )
+            .order_by(TripChatMessage.created_at.desc(), TripChatMessage.id.desc())
+            .limit(max(limit * 4, limit))
+        )
+        runs: list[TripChatMessage] = []
+        active_statuses = PROCESSING_TURN_STATUSES | {"queued"}
+        for turn in self.db.scalars(statement):
+            timing = (turn.result_summary or {}).get("plannerTiming")
+            if turn.status not in active_statuses and not isinstance(timing, dict):
+                continue
+            runs.append(turn)
+            if len(runs) >= limit:
+                break
+        return runs

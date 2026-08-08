@@ -280,6 +280,7 @@ def test_queue_claims_only_one_job_until_it_finishes(
     assert timing_payload["status"] == "succeeded"
     assert timing_payload["explorerSeconds"] == 3.5
     assert timing_payload["plannerSeconds"] == 4.25
+    assert timing_payload["plannerTiming"]["totalSeconds"] == 4.25
     assert timing_payload["accountedSeconds"] == 7.75
     second = repository.claim_next()
     assert second is not None
