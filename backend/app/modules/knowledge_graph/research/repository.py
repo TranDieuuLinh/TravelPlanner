@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.modules.knowledge_graph.model import (
@@ -25,6 +25,7 @@ from app.modules.knowledge_graph.research.schema import (
     AreaRef,
     EntitySummary,
     GraphStats,
+    OfferedActivityCandidate,
     PLACE_TYPES,
     Recommendation,
     RecommendationPriority,
@@ -99,6 +100,131 @@ class ScopeResolutionRepository:
                 .limit(limit)
             ).all()
         )
+
+    def list_plannable_meal_item_nodes(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[KnowledgeEntity]:
+        """Return food/drink nodes that at least one Restaurant can serve.
+
+        DrinkDessert venues remain activity/support stops, so their items do not
+        make a node eligible for a breakfast/lunch/dinner anchor by themselves.
+        """
+        venue = aliased(KnowledgeEntity)
+        offer = aliased(KnowledgeRelationship)
+        return list(
+            self.db.scalars(
+                select(KnowledgeEntity)
+                .distinct()
+                .join(offer, offer.to_entity_id == KnowledgeEntity.id)
+                .join(venue, venue.id == offer.from_entity_id)
+                .where(
+                    KnowledgeEntity.entity_type.in_(("FoodItem", "DrinkItem")),
+                    offer.relationship_type == "OFFERS_ITEM",
+                    venue.entity_type == "Restaurant",
+                )
+                .order_by(KnowledgeEntity.entity_type, KnowledgeEntity.canonical_name)
+                .limit(limit)
+            ).all()
+        )
+
+    def list_activity_place_candidates(
+        self,
+        region_key: str,
+        *,
+        activity_terms: list[str] | None = None,
+        limit: int = 1000,
+    ) -> list[OfferedActivityCandidate]:
+        """Project in-scope ``Place -> OFFERS_ACTIVITY -> Activity`` paths.
+
+        This is intentionally independent from ``SPECIAL_EXPERIENCE``. The
+        latter selects trip highlights, while this bounded projection supplies
+        ordinary gap-fill candidates to PlaceSelector.
+        """
+        parts = [part.strip() for part in region_key.split(",") if part.strip()]
+        destination = parts[1] if len(parts) >= 2 and parts[0] == "vn" else region_key
+        area = self.resolve_area_by_name(destination.replace("-", " "))
+        if area is None:
+            return []
+        area_ids = [
+            area.id,
+            *(
+                child.id
+                for child in self.traverse_part_of_descendants(
+                    area.id,
+                    max_depth=4,
+                    limit=500,
+                )
+            ),
+        ]
+        place = aliased(KnowledgeEntity)
+        activity = aliased(KnowledgeEntity)
+        located = aliased(KnowledgeRelationship)
+        offer = aliased(KnowledgeRelationship)
+        statement = (
+            select(place.id, activity.id, activity.canonical_name)
+            .join(located, located.from_entity_id == place.id)
+            .join(
+                offer,
+                (offer.from_entity_id == place.id)
+                & (offer.relationship_type == "OFFERS_ACTIVITY"),
+            )
+            .join(activity, activity.id == offer.to_entity_id)
+            .where(
+                located.relationship_type == "LOCATED_IN",
+                located.to_entity_id.in_(area_ids),
+                place.entity_type.in_(
+                    (
+                        "TravelPlace",
+                        "DrinkDessert",
+                        "Attraction",
+                        "Entertainment",
+                        "Cafe",
+                        "Shop",
+                    )
+                ),
+                activity.entity_type.in_(ActivityTypes),
+            )
+            .order_by(
+                case(
+                    (place.entity_type == "TravelPlace", 0),
+                    (place.entity_type.in_(("Attraction", "Entertainment")), 1),
+                    else_=2,
+                ),
+                offer.id,
+            )
+            .limit(limit)
+        )
+        normalized_terms = list(
+            dict.fromkeys(
+                normalized
+                for term in activity_terms or []
+                if (normalized := _normalized(term))
+            )
+        )
+        rows = []
+        if normalized_terms:
+            rows = self.db.execute(
+                statement.where(
+                    or_(
+                        *(
+                            activity.normalized_name.contains(term)
+                            for term in normalized_terms
+                        )
+                    )
+                )
+            ).all()
+        if not rows:
+            rows = self.db.execute(statement).all()
+        return [
+            OfferedActivityCandidate(
+                placeId=place_id,
+                activityId=activity_id,
+                activityName=activity_name,
+            )
+            for place_id, activity_id, activity_name in rows
+        ]
 
     def list_places_offering_items(
         self,

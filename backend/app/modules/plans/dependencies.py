@@ -60,6 +60,7 @@ from app.modules.plans.information_finder import (
 from app.modules.plans.place_selector.place_tool import RepositoryPlaceSelectionTool
 from app.modules.plans.itinerary_optimizer import RouteFirstItineraryOptimizer
 from app.modules.plans.place_selector import PlaceSelectorService
+from app.modules.plans.place_selector.meal_node_planner import MealNodePlanner
 from app.modules.plans.trip_theme_planner import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.graph_research import (
     TripThemeGraphResearchService,
@@ -244,9 +245,13 @@ def get_plan_service(
         skip_statistics_for_explicit_intent=True,
     )
     place_selector = PlaceSelectorService(
-        RepositoryPlaceSelectionTool(place_repository),
+        RepositoryPlaceSelectionTool(
+            place_repository,
+            graph_repository=kg_repo,
+        ),
         route_optimizer=_get_itinerary_optimizer(),
         graph_repository=kg_repo,
+        meal_node_planner=MealNodePlanner(llm_client, kg_repo),
         nearby_route_cost_provider=_get_nearby_route_cost_provider(),
     )
     main_workflow = MainPlanWorkflow(

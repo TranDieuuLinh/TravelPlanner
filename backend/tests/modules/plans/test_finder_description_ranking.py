@@ -111,6 +111,104 @@ def test_structured_reranking_prefers_reviewed_place_over_alphabetic_noise() -> 
     ]
 
 
+def test_offers_activity_enriches_finder_candidate_without_category_dependency() -> None:
+    repository = FakeFinderRepository(
+        [
+            _place(
+                "cocktail-bar",
+                "Rooftop Bar",
+                "bar",
+                "vn,ha-noi",
+                description="Không gian ngắm thành phố về đêm.",
+                group="DrinkDessert",
+                tags=["nightlife"],
+            )
+        ]
+    )
+
+    class _Graph:
+        def list_activity_place_candidates(self, region_key: str, *, limit: int):
+            assert region_key == "vn,ha-noi"
+            return [
+                SimpleNamespace(
+                    placeId="cocktail-bar",
+                    activityId="activity-cocktail",
+                    activityName="Uống cocktail ngắm thành phố",
+                )
+            ]
+
+    results = RepositoryPlaceSelectionTool(
+        repository,
+        graph_repository=_Graph(),
+    ).search(
+        region_key="vn,ha-noi",
+        target_tags=["cocktail"],
+        excluded_place_ids=set(),
+        limit=3,
+    )
+
+    assert len(results) == 1
+    assert results[0].activity_id == "activity-cocktail"
+    assert results[0].source_activity == "Uống cocktail ngắm thành phố"
+    assert results[0].selection_method == "offers_activity_graph"
+
+
+def test_place_selector_softly_prefers_a_new_activity_id_within_the_day() -> None:
+    repository = FakeFinderRepository(
+        [
+            _place("walk-a", "A Walk", "museum", "vn,ha-noi", description="culture", group="attraction", tags=["culture"]),
+            _place("walk-b", "B Walk", "museum", "vn,ha-noi", description="culture", group="attraction", tags=["culture"]),
+            _place("photo", "C Photo", "museum", "vn,ha-noi", description="culture", group="attraction", tags=["culture"]),
+        ]
+    )
+
+    class _Graph:
+        def list_activity_place_candidates(self, region_key: str, **kwargs):
+            return [
+                SimpleNamespace(placeId="walk-a", activityId="activity-walk", activityName="Đi dạo"),
+                SimpleNamespace(placeId="walk-b", activityId="activity-walk", activityName="Đi dạo"),
+                SimpleNamespace(placeId="photo", activityId="activity-photo", activityName="Chụp ảnh"),
+            ]
+
+    selector = PlaceSelectorService(
+        RepositoryPlaceSelectionTool(repository, graph_repository=_Graph())
+    )
+    result = selector.fill_main_plan(
+        PlaceSelectionBlueprint(
+            title="Hà Nội",
+            destination="Hà Nội",
+            regionKey="vn,ha-noi",
+            selectionDays=[
+                PlaceSelectionDay(
+                    day=1,
+                    theme="Culture",
+                    targetArea="Hà Nội",
+                    targetRegionKey="vn,ha-noi",
+                    focusTags=["culture"],
+                    pace=TravelPace.balanced,
+                )
+            ],
+        ),
+        TravelIntent(
+            destination="Hà Nội",
+            days=1,
+            budget=BudgetLevel.medium,
+            travelStyle="local",
+            pace=TravelPace.balanced,
+            interests=["culture"],
+        ),
+        [],
+    )
+
+    activities = [
+        item for item in result.days[0].items if item.timeline_category == "activity"
+    ]
+    assert [item.activity_id for item in activities[:2]] == [
+        "activity-walk",
+        "activity-photo",
+    ]
+
+
 def test_nature_day_keeps_hotel_and_restaurant_out_of_activity_slots() -> None:
     repository = FakeFinderRepository(
         [

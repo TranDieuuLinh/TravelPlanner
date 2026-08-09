@@ -28,6 +28,16 @@ class MealNodeSelectionResponse(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class TripMealNodeSelection(MealNodeSelection):
+    day: int = Field(ge=1, le=30)
+
+
+class TripMealNodeSelectionResponse(BaseModel):
+    selections: list[TripMealNodeSelection] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
+
+
 MEAL_NODE_SYSTEM_PROMPT = """
 Bạn là bộ chọn món ăn cho hệ thống lập lịch du lịch.
 
@@ -43,6 +53,26 @@ Quy tắc bắt buộc:
   đồ uống hoặc cà phê nếu các node đó có trong catalog.
 - Không chọn tên nhà hàng/địa điểm. Bạn chỉ chọn FoodItem hoặc DrinkItem;
   backend sẽ tìm địa điểm có edge OFFERS_ITEM.
+""".strip()
+
+
+TRIP_MEAL_NODE_SYSTEM_PROMPT = """
+Bạn là bộ chọn món cho toàn bộ chuyến đi trong hệ thống lập lịch du lịch.
+
+Nhiệm vụ: đọc các hoạt động đã được PlaceSelector xếp theo từng ngày và chọn
+FoodItem hoặc DrinkItem cho breakfast, lunch, dinner của từng ngày.
+
+Quy tắc bắt buộc:
+- Chỉ chọn node có trong mealNodeCatalog; giữ nguyên chính xác nodeId, nodeName,
+  nodeType và chỉ trả JSON đúng schema.
+- Mỗi cặp day + slot xuất hiện tối đa một lần.
+- Ưu tiên món phù hợp thời điểm, hoạt động, địa phương và sở thích chuyến đi.
+- Trong cùng một ngày, không chọn ba món quá giống nhau nếu catalog còn lựa chọn.
+- Không lặp lại cùng node trong toàn chuyến nếu vẫn còn node phù hợp khác.
+- DrinkItem chỉ nên đi cùng bữa khi đó là lựa chọn hợp lý; không biến quán cà phê,
+  bar hoặc tiệm tráng miệng thành bữa chính.
+- Không chọn tên nhà hàng. Backend sẽ tìm Restaurant có cạnh OFFERS_ITEM tới node.
+- Có thể bỏ trống slot nếu catalog không có node phù hợp có thể phục vụ như bữa chính.
 """.strip()
 
 
@@ -72,6 +102,43 @@ class MealNodePlanner:
             )
             return future.result()
 
+    def select_for_trip(
+        self,
+        *,
+        activities_by_day: dict[int, list[dict[str, Any]]],
+        interests: list[str],
+        unavailable_node_ids: set[str] | None = None,
+    ) -> list[TripMealNodeSelection]:
+        """Make one bounded LLM call for the entire trip, never one per slot/day."""
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                asyncio.run,
+                self._select_for_trip(
+                    activities_by_day=activities_by_day,
+                    interests=interests,
+                    unavailable_node_ids=unavailable_node_ids or set(),
+                ),
+            )
+            return future.result()
+
+    def _catalog(self) -> list[dict[str, str]]:
+        loader = getattr(
+            self.graph_repository,
+            "list_plannable_meal_item_nodes",
+            None,
+        )
+        if not callable(loader):
+            loader = self.graph_repository.list_meal_item_nodes
+        nodes = loader(limit=100)
+        return [
+            {
+                "nodeId": node.id,
+                "nodeName": node.canonical_name,
+                "nodeType": node.entity_type,
+            }
+            for node in nodes
+        ]
+
     async def _select_for_day(
         self,
         *,
@@ -80,11 +147,7 @@ class MealNodePlanner:
         used_node_names: set[str],
         unavailable_node_ids: set[str],
     ) -> list[MealNodeSelection]:
-        nodes = self.graph_repository.list_meal_item_nodes(limit=100)
-        catalog = [
-            {"nodeId": node.id, "nodeName": node.canonical_name, "nodeType": node.entity_type}
-            for node in nodes
-        ]
+        catalog = self._catalog()
         if not catalog:
             return []
         payload = json.dumps(
@@ -118,4 +181,59 @@ class MealNodePlanner:
                 continue
             result.append(selection.model_copy(update={"node_name": catalog_node["nodeName"]}))
             seen_slots.add(selection.slot)
+        return result
+
+    async def _select_for_trip(
+        self,
+        *,
+        activities_by_day: dict[int, list[dict[str, Any]]],
+        interests: list[str],
+        unavailable_node_ids: set[str],
+    ) -> list[TripMealNodeSelection]:
+        catalog = self._catalog()
+        if not catalog or not activities_by_day:
+            return []
+        payload = json.dumps(
+            {
+                "days": [
+                    {"day": day, "activities": activities}
+                    for day, activities in sorted(activities_by_day.items())
+                ],
+                "interests": interests,
+                "unavailableNodeIds": sorted(unavailable_node_ids),
+                "mealNodeCatalog": catalog,
+            },
+            ensure_ascii=False,
+        )
+        raw = await self.llm.generate_structured_json(
+            TRIP_MEAL_NODE_SYSTEM_PROMPT,
+            payload,
+            response_schema=TripMealNodeSelectionResponse.model_json_schema(),
+        )
+        response = TripMealNodeSelectionResponse.model_validate_json(raw)
+        valid = {node["nodeId"]: node for node in catalog}
+        valid_days = set(activities_by_day)
+        result: list[TripMealNodeSelection] = []
+        seen_slots: set[tuple[int, str]] = set()
+        used_nodes: set[str] = set()
+        for selection in response.selections:
+            catalog_node = valid.get(selection.node_id)
+            slot_key = (selection.day, selection.slot)
+            if catalog_node is None or selection.day not in valid_days:
+                continue
+            if slot_key in seen_slots or selection.node_id in used_nodes:
+                continue
+            if selection.node_id in unavailable_node_ids:
+                continue
+            if selection.node_name.casefold() != catalog_node["nodeName"].casefold():
+                continue
+            if selection.node_type != catalog_node["nodeType"]:
+                continue
+            result.append(
+                selection.model_copy(
+                    update={"node_name": catalog_node["nodeName"]}
+                )
+            )
+            seen_slots.add(slot_key)
+            used_nodes.add(selection.node_id)
         return result

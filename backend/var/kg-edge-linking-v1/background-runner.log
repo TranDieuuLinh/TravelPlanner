@@ -2012,3 +2012,2416 @@
 
 [2026-08-09 15:26:11] Batch 48 completed; processed after=4314; advanced=66.
 [2026-08-09 15:26:12] Batch 49 started; processed before=4314.
+{"progress": {"failedBatches": 4, "worker1FailedBatches": 1, "worker3FailedBatches": 1, "worker2FailedBatches": 1, "worker4FailedBatches": 1, "places": 36, "edges": 97, "menuImages": 66, "completedBatches": 10, "worker1Places": 14, "worker3Places": 12, "worker2Places": 10}, "totalBatches": 26}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 26,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 10,
+    "worker1FailedBatches": 2,
+    "worker3FailedBatches": 2,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 3,
+    "places": 60,
+    "edges": 169,
+    "menuImages": 113,
+    "completedBatches": 16,
+    "worker1Places": 18,
+    "worker3Places": 16,
+    "worker2Places": 14,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4370,
+  "validatedUniqueEdges": 15380,
+  "alreadyExisting": 15358,
+  "newEdges": 22,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 15:40:27] Batch 50 completed; processed after=4326; advanced=-36.
+[2026-08-09 15:40:28] Batch 51 started; processed before=4326.
+{"progress": {"places": 44, "edges": 127, "menuImages": 72, "completedBatches": 10, "worker1Places": 16, "worker2Places": 12, "worker4Places": 8, "worker3Places": 8}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 224,
+    "menuImages": 135,
+    "completedBatches": 18,
+    "worker1Places": 24,
+    "worker2Places": 20,
+    "worker4Places": 16,
+    "worker3Places": 16,
+    "failedBatches": 6,
+    "worker1FailedBatches": 1,
+    "worker2FailedBatches": 1,
+    "worker3FailedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4446,
+  "validatedUniqueEdges": 15604,
+  "alreadyExisting": 15503,
+  "newEdges": 101,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 15:43:53] Batch 51 completed; processed after=4402; advanced=76.
+[2026-08-09 15:43:54] Batch 52 started; processed before=4402.
+{"progress": {"places": 37, "edges": 115, "menuImages": 71, "completedBatches": 10, "worker3Places": 13, "worker1Places": 16, "worker2Places": 8}, "totalBatches": 25}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 25,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 61,
+    "edges": 179,
+    "menuImages": 118,
+    "completedBatches": 16,
+    "worker3Places": 21,
+    "worker1Places": 24,
+    "worker2Places": 8,
+    "failedBatches": 9,
+    "worker2FailedBatches": 4,
+    "worker4FailedBatches": 4,
+    "worker1FailedBatches": 1,
+    "worker4Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4507,
+  "validatedUniqueEdges": 15783,
+  "alreadyExisting": 15685,
+  "newEdges": 98,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 15:50:05] Batch 52 completed; processed after=4463; advanced=61.
+[2026-08-09 15:50:07] Batch 53 started; processed before=4463.
+{"progress": {"places": 48, "edges": 139, "menuImages": 69, "completedBatches": 10, "worker2Places": 12, "worker1Places": 8, "worker4Places": 20, "worker3Places": 8}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 68,
+    "edges": 202,
+    "menuImages": 108,
+    "completedBatches": 15,
+    "worker2Places": 20,
+    "worker1Places": 12,
+    "worker4Places": 24,
+    "worker3Places": 12,
+    "failedBatches": 8,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4575,
+  "validatedUniqueEdges": 15985,
+  "alreadyExisting": 15858,
+  "newEdges": 127,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 15:53:52] Batch 53 completed; processed after=4531; advanced=68.
+[2026-08-09 15:53:53] Batch 54 started; processed before=4531.
+{"progress": {"places": 38, "edges": 115, "menuImages": 74, "completedBatches": 10, "worker3Places": 6, "worker2Places": 8, "worker1Places": 8, "worker4Places": 16, "failedBatches": 1, "worker2FailedBatches": 1}, "totalBatches": 25}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 25,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 58,
+    "edges": 178,
+    "menuImages": 112,
+    "completedBatches": 15,
+    "worker3Places": 14,
+    "worker2Places": 12,
+    "worker1Places": 12,
+    "worker4Places": 20,
+    "failedBatches": 10,
+    "worker2FailedBatches": 3,
+    "worker1FailedBatches": 4,
+    "worker3FailedBatches": 2,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4633,
+  "validatedUniqueEdges": 16163,
+  "alreadyExisting": 16041,
+  "newEdges": 122,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 15:59:19] Batch 54 completed; processed after=4589; advanced=58.
+[2026-08-09 15:59:20] Batch 55 started; processed before=4589.
+{"progress": {"places": 44, "edges": 102, "menuImages": 59, "completedBatches": 10, "worker2Places": 19, "worker1Places": 9, "worker4Places": 8, "worker3Places": 8}, "totalBatches": 24}
+{"progress": {"places": 84, "edges": 232, "menuImages": 135, "completedBatches": 20, "worker2Places": 27, "worker1Places": 17, "worker4Places": 16, "worker3Places": 24}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 84,
+    "edges": 232,
+    "menuImages": 135,
+    "completedBatches": 20,
+    "worker2Places": 27,
+    "worker1Places": 17,
+    "worker4Places": 16,
+    "worker3Places": 24,
+    "failedBatches": 4,
+    "worker1FailedBatches": 1,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4717,
+  "validatedUniqueEdges": 16395,
+  "alreadyExisting": 16233,
+  "newEdges": 162,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:02:42] Batch 55 completed; processed after=4673; advanced=84.
+[2026-08-09 16:02:43] Batch 56 started; processed before=4673.
+{"progress": {"places": 44, "edges": 100, "menuImages": 64, "completedBatches": 10, "worker2Places": 13, "failedBatches": 4, "worker3FailedBatches": 1, "worker1FailedBatches": 1, "worker2FailedBatches": 1, "worker4FailedBatches": 1, "worker3Places": 8, "worker1Places": 19, "worker4Places": 4}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 68,
+    "edges": 179,
+    "menuImages": 110,
+    "completedBatches": 16,
+    "worker2Places": 17,
+    "failedBatches": 8,
+    "worker3FailedBatches": 3,
+    "worker1FailedBatches": 1,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 3,
+    "worker3Places": 12,
+    "worker1Places": 27,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4785,
+  "validatedUniqueEdges": 16574,
+  "alreadyExisting": 16454,
+  "newEdges": 120,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:07:44] Batch 56 completed; processed after=4741; advanced=68.
+[2026-08-09 16:07:46] Batch 57 started; processed before=4741.
+{"progress": {"failedBatches": 3, "worker2FailedBatches": 1, "worker3FailedBatches": 1, "worker1FailedBatches": 1, "places": 45, "edges": 124, "menuImages": 71, "completedBatches": 10, "worker2Places": 12, "worker1Places": 17, "worker3Places": 8, "worker4Places": 8}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 7,
+    "worker2FailedBatches": 1,
+    "worker3FailedBatches": 2,
+    "worker1FailedBatches": 1,
+    "places": 73,
+    "edges": 214,
+    "menuImages": 123,
+    "completedBatches": 17,
+    "worker2Places": 20,
+    "worker1Places": 25,
+    "worker3Places": 16,
+    "worker4Places": 12,
+    "worker4FailedBatches": 3
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4858,
+  "validatedUniqueEdges": 16787,
+  "alreadyExisting": 16647,
+  "newEdges": 140,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:13:51] Batch 57 completed; processed after=4814; advanced=73.
+[2026-08-09 16:13:53] Batch 58 started; processed before=4814.
+{"progress": {"places": 48, "edges": 130, "menuImages": 68, "completedBatches": 10, "worker1Places": 12, "worker4Places": 20, "worker2Places": 8, "worker3Places": 8}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 56,
+    "edges": 166,
+    "menuImages": 84,
+    "completedBatches": 12,
+    "worker1Places": 16,
+    "worker4Places": 20,
+    "worker2Places": 8,
+    "worker3Places": 12,
+    "failedBatches": 11,
+    "worker2FailedBatches": 4,
+    "worker1FailedBatches": 2,
+    "worker3FailedBatches": 3,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4914,
+  "validatedUniqueEdges": 16953,
+  "alreadyExisting": 16834,
+  "newEdges": 119,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:18:43] Batch 58 completed; processed after=4870; advanced=56.
+[2026-08-09 16:18:44] Batch 59 started; processed before=4870.
+{"progress": {"places": 40, "edges": 134, "menuImages": 76, "completedBatches": 10, "worker1Places": 12, "worker4Places": 12, "failedBatches": 15, "worker3FailedBatches": 4, "worker2FailedBatches": 4, "worker1FailedBatches": 4, "worker4FailedBatches": 3, "worker2Places": 8, "worker3Places": 8}, "totalBatches": 25}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 25,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 40,
+    "edges": 134,
+    "menuImages": 76,
+    "completedBatches": 10,
+    "worker1Places": 12,
+    "worker4Places": 12,
+    "failedBatches": 15,
+    "worker3FailedBatches": 4,
+    "worker2FailedBatches": 4,
+    "worker1FailedBatches": 4,
+    "worker4FailedBatches": 3,
+    "worker2Places": 8,
+    "worker3Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4954,
+  "validatedUniqueEdges": 17087,
+  "alreadyExisting": 16986,
+  "newEdges": 101,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:24:55] Batch 59 completed; processed after=4910; advanced=40.
+[2026-08-09 16:24:56] Batch 60 started; processed before=4910.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 36,
+    "edges": 122,
+    "menuImages": 69,
+    "completedBatches": 9,
+    "worker2Places": 8,
+    "worker3Places": 12,
+    "failedBatches": 14,
+    "worker1FailedBatches": 3,
+    "worker2FailedBatches": 4,
+    "worker3FailedBatches": 3,
+    "worker4FailedBatches": 4,
+    "worker1Places": 12,
+    "worker4Places": 4
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 4990,
+  "validatedUniqueEdges": 17209,
+  "alreadyExisting": 17124,
+  "newEdges": 85,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:31:21] Batch 60 completed; processed after=4946; advanced=36.
+[2026-08-09 16:31:22] Batch 61 started; processed before=4946.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 15,
+    "worker2FailedBatches": 3,
+    "worker1FailedBatches": 4,
+    "worker3FailedBatches": 4,
+    "worker4FailedBatches": 4,
+    "places": 35,
+    "edges": 117,
+    "menuImages": 63,
+    "completedBatches": 9,
+    "worker2Places": 12,
+    "worker1Places": 7,
+    "worker4Places": 8,
+    "worker3Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5025,
+  "validatedUniqueEdges": 17326,
+  "alreadyExisting": 17247,
+  "newEdges": 79,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:38:49] Batch 61 completed; processed after=4981; advanced=35.
+[2026-08-09 16:38:51] Batch 62 started; processed before=4981.
+{"progress": {"places": 37, "edges": 132, "menuImages": 71, "completedBatches": 10, "worker3Places": 12, "worker1Places": 9, "worker2Places": 12, "worker4Places": 4, "failedBatches": 6, "worker1FailedBatches": 2, "worker2FailedBatches": 2, "worker4FailedBatches": 1, "worker3FailedBatches": 1}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 41,
+    "edges": 140,
+    "menuImages": 79,
+    "completedBatches": 11,
+    "worker3Places": 12,
+    "worker1Places": 9,
+    "worker2Places": 12,
+    "worker4Places": 8,
+    "failedBatches": 12,
+    "worker1FailedBatches": 3,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 3,
+    "worker3FailedBatches": 3
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5066,
+  "validatedUniqueEdges": 17466,
+  "alreadyExisting": 17368,
+  "newEdges": 98,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:44:17] Batch 62 completed; processed after=5022; advanced=41.
+[2026-08-09 16:44:18] Batch 63 started; processed before=5022.
+{"progress": {"places": 56, "edges": 143, "menuImages": 61, "completedBatches": 10, "worker2Places": 24, "worker3Places": 20, "worker1Places": 12}, "totalBatches": 21}
+{"progress": {"places": 96, "edges": 282, "menuImages": 138, "completedBatches": 20, "worker2Places": 28, "worker3Places": 28, "worker1Places": 24, "worker4Places": 16}, "totalBatches": 21}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 21,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 96,
+    "edges": 282,
+    "menuImages": 138,
+    "completedBatches": 20,
+    "worker2Places": 28,
+    "worker3Places": 28,
+    "worker1Places": 24,
+    "worker4Places": 16,
+    "failedBatches": 1,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5162,
+  "validatedUniqueEdges": 17748,
+  "alreadyExisting": 17554,
+  "newEdges": 194,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:46:47] Batch 63 completed; processed after=5118; advanced=96.
+[2026-08-09 16:46:48] Batch 64 started; processed before=5118.
+{"progress": {"failedBatches": 7, "worker2FailedBatches": 2, "worker1FailedBatches": 2, "places": 45, "edges": 106, "menuImages": 71, "completedBatches": 10, "worker3Places": 16, "worker4FailedBatches": 2, "worker2Places": 12, "worker3FailedBatches": 1, "worker1Places": 17}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 12,
+    "worker2FailedBatches": 3,
+    "worker1FailedBatches": 3,
+    "places": 53,
+    "edges": 131,
+    "menuImages": 87,
+    "completedBatches": 12,
+    "worker3Places": 16,
+    "worker4FailedBatches": 4,
+    "worker2Places": 12,
+    "worker3FailedBatches": 2,
+    "worker1Places": 17,
+    "worker4Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5215,
+  "validatedUniqueEdges": 17879,
+  "alreadyExisting": 17796,
+  "newEdges": 83,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:54:38] Batch 64 completed; processed after=5171; advanced=53.
+[2026-08-09 16:54:39] Batch 65 started; processed before=5171.
+{"progress": {"places": 38, "edges": 107, "menuImages": 70, "completedBatches": 10, "worker2Places": 10, "worker4Places": 8, "worker3Places": 8, "worker1Places": 12}, "totalBatches": 26}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 26,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 72,
+    "edges": 216,
+    "menuImages": 134,
+    "completedBatches": 19,
+    "worker2Places": 22,
+    "worker4Places": 16,
+    "worker3Places": 16,
+    "worker1Places": 18,
+    "failedBatches": 7,
+    "worker3FailedBatches": 2,
+    "worker1FailedBatches": 2,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5287,
+  "validatedUniqueEdges": 18095,
+  "alreadyExisting": 17948,
+  "newEdges": 147,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 16:58:13] Batch 65 completed; processed after=5243; advanced=72.
+[2026-08-09 16:58:14] Batch 66 started; processed before=5243.
+{"progress": {"places": 47, "edges": 131, "menuImages": 66, "completedBatches": 10, "worker1Places": 23, "failedBatches": 13, "worker2FailedBatches": 4, "worker3FailedBatches": 4, "worker4FailedBatches": 3, "worker2Places": 8, "worker3Places": 8, "worker4Places": 8, "worker1FailedBatches": 2}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 51,
+    "edges": 139,
+    "menuImages": 74,
+    "completedBatches": 11,
+    "worker1Places": 23,
+    "failedBatches": 13,
+    "worker2FailedBatches": 4,
+    "worker3FailedBatches": 4,
+    "worker4FailedBatches": 3,
+    "worker2Places": 8,
+    "worker3Places": 8,
+    "worker4Places": 12,
+    "worker1FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5338,
+  "validatedUniqueEdges": 18234,
+  "alreadyExisting": 18142,
+  "newEdges": 92,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:04:28] Batch 66 completed; processed after=5294; advanced=51.
+[2026-08-09 17:04:30] Batch 67 started; processed before=5294.
+{"progress": {"places": 40, "edges": 112, "menuImages": 63, "completedBatches": 10, "worker3Places": 9, "worker4Places": 8, "worker1Places": 8, "worker2Places": 15}, "totalBatches": 25}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 25,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 230,
+    "menuImages": 131,
+    "completedBatches": 19,
+    "worker3Places": 17,
+    "worker4Places": 20,
+    "worker1Places": 16,
+    "worker2Places": 23,
+    "failedBatches": 6,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 1,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5414,
+  "validatedUniqueEdges": 18464,
+  "alreadyExisting": 18312,
+  "newEdges": 152,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:08:18] Batch 67 completed; processed after=5370; advanced=76.
+[2026-08-09 17:08:19] Batch 68 started; processed before=5370.
+{"progress": {"failedBatches": 15, "worker3FailedBatches": 4, "worker1FailedBatches": 5, "places": 40, "edges": 134, "menuImages": 77, "completedBatches": 10, "worker2Places": 12, "worker4Places": 12, "worker1Places": 8, "worker2FailedBatches": 3, "worker4FailedBatches": 3, "worker3Places": 8}, "totalBatches": 25}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 25,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 15,
+    "worker3FailedBatches": 4,
+    "worker1FailedBatches": 5,
+    "places": 40,
+    "edges": 134,
+    "menuImages": 77,
+    "completedBatches": 10,
+    "worker2Places": 12,
+    "worker4Places": 12,
+    "worker1Places": 8,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 3,
+    "worker3Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5454,
+  "validatedUniqueEdges": 18598,
+  "alreadyExisting": 18506,
+  "newEdges": 92,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:14:54] Batch 68 completed; processed after=5410; advanced=40.
+[2026-08-09 17:14:55] Batch 69 started; processed before=5410.
+{"progress": {"places": 40, "edges": 135, "menuImages": 79, "completedBatches": 10, "worker4Places": 16, "failedBatches": 11, "worker1FailedBatches": 3, "worker2FailedBatches": 3, "worker3FailedBatches": 3, "worker4FailedBatches": 2, "worker3Places": 12, "worker1Places": 8, "worker2Places": 4}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 48,
+    "edges": 163,
+    "menuImages": 94,
+    "completedBatches": 12,
+    "worker4Places": 16,
+    "failedBatches": 12,
+    "worker1FailedBatches": 3,
+    "worker2FailedBatches": 4,
+    "worker3FailedBatches": 3,
+    "worker4FailedBatches": 2,
+    "worker3Places": 12,
+    "worker1Places": 12,
+    "worker2Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5502,
+  "validatedUniqueEdges": 18761,
+  "alreadyExisting": 18648,
+  "newEdges": 113,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:20:17] Batch 69 completed; processed after=5458; advanced=48.
+[2026-08-09 17:20:19] Batch 70 started; processed before=5458.
+{"progress": {"failedBatches": 11, "worker2FailedBatches": 3, "worker3FailedBatches": 3, "places": 40, "edges": 116, "menuImages": 75, "completedBatches": 10, "worker1Places": 12, "worker4FailedBatches": 3, "worker1FailedBatches": 2, "worker3Places": 12, "worker2Places": 12, "worker4Places": 4}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 13,
+    "worker2FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "places": 40,
+    "edges": 116,
+    "menuImages": 75,
+    "completedBatches": 10,
+    "worker1Places": 12,
+    "worker4FailedBatches": 4,
+    "worker1FailedBatches": 3,
+    "worker3Places": 12,
+    "worker2Places": 12,
+    "worker4Places": 4
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5542,
+  "validatedUniqueEdges": 18877,
+  "alreadyExisting": 18801,
+  "newEdges": 76,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:26:12] Batch 70 completed; processed after=5498; advanced=40.
+[2026-08-09 17:26:13] Batch 71 started; processed before=5498.
+{"progress": {"failedBatches": 8, "worker3FailedBatches": 2, "worker2FailedBatches": 2, "worker1FailedBatches": 2, "worker4FailedBatches": 2, "places": 48, "edges": 128, "menuImages": 72, "completedBatches": 10, "worker4Places": 12, "worker2Places": 8, "worker1Places": 16, "worker3Places": 12}, "totalBatches": 22}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 22,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 12,
+    "worker3FailedBatches": 2,
+    "worker2FailedBatches": 4,
+    "worker1FailedBatches": 4,
+    "worker4FailedBatches": 2,
+    "places": 48,
+    "edges": 128,
+    "menuImages": 72,
+    "completedBatches": 10,
+    "worker4Places": 12,
+    "worker2Places": 8,
+    "worker1Places": 16,
+    "worker3Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5590,
+  "validatedUniqueEdges": 19005,
+  "alreadyExisting": 18926,
+  "newEdges": 79,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:32:11] Batch 71 completed; processed after=5546; advanced=48.
+[2026-08-09 17:32:12] Batch 72 started; processed before=5546.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 18,
+    "worker2FailedBatches": 5,
+    "worker1FailedBatches": 5,
+    "worker3FailedBatches": 5,
+    "worker4FailedBatches": 3,
+    "places": 20,
+    "edges": 58,
+    "menuImages": 38,
+    "completedBatches": 6,
+    "worker2Places": 3,
+    "worker4Places": 12,
+    "worker1Places": 1,
+    "worker3Places": 4
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5610,
+  "validatedUniqueEdges": 19063,
+  "alreadyExisting": 19026,
+  "newEdges": 37,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:39:35] Batch 72 completed; processed after=5566; advanced=20.
+[2026-08-09 17:39:37] Batch 73 started; processed before=5566.
+{"progress": {"places": 40, "edges": 124, "menuImages": 71, "completedBatches": 10, "worker3Places": 12, "worker1Places": 8, "worker2Places": 8, "worker4Places": 12}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 56,
+    "edges": 153,
+    "menuImages": 79,
+    "completedBatches": 12,
+    "worker3Places": 12,
+    "worker1Places": 20,
+    "worker2Places": 12,
+    "worker4Places": 12,
+    "failedBatches": 11,
+    "worker2FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker1FailedBatches": 3,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5666,
+  "validatedUniqueEdges": 19216,
+  "alreadyExisting": 19119,
+  "newEdges": 97,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:43:38] Batch 73 completed; processed after=5622; advanced=56.
+[2026-08-09 17:43:40] Batch 74 started; processed before=5622.
+{"progress": {"places": 39, "edges": 138, "menuImages": 78, "completedBatches": 10, "worker2Places": 11, "worker1Places": 8, "failedBatches": 13, "worker3FailedBatches": 4, "worker4Places": 16, "worker1FailedBatches": 4, "worker2FailedBatches": 3, "worker4FailedBatches": 2, "worker3Places": 4}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 43,
+    "edges": 149,
+    "menuImages": 85,
+    "completedBatches": 11,
+    "worker2Places": 11,
+    "worker1Places": 8,
+    "failedBatches": 13,
+    "worker3FailedBatches": 4,
+    "worker4Places": 16,
+    "worker1FailedBatches": 4,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 2,
+    "worker3Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5709,
+  "validatedUniqueEdges": 19365,
+  "alreadyExisting": 19260,
+  "newEdges": 105,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:50:01] Batch 74 completed; processed after=5665; advanced=43.
+[2026-08-09 17:50:02] Batch 75 started; processed before=5665.
+{"progress": {"places": 45, "edges": 116, "menuImages": 63, "completedBatches": 10, "worker2Places": 17, "worker1Places": 8, "worker3Places": 12, "worker4Places": 8, "failedBatches": 11, "worker1FailedBatches": 3, "worker3FailedBatches": 3, "worker2FailedBatches": 3, "worker4FailedBatches": 2}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 57,
+    "edges": 161,
+    "menuImages": 86,
+    "completedBatches": 13,
+    "worker2Places": 17,
+    "worker1Places": 12,
+    "worker3Places": 12,
+    "worker4Places": 16,
+    "failedBatches": 11,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5766,
+  "validatedUniqueEdges": 19526,
+  "alreadyExisting": 19420,
+  "newEdges": 106,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 17:55:01] Batch 75 completed; processed after=5722; advanced=57.
+[2026-08-09 17:55:03] Batch 76 started; processed before=5722.
+{"progress": {"places": 38, "edges": 123, "menuImages": 72, "completedBatches": 10, "worker2Places": 10, "worker1Places": 8, "worker4Places": 8, "worker3Places": 12, "failedBatches": 10, "worker2FailedBatches": 2, "worker3FailedBatches": 3, "worker1FailedBatches": 3, "worker4FailedBatches": 2}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 50,
+    "edges": 164,
+    "menuImages": 95,
+    "completedBatches": 13,
+    "worker2Places": 14,
+    "worker1Places": 8,
+    "worker4Places": 16,
+    "worker3Places": 12,
+    "failedBatches": 11,
+    "worker2FailedBatches": 2,
+    "worker3FailedBatches": 3,
+    "worker1FailedBatches": 4,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5816,
+  "validatedUniqueEdges": 19690,
+  "alreadyExisting": 19575,
+  "newEdges": 115,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:00:03] Batch 76 completed; processed after=5772; advanced=50.
+[2026-08-09 18:00:04] Batch 77 started; processed before=5772.
+{"progress": {"places": 40, "edges": 124, "menuImages": 76, "completedBatches": 10, "worker4Places": 12, "worker3Places": 12, "failedBatches": 11, "worker2FailedBatches": 3, "worker1FailedBatches": 3, "worker3FailedBatches": 3, "worker4FailedBatches": 2, "worker2Places": 12, "worker1Places": 4}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 52,
+    "edges": 162,
+    "menuImages": 99,
+    "completedBatches": 13,
+    "worker4Places": 16,
+    "worker3Places": 12,
+    "failedBatches": 11,
+    "worker2FailedBatches": 3,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker4FailedBatches": 2,
+    "worker2Places": 12,
+    "worker1Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5868,
+  "validatedUniqueEdges": 19852,
+  "alreadyExisting": 19746,
+  "newEdges": 106,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:05:02] Batch 77 completed; processed after=5824; advanced=52.
+[2026-08-09 18:05:03] Batch 78 started; processed before=5824.
+{"progress": {"places": 47, "edges": 145, "menuImages": 68, "completedBatches": 10, "worker3Places": 8, "worker1Places": 23, "worker2Places": 8, "failedBatches": 8, "worker3FailedBatches": 3, "worker4Places": 8, "worker1FailedBatches": 2, "worker2FailedBatches": 2, "worker4FailedBatches": 1}, "totalBatches": 22}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 22,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 59,
+    "edges": 185,
+    "menuImages": 91,
+    "completedBatches": 13,
+    "worker3Places": 8,
+    "worker1Places": 23,
+    "worker2Places": 12,
+    "failedBatches": 9,
+    "worker3FailedBatches": 3,
+    "worker4Places": 16,
+    "worker1FailedBatches": 2,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5927,
+  "validatedUniqueEdges": 20037,
+  "alreadyExisting": 19907,
+  "newEdges": 130,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:10:06] Batch 78 completed; processed after=5883; advanced=59.
+[2026-08-09 18:10:08] Batch 79 started; processed before=5883.
+{"progress": {"places": 40, "edges": 122, "menuImages": 68, "completedBatches": 10, "worker3Places": 8, "worker1Places": 8, "worker2Places": 12, "worker4Places": 12, "failedBatches": 8, "worker1FailedBatches": 2, "worker3FailedBatches": 2, "worker2FailedBatches": 2, "worker4FailedBatches": 2}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 52,
+    "edges": 159,
+    "menuImages": 91,
+    "completedBatches": 13,
+    "worker3Places": 12,
+    "worker1Places": 12,
+    "worker2Places": 16,
+    "worker4Places": 12,
+    "failedBatches": 10,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker2FailedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 5979,
+  "validatedUniqueEdges": 20196,
+  "alreadyExisting": 20087,
+  "newEdges": 109,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:14:29] Batch 79 completed; processed after=5935; advanced=52.
+[2026-08-09 18:14:31] Batch 80 started; processed before=5935.
+{"progress": {"places": 44, "edges": 110, "menuImages": 57, "completedBatches": 10, "worker2Places": 17, "worker3Places": 12, "worker1Places": 11, "worker4Places": 4}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 64,
+    "edges": 177,
+    "menuImages": 96,
+    "completedBatches": 15,
+    "worker2Places": 25,
+    "worker3Places": 12,
+    "worker1Places": 11,
+    "worker4Places": 16,
+    "failedBatches": 9,
+    "worker3FailedBatches": 3,
+    "worker2FailedBatches": 1,
+    "worker1FailedBatches": 3,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6043,
+  "validatedUniqueEdges": 20373,
+  "alreadyExisting": 20260,
+  "newEdges": 113,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:19:38] Batch 80 completed; processed after=5999; advanced=64.
+[2026-08-09 18:19:40] Batch 81 started; processed before=5999.
+{"progress": {"places": 44, "edges": 124, "menuImages": 71, "completedBatches": 10, "worker4Places": 8, "worker3Places": 12, "worker2Places": 8, "worker1Places": 16}, "totalBatches": 24}
+{"progress": {"places": 84, "edges": 246, "menuImages": 149, "completedBatches": 20, "worker4Places": 20, "worker3Places": 20, "worker2Places": 16, "worker1Places": 28}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 88,
+    "edges": 263,
+    "menuImages": 156,
+    "completedBatches": 21,
+    "worker4Places": 20,
+    "worker3Places": 24,
+    "worker2Places": 16,
+    "worker1Places": 28,
+    "failedBatches": 3,
+    "worker2FailedBatches": 2,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6131,
+  "validatedUniqueEdges": 20636,
+  "alreadyExisting": 20463,
+  "newEdges": 173,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:22:17] Batch 81 completed; processed after=6087; advanced=88.
+[2026-08-09 18:22:19] Batch 82 started; processed before=6087.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 14,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 1,
+    "worker1FailedBatches": 5,
+    "worker3FailedBatches": 5,
+    "places": 36,
+    "edges": 97,
+    "menuImages": 60,
+    "completedBatches": 9,
+    "worker4Places": 16,
+    "worker2Places": 12,
+    "worker3Places": 4,
+    "worker1Places": 4
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6167,
+  "validatedUniqueEdges": 20733,
+  "alreadyExisting": 20671,
+  "newEdges": 62,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:28:54] Batch 82 completed; processed after=6123; advanced=36.
+[2026-08-09 18:28:55] Batch 83 started; processed before=6123.
+{"progress": {"places": 42, "edges": 127, "menuImages": 69, "completedBatches": 10, "worker3Places": 12, "worker2Places": 8, "worker4Places": 22, "failedBatches": 1, "worker1FailedBatches": 1}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 58,
+    "edges": 180,
+    "menuImages": 100,
+    "completedBatches": 14,
+    "worker3Places": 16,
+    "worker2Places": 12,
+    "worker4Places": 22,
+    "failedBatches": 9,
+    "worker1FailedBatches": 4,
+    "worker2FailedBatches": 3,
+    "worker3FailedBatches": 2,
+    "worker1Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6225,
+  "validatedUniqueEdges": 20913,
+  "alreadyExisting": 20794,
+  "newEdges": 119,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:34:33] Batch 83 completed; processed after=6181; advanced=58.
+[2026-08-09 18:34:34] Batch 84 started; processed before=6181.
+{"progress": {"places": 48, "edges": 132, "menuImages": 57, "completedBatches": 10, "worker4Places": 14, "worker3Places": 8, "worker1Places": 18, "worker2Places": 8}, "totalBatches": 23}
+{"progress": {"places": 88, "edges": 247, "menuImages": 135, "completedBatches": 20, "worker4Places": 22, "worker3Places": 16, "worker1Places": 30, "worker2Places": 20}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 92,
+    "edges": 258,
+    "menuImages": 143,
+    "completedBatches": 21,
+    "worker4Places": 22,
+    "worker3Places": 20,
+    "worker1Places": 30,
+    "worker2Places": 20,
+    "failedBatches": 2,
+    "worker3FailedBatches": 1,
+    "worker2FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6317,
+  "validatedUniqueEdges": 21171,
+  "alreadyExisting": 21010,
+  "newEdges": 161,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:36:19] Batch 84 completed; processed after=6273; advanced=92.
+[2026-08-09 18:36:21] Batch 85 started; processed before=6273.
+{"progress": {"failedBatches": 8, "worker2FailedBatches": 2, "worker1FailedBatches": 2, "worker3FailedBatches": 2, "worker4FailedBatches": 2, "places": 40, "edges": 131, "menuImages": 75, "completedBatches": 10, "worker3Places": 12, "worker2Places": 12, "worker1Places": 8, "worker4Places": 8}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 8,
+    "worker2FailedBatches": 2,
+    "worker1FailedBatches": 2,
+    "worker3FailedBatches": 2,
+    "worker4FailedBatches": 2,
+    "places": 60,
+    "edges": 192,
+    "menuImages": 115,
+    "completedBatches": 15,
+    "worker3Places": 16,
+    "worker2Places": 16,
+    "worker1Places": 16,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6377,
+  "validatedUniqueEdges": 21363,
+  "alreadyExisting": 21227,
+  "newEdges": 136,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:40:29] Batch 85 completed; processed after=6333; advanced=60.
+[2026-08-09 18:40:30] Batch 86 started; processed before=6333.
+{"progress": {"failedBatches": 11, "worker2FailedBatches": 2, "worker4FailedBatches": 3, "worker1FailedBatches": 3, "worker3FailedBatches": 3, "places": 40, "edges": 128, "menuImages": 78, "completedBatches": 10, "worker2Places": 12, "worker3Places": 12, "worker1Places": 8, "worker4Places": 8}, "totalBatches": 23}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 23,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "failedBatches": 12,
+    "worker2FailedBatches": 2,
+    "worker4FailedBatches": 3,
+    "worker1FailedBatches": 4,
+    "worker3FailedBatches": 3,
+    "places": 44,
+    "edges": 147,
+    "menuImages": 86,
+    "completedBatches": 11,
+    "worker2Places": 16,
+    "worker3Places": 12,
+    "worker1Places": 8,
+    "worker4Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6421,
+  "validatedUniqueEdges": 21510,
+  "alreadyExisting": 21407,
+  "newEdges": 103,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:45:39] Batch 86 completed; processed after=6377; advanced=44.
+[2026-08-09 18:45:41] Batch 87 started; processed before=6377.
+{"progress": {"places": 38, "edges": 118, "menuImages": 74, "completedBatches": 10, "worker1Places": 12, "worker4Places": 6, "failedBatches": 11, "worker1FailedBatches": 3, "worker3FailedBatches": 3, "worker2FailedBatches": 3, "worker4FailedBatches": 2, "worker2Places": 12, "worker3Places": 8}, "totalBatches": 22}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 22,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 42,
+    "edges": 129,
+    "menuImages": 82,
+    "completedBatches": 11,
+    "worker1Places": 12,
+    "worker4Places": 10,
+    "failedBatches": 11,
+    "worker1FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker2FailedBatches": 3,
+    "worker4FailedBatches": 2,
+    "worker2Places": 12,
+    "worker3Places": 8
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6463,
+  "validatedUniqueEdges": 21639,
+  "alreadyExisting": 21548,
+  "newEdges": 91,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:49:56] Batch 87 completed; processed after=6419; advanced=42.
+[2026-08-09 18:49:58] Batch 88 started; processed before=6419.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 21,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 51,
+    "edges": 123,
+    "menuImages": 51,
+    "completedBatches": 9,
+    "worker4Places": 16,
+    "failedBatches": 12,
+    "worker2FailedBatches": 3,
+    "worker3FailedBatches": 3,
+    "worker1FailedBatches": 3,
+    "worker4FailedBatches": 3,
+    "worker2Places": 16,
+    "worker3Places": 8,
+    "worker1Places": 11
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6514,
+  "validatedUniqueEdges": 21762,
+  "alreadyExisting": 21689,
+  "newEdges": 73,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 18:55:35] Batch 88 completed; processed after=6470; advanced=51.
+[2026-08-09 18:55:37] Batch 89 started; processed before=6470.
+{"progress": {"places": 40, "edges": 136, "menuImages": 79, "completedBatches": 10, "worker1Places": 8, "failedBatches": 9, "worker3FailedBatches": 2, "worker2FailedBatches": 2, "worker1FailedBatches": 3, "worker4FailedBatches": 2, "worker2Places": 16, "worker3Places": 16}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 56,
+    "edges": 189,
+    "menuImages": 111,
+    "completedBatches": 14,
+    "worker1Places": 12,
+    "failedBatches": 10,
+    "worker3FailedBatches": 2,
+    "worker2FailedBatches": 2,
+    "worker1FailedBatches": 3,
+    "worker4FailedBatches": 3,
+    "worker2Places": 16,
+    "worker3Places": 16,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6570,
+  "validatedUniqueEdges": 21951,
+  "alreadyExisting": 21820,
+  "newEdges": 131,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:03:43] Batch 89 completed; processed after=6526; advanced=56.
+[2026-08-09 19:03:44] Batch 90 started; processed before=6526.
+{"progress": {"places": 46, "edges": 118, "menuImages": 63, "completedBatches": 10, "worker2Places": 26, "worker3Places": 20, "failedBatches": 1, "worker1FailedBatches": 1}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 70,
+    "edges": 185,
+    "menuImages": 110,
+    "completedBatches": 16,
+    "worker2Places": 26,
+    "worker3Places": 24,
+    "failedBatches": 8,
+    "worker1FailedBatches": 4,
+    "worker4FailedBatches": 3,
+    "worker2FailedBatches": 1,
+    "worker1Places": 8,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6640,
+  "validatedUniqueEdges": 22136,
+  "alreadyExisting": 22021,
+  "newEdges": 115,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:10:22] Batch 90 completed; processed after=6596; advanced=70.
+[2026-08-09 19:10:23] Batch 91 started; processed before=6596.
+{"progress": {"places": 44, "edges": 115, "menuImages": 68, "completedBatches": 10, "worker2Places": 7, "worker3Places": 12, "worker4Places": 8, "worker1Places": 17}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 68,
+    "edges": 191,
+    "menuImages": 115,
+    "completedBatches": 16,
+    "worker2Places": 15,
+    "worker3Places": 16,
+    "worker4Places": 16,
+    "worker1Places": 21,
+    "failedBatches": 8,
+    "worker2FailedBatches": 2,
+    "worker1FailedBatches": 2,
+    "worker4FailedBatches": 2,
+    "worker3FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6708,
+  "validatedUniqueEdges": 22327,
+  "alreadyExisting": 22205,
+  "newEdges": 122,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:15:29] Batch 91 completed; processed after=6664; advanced=68.
+[2026-08-09 19:15:30] Batch 92 started; processed before=6664.
+{"progress": {"places": 44, "edges": 126, "menuImages": 69, "completedBatches": 10, "worker1Places": 17, "worker2Places": 11, "worker4Places": 4, "worker3Places": 12}, "totalBatches": 24}
+{"progress": {"places": 84, "edges": 244, "menuImages": 147, "completedBatches": 20, "worker1Places": 29, "worker2Places": 23, "worker4Places": 8, "worker3Places": 24, "failedBatches": 3, "worker4FailedBatches": 3}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 84,
+    "edges": 244,
+    "menuImages": 147,
+    "completedBatches": 20,
+    "worker1Places": 29,
+    "worker2Places": 23,
+    "worker4Places": 8,
+    "worker3Places": 24,
+    "failedBatches": 4,
+    "worker4FailedBatches": 4
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6792,
+  "validatedUniqueEdges": 22571,
+  "alreadyExisting": 22414,
+  "newEdges": 157,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:24:06] Batch 92 completed; processed after=6748; advanced=84.
+[2026-08-09 19:24:07] Batch 93 started; processed before=6748.
+{"progress": {"places": 44, "edges": 123, "menuImages": 63, "completedBatches": 10, "worker2Places": 9, "worker3Places": 16, "worker1Places": 19}, "totalBatches": 24}
+{"progress": {"places": 84, "edges": 247, "menuImages": 139, "completedBatches": 20, "worker2Places": 21, "worker3Places": 24, "worker1Places": 31, "failedBatches": 1, "worker4FailedBatches": 1, "worker4Places": 8}, "totalBatches": 24}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 24,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 92,
+    "edges": 269,
+    "menuImages": 155,
+    "completedBatches": 22,
+    "worker2Places": 21,
+    "worker3Places": 24,
+    "worker1Places": 31,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2,
+    "worker4Places": 16
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6884,
+  "validatedUniqueEdges": 22840,
+  "alreadyExisting": 22644,
+  "newEdges": 196,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:32:06] Batch 93 completed; processed after=6840; advanced=92.
+[2026-08-09 19:32:07] Batch 94 started; processed before=6840.
+{"progress": {"places": 56, "edges": 108, "menuImages": 54, "completedBatches": 10, "worker4Places": 12, "worker1Places": 12, "worker3Places": 12, "worker2Places": 20}, "totalBatches": 17}
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 17,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 175,
+    "menuImages": 91,
+    "completedBatches": 15,
+    "worker4Places": 16,
+    "worker1Places": 20,
+    "worker3Places": 16,
+    "worker2Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 6960,
+  "validatedUniqueEdges": 23015,
+  "alreadyExisting": 22872,
+  "newEdges": 143,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:37:05] Batch 94 completed; processed after=6916; advanced=76.
+[2026-08-09 19:37:07] Batch 95 started; processed before=6916.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 100,
+    "edges": 78,
+    "menuImages": 0,
+    "completedBatches": 9,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "worker2Places": 24,
+    "worker4Places": 24
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7060,
+  "validatedUniqueEdges": 23093,
+  "alreadyExisting": 23057,
+  "newEdges": 36,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:38:15] Batch 95 completed; processed after=7016; advanced=100.
+[2026-08-09 19:38:16] Batch 96 started; processed before=7016.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 59,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "worker2Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7136,
+  "validatedUniqueEdges": 23152,
+  "alreadyExisting": 23122,
+  "newEdges": 30,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:41:07] Batch 96 completed; processed after=7092; advanced=76.
+[2026-08-09 19:41:09] Batch 97 started; processed before=7092.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 64,
+    "edges": 42,
+    "menuImages": 0,
+    "completedBatches": 6,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "worker2Places": 12,
+    "failedBatches": 3,
+    "worker2FailedBatches": 1,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7200,
+  "validatedUniqueEdges": 23194,
+  "alreadyExisting": 23170,
+  "newEdges": 24,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:44:07] Batch 97 completed; processed after=7156; advanced=64.
+[2026-08-09 19:44:09] Batch 98 started; processed before=7156.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 59,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker1Places": 28,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7276,
+  "validatedUniqueEdges": 23253,
+  "alreadyExisting": 23221,
+  "newEdges": 32,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:47:07] Batch 98 completed; processed after=7232; advanced=76.
+[2026-08-09 19:47:08] Batch 99 started; processed before=7232.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 59,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker1Places": 28,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7352,
+  "validatedUniqueEdges": 23312,
+  "alreadyExisting": 23285,
+  "newEdges": 27,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:51:05] Batch 99 completed; processed after=7308; advanced=76.
+[2026-08-09 19:51:06] Batch 100 started; processed before=7308.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 88,
+    "edges": 68,
+    "menuImages": 0,
+    "completedBatches": 8,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "worker2Places": 24,
+    "worker4Places": 12,
+    "failedBatches": 1,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7440,
+  "validatedUniqueEdges": 23380,
+  "alreadyExisting": 23334,
+  "newEdges": 46,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:54:06] Batch 100 completed; processed after=7396; advanced=88.
+[2026-08-09 19:54:08] Batch 101 started; processed before=7396.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 88,
+    "edges": 71,
+    "menuImages": 0,
+    "completedBatches": 8,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "worker2Places": 24,
+    "failedBatches": 1,
+    "worker4FailedBatches": 1,
+    "worker4Places": 12
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7528,
+  "validatedUniqueEdges": 23451,
+  "alreadyExisting": 23417,
+  "newEdges": 34,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 19:57:09] Batch 101 completed; processed after=7484; advanced=88.
+[2026-08-09 19:57:11] Batch 102 started; processed before=7484.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 56,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker1Places": 28,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7604,
+  "validatedUniqueEdges": 23507,
+  "alreadyExisting": 23471,
+  "newEdges": 36,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:01:05] Batch 102 completed; processed after=7560; advanced=76.
+[2026-08-09 20:01:07] Batch 103 started; processed before=7560.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 54,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker3Places": 24,
+    "worker2Places": 24,
+    "worker1Places": 28,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7680,
+  "validatedUniqueEdges": 23561,
+  "alreadyExisting": 23530,
+  "newEdges": 31,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:05:05] Batch 103 completed; processed after=7636; advanced=76.
+[2026-08-09 20:05:07] Batch 104 started; processed before=7636.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 58,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker2Places": 24,
+    "worker1Places": 28,
+    "worker3Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7756,
+  "validatedUniqueEdges": 23619,
+  "alreadyExisting": 23593,
+  "newEdges": 26,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:08:07] Batch 104 completed; processed after=7712; advanced=76.
+[2026-08-09 20:08:09] Batch 105 started; processed before=7712.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 48,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "worker1Places": 28,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7832,
+  "validatedUniqueEdges": 23667,
+  "alreadyExisting": 23650,
+  "newEdges": 17,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:12:05] Batch 105 completed; processed after=7788; advanced=76.
+[2026-08-09 20:12:07] Batch 106 started; processed before=7788.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 76,
+    "edges": 50,
+    "menuImages": 0,
+    "completedBatches": 7,
+    "worker1Places": 28,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "failedBatches": 2,
+    "worker4FailedBatches": 2
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7908,
+  "validatedUniqueEdges": 23717,
+  "alreadyExisting": 23693,
+  "newEdges": 24,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:16:05] Batch 106 completed; processed after=7864; advanced=76.
+[2026-08-09 20:16:07] Batch 107 started; processed before=7864.
+{
+  "mode": "run",
+  "selectedPlaces": 100,
+  "totalBatches": 9,
+  "taxonomyNodes": 74,
+  "workers": 4,
+  "keysPerWorker": [
+    5,
+    5,
+    5,
+    5
+  ],
+  "output": "/app/var/kg-edge-linking-v1/batch-test-200.jsonl",
+  "summary": {
+    "places": 88,
+    "edges": 76,
+    "menuImages": 0,
+    "completedBatches": 8,
+    "worker2Places": 24,
+    "worker3Places": 24,
+    "worker1Places": 28,
+    "worker4Places": 12,
+    "failedBatches": 1,
+    "worker4FailedBatches": 1
+  }
+}
+
+{
+  "mode": "apply",
+  "proposalRows": 7996,
+  "validatedUniqueEdges": 23792,
+  "alreadyExisting": 23755,
+  "newEdges": 37,
+  "minimumConfidence": 0.76,
+  "dryRun": false
+}
+
+[2026-08-09 20:19:06] Batch 107 completed; processed after=7952; advanced=88.
+[2026-08-09 20:19:08] Batch 108 started; processed before=7952.

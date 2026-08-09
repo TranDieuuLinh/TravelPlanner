@@ -382,8 +382,15 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   experience dining tổng quát được mở rộng qua
   `Activity -> INVOLVES_ITEM -> Item` và
   `Restaurant -> OFFERS_ITEM -> Item`. Catalog được tải bounded một lần, venue
-  và món đã dùng bị loại trên toàn chuyến; Gemini không nằm trong đường chọn
-  meal chính.
+  và món đã dùng bị loại trên toàn chuyến. `MealNodePlanner` có thể gọi LLM một
+  lần cho cả chuyến để chọn FoodItem/DrinkItem hợp ngữ cảnh; Place cụ thể vẫn
+  phải resolve qua `OFFERS_ITEM`, phải là `Restaurant`, và lỗi provider phải
+  fallback về selector deterministic.
+- Activity lấp khoảng trống có thể đi trực tiếp qua
+  `Place -> OFFERS_ACTIVITY -> Activity` trong đúng scope. `activityId` và tên
+  Activity được giữ trên `PlanItem`; PlaceSelector ưu tiên mềm Activity chưa có
+  trong ngày nhưng không biến diversity thành quota cứng và không làm giảm ưu
+  tiên của selected Place hoặc `SPECIAL_EXPERIENCE`.
 - Caption, danh sách nhiều venue bị gộp hoặc match rộng chỉ tới thành phố không
   được đưa vào timeline; candidate có nguồn được giữ để review và PlaceSelector
   không bổ sung địa điểm khác như một bản thay thế của candidate đó.

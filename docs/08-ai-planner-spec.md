@@ -452,6 +452,11 @@ PlaceSelector điền item cụ thể:
   được dùng để loại candidate;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
+- với activity gap-fill, PlaceSelector bổ sung một bounded graph pool từ
+  `Place -> OFFERS_ACTIVITY -> Activity`; Activity khớp interest được hydrate
+  thành `activityId`/`sourceActivity`, còn Activity ID hoặc tên chưa xuất hiện
+  trong ngày được ưu tiên mềm. Pool này độc lập với `SPECIAL_EXPERIENCE`: cạnh
+  special vẫn dành cho điểm nhấn, `OFFERS_ACTIVITY` thông thường chỉ lấp lịch;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - đặt breakfast/lunch/dinner làm anchor cố định, lấp số activity động theo
@@ -490,12 +495,17 @@ activity giữa các ngày rồi tối ưu thứ tự trong ngày. Sau đó `Mea
 ba bữa và lấp activity theo capacity giữa các anchor. MealSelector tải một
 candidate pool bounded cho toàn chuyến: `TARGETS_PLACE` của dining
 `SPECIAL_EXPERIENCE` được ưu tiên, còn experience có `INVOLVES_ITEM` mở rộng
-venue qua `OFFERS_ITEM`. Candidate được phân bổ deterministic theo khung giờ,
-độ phù hợp, chất lượng và detour địa lý; venue và meal key đã dùng không được
-lặp lại. Không gọi Gemini theo từng ngày hoặc retry meal slot. Stop nguồn có
+venue qua `OFFERS_ITEM`. `MealNodePlanner` được gọi tối đa một lần cho toàn
+chuyến để chọn FoodItem/DrinkItem từ catalog node có ít nhất một Restaurant
+cung cấp; output ngoài catalog, node lặp hoặc day/slot lặp bị loại, rồi backend
+resolve venue qua `OFFERS_ITEM`. Nếu provider lỗi hoặc không có venue hợp lệ,
+pipeline fail-open về specialty/catalog deterministic. Candidate được phân bổ
+theo khung giờ, độ phù hợp, chất lượng và detour địa lý; venue và meal key đã
+dùng không được lặp lại. Không gọi Gemini theo từng ngày hoặc retry meal slot. Stop nguồn có
 `sourceDay`, `sourceOrder` hoặc provenance URL/OCR được giữ lại; timing nguồn là
-constraint ưu tiên và có thể spill khi ngày nguồn hết capacity. Đây là heuristic
-deterministic. Walking/car/transit route chỉ được enrich sau khi nghiệm cuối đã chốt;
+constraint ưu tiên và có thể spill khi ngày nguồn hết capacity. Sau bước gợi ý
+node, việc phân bổ venue vẫn là heuristic deterministic. Walking/car/transit
+route chỉ được enrich sau khi nghiệm cuối đã chốt;
 không được mô tả như tối ưu toàn cục. URL và raw prompt không chọn hai thuật toán
 planning khác nhau.
 

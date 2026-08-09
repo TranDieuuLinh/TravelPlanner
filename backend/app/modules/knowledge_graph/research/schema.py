@@ -112,6 +112,14 @@ class SpecialtyMealCandidate(BaseModel):
     bestTimeSlots: list[str] = Field(default_factory=list)
 
 
+class OfferedActivityCandidate(BaseModel):
+    """A concrete Place connected to an Activity by ``OFFERS_ACTIVITY``."""
+
+    placeId: str
+    activityId: str
+    activityName: str
+
+
 # ---------------------------------------------------------------------------
 # Experience Fit Evaluation schemas
 # ---------------------------------------------------------------------------

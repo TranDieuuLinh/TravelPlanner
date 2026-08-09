@@ -636,9 +636,14 @@ def _inside_bbox(
 
 
 class RepositoryPlaceSelectionTool:
-    def __init__(self, repository: PlaceSelectionRepository) -> None:
+    def __init__(self, repository: PlaceSelectionRepository, *, graph_repository=None) -> None:
         self.repository = repository
+        self.graph_repository = graph_repository
         self._scope_cache: dict[str, list[SelectablePlace]] = {}
+        self._graph_activity_cache: dict[
+            tuple[str, tuple[str, ...], int],
+            list[SelectablePlace],
+        ] = {}
 
     def get(self, place_id: str) -> SelectablePlace | None:
         place = self.repository.get(place_id)
@@ -661,6 +666,19 @@ class RepositoryPlaceSelectionTool:
             for place in places
             if _matches_target_locality(place, region_key)
         ]
+        graph_places = self._load_graph_activity_candidates(
+            region_key=region_key,
+            target_tags=target_tags,
+            excluded_place_ids=excluded_place_ids,
+            limit=max(MIN_DESCRIPTION_RETRIEVAL_LIMIT, limit * 10),
+        )
+        if graph_places:
+            by_ref = {place.stable_ref: place for place in places}
+            for place in graph_places:
+                # Prefer the graph-enriched copy so activityId and provenance
+                # survive into CandidateSelector and the final PlanItem.
+                by_ref[place.stable_ref] = place
+            places = list(by_ref.values())
         if bbox_filter is not None:
             places = [place for place in places if _inside_bbox(place, bbox_filter)]
         if not places:
@@ -721,6 +739,7 @@ class RepositoryPlaceSelectionTool:
             place
             for place in shortlisted
             if place_matches_categories(place, query_categories)
+            or self._graph_activity_matches(place, query_terms)
         ]
         if len(eligible_shortlist) < limit:
             shortlisted_refs = {
@@ -729,7 +748,10 @@ class RepositoryPlaceSelectionTool:
             eligible_shortlist.extend(
                 place
                 for place in places
-                if place_matches_categories(place, query_categories)
+                if (
+                    place_matches_categories(place, query_categories)
+                    or self._graph_activity_matches(place, query_terms)
+                )
                 and place.stable_ref not in shortlisted_refs
             )
         shortlisted = eligible_shortlist
@@ -746,6 +768,102 @@ class RepositoryPlaceSelectionTool:
             )
         )
         return shortlisted[:limit]
+
+    def _load_graph_activity_candidates(
+        self,
+        *,
+        region_key: str,
+        target_tags: list[str],
+        excluded_place_ids: set[str],
+        limit: int,
+    ) -> list[SelectablePlace]:
+        if self.graph_repository is None or not target_tags:
+            return []
+        if "Restaurant" in semantic_categories(set(target_tags)):
+            return []
+        cache_key = (
+            region_key,
+            tuple(sorted(_normalized_terms(target_tags))),
+            limit,
+        )
+        cached = self._graph_activity_cache.get(cache_key)
+        if cached is not None:
+            return [
+                place
+                for place in cached
+                if place.stable_ref not in excluded_place_ids
+            ]
+        loader = getattr(self.graph_repository, "list_activity_place_candidates", None)
+        if not callable(loader):
+            return []
+        try:
+            rows = loader(
+                region_key,
+                activity_terms=target_tags,
+                limit=max(limit, 100),
+            )
+        except TypeError:
+            # Compatibility for lightweight test doubles and older adapters.
+            rows = loader(region_key, limit=max(limit, 100))
+        query_terms = _normalized_terms(target_tags)
+        best_by_place: dict[str, tuple[int, object]] = {}
+        for row in rows:
+            activity_terms = _normalized_terms([row.activityName])
+            score = len(query_terms.intersection(activity_terms))
+            normalized_activity = _normalize_text(row.activityName)
+            score += sum(
+                2
+                for term in query_terms
+                if term and term in normalized_activity
+            )
+            current = best_by_place.get(row.placeId)
+            if current is None or score > current[0]:
+                best_by_place[row.placeId] = (score, row)
+
+        result: list[SelectablePlace] = []
+        ordered = sorted(
+            best_by_place.values(),
+            key=lambda value: (-value[0], value[1].activityName.casefold()),
+        )
+        for _, row in ordered[:limit]:
+            place = self.get(row.placeId)
+            if place is None:
+                continue
+            result.append(
+                place.model_copy(
+                    update={
+                        "activity_id": row.activityId,
+                        "source_activity": row.activityName,
+                        "candidate_entity_ids": list(
+                            dict.fromkeys(
+                                [*place.candidate_entity_ids, row.activityId]
+                            )
+                        ),
+                        "selection_method": "offers_activity_graph",
+                        "tags": list(
+                            dict.fromkeys([*place.tags, row.activityName])
+                        ),
+                    }
+                )
+            )
+        self._graph_activity_cache[cache_key] = result
+        return [
+            place
+            for place in result
+            if place.stable_ref not in excluded_place_ids
+        ]
+
+    @staticmethod
+    def _graph_activity_matches(
+        place: SelectablePlace,
+        query_terms: set[str],
+    ) -> bool:
+        if place.selection_method != "offers_activity_graph" or not place.activity_id:
+            return False
+        if not query_terms:
+            return True
+        activity = _normalize_text(place.source_activity or "")
+        return any(term and term in activity for term in query_terms)
 
     def _load_scoped_candidates(
         self,

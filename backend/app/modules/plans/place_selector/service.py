@@ -82,6 +82,7 @@ class PlaceSelectorService:
         timeline_fitter: TimelineFitter | None = None,
         status_tracker: PlaceSelectionStatusTracker | None = None,
         meal_selector=None,
+        meal_node_planner=None,
         graph_repository=None,
         nearby_radius_km: float = 5.0,
         nearby_route_cost_provider=None,
@@ -111,6 +112,7 @@ class PlaceSelectorService:
         self.meal_selector = meal_selector or MealStopSelector(
             self.place_tool,
             graph_repository=graph_repository,
+            meal_node_planner=meal_node_planner,
         )
         self._area_survey_cache: dict[str, AreaProfile] = {}
         self._area_survey_service: AreaSurveyService | None = None
@@ -2377,6 +2379,13 @@ class PlaceSelectorService:
             sourceDay=candidate.source_day,
             sourceTimeHint=candidate.source_time_hint,
             sourceActivity=candidate.source_activity,
+            activityId=candidate.activity_id,
+            experienceCategory=(
+                candidate.experience_category.value
+                if candidate.experience_category is not None
+                else None
+            ),
+            claimIds=candidate.claim_ids,
             preferredTimeWindows=candidate.preferred_time_windows,
         )
 

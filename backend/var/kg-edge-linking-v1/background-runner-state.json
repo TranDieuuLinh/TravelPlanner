@@ -1,9 +1,9 @@
 ﻿{
     "status":  "running",
-    "batchNumber":  48,
-    "processedPlaces":  4314,
-    "message":  "Last batch advanced 66 places",
+    "batchNumber":  107,
+    "processedPlaces":  7952,
+    "message":  "Last batch advanced 88 places",
     "dumpPath":  "",
-    "updatedAt":  "2026-08-09T15:26:11.0127081+07:00",
+    "updatedAt":  "2026-08-09T20:19:06.5403892+07:00",
     "processId":  11084
 }

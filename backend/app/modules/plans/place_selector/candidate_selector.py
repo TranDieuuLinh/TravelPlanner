@@ -390,9 +390,28 @@ class CandidateSelector:
         # Prefer a new semantic category/activity, while retaining candidates
         # when the catalog is genuinely sparse.
         used_tags = {tag.casefold() for tag in context.plan_status.visited_tag_counts}
+        used_activity_ids = {
+            item.activity_id
+            for item in context.current_day_items
+            if item.activity_id is not None
+        }
+        used_activity_names = {
+            _normalize_text(item.source_activity)
+            for item in context.current_day_items
+            if item.source_activity
+        }
         unique_candidates.sort(
             key=lambda candidate: (
                 candidate.stable_ref not in context.selected_by_ref,
+                bool(
+                    candidate.activity_id
+                    and candidate.activity_id in used_activity_ids
+                ),
+                bool(
+                    candidate.source_activity
+                    and _normalize_text(candidate.source_activity)
+                    in used_activity_names
+                ),
                 self._day_place_type_repeated(candidate, context.current_day_items),
                 bool(used_tags.intersection(tag.casefold() for tag in candidate.tags)),
             )

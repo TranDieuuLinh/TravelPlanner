@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import asin, cos, log10, radians, sin, sqrt
+import logging
 import re
 import unicodedata
 
@@ -16,12 +17,18 @@ from app.modules.plans.place_selector.place_tool import (
 from app.modules.plans.explorer.place_policy import is_meal_place
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(frozen=True)
 class _TripMealOption:
     place: SelectablePlace
     selection_path: str = "catalog"
     meal_key: str = ""
     best_time_slots: tuple[str, ...] = ()
+    item_id: str | None = None
+    item_name: str | None = None
+    preferred_slots: tuple[tuple[int, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -43,9 +50,11 @@ class MealStopSelector:
         place_tool: PlaceSelectionTool,
         *,
         graph_repository=None,
+        meal_node_planner=None,
     ) -> None:
         self.place_tool = place_tool
         self.graph_repository = graph_repository
+        self.meal_node_planner = meal_node_planner
 
     def select_for_trip(
         self,
@@ -56,7 +65,7 @@ class MealStopSelector:
         interests: list[str] | None = None,
     ) -> dict[int, dict[str, SelectablePlace | None]]:
         """Select all meal venues from one bounded trip-wide candidate pool."""
-        del interests
+        interests = interests or []
         slots = [
             _MealSlot(day=day, role=role, first=activities[0], second=activities[-1])
             for day, activities in sorted(activities_by_day.items())
@@ -74,6 +83,29 @@ class MealStopSelector:
         if not slots:
             return result
 
+        meal_node_selections = []
+        if self.meal_node_planner is not None:
+            try:
+                meal_node_selections = self.meal_node_planner.select_for_trip(
+                    activities_by_day={
+                        day: [
+                            {
+                                "name": activity.name,
+                                "timeWindow": activity.time_window,
+                                "activityId": activity.activity_id,
+                                "sourceActivity": activity.source_activity,
+                            }
+                            for activity in activities
+                        ]
+                        for day, activities in activities_by_day.items()
+                    },
+                    interests=interests,
+                )
+            except (RuntimeError, TypeError, ValueError) as exc:
+                # Meal-node selection is an enhancement. The deterministic
+                # specialty/catalog selector remains the fail-open path.
+                logger.warning("Meal node planning was skipped: %s", exc)
+
         specialty_rows: list[SpecialtyMealCandidate] = []
         loader = getattr(self.graph_repository, "list_specialty_meal_candidates", None)
         if callable(loader):
@@ -88,8 +120,8 @@ class MealStopSelector:
         fallback_by_id = {
             place.place_id: place for place in fallback if place.place_id is not None
         }
-        options_by_ref: dict[str, _TripMealOption] = {
-            place.stable_ref: _TripMealOption(
+        options_by_key: dict[tuple[str, str, tuple[tuple[int, str], ...]], _TripMealOption] = {
+            (place.stable_ref, self._meal_key(place.name, place.name), ()): _TripMealOption(
                 place=place,
                 meal_key=self._meal_key(place.name, place.name),
             )
@@ -99,12 +131,43 @@ class MealStopSelector:
             place = fallback_by_id.get(row.placeId) or self.place_tool.get(row.placeId)
             if place is None or not self._is_meal_candidate(place):
                 continue
-            options_by_ref[place.stable_ref] = _TripMealOption(
+            option = _TripMealOption(
                 place=place,
                 selection_path=row.selectionPath,
                 meal_key=self._meal_key(row.itemName or row.activityName, place.name),
                 best_time_slots=tuple(row.bestTimeSlots),
+                item_id=row.itemId,
+                item_name=row.itemName or row.activityName,
             )
+            options_by_key[(place.stable_ref, option.meal_key, ())] = option
+
+        item_venue_loader = getattr(
+            self.graph_repository,
+            "list_places_offering_items",
+            None,
+        )
+        if callable(item_venue_loader):
+            for selection in meal_node_selections:
+                preferred_slot = (selection.day, f"{selection.slot}_meal")
+                for entity in item_venue_loader([selection.node_id], limit=self.candidate_limit):
+                    place = self.place_tool.get(entity.id)
+                    if (
+                        place is None
+                        or not self._is_meal_candidate(place)
+                        or not self._in_region(place, region_key)
+                    ):
+                        continue
+                    option = _TripMealOption(
+                        place=place,
+                        selection_path="meal_node",
+                        meal_key=self._meal_key(selection.node_name, place.name),
+                        item_id=selection.node_id,
+                        item_name=selection.node_name,
+                        preferred_slots=(preferred_slot,),
+                    )
+                    options_by_key[
+                        (place.stable_ref, option.meal_key, option.preferred_slots)
+                    ] = option
 
         used_refs = set(excluded_place_ids)
         used_meal_keys: set[str] = set()
@@ -113,7 +176,7 @@ class MealStopSelector:
             ranked_slots: list[tuple[int, tuple, _MealSlot, list[tuple[tuple, _TripMealOption]]]] = []
             for slot in pending:
                 ranked_options = self._rank_trip_options(
-                    list(options_by_ref.values()),
+                    list(options_by_key.values()),
                     slot=slot,
                     region_key=region_key,
                     used_refs=used_refs,
@@ -133,7 +196,7 @@ class MealStopSelector:
             )
             if ranked_options:
                 chosen = ranked_options[0][1]
-                result[slot.day][slot.role] = chosen.place
+                result[slot.day][slot.role] = self._materialize_option(chosen)
                 used_refs.add(chosen.place.stable_ref)
                 if chosen.place.place_id is not None:
                     used_refs.add(chosen.place.place_id)
@@ -211,6 +274,10 @@ class MealStopSelector:
             and (option.place.place_id is None or option.place.place_id not in used_refs)
             and (not option.meal_key or option.meal_key not in used_meal_keys)
             and (
+                not option.preferred_slots
+                or (slot.day, slot.role) in option.preferred_slots
+            )
+            and (
                 not option.best_time_slots
                 or self._matches_role(option.best_time_slots, slot.role)
             )
@@ -259,7 +326,37 @@ class MealStopSelector:
 
     @staticmethod
     def _path_priority(path: str) -> int:
-        return {"target_place": 2, "offers_item": 1}.get(path, 0)
+        return {"meal_node": 3, "target_place": 2, "offers_item": 1}.get(path, 0)
+
+    @staticmethod
+    def _materialize_option(option: _TripMealOption) -> SelectablePlace:
+        if option.item_id is None:
+            return option.place
+        return option.place.model_copy(
+            update={
+                "candidate_entity_ids": list(
+                    dict.fromkeys(
+                        [*option.place.candidate_entity_ids, option.item_id]
+                    )
+                ),
+                "source_activity": option.item_name or option.place.source_activity,
+                "selection_method": (
+                    "meal_node_graph"
+                    if option.selection_path == "meal_node"
+                    else option.place.selection_method or option.selection_path
+                ),
+            }
+        )
+
+    @staticmethod
+    def _in_region(place: SelectablePlace, region_key: str) -> bool:
+        place_region = (place.region_key or "").strip().casefold()
+        requested = region_key.strip().casefold()
+        return (
+            place_region == requested
+            or place_region.startswith(f"{requested},")
+            or requested.startswith(f"{place_region},")
+        )
 
     @staticmethod
     def _matches_role(time_slots: tuple[str, ...], role: str) -> bool:

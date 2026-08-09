@@ -85,3 +85,52 @@ def test_meal_node_planner_discards_unknown_graph_nodes() -> None:
     )
 
     assert result == []
+
+
+class _TripLLM:
+    async def generate_structured_json(self, system_prompt, user_payload, *, response_schema):
+        assert "toàn bộ chuyến đi" in system_prompt
+        payload = json.loads(user_payload)
+        assert [day["day"] for day in payload["days"]] == [1, 2]
+        return json.dumps(
+            {
+                "selections": [
+                    {
+                        "day": 1,
+                        "slot": "breakfast",
+                        "nodeId": "food-pho",
+                        "nodeName": "Phở",
+                        "nodeType": "FoodItem",
+                    },
+                    {
+                        "day": 2,
+                        "slot": "lunch",
+                        "nodeId": "food-com",
+                        "nodeName": "Cơm",
+                        "nodeType": "FoodItem",
+                    },
+                    {
+                        "day": 2,
+                        "slot": "dinner",
+                        "nodeId": "food-pho",
+                        "nodeName": "Phở",
+                        "nodeType": "FoodItem",
+                    },
+                ]
+            }
+        )
+
+
+def test_meal_node_planner_selects_once_for_trip_and_removes_repeated_nodes() -> None:
+    result = MealNodePlanner(_TripLLM(), _Graph()).select_for_trip(
+        activities_by_day={
+            1: [{"name": "Văn Miếu"}],
+            2: [{"name": "Hồ Tây"}],
+        },
+        interests=["local food"],
+    )
+
+    assert [(item.day, item.slot, item.node_id) for item in result] == [
+        (1, "breakfast", "food-pho"),
+        (2, "lunch", "food-com"),
+    ]

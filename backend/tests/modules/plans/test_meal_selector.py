@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.modules.plans.domain.entities import PlanItem
 from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.place_selector.meal_selector import MealStopSelector
@@ -240,6 +242,54 @@ class _SpecialtyGraph:
                 bestTimeSlots=["06:30-10:00", "11:00-14:00"],
             ),
         ]
+
+
+def test_trip_meals_resolve_llm_selected_item_through_offers_item() -> None:
+    places = [
+        _food("pho-venue", "Phở gia truyền", 21.03, 105.801, "Restaurant"),
+        _food("lunch", "Lunch restaurant", 21.03, 105.802, "Restaurant"),
+        _food("dinner", "Dinner restaurant", 21.03, 105.803, "Restaurant"),
+    ]
+
+    class _Planner:
+        def select_for_trip(self, **kwargs):
+            assert list(kwargs["activities_by_day"]) == [1]
+            return [
+                SimpleNamespace(
+                    day=1,
+                    slot="breakfast",
+                    node_id="food-pho",
+                    node_name="Phở",
+                )
+            ]
+
+    class _Graph:
+        def list_specialty_meal_candidates(self, region_key: str, *, limit: int):
+            return []
+
+        def list_places_offering_items(self, item_ids: list[str], *, limit: int):
+            assert item_ids == ["food-pho"]
+            return [SimpleNamespace(id="pho-venue")]
+
+    selected = MealStopSelector(
+        _PlaceTool(places),
+        graph_repository=_Graph(),
+        meal_node_planner=_Planner(),
+    ).select_for_trip(
+        region_key="vn,ha-noi",
+        activities_by_day={
+            1: [_activity("a1", 21.03, 105.80), _activity("a2", 21.03, 105.81)]
+        },
+        excluded_place_ids={"a1", "a2"},
+        interests=["local food"],
+    )
+
+    breakfast = selected[1]["breakfast_meal"]
+    assert breakfast is not None
+    assert breakfast.place_id == "pho-venue"
+    assert breakfast.source_activity == "Phở"
+    assert breakfast.selection_method == "meal_node_graph"
+    assert "food-pho" in breakfast.candidate_entity_ids
 
 
 def _activity(place_id: str, latitude: float, longitude: float) -> PlanItem:
