@@ -92,32 +92,33 @@ def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]
         print(f"        Source panel contains {len(links)} link(s)")
         sources: list[dict[str, str]] = []
         skipped = 0
-        seen: set[tuple[str, str, str]] = set()
         for link_element in links:
             try:
-                name_element = link_element.find_element(By.CSS_SELECTOR, ".Maztge .US7LHc")
-                image = link_element.find_element(By.CSS_SELECTOR, "img")
-                price_element = link_element.find_element(By.CSS_SELECTOR, ".r1iqBd div")
-                name = name_element.text.strip()
-                price = price_element.text.strip()
-                icon = get_image_url(image)
-                href = link_element.get_attribute("href") or ""
+                name = link_element.find_element(
+                    By.CSS_SELECTOR, ".Maztge .US7LHc"
+                ).text.strip()
             except Exception:
-                # Not every anchor in the panel is a booking source.
+                name = ""
+            try:
+                icon = get_image_url(link_element.find_element(By.CSS_SELECTOR, "img"))
+            except Exception:
+                icon = ""
+            try:
+                price = link_element.find_element(
+                    By.CSS_SELECTOR, ".r1iqBd div"
+                ).text.strip()
+            except Exception:
+                price = ""
+            if not (icon and name and price):
                 skipped += 1
                 continue
-
-            key = (href, name, price)
-            if key in seen or not (name or price or icon):
-                skipped += 1
-                continue
-            seen.add(key)
             sources.append({"icon": icon, "name": name, "price": price})
 
         result["source_count"] = len(sources)
         result["sources"] = json.dumps(sources, ensure_ascii=False)
         print(
-            f"        [RESULT] extracted={len(sources)}, skipped={skipped} "
+            f"        [RESULT] extracted={len(sources)}, "
+            f"skipped_incomplete={skipped} "
             "(saved as JSON in sources column)"
         )
     except Exception as error:
