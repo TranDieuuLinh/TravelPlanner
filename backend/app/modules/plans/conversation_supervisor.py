@@ -19,6 +19,7 @@ from app.modules.plans.plan_editor.contract import (
 ConversationIntent = Literal[
     "travel_advice",
     "ask_place",
+    "find_meeting_point",
     "ask_travel_information",
     "create_plan",
     "regenerate_plan",
@@ -53,6 +54,13 @@ class InformationArguments(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     topic: str | None = Field(default=None, min_length=1, max_length=200)
     requires_freshness: bool = Field(default=False, alias="requiresFreshness")
+    origins: list[str] = Field(default_factory=list, min_length=0, max_length=8)
+    venue_type: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=80,
+        alias="venueType",
+    )
 
 
 class PlanningArguments(BaseModel):
@@ -122,6 +130,15 @@ class SupervisorOutput(BaseModel):
             raise ValueError(
                 "requiresFreshness is only valid for ask_travel_information"
             )
+        if isinstance(self.arguments, InformationArguments):
+            if self.intent == "find_meeting_point" and len(self.arguments.origins) < 2:
+                raise ValueError("find_meeting_point requires at least two origins")
+            if self.intent != "find_meeting_point" and (
+                self.arguments.origins or self.arguments.venue_type is not None
+            ):
+                raise ValueError(
+                    "origins and venueType are only valid for find_meeting_point"
+                )
         return self
 
 
@@ -221,6 +238,7 @@ class ConstrainedConversationSupervisor:
 _INTENTS: tuple[ConversationIntent, ...] = (
     "travel_advice",
     "ask_place",
+    "find_meeting_point",
     "ask_travel_information",
     "create_plan",
     "regenerate_plan",
@@ -252,6 +270,7 @@ def _argument_kind_for_intent(intent: ConversationIntent) -> str:
         "travel_advice",
         "ask_place",
         "ask_travel_information",
+        "find_meeting_point",
         "explain_plan",
     }:
         return "information"
@@ -274,6 +293,7 @@ _SYSTEM_PROMPT = (
     "Với mutation, dùng arguments.kind=mutation và đúng một operation. Với add_place, cung cấp name ngắn gọn và day khi biết; nếu không thì clarify. Với move_place, gồm itemId, day và toDay. Với update_place, chỉ gồm itemId, day và name khi người dùng yêu cầu rõ đổi tên/thay địa điểm. Với remove/lock/unlock, gồm itemId và day.\n"
     "Dùng regenerate_plan cho yêu cầu cân bằng lại, làm một ngày nhẹ hơn, đổi ràng buộc lớn của chuyến hoặc tạo lại plan. Chỉ dùng explain_plan, validate_plan và undo cho yêu cầu tương ứng. Chat routing cho backup plan tạm thời chưa khả dụng; dùng unsupported cho yêu cầu đó. Dùng unsupported khi TravelPlanner không có hành động phù hợp.\n"
     "Với travel_advice/ask_place/ask_travel_information/explain_plan, dùng arguments.kind=information và query giữ nguyên ý người dùng; chỉ ask_travel_information được đặt requiresFreshness=true. Với create_plan/regenerate_plan, dùng arguments.kind=planning và chỉ điền destination/days khi được nói rõ. Với validate_plan/undo/unsupported/create_backup dùng arguments.kind=command.\n"
+    "Khi người dùng nêu từ hai điểm xuất phát và muốn tìm chỗ ở giữa, điểm gặp, meeting point hoặc quán thuận tiện cho mọi người, luôn dùng find_meeting_point. Trích riêng từng điểm vào origins theo đúng cách viết của user; venueType là loại địa điểm muốn gặp (mặc định 'cafe'). Nếu latest message yêu cầu áp dụng lưu ý cũ, lấy các origin tương thích từ currentTripIntent.notes hoặc recentMessages thay vì bỏ qua chúng. Không coi các điểm xuất phát là các stop ngẫu nhiên của một plan và không gộp cả câu thành một place query.\n"
     "Ví dụ: 'bạn là ai?' -> travel_advice + information; 'Việt Nam có gì đặc biệt?' -> travel_advice + information; 'lên kế hoạch Hà Nội 2 ngày' -> create_plan + planning; 'thêm Làng Bắc vào ngày 2' -> add_place + mutation; 'xóa chỗ đó' -> clarify + clarification; 'làm lại lịch trình nhẹ hơn' -> regenerate_plan + planning.\n"
 )
 
@@ -397,7 +417,14 @@ def _validated_decision(
             else None
         ),
         information_request=(
-            information.model_dump(mode="json", by_alias=True, exclude_none=True)
+            {
+                key: value
+                for key, value in information.model_dump(
+                    mode="json", by_alias=True, exclude_none=True
+                ).items()
+                if key not in {"origins", "venueType"}
+                or result.intent == "find_meeting_point"
+            }
             if information is not None
             else None
         ),

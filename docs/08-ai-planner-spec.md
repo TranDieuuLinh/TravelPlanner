@@ -65,6 +65,14 @@ tự gọi LLM để trả lời general advice, dùng grounded search cho dữ 
 mới, dùng Knowledge Graph/provider cho place search và chỉ đọc snapshot hiện
 tại khi giải thích plan.
 
+Yêu cầu điểm gặp có từ hai điểm xuất phát dùng intent riêng
+`find_meeting_point`. Các điểm xuất phát được trích thành `origins`, không được
+coi là `mustVisitPlaces` hay stop của itinerary. InformationFinder resolve từng
+origin, dừng để hỏi lại nếu origin không chắc chắn, tính tâm địa lý gần đúng rồi
+tìm và xếp venue theo khoảng cách lớn nhất từ các origin. Kết quả phải ghi rõ
+đây là khoảng cách đường chim bay; tối ưu theo thời gian đi thực tế cần route
+matrix và không được ngụy tạo từ tâm địa lý.
+
 Message có URL của user đã đăng nhập được tách thành một job bền vững cho từng
 URL và trả về ngay. Worker FIFO chỉ chạy một job mỗi lần, gọi lại chính workflow
 Explorer–TripThemePlanner/PlaceSelector rồi ghi revision hoàn chỉnh vào trip chat. Vì vậy user

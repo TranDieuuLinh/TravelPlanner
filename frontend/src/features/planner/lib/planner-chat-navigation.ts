@@ -10,7 +10,7 @@ export function resolvePlannerEntryChatId(
   hasPrefilledRequest: boolean,
   chatIds: readonly string[],
 ): string | null {
-  if (requestedChatId && chatIds.includes(requestedChatId)) return requestedChatId;
   if (hasPrefilledRequest) return null;
-  return chatIds[0] ?? null;
+  if (requestedChatId && chatIds.includes(requestedChatId)) return requestedChatId;
+  return null;
 }

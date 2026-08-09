@@ -23,6 +23,7 @@ import {
   PlannerChatMessages,
 } from "@/features/planner/components/PlannerChatUI";
 import { PlannerDiscoveryPanel } from "@/features/planner/components/PlannerDiscoveryPanel";
+import { GroupPlanningPanel } from "@/features/planner/components/GroupPlanningPanel";
 import {
   PlaceReviewsModal,
   type PlaceReviewsModalPlace,
@@ -102,6 +103,11 @@ import {
 import { planItemMapKey } from "@/features/planner/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/features/planner/lib/itinerary-order";
 import {
+  itinerarySearchResultKey,
+  searchItineraryPlaces,
+  type ItinerarySearchResult,
+} from "@/features/planner/lib/itinerary-search";
+import {
   resolvePlannerEntryChatId,
   shouldApplyBackgroundChatResult,
 } from "@/features/planner/lib/planner-chat-navigation";
@@ -155,6 +161,20 @@ type LocationStatus = "idle" | "locating" | "ready" | "error";
 type PlaceLocationTarget = "add" | "edit";
 type DirectionsStatus = "idle" | "routing" | "ready" | "error";
 
+const DESTINATION_NOTE_LABELS: Record<string, string> = {
+  destination_traffic: "Giao thông đông đúc và khó đoán",
+  destination_transport: "Sử dụng Grab hoặc Xanh SM",
+  destination_water: "Không uống nước máy",
+  destination_security: "Luôn giữ tư trang bên mình",
+  destination_pricing: "Thỏa thuận tổng giá trước",
+  destination_etiquette: "Tôn trọng đền chùa và địa điểm văn hóa",
+  destination_train_safety: "Phố đường tàu vẫn đang hoạt động",
+};
+
+function destinationNoteLabel(type: string, index: number) {
+  return DESTINATION_NOTE_LABELS[type] ?? `Ghi chú địa phương ${index + 1}`;
+}
+
 type FloatingChatRect = {
   x: number;
   y: number;
@@ -171,6 +191,11 @@ type ChatPointerInteraction = {
   startX: number;
   startY: number;
   rect: FloatingChatRect;
+};
+
+type MobileItineraryDrag = {
+  pointerId: number;
+  startY: number;
 };
 
 type TripPlaceSummary = TravelPlan["days"][number]["items"][number] & {
@@ -282,6 +307,7 @@ const URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
 const URL_PATTERN_GLOBAL = /https?:\/\/[^\s<>"']+/gi;
 const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
 const UNSCHEDULED_PLAN_DAY = -1;
+const GROUP_PLAN_DAY = -2;
 const ITINERARY_MIN_PERCENT = 28;
 const ITINERARY_MAX_PERCENT = 68;
 const FLOATING_CHAT_MARGIN = 8;
@@ -534,6 +560,8 @@ function Planner() {
   const [itineraryReviewPlace, setItineraryReviewPlace] =
     useState<PlaceReviewsModalPlace | null>(null);
   const [activePlanDay, setActivePlanDay] = useState<number | null>(null);
+  const [itinerarySearchQuery, setItinerarySearchQuery] = useState("");
+  const [destinationDetailsOpen, setDestinationDetailsOpen] = useState(false);
   const [currentLocation, setCurrentLocation] =
     useState<PlannerMapCurrentLocation | null>(null);
   const [dayDirectionLegs, setDayDirectionLegs] = useState<TransportLeg[]>([]);
@@ -616,12 +644,17 @@ function Planner() {
   const [deletingAllChats, setDeletingAllChats] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [mobileItineraryExpanded, setMobileItineraryExpanded] = useState(false);
   const [itineraryWidthPercent, setItineraryWidthPercent] = useState(40);
   const [floatingChatRect, setFloatingChatRect] =
     useState<FloatingChatRect | null>(null);
   const plannerLayoutRef = useRef<HTMLElement>(null);
   const plannerChatRef = useRef<HTMLElement>(null);
   const chatPointerInteractionRef = useRef<ChatPointerInteraction | null>(null);
+  const mobileItineraryDragRef = useRef<MobileItineraryDrag | null>(null);
+  const suppressMobileItineraryClickRef = useRef(false);
+  const mobilePlanInitializedRef = useRef(false);
+  const previousChatCollapsedRef = useRef(chatCollapsed);
   const suppressChatToggleClickRef = useRef(false);
   const expandedChatSizeRef = useRef<Pick<
     FloatingChatRect,
@@ -953,6 +986,44 @@ function Planner() {
     updateItineraryWidth(event.clientX);
   }
 
+  function beginMobileItineraryDrag(
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) {
+    if (event.button !== 0 || window.innerWidth > 780) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    mobileItineraryDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+    };
+  }
+
+  function endMobileItineraryDrag(
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) {
+    const drag = mobileItineraryDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaY = event.clientY - drag.startY;
+    mobileItineraryDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (Math.abs(deltaY) < 36) return;
+    event.preventDefault();
+    suppressMobileItineraryClickRef.current = true;
+    setMobileItineraryExpanded(deltaY < 0);
+  }
+
+  function cancelMobileItineraryDrag(
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) {
+    if (mobileItineraryDragRef.current?.pointerId !== event.pointerId) return;
+    mobileItineraryDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   function resizeItineraryWithKeyboard(
     event: ReactKeyboardEvent<HTMLButtonElement>
   ) {
@@ -971,7 +1042,13 @@ function Planner() {
     function keepFloatingChatVisible() {
       if (window.innerWidth <= 900) {
         setFloatingChatRect(null);
-        setChatCollapsed(false);
+        if (window.innerWidth <= 780 && plan) {
+          mobilePlanInitializedRef.current = true;
+          setChatCollapsed(true);
+          setMobileItineraryExpanded(false);
+        } else {
+          setChatCollapsed(false);
+        }
         return;
       }
       setFloatingChatRect((current) =>
@@ -980,7 +1057,22 @@ function Planner() {
     }
     window.addEventListener("resize", keepFloatingChatVisible);
     return () => window.removeEventListener("resize", keepFloatingChatVisible);
-  }, [clampFloatingChatRect]);
+  }, [clampFloatingChatRect, plan]);
+
+  useEffect(() => {
+    if (!plan) {
+      mobilePlanInitializedRef.current = false;
+      return;
+    }
+    if (
+      !mobilePlanInitializedRef.current &&
+      window.matchMedia("(max-width: 780px)").matches
+    ) {
+      mobilePlanInitializedRef.current = true;
+      setChatCollapsed(true);
+      setMobileItineraryExpanded(false);
+    }
+  }, [plan]);
 
   useEffect(() => {
     if (!plan || chatCollapsed) return;
@@ -992,6 +1084,24 @@ function Planner() {
       return looksCollapsed ? null : clampFloatingChatRect(current, false);
     });
   }, [chatCollapsed, clampFloatingChatRect, plan]);
+
+  useEffect(() => {
+    const wasCollapsed = previousChatCollapsedRef.current;
+    previousChatCollapsedRef.current = chatCollapsed;
+    if (
+      !plan ||
+      chatCollapsed ||
+      !wasCollapsed ||
+      !window.matchMedia("(max-width: 780px)").matches
+    ) {
+      return;
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      composerTextareaRef.current?.focus({ preventScroll: true });
+    }, 180);
+    return () => window.clearTimeout(focusTimer);
+  }, [chatCollapsed, plan]);
 
   useEffect(() => {
     const hasLegacyCoarseRoutes = plan?.days.some((day) =>
@@ -2029,8 +2139,6 @@ function Planner() {
         } else if (entryChatId) {
           syncPlannerChatUrl(null);
           setPlannerEntryResolved(true);
-        } else if (!hasPrefilledRequest && chats[0]) {
-          void openTripChat(chats[0].id);
         } else {
           setPlannerEntryResolved(true);
         }
@@ -2123,6 +2231,53 @@ function Planner() {
     if (activePlanDay == null) return displayedPlan.days;
     return displayedPlan.days.filter((day) => day.day === activePlanDay);
   }, [activePlanDay, displayedPlan]);
+  const itinerarySearchResults = useMemo(
+    () => searchItineraryPlaces(displayedPlan?.days ?? [], itinerarySearchQuery),
+    [displayedPlan, itinerarySearchQuery]
+  );
+  const destinationStories = useMemo(
+    () =>
+      (displayedPlan?.regionStories ?? [])
+        .map((story) => ({
+          story,
+          text: formatSourceNoteForDisplay(story.text),
+        }))
+        .filter(({ text }) => Boolean(text)),
+    [displayedPlan]
+  );
+  const destinationHistoryStories = useMemo(
+    () =>
+      destinationStories.filter(
+        ({ story }) =>
+          story.type === "destination_history" ||
+          !story.type.startsWith("destination_")
+      ),
+    [destinationStories]
+  );
+  const destinationAdviceStories = useMemo(
+    () =>
+      destinationStories.filter(
+        ({ story }) =>
+          story.type.startsWith("destination_") &&
+          story.type !== "destination_history"
+      ),
+    [destinationStories]
+  );
+  const destinationSummary = destinationHistoryStories[0]?.text;
+
+  useEffect(() => {
+    setItinerarySearchQuery("");
+    setDestinationDetailsOpen(false);
+  }, [activeChatId]);
+
+  useEffect(() => {
+    if (!destinationDetailsOpen) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setDestinationDetailsOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [destinationDetailsOpen]);
   const addingPlanDay = useMemo(
     () => plan?.days.find((day) => day.day === addingDay) ?? null,
     [addingDay, plan]
@@ -3131,10 +3286,13 @@ function Planner() {
     setSelectedMapPlaceKey(null);
     setSelectedMapRouteKey(routeKey);
     setRouteFocusRequest((current) => current + 1);
+    // On phones the itinerary is a sheet layered above the map. Collapse it
+    // before scrolling so the selected route is actually visible to the user.
+    setMobileItineraryExpanded(false);
     window.requestAnimationFrame(() => {
       document.querySelector(".plannerMap")?.scrollIntoView({
         behavior: "smooth",
-        block: "nearest",
+        block: "center",
       });
     });
   }
@@ -3181,10 +3339,44 @@ function Planner() {
   function focusPlaceOnMap(mapKey: string) {
     setSelectedMapRouteKey(null);
     setSelectedMapPlaceKey(mapKey);
+    setMobileItineraryExpanded(false);
     window.requestAnimationFrame(() => {
       document.querySelector(".plannerMap")?.scrollIntoView({
         behavior: "smooth",
-        block: "nearest",
+        block: "center",
+      });
+    });
+  }
+
+  function selectItinerarySearchResult(result: ItinerarySearchResult) {
+    const item = displayedPlan?.days.find((day) => day.day === result.day)
+      ?.items[result.itemIndex];
+    if (!item) return;
+
+    const mapKey = hasPlanItemCoordinates(item)
+      ? planItemMapKey({
+          day: result.day,
+          itemId: item.itemId,
+          itemIndex: result.itemIndex,
+          name: item.name,
+        })
+      : null;
+
+    setActivePlanDay(result.day);
+    setItinerarySearchQuery("");
+    setSelectedMapRouteKey(null);
+    setSelectedMapPlaceKey(mapKey);
+    clearDayDirections();
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const matchingCard = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-itinerary-search-key]")
+        ).find(
+          (element) => element.dataset.itinerarySearchKey === result.key
+        );
+        matchingCard?.scrollIntoView({ behavior: "smooth", block: "center" });
+        matchingCard?.focus({ preventScroll: true });
       });
     });
   }
@@ -4830,7 +5022,39 @@ function Planner() {
                 />
               ) : null}
 
-              <section className="itinerary panel">
+              <section
+                className={`itinerary panel mobileItinerarySheet ${
+                  mobileItineraryExpanded ? "is-expanded" : "is-peek"
+                }`}
+              >
+                <button
+                  aria-expanded={mobileItineraryExpanded}
+                  aria-label={
+                    mobileItineraryExpanded
+                      ? "Thu gọn lịch trình để xem bản đồ"
+                      : "Mở lịch trình chi tiết"
+                  }
+                  className="mobileItineraryHandle"
+                  onClick={() => {
+                    if (suppressMobileItineraryClickRef.current) {
+                      suppressMobileItineraryClickRef.current = false;
+                      return;
+                    }
+                    setMobileItineraryExpanded((expanded) => !expanded);
+                  }}
+                  onPointerCancel={cancelMobileItineraryDrag}
+                  onPointerDown={beginMobileItineraryDrag}
+                  onPointerUp={endMobileItineraryDrag}
+                  type="button"
+                >
+                  <span aria-hidden="true" />
+                  <strong>
+                    {mobileItineraryExpanded ? "Vuốt xuống để xem bản đồ" : "Vuốt lên xem lịch trình"}
+                  </strong>
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d={mobileItineraryExpanded ? "m6 9 6 6 6-6" : "m6 15 6-6 6 6"} />
+                  </svg>
+                </button>
                 <header className="panelHeading itineraryHeading">
                   <span className="planHeaderIcon" aria-hidden="true">
                     <Image
@@ -4843,11 +5067,6 @@ function Planner() {
                   <div className="itineraryHeadingCopy">
                     <div className="itineraryHeadingTitle">
                       <strong>Kế hoạch chi tiết</strong>
-                      <span className="itineraryDestinationName">
-                        {displayedPlan?.destination ??
-                          displayedExploreResult?.explorer.tripIntent.destination ??
-                          "Chưa chọn điểm đến"}
-                      </span>
                     </div>
                     <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
                       <small>
@@ -4919,42 +5138,6 @@ function Planner() {
                           </p>
                         </div>
                       </div>
-                      {displayedPlan.regionStories?.some((story) =>
-                        formatSourceNoteForDisplay(story.text)
-                      ) ? (
-                        <div className="regionStoryPanel">
-                          <span>Câu chuyện về khu vực</span>
-                          {displayedPlan.regionStories
-                            .filter((story) =>
-                              formatSourceNoteForDisplay(story.text)
-                            )
-                            .map((story, storyIndex) => (
-                              <div
-                                className="regionStoryItem"
-                                key={`${story.ref ?? "region-story"}-${storyIndex}`}
-                              >
-                                <p>
-                                  {formatSourceNoteForDisplay(story.text)}
-                                </p>
-                                {story.evidence ? (
-                                  <details>
-                                    <summary>Bằng chứng từ nguồn</summary>
-                                    <q>{story.evidence}</q>
-                                  </details>
-                                ) : null}
-                                {story.ref?.startsWith("http") ? (
-                                  <a
-                                    href={story.ref}
-                                    rel="noreferrer"
-                                    target="_blank"
-                                  >
-                                    Xem video nguồn
-                                  </a>
-                                ) : null}
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
                       <div
                         className="tripQuickFacts"
                         aria-label="Thông tin chuyến đi"
@@ -5106,13 +5289,123 @@ function Planner() {
                             </small>
                           ) : null}
                         </button>
+                        <button
+                          aria-controls="plan-days-panel"
+                          aria-selected={activePlanDay === GROUP_PLAN_DAY}
+                          className={activePlanDay === GROUP_PLAN_DAY ? "active dayTabGroup" : "dayTabGroup"}
+                          id="plan-day-tab-group"
+                          onClick={() => {
+                            setActivePlanDay(GROUP_PLAN_DAY);
+                            setSelectedMapPlaceKey(null);
+                            clearDayDirections();
+                          }}
+                          role="tab"
+                          style={{ "--day-color": "#7252a3" } as CSSProperties}
+                          tabIndex={activePlanDay === GROUP_PLAN_DAY ? 0 : -1}
+                          type="button"
+                        >
+                          <span className="dayTabLabel"><span className="dayTabDot" aria-hidden="true" />Nhóm</span>
+                          <small>{3} công cụ</small>
+                        </button>
                       </div>
+                      <div className="itinerarySearch">
+                        <label className="srOnly" htmlFor="itinerary-place-search">
+                          Tìm địa điểm trong lịch trình hiện tại
+                        </label>
+                        <div className="itinerarySearchField">
+                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="m16.5 16.5 4 4" />
+                          </svg>
+                          <input
+                            aria-autocomplete="list"
+                            aria-controls="itinerary-search-results"
+                            aria-expanded={Boolean(itinerarySearchQuery.trim())}
+                            autoComplete="off"
+                            id="itinerary-place-search"
+                            onChange={(event) =>
+                              setItinerarySearchQuery(event.target.value)
+                            }
+                            placeholder="Tìm địa điểm trong lịch trình này"
+                            role="combobox"
+                            type="search"
+                            value={itinerarySearchQuery}
+                          />
+                          {itinerarySearchQuery ? (
+                            <button
+                              aria-label="Xóa nội dung tìm kiếm"
+                              onClick={() => setItinerarySearchQuery("")}
+                              type="button"
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </div>
+                        {itinerarySearchQuery.trim() ? (
+                          <div
+                            aria-label="Địa điểm trong lịch trình"
+                            className="itinerarySearchResults"
+                            id="itinerary-search-results"
+                            role="listbox"
+                          >
+                            {itinerarySearchResults.length ? (
+                              itinerarySearchResults.map((result) => (
+                                <button
+                                  aria-selected="false"
+                                  key={result.key}
+                                  onClick={() =>
+                                    selectItinerarySearchResult(result)
+                                  }
+                                  role="option"
+                                  type="button"
+                                >
+                                  <span>
+                                    <strong>{result.item.name}</strong>
+                                    <small>
+                                      {result.item.address ||
+                                        result.item.placeType ||
+                                        "Địa điểm trong lịch trình"}
+                                    </small>
+                                  </span>
+                                  <b>Ngày {result.day}</b>
+                                </button>
+                              ))
+                            ) : (
+                              <p role="status">
+                                Không có địa điểm phù hợp trong lịch trình này.
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                      <button
+                        aria-expanded={destinationDetailsOpen}
+                        aria-haspopup="dialog"
+                        className="destinationPreviewCard"
+                        onClick={() => setDestinationDetailsOpen(true)}
+                        type="button"
+                      >
+                        <strong>{displayedPlan.destination}</strong>
+                        {destinationSummary ? (
+                          <span className="destinationPreviewSummary">
+                            {destinationSummary}
+                          </span>
+                        ) : null}
+                        <span className="destinationPreviewAction">
+                          Lịch sử · Điều cần biết
+                          <svg aria-hidden="true" viewBox="0 0 24 24">
+                            <path d="m9 6 6 6-6 6" />
+                          </svg>
+                        </span>
+                      </button>
                       <div
                         aria-labelledby={
                           activePlanDay == null
                             ? "plan-day-tab-all"
                             : activePlanDay === UNSCHEDULED_PLAN_DAY
                               ? "plan-day-tab-unscheduled"
+                              : activePlanDay === GROUP_PLAN_DAY
+                                ? "plan-day-tab-group"
                               : `plan-day-tab-${activePlanDay}`
                         }
                         className="planDayPanels"
@@ -5413,6 +5706,12 @@ function Planner() {
                                 const displayItemName = itineraryDisplayName(
                                   item.name
                                 );
+                                const itinerarySearchKey =
+                                  itinerarySearchResultKey(
+                                    displayedPlanDay.day,
+                                    itemIndex,
+                                    item.itemId
+                                  );
                                 const isNoteEditorOpen = Boolean(
                                   noteEditor &&
                                     noteEditor.day === displayedPlanDay.day &&
@@ -5824,6 +6123,9 @@ function Planner() {
                                             }`}
                                             data-map-place-key={
                                               mapKey ?? undefined
+                                            }
+                                            data-itinerary-search-key={
+                                              itinerarySearchKey
                                             }
                                             onClick={(event) => {
                                               if (
@@ -6352,6 +6654,13 @@ function Planner() {
                             places={displayedPlan.unscheduledPlaces ?? []}
                           />
                         ) : null}
+                        {activePlanDay === GROUP_PLAN_DAY ? (
+                          <GroupPlanningPanel
+                            chatId={activeChatId}
+                            currentUserName={user?.fullName}
+                            destination={displayedPlan.destination}
+                          />
+                        ) : null}
                       </div>
                     </section>
                   </div>
@@ -6405,6 +6714,65 @@ function Planner() {
               >
                 <span aria-hidden="true" />
               </button>
+
+              <div
+                aria-label="Lọc địa điểm trên bản đồ theo ngày"
+                className="mobileMapDayTabs"
+                role="tablist"
+              >
+                <button
+                  aria-selected={activePlanDay == null}
+                  className={activePlanDay == null ? "active" : ""}
+                  onClick={() => {
+                    setActivePlanDay(null);
+                    setSelectedMapPlaceKey(null);
+                    clearDayDirections();
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  Tất cả
+                </button>
+                {displayedPlan?.days.map((day) => {
+                  const dateKey = dateKeyForTripDay(displayedStartDate, day.day);
+                  const color = planDayColors.get(dateKey) ?? "#365f5a";
+                  return (
+                    <button
+                      aria-selected={activePlanDay === day.day}
+                      className={activePlanDay === day.day ? "active" : ""}
+                      key={`mobile-map-day-${day.day}`}
+                      onClick={() => {
+                        setActivePlanDay(day.day);
+                        setSelectedMapPlaceKey(null);
+                        clearDayDirections();
+                      }}
+                      role="tab"
+                      style={{ "--day-color": color } as CSSProperties}
+                      type="button"
+                    >
+                      <span aria-hidden="true" />
+                      Ngày {day.day}
+                    </button>
+                  );
+                })}
+                <button
+                  aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
+                  className={
+                    activePlanDay === UNSCHEDULED_PLAN_DAY
+                      ? "active is-unscheduled"
+                      : "is-unscheduled"
+                  }
+                  onClick={() => {
+                    setActivePlanDay(UNSCHEDULED_PLAN_DAY);
+                    setSelectedMapPlaceKey(null);
+                    clearDayDirections();
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  Chưa xếp
+                </button>
+              </div>
 
               <PlannerMap
                 currentLocation={mapDirectionOrigin}
@@ -6467,6 +6835,105 @@ function Planner() {
             </section>
           )}
         </div>
+
+        {destinationDetailsOpen && displayedPlan ? (
+          <div
+            aria-labelledby="destination-details-title"
+            aria-modal="true"
+            className="destinationDetailsModal"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget)
+                setDestinationDetailsOpen(false);
+            }}
+            role="dialog"
+          >
+            <section className="destinationDetailsWindow">
+              <header className="destinationDetailsHeader">
+                <div>
+                  <h2 id="destination-details-title">
+                    {displayedPlan.destination}
+                  </h2>
+                </div>
+                <button
+                  aria-label="Đóng thông tin điểm đến"
+                  onClick={() => setDestinationDetailsOpen(false)}
+                  type="button"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <path d="m7 7 10 10M17 7 7 17" />
+                  </svg>
+                </button>
+              </header>
+              <div className="destinationDetailsBody">
+                <section
+                  aria-labelledby="destination-history-title"
+                  className="destinationDetailsSection destinationHistorySection"
+                >
+                  <header>
+                    <span aria-hidden="true">01</span>
+                    <div>
+                      <h3 id="destination-history-title">Lịch sử</h3>
+                    </div>
+                  </header>
+                  <div className="destinationDetailsNotes">
+                    {destinationHistoryStories.length ? (
+                      destinationHistoryStories.map(({ story, text }, index) => (
+                        <article
+                          key={`${story.ref ?? "destination-history"}-${index}`}
+                        >
+                          <p>{text}</p>
+                          {story.ref?.startsWith("http") ? (
+                            <a href={story.ref} rel="noreferrer" target="_blank">
+                              Nguồn <span aria-hidden="true">↗</span>
+                            </a>
+                          ) : null}
+                        </article>
+                      ))
+                    ) : (
+                      <p className="destinationDetailsEmpty">
+                        Chưa có nội dung lịch sử kèm nguồn.
+                      </p>
+                    )}
+                  </div>
+                </section>
+                <section
+                  aria-labelledby="destination-advice-title"
+                  className="destinationDetailsSection destinationAdviceSection"
+                >
+                  <header>
+                    <span aria-hidden="true">02</span>
+                    <div>
+                      <h3 id="destination-advice-title">Điều cần biết</h3>
+                    </div>
+                  </header>
+                  <div className="destinationDetailsNotes">
+                    {destinationAdviceStories.length ? (
+                      destinationAdviceStories.map(({ story, text }, index) => (
+                        <article
+                          key={`${story.ref ?? story.type}-${index}`}
+                        >
+                          <strong>
+                            {destinationNoteLabel(story.type, index)}
+                          </strong>
+                          <p>{text}</p>
+                          {story.ref?.startsWith("http") ? (
+                            <a href={story.ref} rel="noreferrer" target="_blank">
+                              Nguồn <span aria-hidden="true">↗</span>
+                            </a>
+                          ) : null}
+                        </article>
+                      ))
+                    ) : (
+                      <p className="destinationDetailsEmpty">
+                        Chưa có lưu ý thực tế nào.
+                      </p>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
         {itineraryReviewPlace ? (
           <PlaceReviewsModal

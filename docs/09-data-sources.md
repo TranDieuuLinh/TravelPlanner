@@ -82,10 +82,10 @@ Các ô tìm địa điểm của Planner dùng chung autocomplete Knowledge Gra
 tối đa `topK` kết quả đã xếp hạng để người dùng chọn, mặc định `K=5` và API chỉ
 chấp nhận từ 1 đến 10. Search chỉ trả canonical venue entity có tọa độ, thuộc
 destination qua `LOCATED_IN`; không trả Area, Activity hoặc item. Khi graph
-không đủ `topK`, Google Maps Playwright được gọi để bổ sung kết quả provisional.
-Search không tự promote snapshot Google vào graph canonical. Chọn một option giữ
-entity/provider place ID cùng tọa độ; nhập văn bản tự do không được coi là đã
-xác nhận đúng place identity.
+không đủ `topK`, autocomplete trả ngay số kết quả hiện có và không gọi
+provider bên ngoài để lấp đầy. Chọn một option giữ Knowledge Graph entity ID
+cùng tọa độ; nhập văn bản tự do không được coi là đã xác nhận đúng
+place identity.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.

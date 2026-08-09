@@ -262,7 +262,7 @@ def _graph_place(
     )
 
 
-def test_search_place_suggestions_reads_knowledge_graph_first():
+def test_search_place_suggestions_reads_only_knowledge_graph():
     place = _graph_place(
         "place-coffee-9",
         name="Coffee 9",
@@ -275,13 +275,8 @@ def test_search_place_suggestions_reads_knowledge_graph_first():
             assert limit == 1
             return [place]
 
-    class FailingGoogleMapsClient:
-        async def search(self, *args, **kwargs):
-            raise AssertionError("Google Maps must not run when graph fills top K")
-
     service = PlanMutationService(
         graph_place_repository=FakeGraphRepository(),
-        gmaps_client=FailingGoogleMapsClient(),
     )
 
     suggestions = asyncio.run(
@@ -295,36 +290,19 @@ def test_search_place_suggestions_reads_knowledge_graph_first():
     assert suggestions[0].is_verified is True
 
 
-def test_search_place_suggestions_uses_google_to_fill_missing_graph_results():
+def test_search_place_suggestions_returns_fewer_than_top_k_without_provider_fill():
     class FakeGraphRepository:
         def search(self, query, destination, *, limit):
-            return [_graph_place("graph-pho-thin", "Phở Thìn")]
-
-    class FakeGoogleMapsClient:
-        async def search(self, query, *, region, limit):
             assert query == "Pho"
-            assert region == "Hà Nội"
+            assert destination == "Hà Nội"
             assert limit == 3
             return [
-                {
-                    "place_id": "google-duplicate",
-                    "title": "Pho Thin",
-                    "address": "13 Lò Đúc, Hà Nội",
-                    "latitude": 21.018111,
-                    "longitude": 105.855301,
-                },
-                {
-                    "place_id": "google-pho-suonk",
-                    "title": "Phở Sướng",
-                    "address": "Hoàn Kiếm, Hà Nội",
-                    "latitude": 21.03,
-                    "longitude": 105.85,
-                },
+                _graph_place("graph-pho-thin", "Phở Thìn"),
+                _graph_place("graph-pho-suong", "Phở Sướng"),
             ]
 
     service = PlanMutationService(
         graph_place_repository=FakeGraphRepository(),
-        gmaps_client=FakeGoogleMapsClient(),
     )
 
     suggestions = asyncio.run(
@@ -333,35 +311,18 @@ def test_search_place_suggestions_uses_google_to_fill_missing_graph_results():
 
     assert [suggestion.place_id for suggestion in suggestions] == [
         "graph-pho-thin",
-        "google-pho-suonk",
+        "graph-pho-suong",
     ]
-    assert [suggestion.source for suggestion in suggestions] == [
-        "knowledge_graph",
-        "google_maps_scraper",
-    ]
-    assert suggestions[1].is_verified is False
+    assert all(suggestion.source == "knowledge_graph" for suggestion in suggestions)
 
 
-def test_search_place_suggestions_falls_back_to_google_when_graph_misses():
+def test_search_place_suggestions_returns_empty_when_graph_misses():
     class EmptyGraphRepository:
         def search(self, query, destination, *, limit):
             return []
 
-    class FakeGoogleMapsClient:
-        async def search(self, query, *, region, limit):
-            return [
-                {
-                    "place_id": f"google-{index}",
-                    "title": f"Coffee {index}",
-                    "latitude": 21.0 + index / 100,
-                    "longitude": 105.8,
-                }
-                for index in range(limit)
-            ]
-
     service = PlanMutationService(
         graph_place_repository=EmptyGraphRepository(),
-        gmaps_client=FakeGoogleMapsClient(),
     )
 
     suggestions = asyncio.run(
@@ -372,11 +333,7 @@ def test_search_place_suggestions_falls_back_to_google_when_graph_misses():
         )
     )
 
-    assert [suggestion.place_id for suggestion in suggestions] == [
-        "google-0",
-        "google-1",
-        "google-2",
-    ]
+    assert suggestions == []
 
 
 def test_update_item_keeps_selected_catalog_identity_and_coordinates():

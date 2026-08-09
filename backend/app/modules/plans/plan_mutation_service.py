@@ -1,13 +1,10 @@
-import logging
 import unicodedata
-from typing import Any
 from uuid import uuid4
 
 from app.modules.knowledge_graph.place_search import (
     KnowledgeGraphPlaceSearchRepository,
 )
 from app.modules.places.resolver import (
-    GoogleMapsSearchClient,
     PlaceResolver,
     ProvisionalPlaceResolver,
 )
@@ -33,8 +30,6 @@ from app.modules.plans.plan_mutation_schema import (
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.shared.errors import AppError
 
-logger = logging.getLogger(__name__)
-
 
 class PlanMutationService:
     def __init__(
@@ -43,13 +38,11 @@ class PlanMutationService:
         graph_place_repository: KnowledgeGraphPlaceSearchRepository | None = None,
         route_optimizer: GeographicRouteOptimizer | None = None,
         checker: OverallChecker | None = None,
-        gmaps_client: GoogleMapsSearchClient | None = None,
     ) -> None:
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
         self.graph_place_repository = graph_place_repository
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
         self.checker = checker or OverallChecker()
-        self.gmaps_client = gmaps_client
 
     async def search_place_suggestions(
         self,
@@ -65,127 +58,11 @@ class PlanMutationService:
             return []
         dest = (destination or "").strip()
 
-        graph_results = self._search_knowledge_graph(
+        return self._search_knowledge_graph(
             cleaned,
             dest,
             limit=top_k,
         )
-        if len(graph_results) >= top_k:
-            return graph_results[:top_k]
-
-        # Google Maps is an external fallback only. Its normalized response is
-        # returned as a provisional suggestion and is never promoted into the
-        # canonical Knowledge Graph by this read path.
-        if self.gmaps_client is not None:
-            gmaps_results = await self._search_google_maps_fallback(
-                cleaned,
-                dest,
-                limit=top_k,
-            )
-            graph_results = _merge_place_suggestions(
-                graph_results,
-                gmaps_results,
-                limit=top_k,
-            )
-            if graph_results:
-                return graph_results
-
-        if graph_results:
-            return graph_results
-        return []
-
-    async def _search_google_maps_fallback(
-        self,
-        query: str,
-        destination: str,
-        *,
-        limit: int = 8,
-    ) -> list[PlaceSuggestion]:
-        """Fallback to Google Maps when the canonical graph is insufficient."""
-        try:
-            results = await self.gmaps_client.search(
-                query,
-                region=destination or None,
-                limit=limit,
-            )
-            suggestions: list[PlaceSuggestion] = []
-            for result in results:
-                lat = result.get("latitude") or result.get("y")
-                lng = result.get("longitude") or result.get("x")
-                if lat is None or lng is None:
-                    continue
-
-                address = result.get("address") or result.get("complete_address")
-                if isinstance(address, dict):
-                    address = address.get("formatted") or str(address)
-
-                # Ensure correct types
-                rating_val = result.get("review_rating") or result.get("rating")
-                if rating_val is not None:
-                    try:
-                        rating_val = float(rating_val)
-                    except (ValueError, TypeError):
-                        rating_val = None
-
-                review_count_val = result.get("review_count")
-                if review_count_val is not None:
-                    try:
-                        review_count_val = int(float(review_count_val))
-                    except (ValueError, TypeError):
-                        review_count_val = None
-
-                price_level_val = result.get("price_level")
-                if price_level_val is not None:
-                    try:
-                        price_level_val = int(price_level_val)
-                    except (ValueError, TypeError):
-                        price_level_val = None
-
-                suggestions.append(
-                    PlaceSuggestion(
-                        name=result.get("title") or result.get("name") or query,
-                        address=address,
-                        latitude=float(lat),
-                        longitude=float(lng),
-                        placeId=result.get("place_id") or result.get("data_id"),
-                        imageUrl=result.get("thumbnail") or result.get("image_url"),
-                        rating=rating_val,
-                        reviewCount=review_count_val,
-                        priceLevel=price_level_val,
-                        placeType=result.get("category") or result.get("place_type"),
-                        phone=result.get("phone"),
-                        website=result.get("website"),
-                        openingHours=self._format_opening_hours(result.get("opening_hours")),
-                        isVerified=False,
-                        source="google_maps_scraper",
-                    )
-                )
-            return suggestions
-        except Exception as e:
-            logger.warning(f"Google Maps fallback search failed: {e}")
-            return []
-
-    def _format_opening_hours(
-        self, hours: Any
-    ) -> list[str] | None:
-        """Format opening hours from various formats to list of strings."""
-        if hours is None:
-            return None
-        if isinstance(hours, list):
-            result = []
-            for h in hours:
-                if isinstance(h, str):
-                    result.append(h)
-                elif isinstance(h, dict):
-                    # Format: {dayName: "Thứ Hai", rawTimeSlots: "08:00-22:00"}
-                    day = h.get("dayName", "")
-                    slots = h.get("rawTimeSlots", "")
-                    if day and slots:
-                        result.append(f"{day}: {slots}")
-                    elif slots:
-                        result.append(slots)
-            return result if result else None
-        return None
 
     def _search_knowledge_graph(
         self,
@@ -891,26 +768,3 @@ def _transport_option_selection_key(option: PlanTransportOption) -> str:
             segment_key,
         ]
     )
-
-
-def _merge_place_suggestions(
-    primary: list[PlaceSuggestion],
-    fallback: list[PlaceSuggestion],
-    *,
-    limit: int,
-) -> list[PlaceSuggestion]:
-    merged: list[PlaceSuggestion] = []
-    identities: set[str] = set()
-    names: set[str] = set()
-    for suggestion in [*primary, *fallback]:
-        identity = suggestion.place_id.strip() if suggestion.place_id else ""
-        name = _search_key(suggestion.name)
-        if (identity and identity in identities) or name in names:
-            continue
-        merged.append(suggestion)
-        if identity:
-            identities.add(identity)
-        names.add(name)
-        if len(merged) >= limit:
-            break
-    return merged

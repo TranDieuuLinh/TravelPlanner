@@ -412,7 +412,12 @@ class ConversationTurnService:
                 blocks,
             )
 
-        if decision.intent in {"travel_advice", "ask_place", "ask_travel_information"}:
+        if decision.intent in {
+            "travel_advice",
+            "ask_place",
+            "find_meeting_point",
+            "ask_travel_information",
+        }:
             information_request = decision.information_request or {}
             return await self.agent_dispatcher.dispatch_for_decision(
                 ConversationAgentContext(
@@ -430,6 +435,8 @@ class ConversationTurnService:
                             "requiresFreshness",
                             False,
                         ),
+                        "origins": information_request.get("origins", []),
+                        "venue_type": information_request.get("venueType", "cafe"),
                     },
                 )
             )

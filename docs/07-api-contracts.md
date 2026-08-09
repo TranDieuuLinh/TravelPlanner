@@ -177,6 +177,13 @@ Các endpoint sau yêu cầu đăng nhập; mọi thao tác ghi yêu cầu CSRF:
   operation đang chờ xác nhận. Chỉ chấp nhận khi status là
   `awaiting_confirmation`; nếu `chat.revision != turn.baseRevision` trả
   `409 VERSION_CONFLICT`.
+- Turn được classifier xác định là `find_meeting_point` trả block
+  `meetingPoint` gồm `center`, các `origins` đã resolve và
+  `method=geographic_centroid`, sau đó là `candidateList` venue. Ba điểm xuất
+  phát không được đưa vào plan như ba stop. Candidate có `displayName`, tọa độ,
+  `distanceToCenterKm` và `maxOriginDistanceKm`; warning
+  `meeting_point_uses_straight_line_distance` phân biệt kết quả gần đúng với
+  route-time midpoint.
 - `POST /api/trip-chats/{chatId}/turns/{turnId}/cancel`: hủy turn đang
   xử lý hoặc chờ xác nhận; turn đã `completed` trả `409 TURN_ALREADY_COMPLETED`.
 - `POST /api/trip-chats/{chatId}/url-jobs`: tách URL thành các background job

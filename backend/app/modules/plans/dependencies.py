@@ -136,7 +136,6 @@ def get_plan_mutation_service(
         graph_place_repository=KnowledgeGraphPlaceSearchRepository(db),
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
-        gmaps_client=_get_gmaps_search_client(),
     )
 
 

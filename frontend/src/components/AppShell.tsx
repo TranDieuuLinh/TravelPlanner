@@ -12,6 +12,51 @@ type NavItem = {
   label: string;
 };
 
+function MobileNavIcon({ href }: Pick<NavItem, "href">) {
+  if (href === "/reels" || href === "/explore") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="m14.9 9.1-1.7 4.1-4.1 1.7 1.7-4.1 4.1-1.7Z" />
+      </svg>
+    );
+  }
+
+  if (href === "/planner") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M12 3.5c.5 3.1 2.4 5 5.5 5.5-3.1.5-5 2.4-5.5 5.5-.5-3.1-2.4-5-5.5-5.5 3.1-.5 5-2.4 5.5-5.5Z" />
+        <path d="M18.2 14.8c.2 1.5 1.1 2.4 2.6 2.6-1.5.2-2.4 1.1-2.6 2.6-.2-1.5-1.1-2.4-2.6-2.6 1.5-.2 2.4-1.1 2.6-2.6Z" />
+      </svg>
+    );
+  }
+
+  if (href.startsWith("/creator")) {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M4.5 9.5h15v10h-15zM3.5 9.5l1.4-5h14.2l1.4 5" />
+        <path d="M9.5 19.5v-5h5v5M3.5 9.5c0 1.4 1.1 2.5 2.5 2.5s2.5-1.1 2.5-2.5c0 1.4 1.1 2.5 2.5 2.5s2.5-1.1 2.5-2.5c0 1.4 1.1 2.5 2.5 2.5s2.5-1.1 2.5-2.5" />
+      </svg>
+    );
+  }
+
+  if (href.startsWith("/admin")) {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M12 3.5 19 6v5.2c0 4.3-2.8 7.6-7 9.3-4.2-1.7-7-5-7-9.3V6l7-2.5Z" />
+        <path d="m8.8 12 2.1 2.1 4.4-4.4" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5.5 20c.4-4 2.7-6 6.5-6s6.1 2 6.5 6" />
+    </svg>
+  );
+}
+
 const nav: NavItem[] = [
   { href: "/reels", label: "Khám phá" },
   { href: "/planner", label: "AI Planner" },
@@ -147,6 +192,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             href={item.href}
             key={item.href}
           >
+            <span className="mobileItemIcon">
+              <MobileNavIcon href={item.href} />
+            </span>
             <span className="mobileItemLabel">{item.label}</span>
           </Link>
         ))}

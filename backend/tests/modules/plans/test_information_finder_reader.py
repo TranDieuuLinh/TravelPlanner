@@ -114,3 +114,82 @@ def test_graph_source_timestamp_is_propagated_when_present():
     result = asyncio.run(reader(FakeGraph([match])).search("cafe", None, 1))
 
     assert result.candidates[0].fetched_at == datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc)
+
+
+class MeetingProvider:
+    provider_name = "fake_maps"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def search(self, query, destination, top_k, filters=None):
+        self.calls.append((query, destination, top_k, filters))
+        origins = {
+            "Cầu Nhật Tân": {
+                "place_id": "origin-1", "name": "Cầu Nhật Tân",
+                "latitude": 21.093, "longitude": 105.815,
+            },
+            "Lăng Chủ tịch Hồ Chí Minh": {
+                "place_id": "origin-2", "name": "Lăng Chủ tịch Hồ Chí Minh",
+                "latitude": 21.037, "longitude": 105.835,
+            },
+            "VinUniversity": {
+                "place_id": "origin-3", "name": "VinUniversity",
+                "latitude": 20.990, "longitude": 105.944,
+            },
+        }
+        if query in origins:
+            return [origins[query]]
+        return [
+            {
+                "place_id": "cafe-fair",
+                "name": "Cafe Fair",
+                "address": "Hà Nội",
+                "latitude": 21.038,
+                "longitude": 105.865,
+            },
+            {
+                "place_id": "cafe-far",
+                "name": "Cafe Far",
+                "address": "Hà Nội",
+                "latitude": 21.10,
+                "longitude": 105.70,
+            },
+        ]
+
+
+def test_meeting_point_resolves_origins_then_ranks_cafes_near_center():
+    provider = MeetingProvider()
+    result = asyncio.run(
+        reader(FakeGraph([]), provider).find_meeting_point(
+            ["Cầu Nhật Tân", "Lăng Chủ tịch Hồ Chí Minh", "VinUniversity"],
+            "cafe",
+            "Hà Nội",
+            5,
+        )
+    )
+
+    assert result.kind == "meeting_point_candidates"
+    assert result.meeting_point is not None
+    assert len(result.resolved_origins) == 3
+    assert [item.place_id for item in result.candidates] == ["cafe-fair", "cafe-far"]
+    assert result.candidates[0].display_name == "Cafe Fair"
+    assert result.candidates[0].max_origin_distance_km is not None
+    assert "meeting_point_uses_straight_line_distance" in result.warnings
+    assert provider.calls[-1][3]["center"] is not None
+
+
+def test_meeting_point_fails_closed_when_an_origin_is_unresolved():
+    provider = MeetingProvider()
+    result = asyncio.run(
+        reader(FakeGraph([]), provider).find_meeting_point(
+            ["Cầu Nhật Tân", "một chỗ không xác định"],
+            "cafe",
+            "Hà Nội",
+            5,
+        )
+    )
+
+    assert result.kind == "meeting_point_clarification"
+    assert result.candidates == []
+    assert any(warning.startswith("unresolved_meeting_origin:") for warning in result.warnings)

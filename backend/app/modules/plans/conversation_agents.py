@@ -18,7 +18,13 @@ def agent_for_conversation_intent(
     intent: str,
 ) -> ConversationAgentName | None:
     """Return the allowlisted conversation agent for an intent."""
-    if intent in {"ask_place", "ask_travel_information", "travel_advice", "explain_plan"}:
+    if intent in {
+        "ask_place",
+        "find_meeting_point",
+        "ask_travel_information",
+        "travel_advice",
+        "explain_plan",
+    }:
         return "information_finder"
     if intent == "create_plan":
         return "explorer"

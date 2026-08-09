@@ -45,6 +45,8 @@ class InformationFinderAgent:
             return await self._answer(context, grounded=False)
         if intent == "ask_travel_information":
             return await self._answer(context, grounded=True)
+        if intent == "find_meeting_point":
+            return await self._find_meeting_point(context)
         query = _query(context)
         if query is None:
             return _clarification(context)
@@ -61,6 +63,60 @@ class InformationFinderAgent:
             return InformationFinderResponse(
                 message=message,
                 blocks=[{"type": "text", "text": message}, {"type": "warning", "code": "PLACE_SEARCH_FAILED", "message": "Place search provider failed."}],
+            )
+        return _result_response(result)
+
+    async def _find_meeting_point(
+        self, context: Any
+    ) -> InformationFinderResponse:
+        data = getattr(context, "data", {}) or {}
+        origins = [
+            str(origin).strip()
+            for origin in data.get("origins", [])
+            if str(origin).strip()
+        ]
+        if len(origins) < 2:
+            message = (
+                "Mình cần ít nhất hai điểm xuất phát để tính điểm gặp ở giữa. "
+                "Bạn hãy ghi tên hoặc địa chỉ từng điểm."
+            )
+            return InformationFinderResponse(
+                message,
+                [{"type": "text", "text": message}],
+            )
+        if self.reader is None or not hasattr(self.reader, "find_meeting_point"):
+            message = "Hiện chưa có bộ định vị để tính điểm gặp ở giữa."
+            return InformationFinderResponse(
+                message,
+                [
+                    {"type": "text", "text": message},
+                    {
+                        "type": "warning",
+                        "code": "MEETING_POINT_READER_UNAVAILABLE",
+                        "message": message,
+                    },
+                ],
+            )
+        try:
+            result = await self.reader.find_meeting_point(
+                origins,
+                str(data.get("venue_type") or "cafe"),
+                _destination(context),
+                5,
+            )
+        except Exception:
+            logger.exception("Meeting-point calculation failed")
+            message = "Mình chưa thể tính điểm gặp lúc này; các điểm xuất phát chưa bị đổi."
+            return InformationFinderResponse(
+                message,
+                [
+                    {"type": "text", "text": message},
+                    {
+                        "type": "warning",
+                        "code": "MEETING_POINT_FAILED",
+                        "message": message,
+                    },
+                ],
             )
         return _result_response(result)
 
@@ -265,6 +321,15 @@ def _clarification(context: Any) -> InformationFinderResponse:
 
 def _result_response(result: InformationResult) -> InformationFinderResponse:
     blocks: list[dict[str, Any]] = [{"type": "text", "text": result.message}]
+    if result.meeting_point is not None:
+        blocks.append(
+            {
+                "type": "meetingPoint",
+                "center": result.meeting_point,
+                "origins": result.resolved_origins,
+                "method": "geographic_centroid",
+            }
+        )
     if result.candidates:
         blocks.append({"type": "candidateList", "candidates": [item.model_dump(mode="json", by_alias=True) for item in result.candidates], "needsUserChoice": result.needs_user_choice})
         if result.needs_user_choice:

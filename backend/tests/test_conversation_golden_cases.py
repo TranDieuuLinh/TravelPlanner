@@ -111,6 +111,16 @@ def enable_supervisor(monkeypatch):
             "regenerate_plan",
             {"kind": "planning"},
         ),
+        (
+            "Tìm quán cà phê ở giữa Cầu Nhật Tân, Lăng Bác và VinUniversity",
+            "find_meeting_point",
+            {
+                "kind": "information",
+                "query": "Tìm quán cà phê ở giữa",
+                "origins": ["Cầu Nhật Tân", "Lăng Bác", "VinUniversity"],
+                "venueType": "cafe",
+            },
+        ),
     ],
 )
 async def test_classifier_routes_message_to_typed_intent(message, intent, arguments):

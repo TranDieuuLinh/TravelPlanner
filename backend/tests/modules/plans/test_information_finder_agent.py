@@ -21,6 +21,10 @@ class FakeReader:
         self.calls.append((query, destination, top_k, filters))
         return self.result
 
+    async def find_meeting_point(self, origins, venue_type, destination, top_k):
+        self.calls.append((origins, venue_type, destination, top_k))
+        return self.result
+
 
 class FakeLLM:
     def __init__(self, answer="Thông tin hữu ích", *, grounded=False):
@@ -190,3 +194,33 @@ def test_provider_warning_is_rendered():
     response = asyncio.run(InformationFinderAgent(FakeReader(result)).run(context("cafes")))
 
     assert any(block["type"] == "warning" for block in response.blocks)
+
+
+def test_meeting_point_uses_structured_origins_and_returns_center_block():
+    result = InformationResult(
+        kind="meeting_point_candidates",
+        message="Chọn điểm gặp",
+        candidates=[candidate()],
+        needsUserChoice=True,
+        meetingPoint={"latitude": 21.04, "longitude": 105.86},
+        resolvedOrigins=[
+            {"query": "Cầu Nhật Tân", "latitude": 21.09, "longitude": 105.81}
+        ],
+    )
+    reader = FakeReader(result)
+    response = asyncio.run(
+        InformationFinderAgent(reader).run(
+            context(
+                "tìm cafe ở giữa",
+                decision_intent="find_meeting_point",
+                information_intent="find_meeting_point",
+                origins=["Cầu Nhật Tân", "Lăng Bác", "VinUniversity"],
+                venue_type="cafe",
+            )
+        )
+    )
+
+    assert reader.calls == [
+        (["Cầu Nhật Tân", "Lăng Bác", "VinUniversity"], "cafe", "Hanoi", 5)
+    ]
+    assert any(block["type"] == "meetingPoint" for block in response.blocks)

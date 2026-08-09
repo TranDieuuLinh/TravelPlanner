@@ -90,6 +90,10 @@ ghi khi operator truyền `--apply`.
   recommendation; đây là timing preference mềm có provenance, không phải giờ mở
   cửa và không tin giá trị timing do LLM tự trả.
 - `PlanDay`: số thứ tự ngày, chủ đề và danh sách item.
+- `MeetingPointQuery` là request đọc gồm ít nhất hai origin và loại venue. Origin
+  chỉ là đầu vào định vị, không phải `SelectedPlace`. Kết quả giữ origin đã
+  resolve, tâm địa lý, candidate venue và khoảng cách gần đúng; nó không tự sửa
+  plan hoặc biến text trong `TripIntent.notes` thành stop.
 - `Plan.regionStories`: câu chuyện/tip cấp destination từ creator, tách khỏi
   place note. Mỗi phần tử giữ text tiếng Việt, evidence span nguyên văn, URL và
   loại evidence; không có nội dung region-specific thì mảng rỗng.

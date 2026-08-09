@@ -117,6 +117,38 @@ class TestSupervisorSchema:
         assert isinstance(output.arguments, InformationArguments)
         assert output.arguments.query == "Việt Nam có gì đặc biệt?"
 
+    def test_meeting_point_arguments_keep_origins_separate_from_places(self):
+        output = _output(
+            "find_meeting_point",
+            {
+                "kind": "information",
+                "query": "Tìm quán cà phê ở giữa",
+                "origins": [
+                    "Cầu Nhật Tân",
+                    "Lăng Chủ tịch Hồ Chí Minh",
+                    "VinUniversity",
+                ],
+                "venueType": "cafe",
+            },
+        )
+        assert isinstance(output.arguments, InformationArguments)
+        assert output.arguments.origins == [
+            "Cầu Nhật Tân",
+            "Lăng Chủ tịch Hồ Chí Minh",
+            "VinUniversity",
+        ]
+
+    def test_meeting_point_requires_at_least_two_origins(self):
+        with pytest.raises(ValidationError, match="at least two origins"):
+            _output(
+                "find_meeting_point",
+                {
+                    "kind": "information",
+                    "query": "Tìm chỗ ở giữa",
+                    "origins": ["Cầu Nhật Tân"],
+                },
+            )
+
     def test_planning_arguments(self):
         output = _output(
             "create_plan",
@@ -231,6 +263,26 @@ class TestValidatedDecision:
             None,
         )
         assert decision.intake_patch == {"destination": "Hà Nội", "days": 4}
+
+    def test_meeting_point_request_forwards_structured_origins(self):
+        decision = _validated_decision(
+            _output(
+                "find_meeting_point",
+                {
+                    "kind": "information",
+                    "query": "Tìm quán cà phê ở giữa",
+                    "origins": ["Cầu Nhật Tân", "Lăng Bác", "VinUniversity"],
+                    "venueType": "cafe",
+                },
+            ),
+            None,
+        )
+        assert decision.information_request["origins"] == [
+            "Cầu Nhật Tân",
+            "Lăng Bác",
+            "VinUniversity",
+        ]
+        assert decision.information_request["venueType"] == "cafe"
 
     def test_clarification_becomes_service_message_and_options(self):
         decision = _validated_decision(

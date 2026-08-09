@@ -68,6 +68,16 @@ class InformationCandidate(_ContractModel):
     confidence: Annotated[float, Field(ge=0, le=1)]
     is_verified: Annotated[bool, Field(default=False, alias="isVerified")]
     fetched_at: Annotated[datetime, Field(alias="fetchedAt")]
+    display_name: str | None = Field(
+        default=None, min_length=1, max_length=255, alias="displayName"
+    )
+    address: str | None = Field(default=None, min_length=1, max_length=500)
+    distance_to_center_km: float | None = Field(
+        default=None, ge=0, alias="distanceToCenterKm"
+    )
+    max_origin_distance_km: float | None = Field(
+        default=None, ge=0, alias="maxOriginDistanceKm"
+    )
 
     @model_validator(mode="after")
     def validate_identity_and_coordinates(self) -> "InformationCandidate":
@@ -88,3 +98,9 @@ class InformationResult(_ContractModel):
     candidates: list[InformationCandidate] = Field(default_factory=list, max_length=10)
     needs_user_choice: Annotated[bool, Field(default=False, alias="needsUserChoice")]
     warnings: list[str] = Field(default_factory=list, max_length=50)
+    meeting_point: dict[str, float] | None = Field(
+        default=None, alias="meetingPoint"
+    )
+    resolved_origins: list[dict[str, object]] = Field(
+        default_factory=list, max_length=8, alias="resolvedOrigins"
+    )
