@@ -2,6 +2,8 @@
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-08-03
+- Cập nhật: ADR-033 thay thế phần TripThemePlanner tạo `tripThemes`; quyền sở hữu
+  lịch ngày của PlaceSelector vẫn giữ nguyên.
 
 ## Bối cảnh
 
@@ -20,8 +22,9 @@ Runtime dùng flow:
 Explorer -> TripThemePlanner -> PlaceSelector -> Checker
 ```
 
-- TripThemePlanner trả `TripThemePlanningOutput` gồm `tripThemes`, assumption,
-  warning và trace. Nó không trả ngày, journey phase hoặc place allocation.
+- TripThemePlanner trả `TripThemePlanningOutput` gồm `tripThemes=[]`, highlight
+  `requiredExperiences`, assumption, warning và trace. Nó không trả ngày,
+  journey phase hoặc place allocation.
 - PlaceSelector nhận `tripSpec.days`, `tripThemes` và `selectedPlaces`; nó tạo
   day slot deterministic, áp capacity, chọn Place và tối ưu tuyến.
 - `Plan` lưu trực tiếp `tripThemes` và `days`; dữ liệu mới không ghi

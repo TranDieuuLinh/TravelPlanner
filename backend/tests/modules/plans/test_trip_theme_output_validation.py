@@ -18,12 +18,14 @@ def _candidate(
 ) -> GraphExperienceCandidate:
     return GraphExperienceCandidate(
         claimIds=[claim],
+        specialClaimIds=[claim],
         placeIds=[place],
         candidatePlaceIds=[place],
         activityId=activity,
         activityName="Coffee tour",
         category=category,
         anchorPlaceIds=[place],
+        isSpecialExperience=True,
         rank=1,
         fit=FitResult(status=CheckStatus.SUPPORTED, hasHardConflict=False, dimensionCount=1),
         trust=TrustLevel.SOURCE_BACKED,
@@ -90,7 +92,7 @@ def test_duplicate_claim_and_mixed_source_are_rejected() -> None:
     assert mixed.errors[0].code == "provenance_mismatch"
 
 
-def test_selection_policy_classification_and_minimum_are_validated() -> None:
+def test_selection_policy_and_classification_are_validated_without_theme_quota() -> None:
     policy = validate(
         {"requiredExperiences": [_requirement(claimIds=["claim-b"], evidenceClaimIds=["claim-b"])]},
         _catalog(_candidate(), _candidate(claim="claim-b", place="place-b", source="source-b", activity="activity-b")),
@@ -109,7 +111,7 @@ def test_selection_policy_classification_and_minimum_are_validated() -> None:
 
     assert policy.errors[0].code == "selection_policy_invalid"
     assert classification.errors[0].code == "classification_mismatch"
-    assert minimum.errors[0].code == "minimum_activities_exceeds_candidates"
+    assert minimum.is_valid is True
 
 
 def test_valid_output_hydrates_catalog_timing_and_ignores_llm_timing() -> None:
@@ -121,6 +123,29 @@ def test_valid_output_hydrates_catalog_timing_and_ignores_llm_timing() -> None:
     assert hydrated.recommended_visit_minutes == 90
     assert hydrated.preferred_time_windows[0].start == "09:00"
     assert hydrated.preferred_time_windows[0].end == "12:00"
+
+
+def test_highlight_must_cite_its_special_experience_claim() -> None:
+    candidate = _candidate().model_copy(
+        update={
+            "claim_ids": ["claim-special", "claim-offer"],
+            "special_claim_ids": ["claim-special"],
+        }
+    )
+    result = validate(
+        {
+            "requiredExperiences": [
+                _requirement(
+                    claimIds=["claim-offer"],
+                    evidenceClaimIds=["claim-offer"],
+                )
+            ]
+        },
+        _catalog(candidate),
+    )
+
+    assert result.is_valid is False
+    assert result.errors[0].code == "special_claim_required"
 
 
 def test_empty_catalog_accepts_empty_output_and_rejects_requirements() -> None:

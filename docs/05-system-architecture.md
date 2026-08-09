@@ -79,8 +79,9 @@ chọn hoặc chặng điều hướng vào plan, database hay timing log.
 
 Mọi luồng tạo plan dùng chung `meal_anchored_timeline`; URL metadata chỉ bổ sung
 constraint và provenance cho cùng Planner.
-`TripThemePlannerService` chỉ xác định các trải nghiệm bắt buộc ở cấp toàn
-chuyến qua `tripThemes`; nó không chia theme theo ngày. PlaceSelector tạo day
+`TripThemePlannerService` chỉ chọn một số ít điểm nhấn cấp toàn chuyến từ
+`SPECIAL_EXPERIENCE`; nó giữ `tripThemes=[]` và không chia theme theo ngày.
+PlaceSelector tạo day
 slot từ `tripSpec.days`, sau đó route optimizer phân hoạt động theo cụm địa lý.
 `PlaceSelectorService` chọn candidate mà không gọi route pedestrian/auto/transit;
 Sau đó global stage của module `plans/itinerary_optimizer` dùng travel-time matrix

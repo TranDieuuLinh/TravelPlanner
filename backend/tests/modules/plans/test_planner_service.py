@@ -194,7 +194,7 @@ def test_main_workflow_uses_canonical_hanoi_catalog_region() -> None:
     plan = asyncio.run(workflow.run_from_explorer(payload))
 
     assert statistics.requested_region_keys == ["vn,ha-noi"]
-    assert plan.trip_themes
+    assert plan.trip_themes == []
     assert len(plan.days) == 1
 
 
@@ -310,13 +310,13 @@ def test_trip_theme_planner_uses_snapshot_and_returns_only_themes() -> None:
     serialized = output.model_dump(mode="json", by_alias=True)
     assert "macroPlan" not in serialized
     assert "dayBriefs" not in serialized
-    assert serialized["tripThemes"]
+    assert serialized["tripThemes"] == []
     assert "generator=llm" in output.trace.notes
     assert not any(
         note.startswith("researchPromptVersion=") for note in output.trace.notes
     )
     assert (
-        "promptVersion=trip_theme_planner_graph_v6_structured_output"
+        "promptVersion=trip_theme_planner_highlight_v7_structured_output"
         in output.trace.notes
     )
     assert "snapshotId=snapshot-3" in output.trace.notes
@@ -492,14 +492,14 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
     )
 
     assert len(llm.calls) == 1
-    assert "Bạn là Trip Theme Planner" in llm.system_prompt
-    assert "knowledge_entities" in llm.system_prompt
+    assert "Bạn là TripThemePlanner" in llm.system_prompt
+    assert "SPECIAL_EXPERIENCE" in llm.system_prompt
     assert "source_backed" in llm.system_prompt
-    assert "dataset reference" in llm.system_prompt
+    assert "requiredExperiences=[]" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "trip_theme_plan"
     assert payload["promptVersion"] == (
-        "trip_theme_planner_graph_v6_structured_output"
+        "trip_theme_planner_highlight_v7_structured_output"
     )
     assert "requiredOutputShape" not in payload
     assert llm.response_schemas == [TripThemeDraft.model_json_schema()]
@@ -510,6 +510,8 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
         == "vn,ha-noi,hoan-kiem"
     )
     assert payload["themeSelectionPolicy"]["selectionMode"] == ("current_trip_intent")
+    assert payload["themeSelectionPolicy"]["maximumHighlightExperiences"] == 1
+    assert payload["themeSelectionPolicy"]["allowEmptyHighlights"] is True
     assert "researchProposal" not in payload
     assert "verifiedResearch" not in payload
 
@@ -526,10 +528,7 @@ def test_trip_theme_planner_returns_requirements_without_route_buckets() -> None
         )
     )
 
-    assert [theme.theme for theme in output.trip_themes] == [
-        "Lịch sử",
-        "Nghệ thuật",
-    ]
+    assert output.trip_themes == []
     assert "selectionDays" not in output.model_dump(mode="json", by_alias=True)
 
 
@@ -548,9 +547,8 @@ def test_planner_normalizes_food_themes_and_over_capacity_requirements() -> None
         )
     )
 
-    assert [theme.theme for theme in output.trip_themes] == ["Văn hóa địa phương"]
-    assert output.trip_themes[0].minimum_activities == 4
-    assert any("khung bữa ăn riêng" in warning for warning in output.warnings)
+    assert output.trip_themes == []
+    assert any("không được dùng để điều khiển" in warning for warning in output.warnings)
 
 
 def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> None:
@@ -572,7 +570,7 @@ def test_planner_can_continue_without_catalog_when_places_are_confirmed() -> Non
     )
 
     assert output.trip_themes_ready is True
-    assert output.trip_themes
+    assert output.trip_themes == []
 
 
 def test_place_selector_reports_confirmed_places_over_day_capacity() -> None:
@@ -802,7 +800,7 @@ def test_long_trip_still_returns_only_trip_wide_themes() -> None:
 
     serialized = output.model_dump(mode="json", by_alias=True)
     assert output.trip_spec.days == 7
-    assert output.trip_themes
+    assert output.trip_themes == []
     assert "journeyPhases" not in serialized
     assert "selectionDays" not in serialized
 
@@ -834,7 +832,7 @@ def test_main_workflow_accepts_structured_selected_places() -> None:
 
     plan = asyncio.run(workflow.run(payload))
 
-    assert plan.trip_themes
+    assert plan.trip_themes == []
     assert "macroPlan" not in plan.model_dump(mode="json", by_alias=True)
     assert plan.days[0].items[0].name == "Văn Miếu"
 

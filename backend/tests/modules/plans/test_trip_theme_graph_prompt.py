@@ -148,6 +148,19 @@ def _graph_bundle() -> TripResearchBundle:
         time_slots=["19:00-21:00"],
         recommended_visit_minutes=60,
     )
+    cooking_special_claim = _claim(
+        claim_id="claim-cooking-special",
+        predicate="SPECIAL_EXPERIENCE",
+        object_id="activity-cooking-class",
+        object_type="Activity",
+        object_name="Cooking Class",
+        activity_id="activity-cooking-class",
+        activity_name="Cooking Class",
+        anchor_place_id="place-cooking-a",
+        anchor_place_name="Cooking A",
+        source="https://example.com/cooking-source",
+        priority=RecommendationPriority.RECOMMENDED,
+    )
     cooking_claim_a = _claim(
         claim_id="claim-cooking-a",
         object_id="activity-cooking-class",
@@ -177,8 +190,9 @@ def _graph_bundle() -> TripResearchBundle:
         scope=ScopeResolveOutput(),
         eligibleExperiences=[
             _ranked(coffee_claim, 1),
-            _ranked(cooking_claim_a, 2),
-            _ranked(cooking_claim_b, 3),
+            _ranked(cooking_special_claim, 2),
+            _ranked(cooking_claim_a, 3),
+            _ranked(cooking_claim_b, 4),
         ],
         graphSnapshot=GraphSnapshot(timestamp="2026-08-04T00:00:00Z"),
     )
@@ -514,6 +528,7 @@ class TestChooseOneSelection:
                     "priority": "must",
                     "reason": "Pick one of the cooking class venues.",
                     "evidenceClaimIds": [
+                        "claim-cooking-special",
                         "claim-cooking-a",
                         "claim-cooking-b",
                     ],
@@ -542,6 +557,7 @@ class TestChooseOneSelection:
             "place-cooking-b",
         }
         assert set(requirement.evidence_claim_ids) == {
+            "claim-cooking-special",
             "claim-cooking-a",
             "claim-cooking-b",
         }
@@ -751,7 +767,7 @@ class TestGraphCatalogInPayload:
         assert "activity-coffee-tour" in activity_ids
         assert "activity-cooking-class" in activity_ids
         assert "place-cafe-giang" in place_ids
-        assert "Bạn là Trip Theme Planner" in llm.system_prompts[0]
+        assert "Bạn là TripThemePlanner" in llm.system_prompts[0]
         assert "graphCandidateCatalog" in llm.system_prompts[0]
         # Repair payload should also include the bounded catalog so the LLM
         # can pick only IDs from it during the repair attempt.
@@ -800,8 +816,8 @@ class TestGraphCutoverEvaluations:
 
         policy = json.loads(llm.macro_payloads[0])["themeSelectionPolicy"]
         assert policy["selectionMode"] == "destination_special_experiences"
-        assert llm.macro_calls == 2
-        assert output.required_experiences[0].requirement_id == "req-default-coffee"
+        assert llm.macro_calls == 1
+        assert output.required_experiences == []
 
     def test_confirmed_places_take_priority_over_long_term_profile(self) -> None:
         llm = _GraphThemeScriptedLLM(

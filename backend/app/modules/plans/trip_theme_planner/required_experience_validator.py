@@ -119,7 +119,6 @@ def validate(
             claim_owner[claim_id] = candidate
 
     used_claims: set[str] = set()
-    used_main_keys: set[tuple[str | None, ExperienceCategory]] = set()
     hydrated: list[RequiredExperience] = []
     warnings: list[ValidationIssue] = []
     for index, requirement in enumerate(draft.required_experiences):
@@ -129,6 +128,26 @@ def validate(
             errors.append(ValidationIssue(issue[0], issue[1], path))
             continue
         assert candidate is not None
+        if not candidate.is_special_experience:
+            errors.append(ValidationIssue(
+                code="not_special_experience",
+                reason=(
+                    "TripThemePlanner may only select candidates backed by "
+                    "SPECIAL_EXPERIENCE."
+                ),
+                path=path,
+            ))
+            continue
+        if not set(requirement.claim_ids).intersection(candidate.special_claim_ids):
+            errors.append(ValidationIssue(
+                code="special_claim_required",
+                reason=(
+                    "Each highlight must cite at least one SPECIAL_EXPERIENCE "
+                    "claim from its catalog candidate."
+                ),
+                path=f"{path}.claimIds",
+            ))
+            continue
 
         duplicate_claims = used_claims.intersection(requirement.claim_ids)
         if duplicate_claims:
@@ -155,44 +174,7 @@ def validate(
                     reason="Meal/food candidates cannot be classified as main experience.",
                     path=f"{path}.theme",
                 ))
-        if requirement.category is ExperienceCategory.main_experience:
-            diversity_key = (candidate.activity_id, candidate.category)
-            if diversity_key in used_main_keys:
-                warnings.append(ValidationIssue(
-                    code="diversity_warning",
-                    reason="Main experiences repeat an activity/category key.",
-                    path=path,
-                ))
-            used_main_keys.add(diversity_key)
-
         hydrated.append(_hydrate_timing(requirement, candidate))
-
-    available_main_keys = {
-        (candidate.activity_id, candidate.category)
-        for candidate in catalog.candidates
-        if candidate.category not in {ExperienceCategory.meal, ExperienceCategory.food}
-    }
-    if len(available_main_keys) < len({
-        (item.activity_id, item.category)
-        for item in draft.required_experiences
-        if item.category is ExperienceCategory.main_experience
-    }):
-        warnings.append(ValidationIssue(
-            code="diversity_warning",
-            reason="Catalog does not contain enough distinct main activity/category candidates.",
-            path="requiredExperiences",
-        ))
-
-    if catalog.candidates:
-        for index, theme in enumerate(draft.trip_themes):
-            available = _theme_candidate_count(theme, catalog)
-            if theme.minimum_activities > available:
-                errors.append(ValidationIssue(
-                    code="minimum_activities_exceeds_candidates",
-                    reason=(f"minimumActivities={theme.minimum_activities} exceeds "
-                            f"available catalog candidates={available}."),
-                    path=f"tripThemes[{index}].minimumActivities",
-                ))
 
     if errors:
         return TripThemeValidationResult(output=None, errors=tuple(errors), warnings=tuple(warnings))
