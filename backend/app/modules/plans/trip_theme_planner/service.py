@@ -735,30 +735,11 @@ class TripThemePlannerService:
                     ],
                 ]
             })
-        themes, normalized = self._normalize_trip_themes(draft.trip_themes)
-        allowed_region_prefixes = {
-            planner_input.region_context.region_key,
-            *(
-                place.region_key
-                for place in planner_input.selected_places
-                if place.region_key
-            ),
-        }
-        for requirement in themes:
-            unknown_regions = {
-                region_key
-                for region_key in requirement.target_region_keys
-                if not any(
-                    region_key == prefix
-                    or region_key.startswith(f"{prefix},")
-                    for prefix in allowed_region_prefixes
-                )
-            }
-            if unknown_regions:
-                raise ValueError(
-                    "Trip theme references an unknown targetRegionKey: "
-                    f"{sorted(unknown_regions)[0]}"
-                )
+        # TripThemePlanner now selects destination highlights only. Keep the
+        # public field for compatibility, but never let an LLM-authored theme
+        # become a PlaceSelector quota or catalog requirement.
+        themes: list[TripThemeRequirement] = []
+        discarded_themes = bool(draft.trip_themes)
 
         required_experiences = list(draft.required_experiences)
         if required_experiences:
@@ -773,48 +754,20 @@ class TripThemePlannerService:
                     f"{exc}"
                 ) from exc
 
-        required_experiences, diversity_warnings = _enforce_experience_diversity(
-            required_experiences,
-            graph_catalog,
-            planner_input,
-        )
-
         selection_policy = build_theme_selection_policy(planner_input)
-        required_count = min(
-            int(selection_policy["minimumRequiredExperiences"]),
-            len(graph_catalog.candidates),
-        )
-        if required_count and len(required_experiences) < required_count:
-            raise ValueError(
-                "requiredExperiences must contain at least "
-                f"{required_count} graph candidates for this trip."
-            )
-
-        trusted_special_candidates = [
-            candidate
-            for candidate in graph_catalog.candidates
-            if candidate.is_special_experience
-            and candidate.trust is not TrustLevel.INFERRED
-        ]
-        if (
-            selection_policy["selectionMode"]
-            == "destination_special_experiences"
-            and trusted_special_candidates
-            and not required_experiences
-        ):
-            raise ValueError(
-                "No trip intent, confirmed Place, or effective long-term "
-                "profile was supplied; choose at least one trusted destination "
-                "special experience from graphCandidateCatalog."
-            )
+        highlight_limit = int(selection_policy["maximumHighlightExperiences"])
+        truncated_highlights = len(required_experiences) > highlight_limit
+        required_experiences = required_experiences[:highlight_limit]
 
         warnings = list(draft.warnings)
-        warnings.extend(diversity_warnings)
-        if normalized:
+        if truncated_highlights:
             warnings.append(
-                "Tín hiệu trải nghiệm toàn chuyến đã được chuẩn hóa thành "
-                "một pool đa dạng có giới hạn; điểm ăn uống được dành cho "
-                "các khung bữa ăn riêng."
+                "Danh sách điểm nhấn đã được giới hạn theo thời lượng chuyến đi."
+            )
+        if discarded_themes:
+            warnings.append(
+                "TripThemePlanner chỉ giữ điểm nhấn đặc trưng; theme do model "
+                "trả về không được dùng để điều khiển PlaceSelector."
             )
         return draft.model_copy(
             update={

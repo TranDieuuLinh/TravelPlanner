@@ -65,7 +65,8 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Nhập điểm đến, ngày/số ngày, điểm xuất phát, nhóm đi, ngân sách, tiền tệ, nhịp
   độ, sở thích, phương tiện, nhu cầu tiếp cận và ràng buộc cứng.
 - Câu hỏi làm rõ có giá trị cao, cập nhật cùng draft.
-- TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến, không tạo ngày.
+- TripThemePlanner giữ tên tương thích, chọn tối đa 1–3 điểm nhấn từ
+  `SPECIAL_EXPERIENCE`, cho phép rỗng và không tạo ngày/theme quota.
 - PlaceSelector tạo đủ số ngày từ `tripSpec.days`, chọn địa điểm và tối ưu tuyến.
 - Tạo `Main Plan` theo ngày với item ổn định, khung giờ, thời lượng, place, chi
   phí, nguồn và ghi chú.

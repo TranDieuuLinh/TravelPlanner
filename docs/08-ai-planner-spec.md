@@ -101,13 +101,16 @@ response đầu, dùng optimistic revision và chạy lại timeline/Checker tr�
 đánh dấu `routeEnrichmentStatus=completed`.
 
 TripThemePlanner không còn dùng research LLM hoặc place-catalog research tool
-legacy.
+legacy. Tên service được giữ để tương thích nhưng vai trò hiện tại là chọn điểm
+nhấn đặc trưng, không tạo theme điều khiển việc chọn Place.
 Backend chạy `GraphResearchOrchestrator` một lần, loại hard conflict và chiếu
 evidence `supported` hoặc `unknown` theo ontology v7 thành `graphCandidateCatalog`;
 candidate `unknown` được xếp sau evidence `supported` và giữ warning về dữ liệu
 vận hành chưa đủ. Sau đó LLM tạo
-`TripThemeDraft` trong một lượt. Output có `tripThemes`, `requiredExperiences`,
-assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
+`TripThemeDraft` trong một lượt. Projection chỉ giữ nhóm Activity có seed
+`SPECIAL_EXPERIENCE`; claim `OFFERS_ACTIVITY` chỉ bổ sung Place cho đúng nhóm
+đó. Output luôn có `tripThemes=[]`; `requiredExperiences` chỉ chứa 0–3 điểm
+nhấn, assumption, warning và trace; không có ngày, route hoặc allocation. Backend yêu
 cầu Gemini tạo JSON bằng `responseJsonSchema` của `TripThemeDraft`, rồi vẫn
 kiểm tra ID graph, region và các invariant nghiệp vụ phía server. Chỉ output
 không thể chuẩn hóa an toàn mới yêu cầu model sửa, tối đa ba lần. PlaceSelector chịu toàn bộ trách nhiệm
@@ -356,7 +359,7 @@ của Extractor.
 
 ### Giai đoạn 5: TripThemePlanner
 
-TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
+TripThemePlanner giữ tên runtime cũ nhưng chỉ chọn điểm nhấn cấp toàn chuyến:
 
 - runtime bỏ qua region statistics khi Explorer đã cung cấp interest,
   must-visit Place hoặc selected Place; statistics chỉ là fallback cho yêu cầu
@@ -364,16 +367,15 @@ TripThemePlanner tạo `tripThemes` ở cấp toàn chuyến:
 - chọn nguồn định hướng theo thứ tự: interest/ràng buộc chuyến hiện tại,
   selected Place đã xác nhận, long-term profile có hiệu lực, rồi mới đến
   special experience đặc trưng của điểm đến;
-- nếu không có interest, selected Place và profile, phải chọn ít nhất một
-  special experience trusted khi graph có coverage; `must` trên graph là độ
-  quan trọng với điểm đến, không tự động bắt buộc cho mọi user;
+- catalog chỉ chứa Activity có `SPECIAL_EXPERIENCE`; `TARGETS_PLACE` cung cấp
+  anchor trực tiếp và `OFFERS_ACTIVITY` chỉ bổ sung venue cho Activity đó;
+- model có thể chọn 0 điểm nhấn; trần là 1/2/3 cho chuyến 1–3/4–6/7+ ngày;
+  `must` trên graph là độ quan trọng với điểm đến, không bắt buộc cho user;
 - không chọn trải nghiệm lệch intent, ví dụ không bắt leo núi khi user chỉ muốn
   văn hóa và đời sống địa phương;
-- `requiredExperiences` được chọn trước: khi graph catalog có coverage, Planner
-  phải chọn tối thiểu một trải nghiệm cụ thể cho mỗi ngày, giới hạn bởi số
-  candidate thực có; `tripThemes` chỉ tóm tắt các lựa chọn này, không thay thế
-  bằng theme chung;
-- mỗi theme có focus tags, số activity tối thiểu và region mục tiêu khi có;
+- `requiredExperiences` chỉ chứa highlight có ít nhất một claim ID của chính
+  cạnh `SPECIAL_EXPERIENCE`; không ép minimum, diversity hay category coverage;
+- `tripThemes` luôn rỗng và không còn là quota đầu vào cho PlaceSelector;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
   động cho mọi ngày;
@@ -390,7 +392,7 @@ research bundle lẫn bounded `graphCandidateCatalog`; lệnh này không gọi 
 ### Giai đoạn 6: PlaceSelector
 
 TripThemePlanner runtime mang tên `TripThemePlannerService`. Nó tạo
-`tripThemes` và `requiredExperiences` ở cấp toàn chuyến,
+`requiredExperiences` highlight ở cấp toàn chuyến và giữ `tripThemes=[]`,
 không tạo nội dung theo Ngày 1/Ngày 2. PlaceSelector tạo đúng số day slot từ
 `tripSpec.days`; route optimizer quyết định activity thuộc ngày nào.
 

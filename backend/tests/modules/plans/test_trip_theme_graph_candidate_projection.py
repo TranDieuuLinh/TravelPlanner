@@ -349,7 +349,7 @@ class TestSupportedShapeInclusion:
         assert candidate.activity_id == "activity_cooking"
         assert candidate.place_ids == []
 
-    def test_offers_activity_included(self) -> None:
+    def test_offers_activity_without_special_seed_is_excluded(self) -> None:
         ranked = _ranked(
             "c_offers",
             rank=1,
@@ -366,12 +366,9 @@ class TestSupportedShapeInclusion:
             priority=RecommendationPriority.MUST,
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
-        assert len(catalog.candidates) == 1
-        candidate = catalog.candidates[0]
-        assert candidate.activity_id == "activity_coffee_tour"
-        assert candidate.anchor_place_ids == ["place_cafe"]
+        assert catalog.candidates == []
 
-    def test_located_in_offers_activity_included(self) -> None:
+    def test_located_in_offer_without_special_seed_is_excluded(self) -> None:
         ranked = _ranked(
             "c_located_offers",
             rank=1,
@@ -388,11 +385,7 @@ class TestSupportedShapeInclusion:
             priority=RecommendationPriority.RECOMMENDED,
         )
         catalog = project_graph_candidate_catalog(_bundle(eligible=[ranked]))
-        assert len(catalog.candidates) == 1
-        candidate = catalog.candidates[0]
-        assert candidate.activity_id == "activity_bun_cha"
-        assert "place_restaurant" in candidate.place_ids
-        assert "place_restaurant" in candidate.anchor_place_ids
+        assert catalog.candidates == []
 
 
 # ---------------------------------------------------------------------------
@@ -404,9 +397,19 @@ class TestActivityGrouping:
     """Claims with the same Activity ID are merged into one candidate."""
 
     def test_two_places_offering_same_activity_grouped(self) -> None:
+        special_rank = _ranked(
+            "c_special",
+            rank=1,
+            predicate="SPECIAL_EXPERIENCE",
+            object_id="activity_coffee_tour",
+            object_type="Activity",
+            object_name="Coffee Tour",
+            activity_id="activity_coffee_tour",
+            activity_name="Coffee Tour",
+        )
         cafe_rank = _ranked(
             "c_cafe",
-            rank=1,
+            rank=2,
             predicate="OFFERS_ACTIVITY",
             subject_id="place_cafe_giang",
             object_id="activity_coffee_tour",
@@ -418,7 +421,7 @@ class TestActivityGrouping:
         )
         restaurant_rank = _ranked(
             "c_restaurant",
-            rank=2,
+            rank=3,
             predicate="OFFERS_ACTIVITY",
             subject_id="place_restaurant",
             object_id="activity_coffee_tour",
@@ -429,13 +432,18 @@ class TestActivityGrouping:
             anchor_place_name="Restaurant",
         )
         catalog = project_graph_candidate_catalog(
-            _bundle(eligible=[cafe_rank, restaurant_rank])
+            _bundle(eligible=[special_rank, cafe_rank, restaurant_rank])
         )
         assert len(catalog.candidates) == 1
         candidate = catalog.candidates[0]
         assert candidate.activity_id == "activity_coffee_tour"
         assert set(candidate.anchor_place_ids) == {"place_cafe_giang", "place_restaurant"}
-        assert set(candidate.claim_ids) == {"c_cafe", "c_restaurant"}
+        assert set(candidate.claim_ids) == {
+            "c_special",
+            "c_cafe",
+            "c_restaurant",
+        }
+        assert candidate.special_claim_ids == ["c_special"]
 
     def test_special_experience_activity_no_grouping_without_activity(self) -> None:
         a1 = _ranked(
@@ -811,7 +819,7 @@ class TestSelectableHelper:
 class TestMultipleShapes:
     """A bundle with mixed shapes produces separate candidates."""
 
-    def test_mixed_shapes_all_included(self) -> None:
+    def test_mixed_shapes_only_special_seeded_groups_are_included(self) -> None:
         direct_anchor = _ranked(
             "c_anchor",
             rank=1,
@@ -842,4 +850,4 @@ class TestMultipleShapes:
         catalog = project_graph_candidate_catalog(
             _bundle(eligible=[direct_anchor, activity_se, offers])
         )
-        assert len(catalog.candidates) == 3
+        assert len(catalog.candidates) == 2

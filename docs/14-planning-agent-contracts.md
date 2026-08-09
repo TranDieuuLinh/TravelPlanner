@@ -82,14 +82,7 @@ Output là `TripThemePlanningOutput`:
   "mode": "main",
   "tripSpec": {"days": 3},
   "tripThemesReady": true,
-  "tripThemes": [
-    {
-      "theme": "Văn hóa Hà Nội",
-      "focusTags": ["culture", "history"],
-      "minimumActivities": 2,
-      "targetRegionKeys": ["vn,ha-noi"]
-    }
-  ],
+  "tripThemes": [],
   "requiredExperiences": [
     {
       "requirementId": "req-walk-hoan-kiem",
@@ -117,22 +110,20 @@ Output là `TripThemePlanningOutput`:
 ```
 
 Output không được có ngày, route bucket, journey phase hoặc selected-place
-allocation. Backend chạy graph research deterministic, tạo bounded
+allocation. Tên `TripThemePlanner` được giữ để tương thích, nhưng runtime hiện
+chỉ chọn tối đa 1/2/3 điểm nhấn cho chuyến 1–3/4–6/7+ ngày và luôn trả
+`tripThemes=[]`. Backend chạy graph research deterministic, tạo bounded
 `graphCandidateCatalog`, rồi gọi LLM một lượt để tạo `TripThemeDraft`; CLI
 `research-context` hiển thị cùng catalog mà không gọi LLM. Backend sửa contract
-lỗi tối đa ba lần. Tổng
-`minimumActivities` được chuẩn hóa theo capacity hai activity mỗi ngày; theme
-chỉ nói về bữa ăn bị loại vì meal là trách nhiệm riêng của PlaceSelector.
+lỗi tối đa ba lần.
 
-Theme selection dùng thứ tự `current trip intent > confirmed selected Places >
-effective long-term profile > destination special experiences`. Khi ba nguồn
-đầu đều rỗng, backend yêu cầu output chọn ít nhất một trusted special experience
-nếu catalog có candidate phù hợp. Priority `must` của graph không override intent
-hoặc hard constraint của user.
+Catalog chỉ chứa Activity có seed `SPECIAL_EXPERIENCE`; `OFFERS_ACTIVITY` chỉ
+bổ sung venue cho chính Activity đặc biệt đó. Model được phép không chọn điểm
+nhấn nào. Priority `must` của graph là tín hiệu nổi bật của destination, không
+phải yêu cầu bắt buộc của user và không override intent hoặc hard constraint.
 
-Khi catalog trống nhưng có selected Place, TripThemePlanner vẫn có thể tạo
-theme nhưng `requiredExperiences` phải rỗng. Khi cả hai nguồn trống,
-`tripThemesReady=false`.
+Catalog rỗng tạo `requiredExperiences=[]` mà không chặn Planner. Selected Place
+vẫn được PlaceSelector bảo toàn độc lập với highlight catalog.
 
 ## PlaceSelector
 

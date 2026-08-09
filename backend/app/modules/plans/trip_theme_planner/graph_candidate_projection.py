@@ -25,6 +25,10 @@ class GraphExperienceCandidate(BaseModel):
     """Bounded identifiers and evidence for one selectable graph experience."""
 
     claim_ids: list[str] = Field(default_factory=list, alias="claimIds")
+    special_claim_ids: list[str] = Field(
+        default_factory=list,
+        alias="specialClaimIds",
+    )
     place_ids: list[str] = Field(default_factory=list, alias="placeIds")
     candidate_place_ids: list[str] = Field(
         default_factory=list,
@@ -155,11 +159,30 @@ def candidate_diversity_key(candidate: GraphExperienceCandidate) -> tuple[str | 
 def project_graph_candidate_catalog(
     bundle: TripResearchBundle,
 ) -> GraphCandidateCatalog:
-    """Project eligible experiences without reading other bundle lists."""
+    """Project only Activity groups seeded by ``SPECIAL_EXPERIENCE``.
+
+    ``OFFERS_ACTIVITY`` claims may enrich the venue choices for a special
+    Activity, but they can no longer create a planner candidate on their own.
+    This keeps ordinary catalog coverage out of TripThemePlanner while still
+    letting PlaceSelector resolve a highlighted Activity to a concrete Place.
+    """
+
+    special_activity_ids = {
+        activity_id
+        for ranked in bundle.eligibleExperiences
+        if _is_selectable(ranked)
+        and ranked.claim.predicate == "SPECIAL_EXPERIENCE"
+        and (activity_id := _activity_id(ranked.claim)) is not None
+    }
 
     grouped: dict[str, list[RankedExperience]] = {}
     for ranked in bundle.eligibleExperiences:
         if not _is_selectable(ranked):
+            continue
+        activity_id = _activity_id(ranked.claim)
+        if ranked.claim.predicate != "SPECIAL_EXPERIENCE" and (
+            activity_id is None or activity_id not in special_activity_ids
+        ):
             continue
         grouped.setdefault(_candidate_key(ranked.claim), []).append(ranked)
 
@@ -223,7 +246,16 @@ def _project_group(
     experiences: Sequence[RankedExperience],
 ) -> GraphExperienceCandidate:
     ordered = sorted(experiences, key=_ranked_sort_key)
-    primary = ordered[0]
+    # The special edge owns rank/trust for the highlight. Supporting
+    # OFFERS_ACTIVITY claims only add venue choices and provenance.
+    primary = min(
+        (
+            ranked
+            for ranked in ordered
+            if ranked.claim.predicate == "SPECIAL_EXPERIENCE"
+        ),
+        key=_ranked_sort_key,
+    )
     claims = [ranked.claim for ranked in ordered]
     recommendation = _best_recommendation(ordered)
     anchor_names = _anchor_place_names(ordered)
@@ -231,6 +263,11 @@ def _project_group(
     return GraphExperienceCandidate(
         claimIds=_ordered_ids(
             (ranked.rank, ranked.claim.claimId) for ranked in ordered
+        ),
+        specialClaimIds=_ordered_ids(
+            (ranked.rank, ranked.claim.claimId)
+            for ranked in ordered
+            if ranked.claim.predicate == "SPECIAL_EXPERIENCE"
         ),
         placeIds=_ordered_ids(
             (ranked.rank, place_id)

@@ -2,6 +2,8 @@
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-08-05
+- Cập nhật: chính sách chọn theme/minimum special experience đã được ADR-033
+  thay thế; phần graph research và provenance vẫn giữ nguyên.
 
 ## Bối cảnh
 
@@ -22,12 +24,10 @@ nên research cũ tạo hai nguồn authority và không biểu diễn đúng di
 - Theo ontology v7, special experience trỏ tới Activity; `TARGETS_PLACE` cung
   cấp direct anchor. `OFFERS_ACTIVITY` vẫn cung cấp các Place cùng thực hiện một
   Activity.
-- Output chỉ ở cấp toàn chuyến: `tripThemes`, `requiredExperiences`, assumptions,
-  warnings và trace. Không có day, route hoặc allocation.
-- Chọn theme theo thứ tự current-trip intent, confirmed Places, effective
-  long-term profile, rồi destination special experiences. Graph `must` không
-  được override intent hoặc hard constraint; khi không có tín hiệu cá nhân,
-  planner phải lấy ít nhất một trusted special experience nếu catalog có.
+- Output chỉ ở cấp toàn chuyến, không có day, route hoặc allocation. Chính sách
+  output highlight-only và `tripThemes=[]` được định nghĩa tại ADR-033.
+- Graph `must` không override intent hoặc hard constraint. ADR-033 cho phép
+  không chọn special experience nào dù catalog có dữ liệu.
 - `research-context` là CLI chỉ đọc, hiển thị research bundle và bounded catalog,
   không gọi LLM.
 - Cutover ban đầu chưa truyền `requiredExperiences`; runtime hiện đã mở rộng
