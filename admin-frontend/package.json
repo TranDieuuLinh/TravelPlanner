@@ -14,6 +14,7 @@
     "react": "^19.0.0",
     "react-diff-viewer-continued": "^4.4.0",
     "react-dom": "^19.0.0",
+    "react-force-graph-2d": "^1.29.1",
     "react-resizable-panels": "^4.12.2",
     "sharp": "0.35.3"
   },

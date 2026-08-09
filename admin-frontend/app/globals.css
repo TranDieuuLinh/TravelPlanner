@@ -232,120 +232,162 @@ select {
 
 .appShell {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
-}
-
-.sidebar {
-  position: sticky;
-  top: 0;
-  height: 100vh;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
-  padding: 26px 18px;
-  background: rgba(7, 16, 15, 0.92);
 }
 
-.sidebarBrand {
+/* Horizontal navigation bar pinned to the top of the workspace. Replaces the
+   previous vertical sidebar. */
+.topbarNav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px 34px;
+  gap: 18px;
+  padding: 10px clamp(18px, 3vw, 40px);
+  background: rgba(7, 16, 15, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
 }
 
-.sidebarBrand>span {
+.topbarNavBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.topbarNavBrandMark {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--lime);
   color: #14200e;
-  font-size: 0.78rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
   font-weight: 950;
+  letter-spacing: 0.06em;
 }
 
-.sidebarBrand div {
+.topbarNavBrand div {
   display: grid;
+  line-height: 1.15;
 }
 
-.sidebarBrand b {
-  font-size: 0.88rem;
+.topbarNavBrand b {
+  font-size: 0.82rem;
+  letter-spacing: -0.01em;
 }
 
-.sidebarBrand small,
-.sidebarFoot small {
-  overflow: hidden;
+.topbarNavBrand small {
   color: var(--muted);
-  font-size: 0.65rem;
-  text-overflow: ellipsis;
+  font-size: 0.6rem;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
 }
 
-.sidebar nav {
-  display: grid;
-  gap: 6px;
-}
-
-.sidebar nav a {
+.topbarNavLinks {
   display: flex;
   align-items: center;
-  gap: 11px;
-  border-radius: 9px;
-  padding: 12px;
+  gap: 2px;
+  margin-left: 16px;
+}
+
+.topbarNavLinks a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  padding: 8px 14px;
+  border-radius: 8px;
   color: #829d95;
   font-size: 0.78rem;
   font-weight: 700;
   text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 
-.sidebar nav a.active {
-  background: rgba(184, 241, 91, 0.1);
+.topbarNavLinks a:hover {
+  background: rgba(103, 232, 189, 0.08);
+  color: var(--text);
+}
+
+.topbarNavLinks a.active {
   color: var(--lime);
+  background: rgba(184, 241, 91, 0.1);
 }
 
-.sidebar nav span {
+.topbarNavLinks a.active::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--lime);
+}
+
+.topbarNavLinks a > span:first-child {
   font-family: var(--mono);
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
-.sidebarFoot {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 30px;
+.topbarNavUser {
+  margin-left: auto;
+  display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  padding: 20px 5px 0;
+  gap: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  min-width: 0;
 }
 
-.adminAvatar {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: 50%;
-  background: #163029;
-  color: var(--mint);
-  font-weight: 900;
-}
-
-.sidebarFoot>div:nth-child(2) {
+.topbarNavUserInfo {
   min-width: 0;
   display: grid;
+  line-height: 1.2;
 }
 
-.sidebarFoot b {
+.topbarNavUserInfo b {
   overflow: hidden;
   font-size: 0.7rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebarFoot button {
-  border: 0;
+.topbarNavUserInfo small {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.topbarNavSignout {
+  border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.topbarNavSignout:hover {
+  background: rgba(103, 232, 189, 0.1);
+  color: var(--text);
+  border-color: rgba(103, 232, 189, 0.3);
 }
 
 .workspace {
@@ -1399,38 +1441,6 @@ select {
 }
 
 @media (max-width: 1100px) {
-  .appShell {
-    grid-template-columns: 76px minmax(0, 1fr);
-  }
-
-  .sidebarBrand div,
-  .sidebar nav a:not(.active),
-  .sidebar nav a.active {
-    font-size: 0;
-  }
-
-  .sidebarBrand {
-    padding-inline: 0;
-  }
-
-  .sidebar nav a {
-    justify-content: center;
-  }
-
-  .sidebar nav span {
-    font-size: 1rem;
-  }
-
-  .sidebarFoot {
-    grid-template-columns: 36px;
-    justify-content: center;
-  }
-
-  .sidebarFoot>div:nth-child(2),
-  .sidebarFoot button {
-    display: none;
-  }
-
   .dataLayout {
     grid-template-columns: 280px minmax(0, 1fr);
   }
@@ -1442,29 +1452,42 @@ select {
 
 @media (max-width: 820px) {
   .appShell {
-    display: block;
+    display: flex;
   }
 
-  .sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    align-items: center;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 12px 18px;
+  .topbarNav {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 16px;
   }
 
-  .sidebarBrand {
-    padding: 0;
-  }
-
-  .sidebar nav {
+  .topbarNavBrand div {
     display: none;
   }
 
-  .sidebarFoot {
+  .topbarNavLinks {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .topbarNavLinks a {
+    padding: 8px 10px;
+  }
+
+  .topbarNavLinks a > span:last-child {
+    display: none;
+  }
+
+  .topbarNavUser {
+    margin-left: auto;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .topbarNavUserInfo {
     display: none;
   }
 
@@ -1700,6 +1723,67 @@ select {
   box-shadow: 0 0 0 5px rgba(103, 232, 189, 0.08);
 }
 
+/* Compact stats badge in the topbar top-right corner. Replaces the verbose
+   "PostgreSQL Backend" strip + 3-column metric grid that used to sit above
+   the tabs. Users get the raw counts inline; full numbers available on hover. */
+.kgTopbar {
+  align-items: flex-start;
+}
+
+.kgSourceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(11, 23, 21, 0.72);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.kgSourceBadge:hover {
+  border-color: rgba(103, 232, 189, 0.4);
+  color: var(--text);
+}
+
+.kgSourceBadge .kgPulse {
+  width: 7px;
+  height: 7px;
+}
+
+.kgSourceBadgeLabel {
+  font-weight: 750;
+  color: var(--mint);
+  letter-spacing: 0.08em;
+}
+
+.kgSourceBadgeDivider {
+  opacity: 0.45;
+}
+
+.kgSourceBadgeUnit {
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-left: -2px;
+}
+
+.kgSourceBadge > span:nth-child(4),
+.kgSourceBadge > span:nth-child(6),
+.kgSourceBadge > span:nth-child(8) {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .kgNotice {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) 28px;
@@ -1898,12 +1982,36 @@ select {
 
 .kgInspectorAll {
   display: grid;
-  gap: 22px;
+  gap: 18px;
 }
 
 .kgInspectorSection {
   min-width: 0;
   margin-top: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(11, 23, 21, 0.5);
+  transition: border-color 0.15s ease;
+}
+
+.kgInspectorSection:hover {
+  border-color: rgba(103, 232, 189, 0.28);
+}
+
+/* Collapsed section: hide everything except the toggle header */
+.kgInspectorSection.kgInspectorSectionCollapsed>*:not(header) {
+  display: none;
+}
+
+.kgInspectorSection.kgInspectorSectionCollapsed {
+  padding-bottom: 14px;
+}
+
+.kgInspectorSection.kgInspectorSectionCollapsed>header {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .kgInspectorSection>header {
@@ -1911,50 +2019,97 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 11px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+/* Toggle button: collapses/expands the section. Wraps chevron + title + count */
+.kgSectionToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: background 0.12s ease;
+}
+
+.kgSectionToggle:hover,
+.kgSectionToggle:focus-visible {
+  background: rgba(103, 232, 189, 0.08);
+  outline: none;
+}
+
+.kgSectionChevron {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.kgSectionChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.kgSectionToggle:hover .kgSectionChevron {
+  color: var(--mint);
 }
 
 .kgInspectorSection>header h3,
 .kgInspectorSection>h3 {
   margin: 0;
-  color: #a9beb8;
+  color: #c8ddd5;
   font-family: var(--mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-weight: 600;
 }
 
 .kgInspectorSection>header>span {
   display: grid;
-  min-width: 24px;
+  min-width: 26px;
   height: 22px;
   place-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(103, 232, 189, 0.25);
   border-radius: 999px;
-  padding: 0 7px;
-  color: var(--muted);
+  padding: 0 8px;
+  background: rgba(103, 232, 189, 0.08);
+  color: var(--mint);
   font-family: var(--mono);
-  font-size: 0.56rem;
+  font-size: 0.6rem;
+  font-weight: 600;
 }
 
 .kgSectionHeaderActions,
 .kgSectionActions {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .kgSectionHeaderActions .kgSectionCount {
   display: grid;
-  min-width: 24px;
+  min-width: 26px;
   height: 22px;
   place-items: center;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(103, 232, 189, 0.25);
   border-radius: 999px;
-  padding: 0 7px;
-  color: var(--muted);
+  padding: 0 8px;
+  background: rgba(103, 232, 189, 0.08);
+  color: var(--mint);
   font-family: var(--mono);
-  font-size: 0.56rem;
+  font-size: 0.6rem;
+  font-weight: 600;
 }
 
 .kgSectionEdit,
@@ -1963,45 +2118,189 @@ select {
 .kgAddRowButton,
 .kgMiniDanger {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.025);
   color: #b9cbc5;
   cursor: pointer;
-  font-size: 0.6rem;
+  font-size: 0.62rem;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.kgSectionHeaderActions>.kgSectionEdit {
+  border-color: rgba(103, 232, 189, 0.32);
+  color: var(--mint);
+  background: rgba(103, 232, 189, 0.06);
+  padding: 5px 11px;
+}
+
+.kgSectionHeaderActions>.kgSectionEdit:hover:not(:disabled) {
+  background: rgba(103, 232, 189, 0.14);
+  border-color: rgba(103, 232, 189, 0.5);
+}
+
+/* Tiny per-row commit button (alias / property / relationship rows). */
+.kgMiniPrimary {
+  border: 1px solid rgba(103, 232, 189, 0.32);
+  border-radius: 8px;
+  background: rgba(103, 232, 189, 0.06);
+  color: var(--mint);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.kgMiniPrimary:hover:not(:disabled) {
+  background: rgba(103, 232, 189, 0.18);
+  border-color: rgba(103, 232, 189, 0.55);
+  color: #d6ffeb;
+}
+
+.kgMiniPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kgPropertyEditRow>.kgMiniPrimary,
+.kgAliasEditRow>.kgMiniPrimary,
+.kgRelationshipEditRow>.kgMiniPrimary {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
+  padding: 0;
 }
 
 .kgSectionEdit,
 .kgSectionDelete,
 .kgSectionActions button {
-  padding: 6px 10px;
+  padding: 6px 11px;
+}
+
+.kgSectionEdit:hover:not(:disabled),
+.kgSectionActions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text);
 }
 
 .kgSectionDelete,
 .kgMiniDanger {
-  border-color: rgba(255, 116, 108, 0.28);
+  border-color: rgba(255, 116, 108, 0.32);
   color: #ff9690;
+  background: rgba(255, 116, 108, 0.04);
+}
+
+.kgSectionDelete:hover:not(:disabled),
+.kgMiniDanger:hover:not(:disabled) {
+  background: rgba(255, 116, 108, 0.18);
+  border-color: rgba(255, 116, 108, 0.55);
+  color: #ffd9d6;
 }
 
 .kgSectionActions .save {
-  border-color: rgba(103, 232, 189, 0.3);
+  border-color: rgba(103, 232, 189, 0.4);
   color: var(--mint);
+  background: rgba(103, 232, 189, 0.1);
+  padding: 5px 14px;
+  font-weight: 600;
+}
+
+.kgSectionActions .save:hover:not(:disabled) {
+  background: rgba(103, 232, 189, 0.2);
+  border-color: rgba(103, 232, 189, 0.6);
 }
 
 .kgSectionEdit:disabled,
 .kgSectionDelete:disabled,
 .kgSectionActions button:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .kgSectionForm,
+/* Relationship graph visualization */
+.kgRelationshipGraph {
+  margin-top: 12px;
+  border: 1px solid rgba(103, 232, 189, 0.16);
+  border-radius: 10px;
+  background: rgba(7, 17, 15, 0.4);
+  overflow: hidden;
+}
+
+.kgRelationshipGraphCanvas {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  background: rgba(11, 23, 21, 0.4);
+}
+
+.kgRelationshipGraphCanvas[aria-busy="true"]::after {
+  content: "Loading neighbors…";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  pointer-events: none;
+  background: rgba(11, 23, 21, 0.55);
+}
+
+.kgRelationshipGraphLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px dashed var(--line);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kgRelationshipGraphLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kgRelationshipGraphLegendDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.kgRelationshipGraphLegendHint {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.kgRelationshipGraphError {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px dashed rgba(248, 113, 113, 0.4);
+  color: #f87171;
+  font-size: 0.7rem;
+}
+
 .kgSectionEditList {
   display: grid;
-  gap: 9px;
-  border: 1px solid rgba(103, 232, 189, 0.18);
+  gap: 6px;
+  border: 1px solid rgba(103, 232, 189, 0.16);
   border-radius: 10px;
-  padding: 12px;
-  background: rgba(103, 232, 189, 0.025);
+  padding: 8px;
+  background: linear-gradient(
+    180deg,
+    rgba(103, 232, 189, 0.045) 0%,
+    rgba(103, 232, 189, 0.02) 100%
+  );
 }
 
 .kgIdentitySectionForm {
@@ -2019,19 +2318,42 @@ select {
 }
 
 .kgSectionForm input,
-.kgSectionForm select,
+.kgSectionForm select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 9px;
+  background: #07110f;
+  color: #d5e4df;
+  font: inherit;
+  font-size: 0.68rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
 .kgSectionEditList input,
 .kgSectionEditList select {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 8px 9px;
+  border-radius: 6px;
+  padding: 5px 8px;
   background: #07110f;
   color: #d5e4df;
   font: inherit;
-  font-size: 0.64rem;
+  font-size: 0.68rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.kgSectionForm input:focus,
+.kgSectionForm select:focus,
+.kgSectionEditList input:focus,
+.kgSectionEditList select:focus {
+  outline: none;
+  border-color: rgba(103, 232, 189, 0.45);
+  background: #0a1814;
 }
 
 .kgSectionForm input:disabled {
@@ -2042,31 +2364,65 @@ select {
 .kgRelationshipEditRow,
 .kgAliasEditRow {
   display: grid;
-  gap: 7px;
-  align-items: center;
+  gap: 8px;
+  align-items: stretch;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(7, 17, 15, 0.55);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.kgPropertyEditRow:hover,
+.kgRelationshipEditRow:hover,
+.kgAliasEditRow:hover {
+  border-color: rgba(103, 232, 189, 0.35);
+  background: rgba(103, 232, 189, 0.04);
 }
 
 .kgPropertyEditRow {
-  grid-template-columns: minmax(100px, 0.7fr) minmax(130px, 1fr) minmax(150px, 1fr) 30px;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.6fr) auto auto;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 6px;
 }
 
-.kgPropertyEditRow>* {
+.kgPropertyEditRow>input {
   min-width: 0;
 }
 
 .kgAliasEditRow {
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1.4fr) 80px auto auto;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 6px;
 }
 
 .kgRelationshipEditRow {
-  grid-template-columns: repeat(3, minmax(105px, 1fr)) repeat(2, minmax(150px, 1.2fr)) 30px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 6px;
+}
+
+.kgPropertyEditRow>.kgMiniDanger,
+.kgAliasEditRow>.kgMiniDanger,
+.kgRelationshipEditRow>.kgMiniDanger {
+  width: 24px;
+  height: 24px;
+  font-size: 0.85rem;
 }
 
 .kgMiniDanger {
   width: 30px;
   height: 30px;
   padding: 0;
-  font-size: 0.9rem;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .kgAddRowButton {
@@ -2616,9 +2972,12 @@ select {
 }
 
 .kgInspectorEmptyCompact {
-  min-height: 110px;
-  border: 1px dashed var(--line);
+  min-height: 96px;
+  padding: 18px 16px;
+  border: 1px dashed rgba(103, 232, 189, 0.18);
   border-radius: 10px;
+  background: rgba(103, 232, 189, 0.02);
+  gap: 8px;
 }
 
 .kgRawSection .kgRawFile {
@@ -2638,17 +2997,42 @@ select {
 
 .kgInspectorEmpty {
   flex-direction: column;
+  padding: 20px 18px;
+  border: 1px dashed rgba(103, 232, 189, 0.18);
+  border-radius: 10px;
+  background: rgba(103, 232, 189, 0.02);
 }
 
 .kgInspectorEmpty>span {
-  color: var(--mint);
-  font-size: 1.8rem;
+  color: rgba(103, 232, 189, 0.55);
+  font-size: 1.6rem;
+  opacity: 0.7;
 }
 
 .kgInspectorEmpty p,
 .kgEmptyCallout p {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.kgInspectorEmpty b,
+.kgEmptyCallout b {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.kgMoreIndicator {
+  margin: 0;
+  padding: 8px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .kgPanel {
@@ -4078,7 +4462,7 @@ select {
   }
 
   .kgRelationshipEditRow {
-    grid-template-columns: repeat(2, minmax(130px, 1fr)) 30px;
+    grid-template-columns: repeat(2, minmax(130px, 1fr)) 30px 30px;
   }
 
   .kgRelationshipEditRow input {
@@ -4099,16 +4483,25 @@ select {
   }
 
   .kgPropertyEditRow {
-    grid-template-columns: 1fr 30px;
+    grid-template-columns: 1fr 30px 30px;
   }
 
   .kgPropertyEditRow input {
     grid-column: 1;
   }
 
-  .kgPropertyEditRow .kgMiniDanger {
-    grid-column: 2;
+  .kgPropertyEditRow .kgMiniDanger,
+  .kgPropertyEditRow .kgMiniPrimary {
+    grid-column: auto;
     grid-row: 1;
+  }
+
+  .kgPropertyEditRow .kgMiniPrimary {
+    grid-column: 2;
+  }
+
+  .kgPropertyEditRow .kgMiniDanger {
+    grid-column: 3;
   }
 }
 
@@ -4146,7 +4539,8 @@ select {
   }
 
   .kgRelationshipEditRow input,
-  .kgRelationshipEditRow .kgMiniDanger {
+  .kgRelationshipEditRow .kgMiniDanger,
+  .kgRelationshipEditRow .kgMiniPrimary {
     grid-column: auto;
   }
 
@@ -4190,3 +4584,4 @@ select {
   gap: 10px;
   margin-top: 22px;
 }
+

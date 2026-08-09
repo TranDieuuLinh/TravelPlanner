@@ -166,7 +166,7 @@ def _entity_detail_response(
     alias_offset: int = 0,
     alias_limit: int = 20,
     property_offset: int = 0,
-    property_limit: int = 20,
+    property_limit: int = 500,
     relationship_offset: int = 0,
     relationship_limit: int = 20,
 ) -> EntityDetailResponse:
@@ -366,11 +366,11 @@ def get_entity_detail(
     _: Annotated[User, Depends(require_role("admin"))],
     repo: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
     alias_offset: Annotated[int, Query(ge=0)] = 0,
-    alias_limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    alias_limit: Annotated[int, Query(ge=0, le=50)] = 20,
     property_offset: Annotated[int, Query(ge=0)] = 0,
-    property_limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    property_limit: Annotated[int, Query(ge=0, le=500)] = 500,
     relationship_offset: Annotated[int, Query(ge=0)] = 0,
-    relationship_limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    relationship_limit: Annotated[int, Query(ge=0, le=50)] = 20,
 ) -> EntityDetailResponse:
     return _entity_detail_response(
         repo,

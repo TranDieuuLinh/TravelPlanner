@@ -52,45 +52,68 @@ export default function DashboardLayout({
 
   return (
     <main className="appShell">
-      <aside className="sidebar">
-        <div className="sidebarBrand">
-          <span>TravelPlanner</span>
+      <header className="topbarNav" role="banner">
+        <Link href="/runs" className="topbarNavBrand" aria-label="TravelPlanner home">
+          <span className="topbarNavBrandMark">TP</span>
           <div>
-            <b>Planning</b>
-            <small>Control room</small>
+            <b>TravelPlanner</b>
+            <small>Planning control</small>
           </div>
-        </div>
-        <nav>
-          <Link href="/runs" className={pathname === "/runs" ? "active" : ""}>
-            <span>⌁</span> Planning runs
+        </Link>
+        <nav className="topbarNavLinks" aria-label="Primary">
+          <Link
+            href="/runs"
+            className={pathname === "/runs" ? "active" : ""}
+            title="Planning runs"
+          >
+            <span aria-hidden="true">⌁</span>
+            <span>Planning runs</span>
           </Link>
-          <Link href="/golden" className={pathname === "/golden" ? "active" : ""}>
-            <span>◇</span> Golden dataset
+          <Link
+            href="/golden"
+            className={pathname === "/golden" ? "active" : ""}
+            title="Golden dataset"
+          >
+            <span aria-hidden="true">◇</span>
+            <span>Golden dataset</span>
           </Link>
           <Link
             href="/knowledge-graph"
             className={pathname === "/knowledge-graph" ? "active" : ""}
+            title="Knowledge Graph"
           >
-            <span>⌘</span> Knowledge Graph
+            <span aria-hidden="true">⌘</span>
+            <span>Knowledge Graph</span>
           </Link>
-          <Link href="/tools" className={pathname === "/tools" ? "active" : ""}>
-            <span>⌂</span> Tools Tester
+          <Link
+            href="/tools"
+            className={pathname === "/tools" ? "active" : ""}
+            title="Tools Tester"
+          >
+            <span aria-hidden="true">⌂</span>
+            <span>Tools Tester</span>
           </Link>
         </nav>
-        <div className="sidebarFoot">
-          <div className="adminAvatar">{user?.fullName?.slice(0, 1) ?? "A"}</div>
-          <div>
+        <div className="topbarNavUser">
+          <div className="adminAvatar" aria-hidden="true">
+            {user?.fullName?.slice(0, 1) ?? "A"}
+          </div>
+          <div className="topbarNavUserInfo">
             <b>{user?.fullName ?? "TravelPlanner Admin"}</b>
             <small>{user?.email ?? "Authenticated session"}</small>
           </div>
-          <button type="button" onClick={signOut} aria-label="Đăng xuất">
+          <button
+            type="button"
+            className="topbarNavSignout"
+            onClick={signOut}
+            aria-label="Đăng xuất"
+            title="Đăng xuất"
+          >
             ↗
           </button>
         </div>
-      </aside>
-      <section className="workspace">
-        {children}
-      </section>
+      </header>
+      <section className="workspace">{children}</section>
     </main>
   );
 }

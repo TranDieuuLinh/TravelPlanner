@@ -116,16 +116,32 @@ function cookie(name: string): string | undefined {
 }
 
 async function parseError(response: Response): Promise<APIError> {
-  let body: { code?: string; message?: string; detail?: string } = {};
+  let body: {
+    code?: string;
+    message?: string;
+    detail?: string;
+    fieldErrors?: Record<string, string>;
+    field_errors?: Record<string, string>;
+  } = {};
   try {
     body = await response.json();
   } catch {
     // Use the stable fallback below.
   }
+  let message = body.message ?? body.detail ?? "Không thể hoàn thành yêu cầu.";
+  const fieldErrors = body.fieldErrors ?? body.field_errors;
+  if (fieldErrors && typeof fieldErrors === "object" && Object.keys(fieldErrors).length > 0) {
+    const details = Object.entries(fieldErrors)
+      .map(([field, reason]) => `${field}: ${reason}`)
+      .join("; ");
+    if (details) {
+      message = `${message} (${details})`;
+    }
+  }
   return new APIError(
     response.status,
     body.code ?? "REQUEST_FAILED",
-    body.message ?? body.detail ?? "Không thể hoàn thành yêu cầu."
+    message
   );
 }
 

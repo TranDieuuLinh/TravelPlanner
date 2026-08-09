@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
   getKGStats,
   listKGEntities,
@@ -39,6 +40,23 @@ const TABS: Array<{ id: WorkspaceTab; label: string }> = [
 ];
 
 const DEFAULT_PAGE_SIZE = 50;
+
+// Compact number formatter for the topbar stats badge.
+//   0–999 → "123", 1k–999k → "1.2K", ≥1M → "1.2M".
+function formatCompactNumber(value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return "—";
+  }
+  if (value < 1000) {
+    return String(value);
+  }
+  if (value < 1_000_000) {
+    const scaled = value / 1000;
+    return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  const scaled = value / 1_000_000;
+  return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1).replace(/\.0$/, "")}M`;
+}
 
 // Common quick entity types for pill selection
 const QUICK_ENTITY_TYPES = [
@@ -320,7 +338,7 @@ export default function KnowledgeGraphPage() {
     setLoadingDetail(true);
     setSelectedEntity(null);
     try {
-      const data = await getKGEntityDetail(entityId);
+      const data = await getKGEntityDetail(entityId, { propertyLimit: KG_DETAIL_PROPERTY_FETCH_LIMIT });
       setSelectedEntity(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load entity detail");
@@ -525,20 +543,32 @@ export default function KnowledgeGraphPage() {
             Quản lý entity, alias, relationship và ontology từ PostgreSQL backend.
           </p>
         </div>
-      </header>
-
-      <section className="kgSourceStrip" aria-label="Data source">
-        <div>
+        <div
+          className="kgSourceBadge"
+          title={
+            stats
+              ? `${stats.entityCount.toLocaleString()} entities · ${stats.aliasCount.toLocaleString()} aliases · ${stats.relationshipCount.toLocaleString()} relationships`
+              : "Loading stats…"
+          }
+          aria-label={
+            stats
+              ? `PostgreSQL backend: ${stats.entityCount} entities, ${stats.aliasCount} aliases, ${stats.relationshipCount} relationships`
+              : "PostgreSQL backend stats loading"
+          }
+        >
           <span className="kgPulse" />
-          <span>
-            <b>PostgreSQL Backend</b>
-            <small>Knowledge Graph runtime database</small>
-          </span>
+          <span className="kgSourceBadgeLabel">PG</span>
+          <span className="kgSourceBadgeDivider">·</span>
+          <span>{stats ? formatCompactNumber(stats.entityCount) : "—"}</span>
+          <span className="kgSourceBadgeUnit">ent</span>
+          <span className="kgSourceBadgeDivider">·</span>
+          <span>{stats ? formatCompactNumber(stats.aliasCount) : "—"}</span>
+          <span className="kgSourceBadgeUnit">alias</span>
+          <span className="kgSourceBadgeDivider">·</span>
+          <span>{stats ? formatCompactNumber(stats.relationshipCount) : "—"}</span>
+          <span className="kgSourceBadgeUnit">rel</span>
         </div>
-        <div className="kgSourceMeta">
-          <span>API-driven Query & Pagination</span>
-        </div>
-      </section>
+      </header>
 
       {error && (
         <div className="kgNotice" role="alert">
@@ -549,25 +579,6 @@ export default function KnowledgeGraphPage() {
           </button>
         </div>
       )}
-
-      {/* Stats */}
-      <section className="metricGrid kgMetrics" aria-label="Knowledge graph metrics">
-        <article>
-          <span>Entities</span>
-          <strong>{stats?.entityCount ?? "—"}</strong>
-          <small>Total entities in database</small>
-        </article>
-        <article>
-          <span>Aliases</span>
-          <strong>{stats?.aliasCount ?? "—"}</strong>
-          <small>Entity name aliases</small>
-        </article>
-        <article>
-          <span>Relationships</span>
-          <strong>{stats?.relationshipCount ?? "—"}</strong>
-          <small>Graph edges</small>
-        </article>
-      </section>
 
       {/* Tabs */}
       <nav className="kgWorkspaceTabs" aria-label="Knowledge graph sections">
@@ -698,9 +709,6 @@ export default function KnowledgeGraphPage() {
               </button>
             )}
 
-            <button type="button" className="kgMiniDanger" disabled={loadingLowReviewPreview} onClick={() => void handleOpenLowReviewDelete()}>
-              {loadingLowReviewPreview ? "Checking..." : "Delete review count < 50"}
-            </button>
             <button type="button" className="kgSectionEdit" onClick={() => setCreateEntityOpen(true)}>
               Create node
             </button>
@@ -983,7 +991,6 @@ export default function KnowledgeGraphPage() {
                       </div>
                       <div style={{ display: "flex", gap: "16px", color: "var(--muted)", fontSize: "0.6rem" }}>
                         <span>Edge ID: #{rel.id}</span>
-                        {rel.source && <span>Source: {rel.source}</span>}
                         {rel.createdAt && <span>Created: {new Date(rel.createdAt).toLocaleString()}</span>}
                       </div>
                     </article>
@@ -1042,8 +1049,8 @@ export default function KnowledgeGraphPage() {
             <p className="eyebrow">Knowledge Graph</p>
             <h2 id="kg-create-node-title">Create node</h2>
             <div className="kgSectionForm kgIdentitySectionForm">
-              <label><span>Entity ID</span><input value={newEntity.entityId} onChange={(event) => setNewEntity((current) => ({ ...current, entityId: event.target.value }))} placeholder="place_example" /></label>
-              <label><span>Canonical name</span><input value={newEntity.canonicalName} onChange={(event) => setNewEntity((current) => ({ ...current, canonicalName: event.target.value }))} placeholder="Example place" /></label>
+              <label><span>ID</span><input value={newEntity.entityId} onChange={(event) => setNewEntity((current) => ({ ...current, entityId: event.target.value }))} placeholder="place_example" /></label>
+              <label><span>Name</span><input value={newEntity.canonicalName} onChange={(event) => setNewEntity((current) => ({ ...current, canonicalName: event.target.value }))} placeholder="Example place" /></label>
               <label><span>Type</span><select value={newEntity.entityType} onChange={(event) => setNewEntity((current) => ({ ...current, entityType: event.target.value }))}><option value="">Select type</option>{availableNodeTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
               <label><span>Status</span><select value={newEntity.status} onChange={(event) => setNewEntity((current) => ({ ...current, status: event.target.value }))}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label>
             </div>
@@ -1088,7 +1095,6 @@ type EditablePropertyRow = {
   id: number | null;
   key: string;
   value: string;
-  source: string;
 };
 
 type EditableRelationshipRow = {
@@ -1096,8 +1102,456 @@ type EditableRelationshipRow = {
   id: number | null;
   relationship: string;
   toEntityId: string;
-  source: string;
 };
+
+const KG_COLLAPSED_SECTIONS_STORAGE_KEY = "vsf.admin.kg.section.collapsed";
+
+// Inspector section IDs that are collapsed by default when no persisted
+// preference exists yet. Users can still expand individually; their choice is
+// then stored in localStorage and reused on subsequent visits.
+const KG_DEFAULT_COLLAPSED_SECTIONS: readonly string[] = [
+  "information",
+  "aliases",
+  "properties",
+  "relationships",
+];
+
+// Property pagination is disabled in the inspector; we always ask the backend
+// for the full set so editors can see every property without paging. The
+// backend cap is set to KG_DETAIL_PROPERTY_FETCH_LIMIT.
+const KG_DETAIL_PROPERTY_FETCH_LIMIT = 500;
+
+type CollapsedSectionsState = {
+  collapsed: ReadonlySet<string>;
+  isCollapsed: (sectionId: string) => boolean;
+  toggle: (sectionId: string) => void;
+};
+
+function useCollapsedSections(defaultCollapsed: readonly string[] = []): CollapsedSectionsState {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set(defaultCollapsed));
+  const hydratedRef = useRef(false);
+
+  // Restore persisted collapse state once on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(KG_COLLAPSED_SECTIONS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setCollapsed(new Set(parsed.filter((value): value is string => typeof value === "string")));
+        }
+      }
+    } catch {
+      // ignore malformed storage entry
+    }
+    hydratedRef.current = true;
+  }, []);
+
+  // Persist collapse state whenever it changes (skip the initial render before hydration).
+  useEffect(() => {
+    if (!hydratedRef.current || typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        KG_COLLAPSED_SECTIONS_STORAGE_KEY,
+        JSON.stringify(Array.from(collapsed))
+      );
+    } catch {
+      // ignore storage failures (e.g. quota, private mode)
+    }
+  }, [collapsed]);
+
+  const isCollapsed = useCallback((sectionId: string) => collapsed.has(sectionId), [collapsed]);
+
+  const toggle = useCallback((sectionId: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  }, []);
+
+  return { collapsed, isCollapsed, toggle };
+}
+
+function InspectorSection({
+  sectionId,
+  title,
+  count,
+  headerExtras,
+  isCollapsed,
+  onToggle,
+  children,
+}: {
+  sectionId: string;
+  title: string;
+  count?: number;
+  headerExtras?: React.ReactNode;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={`kgInspectorSection${isCollapsed ? " kgInspectorSectionCollapsed" : ""}`}
+      data-section-id={sectionId}
+    >
+      <header className="kgSectionHeaderActions">
+        <button
+          type="button"
+          className="kgSectionToggle"
+          onClick={onToggle}
+          aria-expanded={!isCollapsed}
+          aria-label={isCollapsed ? `Expand ${title} section` : `Collapse ${title} section`}
+          title={isCollapsed ? `Expand ${title}` : `Collapse ${title}`}
+        >
+          <span className={`kgSectionChevron${isCollapsed ? " kgSectionChevronCollapsed" : ""}`} aria-hidden="true">
+            ▾
+          </span>
+          <h3>{title}</h3>
+          {typeof count === "number" && <span className="kgSectionCount">{count}</span>}
+        </button>
+        {headerExtras}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+// Force-graph 2D visualization for an entity's direct relationships.
+// Lazy-loaded with ssr:false because the underlying library touches `window`
+// at module load time.
+
+type GraphNode = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  isCenter: boolean;
+  // Position values are populated at runtime by react-force-graph.
+  x?: number;
+  y?: number;
+};
+
+type GraphLink = {
+  source: string;
+  target: string;
+  relationship: string;
+  direction: "out" | "in";
+  sourceId: string;
+  targetId: string;
+};
+
+type ForceGraph2DComponent = React.ComponentType<{
+  graphData: { nodes: GraphNode[]; links: GraphLink[] };
+  width: number;
+  height: number;
+  backgroundColor?: string;
+  nodeId?: string;
+  nodeRelSize?: number;
+  nodeCanvasObject?: (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => void;
+  nodeCanvasObjectMode?: () => "replace" | "before" | "after";
+  nodeLabel?: (node: GraphNode) => string;
+  linkColor?: (link: GraphLink) => string;
+  linkWidth?: (link: GraphLink) => number;
+  linkLabel?: (link: GraphLink) => string;
+  linkDirectionalArrowLength?: number;
+  linkDirectionalArrowRelPos?: number;
+  linkDirectionalParticles?: (link: GraphLink) => number;
+  linkDirectionalParticleSpeed?: number;
+  linkDirectionalParticleColor?: string;
+  linkDirectionalParticleWidth?: number;
+  onNodeClick?: (node: GraphNode) => void;
+  enableNodeDrag?: boolean;
+  enableZoomInteraction?: boolean;
+  enablePanInteraction?: boolean;
+  cooldownTime?: number;
+  d3AlphaDecay?: number;
+  d3VelocityDecay?: number;
+  warmupTicks?: number;
+}>;
+
+const ForceGraph2D = dynamic(() => import("react-force-graph-2d") as Promise<{ default: ForceGraph2DComponent }>, { ssr: false }) as unknown as ForceGraph2DComponent;
+
+const ENTITY_TYPE_PALETTE: Record<string, string> = {
+  Destination: "#67e8bd",
+  Attraction: "#fbbf24",
+  Hotel: "#a78bfa",
+  Restaurant: "#f87171",
+  Activity: "#60a5fa",
+  Topic: "#94a3b8",
+};
+
+const ENTITY_TYPE_DEFAULT_COLOR = "#67e8bd";
+const ENTITY_TYPE_ICON: Record<string, string> = {
+  Destination: "◆",
+  Attraction: "★",
+  Hotel: "▣",
+  Restaurant: "●",
+  Activity: "▲",
+  Topic: "◌",
+};
+
+// Draw a small glyph centered inside a node circle. The glyph scales with the
+// circle radius (clamped) so it stays readable at the new bigger node sizes.
+function drawNodeIcon(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  glyph: string
+): void {
+  const iconSize = Math.max(8, Math.min(radius * 1.1, 14));
+  ctx.save();
+  ctx.font = `${iconSize}px var(--mono, monospace)`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(11, 22, 20, 0.85)";
+  ctx.fillText(glyph, x, y + 1);
+  ctx.restore();
+}
+
+function RelationshipGraph({
+  entity,
+  onJumpToEntity,
+}: {
+  entity: KGEntityDetail;
+  onJumpToEntity: (entityId: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 320 });
+  const [neighbors, setNeighbors] = useState<Record<string, KGEntitySummary>>({});
+  const [loadError, setLoadError] = useState("");
+
+  // Track container size for canvas sizing (no zoom/pan, so width is fixed).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        if (w > 0) {
+          setSize((prev) => ({ ...prev, width: w }));
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Collect unique neighbor IDs across all relationships (both directions).
+  const neighborIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const rel of entity.relationships) {
+      if (rel.fromEntityId !== entity.id) ids.add(rel.fromEntityId);
+      if (rel.toEntityId !== entity.id) ids.add(rel.toEntityId);
+    }
+    return Array.from(ids);
+  }, [entity.id, entity.relationships]);
+
+  // Fetch missing neighbor summaries (cached for the lifetime of this graph).
+  useEffect(() => {
+    let cancelled = false;
+    const missing = neighborIds.filter((id) => !(id in neighbors));
+    if (missing.length === 0) {
+      return;
+    }
+    setLoadError("");
+    Promise.allSettled(
+      missing.map((id) =>
+        getKGEntityDetail(id, { aliasLimit: 0, propertyLimit: 0, relationshipLimit: 0 }).then(
+          (detail) => [id, { id: detail.id, canonicalName: detail.canonicalName, entityType: detail.entityType, status: detail.status, createdAt: detail.createdAt, updatedAt: detail.updatedAt, reviewCount: null }] as const
+        )
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const fetched: Record<string, KGEntitySummary> = {};
+      const failures: string[] = [];
+      results.forEach((res) => {
+        if (res.status === "fulfilled") {
+          const [id, summary] = res.value;
+          fetched[id] = summary;
+        } else {
+          failures.push("neighbor");
+        }
+      });
+      if (Object.keys(fetched).length > 0) {
+        setNeighbors((prev) => ({ ...prev, ...fetched }));
+      }
+      if (failures.length > 0 && missing.length === failures.length) {
+        setLoadError("Không thể tải thông tin entity lân cận.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [neighborIds, neighbors]);
+
+  // Build graph data (centered entity + neighbors).
+  const graphData = useMemo(() => {
+    const centerNode: GraphNode = {
+      id: entity.id,
+      name: entity.canonicalName,
+      type: entity.entityType,
+      status: entity.status,
+      isCenter: true,
+    };
+    const neighborNodes: GraphNode[] = neighborIds
+      .map((id) => neighbors[id])
+      .filter((n): n is KGEntitySummary => Boolean(n))
+      .map((n) => ({
+        id: n.id,
+        name: n.canonicalName,
+        type: n.entityType,
+        status: n.status,
+        isCenter: false,
+      }));
+    const links: GraphLink[] = entity.relationships
+      .filter((rel) => rel.fromEntityId in neighbors || rel.toEntityId in neighbors || rel.fromEntityId === entity.id || rel.toEntityId === entity.id)
+      .map((rel) => {
+        const isOut = rel.fromEntityId === entity.id;
+        return {
+          source: rel.fromEntityId,
+          target: rel.toEntityId,
+          sourceId: rel.fromEntityId,
+          targetId: rel.toEntityId,
+          relationship: rel.relationship,
+          direction: isOut ? "out" : "in",
+        };
+      });
+    return { nodes: [centerNode, ...neighborNodes], links };
+  }, [entity, neighborIds, neighbors]);
+
+  const handleNodeClick = useCallback(
+    (node: GraphNode) => {
+      if (!node.isCenter) {
+        onJumpToEntity(node.id);
+      }
+    },
+    [onJumpToEntity]
+  );
+
+  const drawNode = useCallback(
+    (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const radius = node.isCenter ? 14 : 10;
+      const color =
+        (node.type && ENTITY_TYPE_PALETTE[node.type]) || ENTITY_TYPE_DEFAULT_COLOR;
+      ctx.beginPath();
+      ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI, false);
+      ctx.fillStyle = color;
+      if (node.isCenter) {
+        ctx.lineWidth = 2 / globalScale;
+        ctx.strokeStyle = "#0b1614";
+      } else {
+        ctx.lineWidth = 1 / globalScale;
+        ctx.strokeStyle = "rgba(11, 22, 20, 0.5)";
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Type glyph centered inside the circle.
+      const glyph = ENTITY_TYPE_ICON[node.type ?? ""] ?? "◇";
+      drawNodeIcon(ctx, node.x ?? 0, node.y ?? 0, radius, glyph);
+
+      // Label below node — fixed pixel size so text stays small even when the
+// camera is zoomed out (low globalScale would otherwise inflate the font).
+      const fontSize = node.isCenter ? 5 : 4;
+      ctx.font = `${fontSize}px var(--mono, monospace)`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = node.isCenter ? "#c8ddd5" : "#9fb3ad";
+      const label = node.name.length > 22 ? `${node.name.slice(0, 21)}…` : node.name;
+      ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + radius + 2);
+    },
+    []
+  );
+
+  const nodeCanvasObjectMode = useCallback(() => "replace" as const, []);
+  const linkColor = useCallback(
+    (link: GraphLink) => (link.direction === "out" ? "rgba(103, 232, 189, 0.55)" : "rgba(167, 215, 198, 0.45)"),
+    []
+  );
+  const linkWidth = useCallback((link: GraphLink) => (link.sourceId === entity.id || link.targetId === entity.id ? 1.4 : 0.9), [entity.id]);
+  const linkLabel = useCallback((link: GraphLink) => link.relationship, []);
+
+  if (neighborIds.length === 0) {
+    return (
+      <div className="kgInspectorEmpty kgInspectorEmptyCompact">
+        <span>◇</span>
+        <b>No relationships to visualize</b>
+      </div>
+    );
+  }
+
+  const ready = neighborIds.every((id) => id in neighbors);
+
+  return (
+    <div className="kgRelationshipGraph">
+      <div ref={containerRef} className="kgRelationshipGraphCanvas" aria-busy={!ready}>
+        {size.width > 0 && (
+          <ForceGraph2D
+            graphData={graphData}
+            width={size.width}
+            height={size.height}
+            backgroundColor="rgba(11, 23, 21, 0.4)"
+            nodeId="id"
+            nodeRelSize={6}
+            nodeCanvasObject={drawNode}
+            nodeCanvasObjectMode={nodeCanvasObjectMode}
+            nodeLabel={(node: GraphNode) =>
+              `${node.name}\n${node.type} · ${node.status}${node.isCenter ? "\n(current entity)" : "\nClick to jump"}`
+            }
+            linkColor={linkColor}
+            linkWidth={linkWidth}
+            linkLabel={linkLabel}
+            linkDirectionalArrowLength={4}
+            linkDirectionalArrowRelPos={0.85}
+            linkDirectionalParticles={(link: GraphLink) => (link.sourceId === entity.id ? 1 : 0)}
+            linkDirectionalParticleSpeed={0.006}
+            linkDirectionalParticleColor="rgba(103, 232, 189, 0.85)"
+            linkDirectionalParticleWidth={1.5}
+            onNodeClick={handleNodeClick}
+            enableNodeDrag={false}
+            enableZoomInteraction={false}
+            enablePanInteraction={false}
+            cooldownTime={2000}
+            d3AlphaDecay={0.05}
+            d3VelocityDecay={0.4}
+            warmupTicks={40}
+          />
+        )}
+      </div>
+      <div className="kgRelationshipGraphLegend">
+        <span className="kgRelationshipGraphLegendItem">
+          <span className="kgRelationshipGraphLegendDot" style={{ background: "var(--mint)" }} />
+          Outgoing
+        </span>
+        <span className="kgRelationshipGraphLegendItem">
+          <span className="kgRelationshipGraphLegendDot" style={{ background: "rgba(167, 215, 198, 0.7)" }} />
+          Incoming
+        </span>
+        <span className="kgRelationshipGraphLegendHint">
+          {ready ? "Click a node to jump to that entity." : `Loading neighbors…`}
+        </span>
+      </div>
+      {loadError && (
+        <p className="kgRelationshipGraphError" role="alert">
+          {loadError}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function EditableEntityDetailPanel({
   entity,
@@ -1126,6 +1580,7 @@ function EditableEntityDetailPanel({
   const [relationshipRows, setRelationshipRows] = useState<EditableRelationshipRow[]>([]);
   const [localError, setLocalError] = useState("");
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const sections = useCollapsedSections(KG_DEFAULT_COLLAPSED_SECTIONS);
 
   const createRowKey = useCallback(
     () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
@@ -1152,7 +1607,6 @@ function EditableEntityDetailPanel({
         id: prop.id,
         key: prop.key,
         value: prop.value,
-        source: prop.source ?? "",
       }))
     );
     setRelationshipRows(
@@ -1161,7 +1615,6 @@ function EditableEntityDetailPanel({
         id: rel.id,
         relationship: rel.relationship,
         toEntityId: rel.toEntityId,
-        source: rel.source ?? "",
       }))
     );
     setLocalError("");
@@ -1221,7 +1674,7 @@ function EditableEntityDetailPanel({
   }, [createRowKey]);
 
   const addPropertyRow = useCallback(() => {
-    setPropertyRows((current) => [...current, { clientKey: createRowKey(), id: null, key: "", value: "", source: "" }]);
+    setPropertyRows((current) => [...current, { clientKey: createRowKey(), id: null, key: "", value: "" }]);
   }, [createRowKey]);
 
   const addRelationshipRow = useCallback(() => {
@@ -1232,7 +1685,6 @@ function EditableEntityDetailPanel({
         id: null,
         relationship: availableNodeTypes[0] ?? "",
         toEntityId: "",
-        source: "",
       },
     ]);
   }, [availableNodeTypes, createRowKey]);
@@ -1300,7 +1752,6 @@ function EditableEntityDetailPanel({
     async (row: EditablePropertyRow) => {
       const key = row.key.trim();
       const value = row.value.trim();
-      const source = row.source.trim();
       if (!key) {
         reportError("Property key không được để trống.");
         return;
@@ -1311,8 +1762,8 @@ function EditableEntityDetailPanel({
       }
       await saveSection(`property-${row.clientKey}`, () =>
         row.id === null
-          ? createKGProperty(entity.id, { key, value, source: source || undefined })
-          : updateKGProperty(entity.id, row.id, { key, value, source: source || undefined })
+          ? createKGProperty(entity.id, { key, value })
+          : updateKGProperty(entity.id, row.id, { key, value })
       );
     },
     [entity.id, reportError, saveSection]
@@ -1329,7 +1780,9 @@ function EditableEntityDetailPanel({
         return;
       }
       await saveSection(`property-delete-${row.clientKey}`, () =>
-        deleteKGProperty(entity.id, propertyId).then(() => getKGEntityDetail(entity.id))
+        deleteKGProperty(entity.id, propertyId).then(() =>
+          getKGEntityDetail(entity.id, { propertyLimit: KG_DETAIL_PROPERTY_FETCH_LIMIT })
+        )
       );
     },
     [entity.id, saveSection]
@@ -1339,7 +1792,6 @@ function EditableEntityDetailPanel({
     async (row: EditableRelationshipRow) => {
       const relationship = row.relationship.trim();
       const toEntityId = row.toEntityId.trim();
-      const source = row.source.trim();
       if (!relationship) {
         reportError("Relationship không được để trống.");
         return;
@@ -1353,12 +1805,10 @@ function EditableEntityDetailPanel({
           ? createKGRelationship(entity.id, {
               relationship,
               toEntityId,
-              source: source || undefined,
             })
           : updateKGRelationship(entity.id, row.id, {
               relationship,
               toEntityId,
-              source: source || undefined,
             })
       );
     },
@@ -1396,17 +1846,19 @@ function EditableEntityDetailPanel({
       </header>
 
       <div className="kgInspectorBody kgInspectorAll">
-        <section className="kgInspectorSection">
-          <header className="kgSectionHeaderActions">
-            <h3>Information</h3>
-          </header>
+        <InspectorSection
+          sectionId="information"
+          title="Information"
+          isCollapsed={sections.isCollapsed("information")}
+          onToggle={() => sections.toggle("information")}
+        >
           <div className="kgSectionForm kgIdentitySectionForm">
             <label>
-              <span>Entity ID</span>
+              <span>ID</span>
               <input value={entity.id} disabled />
             </label>
             <label>
-              <span>Canonical Name</span>
+              <span>Name</span>
               <input
                 value={draftEntity.canonicalName}
                 onChange={(event) => setDraftEntity((current) => ({ ...current, canonicalName: event.target.value }))}
@@ -1449,16 +1901,20 @@ function EditableEntityDetailPanel({
               Copy entity
             </button>
           </div>
-        </section>
+        </InspectorSection>
 
-        <section className="kgInspectorSection">
-          <header className="kgSectionHeaderActions">
-            <h3>Aliases</h3>
-            <span className="kgSectionCount">{entity.aliasTotal}</span>
+        <InspectorSection
+          sectionId="aliases"
+          title="Aliases"
+          count={entity.aliasTotal}
+          isCollapsed={sections.isCollapsed("aliases")}
+          onToggle={() => sections.toggle("aliases")}
+          headerExtras={
             <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addAliasRow}>
               Add alias
             </button>
-          </header>
+          }
+        >
           {aliasRows.length > 0 ? (
             <div className="kgSectionEditList">
               {aliasRows.map((row) => (
@@ -1469,6 +1925,7 @@ function EditableEntityDetailPanel({
                       updateAliasRow(row.clientKey, (current) => ({ ...current, alias: event.target.value }))
                     }
                     placeholder="Alias"
+                    disabled={isSaving}
                   />
                   <input
                     value={row.language}
@@ -1476,15 +1933,28 @@ function EditableEntityDetailPanel({
                       updateAliasRow(row.clientKey, (current) => ({ ...current, language: event.target.value }))
                     }
                     placeholder="Lang"
+                    disabled={isSaving}
                   />
-                  <div className="kgSectionActions">
-                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveAlias(row)}>
-                      {row.id === null ? "Create" : "Save"}
-                    </button>
-                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeAlias(row)}>
-                      ×
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="kgMiniPrimary"
+                    disabled={isSaving || savingKey === `alias-${row.clientKey}`}
+                    onClick={() => void saveAlias(row)}
+                    title={row.id === null ? "Create alias" : "Save alias changes"}
+                    aria-label="Save alias"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="kgMiniDanger"
+                    disabled={isSaving}
+                    onClick={() => void removeAlias(row)}
+                    title={row.id === null ? "Discard this alias" : "Delete this alias"}
+                    aria-label="Delete alias"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
               {entity.aliasHasMore && (
@@ -1497,16 +1967,20 @@ function EditableEntityDetailPanel({
               <b>No aliases</b>
             </div>
           )}
-        </section>
+        </InspectorSection>
 
-        <section className="kgInspectorSection">
-          <header className="kgSectionHeaderActions">
-            <h3>Properties</h3>
-            <span className="kgSectionCount">{entity.propertyTotal}</span>
+        <InspectorSection
+          sectionId="properties"
+          title="Properties"
+          count={entity.propertyTotal}
+          isCollapsed={sections.isCollapsed("properties")}
+          onToggle={() => sections.toggle("properties")}
+          headerExtras={
             <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addPropertyRow}>
               Add property
             </button>
-          </header>
+          }
+        >
           {propertyRows.length > 0 ? (
             <div className="kgSectionEditList">
               {propertyRows.map((row) => (
@@ -1517,6 +1991,7 @@ function EditableEntityDetailPanel({
                       updatePropertyRow(row.clientKey, (current) => ({ ...current, key: event.target.value }))
                     }
                     placeholder="Key"
+                    disabled={isSaving}
                   />
                   <input
                     value={row.value}
@@ -1524,29 +1999,30 @@ function EditableEntityDetailPanel({
                       updatePropertyRow(row.clientKey, (current) => ({ ...current, value: event.target.value }))
                     }
                     placeholder="Value"
+                    disabled={isSaving}
                   />
-                  <input
-                    value={row.source}
-                    onChange={(event) =>
-                      updatePropertyRow(row.clientKey, (current) => ({ ...current, source: event.target.value }))
-                    }
-                    placeholder="Source"
-                  />
-                  <div className="kgSectionActions">
-                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveProperty(row)}>
-                      {row.id === null ? "Create" : "Save"}
-                    </button>
-                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeProperty(row)}>
-                      ×
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="kgMiniPrimary"
+                    disabled={isSaving || savingKey === `property-${row.clientKey}`}
+                    onClick={() => void saveProperty(row)}
+                    title={row.id === null ? "Create property" : "Save property changes"}
+                    aria-label="Save property"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="kgMiniDanger"
+                    disabled={isSaving}
+                    onClick={() => void removeProperty(row)}
+                    title={row.id === null ? "Discard this property" : "Delete this property"}
+                    aria-label="Delete property"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
-              {entity.propertyHasMore && (
-                <p className="kgMoreIndicator">
-                  +{entity.propertyTotal - entity.properties.length} more properties
-                </p>
-              )}
             </div>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
@@ -1554,16 +2030,20 @@ function EditableEntityDetailPanel({
               <b>No properties</b>
             </div>
           )}
-        </section>
+        </InspectorSection>
 
-        <section className="kgInspectorSection">
-          <header className="kgSectionHeaderActions">
-            <h3>Relationships</h3>
-            <span className="kgSectionCount">{entity.relationshipTotal}</span>
+        <InspectorSection
+          sectionId="relationships"
+          title="Relationships"
+          count={entity.relationshipTotal}
+          isCollapsed={sections.isCollapsed("relationships")}
+          onToggle={() => sections.toggle("relationships")}
+          headerExtras={
             <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addRelationshipRow}>
               Add relationship
             </button>
-          </header>
+          }
+        >
           {relationshipRows.length > 0 ? (
             <div className="kgSectionEditList">
               {relationshipRows.map((row) => (
@@ -1573,30 +2053,37 @@ function EditableEntityDetailPanel({
                     onChange={(event) =>
                       updateRelationshipRow(row.clientKey, (current) => ({ ...current, relationship: event.target.value }))
                     }
-                    placeholder="Relationship"
+                    placeholder="Type"
+                    disabled={isSaving}
                   />
                   <input
                     value={row.toEntityId}
                     onChange={(event) =>
                       updateRelationshipRow(row.clientKey, (current) => ({ ...current, toEntityId: event.target.value }))
                     }
-                    placeholder="To entity ID"
+                    placeholder="To ID"
+                    disabled={isSaving}
                   />
-                  <input
-                    value={row.source}
-                    onChange={(event) =>
-                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, source: event.target.value }))
-                    }
-                    placeholder="Source"
-                  />
-                  <div className="kgSectionActions">
-                    <button type="button" className="save" disabled={isSaving} onClick={() => void saveRelationship(row)}>
-                      {row.id === null ? "Create" : "Save"}
-                    </button>
-                    <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={() => void removeRelationship(row)}>
-                      ×
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="kgMiniPrimary"
+                    disabled={isSaving || savingKey === `relationship-${row.clientKey}`}
+                    onClick={() => void saveRelationship(row)}
+                    title={row.id === null ? "Create relationship" : "Save relationship changes"}
+                    aria-label="Save relationship"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="kgMiniDanger"
+                    disabled={isSaving}
+                    onClick={() => void removeRelationship(row)}
+                    title={row.id === null ? "Discard this relationship" : "Delete this relationship"}
+                    aria-label="Delete relationship"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
               {entity.relationshipHasMore && (
@@ -1611,7 +2098,10 @@ function EditableEntityDetailPanel({
               <b>No relationships</b>
             </div>
           )}
-        </section>
+          {entity.relationships.length > 0 && (
+            <RelationshipGraph entity={entity} onJumpToEntity={onJumpToEntity} />
+          )}
+        </InspectorSection>
 
         {localError && (
           <div className="kgNotice" role="alert">
@@ -1635,6 +2125,7 @@ function EntityDetailPanel({
   entity: KGEntityDetail;
   onJumpToEntity: (entityId: string) => void;
 }) {
+  const sections = useCollapsedSections(KG_DEFAULT_COLLAPSED_SECTIONS);
   return (
     <>
       <header className="detailHeader kgInspectorHeader">
@@ -1650,19 +2141,21 @@ function EntityDetailPanel({
 
       <div className="kgInspectorBody kgInspectorAll">
         {/* Basic Info */}
-        <section className="kgDefinitionList kgInspectorSection">
-          <header>
-            <h3>Information</h3>
-          </header>
-          <dl>
+        <InspectorSection
+          sectionId="information"
+          title="Information"
+          isCollapsed={sections.isCollapsed("information")}
+          onToggle={() => sections.toggle("information")}
+        >
+          <dl className="kgDefinitionList">
             <div>
-              <dt>Entity ID</dt>
+              <dt>ID</dt>
               <dd>
                 <code>{entity.id}</code>
               </dd>
             </div>
             <div>
-              <dt>Canonical Name</dt>
+              <dt>Name</dt>
               <dd>{entity.canonicalName}</dd>
             </div>
             <div>
@@ -1682,14 +2175,16 @@ function EntityDetailPanel({
               <dd>{new Date(entity.updatedAt).toLocaleString()}</dd>
             </div>
           </dl>
-        </section>
+        </InspectorSection>
 
         {/* Aliases */}
-        <section className="kgInspectorSection">
-          <header>
-            <h3>Aliases</h3>
-            <span className="kgSectionCount">{entity.aliasTotal}</span>
-          </header>
+        <InspectorSection
+          sectionId="aliases"
+          title="Aliases"
+          count={entity.aliasTotal}
+          isCollapsed={sections.isCollapsed("aliases")}
+          onToggle={() => sections.toggle("aliases")}
+        >
           {entity.aliases.length > 0 ? (
             <div className="kgAliasCards">
               {entity.aliases.map((alias, index) => (
@@ -1713,14 +2208,16 @@ function EntityDetailPanel({
               <b>No aliases</b>
             </div>
           )}
-        </section>
+        </InspectorSection>
 
         {/* Properties */}
-        <section className="kgInspectorSection">
-          <header>
-            <h3>Properties</h3>
-            <span className="kgSectionCount">{entity.propertyTotal}</span>
-          </header>
+        <InspectorSection
+          sectionId="properties"
+          title="Properties"
+          count={entity.propertyTotal}
+          isCollapsed={sections.isCollapsed("properties")}
+          onToggle={() => sections.toggle("properties")}
+        >
           {entity.properties.length > 0 ? (
             <div className="kgPropertyTableWrap">
               <table className="kgPropertyTable">
@@ -1728,7 +2225,6 @@ function EntityDetailPanel({
                   <tr>
                     <th>Key</th>
                     <th>Value</th>
-                    <th>Source</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1738,16 +2234,10 @@ function EntityDetailPanel({
                         <code>{prop.key}</code>
                       </td>
                       <td>{prop.value || <span className="kgMissingText">Empty</span>}</td>
-                      <td>{prop.source || <span className="kgMissingText">Unknown</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {entity.propertyHasMore && (
-                <p className="kgMoreIndicator">
-                  +{entity.propertyTotal - entity.properties.length} more properties
-                </p>
-              )}
             </div>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
@@ -1755,52 +2245,57 @@ function EntityDetailPanel({
               <b>No properties</b>
             </div>
           )}
-        </section>
+        </InspectorSection>
 
         {/* Relationships */}
-        <section className="kgInspectorSection">
-          <header>
-            <h3>Relationships</h3>
-            <span className="kgSectionCount">{entity.relationshipTotal}</span>
-          </header>
+        <InspectorSection
+          sectionId="relationships"
+          title="Relationships"
+          count={entity.relationshipTotal}
+          isCollapsed={sections.isCollapsed("relationships")}
+          onToggle={() => sections.toggle("relationships")}
+        >
           {entity.relationships.length > 0 ? (
-            <div className="kgRelationCards">
-              {entity.relationships.map((rel) => {
-                const isOut = rel.fromEntityId === entity.id;
-                const targetId = isOut ? rel.toEntityId : rel.fromEntityId;
-                return (
-                  <article key={rel.id}>
-                    <span className="kgRelationDirection">{isOut ? "OUT" : "IN"}</span>
-                    <div>
-                      <code>{rel.relationship}</code>
-                      <small style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
-                        <span>{isOut ? "To:" : "From:"}</span>
-                        <button
-                          type="button"
-                          className="kgEntityBtnLink"
-                          onClick={() => onJumpToEntity(targetId)}
-                          title="Jump to target entity"
-                        >
-                          {targetId}
-                        </button>
-                      </small>
-                    </div>
-                  </article>
-                );
-              })}
-              {entity.relationshipHasMore && (
-                <p className="kgMoreIndicator">
-                  +{entity.relationshipTotal - entity.relationships.length} more relationships
-                </p>
-              )}
-            </div>
+            <>
+              <div className="kgRelationCards">
+                {entity.relationships.map((rel) => {
+                  const isOut = rel.fromEntityId === entity.id;
+                  const targetId = isOut ? rel.toEntityId : rel.fromEntityId;
+                  return (
+                    <article key={rel.id}>
+                      <span className="kgRelationDirection">{isOut ? "OUT" : "IN"}</span>
+                      <div>
+                        <code>{rel.relationship}</code>
+                        <small style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                          <span>{isOut ? "To:" : "From:"}</span>
+                          <button
+                            type="button"
+                            className="kgEntityBtnLink"
+                            onClick={() => onJumpToEntity(targetId)}
+                            title="Jump to target entity"
+                          >
+                            {targetId}
+                          </button>
+                        </small>
+                      </div>
+                    </article>
+                  );
+                })}
+                {entity.relationshipHasMore && (
+                  <p className="kgMoreIndicator">
+                    +{entity.relationshipTotal - entity.relationships.length} more relationships
+                  </p>
+                )}
+              </div>
+              <RelationshipGraph entity={entity} onJumpToEntity={onJumpToEntity} />
+            </>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
               <span>◇</span>
               <b>No relationships</b>
             </div>
           )}
-        </section>
+        </InspectorSection>
       </div>
     </>
   );
