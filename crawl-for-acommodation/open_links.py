@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import tempfile
 import argparse
@@ -62,7 +63,7 @@ def get_image_url(image: Any) -> str:
 def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]:
     """Open an accommodation listing and read its available booking sources."""
 
-    result: dict[str, Any] = {"source_count": 0}
+    result: dict[str, Any] = {"source_count": 0, "sources": "[]"}
     print(f"        [OPEN] {link[:120]}")
     driver.get(link)
     time.sleep(PAGE_DELAY_SECONDS)
@@ -89,7 +90,7 @@ def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]
         )
         links = container.find_elements(By.CSS_SELECTOR, "a")
         print(f"        Source panel contains {len(links)} link(s)")
-        item_number = 0
+        sources: list[dict[str, str]] = []
         skipped = 0
         seen: set[tuple[str, str, str]] = set()
         for link_element in links:
@@ -111,15 +112,13 @@ def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]
                 skipped += 1
                 continue
             seen.add(key)
-            item_number += 1
-            result[f"source_icon_{item_number}"] = icon
-            result[f"name_{item_number}"] = name
-            result[f"price_{item_number}"] = price
+            sources.append({"icon": icon, "name": name, "price": price})
 
-        result["source_count"] = item_number
+        result["source_count"] = len(sources)
+        result["sources"] = json.dumps(sources, ensure_ascii=False)
         print(
-            f"        [RESULT] extracted={item_number}, skipped={skipped} "
-            f"(icon/name/price columns created for each item)"
+            f"        [RESULT] extracted={len(sources)}, skipped={skipped} "
+            "(saved as JSON in sources column)"
         )
     except Exception as error:
         print(f"        [ERROR] Source list error: {error}")
