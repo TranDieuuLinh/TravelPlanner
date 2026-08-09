@@ -62,10 +62,8 @@ def get_image_url(image: Any) -> str:
 def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]:
     """Open an accommodation listing and read its available booking sources."""
 
-    result: dict[str, Any] = {
-        "price": -1,
-        "menu_images": "",
-    }
+    result: dict[str, Any] = {"source_count": 0}
+    print(f"        [OPEN] {link[:120]}")
     driver.get(link)
     time.sleep(PAGE_DELAY_SECONDS)
 
@@ -79,6 +77,7 @@ def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]
         )
         driver.execute_script("arguments[0].click();", source_button)
         time.sleep(LIST_DELAY_SECONDS)
+        print("        [LIST] Booking/source panel opened")
 
         container = wait.until(
             EC.presence_of_element_located(
@@ -88,35 +87,42 @@ def process_accommodation(driver: webdriver.Chrome, link: str) -> dict[str, Any]
                 )
             )
         )
-        items = container.find_elements(By.CSS_SELECTOR, ":scope > div")
+        links = container.find_elements(By.CSS_SELECTOR, "a")
+        print(f"        Source panel contains {len(links)} link(s)")
         item_number = 0
-        for item_container in items:
+        skipped = 0
+        seen: set[tuple[str, str, str]] = set()
+        for link_element in links:
             try:
-                item = item_container.find_element(
-                    By.CSS_SELECTOR, ":scope > div:nth-child(1)"
-                )
-                link_element = item.find_element(By.CSS_SELECTOR, "a")
-                image = link_element.find_element(
-                    By.CSS_SELECTOR, ".Maztge .US7LHc img"
-                )
-                name_element = link_element.find_element(
-                    By.CSS_SELECTOR, ".Maztge .US7LHc"
-                )
-                price_element = link_element.find_element(
-                    By.CSS_SELECTOR, ".r1iqBd div"
-                )
+                name_element = link_element.find_element(By.CSS_SELECTOR, ".Maztge .US7LHc")
+                image = link_element.find_element(By.CSS_SELECTOR, "img")
+                price_element = link_element.find_element(By.CSS_SELECTOR, ".r1iqBd div")
+                name = name_element.text.strip()
+                price = price_element.text.strip()
+                icon = get_image_url(image)
+                href = link_element.get_attribute("href") or ""
             except Exception:
-                # Some children are separators or layout elements.
+                # Not every anchor in the panel is a booking source.
+                skipped += 1
                 continue
 
+            key = (href, name, price)
+            if key in seen or not (name or price or icon):
+                skipped += 1
+                continue
+            seen.add(key)
             item_number += 1
-            result[f"source_icon_{item_number}"] = get_image_url(image)
-            result[f"name_{item_number}"] = name_element.text.strip()
-            result[f"price_{item_number}"] = price_element.text.strip()
+            result[f"source_icon_{item_number}"] = icon
+            result[f"name_{item_number}"] = name
+            result[f"price_{item_number}"] = price
 
-        print(f"        Found {item_number} source item(s)")
+        result["source_count"] = item_number
+        print(
+            f"        [RESULT] extracted={item_number}, skipped={skipped} "
+            f"(icon/name/price columns created for each item)"
+        )
     except Exception as error:
-        print(f"        Source list error: {error}")
+        print(f"        [ERROR] Source list error: {error}")
 
     time.sleep(PAGE_DELAY_SECONDS * 2)
     return result
@@ -178,7 +184,7 @@ def save_results(rows: list[dict[str, Any]]) -> None:
         writer.writeheader()
         writer.writerows(rows)
     temp_output.replace(OUTPUT_CSV_PATH)
-    print(f"Saved {len(rows)} row(s) to {OUTPUT_CSV_PATH.name}")
+    print(f"[SAVE] {len(rows)} row(s), {len(fieldnames)} column(s) -> {OUTPUT_CSV_PATH.name}")
 
 
 def load_saved_results() -> list[dict[str, Any]]:
@@ -191,7 +197,7 @@ def load_saved_results() -> list[dict[str, Any]]:
         return list(csv.DictReader(file))
 
 
-def main(test_mode: bool = False) -> None:
+def main(test_mode: bool = False, fresh: bool = False) -> None:
     if not CSV_PATH.exists():
         print(f"CSV file not found: {CSV_PATH}")
         return
@@ -220,7 +226,9 @@ def main(test_mode: bool = False) -> None:
             print("CSV must contain an id column and at least one link/source_url value")
             return
 
-        saved_results = load_saved_results()
+        saved_results = [] if fresh else load_saved_results()
+        if fresh:
+            print("Fresh mode: ignoring existing crawl output")
         saved_ids = {str(row.get("id", "")).strip() for row in saved_results}
         if saved_ids:
             rows = [row for row in rows if row.get("id", "").strip() not in saved_ids]
@@ -265,11 +273,9 @@ def main(test_mode: bool = False) -> None:
 
         print("\nCrawl summary:")
         for result in results:
-            images = result.get("menu_images", "")
-            preview = f"{images[:100]}..." if images else "No menu image"
             print(
                 f"- {result.get('name', 'N/A')} "
-                f"(price: {result.get('price', -1)}): {preview}"
+                f"({result.get('source_count', 0)} source item(s))"
             )
     finally:
         if driver is not None:
@@ -283,5 +289,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Crawl only the first 2 links for a quick validation",
     )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Ignore data_crawled.csv and crawl every input row again",
+    )
     args = parser.parse_args()
-    main(test_mode=args.test)
+    main(test_mode=args.test, fresh=args.fresh)
