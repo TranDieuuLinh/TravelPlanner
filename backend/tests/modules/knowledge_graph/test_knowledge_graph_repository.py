@@ -68,6 +68,62 @@ class TestKnowledgeGraphRepositoryEntities:
     def test_delete_entity_not_found(self, repo: KnowledgeGraphRepository) -> None:
         assert repo.delete_entity("nonexistent") is False
 
+    def test_delete_entity_cascades_to_attached_graph_records(self, repo: KnowledgeGraphRepository) -> None:
+        repo.upsert_entity("place_001", "Hoan Kiem Lake", "Place")
+        repo.upsert_entity("area_001", "Hoan Kiem", "Area")
+        repo.upsert_alias("place_001", "Ho Guom")
+        repo.upsert_property("place_001", "country", "Viet Nam")
+        repo.upsert_relationship("place_001", "LOCATED_IN", "area_001")
+        repo.upsert_relationship("area_001", "CONTAINS", "place_001")
+        repo.db.commit()
+
+        assert repo.delete_entity("place_001") is True
+        repo.db.commit()
+
+        assert repo.get_entity("place_001") is None
+        assert repo.get_aliases_for_entity("place_001") == []
+        assert repo.get_properties_for_entity("place_001") == []
+        relationships, total = repo.list_relationships(limit=10, offset=0)
+        assert total == 0
+        assert relationships == []
+
+    def test_delete_entities_below_review_count_ignores_missing_and_invalid_counts(self, repo: KnowledgeGraphRepository) -> None:
+        for entity_id in ("low", "at_limit", "missing", "invalid"):
+            repo.upsert_entity(entity_id, entity_id, "Place")
+        repo.upsert_property("low", "review_count", "49")
+        repo.upsert_property("at_limit", "review_count", "50")
+        repo.upsert_property("invalid", "review_count", "unknown")
+
+        assert repo.entity_ids_below_review_count(50) == ["low"]
+        assert repo.delete_entities_below_review_count(50) == 1
+        assert repo.get_entity("low") is None
+        assert repo.get_entity("at_limit") is not None
+        assert repo.get_entity("missing") is not None
+        assert repo.get_entity("invalid") is not None
+
+    def test_copy_entity_copies_attached_data_without_changing_source(self, repo: KnowledgeGraphRepository) -> None:
+        repo.upsert_entity("place_001", "Hoan Kiem Lake", "Place", status="active")
+        repo.upsert_entity("area_001", "Hoan Kiem", "Area")
+        repo.upsert_alias("place_001", "Ho Guom", language="vi")
+        repo.upsert_property("place_001", "review_count", "500")
+        repo.upsert_relationship("place_001", "LOCATED_IN", "area_001")
+
+        copied = repo.copy_entity("place_001", "place_copy", canonical_name="Lake copy")
+
+        assert copied is not None
+        assert copied.canonical_name == "Lake copy"
+        assert copied.entity_type == "Place"
+        assert repo.get_entity("place_001").canonical_name == "Hoan Kiem Lake"
+        assert [alias.alias for alias in repo.get_aliases_for_entity("place_copy")] == ["Ho Guom"]
+        assert [(prop.key, prop.value) for prop in repo.get_properties_for_entity("place_copy")] == [
+            ("review_count", "500")
+        ]
+        relationships, total = repo.list_relationships(
+            from_entity_id="place_copy", limit=10, offset=0
+        )
+        assert total == 1
+        assert relationships[0].to_entity_id == "area_001"
+
     def test_list_entities_pagination(self, repo: KnowledgeGraphRepository) -> None:
         for i in range(10):
             repo.upsert_entity(f"place_{i:03d}", f"Place {i}", "Place")
@@ -101,6 +157,16 @@ class TestKnowledgeGraphRepositoryEntities:
         assert len(entities) == 1
         assert total == 1
         assert entities[0].canonical_name == "Hoan Kiem Lake"
+
+    def test_list_entities_excludes_names_by_multiple_terms(self, repo: KnowledgeGraphRepository) -> None:
+        repo.upsert_entity("coffee_001", "Coffee House", "Place")
+        repo.upsert_entity("cafe_001", "Garden Cafe", "Place")
+        repo.upsert_entity("museum_001", "History Museum", "Place")
+
+        entities, total = repo.list_entities(exclude_names=["coffee", "cafe"])
+
+        assert total == 1
+        assert [entity.id for entity in entities] == ["museum_001"]
 
 
 class TestKnowledgeGraphRepositoryAliases:

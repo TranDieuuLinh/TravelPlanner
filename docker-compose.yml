@@ -12,7 +12,11 @@ services:
       - "5432:5432"
     restart: unless-stopped
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # The previous development volume was initialized with the `vsf` role
+      # and `vsf_travel` database. Use a versioned volume so PostgreSQL applies
+      # the current travelplanner credentials on first startup while retaining
+      # the old volume for an explicit data migration if needed.
+      - travelplanner_postgres_data_v2:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
@@ -122,4 +126,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  travelplanner_postgres_data_v2:

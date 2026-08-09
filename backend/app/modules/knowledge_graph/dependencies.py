@@ -1,7 +1,9 @@
 """Dependencies for Knowledge Graph module."""
 
+from collections.abc import Generator
 from functools import lru_cache
 
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -18,28 +20,36 @@ def get_knowledge_graph_dataset() -> KnowledgeGraphDataset:
     return KnowledgeGraphDataset()
 
 
-def get_db() -> Session:
-    """Get a database session."""
-    return SessionLocal()
+def get_db() -> Generator[Session, None, None]:
+    """Yield a request-scoped database session and always release its connection."""
+    with SessionLocal() as db:
+        yield db
 
 
-def get_knowledge_graph_repository() -> KnowledgeGraphRepository:
+def get_knowledge_graph_repository(
+    db: Session = Depends(get_db),
+) -> KnowledgeGraphRepository:
     """Get the PostgreSQL knowledge graph repository."""
-    return KnowledgeGraphRepository(get_db())
+    return KnowledgeGraphRepository(db)
 
 
-def get_graph_import_repository() -> GraphImportRepository:
+def get_graph_import_repository(
+    db: Session = Depends(get_db),
+) -> GraphImportRepository:
     """Get the PostgreSQL graph import repository."""
-    return GraphImportRepository(get_db())
+    return GraphImportRepository(db)
 
 
-def get_knowledge_graph_import_service():
+def get_knowledge_graph_import_service(
+    graph_repository: GraphImportRepository = Depends(get_graph_import_repository),
+    knowledge_repository: KnowledgeGraphRepository = Depends(get_knowledge_graph_repository),
+):
     """Get the knowledge graph import service with PostgreSQL repositories."""
     from app.modules.knowledge_graph.service import KnowledgeGraphImportService
 
     return KnowledgeGraphImportService(
-        get_graph_import_repository(),
-        get_knowledge_graph_repository(),
+        graph_repository,
+        knowledge_repository,
         get_knowledge_graph_dataset(),
         get_llm_client(),
     )

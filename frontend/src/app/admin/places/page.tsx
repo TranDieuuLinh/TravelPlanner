@@ -35,6 +35,7 @@ export default function AdminPlaceReviewPage() {
   const { loading: authLoading, user } = useAuth();
   const [groups, setGroups] = useState<PlaceReviewGroup[]>([]);
   const [groupCount, setGroupCount] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
@@ -54,7 +55,7 @@ export default function AdminPlaceReviewPage() {
       setLoading(true);
       setError("");
       try {
-        const response = await getPlaceReviewGroups({ limit: PAGE_SIZE, query });
+        const response = await getPlaceReviewGroups({ offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE, query });
         if (cancelled) return;
         setGroups(response.groups);
         setGroupCount(response.groupCount);
@@ -75,19 +76,22 @@ export default function AdminPlaceReviewPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, user]);
+  }, [page, query, user]);
 
   async function loadMore() {
     setLoadingMore(true);
     setError("");
     try {
       const response = await getPlaceReviewGroups({
-        offset: groups.length,
+        offset: (page - 1) * PAGE_SIZE,
         limit: PAGE_SIZE,
         query,
       });
-      setGroups((current) => [...current, ...response.groups]);
+      setGroups(response.groups);
       setGroupCount(response.groupCount);
+      setCanonicalIds(Object.fromEntries(
+        response.groups.map((group) => [group.groupId, group.records[0]?.entityId ?? ""]),
+      ));
       setCanonicalIds((current) => ({
         ...current,
         ...Object.fromEntries(
@@ -155,7 +159,10 @@ export default function AdminPlaceReviewPage() {
       <div className="placeReviewToolbar">
         <input
           aria-label="Tìm nhóm địa điểm"
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setPage(1);
+            setQuery(event.target.value);
+          }}
           placeholder="Tìm theo tên hoặc địa chỉ..."
           value={query}
         />
@@ -221,10 +228,14 @@ export default function AdminPlaceReviewPage() {
         </div>
       )}
 
-      {groups.length < groupCount ? (
+      {groupCount > PAGE_SIZE ? (
         <div className="placeReviewLoadMore">
-          <button className="secondaryBtn" disabled={loadingMore} onClick={() => void loadMore()} type="button">
+          <span>Trang {page} / {Math.ceil(groupCount / PAGE_SIZE)}</span>
+          <button className="secondaryBtn" disabled={loading || page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">
             {loadingMore ? "Đang tải..." : "Hiện thêm 50 nhóm"}
+          </button>
+          <button className="secondaryBtn" disabled={loading || page >= Math.ceil(groupCount / PAGE_SIZE)} onClick={() => setPage((current) => current + 1)} type="button">
+            Trang sau
           </button>
         </div>
       ) : null}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import Numeric, asc, case, cast, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -57,6 +57,9 @@ class KnowledgeGraphRepository:
         search: str | None = None,
         entity_type: str | None = None,
         status: str | None = None,
+        exclude_names: list[str] | None = None,
+        sort_by: str = "name",
+        sort_direction: str = "asc",
     ) -> tuple[list[KnowledgeEntity], int]:
         """List entities with optional filters and pagination."""
         query = select(KnowledgeEntity)
@@ -83,10 +86,39 @@ class KnowledgeGraphRepository:
             query = query.where(KnowledgeEntity.status == status)
             count_query = count_query.where(KnowledgeEntity.status == status)
 
-        query = query.order_by(
-            KnowledgeEntity.canonical_name,
-            KnowledgeEntity.id,
-        ).offset(offset).limit(limit)
+        for term in exclude_names or []:
+            normalized_term = _normalized(term)
+            if not normalized_term:
+                continue
+            exclusion = ~KnowledgeEntity.normalized_name.ilike(f"%{normalized_term}%")
+            query = query.where(exclusion)
+            count_query = count_query.where(exclusion)
+
+        review_count_value = (
+            select(KnowledgeProperty.value)
+            .where(
+                KnowledgeProperty.entity_id == KnowledgeEntity.id,
+                KnowledgeProperty.key == "review_count",
+            )
+            .scalar_subquery()
+        )
+        review_count_sort = case(
+            (
+                review_count_value.op("~")(r"^[0-9]+([.][0-9]+)?$"),
+                cast(review_count_value, Numeric),
+            ),
+            else_=None,
+        )
+        sort_column = {
+            "name": KnowledgeEntity.canonical_name,
+            "type": KnowledgeEntity.entity_type,
+            "status": KnowledgeEntity.status,
+            "created_at": KnowledgeEntity.created_at,
+            "updated_at": KnowledgeEntity.updated_at,
+            "review_count": review_count_sort,
+        }.get(sort_by, KnowledgeEntity.canonical_name)
+        sort_order = (desc(sort_column) if sort_direction == "desc" else asc(sort_column)).nulls_last()
+        query = query.order_by(sort_order, KnowledgeEntity.id).offset(offset).limit(limit)
         total = self.db.scalar(count_query) or 0
         entities = list(self.db.scalars(query))
         return entities, total
@@ -162,6 +194,77 @@ class KnowledgeGraphRepository:
         self.db.delete(entity)
         self.db.flush()
         return True
+
+    def entity_ids_below_review_count(self, threshold: int) -> list[str]:
+        """Return entities with a valid review_count property below ``threshold``."""
+        review_properties = self.db.scalars(
+            select(KnowledgeProperty).where(KnowledgeProperty.key == "review_count")
+        )
+        entity_ids: list[str] = []
+        for prop in review_properties:
+            try:
+                review_count = int(float(prop.value))
+            except (TypeError, ValueError):
+                continue
+            if review_count < threshold:
+                entity_ids.append(prop.entity_id)
+        return entity_ids
+
+    def delete_entities_below_review_count(self, threshold: int) -> int:
+        """Delete every entity selected by ``entity_ids_below_review_count``."""
+        entity_ids = self.entity_ids_below_review_count(threshold)
+        for entity_id in entity_ids:
+            self.delete_entity(entity_id)
+        return len(entity_ids)
+
+    def copy_entity(
+        self,
+        source_entity_id: str,
+        new_entity_id: str,
+        *,
+        canonical_name: str | None = None,
+    ) -> KnowledgeEntity | None:
+        """Create an independent copy with aliases, properties, and outgoing edges."""
+        source = self.get_entity(source_entity_id)
+        if source is None:
+            return None
+        copied = self.upsert_entity(
+            new_entity_id,
+            canonical_name or f"Copy of {source.canonical_name}",
+            source.entity_type,
+            status=source.status,
+        )
+        for alias in self.get_aliases_for_entity(source_entity_id):
+            self.upsert_alias(
+                new_entity_id,
+                alias.alias,
+                alias.language,
+                alias_type=alias.alias_type,
+                source=alias.source,
+                provider=alias.provider,
+                status=alias.status,
+                confidence=alias.confidence,
+            )
+        for prop in self.get_properties_for_entity(source_entity_id):
+            self.upsert_property(new_entity_id, prop.key, prop.value, prop.source)
+        for relationship in self.db.scalars(
+            select(KnowledgeRelationship).where(
+                KnowledgeRelationship.from_entity_id == source_entity_id
+            )
+        ):
+            target_id = (
+                new_entity_id
+                if relationship.to_entity_id == source_entity_id
+                else relationship.to_entity_id
+            )
+            self.upsert_relationship(
+                new_entity_id,
+                relationship.relationship_type,
+                target_id,
+                recommendations=relationship.recommendations,
+                source=relationship.source,
+            )
+        return copied
 
     # --- Aliases ---
 
@@ -339,6 +442,8 @@ class KnowledgeGraphRepository:
         from_entity_id: str | None = None,
         to_entity_id: str | None = None,
         search: str | None = None,
+        sort_by: str = "id",
+        sort_direction: str = "asc",
     ) -> tuple[list[KnowledgeRelationship], int]:
         """List relationships with optional filters."""
         query = select(KnowledgeRelationship)
@@ -372,7 +477,13 @@ class KnowledgeGraphRepository:
                 | (KnowledgeRelationship.relationship_type.ilike(like_pattern))
             )
 
-        query = query.order_by(KnowledgeRelationship.id).offset(offset).limit(limit)
+        sort_column = {
+            "id": KnowledgeRelationship.id,
+            "relationship": KnowledgeRelationship.relationship_type,
+            "created_at": KnowledgeRelationship.created_at,
+        }.get(sort_by, KnowledgeRelationship.id)
+        sort_order = desc(sort_column) if sort_direction == "desc" else asc(sort_column)
+        query = query.order_by(sort_order, KnowledgeRelationship.id).offset(offset).limit(limit)
         total = self.db.scalar(count_query) or 0
         relationships = list(self.db.scalars(query))
         return relationships, total

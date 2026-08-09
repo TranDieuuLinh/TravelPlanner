@@ -568,6 +568,7 @@ export type KGEntitySummary = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  reviewCount: number | null;
 };
 
 export type KGEntityListPage = {
@@ -626,6 +627,13 @@ export type KGEntityUpdatePayload = {
   status?: string;
 };
 
+export type KGEntityCreatePayload = {
+  entityId: string;
+  canonicalName: string;
+  entityType: string;
+  status: string;
+};
+
 export type KGAliasUpsertPayload = {
   alias: string;
   language: string;
@@ -662,6 +670,9 @@ export function listKGEntities(filters: {
   search?: string;
   entityType?: string;
   status?: string;
+  excludeNames?: string;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
 }): Promise<KGEntityListPage> {
   const params = new URLSearchParams();
   if (filters.limit !== undefined) params.set("limit", String(filters.limit));
@@ -669,6 +680,9 @@ export function listKGEntities(filters: {
   if (filters.search) params.set("search", filters.search);
   if (filters.entityType) params.set("entity_type", filters.entityType);
   if (filters.status) params.set("status", filters.status);
+  if (filters.excludeNames) params.set("excludeNames", filters.excludeNames);
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
+  if (filters.sortDirection) params.set("sortDirection", filters.sortDirection);
   const query = params.toString();
   return request(`/admin/knowledge-graph/entities${query ? `?${query}` : ""}`);
 }
@@ -704,6 +718,45 @@ export function updateKGEntity(
   return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}`, {
     method: "PATCH",
     body: JSON.stringify(payload)
+  });
+}
+
+export function createKGEntity(payload: KGEntityCreatePayload): Promise<KGEntityDetail> {
+  return request("/admin/knowledge-graph/entities", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function copyKGEntity(
+  entityId: string,
+  payload: Pick<KGEntityCreatePayload, "entityId" | "canonicalName">
+): Promise<KGEntityDetail> {
+  return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}/copy`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteKGEntity(entityId: string): Promise<{ deletedEntityId: string }> {
+  return request(`/admin/knowledge-graph/entities/${encodeURIComponent(entityId)}`, {
+    method: "DELETE",
+  });
+}
+
+export type KGLowReviewEntityResponse = {
+  threshold: number;
+  entityCount: number;
+  deletedEntityCount?: number;
+};
+
+export function getKGLowReviewEntityCount(threshold = 50): Promise<KGLowReviewEntityResponse> {
+  return request(`/admin/knowledge-graph/entities/low-review-count?threshold=${threshold}`);
+}
+
+export function deleteKGLowReviewEntities(threshold = 50): Promise<KGLowReviewEntityResponse> {
+  return request(`/admin/knowledge-graph/entities/low-review-count?threshold=${threshold}`, {
+    method: "DELETE",
   });
 }
 
@@ -816,6 +869,8 @@ export function listKGRelationships(filters: {
   fromEntityId?: string;
   toEntityId?: string;
   search?: string;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
 }): Promise<KGRelationshipListPage> {
   const params = new URLSearchParams();
   if (filters.limit !== undefined) params.set("limit", String(filters.limit));
@@ -824,6 +879,8 @@ export function listKGRelationships(filters: {
   if (filters.fromEntityId) params.set("from_entity_id", filters.fromEntityId);
   if (filters.toEntityId) params.set("to_entity_id", filters.toEntityId);
   if (filters.search) params.set("search", filters.search);
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
+  if (filters.sortDirection) params.set("sortDirection", filters.sortDirection);
   const query = params.toString();
   return request(`/admin/knowledge-graph/relationships${query ? `?${query}` : ""}`);
 }
