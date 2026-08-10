@@ -5,7 +5,11 @@ from types import SimpleNamespace
 from app.modules.plans.domain.entities import PlanItem
 from app.modules.plans.domain.entities import PreferredTimeWindow
 from app.modules.plans.place_selector.place_tool import SelectablePlace
-from app.modules.plans.place_selector.meal_selector import MealStopSelector
+from app.modules.plans.place_selector.meal_selector import (
+    MealStopSelector,
+    _MealSlot,
+    _TripMealOption,
+)
 from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.knowledge_graph.ontology import canonical_place_node_type
 from app.modules.knowledge_graph.research.schema import SpecialtyMealCandidate
@@ -210,7 +214,7 @@ def test_catalog_preferred_window_keeps_alcohol_venue_out_of_breakfast() -> None
     assert selected[1]["dinner_meal"].place_id == "craft-beer"
 
 
-def test_trip_meals_load_specialties_once_and_avoid_duplicate_dishes() -> None:
+def test_trip_meals_use_unique_dishes_before_a_necessary_repeat() -> None:
     places = [
         _food("bun-cha-one", "Bún chả Hương Liên", 21.03, 105.801, "Restaurant"),
         _food("bun-cha-two", "Bún chả Đắc Kim", 21.03, 105.802, "Restaurant"),
@@ -233,14 +237,83 @@ def test_trip_meals_load_specialties_once_and_avoid_duplicate_dishes() -> None:
     chosen = [place for meals in selected.values() for place in meals.values() if place]
     assert graph.calls == 1
     assert len({place.place_id for place in chosen}) == len(chosen)
-    assert sum("bún chả" in place.name.casefold() for place in chosen) == 1
+    # Six slots only have five unique venues. Every distinct meal key is used
+    # before bún chả is allowed to repeat at the second source restaurant.
+    assert sum("bún chả" in place.name.casefold() for place in chosen) == 2
     assert "pho" in {place.place_id for place in chosen}
+    assert {"rice", "fallback"} <= {place.place_id for place in chosen}
     assert all(
         place is None or "bún chả" not in place.name.casefold()
         for meals in selected.values()
         for role, place in meals.items()
         if role != "lunch_meal"
     )
+
+
+def test_trip_meals_penalize_repeated_specialty_but_allow_it_when_necessary() -> None:
+    places = [
+        _food("pho-one", "Phở Một", 21.03, 105.801, "Restaurant"),
+        _food("pho-two", "Phở Hai", 21.03, 105.802, "Restaurant"),
+    ]
+
+    class _RepeatedSpecialtyGraph:
+        def list_specialty_meal_candidates(self, region_key: str, *, limit: int):
+            assert region_key == "vn,ha-noi"
+            return [
+                SpecialtyMealCandidate(
+                    activityId=f"eat-{place_id}",
+                    activityName="Ăn phở",
+                    placeId=place_id,
+                    itemId="food-pho",
+                    itemName="Phở",
+                    selectionPath="offers_item",
+                )
+                for place_id in ("pho-one", "pho-two")
+            ]
+
+    selected = MealStopSelector(
+        _PlaceTool(places),
+        graph_repository=_RepeatedSpecialtyGraph(),
+    ).select_for_trip(
+        region_key="vn,ha-noi",
+        activities_by_day={
+            1: [_activity("a1", 21.03, 105.80), _activity("a2", 21.03, 105.81)]
+        },
+        excluded_place_ids={"a1", "a2"},
+    )
+
+    chosen = [place for place in selected[1].values() if place is not None]
+    assert {place.place_id for place in chosen} == {"pho-one", "pho-two"}
+    assert all(place.source_activity == "Phở" for place in chosen)
+
+
+def test_unused_generic_meal_beats_repeating_a_specialty() -> None:
+    selector = MealStopSelector(_PlaceTool([]))
+    slot = selector._rank_trip_options(
+        [
+            _TripMealOption(
+                place=_food("pho-two", "Phở Hai", 21.03, 105.802, "Restaurant"),
+                selection_path="offers_item",
+                meal_key="phở",
+                item_id="food-pho",
+            ),
+            _TripMealOption(
+                place=_food("rice", "Cơm nhà", 21.03, 105.803, "Restaurant"),
+                meal_key="cơm nhà",
+            ),
+        ],
+        slot=_MealSlot(
+            day=1,
+            role="lunch_meal",
+            first=_activity("a1", 21.03, 105.80),
+            second=_activity("a2", 21.03, 105.81),
+        ),
+        region_key="vn,ha-noi",
+        used_refs=set(),
+        meal_key_usage={"phở": 1},
+    )
+
+    assert slot[0][1].place.place_id == "rice"
 
 
 class _SpecialtyGraph:

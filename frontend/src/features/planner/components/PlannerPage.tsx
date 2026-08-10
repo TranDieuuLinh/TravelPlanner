@@ -116,6 +116,10 @@ import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
 import { visibleConversationMessages } from "@/features/planner/lib/conversation-messages";
 import {
+  formatItineraryTimeWindow,
+  itineraryTimeWindowAriaLabel,
+} from "@/features/planner/lib/time-window";
+import {
   sourceProviderKind,
   type SourceProviderKind,
 } from "@/features/planner/lib/source-provider";
@@ -5826,6 +5830,8 @@ function Planner() {
                                 );
                                 const timelineCategory =
                                   item.timelineCategory ?? "activity";
+                                const displayedTimeWindow =
+                                  formatItineraryTimeWindow(item.timeWindow);
                                 const isNonActivity =
                                   timelineCategory === "break" ||
                                   item.placeType === "break" ||
@@ -6280,6 +6286,27 @@ function Planner() {
                                                           item.sourceLink,
                                                       }}
                                                     />
+                                                  ) : null}
+                                                  {displayedTimeWindow ? (
+                                                    <div
+                                                      aria-label={
+                                                        itineraryTimeWindowAriaLabel(
+                                                          item.timeWindow
+                                                        ) ?? undefined
+                                                      }
+                                                      className="itineraryScheduleBadge"
+                                                    >
+                                                      <svg
+                                                        aria-hidden="true"
+                                                        viewBox="0 0 24 24"
+                                                      >
+                                                        <circle cx="12" cy="12" r="8.5" />
+                                                        <path d="M12 7.5v5l3.5 2" />
+                                                      </svg>
+                                                      <span>
+                                                        {displayedTimeWindow}
+                                                      </span>
+                                                    </div>
                                                   ) : null}
                                                 </div>
                                               </header>

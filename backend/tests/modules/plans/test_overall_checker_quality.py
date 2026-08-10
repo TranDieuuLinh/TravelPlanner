@@ -133,7 +133,7 @@ def test_daily_composition_rejects_adjacent_restaurants_without_separator():
     assert report.status == "failed"
 
 
-def test_drink_dessert_is_a_valid_separator_between_restaurants():
+def test_drink_dessert_adjacent_to_meal_is_a_food_cluster():
     report = OverallChecker().check(
         _plan(
             [
@@ -152,7 +152,29 @@ def test_drink_dessert_is_a_valid_separator_between_restaurants():
         )
     )
 
-    assert "adjacent_restaurant_stops" not in {
+    assert "adjacent_restaurant_stops" in {
+        issue.code for issue in report.issues
+    }
+
+
+def test_optional_suggestion_cannot_survive_mandatory_overflow():
+    unscheduled = UnscheduledPlace(
+        placeId="ngoc-son",
+        name="Ngoc Son Temple",
+        reason="No capacity after detailed routing",
+        reasonCode="detailed_route_overflow",
+        sourceRefs=["https://example.com/reel"],
+    )
+    optional = _item(
+        "optional-spa",
+        place_type="spa",
+        category="activity",
+        source="finder_suggestion",
+    )
+
+    report = OverallChecker().check(_plan([optional], unscheduled=[unscheduled]))
+
+    assert "optional_displaced_mandatory" in {
         issue.code for issue in report.issues
     }
 

@@ -132,6 +132,7 @@ class MealStopSelector:
             place = fallback_by_id.get(row.placeId) or self.place_tool.get(row.placeId)
             if place is None or not self._is_meal_candidate(place):
                 continue
+            self._remove_catalog_alias(options_by_key, place.stable_ref)
             option = _TripMealOption(
                 place=place,
                 selection_path=row.selectionPath,
@@ -158,6 +159,7 @@ class MealStopSelector:
                         or not self._in_region(place, region_key)
                     ):
                         continue
+                    self._remove_catalog_alias(options_by_key, place.stable_ref)
                     option = _TripMealOption(
                         place=place,
                         selection_path="meal_node",
@@ -171,7 +173,10 @@ class MealStopSelector:
                     ] = option
 
         used_refs = set(excluded_place_ids)
-        used_meal_keys: set[str] = set()
+        # Meal identity is trip-wide. Reusing a dish is a soft penalty rather
+        # than a hard exclusion: prefer every unused specialty before a repeat,
+        # but still fill a meal slot when the destination has few alternatives.
+        meal_key_usage: dict[str, int] = {}
         pending = list(slots)
         while pending:
             ranked_slots: list[tuple[int, tuple, _MealSlot, list[tuple[tuple, _TripMealOption]]]] = []
@@ -181,7 +186,7 @@ class MealStopSelector:
                     slot=slot,
                     region_key=region_key,
                     used_refs=used_refs,
-                    used_meal_keys=used_meal_keys,
+                    meal_key_usage=meal_key_usage,
                 )
                 ranked_slots.append(
                     (
@@ -202,7 +207,9 @@ class MealStopSelector:
                 if chosen.place.place_id is not None:
                     used_refs.add(chosen.place.place_id)
                 if chosen.meal_key:
-                    used_meal_keys.add(chosen.meal_key)
+                    meal_key_usage[chosen.meal_key] = (
+                        meal_key_usage.get(chosen.meal_key, 0) + 1
+                    )
             pending.remove(slot)
         return result
 
@@ -272,14 +279,13 @@ class MealStopSelector:
         slot: _MealSlot,
         region_key: str,
         used_refs: set[str],
-        used_meal_keys: set[str],
+        meal_key_usage: dict[str, int],
     ) -> list[tuple[tuple, _TripMealOption]]:
         available = [
             option
             for option in options
             if option.place.stable_ref not in used_refs
             and (option.place.place_id is None or option.place.place_id not in used_refs)
-            and (not option.meal_key or option.meal_key not in used_meal_keys)
             and (
                 not option.preferred_slots
                 or (slot.day, slot.role) in option.preferred_slots
@@ -309,6 +315,10 @@ class MealStopSelector:
         ranked = [
             (
                 (
+                    # Diversity precedes provenance strength. An unused graph
+                    # specialty beats a generic venue, while any unused meal
+                    # beats repeating a dish already scheduled on this trip.
+                    meal_key_usage.get(option.meal_key, 0),
                     -self._path_priority(option.selection_path),
                     -int(self._matches_role(option.best_time_slots, slot.role)),
                     -selection_relevance_score(
@@ -334,6 +344,19 @@ class MealStopSelector:
     @staticmethod
     def _path_priority(path: str) -> int:
         return {"meal_node": 3, "target_place": 2, "offers_item": 1}.get(path, 0)
+
+    @staticmethod
+    def _remove_catalog_alias(
+        options_by_key: dict[
+            tuple[str, str, tuple[tuple[int, str], ...]],
+            _TripMealOption,
+        ],
+        stable_ref: str,
+    ) -> None:
+        """Do not let a known specialty re-enter ranking as a generic meal."""
+        for key, option in list(options_by_key.items()):
+            if option.place.stable_ref == stable_ref and option.selection_path == "catalog":
+                del options_by_key[key]
 
     @staticmethod
     def _materialize_option(option: _TripMealOption) -> SelectablePlace:

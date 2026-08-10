@@ -40,6 +40,7 @@ class OverallChecker:
             for warning in dict.fromkeys(plan.warnings)
         )
         issues.extend(self._constraint_policy_issues(plan))
+        issues.extend(self._mandatory_priority_issues(plan))
         issues.extend(self._timeline_issues(plan))
         quality_issues = self._quality_issues(plan)
         issues.extend(quality_issues)
@@ -168,31 +169,33 @@ class OverallChecker:
             visible_stops = [
                 item for item in day.items if item.timeline_category != "break"
             ]
-            adjacent_restaurants = [
+            adjacent_food_stops = [
                 (left, right)
                 for left, right in zip(visible_stops, visible_stops[1:])
-                if self._is_restaurant(left) and self._is_restaurant(right)
+                if self._is_food_stop(left) and self._is_food_stop(right)
             ]
-            if adjacent_restaurants:
+            if adjacent_food_stops:
                 affected_items = [
                     item
-                    for pair in adjacent_restaurants
+                    for pair in adjacent_food_stops
                     for item in pair
                 ]
                 issues.append(self._issue(
+                    # Keep the existing code for API compatibility while
+                    # broadening the invariant to all food/drink stops.
                     "adjacent_restaurant_stops", "error",
                     (
-                        f"Day {day.day} contains consecutive restaurant stops "
-                        "without an activity or DrinkDessert stop between them."
+                        f"Day {day.day} contains consecutive food/drink stops "
+                        "without a non-food activity between them."
                     ),
                     list(dict.fromkeys(self._item_id(item) for item in affected_items)),
                     [
                         f"{self._item_id(left)}->{self._item_id(right)}"
-                        for left, right in adjacent_restaurants
+                        for left, right in adjacent_food_stops
                     ],
                     (
-                        "Insert at least one activity or DrinkDessert stop between "
-                        "the restaurants, or move one restaurant to another day."
+                        "Insert a non-food activity between these stops, or move "
+                        "one food/drink stop to another day."
                     ),
                     "selector",
                 ))
@@ -292,8 +295,18 @@ class OverallChecker:
                     continue
                 start, end = self._window(item)
                 if not any(self._window_values(window)[0] <= start and end <= self._window_values(window)[1] for window in item.preferred_time_windows):
+                    time_sensitive = any(
+                        str(tag).casefold().replace(" ", "_")
+                        in {"fresh_market", "morning_market", "night_market"}
+                        for tag in item.tags
+                    )
                     issues.append(self._issue(
-                        "timing_recommendation_ignored", "warning",
+                        (
+                            "time_sensitive_window_ignored"
+                            if time_sensitive
+                            else "timing_recommendation_ignored"
+                        ),
+                        "error" if time_sensitive else "warning",
                         f"{item.name} is scheduled outside its recommended visit window.",
                         [self._item_id(item)],
                         [f"scheduled={item.time_window}", *[f"recommended={window.start}-{window.end}" for window in item.preferred_time_windows], "owner=selector"],
@@ -301,6 +314,35 @@ class OverallChecker:
                         "selector",
                     ))
         return issues
+
+    def _mandatory_priority_issues(self, plan: Plan) -> list[CheckIssue]:
+        optional_items = [
+            item
+            for day in plan.days
+            for item in day.items
+            if item.source == "finder_suggestion" and not item.locked
+        ]
+        displaced = [
+            place
+            for place in plan.unscheduled_places
+            if place.reason_code in {
+                "no_day_capacity",
+                "timeline_capacity",
+                "detailed_route_overflow",
+                "selected_place_not_scheduled",
+            }
+        ]
+        if not optional_items or not displaced:
+            return []
+        return [self._issue(
+            "optional_displaced_mandatory",
+            "error",
+            "Optional suggestions remain scheduled while mandatory Places overflow.",
+            [self._item_id(item) for item in optional_items],
+            [place.name for place in displaced],
+            "Evict optional suggestions, retry mandatory Places across days, then re-fit the timeline.",
+            "selector",
+        )]
 
     def _opening_hours_issues(self, plan: Plan) -> list[CheckIssue]:
         return [self._issue(

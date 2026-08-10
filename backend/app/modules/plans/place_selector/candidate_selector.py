@@ -37,26 +37,15 @@ from app.modules.plans.trip_theme_planner.opening_hours_parser import (
     extract_time_intervals,
     is_24_hours,
 )
+from app.modules.plans.place_selector.travel_eligibility import (
+    is_default_travel_eligible,
+)
+from app.modules.plans.place_selector.visit_windows import (
+    is_time_sensitive_visit,
+    matches_effective_preference,
+)
 
 
-NON_TOURISM_PLACE_TYPES = {
-    "cemetery",
-    "community_center",
-    "congregation",
-    "courthouse",
-    "cultural_center",
-    "embassy",
-    "education_center",
-    "fire_station",
-    "funeral_home",
-    "hospital",
-    "local_government_office",
-    "police",
-    "post_office",
-    "school",
-    "university",
-    "village_hall",
-}
 MIN_NON_FOOD_ACTIVITIES_PER_DAY = 2
 CATEGORY_DISCOVERY_TERMS = {
     "attraction": ("museum", "history", "heritage", "landmark", "temple"),
@@ -328,12 +317,19 @@ class CandidateSelector:
                 excluded_place_ids=(
                     set(context.plan_status.used_place_ids) | selected_place_ids
                 ),
-                limit=self.max_candidates_per_block,
+                # Fetch a small over-sample so ineligible operational venues
+                # are removed before the bounded ranking/attempt limit.
+                limit=self.max_candidates_per_block * 4,
                 bbox_filter=context.bbox_filter,
             )
             catalog_candidates = [
                 candidate
                 for candidate in catalog_candidates
+                if is_default_travel_eligible(
+                    name=candidate.name,
+                    place_type=candidate.place_type,
+                    tags=candidate.tags,
+                )
                 if not self._duplicates_existing_identity(
                     candidate,
                     selected_places=context.selected_by_ref.values(),
@@ -391,7 +387,10 @@ class CandidateSelector:
 
         # Prefer a new semantic category/activity, while retaining candidates
         # when the catalog is genuinely sparse.
-        used_tags = {tag.casefold() for tag in context.plan_status.visited_tag_counts}
+        used_tag_counts = {
+            tag.casefold(): count
+            for tag, count in context.plan_status.visited_tag_counts.items()
+        }
         used_activity_ids = {
             item.activity_id
             for item in context.current_day_items
@@ -405,17 +404,27 @@ class CandidateSelector:
         unique_candidates.sort(
             key=lambda candidate: (
                 candidate.stable_ref not in context.selected_by_ref,
-                bool(
-                    candidate.activity_id
-                    and candidate.activity_id in used_activity_ids
+                -(
+                    selection_relevance_score(
+                        candidate,
+                        region_key=(
+                            context.brief.target_region_key
+                            or context.brief.target_area
+                        ),
+                        target_tags=[
+                            context.brief.theme,
+                            *context.brief.focus_tags,
+                            *context.intent_interests,
+                        ],
+                    )
+                    - self._trip_diversity_penalty(
+                        candidate,
+                        context,
+                        used_tag_counts=used_tag_counts,
+                        used_activity_ids=used_activity_ids,
+                        used_activity_names=used_activity_names,
+                    )
                 ),
-                bool(
-                    candidate.source_activity
-                    and _normalize_text(candidate.source_activity)
-                    in used_activity_names
-                ),
-                self._day_place_type_repeated(candidate, context.current_day_items),
-                bool(used_tags.intersection(tag.casefold() for tag in candidate.tags)),
             )
         )
 
@@ -426,6 +435,13 @@ class CandidateSelector:
             attempts += 1
             candidate_ref = candidate.stable_ref
             if candidate_ref in context.plan_status.used_place_ids:
+                continue
+            if (
+                candidate_ref not in context.selected_by_ref
+                and self._would_cluster_food_drink(
+                    candidate, context.current_day_items
+                )
+            ):
                 continue
             if (
                 context.block.kind != "meal"
@@ -602,6 +618,81 @@ class CandidateSelector:
             _normalize_text(item.place_type) == candidate_type
             for item in current_day_items
         )
+
+    @staticmethod
+    def _trip_diversity_penalty(
+        candidate: SelectablePlace,
+        context: CandidateSelectionContext,
+        *,
+        used_tag_counts: dict[str, int],
+        used_activity_ids: set[str],
+        used_activity_names: set[str],
+    ) -> int:
+        """Apply a count-based, trip-wide penalty without overriding intent."""
+
+        penalty = sum(
+            used_tag_counts.get(tag.casefold(), 0) * 3 for tag in candidate.tags
+        )
+        candidate_type = _normalize_text(candidate.place_type)
+        penalty += 8 * sum(
+            _normalize_text(item.place_type) == candidate_type
+            for item in context.occupied_items
+            if candidate_type
+        )
+        if candidate.activity_id and candidate.activity_id in used_activity_ids:
+            penalty += 35
+        normalized_activity = _normalize_text(candidate.source_activity or "")
+        if normalized_activity and normalized_activity in used_activity_names:
+            penalty += 25
+        if CandidateSelector._day_place_type_repeated(
+            candidate, context.current_day_items
+        ):
+            penalty += 15
+        family = CandidateSelector._activity_family(candidate)
+        if family:
+            family_count = sum(
+                CandidateSelector._activity_family(item) == family
+                for item in context.occupied_items
+            )
+            penalty += family_count * (20 if family in {"spa", "beer"} else 10)
+        return penalty
+
+    @staticmethod
+    def _activity_family(value) -> str | None:
+        text = _normalize_text(
+            " ".join(
+                [
+                    getattr(value, "name", "") or "",
+                    getattr(value, "place_type", "") or "",
+                    getattr(value, "source_activity", "") or "",
+                    *list(getattr(value, "tags", []) or []),
+                ]
+            )
+        )
+        if any(marker in text for marker in ("spa", "massage", "wellness")):
+            return "spa"
+        if any(marker in text for marker in ("beer", "bier", "brewery", "pub")):
+            return "beer"
+        if any(marker in text for marker in ("cafe", "coffee", "ca phe", "tea")):
+            return "cafe_tea"
+        return None
+
+    @staticmethod
+    def _would_cluster_food_drink(
+        candidate: SelectablePlace,
+        current_day_items: list[PlanItem],
+    ) -> bool:
+        if place_category(candidate) not in {"Restaurant", "DrinkDessert"}:
+            return False
+        previous = next(
+            (
+                item
+                for item in reversed(current_day_items)
+                if item.timeline_category != "break"
+            ),
+            None,
+        )
+        return previous is not None and previous.timeline_category == "food"
 
     def _duplicates_existing_identity(
         self,
@@ -996,10 +1087,11 @@ class CandidateSelector:
         if policy_rejection is not None:
             return CandidateRejection(*policy_rejection)
         category = place_category(candidate)
-        normalized_place_type = (
-            candidate.place_type.strip().casefold().replace(" ", "_")
-        )
-        if not is_selected and normalized_place_type in NON_TOURISM_PLACE_TYPES:
+        if not is_selected and not is_default_travel_eligible(
+            name=candidate.name,
+            place_type=candidate.place_type,
+            tags=candidate.tags,
+        ):
             return CandidateRejection(
                 "activity_category_mismatch",
                 "The catalogue type is not a visitable tourism activity.",
@@ -1100,6 +1192,15 @@ class CandidateSelector:
                 "Place price level is too high for the trip budget.",
             )
         duration = candidate_duration(candidate, block)
+        if is_time_sensitive_visit(candidate) and not matches_effective_preference(
+            candidate,
+            block.time_window,
+            duration,
+        ):
+            return CandidateRejection(
+                "preferred_time_window_mismatch",
+                "The visit is time-sensitive and does not fit this activity window.",
+            )
         if enforce_opening_hours and not self._opening_hours_cover_block(
             candidate,
             block.time_window,

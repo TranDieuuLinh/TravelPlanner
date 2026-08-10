@@ -34,21 +34,46 @@ class ClusterFirstRepairSolver:
         days_locked: bool,
         matrix_provider: TravelTimeMatrixProvider | None = None,
     ) -> PlanningSolution:
-        matrix = self._build_matrix(pool, matrix_provider)
+        day_count = max(1, min(MAX_TRIP_DAYS, requested_days))
+        all_pinned = bool(pool.candidates) and all(
+            candidate.source_day is not None
+            and 1 <= candidate.source_day <= day_count
+            for candidate in pool.candidates
+        )
+        # A fixed trip whose mandatory stops are already pinned to valid days
+        # needs local validation/ordering, not a provider-backed global matrix.
+        matrix = self._build_matrix(
+            pool,
+            None if days_locked and all_pinned else matrix_provider,
+        )
         candidates = sorted(
             pool.candidates,
             key=lambda candidate: (
                 not candidate.mandatory,
+                candidate.priority_tier,
                 candidate.source_order or 10_000,
                 candidate.candidate_id,
             ),
         )
-        day_count = max(1, min(MAX_TRIP_DAYS, requested_days))
         days: list[list[PlanningCandidate]] = [[] for _ in range(day_count)]
         unscheduled: list[str] = []
 
         for candidate in candidates:
-            day_index = self._best_day(candidate, days, matrix)
+            pinned_index = (
+                candidate.source_day - 1
+                if days_locked
+                and candidate.source_day is not None
+                and 1 <= candidate.source_day <= len(days)
+                else None
+            )
+            day_index = self._best_day(
+                candidate,
+                days,
+                matrix,
+                allowed_day_indices=(
+                    {pinned_index} if pinned_index is not None else None
+                ),
+            )
             if day_index is None and not days_locked and len(days) < MAX_TRIP_DAYS:
                 days.append([])
                 day_index = len(days) - 1
@@ -76,9 +101,12 @@ class ClusterFirstRepairSolver:
         candidate: PlanningCandidate,
         days: list[list[PlanningCandidate]],
         matrix: MatrixSnapshot,
+        allowed_day_indices: set[int] | None = None,
     ) -> int | None:
         feasible: list[tuple[float, int, int]] = []
         for index, day in enumerate(days):
+            if allowed_day_indices is not None and index not in allowed_day_indices:
+                continue
             if not self._fits(candidate, day, matrix):
                 continue
             # Geographic insertion remains the primary signal. When route
@@ -144,6 +172,8 @@ class ClusterFirstRepairSolver:
 
         for source_index, source in enumerate(days):
             for candidate in list(source):
+                if candidate.source_day is not None:
+                    continue
                 current_cost = self._insertion_cost(candidate, source, matrix)
                 alternatives = [
                     (self._insertion_cost(candidate, target, matrix), target_index)

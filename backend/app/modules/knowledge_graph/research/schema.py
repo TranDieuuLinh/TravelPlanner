@@ -112,6 +112,16 @@ class SpecialtyMealCandidate(BaseModel):
     bestTimeSlots: list[str] = Field(default_factory=list)
 
 
+class ActivityItemVenueCandidate(BaseModel):
+    """Venue serving an item involved by one destination Activity."""
+
+    activityId: str
+    itemId: str
+    itemName: str
+    placeId: str
+    placeType: str = Field(pattern=r"^(Restaurant|DrinkDessert)$")
+
+
 class OfferedActivityCandidate(BaseModel):
     """A concrete Place connected to an Activity by ``OFFERS_ACTIVITY``."""
 

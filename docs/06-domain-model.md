@@ -393,6 +393,18 @@ Order phải tham chiếu đến phiên bản listing và plan bất biến. Buy
   lần cho cả chuyến để chọn FoodItem/DrinkItem hợp ngữ cảnh; Place cụ thể vẫn
   phải resolve qua `OFFERS_ITEM`, phải là `Restaurant`, và lỗi provider phải
   fallback về selector deterministic.
+- Với catalog đặc sản Hà Nội, `SPECIAL_EXPERIENCE` trỏ tới Activity theo loại
+  món/đồ uống, không trỏ tới Activity mang tên một nhà hàng cụ thể. Activity nối
+  `INVOLVES_ITEM` tới `FoodItem`/`DrinkItem`; `Restaurant` hoặc `DrinkDessert`
+  chỉ nối tới item bằng `OFFERS_ITEM`. Không tạo `OFFERS_ACTIVITY` cho đường này.
+  Tên venue hoặc `TARGETS_PLACE` cũ có provenance là bằng chứng để tạo cạnh
+  `OFFERS_ITEM`; món không có venue đủ bằng chứng không được đưa vào catalog.
+  Sau khi chuyển bằng chứng, Activity food/drink legacy mang tên venue bị xóa;
+  entity `Restaurant`/`DrinkDessert` tương ứng vẫn được giữ nguyên.
+  Với required experience chưa có Place cụ thể, Mandatory Candidate Pool resolve
+  `Activity -> INVOLVES_ITEM -> Item <- OFFERS_ITEM <- Venue`, giới hạn trong
+  scope chuyến đi và chỉ nhận `Restaurant`/`DrinkDessert`; text search chỉ là
+  fallback khi graph không trả được venue.
 - Activity lấp khoảng trống có thể đi trực tiếp qua
   `Place -> OFFERS_ACTIVITY -> Activity` trong đúng scope. `activityId` và tên
   Activity được giữ trên `PlanItem`; PlaceSelector ưu tiên mềm Activity chưa có

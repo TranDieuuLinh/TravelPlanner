@@ -19,9 +19,18 @@ của destination.
 - Ưu tiên `Activity -> TARGETS_PLACE -> Restaurant`.
 - Với experience tổng quát, dùng `Activity -> INVOLVES_ITEM -> Item` và tìm
   restaurant trong scope qua `Restaurant -> OFFERS_ITEM -> Item`.
+- Food/drink experience được canonical hóa theo loại món, không theo tên quán.
+  `Restaurant`/`DrinkDessert` chỉ nối `OFFERS_ITEM` tới item; không tạo cạnh
+  `OFFERS_ACTIVITY` để biểu diễn việc venue bán một món.
+- Required food/drink Activity chưa có Place cụ thể được Mandatory Candidate
+  Pool resolve bằng `INVOLVES_ITEM/OFFERS_ITEM`, nhận cả `Restaurant` và
+  `DrinkDessert` trong destination. Text search chỉ là fallback khi graph không
+  có venue materialize hợp lệ.
 - Phân bổ deterministic cho toàn bộ meal slot, ưu tiên khung giờ experience,
-  semantic relevance và dữ liệu chất lượng trước detour địa lý; không lặp venue
-  hoặc meal key khi còn lựa chọn khác.
+  semantic relevance và dữ liệu chất lượng trước detour địa lý. Không lặp venue;
+  meal key đã dùng bị cộng penalty ở cấp toàn chuyến để mọi món chưa dùng được
+  ưu tiên trước. Đây là penalty mềm: món được phép lặp khi không còn lựa chọn
+  phù hợp, tránh để trống meal chỉ vì destination có catalog nhỏ.
 - Dùng catalog restaurant thông thường làm fallback. Không gọi Gemini trong
   đường chọn meal chính và không retry LLM theo slot.
 - Không đưa toàn bộ restaurant catalog vào matrix. Tọa độ dùng để prefilter;

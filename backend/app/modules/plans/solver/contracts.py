@@ -7,6 +7,12 @@ from app.modules.plans.routing.provider import TravelTimeMatrixProvider
 
 
 CandidateKind = Literal["activity", "meal"]
+CandidatePriorityTier = Literal[0, 1, 2, 3]
+
+USER_INTENT_TIER: CandidatePriorityTier = 0
+URL_SOURCE_TIER: CandidatePriorityTier = 1
+REQUIRED_EXPERIENCE_TIER: CandidatePriorityTier = 2
+OPTIONAL_SUGGESTION_TIER: CandidatePriorityTier = 3
 
 
 @dataclass(frozen=True)
@@ -21,6 +27,8 @@ class PlanningCandidate:
     latitude: float | None = None
     longitude: float | None = None
     source_order: int | None = None
+    source_day: int | None = None
+    priority_tier: CandidatePriorityTier = USER_INTENT_TIER
 
 
 @dataclass(frozen=True)

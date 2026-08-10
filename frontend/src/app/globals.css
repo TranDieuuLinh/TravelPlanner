@@ -15205,6 +15205,47 @@ svg {
   border: 0;
 }
 
+/* Scheduled time belongs to the stop itself, so keep it visible on the card
+   instead of requiring the traveler to infer it from ordering or route legs. */
+.itinerary .itineraryScheduleBadge,
+.mobileItinerarySheet .itineraryScheduleBadge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e6e2;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #f4f9f7;
+  color: #315f58;
+  font-size: .62rem;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.itinerary .itineraryScheduleBadge svg,
+.mobileItinerarySheet .itineraryScheduleBadge svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+@container itinerary-panel (max-width: 360px) {
+  .itinerary .itineraryScheduleBadge {
+    min-height: 24px;
+    padding-inline: 7px;
+    font-size: .58rem;
+  }
+}
+
 /* Long place names, review text, and route controls must yield to the card
    width instead of creating a horizontal scrollbar. */
 .itinerary .itineraryPlaceCard,

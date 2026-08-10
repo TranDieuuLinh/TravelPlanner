@@ -24,6 +24,7 @@ from app.modules.plans.dto.agent_contracts import (
 )
 from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.knowledge_graph.research.schema import ActivityItemVenueCandidate
 
 
 def test_place_selector_contract_accepts_required_experiences() -> None:
@@ -63,6 +64,41 @@ class _RequiredPlaceTool:
         )
 
     def search(self, **kwargs):
+        return []
+
+
+class _ActivityItemGraphRepository:
+    def list_activity_item_venue_candidates(self, region_key, activity_id, *, limit):
+        assert region_key == "vn:hanoi"
+        assert activity_id == "activity-egg-coffee"
+        assert limit == 5
+        return [
+            ActivityItemVenueCandidate(
+                activityId=activity_id,
+                itemId="drink-item-egg-coffee",
+                itemName="Cà phê trứng",
+                placeId="drink-cafe-giang",
+                placeType="DrinkDessert",
+            )
+        ]
+
+
+class _ActivityItemPlaceTool:
+    def __init__(self) -> None:
+        self.search_called = False
+
+    def get(self, place_id: str) -> SelectablePlace | None:
+        if place_id != "drink-cafe-giang":
+            return None
+        return SelectablePlace(
+            placeId=place_id,
+            name="Cafe Giảng",
+            placeType="cafe",
+            regionKey="vn:hanoi",
+        )
+
+    def search(self, **kwargs):
+        self.search_called = True
         return []
 
 
@@ -120,6 +156,43 @@ def test_current_trip_time_hint_overrides_graph_preferred_windows() -> None:
 
     assert resolved[0].source_time_hint == "morning"
     assert resolved[0].preferred_time_windows == []
+
+
+def test_open_food_drink_activity_resolves_venue_through_offers_item() -> None:
+    tool = _ActivityItemPlaceTool()
+    selection_input = PlaceSelectionInput.model_validate(
+        {
+            "intent": {"destination": "Hà Nội"},
+            "tripSpec": {"days": 1},
+            "regionKey": "vn:hanoi",
+            "requiredExperiences": [
+                {
+                    "requirementId": "req-egg-coffee",
+                    "theme": "Thưởng thức cà phê trứng",
+                    "selectionPolicy": "open_candidate",
+                    "activityId": "activity-egg-coffee",
+                    "minimumRequired": 1,
+                    "priority": "must",
+                    "reason": "Đặc trưng Hà Nội.",
+                    "evidenceClaimIds": ["claim-egg-coffee"],
+                    "sourceRefs": ["curation:test"],
+                }
+            ],
+        }
+    )
+
+    resolved, unresolved = PlaceSelectorService(
+        tool,
+        graph_repository=_ActivityItemGraphRepository(),
+    )._required_experience_places(selection_input)
+
+    assert unresolved == []
+    assert tool.search_called is False
+    assert [place.place_id for place in resolved] == ["drink-cafe-giang"]
+    assert resolved[0].activity_id == "activity-egg-coffee"
+    assert resolved[0].candidate_entity_ids == ["drink-item-egg-coffee"]
+    assert resolved[0].selection_method == "activity_item_graph"
+    assert resolved[0].source_activity == "Thưởng thức cà phê trứng"
 
 
 def _base_requirement(**overrides: object) -> dict[str, object]:

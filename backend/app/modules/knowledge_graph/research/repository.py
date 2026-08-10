@@ -22,6 +22,7 @@ from app.modules.knowledge_graph.text import normalize_knowledge_text
 from app.modules.knowledge_graph.research.schema import (
     AREA_TYPES,
     ActivityTypes,
+    ActivityItemVenueCandidate,
     AreaRef,
     EntitySummary,
     GraphStats,
@@ -253,6 +254,74 @@ class ScopeResolutionRepository:
             ).all()
         )
 
+    def list_activity_item_venue_candidates(
+        self,
+        region_key: str,
+        activity_id: str,
+        *,
+        limit: int = 25,
+    ) -> list[ActivityItemVenueCandidate]:
+        """Resolve an Activity to in-scope venues through its involved items.
+
+        Canonical path (read from right to left for the venue lookup):
+        Activity -> INVOLVES_ITEM -> Item <- OFFERS_ITEM <- Venue.
+        Food/drink Activities deliberately do not require OFFERS_ACTIVITY.
+        """
+        if not activity_id or limit < 1:
+            return []
+        parts = [part.strip() for part in region_key.split(",") if part.strip()]
+        destination = parts[1] if len(parts) >= 2 and parts[0] == "vn" else region_key
+        area = self.resolve_area_by_name(destination.replace("-", " "))
+        if area is None:
+            return []
+        area_ids = self.get_descendant_scope_area_ids(area.id)
+
+        involves = aliased(KnowledgeRelationship)
+        item = aliased(KnowledgeEntity)
+        offer = aliased(KnowledgeRelationship)
+        venue = aliased(KnowledgeEntity)
+        located = aliased(KnowledgeRelationship)
+        rows = self.db.execute(
+            select(
+                item.id,
+                item.canonical_name,
+                venue.id,
+                venue.entity_type,
+            )
+            .select_from(involves)
+            .join(item, item.id == involves.to_entity_id)
+            .join(
+                offer,
+                (offer.to_entity_id == item.id)
+                & (offer.relationship_type == "OFFERS_ITEM"),
+            )
+            .join(venue, venue.id == offer.from_entity_id)
+            .join(
+                located,
+                (located.from_entity_id == venue.id)
+                & (located.relationship_type == "LOCATED_IN"),
+            )
+            .where(
+                involves.from_entity_id == activity_id,
+                involves.relationship_type == "INVOLVES_ITEM",
+                item.entity_type.in_(("FoodItem", "DrinkItem")),
+                venue.entity_type.in_(("Restaurant", "DrinkDessert")),
+                located.to_entity_id.in_(area_ids),
+            )
+            .order_by(offer.id, venue.id)
+            .limit(limit)
+        ).all()
+        return [
+            ActivityItemVenueCandidate(
+                activityId=activity_id,
+                itemId=item_id,
+                itemName=item_name,
+                placeId=place_id,
+                placeType=place_type,
+            )
+            for item_id, item_name, place_id, place_type in rows
+        ]
+
     def list_specialty_meal_candidates(
         self,
         region_key: str,
@@ -270,7 +339,7 @@ class ScopeResolutionRepository:
         area = self.resolve_area_by_name(destination.replace("-", " "))
         if area is None:
             return []
-        area_ids = self.get_scope_area_ids(area.id)
+        area_ids = self.get_descendant_scope_area_ids(area.id)
         special_edges = self.query_special_experiences_in_scope(area_ids, limit=limit)
         activity_ids = list(dict.fromkeys(edge.to_entity_id for edge in special_edges))
         if not activity_ids:
@@ -992,26 +1061,35 @@ class ScopeResolutionRepository:
         root_area_id: str,
         max_depth: int = 4,
     ) -> list[str]:
-        """Get all Area IDs in scope (root + descendants)."""
-        area_ids = [root_area_id]
-        queue: list[str] = [root_area_id]
-
-        while queue:
-            current_id = queue.pop(0)
-            children = self.db.scalars(
-                select(KnowledgeRelationship.to_entity_id).where(
-                    KnowledgeRelationship.from_entity_id == current_id,
-                    KnowledgeRelationship.relationship_type == "PART_OF",
+        """Get graph discovery scope (root + PART_OF ancestors)."""
+        return [
+            root_area_id,
+            *(
+                area.id
+                for area in self.traverse_part_of_ancestors(
+                    root_area_id,
+                    max_depth=max_depth,
                 )
-            ).all()
+            ),
+        ]
 
-            for child_id in children:
-                child_entity = self.db.get(KnowledgeEntity, child_id)
-                if child_entity and child_entity.entity_type in AREA_TYPES:
-                    area_ids.append(child_id)
-                    queue.append(child_id)
-
-        return area_ids
+    def get_descendant_scope_area_ids(
+        self,
+        root_area_id: str,
+        max_depth: int = 4,
+    ) -> list[str]:
+        """Get venue lookup scope (destination root + contained areas)."""
+        return [
+            root_area_id,
+            *(
+                area.id
+                for area in self.traverse_part_of_descendants(
+                    root_area_id,
+                    max_depth=max_depth,
+                    limit=500,
+                )
+            ),
+        ]
 
 
 # Alias for compatibility with experience discovery tool

@@ -431,6 +431,10 @@ PlaceSelector điền item cụ thể:
   được lấp meal anchor. Với place chưa đi qua graph, nhà hàng/quán ăn hoặc venue
   có bằng chứng món chính mới được dùng làm fallback. Category trình bày `food`
   không phải node type và không đủ để xác định một bữa chính;
+- trong toàn chuyến, meal venue gắn `FoodItem`/`DrinkItem` đặc trưng được ưu tiên
+  hơn restaurant catalog thông thường. Mỗi `meal key` đã xuất hiện bị cộng
+  diversity penalty để món chưa dùng được chọn trước; penalty không phải hard
+  ban nên món có thể lặp khi không còn lựa chọn phù hợp;
 - mỗi ngày phải có ít nhất hai activity non-food, ưu tiên một activity trước
   lunch và một activity sau lunch; café không được tính vào mức tối thiểu này;
 - tối đa một café mỗi ngày, kể cả khi intent chứa cafe hopping;
@@ -445,6 +449,13 @@ PlaceSelector điền item cụ thể:
 - với intake có URL hoặc ảnh/OCR, xếp candidate nguồn tương thích trước trong
   từng meal/activity window; chỉ gọi Finder cho gap sau khi không còn candidate
   nguồn phù hợp với window đó;
+- mọi bước capacity, skeleton và timeline dùng cùng tier
+  `user intent -> URL source -> required experience -> finder suggestion`;
+  `sourceOrder` chỉ sắp thứ tự bên trong URL, không phải priority giữa nguồn;
+- capacity overflow không xóa mandatory Place trước exact timeline. Nếu
+  mandatory vẫn overflow sau detailed routing, Planner phải evict unlocked
+  finder suggestion trước và CheckOverall phát lỗi
+  `optional_displaced_mandatory` nếu invariant này bị vi phạm;
 - PlaceSelector loại suggestion trùng danh tính với toàn bộ stop URL và item đã xếp,
   kể cả khi provider ID khác nhưng tên chuẩn hóa/biến thể alias cho thấy cùng
   một địa điểm;
@@ -485,6 +496,16 @@ PlaceSelector điền item cụ thể:
 - coffee do Finder thêm tối đa một stop/ngày và bằng 0 nếu ngày đã có coffee từ
   URL; chỉ bỏ giới hạn khi intent nói rõ coffee tour/cafe hopping. Category
   Finder chưa xuất hiện trong ngày được ưu tiên để tăng diversity;
+- diversity của gap-fill dùng count toàn chuyến, tăng penalty cho activity/tag/
+  place type đã lặp và tăng mạnh hơn cho spa, beer/bar và café/trà. Food/drink
+  liên tiếp không còn được coi là separator hợp lệ; phải có non-food activity
+  giữa hai stop, trừ intent chuyên biệt được mô hình hóa riêng;
+- suggestion thuộc clinic/medical, education consulting, office, government,
+  real-estate và dịch vụ vận hành không được tự động lấp activity. Explicit
+  user-selected Place vẫn được giữ để hỗ trợ nhu cầu thực tế do user yêu cầu;
+- `fresh_market`/`morning_market` không có window rõ được gán preference
+  `05:00-08:00`, `night_market` là `18:00-23:00`; generic `market` không bị suy
+  diễn thời gian chỉ từ tên. Vi phạm window time-sensitive là checker error;
 - giữ source ref từ `SelectedPlace` tới `TripItem`;
 - tối ưu thứ tự item có tọa độ bằng nearest-neighbour rồi 2-opt;
 - batch ordered stop của từng ngày qua Valhalla sau khi xếp stop; Haversine chỉ
@@ -714,6 +735,12 @@ required experience được resolve rồi gộp với Place từ URL/user thàn
 pool. Chỉ lúc đó `ClusterFirstRepairSolver` dùng capacity, meal anchors và
 TravelTimeMatrix để chọn số ngày/phân cụm trong bộ nhớ. Suggestion dùng để lấp
 gap không tham gia quyết định tăng ngày.
+
+Required food/drink experience chưa có Place cụ thể được resolve trước capacity
+qua `Activity -> INVOLVES_ITEM -> Item <- OFFERS_ITEM <- Venue`. Venue lookup
+chỉ nhận `Restaurant`/`DrinkDessert` nằm trong destination và các area con, dùng
+pool bounded; không cần `OFFERS_ACTIVITY`. Text/tag search chỉ chạy khi graph
+không trả được venue materialize hợp lệ.
 
 Theme là tín hiệu cấp chuyến đi, không phải contract cấp ngày. Số lượng
 `requiredExperiences` không phụ thuộc `tripSpec.days`; các ngày cần đa dạng hoạt

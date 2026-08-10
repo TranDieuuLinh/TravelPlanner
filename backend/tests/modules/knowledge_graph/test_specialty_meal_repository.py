@@ -64,6 +64,45 @@ def test_plannable_meal_nodes_require_a_restaurant_offer(db_session) -> None:
     ]
 
 
+def test_activity_item_venue_candidates_include_restaurant_and_drink_dessert(
+    db_session,
+) -> None:
+    db_session.add_all(
+        [
+            KnowledgeEntity(id="area-hanoi-item", canonical_name="Hà Nội Item", normalized_name="ha noi item", entity_type="Area"),
+            KnowledgeEntity(id="area-hoan-kiem-item", canonical_name="Hoàn Kiếm Item", normalized_name="hoan kiem item", entity_type="Area"),
+            KnowledgeEntity(id="area-other", canonical_name="Nơi khác", normalized_name="noi khac", entity_type="Area"),
+            KnowledgeEntity(id="activity-coffee", canonical_name="Thưởng thức cà phê trứng", normalized_name="thuong thuc ca phe trung", entity_type="Activity"),
+            KnowledgeEntity(id="item-coffee", canonical_name="Cà phê trứng", normalized_name="ca phe trung", entity_type="DrinkItem"),
+            KnowledgeEntity(id="restaurant-coffee", canonical_name="Nhà hàng có cà phê trứng", normalized_name="nha hang co ca phe trung", entity_type="Restaurant"),
+            KnowledgeEntity(id="cafe-giang", canonical_name="Cafe Giảng", normalized_name="cafe giang", entity_type="DrinkDessert"),
+            KnowledgeEntity(id="travel-place", canonical_name="Điểm thường", normalized_name="diem thuong", entity_type="TravelPlace"),
+            KnowledgeEntity(id="cafe-other", canonical_name="Cafe ngoài vùng", normalized_name="cafe ngoai vung", entity_type="DrinkDessert"),
+            KnowledgeRelationship(from_entity_id="activity-coffee", relationship_type="INVOLVES_ITEM", to_entity_id="item-coffee"),
+            KnowledgeRelationship(from_entity_id="area-hoan-kiem-item", relationship_type="PART_OF", to_entity_id="area-hanoi-item"),
+            KnowledgeRelationship(from_entity_id="restaurant-coffee", relationship_type="OFFERS_ITEM", to_entity_id="item-coffee"),
+            KnowledgeRelationship(from_entity_id="cafe-giang", relationship_type="OFFERS_ITEM", to_entity_id="item-coffee"),
+            KnowledgeRelationship(from_entity_id="travel-place", relationship_type="OFFERS_ITEM", to_entity_id="item-coffee"),
+            KnowledgeRelationship(from_entity_id="cafe-other", relationship_type="OFFERS_ITEM", to_entity_id="item-coffee"),
+            KnowledgeRelationship(from_entity_id="restaurant-coffee", relationship_type="LOCATED_IN", to_entity_id="area-hanoi-item"),
+            KnowledgeRelationship(from_entity_id="cafe-giang", relationship_type="LOCATED_IN", to_entity_id="area-hoan-kiem-item"),
+            KnowledgeRelationship(from_entity_id="travel-place", relationship_type="LOCATED_IN", to_entity_id="area-hanoi-item"),
+            KnowledgeRelationship(from_entity_id="cafe-other", relationship_type="LOCATED_IN", to_entity_id="area-other"),
+        ]
+    )
+    db_session.commit()
+
+    rows = ScopeResolutionRepository(db_session).list_activity_item_venue_candidates(
+        "vn,ha-noi-item",
+        "activity-coffee",
+    )
+
+    assert {(row.placeId, row.placeType, row.itemId) for row in rows} == {
+        ("restaurant-coffee", "Restaurant", "item-coffee"),
+        ("cafe-giang", "DrinkDessert", "item-coffee"),
+    }
+
+
 def test_activity_place_candidates_use_offers_activity_not_special_only(db_session) -> None:
     db_session.add_all(
         [

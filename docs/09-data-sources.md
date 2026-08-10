@@ -591,3 +591,27 @@ pool bounded từ `SPECIAL_EXPERIENCE/TARGETS_PLACE`, mở rộng
 `INVOLVES_ITEM/OFFERS_ITEM` khi cần, rồi dùng tọa độ để prefilter và phân bổ
 toàn chuyến. Final route chỉ nhận các venue đã chọn; vì vậy fallback hàng nghìn
 venue không tạo một matrix toàn cục thứ hai.
+
+Catalog food/drink đặc trưng không dùng tên nhà hàng làm Activity. Batch
+`specialty_food_catalog_cli` đối chiếu trực tiếp `Restaurant`/`DrinkDessert`,
+mặc định dry-run và chỉ ghi với `--apply`. Graph canonical là
+`Area -> SPECIAL_EXPERIENCE -> Activity -> INVOLVES_ITEM -> Item` và
+`Venue -> OFFERS_ITEM -> Item`; batch không tạo `OFFERS_ACTIVITY`.
+Trước khi xóa Activity legacy mang tên venue, batch đọc `TARGETS_PLACE` để giữ
+lại bằng chứng venue cho `OFFERS_ITEM`; entity venue không bị xóa.
+Runtime Mandatory Candidate Pool đọc ngược `OFFERS_ITEM` từ item của Activity để
+resolve `Restaurant`/`DrinkDessert` trong destination. Truy vấn được giới hạn và
+không cần tạo cạnh `OFFERS_ACTIVITY`; chỉ khi không có venue graph hợp lệ mới
+fallback sang place search theo text/tag.
+
+## Eligibility và thời điểm trải nghiệm
+
+Place provider category phải được chuẩn hóa trước gap-fill. Clinic, medical,
+education consulting, office, government, real-estate và operational service
+types không đủ điều kiện làm suggestion du lịch mặc định. Policy này không xóa
+explicit user-selected Place.
+
+`openingHours` chỉ chứng minh khả năng mở cửa. Thời điểm trải nghiệm tốt nhất đi
+qua `preferredTimeWindows` có provenance riêng. Structured tag
+`fresh_market`/`morning_market` dùng `05:00-08:00`, `night_market` dùng
+`18:00-23:00`; generic `market` không được suy diễn là chợ sáng.

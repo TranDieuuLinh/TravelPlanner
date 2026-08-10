@@ -692,7 +692,7 @@ class RepositoryPlaceSelectionTool:
 
     def get(self, place_id: str) -> SelectablePlace | None:
         place = self.repository.get(place_id)
-        if place is None or place.deleted_at is not None:
+        if place is None or getattr(place, "deleted_at", None) is not None:
             return None
         return self._to_selectable_place(place)
 
@@ -1095,7 +1095,11 @@ class RepositoryPlaceSelectionTool:
                 if isinstance(feature, str)
             ],
             openingHours=list(place.opening_hours or []),
-            preferredTimeWindows=list(place.preferred_time_windows or []),
+            preferredTimeWindows=list(
+                getattr(place, "preferred_time_windows", None)
+                or metadata.get("preferredTimeWindows", [])
+                or []
+            ),
             weatherSensitivity=(
                 str(metadata.get("weatherSensitivity"))
                 if metadata.get("weatherSensitivity") is not None

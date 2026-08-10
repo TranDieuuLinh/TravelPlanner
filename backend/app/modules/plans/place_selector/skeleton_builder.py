@@ -18,6 +18,7 @@ from app.modules.plans.place_selector.timeline_policy import (
     MEAL_ANCHORS,
     selected_activity_duration,
 )
+from app.modules.plans.solver.candidate_pool import selected_place_priority_tier
 
 if TYPE_CHECKING:
     from app.modules.plans.place_selector.area_survey import AreaProfile
@@ -98,6 +99,7 @@ class DaySkeletonBuilder:
         ordered = sorted(
             selected_places,
             key=lambda place: (
+                selected_place_priority_tier(place),
                 place.source_day or brief.day,
                 place.source_order or 10_000,
                 place.priority,
@@ -638,7 +640,11 @@ class DaySkeletonBuilder:
     ) -> DaySkeleton:
         ordered = sorted(
             selected_places,
-            key=lambda place: (place.source_order or 10_000, place.name.casefold()),
+            key=lambda place: (
+                selected_place_priority_tier(place),
+                place.source_order or 10_000,
+                place.name.casefold(),
+            ),
         )
         cursor = 8 * 60
         blocks: list[DayBlock] = []

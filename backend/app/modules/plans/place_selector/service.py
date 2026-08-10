@@ -52,6 +52,11 @@ from app.modules.plans.place_selector.meal_selector import MealStopSelector
 from app.modules.plans.itinerary_optimizer import ItineraryOptimizer
 from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.modules.plans.explorer.place_policy import is_meal_place
+from app.modules.plans.solver.candidate_pool import selected_place_priority_tier
+from app.modules.plans.place_selector.visit_windows import (
+    effective_preferred_time_windows,
+    is_time_sensitive_visit,
+)
 from app.modules.plans.place_selector.timeline_policy import (
     ACTIVITY_WINDOWS,
     DAILY_ACTIVITY_MINUTES,
@@ -467,12 +472,20 @@ class PlaceSelectorService:
                 candidate_ids = requirement.candidate_place_ids
             if policy == "open_candidate":
                 candidate_ids = []
-                searched = self.place_tool.search(
+                graph_candidates = self._activity_item_venue_candidates(
                     region_key=selection_input.region_key,
-                    target_tags=[requirement.theme, requirement.activity_id or ""],
+                    activity_id=requirement.activity_id,
                     excluded_place_ids=set(existing),
                     limit=max(requirement.minimum_required, 5),
                 )
+                searched = graph_candidates
+                if not searched:
+                    searched = self.place_tool.search(
+                        region_key=selection_input.region_key,
+                        target_tags=[requirement.theme, requirement.activity_id or ""],
+                        excluded_place_ids=set(existing),
+                        limit=max(requirement.minimum_required, 5),
+                    )
                 candidate_ids = [candidate.stable_ref for candidate in searched]
                 for candidate in searched:
                     if candidate.stable_ref not in existing:
@@ -562,6 +575,45 @@ class PlaceSelectorService:
                 )
         return resolved, unresolved
 
+    def _activity_item_venue_candidates(
+        self,
+        *,
+        region_key: str,
+        activity_id: str | None,
+        excluded_place_ids: set[str],
+        limit: int,
+    ) -> list[SelectablePlace]:
+        """Resolve food/drink Activities via INVOLVES_ITEM and OFFERS_ITEM."""
+        loader = getattr(
+            self.graph_repository,
+            "list_activity_item_venue_candidates",
+            None,
+        )
+        if not activity_id or not callable(loader):
+            return []
+        resolved: list[SelectablePlace] = []
+        for row in loader(region_key, activity_id, limit=limit):
+            if row.placeId in excluded_place_ids:
+                continue
+            candidate = self.place_tool.get(row.placeId)
+            if candidate is None:
+                continue
+            resolved.append(
+                candidate.model_copy(
+                    update={
+                        "activity_id": activity_id,
+                        "candidate_entity_ids": list(
+                            dict.fromkeys(
+                                [*candidate.candidate_entity_ids, row.itemId]
+                            )
+                        ),
+                        "selection_method": "activity_item_graph",
+                        "source_activity": row.itemName,
+                    }
+                )
+            )
+        return resolved
+
     @staticmethod
     def _candidate_to_selected(candidate: SelectablePlace, requirement) -> SelectedPlaceContext:
         """Project a catalog candidate into the planner's selected-place contract."""
@@ -629,6 +681,7 @@ class PlaceSelectorService:
         for place in sorted(
             selection_input.selected_places,
             key=lambda value: (
+                selected_place_priority_tier(value),
                 value.source_day or 10_000,
                 value.source_order or 10_000,
                 value.name.casefold(),
@@ -1430,6 +1483,75 @@ class PlaceSelectorService:
             plan_status.day_usage = PlaceSelectionUsage()
             day_items: list[PlanItem] = []
             activity_number = 0
+
+            # Time-sensitive source stops can legitimately precede the normal
+            # 09:00 activity windows (for example a 05:00 fresh market).
+            # Schedule those evidence-backed anchors first instead of forcing
+            # them into a generic morning slot or silently dropping them.
+            for selected in selected_activities:
+                candidate = self.candidate_selector._selected_to_candidate(
+                    selected, activity_brief
+                )
+                windows = effective_preferred_time_windows(candidate)
+                if not is_time_sensitive_visit(candidate) or not windows:
+                    continue
+                duration = selected_activity_duration(
+                    selected.source_duration_minutes
+                )
+                start = parse_clock_minutes(windows[0].start)
+                end = parse_clock_minutes(windows[0].end)
+                if start is None or end is None or start + duration > end:
+                    continue
+                activity_number += 1
+                early_block = DayBlock(
+                    role=f"main_activity_{activity_number}",
+                    time_window=format_clock_window(start, duration),
+                    duration_minutes=duration,
+                    activity=True,
+                    preferred_ref=selected.stable_ref,
+                )
+                chosen = self.candidate_selector.select(
+                    CandidateSelectionContext(
+                        selection_blueprint=selection_blueprint,
+                        brief=activity_brief,
+                        block=early_block,
+                        selected_by_ref=selected_by_ref,
+                        plan_status=plan_status,
+                        user_status=user_status,
+                        avoided_place_names=avoided_place_names,
+                        intent_constraints=intent_constraints,
+                        allow_place_suggestions=False,
+                        constraint_policy=constraint_policy,
+                        budget_level=budget_level,
+                        rejected_selected_places=rejected_selected_places,
+                        intent_interests=intent_interests,
+                        travel_style=travel_style,
+                        strict_day_theme=False,
+                        enforce_opening_hours=False,
+                        occupied_items=[
+                            *(item for day in activity_days for item in day.items),
+                            *day_items,
+                        ],
+                        current_day_items=day_items,
+                        bbox_filter=(area_profile.bbox if area_profile else None),
+                    )
+                )
+                if chosen is None:
+                    continue
+                day_items.append(
+                    self._build_activity_item(
+                        chosen,
+                        early_block,
+                        mode=mode,
+                        selected_source=True,
+                    )
+                )
+                self.status_tracker.apply_activity(
+                    chosen,
+                    early_block,
+                    user_status,
+                    plan_status,
+                )
             for available_window_index, available_window in enumerate(ACTIVITY_WINDOWS):
                 cursor = available_window.start_minutes
                 while (
@@ -2352,6 +2474,7 @@ class PlaceSelectorService:
         return sorted(
             places,
             key=lambda place: (
+                selected_place_priority_tier(place),
                 place.source_day or 10_000,
                 place.source_order or 10_000,
                 place.priority if place.priority is not None else 10_000,
@@ -2371,7 +2494,7 @@ class PlaceSelectorService:
         ordered = sorted(
             places,
             key=lambda place: (
-                place.source_order is None,
+                selected_place_priority_tier(place),
                 place.source_order or 10_000,
                 place.name.casefold(),
             ),
@@ -2617,7 +2740,7 @@ class PlaceSelectorService:
                 else None
             ),
             claimIds=candidate.claim_ids,
-            preferredTimeWindows=candidate.preferred_time_windows,
+            preferredTimeWindows=effective_preferred_time_windows(candidate),
         )
 
     @staticmethod

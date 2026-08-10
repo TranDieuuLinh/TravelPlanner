@@ -35,13 +35,20 @@ Explorer + Resolve
   duration được mở thêm ngày trong memory; trip khóa duration giữ overflow với
   `reasonCode=no_day_capacity`.
 - Candidate suggestion không tham gia quyết định tăng ngày.
-- PlaceSelector query tối đa một pool nhỏ theo từng gap; mặc định top 5. Nó chỉ
-  commit candidate vừa category, timeline và constraint.
+- PlaceSelector có thể đọc tối đa 20 candidate theo từng gap để loại operational
+  venue trước ranking, nhưng chỉ thử tối đa top 5 sau prefilter. Nó chỉ commit
+  candidate vừa category, timeline và constraint.
 - Suggestion không được chọn hoặc bị detailed-route fitting loại không đi vào
   `UnscheduledPlace`. Danh sách này chỉ chứa nghĩa vụ chưa đáp ứng, candidate
   nguồn `needs_review` và required experience chưa resolve.
 - TravelTimeMatrix phục vụ capacity/clustering; detailed route enrichment chỉ
   chạy khi stop và thứ tự đã ổn định để lấy duration, distance và geometry.
+- Capacity output là đề xuất phân ngày, không phải quyền xóa Place khỏi input
+  của PlaceSelector. Mọi mandatory Place tiếp tục đi qua exact timeline; khi
+  route thật overflow, suggestion không khóa phải bị loại trước.
+- Trip khóa duration nhưng mọi mandatory Place đã pin vào ngày hợp lệ bỏ qua
+  provider-backed global matrix; hệ thống chỉ validate/ordering cục bộ. Trip
+  khóa ngày nhưng Place chưa pin vẫn cần matrix để phân cụm và phân ngày.
 
 ## Hệ quả
 

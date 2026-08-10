@@ -9,10 +9,39 @@ from app.modules.plans.place_selector.timeline_policy import (
 )
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.schema import SelectedPlaceCreate
-from app.modules.plans.solver.contracts import CandidatePool, PlanningCandidate
+from app.modules.plans.solver.contracts import (
+    CandidatePool,
+    PlanningCandidate,
+    REQUIRED_EXPERIENCE_TIER,
+    URL_SOURCE_TIER,
+    USER_INTENT_TIER,
+)
 
 
 CandidatePlace = SelectedPlaceCreate | SelectedPlaceContext
+
+
+def selected_place_priority_tier(place: CandidatePlace) -> int:
+    """Return the user-visible commitment order for a selected Place.
+
+    ``source_order`` only orders stops within a source itinerary. It must not
+    outrank an explicit user choice. Required-experience markers are added by
+    TripThemePlanner and therefore sit behind user and URL commitments.
+    """
+
+    refs = [ref.casefold() for ref in place.source_refs]
+    is_required = any(ref.startswith("required_experience:") for ref in refs)
+    is_url_source = bool(place.source_order) or any(
+        ref.startswith(("http://", "https://")) or ref == "ocr" for ref in refs
+    )
+    if is_required:
+        # Required-experience evidence commonly contains an HTTP claim URL;
+        # only a real source-itinerary order proves that this was already a
+        # URL stop before ThemePlanner attached the requirement marker.
+        return URL_SOURCE_TIER if place.source_order else REQUIRED_EXPERIENCE_TIER
+    if place.must_visit or not is_url_source:
+        return USER_INTENT_TIER
+    return URL_SOURCE_TIER
 
 
 def selected_place_identity(place: CandidatePlace) -> str:
@@ -64,6 +93,8 @@ def build_selected_place_pool(
                 latitude=place.latitude,
                 longitude=place.longitude,
                 source_order=place.source_order,
+                source_day=place.source_day,
+                priority_tier=selected_place_priority_tier(place),
             )
         )
     return CandidatePool(tuple(candidates))

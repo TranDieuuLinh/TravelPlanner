@@ -455,7 +455,7 @@ class MainPlanWorkflow:
             for place in mandatory_places
             if selected_place_identity(place) in overflow_ids
         ]
-        schedulable_places = [
+        allocated_places = [
             place.model_copy(
                 update={
                     "source_day": assigned_days.get(
@@ -465,7 +465,6 @@ class MainPlanWorkflow:
                 }
             )
             for place in mandatory_places
-            if selected_place_identity(place) not in overflow_ids
         ]
         if solution.day_count != trip_spec.days:
             trip_spec = trip_spec.model_copy(
@@ -475,7 +474,10 @@ class MainPlanWorkflow:
         selection_input = prepared_input.model_copy(
             update={
                 "trip_spec": trip_spec,
-                "selected_places": schedulable_places,
+                # Capacity is a proposed allocation. Exact timeline fitting
+                # still receives every mandatory Place so optional gap-fill
+                # can never survive merely because preflight dropped a source.
+                "selected_places": allocated_places,
             }
         )
         if timing_trace is not None:
@@ -500,10 +502,7 @@ class MainPlanWorkflow:
             selection_input,
             enrich_routes=not defer_route_enrichment,
             requirements_prepared=True,
-            unresolved_requirements=[
-                *unresolved_requirements,
-                *capacity_unscheduled,
-            ],
+            unresolved_requirements=unresolved_requirements,
         )
         if timing_trace is not None:
             timing_trace.add_stage(
