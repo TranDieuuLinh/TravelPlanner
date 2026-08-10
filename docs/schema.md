@@ -1,18 +1,19 @@
-# Backend module and agent schemas
+# Schema module, agent và tool
 
-Last checked: 2026-08-10
+Cập nhật lần cuối: 2026-08-10.
 
-The backend follows a modular LangGraph design. Each module exposes its public
-contract through `public.py`; its internal graph state and nodes are private.
+Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
+contract qua `public.py`; state và node nội bộ không được module khác truy cập
+trực tiếp.
 
-## API boundary
+## Ranh giới API
 
 | Endpoint | Input | Output |
 |---|---|---|
-| `GET /health` | None | `{ "status": "ok" }` |
+| `GET /health` | Không có | `{ "status": "ok" }` |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 
-## Modules
+## Các module
 
 | Module | Input | Output |
 |---|---|---|
@@ -23,9 +24,9 @@ contract through `public.py`; its internal graph state and nodes are private.
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
 | `plan_editor` | `PlanEditorInput` | `PlanEditorOutput` |
 
-## Agents
+## Các agent hiện có
 
-The current agent names are defined by `AgentName`:
+Tên agent được định nghĩa trong `AgentName`:
 
 - `supervisor`
 - `explorer`
@@ -34,7 +35,7 @@ The current agent names are defined by `AgentName`:
 - `itinerary_planner`
 - `plan_editor`
 
-The root orchestration graph calls these agents in this flow:
+Root orchestration graph gọi các agent theo flow:
 
 ```text
 supervisor
@@ -43,31 +44,29 @@ supervisor
 └── explorer -> place_checker -> itinerary_planner
 ```
 
-The root graph input is `RootGraphInput` and the root graph output is
-`RootGraphOutput`.
+Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
 
-## Tools and provider adapters
+## Tool và provider adapter
 
-There is no separate standalone tool registry yet. The current provider tools
-and adapters are:
+Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 
 | Tool / adapter | Module | Input | Output |
 |---|---|---|---|
 | `UnconfiguredInformationProvider` | `information_finder` | `query: str` | `InformationFinderOutput` |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
-| `EstimatedRoutingProvider.travel_minutes` | `itinerary_planner` | Two `VerifiedPlace` values | `int` minutes |
+| `EstimatedRoutingProvider.travel_minutes` | `itinerary_planner` | Hai giá trị `VerifiedPlace` | Số phút dạng `int` |
 
-These are development implementations. The external-provider interfaces are:
+Các provider interface bên ngoài hiện có:
 
 - `InformationProvider`
 - `PlaceResolver`
 - `PlaceDiscovery`
 - `RoutingProvider`
 
-## Shared contracts
+## Shared contract
 
-The main shared schema names are:
+Các schema dùng chung chính:
 
 - `TripIntent`
 - `Coordinates`
@@ -80,13 +79,13 @@ The main shared schema names are:
 - `AgentTrace`
 - `AgentError`
 
-## API request and response names
+## Schema request và response của API
 
 - `InvokeRequest`: `thread_id`, `message`, `supplied_candidates`,
   `existing_itinerary`, `edit_operation`.
 - `InvokeResponse`: `request_id`, `route`, `response`, `itinerary`,
   `clarification_question`, `warnings`.
 
-This file records the current scaffold only. Authentication, database-backed
-repositories, URL import tools, live place search, live routing, and
-Marketplace agents are not currently implemented.
+Tài liệu này chỉ mô tả scaffold hiện tại. Authentication, repository dùng
+database, tool import URL, tìm place live, routing live và agent Marketplace
+chưa được triển khai.

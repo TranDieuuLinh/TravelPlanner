@@ -1,15 +1,15 @@
-# Current codebase structure
+# Cấu trúc codebase hiện tại
 
-Updated 2026-08-10.
+Cập nhật lần cuối: 2026-08-10.
 
-## Top-level applications
+## Các ứng dụng cấp cao nhất
 
-- `backend/`: the current FastAPI/LangGraph runtime.
-- `frontend/`: the user-facing Next.js application.
-- `admin-frontend/`: the separate admin/control Next.js application.
-- `docker-compose.yml`: local container configuration.
+- `backend/`: backend FastAPI/LangGraph hiện tại.
+- `frontend/`: giao diện Next.js cho người dùng.
+- `admin-frontend/`: giao diện Next.js riêng cho quản trị viên.
+- `docker-compose.yml`: cấu hình chạy các service trên máy local.
 
-## Backend layout
+## Cấu trúc backend
 
 ```text
 backend/
@@ -35,44 +35,42 @@ backend/
 └── tests/
 ```
 
-`src/app/main.py` creates the FastAPI application. `api/` exposes the HTTP
-contract. `orchestration/` owns the root graph and maps public contracts
-between modules. It must not contain feature-specific travel rules.
+`src/app/main.py` khởi tạo ứng dụng FastAPI. Thư mục `api/` định nghĩa ranh
+giới HTTP. Thư mục `orchestration/` sở hữu root graph và ánh xạ các public
+contract giữa các module. Business rule về du lịch không nên đặt trong
+`orchestration/`.
 
-## Module boundary
+## Ranh giới module
 
-Each vertical module follows this shape:
+Mỗi module dọc có cấu trúc sau:
 
 ```text
 modules/<module>/
-├── public.py       # supported imports for other modules
-├── contract.py     # public Pydantic contracts
-├── state.py        # private graph state
-├── graph.py        # graph factory
-├── nodes.py        # thin LangGraph nodes
-├── service.py      # deterministic business behavior
-├── ports.py        # provider interfaces, when needed
-├── adapters/       # concrete provider implementations, when needed
-└── tests/          # module-local tests
+├── public.py       # API import được module khác hỗ trợ
+├── contract.py     # Pydantic contract công khai
+├── state.py        # graph state nội bộ
+├── graph.py        # factory tạo subgraph
+├── nodes.py        # node LangGraph mỏng
+├── service.py      # business logic xác định được
+├── ports.py        # interface cho provider nếu cần
+├── adapters/       # implementation provider cụ thể nếu cần
+└── tests/          # test riêng của module
 ```
 
-Consumers should import a module through `public.py`, not reach into another
-module's private state, nodes, or services. External providers must be added
-behind a port and adapter.
+Module khác chỉ nên import thông qua `public.py`, không truy cập trực tiếp
+state, node hoặc service nội bộ. Provider bên ngoài phải được đặt sau port và
+adapter.
 
-## Current API boundary
+## Ranh giới API hiện tại
 
-The current runtime intentionally exposes only:
+Backend hiện chỉ expose:
 
 - `GET /health`
 - `POST /v1/agent/invoke`
 
-The agent endpoint accepts a thread id, a user message, optional place
-candidates, an existing itinerary, and an optional edit operation. Its response
-contains the selected route, a textual response, an itinerary when available,
-clarification information, and warnings.
+Endpoint agent nhận thread id, yêu cầu của người dùng, danh sách place tùy
+chọn, itinerary hiện có và edit operation tùy chọn. Response trả về route đã
+chọn, câu trả lời, itinerary nếu có, câu hỏi cần làm rõ và warning.
 
-Authentication, Marketplace, URL import, durable storage, live place data, and
-live routing are not part of the current scaffold. Add them as explicit
-modules or adapters instead of reintroducing the removed legacy backend
-structure.
+Authentication, Marketplace, import URL, lưu trữ bền vững, dữ liệu place live
+và routing live chưa nằm trong scaffold hiện tại.
