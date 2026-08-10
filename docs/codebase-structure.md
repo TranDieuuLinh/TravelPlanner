@@ -7,6 +7,8 @@ Cập nhật lần cuối: 2026-08-10.
 - `backend/`: backend FastAPI/LangGraph hiện tại.
 - `frontend/`: giao diện Next.js cho người dùng.
 - `admin-frontend/`: giao diện Next.js riêng cho quản trị viên.
+- `packages/`: các package frontend dùng chung trong npm workspace; hiện có
+  `api-client/` cho API error và request helper dùng chung.
 - `docker-compose.yml`: cấu hình chạy các service trên máy local.
 
 ## Cấu trúc backend
@@ -24,7 +26,8 @@ backend/
 │   ├── orchestration/
 │   ├── shared/
 │   │   ├── contracts/
-│   │   └── persistence/
+│   │   ├── persistence/
+│   │   └── llm/
 │   └── modules/
 │       ├── supervisor/
 │       ├── explorer/
@@ -72,5 +75,40 @@ Endpoint agent nhận thread id, yêu cầu của người dùng, danh sách pla
 chọn, itinerary hiện có và edit operation tùy chọn. Response trả về route đã
 chọn, câu trả lời, itinerary nếu có, câu hỏi cần làm rõ và warning.
 
-Authentication, Marketplace, import URL, lưu trữ bền vững, dữ liệu place live
-và routing live chưa nằm trong scaffold hiện tại.
+Information Finder hiện có service cache-first, các port `SearchProvider`,
+`SourceRepository`, `EmbeddingProvider`, `AnswerGenerator`, adapter Tavily,
+multilingual-e5 và PostgreSQL/pgvector. Các bảng do module sở hữu có tiền tố
+`information_finder_`; module không dùng bảng legacy. Khi thiếu database hoặc
+API key, development/test dùng fallback trung thực trong process.
+
+Answer generator của Information Finder có thể nhận `LlmClient` dùng chung qua
+dependency injection. Prompt, structured claim contract, source budget,
+citation validation và fallback policy vẫn thuộc module Information Finder;
+shared client chỉ sở hữu transport Gemini và key rotation.
+
+Supervisor là hybrid intent classifier: các rule deterministic có tín hiệu mạnh
+được ưu tiên, request còn mơ hồ có thể dùng structured Gemini qua `shared/llm/`,
+và fallback an toàn được bật mặc định. `SUPERVISOR_CLASSIFIER_PROVIDER=rules`
+chạy offline; cấu hình `gemini` yêu cầu `GEMINI_API_KEY`. Routing baseline chưa
+được production-evaluated.
+
+`shared/llm/` cung cấp port và Gemini REST adapter dùng chung. `GEMINI_API_KEY`
+là một chuỗi chứa nhiều key phân tách bằng dấu phẩy; adapter xoay vòng key và
+cooldown key khi provider trả về lỗi có thể thử lại. Các agent hiện có chưa
+được chuyển business behavior sang LLM ngoài Supervisor và Information Finder
+theo cấu hình của từng module.
+
+Authentication, Marketplace, import URL, dữ liệu place live và routing live
+chưa nằm trong scaffold hiện tại. Checkpointer của root graph vẫn chưa bền vững.
+
+## Cấu trúc style frontend
+
+`frontend/src/app/globals.css` là entrypoint style duy nhất của app và chỉ giữ
+các `@import`. CSS theo vùng chức năng nằm trong `frontend/src/styles/global/`,
+được import theo đúng thứ tự cascade hiện tại; style riêng của Planner nằm trong
+`frontend/src/features/planner/styles/`.
+
+`admin-frontend/app/globals.css` cũng chỉ giữ các import. Style admin được chia
+theo shell/run, responsive, Knowledge Graph và AI import trong
+`admin-frontend/styles/`; các panel Knowledge Graph nằm trong
+`admin-frontend/app/components/knowledge-graph/`.
