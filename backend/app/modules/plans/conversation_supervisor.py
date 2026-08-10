@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from app.core.config import settings
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.domain.entities import Plan
 from app.modules.plans.plan_editor.contract import (
     OperationType,
@@ -169,6 +170,7 @@ class ConstrainedConversationSupervisor:
     def __init__(self, llm: LLMClient) -> None:
         self.llm = llm
 
+    @observe_application("planner.conversation_supervisor")
     async def decide(
         self,
         content: str,

@@ -6,6 +6,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.explorer.schema import (
     GeneratedLookupAlias,
     UnifiedPlaceCandidate,
@@ -99,6 +100,7 @@ class LLMPlaceAliasEnricher:
     def __init__(self, llm_client: LLMClient) -> None:
         self.llm_client = llm_client
 
+    @observe_application("places.enrich_aliases")
     async def enrich(
         self,
         candidates: list[UnifiedPlaceCandidate],

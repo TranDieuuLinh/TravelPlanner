@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.knowledge_graph.research import (
     GraphScopeError,
     TripResearchBundle,
@@ -492,6 +493,7 @@ class TripThemePlannerService:
             statistics_status,
         )
 
+    @observe_application("planner.trip_theme")
     async def _create_plan(
         self,
         planner_input: TripThemePlanningInput,

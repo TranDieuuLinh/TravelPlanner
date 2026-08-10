@@ -12,6 +12,11 @@ from queue import Queue
 import httpx
 
 from app.core.config import settings
+from app.integrations.llm.tracing import (
+    begin_external_generation,
+    finish_external_gemini_generation,
+    observe_external_generation,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     FrameVisionObservation,
     FrameVisionResult,
@@ -223,6 +228,7 @@ class GeminiReelFrameVision:
                 last_error = exc
         raise last_error or RuntimeError("Unknown frame batch failure.")
 
+    @observe_external_generation("llm.analyze_reel_frames")
     def _analyze_batch(
         self,
         frame_paths: list[Path],
@@ -231,6 +237,16 @@ class GeminiReelFrameVision:
         api_key: str,
     ) -> FrameVisionResult:
         start = time.perf_counter()
+        begin_external_generation(
+            provider="gemini",
+            model=self.model_name,
+            operation="analyze_reel_frames",
+            input_summary={
+                "frameCount": len(frame_paths),
+                "frameBytes": sum(path.stat().st_size for path in frame_paths),
+                "destinationHintProvided": bool(destination),
+            },
+        )
         prompt = (
             "Analyze these chronological frames sampled from a travel reel. "
             "Return one observation for each distinct, visually evidenced numbered "
@@ -448,10 +464,22 @@ class GeminiReelFrameVision:
                     )
             if rendered:
                 text = "\n".join(rendered)
-        return FrameVisionResult(
+        result = FrameVisionResult(
             text=text,
             places=place_names,
             observations=structured_observations,
             status="ok",
             durationSeconds=time.perf_counter() - start,
         )
+        finish_external_gemini_generation(
+            operation="analyze_reel_frames",
+            configured_model=self.model_name,
+            response=data,
+            output_summary={
+                "type": "frameVision",
+                "textCharacters": len(result.text),
+                "placeCount": len(result.places),
+                "observationCount": len(result.observations),
+            },
+        )
+        return result

@@ -11,6 +11,11 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
+from app.integrations.llm.tracing import (
+    begin_external_generation,
+    finish_external_gemini_generation,
+    observe_external_generation,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     FrameVisionObservation,
     SpeechToTextObservation,
@@ -149,6 +154,7 @@ class GeminiSourceObservationFuser:
             expected_place_count=expected_place_count,
         )
 
+    @observe_external_generation("llm.fuse_source_observations")
     async def _fuse_with_deadline(
         self,
         *,
@@ -157,6 +163,17 @@ class GeminiSourceObservationFuser:
         started_at: float,
     ) -> SourceObservationFusionResult:
         last_error = "source_observation_fusion_unavailable"
+        begin_external_generation(
+            provider="gemini",
+            model=self.model_name,
+            operation="fuse_source_observations",
+            input_summary={
+                "requestPayloadCharacters": len(
+                    json.dumps(request_payload, ensure_ascii=False)
+                ),
+                "responseSchemaProvided": True,
+            },
+        )
         request_timeout = httpx.Timeout(
             connect=min(10.0, self.timeout_seconds),
             read=min(30.0, self.timeout_seconds),
@@ -180,7 +197,8 @@ class GeminiSourceObservationFuser:
                         continue
                     try:
                         response.raise_for_status()
-                        raw = _extract_text(response.json())
+                        data = response.json()
+                        raw = _extract_text(data)
                         output = SourceObservationFusionResult.model_validate_json(raw)
                     except (
                         httpx.HTTPError,
@@ -189,6 +207,16 @@ class GeminiSourceObservationFuser:
                     ) as exc:
                         last_error = type(exc).__name__
                         break
+                    finish_external_gemini_generation(
+                        operation="fuse_source_observations",
+                        configured_model=self.model_name,
+                        response=data,
+                        output_summary={
+                            "type": "sourceObservationFusion",
+                            "observationCount": len(output.observations),
+                            "regionStoryCharacters": len(output.region_story),
+                        },
+                    )
                     return output.model_copy(
                         update={
                             "status": "ok",

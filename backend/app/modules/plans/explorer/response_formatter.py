@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.domain.constraint_policy import (
     ConstraintPolicy,
     GeographicScopePolicy,
@@ -28,6 +29,7 @@ class ExploreResponseFormatter:
     def __init__(self, llm: LLMClient) -> None:
         self.llm = llm
 
+    @observe_application("explorer.format_bundle")
     async def format(
         self,
         payload: FullExploreRequest,
@@ -121,6 +123,7 @@ class ExploreResponseFormatter:
                 "Gemini failed to generate a valid ExploreBundleDraft JSON."
             ) from exc
 
+    @observe_application("explorer.format_context")
     async def format_context(
         self,
         payload: FullExploreRequest,

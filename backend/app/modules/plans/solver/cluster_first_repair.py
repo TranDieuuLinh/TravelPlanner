@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import asin, cos, radians, sin, sqrt
 
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.place_selector.timeline_policy import DAILY_ACTIVITY_MINUTES
 from app.modules.plans.routing.provider import TravelTimeMatrixProvider
 from app.modules.plans.solver.contracts import (
@@ -26,6 +27,7 @@ class ClusterFirstRepairSolver:
     planner retries. Optional candidates can use the same contract later.
     """
 
+    @observe_application("planner.capacity_solver")
     def solve(
         self,
         pool: CandidatePool,

@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 
 from .reader import PlaceSearchReader
 from .schema import InformationAnswer, InformationQuery, InformationResult
@@ -120,6 +121,7 @@ class InformationFinderAgent:
             )
         return _result_response(result)
 
+    @observe_application("planner.information_finder")
     async def _answer(
         self,
         context: Any,

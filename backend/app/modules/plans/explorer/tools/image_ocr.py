@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.core.config import settings
 from app.integrations.llm.base import LLMClient, LLMImageInput
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.explorer.schema import ExploreImageContext
 
 SUPPORTED_IMAGE_MIME_TYPES = {
@@ -42,6 +43,7 @@ class ImageOcrService:
                 image.clear_data()
         return contexts
 
+    @observe_application("explorer.image_ocr")
     async def extract(
         self,
         *,

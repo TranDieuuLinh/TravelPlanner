@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.integrations.search.base import WebSearchProvider
 
 
@@ -235,6 +236,7 @@ mức giá người lớn, chọn vé vào cửa cơ bản; không trả khoản
 """.strip()
 
 
+@observe_application("knowledge_graph.research_price_grounded")
 async def research_travel_place_price(
     candidate: TravelPlacePriceCandidate,
     *,
@@ -274,6 +276,7 @@ async def research_travel_place_price(
     )
 
 
+@observe_application("knowledge_graph.research_price_web")
 async def research_travel_place_price_with_web_search(
     candidate: TravelPlacePriceCandidate,
     *,
@@ -344,6 +347,7 @@ async def research_travel_place_price_with_web_search(
     )
 
 
+@observe_application("knowledge_graph.research_price_sources")
 async def research_travel_place_price_from_sources(
     candidate: TravelPlacePriceCandidate,
     *,

@@ -3,6 +3,7 @@ import base64
 import json
 import re
 import time
+from contextvars import ContextVar
 
 import httpx
 
@@ -12,6 +13,7 @@ from app.integrations.llm.base import (
     GroundingSource,
     LLMClient,
     LLMImageInput,
+    LLMUsage,
 )
 
 GEMINI_GENERATE_CONTENT_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -136,6 +138,10 @@ class GeminiLLMClient(LLMClient):
         self._current_key_index = 0
         self._key_cooldown_until: dict[int, float] = {}
         self._disabled_key_indexes: set[int] = set()
+        self._last_usage: ContextVar[LLMUsage | None] = ContextVar(
+            f"gemini_last_usage_{id(self)}",
+            default=None,
+        )
 
     async def generate_profile_plan(self, prompt: str) -> str:
         return await self.generate_json(
@@ -338,13 +344,60 @@ class GeminiLLMClient(LLMClient):
                     )
 
                 try:
-                    return response.json()
+                    data = response.json()
                 except ValueError as exc:
                     raise RuntimeError(
                         "Gemini returned a non-JSON response."
                     ) from exc
+                self._last_usage.set(self._usage_from_response(data, model))
+                return data
 
         raise RuntimeError("Gemini request failed unexpectedly.")
+
+    def consume_last_usage(self) -> LLMUsage | None:
+        usage = self._last_usage.get()
+        self._last_usage.set(None)
+        return usage
+
+    @staticmethod
+    def _usage_from_response(
+        data: dict,
+        requested_model: str,
+    ) -> LLMUsage | None:
+        raw = data.get("usageMetadata")
+        if not isinstance(raw, dict):
+            return None
+        metadata = raw
+
+        def token_count(name: str) -> int:
+            value = metadata.get(name, 0)
+            return value if isinstance(value, int) and value >= 0 else 0
+
+        input_tokens = token_count("promptTokenCount")
+        candidate_tokens = token_count("candidatesTokenCount")
+        thinking_tokens = token_count("thoughtsTokenCount")
+        reported_total = token_count("totalTokenCount")
+        total_tokens = reported_total or (
+            input_tokens + candidate_tokens + thinking_tokens
+        )
+        # Gemini's total includes thinking tokens. Keep Langfuse's input/output
+        # buckets mutually exclusive while preserving the provider total.
+        output_tokens = max(candidate_tokens, total_tokens - input_tokens)
+        total_tokens = max(total_tokens, input_tokens + output_tokens)
+        model = data.get("modelVersion")
+        return LLMUsage(
+            model=str(model).strip() if model else requested_model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            details={
+                "candidateTokens": candidate_tokens,
+                "thinkingTokens": thinking_tokens,
+                "cachedInputTokens": token_count("cachedContentTokenCount"),
+                "toolUsePromptTokens": token_count("toolUsePromptTokenCount"),
+                "responseId": str(data.get("responseId") or "")[:200] or None,
+            },
+        )
 
     async def _acquire_api_key(self) -> tuple[int, str]:
         while True:

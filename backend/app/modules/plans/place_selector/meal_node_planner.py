@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 
 
 class MealNodeSelection(BaseModel):
@@ -139,6 +140,7 @@ class MealNodePlanner:
             for node in nodes
         ]
 
+    @observe_application("planner.select_daily_meals")
     async def _select_for_day(
         self,
         *,
@@ -183,6 +185,7 @@ class MealNodePlanner:
             seen_slots.add(selection.slot)
         return result
 
+    @observe_application("planner.select_trip_meals")
     async def _select_for_trip(
         self,
         *,

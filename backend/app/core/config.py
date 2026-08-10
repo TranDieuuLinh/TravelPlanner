@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     gemini_caption_max_attempts: int = Field(default=2, ge=1, le=3)
     gemini_audio_model: str = "gemini-3.6-flash"
     gemini_image_ocr_model: str = "gemini-3.5-flash-lite"
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "http://localhost:3005"
+    langfuse_environment: str = "local"
     url_reel_gemini_stt_min_interval_seconds: float = Field(
         default=2.0,
         ge=0.0,
