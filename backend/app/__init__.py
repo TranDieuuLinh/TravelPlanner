@@ -1,1 +1,0 @@
-"""TravelPlanner backend application package."""

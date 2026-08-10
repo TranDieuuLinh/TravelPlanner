@@ -23,43 +23,50 @@ services:
       timeout: 5s
       retries: 10
 
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: travelplanner-langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse_password}
+      POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
+    ports:
+      - "${LANGFUSE_DB_PORT:-5433}:5432"
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2.95.11
+    container_name: travelplanner-langfuse
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "${LANGFUSE_PORT:-3005}:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfuse_password}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3005}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-travelplanner_langfuse_secret_key_local}
+      SALT: ${LANGFUSE_SALT:-travelplanner_langfuse_salt_local}
+      TELEMETRY_ENABLED: "false"
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file:
-      - path: ./backend/.env
-        required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://travelplanner:travelplanner@postgres:5432/travelplanner
-      BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
-      APP_ENV: local
-      GEMINI_MIN_INTERVAL_SECONDS: "0.0"
-      URL_IMPORT_JOB_TIMEOUT_SECONDS: "300"
-      PLACE_RESOLVER_PROVIDER: google_maps_scraper
-      ROUTE_PROVIDER: valhalla
-      VALHALLA_BASE_URL: http://valhalla:8002
-      OPENTRIPPLANNER_BASE_URL: http://opentripplanner:8080/otp/gtfs/v1
-      OPENTRIPPLANNER_SCHEDULE_STATUS: development_shifted_2018
-      GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
-      GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
-      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
-      DATABASE_PLACE_RESOLVER_TOP_K: "5"
-      DATABASE_PLACE_RESOLVER_MAX_CONCURRENCY: "4"
-      DATABASE_PLACE_RESOLVER_MINIMUM_SCORE: "0.82"
-      DATABASE_PLACE_RESOLVER_MINIMUM_MARGIN: "0.08"
+      PYTHONPATH: /app/src
     ports:
       - "8000:8000"
     restart: unless-stopped
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/var:/app/var
-      - ./database/golden_dataset:/database/golden_dataset:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      google-maps-scraper:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -72,19 +79,6 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
-
-  google-maps-scraper:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.playwright
-    environment:
-      DISABLE_TELEMETRY: "1"
-      GOOGLE_MAPS_SCRAPER_WORK_DIR: /work
-      GOOGLE_MAPS_SCRAPER_CONCURRENCY: "2"
-      GOOGLE_MAPS_SCRAPER_STALE_ARTIFACT_SECONDS: "600"
-    volumes:
-      - ./backend/var/google-maps-scraper:/work
-    restart: unless-stopped
 
   valhalla:
     image: ghcr.io/valhalla/valhalla-scripted:latest
@@ -127,3 +121,4 @@ services:
 
 volumes:
   travelplanner_postgres_data_v2:
+  langfuse_postgres_data:

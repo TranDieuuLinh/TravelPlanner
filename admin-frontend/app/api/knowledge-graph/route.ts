@@ -20,7 +20,7 @@ const DATASET_DIRECTORY = path.resolve(
 );
 
 const BACKEND_API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 function isAllowedFile(value: unknown): value is AllowedFile {
   return typeof value === "string" && ALLOWED_FILES.includes(value as AllowedFile);

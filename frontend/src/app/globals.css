@@ -15205,6 +15205,47 @@ svg {
   border: 0;
 }
 
+/* Scheduled time belongs to the stop itself, so keep it visible on the card
+   instead of requiring the traveler to infer it from ordering or route legs. */
+.itinerary .itineraryScheduleBadge,
+.mobileItinerarySheet .itineraryScheduleBadge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d8e6e2;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #f4f9f7;
+  color: #315f58;
+  font-size: .62rem;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.itinerary .itineraryScheduleBadge svg,
+.mobileItinerarySheet .itineraryScheduleBadge svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+@container itinerary-panel (max-width: 360px) {
+  .itinerary .itineraryScheduleBadge {
+    min-height: 24px;
+    padding-inline: 7px;
+    font-size: .58rem;
+  }
+}
+
 /* Long place names, review text, and route controls must yield to the card
    width instead of creating a horizontal scrollbar. */
 .itinerary .itineraryPlaceCard,
@@ -17490,7 +17531,7 @@ svg {
 
 .destinationDetailsWindow {
   display: grid;
-  width: min(860px, 100%);
+  width: min(980px, 100%);
   max-height: min(760px, calc(100dvh - 48px));
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -17558,25 +17599,27 @@ svg {
 .destinationDetailsBody {
   display: grid;
   min-height: 0;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   overflow-y: auto;
 }
 
 .destinationDetailsSection {
   display: grid;
   align-content: start;
-  gap: 18px;
-  padding: 25px 26px 30px;
+  gap: 10px;
+  padding: 16px clamp(24px, 6vw, 72px) 18px;
 }
 
 .destinationAdviceSection {
-  background: #fcfaf5;
+  background: transparent;
 }
 
 .destinationDetailsSection > header {
   display: flex;
+  width: min(100%, 680px);
   align-items: flex-start;
   gap: 12px;
+  margin-inline: auto;
 }
 
 .destinationDetailsSection > header > span {
@@ -17604,55 +17647,77 @@ svg {
 
 .destinationDetailsSection h3 {
   color: #1e3b34;
-  font-size: .92rem;
+  font-size: 1.05rem;
 }
 
 .destinationDetailsSection header p {
   color: #7a8a85;
-  font-size: .58rem;
+  font-size: .72rem;
+  line-height: 1.45;
 }
 
 .destinationDetailsNotes {
   display: grid;
-  gap: 10px;
-}
-
-.destinationDetailsNotes article {
-  display: grid;
-  gap: 6px;
+  width: min(100%, 680px);
+  gap: 0;
+  overflow: hidden;
+  margin-inline: auto;
   border: 1px solid #e1eae7;
-  border-radius: 13px;
-  padding: 13px 14px;
+  border-radius: 14px;
   background: #fffdf9;
 }
 
-.destinationDetailsNotes article > strong {
+.destinationDetailsNotes article {
+  padding: 5px 18px;
+}
+
+.destinationDetailsNotes > .destinationDetailsEmpty {
+  padding: 5px 18px;
+}
+
+.destinationDetailsNotes article p > strong {
   color: #254a41;
-  font-size: .65rem;
+  font-weight: 850;
 }
 
 .destinationDetailsNotes article p,
 .destinationDetailsEmpty {
   margin: 0;
   color: #5f716c;
-  font-size: .61rem;
-  line-height: 1.62;
+  font-size: .8rem;
+  line-height: 1.65;
 }
 
-.destinationDetailsNotes article a {
+.destinationDetailsNotes .destinationSourceIcon {
   display: inline-flex;
-  width: fit-content;
+  width: 17px;
+  height: 17px;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  margin-left: 5px;
+  border-radius: 4px;
   color: #2d6a5e;
-  font-size: .55rem;
-  font-weight: 850;
+  vertical-align: -3px;
   text-decoration: none;
 }
 
-.destinationDetailsNotes article a:hover,
-.destinationDetailsNotes article a:focus-visible {
-  text-decoration: underline;
+.destinationDetailsNotes .destinationSourceIcon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.destinationDetailsNotes .destinationSourceIcon:hover {
+  background: #e6f2ee;
+}
+
+.destinationDetailsNotes .destinationSourceIcon:focus-visible {
+  outline: 2px solid #2d6a5e;
+  outline-offset: 2px;
 }
 
 @media (max-width: 680px) {
@@ -17665,6 +17730,10 @@ svg {
     width: 100%;
     max-height: 88dvh;
     border-radius: 24px 24px 0 0;
+  }
+
+  .destinationDetailsSection {
+    padding: 14px 18px 16px;
   }
 
 }

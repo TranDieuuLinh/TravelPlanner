@@ -1,9 +1,0 @@
-﻿{
-    "status":  "stopped_by_user",
-    "batchNumber":  134,
-    "processedPlaces":  9064,
-    "message":  "Stopped after repeated no-progress batches; SQL dump completed",
-    "dumpPath":  "K:\\VSF\\VSF_TravelPlanner\\trung-plans\\travelplanner_dump_2026-08-09_221607.sql",
-    "updatedAt":  "2026-08-09T22:16:07+07:00",
-    "processId":  11084
-}

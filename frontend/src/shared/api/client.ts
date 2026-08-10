@@ -1,4 +1,36 @@
-const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+export type AgentInvokeRequest = {
+  threadId: string;
+  message: string;
+  suppliedCandidates?: unknown[];
+  existingItinerary?: unknown;
+  editOperation?: unknown;
+};
+
+export type AgentInvokeResponse = {
+  request_id: string;
+  route: string;
+  response: string;
+  itinerary: unknown | null;
+  clarification_question: string | null;
+  warnings: string[];
+};
+
+export async function invokeAgent(
+  input: AgentInvokeRequest
+): Promise<AgentInvokeResponse> {
+  return apiFetch<AgentInvokeResponse>("/v1/agent/invoke", {
+    method: "POST",
+    body: JSON.stringify({
+      thread_id: input.threadId,
+      message: input.message,
+      supplied_candidates: input.suppliedCandidates ?? [],
+      existing_itinerary: input.existingItinerary,
+      edit_operation: input.editOperation,
+    }),
+  });
+}
 
 export type APIErrorBody = {
   code?: string;
