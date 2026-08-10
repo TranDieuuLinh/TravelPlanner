@@ -1,0 +1,1 @@
+"""InformationFinder module tests."""

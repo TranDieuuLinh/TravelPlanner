@@ -1,0 +1,1 @@
+"""PlaceChecker module tests."""

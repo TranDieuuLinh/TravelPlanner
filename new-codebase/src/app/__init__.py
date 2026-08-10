@@ -1,0 +1,2 @@
+"""Modular Travel Planner application."""
+
