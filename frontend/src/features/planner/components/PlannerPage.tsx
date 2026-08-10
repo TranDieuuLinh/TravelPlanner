@@ -123,6 +123,17 @@ import {
   tripDaysBetween,
 } from "@/features/planner/utils/plannerDates";
 import {
+  dateKeyForTripDay,
+  hasPlanItemCoordinates,
+} from "@/features/planner/utils/plannerCoordinates";
+import {
+  planLegSelectionKey,
+  planPlaceNamesMatch,
+  selectedTransportOption,
+  transportLegsMatch,
+  transportOptionsForLeg,
+} from "@/features/planner/utils/transportSelection";
+import {
   formatItineraryTimeWindow,
   itineraryTimeWindowAriaLabel,
 } from "@/features/planner/lib/time-window";
@@ -7917,40 +7928,8 @@ function categoryFromPlaceType(placeType: string): PlaceCategory {
   return "other";
 }
 
-function hasPlanItemCoordinates(
-  item: TravelPlan["days"][number]["items"][number]
-): item is TravelPlan["days"][number]["items"][number] & {
-  latitude: number;
-  longitude: number;
-} {
-  return (
-    typeof item.latitude === "number" &&
-    Number.isFinite(item.latitude) &&
-    item.latitude >= -90 &&
-    item.latitude <= 90 &&
-    typeof item.longitude === "number" &&
-    Number.isFinite(item.longitude) &&
-    item.longitude >= -180 &&
-    item.longitude <= 180
-  );
-}
-
 function itineraryDisplayName(name: string): string {
   return name.replace(/^Điểm du lịch\s+/i, "").trim() || name;
-}
-
-function dateKeyForTripDay(
-  startDate: string | null | undefined,
-  day: number
-): string {
-  if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-    return `day-${day}`;
-  }
-
-  const date = new Date(`${startDate}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return `day-${day}`;
-  date.setUTCDate(date.getUTCDate() + day - 1);
-  return date.toISOString().slice(0, 10);
 }
 
 function handleDayTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
@@ -8438,43 +8417,6 @@ function transportLegAfterItem(
   });
 
   return exactLeg ?? null;
-}
-
-function transportOptionsForLeg(leg: TransportLeg): TransportOption[] {
-  return visibleTransportOptions(
-    [leg, ...(leg.alternatives ?? [])],
-    leg.distanceMeters
-  );
-}
-
-function planLegSelectionKey(day: number, legIndex: number): string {
-  return `${day}:${legIndex}`;
-}
-
-function planPlaceNamesMatch(left: string, right: string): boolean {
-  return (
-    left.trim().toLocaleLowerCase("vi") === right.trim().toLocaleLowerCase("vi")
-  );
-}
-
-function transportLegsMatch(left: TransportLeg, right: TransportLeg): boolean {
-  const sameFrom =
-    left.fromItemId && right.fromItemId
-      ? left.fromItemId === right.fromItemId
-      : planPlaceNamesMatch(left.fromPlace, right.fromPlace);
-  const sameTo =
-    left.toItemId && right.toItemId
-      ? left.toItemId === right.toItemId
-      : planPlaceNamesMatch(left.toPlace, right.toPlace);
-  return sameFrom && sameTo;
-}
-
-function selectedTransportOption(
-  leg: TransportLeg,
-  selectedOptionKey?: string
-): TransportOption {
-  const options = transportOptionsForLeg(leg);
-  return resolveSelectedTransportOption(options, leg, selectedOptionKey);
 }
 
 function planTransportRouteMapKey(
