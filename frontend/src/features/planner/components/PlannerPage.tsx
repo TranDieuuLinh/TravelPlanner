@@ -23,6 +23,7 @@ import {
   PlannerChatMessages,
 } from "@/features/planner/components/PlannerChatUI";
 import { PlannerDiscoveryPanel } from "@/features/planner/components/PlannerDiscoveryPanel";
+import { DestinationSourceLink } from "@/features/planner/components/DestinationSourceLink";
 import { GroupPlanningPanel } from "@/features/planner/components/GroupPlanningPanel";
 import {
   PlaceReviewsModal,
@@ -116,6 +117,12 @@ import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
 import { visibleConversationMessages } from "@/features/planner/lib/conversation-messages";
 import {
+  addTripDays,
+  defaultTripEndDate,
+  formatPlannerDate,
+  tripDaysBetween,
+} from "@/features/planner/utils/plannerDates";
+import {
   formatItineraryTimeWindow,
   itineraryTimeWindowAriaLabel,
 } from "@/features/planner/lib/time-window";
@@ -177,26 +184,6 @@ const DESTINATION_NOTE_LABELS: Record<string, string> = {
 
 function destinationNoteLabel(type: string, index: number) {
   return DESTINATION_NOTE_LABELS[type] ?? `Ghi chú địa phương ${index + 1}`;
-}
-
-function DestinationSourceLink({ href }: { href?: string | null }) {
-  if (!href?.startsWith("http")) return null;
-
-  return (
-    <a
-      aria-label="Xem nguồn"
-      className="destinationSourceIcon"
-      href={href}
-      rel="noreferrer"
-      target="_blank"
-      title="Xem nguồn"
-    >
-      <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M14 5h5v5M19 5l-9 9" />
-        <path d="M17 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h5" />
-      </svg>
-    </a>
-  );
 }
 
 type FloatingChatRect = {
@@ -304,16 +291,6 @@ const travelerOptions: ReadonlyArray<{
   },
 ];
 
-function formatGuidedDate(value: string): string {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return value;
-  return new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
-}
-
 function travelerAnswer(counts: TravelerCounts): string {
   return [
     counts.adults ? `${counts.adults} người lớn` : "",
@@ -373,15 +350,15 @@ function formatTripTiming(
   timing: ExplorerContext["tripIntent"]["timing"]
 ): string {
   if (timing.startDate && timing.endDate) {
-    return `${formatGuidedDate(timing.startDate)} – ${formatGuidedDate(
+    return `${formatPlannerDate(timing.startDate)} – ${formatPlannerDate(
       timing.endDate
     )}`;
   }
   if (timing.startDate) {
-    return `Từ ${formatGuidedDate(timing.startDate)}`;
+    return `Từ ${formatPlannerDate(timing.startDate)}`;
   }
   if (timing.endDate) {
-    return `Đến ${formatGuidedDate(timing.endDate)}`;
+    return `Đến ${formatPlannerDate(timing.endDate)}`;
   }
   return `${timing.days} ngày`;
 }
@@ -411,31 +388,6 @@ function guidedAnswersFromTripIntent(intent: TripIntent): GuidedIntakeAnswers {
     budget: formatTripBudget(intent),
     note: intent.notes.join(" · "),
   };
-}
-
-function tripDaysBetween(startDate: string, endDate: string): number {
-  const start = Date.parse(`${startDate}T00:00:00Z`);
-  const end = Date.parse(`${endDate}T00:00:00Z`);
-  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
-}
-
-function addTripDays(startDate: string, durationDays = 3): string {
-  const date = new Date(`${startDate}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return "";
-  date.setUTCDate(date.getUTCDate() + Math.max(0, durationDays - 1));
-  return date.toISOString().slice(0, 10);
-}
-
-function defaultTripEndDate(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
-  durationDays: number | null | undefined
-): string {
-  if (!startDate) return endDate ?? "";
-  const days = durationDays && durationDays > 0 ? durationDays : 3;
-  return !endDate || (days === 3 && endDate === startDate)
-    ? addTripDays(startDate, days)
-    : endDate;
 }
 
 function budgetFromAnswer(answer: string, current: TripIntent["budget"]) {
@@ -3662,13 +3614,13 @@ function Planner() {
     }
     let answer = "Bỏ qua";
     if (guidedStartDate && guidedEndDate) {
-      answer = `${formatGuidedDate(guidedStartDate)} đến ${formatGuidedDate(
+      answer = `${formatPlannerDate(guidedStartDate)} đến ${formatPlannerDate(
         guidedEndDate
       )}`;
     } else if (guidedStartDate) {
-      answer = `Bắt đầu ${formatGuidedDate(guidedStartDate)}`;
+      answer = `Bắt đầu ${formatPlannerDate(guidedStartDate)}`;
     } else if (guidedEndDate) {
-      answer = `Kết thúc trước ${formatGuidedDate(guidedEndDate)}`;
+      answer = `Kết thúc trước ${formatPlannerDate(guidedEndDate)}`;
     }
     void submitGuidedAnswer(answer);
   }
