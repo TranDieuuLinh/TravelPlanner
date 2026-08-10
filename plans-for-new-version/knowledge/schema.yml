@@ -1,0 +1,64 @@
+# types
+- ADM 0
+- ADM 1
+- ADM 2
+- Accommodation
+- TravelPlace
+- Restaurant
+- DrinkDessert
+- FoodItem
+- DrinkItem
+- ProductItem
+- ActivityItem
+
+# relationships
+- Located_In
+- Adjacent_To
+- Special_Near
+- Special_Experience
+- Offer_Item
+
+# Properties
+- Name:
+- description:
+- tags:
+- raing:
+- review_counts:
+- latitude:
+- longtitude:
+- time_open:
+- time_close:
+- time_windows:
+- time_duration:
+- price_min:
+- price_max:
+- fetch_at:
+- verify_by:
+- story:
+- meta_json:
+ + image:
+ + adress:
+ + phone:
+ + url_google_map:
+ + source_note:
+ + menu_urls:
+ + icon:
+ + note:
+
+# Parent Node:
+Region:
+ requirements:
+  - name:
+  - id:
+  - type: ADM 0/1/2
+ nice-to-have:
+  - story:
+
+Place:
+ requirements:
+  - name:
+  - id:
+  - type: Accommodation/TravelPlace/Restaurant/DrinkDessert
+  - latitude:
+  - longtitude:
+ nice-to-have
