@@ -7,7 +7,7 @@ import {
   testConstraintResearch,
   testFestivalDiscovery,
   testRegionOverview
-} from "../../../lib/api";
+} from "../../../lib/api/tools";
 import { JsonPanel } from "../../components/shared";
 
 export default function ToolsTesterPage() {

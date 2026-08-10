@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PlanningRunStage } from "../../lib/api";
+import type { PlanningRunStage } from "../../lib/api/planning-runs";
 
 export const STAGES = ["explorer", "planner", "finder", "checker", "workflow"];
 export const STATUSES = ["running", "completed", "blocked", "failed", "passed", "draft"];

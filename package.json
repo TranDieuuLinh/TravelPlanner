@@ -1,0 +1,14 @@
+{
+  "name": "travelplanner-workspace",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "admin-frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspace frontend && npm run typecheck --workspace admin-frontend",
+    "build": "node scripts/build-frontends.mjs",
+    "test": "npm run test:api --workspace frontend && npm run test:planner --workspace frontend && npm run test:transport --workspace frontend"
+  }
+}

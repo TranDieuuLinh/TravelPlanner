@@ -17,6 +17,11 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "paths": {
+      "@travelplanner/api-client": [
+        "../packages/api-client/src/index.ts"
+      ]
+    },
     "plugins": [
       {
         "name": "next"
@@ -26,10 +31,10 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-admin-dev/types/**/*.ts",
     ".next-build/types/**/*.ts",
     ".next-dev/types/**/*.ts",
-    "next-env.d.ts",
-    ".next-admin-dev/types/**/*.ts"
+    "next-env.d.ts"
   ],
   "exclude": [
     "node_modules"

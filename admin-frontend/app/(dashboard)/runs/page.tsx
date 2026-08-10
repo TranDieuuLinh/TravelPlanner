@@ -7,7 +7,7 @@ import {
   PlanningRunSummary,
   getRun,
   listRuns,
-} from "../../../lib/api";
+} from "../../../lib/api/planning-runs";
 import {
   STAGES,
   STATUSES,

@@ -1,3 +1,12 @@
+import {
+  APIError,
+  networkAPIError,
+  parseAPIError,
+  jsonRequestHeaders
+} from "@travelplanner/api-client";
+
+export { APIError } from "@travelplanner/api-client";
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -97,52 +106,12 @@ type RunList = {
   offset: number;
 };
 
-export class APIError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string
-  ) {
-    super(message);
-  }
-}
-
 function cookie(name: string): string | undefined {
   const prefix = `${encodeURIComponent(name)}=`;
   return document.cookie
     .split("; ")
     .find((item) => item.startsWith(prefix))
     ?.slice(prefix.length);
-}
-
-async function parseError(response: Response): Promise<APIError> {
-  let body: {
-    code?: string;
-    message?: string;
-    detail?: string;
-    fieldErrors?: Record<string, string>;
-    field_errors?: Record<string, string>;
-  } = {};
-  try {
-    body = await response.json();
-  } catch {
-    // Use the stable fallback below.
-  }
-  let message = body.message ?? body.detail ?? "Không thể hoàn thành yêu cầu.";
-  const fieldErrors = body.fieldErrors ?? body.field_errors;
-  if (fieldErrors && typeof fieldErrors === "object" && Object.keys(fieldErrors).length > 0) {
-    const details = Object.entries(fieldErrors)
-      .map(([field, reason]) => `${field}: ${reason}`)
-      .join("; ");
-    if (details) {
-      message = `${message} (${details})`;
-    }
-  }
-  return new APIError(
-    response.status,
-    body.code ?? "REQUEST_FAILED",
-    message
-  );
 }
 
 async function refreshSession(): Promise<boolean> {
@@ -161,10 +130,7 @@ async function request<T>(
   init: RequestInit = {},
   retry = true
 ): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
+  const headers = jsonRequestHeaders(init);
   if (!["GET", "HEAD"].includes((init.method ?? "GET").toUpperCase())) {
     const csrf = cookie("travelplanner_csrf");
     if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
@@ -177,11 +143,7 @@ async function request<T>(
       credentials: "include"
     });
   } catch {
-    throw new APIError(
-      0,
-      "NETWORK_ERROR",
-      "Không kết nối được backend TravelPlanner."
-    );
+    throw networkAPIError("Không kết nối được backend TravelPlanner.");
   }
   if (
     response.status === 401 &&
@@ -191,7 +153,9 @@ async function request<T>(
   ) {
     return request<T>(path, init, false);
   }
-  if (!response.ok) throw await parseError(response);
+  if (!response.ok) {
+    throw await parseAPIError(response, "Không thể hoàn thành yêu cầu.", true);
+  }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -206,11 +170,10 @@ export async function login(
   });
   if (response.user.role !== "admin") {
     await logout();
-    throw new APIError(
-      403,
-      "ADMIN_REQUIRED",
-      "Tài khoản này không có quyền quản trị."
-    );
+    throw new APIError(403, {
+      code: "ADMIN_REQUIRED",
+      message: "Tài khoản này không có quyền quản trị."
+    });
   }
   return response.user;
 }
@@ -297,7 +260,9 @@ export async function loadKnowledgeGraphFiles(): Promise<KnowledgeGraphFiles> {
     cache: "no-store",
     credentials: "include"
   });
-  if (!response.ok) throw await parseError(response);
+  if (!response.ok) {
+    throw await parseAPIError(response, "Không thể hoàn thành yêu cầu.", true);
+  }
   const payload = (await response.json()) as { files: KnowledgeGraphFiles };
   return payload.files;
 }
@@ -316,7 +281,9 @@ export async function saveKnowledgeGraphFile(
     },
     body: JSON.stringify({ fileName, content })
   });
-  if (!response.ok) throw await parseError(response);
+  if (!response.ok) {
+    throw await parseAPIError(response, "Không thể hoàn thành yêu cầu.", true);
+  }
 }
 
 export async function saveKnowledgeGraphFiles(
@@ -332,7 +299,9 @@ export async function saveKnowledgeGraphFiles(
     },
     body: JSON.stringify({ files })
   });
-  if (!response.ok) throw await parseError(response);
+  if (!response.ok) {
+    throw await parseAPIError(response, "Không thể hoàn thành yêu cầu.", true);
+  }
 }
 
 export type GraphMatchCandidate = {

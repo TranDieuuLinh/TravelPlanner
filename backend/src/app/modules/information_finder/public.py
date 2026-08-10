@@ -4,13 +4,12 @@ from app.modules.information_finder.contract import (
     SourceReference,
 )
 from app.modules.information_finder.graph import build_information_finder_graph
-from app.modules.information_finder.ports import InformationProvider
+from app.modules.information_finder.service import InformationFinderService
 
 __all__ = [
     "InformationFinderInput",
     "InformationFinderOutput",
-    "InformationProvider",
+    "InformationFinderService",
     "SourceReference",
     "build_information_finder_graph",
 ]
-

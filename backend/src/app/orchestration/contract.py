@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 
+from app.modules.information_finder.public import SourceReference
 from app.modules.plan_editor.public import EditOperation
+from app.modules.supervisor.public import SupervisorRoute
 from app.shared.contracts.itinerary import Itinerary
 from app.shared.contracts.place import PlaceCandidate
 
@@ -15,9 +17,10 @@ class RootGraphInput(BaseModel):
 
 class RootGraphOutput(BaseModel):
     request_id: str
-    route: str
+    route: SupervisorRoute
     response: str
     itinerary: Itinerary | None = None
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    sources: list[SourceReference] = Field(default_factory=list)
 

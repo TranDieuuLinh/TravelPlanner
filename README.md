@@ -1,5 +1,7 @@
 # TravelPlanner
 
+Cập nhật lần cuối: 2026-08-10.
+
 TravelPlanner is a travel-planning product with a Next.js user frontend, a
 separate admin frontend, and a modular FastAPI/LangGraph backend.
 
@@ -29,6 +31,8 @@ travelplanner/
 │   └── tests/         # Backend integration tests
 ├── frontend/         # User-facing Next.js application
 ├── admin-frontend/    # Admin/control Next.js application
+├── packages/          # Shared frontend workspace packages
+│   └── api-client/    # Shared API errors and request helpers
 ├── docs/              # Current codebase documentation
 ├── database/          # Data assets used by supporting tools
 ├── routing-data/      # Optional routing engine data
@@ -80,6 +84,15 @@ Run the admin frontend:
 cd admin-frontend
 npm install
 npm run dev
+```
+
+Run checks for both frontends from the repository root:
+
+```bash
+npm install
+npm run typecheck
+npm test
+npm run build
 ```
 
 ## Verification
