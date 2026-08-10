@@ -12,6 +12,8 @@ node_modules/
 .next/
 .next-dev
 .next-build/
+.next-verify/
+.next-admin-verify/
 frontend/tsconfig.tsbuildinfo
 out/
 dist/
@@ -21,6 +23,7 @@ coverage/
 
 # Local knowledge-graph database dumps (too large for GitHub)
 *.sql
+!backend/migrations/*.sql
 database/kg_dump.sql
 database/kg_dump_v7.sql
 database/travelplanner_full_20260805_1548.sql

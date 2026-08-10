@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { login, AdminUser } from "../../lib/api";
+import { login, type AdminUser } from "../../lib/api/auth";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");

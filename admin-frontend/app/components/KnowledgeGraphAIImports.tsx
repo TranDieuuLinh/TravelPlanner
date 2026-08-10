@@ -23,7 +23,7 @@ import {
   revalidateGraphImport,
   updateProposedGraphEdge,
   updateProposedGraphNode
-} from "../../lib/api";
+} from "../../lib/api/knowledge-graph";
 
 type ReviewTab = "nodes" | "edges" | "source";
 

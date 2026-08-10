@@ -1,5 +1,8 @@
 from app.modules.explorer.public import build_explorer_graph
-from app.modules.information_finder.public import build_information_finder_graph
+from app.modules.information_finder.public import (
+    InformationFinderService,
+    build_information_finder_graph,
+)
 from app.modules.itinerary_planner.public import build_itinerary_planner_graph
 from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
 from app.modules.place_checker.public import build_place_checker_graph
@@ -8,10 +11,15 @@ from app.orchestration.root_state import RootState
 
 
 class RootNodes:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        information_finder_service: InformationFinderService | None = None,
+    ) -> None:
         self.supervisor = build_supervisor_graph()
         self.explorer = build_explorer_graph()
-        self.information_finder = build_information_finder_graph()
+        self.information_finder = build_information_finder_graph(
+            information_finder_service
+        )
         self.place_checker = build_place_checker_graph()
         self.itinerary_planner = build_itinerary_planner_graph()
         self.plan_editor = build_plan_editor_graph()
@@ -50,7 +58,11 @@ class RootNodes:
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke({"query": state["message"]})
         output = result["output"]
-        return {"information_output": output, "response": output.answer}
+        return {
+            "information_output": output,
+            "response": output.answer,
+            "warnings": output.warnings,
+        }
 
     async def run_place_checker(self, state: RootState) -> dict:
         result = await self.place_checker.ainvoke(

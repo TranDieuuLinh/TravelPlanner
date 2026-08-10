@@ -17,6 +17,7 @@ services:
       # the current travelplanner credentials on first startup while retaining
       # the old volume for an explicit data migration if needed.
       - travelplanner_postgres_data_v2:/var/lib/postgresql/data
+      - ./backend/migrations/001_information_finder_source_cache.sql:/docker-entrypoint-initdb.d/001_information_finder_source_cache.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
@@ -64,6 +65,14 @@ services:
       dockerfile: Dockerfile
     environment:
       PYTHONPATH: /app/src
+      DATABASE_URL: postgresql://travelplanner:travelplanner@postgres:5432/travelplanner
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      TAVILY_SEARCH_DEPTH: ${TAVILY_SEARCH_DEPTH:-basic}
+      TAVILY_MAX_RESULTS: ${TAVILY_MAX_RESULTS:-5}
+      TAVILY_TIMEOUT_SECONDS: ${TAVILY_TIMEOUT_SECONDS:-15}
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped

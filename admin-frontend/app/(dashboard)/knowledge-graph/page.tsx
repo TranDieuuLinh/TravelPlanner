@@ -28,7 +28,7 @@ import {
   type KGEntityDetail,
   type KGRelationshipSummary,
   type KGOntology,
-} from "../../../lib/api";
+} from "../../../lib/api/knowledge-graph";
 import { KnowledgeGraphAIImports } from "../../components/KnowledgeGraphAIImports";
 
 type WorkspaceTab = "entities" | "relationships" | "aiImports";

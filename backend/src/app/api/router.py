@@ -28,6 +28,7 @@ async def invoke_agent(payload: InvokeRequest, graph=Depends(get_graph)) -> Invo
         graph_input,
         config={"configurable": {"thread_id": payload.thread_id}},
     )
+    information_output = result.get("information_output")
     return InvokeResponse(
         request_id=request_id,
         route=result["decision"].route,
@@ -35,5 +36,6 @@ async def invoke_agent(payload: InvokeRequest, graph=Depends(get_graph)) -> Invo
         itinerary=result.get("itinerary"),
         clarification_question=result.get("clarification_question"),
         warnings=result.get("warnings", []),
+        sources=information_output.sources if information_output else [],
     )
 

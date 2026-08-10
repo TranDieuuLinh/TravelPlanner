@@ -1,19 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/features/auth/components/AuthProvider";
 import { searchListings } from "@/features/marketplace/api";
 import type { ListingSummary } from "@/features/marketplace/types";
-
-const landingFont = Plus_Jakarta_Sans({
-  display: "swap",
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-landing",
-  weight: ["400", "500", "600", "700"],
-});
 
 function ArrowIcon() {
   return (
@@ -219,7 +211,7 @@ export default function HomePage() {
   const plannerHref = user ? "/planner" : "/login?next=%2Fplanner";
 
   return (
-    <main className={`${landingFont.variable} landingPage`}>
+    <main className="landingPage">
       <section className="landingHero pageWidth">
         <div className="landingHeroCopy">
           <span className="landingKicker"><span className="landingKickerDot" /> Lập kế hoạch du lịch cùng AI</span>

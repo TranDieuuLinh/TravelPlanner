@@ -12,7 +12,7 @@ import {
   listGoldenCases,
   runGoldenCase,
   updateGoldenCaseInput
-} from "../../../lib/api";
+} from "../../../lib/api/golden";
 import {
   JsonPanel,
   StageInspector,

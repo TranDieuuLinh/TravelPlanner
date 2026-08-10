@@ -8,13 +8,36 @@ Tài liệu này được lấy trực tiếp từ database `travelplanner` tron
 PostgreSQL `pgvector/pgvector:0.8.2-pg16` đang chạy qua Docker Compose.
 
 Database hiện có schema legacy với 31 table. Backend LangGraph mới trong
-`backend/src/app` hiện chưa có SQLAlchemy model, repository hoặc migration để
-đọc các table này. Vì vậy cần phân biệt:
+`backend/src/app` không có SQLAlchemy model để đọc các table legacy. Information
+Finder có repository `asyncpg` và migration SQL riêng, chỉ sở hữu các bảng tiền
+tố `information_finder_`. Vì vậy cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới vẫn tồn tại trong
   PostgreSQL volume.
-- **Backend mới:** chưa sử dụng các table này; graph state vẫn dùng
-  `InMemorySaver`.
+- **Backend mới:** không sử dụng các table legacy; graph state vẫn dùng
+  `InMemorySaver`. Information Finder sẽ dùng các bảng cache mô tả bên dưới khi
+  có `DATABASE_URL` và migration đã được áp dụng.
+
+## Schema cache nguồn Information Finder
+
+Migration nguồn: `backend/migrations/001_information_finder_source_cache.sql`.
+Migration chưa được tự động áp vào volume đang tồn tại trong lần cập nhật tài
+liệu này. Docker áp migration khi khởi tạo volume mới; với volume hiện hữu cần
+chạy migration thủ công và kiểm tra backup trước.
+
+| Bảng | Trách nhiệm chính |
+|---|---|
+| `information_finder_source_documents` | Canonical URL duy nhất, domain, title, provider và `review_status` mặc định `pending`. |
+| `information_finder_source_snapshots` | Nội dung theo content hash; phân biệt `published_at`, `source_updated_at`, `last_fetched_at`, `expires_at` và provenance Tavily. |
+| `information_finder_source_chunks` | Chunk khoảng 300 token, overlap khoảng 50 token và generated `tsvector`. |
+| `information_finder_source_embeddings` | Vector 384 chiều cùng model, revision, dimensions và `embedded_at`. |
+| `information_finder_search_runs` | Query gốc/chuẩn hóa, tham số, request id, trạng thái và lỗi provider. |
+| `information_finder_search_run_sources` | Snapshot thuộc search run, rank, provider score và snippet. |
+
+Unique constraint chống trùng canonical URL, snapshot content hash, chunk và
+embedding model/revision. Ghi search run và nguồn dùng một transaction; lời gọi
+Tavily và embedding không giữ transaction mở. Đây là source cache runtime, không
+phải bằng chứng admin đã review dữ liệu.
 
 Các kiểu `json` lưu dữ liệu JSON; `timestamptz` là thời điểm có timezone; `NULL`
 là cột cho phép không có giá trị. Mô tả cột dưới đây là mô tả ngắn theo tên và

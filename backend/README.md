@@ -1,5 +1,7 @@
 # Travel Planner Agents
 
+Cập nhật lần cuối: 2026-08-10.
+
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
 ## Architecture
@@ -39,12 +41,19 @@ This is a working architecture scaffold, not a production travel-data system.
 
 - The supervisor is a deterministic classifier baseline.
 - Explorer currently parses destination and duration from simple text input.
-- InformationFinder intentionally uses an unconfigured provider response.
+- InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval and
+  optional Tavily Search. Without configuration it returns a truthful
+  process-local development fallback.
 - PlaceChecker uses `DevelopmentCatalog`, which creates deterministic placeholder
   suggestions. Placeholder places have `verified=false` and emit a warning.
 - ItineraryPlanner uses estimated routing, not live road-network data.
 - The checkpointer is in memory and must be replaced by durable storage in
   production.
+- A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
+  It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
+  request receives a quota, authorization, transport, or server error. Existing
+  agents remain deterministic until their module behavior explicitly adopts the
+  shared client.
 
 All external capabilities are behind module ports so real providers can be
 added without changing public graph contracts.
@@ -54,7 +63,8 @@ added without changing public graph contracts.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev]'
+pip install -e '.[dev,embeddings]'
+psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
 uvicorn app.main:app --reload
 ```
 
@@ -80,6 +90,14 @@ Run tests:
 ```bash
 pytest
 ```
+
+Configure `DATABASE_URL` for the module-owned PostgreSQL cache and
+`TAVILY_API_KEY` for web refreshes. See `.env.example` for thresholds, timeout,
+search depth, model revision, and blocked domains. Docker initializes the SQL
+migration only for a new PostgreSQL volume; run it manually for an existing
+volume. The current answer generator is extractive development fallback, not a
+selected production LLM provider. To configure the shared Gemini client, set
+`GEMINI_API_KEY=api1,api2,api3` and optionally `GEMINI_MODEL`.
 
 LangGraph Studio can load the graph declared in `langgraph.json` after the
 LangGraph CLI is installed.
