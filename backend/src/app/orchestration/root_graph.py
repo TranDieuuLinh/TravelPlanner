@@ -6,8 +6,10 @@ from app.orchestration.routes import route_after_explorer, route_supervisor
 from app.shared.persistence import create_checkpointer
 
 
-def create_root_graph(*, checkpointer=None, information_finder_service=None):
-    nodes = RootNodes(information_finder_service)
+def create_root_graph(
+    *, checkpointer=None, information_finder_service=None, supervisor_service=None
+):
+    nodes = RootNodes(information_finder_service, supervisor_service)
     builder = StateGraph(RootState)
 
     builder.add_node("supervisor", nodes.run_supervisor)

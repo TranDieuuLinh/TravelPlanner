@@ -6,8 +6,13 @@ from app.shared.llm.errors import (
     LlmConfigurationError,
     LlmError,
     LlmProviderError,
+    LlmQuotaError,
+    LlmRefusalError,
     LlmResponseError,
+    LlmServerError,
+    LlmTimeoutError,
     LlmTransportError,
+    LlmUnauthorizedError,
 )
 from app.shared.llm.ports import LlmClient
 
@@ -18,6 +23,11 @@ __all__ = [
     "LlmConfigurationError",
     "LlmError",
     "LlmProviderError",
+    "LlmQuotaError",
+    "LlmRefusalError",
     "LlmResponseError",
+    "LlmServerError",
+    "LlmTimeoutError",
     "LlmTransportError",
+    "LlmUnauthorizedError",
 ]

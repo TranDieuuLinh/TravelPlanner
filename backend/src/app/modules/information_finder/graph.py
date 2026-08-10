@@ -24,4 +24,3 @@ def build_information_finder_graph(service: InformationFinderService | None = No
     builder.add_edge(START, "find")
     builder.add_edge("find", END)
     return builder.compile()
-

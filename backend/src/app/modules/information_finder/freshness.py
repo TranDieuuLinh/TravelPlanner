@@ -10,13 +10,25 @@ class FreshnessDecision:
 
 class FreshnessPolicy:
     LIVE_TERMS = {
-        "hôm nay", "hiện tại", "mới nhất", "latest", "today", "current",
-        "thời tiết", "weather", "giá", "price",
+        "hôm nay",
+        "hiện tại",
+        "mới nhất",
+        "latest",
+        "today",
+        "current",
+        "thời tiết",
+        "weather",
+        "giá",
+        "price",
     }
     EVENT_TERMS = {"sự kiện", "event", "lịch hoạt động", "schedule"}
     DAILY_TERMS = {
-        "giờ mở cửa", "opening hours", "giá vé", "ticket price",
-        "quy định", "regulation",
+        "giờ mở cửa",
+        "opening hours",
+        "giá vé",
+        "ticket price",
+        "quy định",
+        "regulation",
     }
 
     def for_query(self, query: str) -> FreshnessDecision:

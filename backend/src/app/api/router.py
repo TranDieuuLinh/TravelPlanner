@@ -1,9 +1,10 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.dependencies import get_graph
 from app.api.schemas import InvokeRequest, InvokeResponse
+from app.modules.supervisor.public import SupervisorClassificationError
 
 
 router = APIRouter()
@@ -24,10 +25,13 @@ async def invoke_agent(payload: InvokeRequest, graph=Depends(get_graph)) -> Invo
         "existing_itinerary": payload.existing_itinerary,
         "edit_operation": payload.edit_operation,
     }
-    result = await graph.ainvoke(
-        graph_input,
-        config={"configurable": {"thread_id": payload.thread_id}},
-    )
+    try:
+        result = await graph.ainvoke(
+            graph_input,
+            config={"configurable": {"thread_id": payload.thread_id}},
+        )
+    except SupervisorClassificationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
     information_output = result.get("information_output")
     return InvokeResponse(
         request_id=request_id,

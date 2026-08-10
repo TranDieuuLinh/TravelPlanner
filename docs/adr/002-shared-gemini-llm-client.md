@@ -4,14 +4,16 @@ Cập nhật lần cuối: 2026-08-10.
 
 ## Trạng thái
 
-Accepted cho capability LLM dùng chung; chưa chuyển các agent hiện có khỏi
-deterministic behavior.
+Accepted cho capability LLM dùng chung. Information Finder là module đầu tiên
+có thể opt-in qua cấu hình; các module khác chưa tự động chuyển behavior.
 
 ## Quyết định
 
 Đặt port và adapter LLM tại `backend/src/app/shared/llm/` vì nhiều feature
 module có thể dùng cùng capability này. Adapter gọi REST endpoint
 `models.generateContent`, nhận system/user prompt và trả về text đầu tiên hợp lệ.
+Port hỗ trợ JSON Schema tùy chọn; client gửi `responseMimeType=application/json`
+và `responseJsonSchema`, sau đó module gọi phải validate lại tại boundary.
 
 Ứng dụng dùng một biến cấu hình duy nhất:
 
@@ -30,5 +32,8 @@ Key không được ghi vào log hoặc exception message.
   `LlmClient` qua dependency injection.
 - Xoay key trong process không thay thế rate limiting, billing isolation,
   secret management hoặc durable usage tracking ở production.
-- Các agent hiện tại chưa tự động gọi LLM; thay đổi behavior của từng agent sẽ
-  được thực hiện trong module sở hữu agent đó.
+- Information Finder sở hữu prompt chống prompt injection, source budget,
+  structured claim schema, citation validation và fallback. Shared client không
+  chứa business rule du lịch hay source content.
+- `gemini-2.5-flash` chỉ là baseline cấu hình được, chưa được production-evaluated;
+  cần pin snapshot sau eval, cùng secret management, observability và cost limit.

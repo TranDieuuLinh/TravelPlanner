@@ -9,8 +9,13 @@ from app.shared.llm.errors import (
     LlmAllKeysUnavailable,
     LlmConfigurationError,
     LlmProviderError,
+    LlmQuotaError,
+    LlmRefusalError,
     LlmResponseError,
+    LlmServerError,
+    LlmTimeoutError,
     LlmTransportError,
+    LlmUnauthorizedError,
 )
 
 
@@ -89,6 +94,7 @@ class GeminiLlmClient:
         system_prompt: str | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_json_schema: dict[str, Any] | None = None,
     ) -> str:
         if not user_prompt.strip():
             raise LlmConfigurationError("LLM user prompt must not be empty.")
@@ -97,6 +103,7 @@ class GeminiLlmClient:
             system_prompt=system_prompt,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_json_schema=response_json_schema,
         )
         last_error: Exception | None = None
 
@@ -111,8 +118,14 @@ class GeminiLlmClient:
                     },
                     json=payload,
                 )
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                last_error = LlmTransportError("Gemini request failed before a response was received.")
+            except httpx.TimeoutException:
+                last_error = LlmTimeoutError("Gemini request timed out.")
+                await self._cool_down(key_index)
+                continue
+            except httpx.TransportError:
+                last_error = LlmTransportError(
+                    "Gemini request failed before a response was received."
+                )
                 await self._cool_down(key_index)
                 continue
 
@@ -165,19 +178,21 @@ class GeminiLlmClient:
         system_prompt: str | None,
         temperature: float | None,
         max_output_tokens: int | None,
+        response_json_schema: dict[str, Any] | None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": user_prompt}]}]
         }
         if system_prompt and system_prompt.strip():
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_prompt}]
-            }
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         generation_config: dict[str, Any] = {}
         if temperature is not None:
             generation_config["temperature"] = temperature
         if max_output_tokens is not None:
             generation_config["maxOutputTokens"] = max_output_tokens
+        if response_json_schema is not None:
+            generation_config["responseMimeType"] = "application/json"
+            generation_config["responseJsonSchema"] = response_json_schema
         if generation_config:
             payload["generationConfig"] = generation_config
         return payload
@@ -189,11 +204,11 @@ class GeminiLlmClient:
     @staticmethod
     def _provider_error(response: httpx.Response) -> LlmProviderError:
         if response.status_code in {401, 403}:
-            return LlmProviderError("Gemini API key was rejected.")
+            return LlmUnauthorizedError("Gemini API key was rejected.")
         if response.status_code == 429:
-            return LlmProviderError("Gemini API key quota or rate limit was reached.")
+            return LlmQuotaError("Gemini API key quota or rate limit was reached.")
         if response.status_code >= 500:
-            return LlmProviderError("Gemini service returned a server error.")
+            return LlmServerError("Gemini service returned a server error.")
         return LlmProviderError(
             f"Gemini request was rejected with HTTP {response.status_code}."
         )
@@ -207,7 +222,12 @@ class GeminiLlmClient:
 
         candidates = body.get("candidates")
         if not isinstance(candidates, list) or not candidates:
+            if body.get("promptFeedback", {}).get("blockReason"):
+                raise LlmRefusalError("Gemini refused the prompt.")
             raise LlmResponseError("Gemini returned no candidate response.")
+        finish_reason = candidates[0].get("finishReason")
+        if finish_reason in {"SAFETY", "RECITATION", "PROHIBITED_CONTENT"}:
+            raise LlmRefusalError("Gemini refused to generate an answer.")
         parts = candidates[0].get("content", {}).get("parts", [])
         text = "".join(
             part.get("text", "")

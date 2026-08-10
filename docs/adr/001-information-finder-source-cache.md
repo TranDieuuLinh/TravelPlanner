@@ -26,8 +26,9 @@ volume đã tồn tại phải chạy migration thủ công.
 Khi không có database, development/test dùng cache trong process và hashing
 embedding, không được coi là semantic retrieval production.
 
-Chưa chọn LLM production. `ExtractiveAnswerGenerator` chỉ ghép snippet đã cấp
-với citation ổn định và được ghi nhận rõ là fallback.
+Information Finder có thể dùng shared Gemini LLM client theo ADR 002 để tạo
+structured claims. `ExtractiveAnswerGenerator` vẫn là fallback rõ ràng; model
+Gemini baseline chưa được coi là production-evaluated.
 
 ## Hệ quả
 

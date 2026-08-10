@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -27,6 +27,23 @@ class InformationFinderOutput(PublicModel):
     answer: str
     sources: list[SourceReference] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+class AnswerClaim(BaseModel):
+    text: str
+    source_ids: list[str] = Field(min_length=1)
+
+    @field_validator("text")
+    @classmethod
+    def validate_non_empty_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("claim text must not be empty")
+        return value
+
+
+class GeneratedAnswer(BaseModel):
+    claims: list[AnswerClaim] = Field(min_length=1)
+    caveat: str | None = None
 
 
 class EmbeddingIdentity(BaseModel):

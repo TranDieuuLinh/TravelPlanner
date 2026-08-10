@@ -1,0 +1,107 @@
+@media (max-width: 1100px) {
+  .kgRelationshipGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kgRelationshipEditor,
+  .kgOntologyEditor,
+  .kgEntityEditor {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+
+  .kgControlBar,
+  .kgRawGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kgTopbar,
+  .kgPanelHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kgSourceStrip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kgNodeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kgInlineEditor,
+  .kgRelationshipEditor,
+  .kgOntologyEditor,
+  .kgEntityEditor {
+    grid-template-columns: 1fr;
+  }
+
+  .kgPanelActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 600px) {
+  .kgHeaderActions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kgHeaderActions button {
+    width: 100%;
+  }
+
+  .kgSourceMeta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .kgInspectorTabs {
+    overflow-x: auto;
+  }
+
+  .kgDefinitionList dl div {
+    grid-template-columns: 1fr;
+  }
+
+  .kgDefinitionList dd {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .kgValidationSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .kgHealthScore {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+
+  .kgIssueList>button {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .kgIssueList>button>.status,
+  .kgIssueList>button>i {
+    display: none;
+  }
+
+  .kgFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kgFooter button {
+    width: 100%;
+  }
+}
+
+/* AI knowledge graph import review */

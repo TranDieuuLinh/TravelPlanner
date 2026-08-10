@@ -39,11 +39,15 @@ modules/<module>/
 
 This is a working architecture scaffold, not a production travel-data system.
 
-- The supervisor is a deterministic classifier baseline.
+- The supervisor uses deterministic high-signal rules first, with an optional
+  structured Gemini classifier for ambiguous requests and a truthful
+  deterministic fallback. The baseline model and routing policy are not
+  production-evaluated.
 - Explorer currently parses destination and duration from simple text input.
-- InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval and
-  optional Tavily Search. Without configuration it returns a truthful
-  process-local development fallback.
+- InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
+  optional Tavily Search, and an optional structured answer generator through
+  the shared Gemini client. Without configuration it returns a truthful
+  process-local extractive fallback.
 - PlaceChecker uses `DevelopmentCatalog`, which creates deterministic placeholder
   suggestions. Placeholder places have `verified=false` and emit a warning.
 - ItineraryPlanner uses estimated routing, not live road-network data.
@@ -52,8 +56,10 @@ This is a working architecture scaffold, not a production travel-data system.
 - A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
   It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
   request receives a quota, authorization, transport, or server error. Existing
-  agents remain deterministic until their module behavior explicitly adopts the
-  shared client.
+  Supervisor classification can opt into the same client with
+  `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; keep `rules` for offline development
+  and tests. Missing Gemini configuration fails during composition, while
+  runtime classifier failures use the configured safe fallback.
 
 All external capabilities are behind module ports so real providers can be
 added without changing public graph contracts.
@@ -95,9 +101,12 @@ Configure `DATABASE_URL` for the module-owned PostgreSQL cache and
 `TAVILY_API_KEY` for web refreshes. See `.env.example` for thresholds, timeout,
 search depth, model revision, and blocked domains. Docker initializes the SQL
 migration only for a new PostgreSQL volume; run it manually for an existing
-volume. The current answer generator is extractive development fallback, not a
-selected production LLM provider. To configure the shared Gemini client, set
-`GEMINI_API_KEY=api1,api2,api3` and optionally `GEMINI_MODEL`.
+volume. Set `INFORMATION_FINDER_ANSWER_PROVIDER=gemini` and `GEMINI_API_KEY` to
+enable structured claims. The module validates source IDs and only exposes cited
+sources; provider failures use extractive fallback only when
+`INFORMATION_FINDER_LLM_FALLBACK_ENABLED=true`. `gemini-2.5-flash` is a
+configurable baseline, not a production-evaluated model. After eval, pin a model
+version through `GEMINI_MODEL` and document the evaluated snapshot.
 
 LangGraph Studio can load the graph declared in `langgraph.json` after the
 LangGraph CLI is installed.

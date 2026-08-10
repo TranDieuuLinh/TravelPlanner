@@ -3,7 +3,9 @@ import math
 from uuid import uuid4
 
 from app.modules.information_finder.contract import (
+    AnswerClaim,
     EmbeddingIdentity,
+    GeneratedAnswer,
     PreparedSource,
     RetrievedSource,
 )
@@ -92,7 +94,8 @@ class InMemorySourceRepository:
             existing = self.sources.get(prepared.canonical_url)
             unchanged = (
                 existing is not None
-                and self.content_hashes.get(prepared.canonical_url) == prepared.content_hash
+                and self.content_hashes.get(prepared.canonical_url)
+                == prepared.content_hash
             )
             snapshot_id = (
                 existing.snapshot_id
@@ -132,14 +135,11 @@ class InMemorySourceRepository:
 class ExtractiveAnswerGenerator:
     """Truthful development fallback that only quotes supplied source snippets."""
 
-    async def generate(self, query: str, sources: list[RetrievedSource]) -> str:
-        if not sources:
-            return (
-                "Chưa có nguồn phù hợp để trả lời câu hỏi này. "
-                "Information Finder đang chạy ở chế độ fallback chưa cấu hình đầy đủ."
-            )
-        statements = []
-        for index, source in enumerate(sources[:4], start=1):
+    async def generate(
+        self, query: str, sources: list[RetrievedSource]
+    ) -> GeneratedAnswer:
+        claims = []
+        for source in sources[:4]:
             snippet = " ".join(source.content.split())[:500].rstrip()
-            statements.append(f"{snippet} [{index}]")
-        return "\n\n".join(statements)
+            claims.append(AnswerClaim(text=snippet, source_ids=[source.source_id]))
+        return GeneratedAnswer(claims=claims)

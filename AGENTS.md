@@ -20,8 +20,9 @@ Backend hiện tại là scaffold FastAPI/LangGraph theo kiến trúc module d�
 - Supervisor là classifier xác định tuyến xử lý.
 - Explorer mới phân tích destination và duration từ input đơn giản.
 - Information finder ưu tiên cache PostgreSQL/pgvector, có Tavily Search qua
-  cấu hình và fallback development khi thiếu database/API key. Answer generator
-  hiện vẫn là extractive fallback, chưa phải LLM production.
+  cấu hình. Answer generator có thể dùng shared Gemini client với structured
+  claims/citation validation; extractive vẫn là development/runtime fallback.
+  Model baseline chưa được production-evaluated.
 - Place checker dùng `DevelopmentCatalog`, chỉ tạo dữ liệu placeholder với
   `verified=false` và warning.
 - Itinerary planner dùng estimated routing, chưa dùng dữ liệu đường thực tế.

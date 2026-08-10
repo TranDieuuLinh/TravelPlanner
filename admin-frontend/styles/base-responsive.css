@@ -1,0 +1,154 @@
+@media (max-width: 1100px) {
+  .dataLayout {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .goldenLayout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .appShell {
+    display: flex;
+  }
+
+  .topbarNav {
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 10px 16px;
+  }
+
+  .topbarNavBrand div {
+    display: none;
+  }
+
+  .topbarNavLinks {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .topbarNavLinks a {
+    padding: 8px 10px;
+  }
+
+  .topbarNavLinks a > span:last-child {
+    display: none;
+  }
+
+  .topbarNavUser {
+    margin-left: auto;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .topbarNavUserInfo {
+    display: none;
+  }
+
+  .workspace {
+    padding: 24px 16px 44px;
+  }
+
+  .metricGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .metricGrid article:nth-child(2) {
+    border-right: 0;
+  }
+
+  .metricGrid article:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .controlBar,
+  .dataLayout,
+  .goldenLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .goldenCompare {
+    grid-template-columns: 1fr;
+  }
+
+  .goldenTitle {
+    flex-wrap: wrap;
+  }
+
+  .runCaseButton {
+    width: 100%;
+  }
+
+  .executionCompare {
+    grid-template-columns: 1fr;
+  }
+
+  .runList {
+    max-height: 440px;
+  }
+
+  .runFacts {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .loginPage {
+    grid-template-columns: 1fr;
+  }
+
+  .loginStory {
+    min-height: auto;
+    padding: 50px 24px;
+  }
+
+  .loginStory .brandMark {
+    margin-bottom: 48px;
+  }
+
+  .loginStory h1 {
+    font-size: clamp(2.7rem, 14vw, 4rem);
+  }
+
+  .signalStrip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+
+  .loginPanel {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    padding: 48px 24px 70px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricGrid article {
+    min-height: 104px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .detailPane {
+    padding: 16px;
+  }
+
+  .detailHeader,
+  .stageInspector>header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

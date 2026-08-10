@@ -3,6 +3,7 @@ from pydantic.alias_generators import to_camel
 
 from app.modules.information_finder.public import SourceReference
 from app.modules.plan_editor.public import EditOperation
+from app.modules.supervisor.public import SupervisorRoute
 from app.shared.contracts.itinerary import Itinerary
 from app.shared.contracts.place import PlaceCandidate
 
@@ -21,7 +22,7 @@ class InvokeRequest(ApiModel):
 
 class InvokeResponse(ApiModel):
     request_id: str
-    route: str
+    route: SupervisorRoute
     response: str
     itinerary: Itinerary | None = None
     clarification_question: str | None = None

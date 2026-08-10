@@ -37,4 +37,3 @@ def has_sufficient_local_sources(
     domains = {source.url.split("/", 3)[2].casefold() for source in qualified}
     required_domains = min(2, minimum_sources)
     return len(qualified) >= minimum_sources and len(domains) >= required_domains
-

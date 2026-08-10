@@ -2,6 +2,7 @@ from typing import Protocol
 
 from app.modules.information_finder.contract import (
     EmbeddingIdentity,
+    GeneratedAnswer,
     PreparedSource,
     RetrievedSource,
     SearchResponse,
@@ -69,5 +70,6 @@ class EmbeddingProvider(Protocol):
 
 
 class AnswerGenerator(Protocol):
-    async def generate(self, query: str, sources: list[RetrievedSource]) -> str: ...
-
+    async def generate(
+        self, query: str, sources: list[RetrievedSource]
+    ) -> GeneratedAnswer: ...

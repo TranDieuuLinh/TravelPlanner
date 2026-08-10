@@ -25,7 +25,9 @@ class TavilySearchProvider:
             try:
                 from tavily import AsyncTavilyClient  # type: ignore[import-untyped]
             except ImportError as exc:
-                raise RuntimeError("tavily-python is required for Tavily search") from exc
+                raise RuntimeError(
+                    "tavily-python is required for Tavily search"
+                ) from exc
             client = AsyncTavilyClient(api_key=api_key)
         self.client = client
         self.search_depth = search_depth
@@ -50,9 +52,15 @@ class TavilySearchProvider:
             status = getattr(exc, "status_code", None)
             message = str(exc).casefold()
             if status == 401 or "401" in message or "unauthorized" in message:
-                raise SearchProviderUnauthorized("Tavily authentication failed") from exc
-            if status == 429 or any(term in message for term in ("429", "quota", "limit")):
-                raise SearchProviderQuotaExceeded("Tavily quota or rate limit reached") from exc
+                raise SearchProviderUnauthorized(
+                    "Tavily authentication failed"
+                ) from exc
+            if status == 429 or any(
+                term in message for term in ("429", "quota", "limit")
+            ):
+                raise SearchProviderQuotaExceeded(
+                    "Tavily quota or rate limit reached"
+                ) from exc
             raise SearchProviderError("Tavily search failed") from exc
 
         fetched_at = datetime.now(timezone.utc)

@@ -28,7 +28,9 @@ class PostgresSourceRepository:
             try:
                 import asyncpg  # type: ignore[import-untyped]
             except ImportError as exc:
-                raise RuntimeError("asyncpg is required for PostgreSQL source cache") from exc
+                raise RuntimeError(
+                    "asyncpg is required for PostgreSQL source cache"
+                ) from exc
             self._pool = await asyncpg.create_pool(
                 self.database_url,
                 command_timeout=self.command_timeout,

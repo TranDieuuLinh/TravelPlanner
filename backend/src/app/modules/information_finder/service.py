@@ -10,6 +10,8 @@ from app.modules.information_finder.contract import (
     RetrievedSource,
     SourceReference,
 )
+from app.modules.information_finder.answering import validate_and_render_answer
+from app.modules.information_finder.errors import AnswerProviderError
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
@@ -41,6 +43,7 @@ class InformationFinderOptions:
     blocked_domains: tuple[str, ...] = ()
     chunk_tokens: int = 300
     chunk_overlap: int = 50
+    answer_fallback_enabled: bool = True
 
 
 class InformationFinderService:
@@ -50,6 +53,7 @@ class InformationFinderService:
         repository: SourceRepository,
         embeddings: EmbeddingProvider,
         answers: AnswerGenerator,
+        fallback_answers: AnswerGenerator | None = None,
         search_provider: SearchProvider | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
@@ -57,6 +61,7 @@ class InformationFinderService:
         self.repository = repository
         self.embeddings = embeddings
         self.answers = answers
+        self.fallback_answers = fallback_answers
         self.search_provider = search_provider
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
@@ -115,7 +120,9 @@ class InformationFinderService:
                     )
                     combined.extend(saved)
                 except SearchProviderError as exc:
-                    warnings.append(f"Web search unavailable ({exc.code}); local sources were used.")
+                    warnings.append(
+                        f"Web search unavailable ({exc.code}); local sources were used."
+                    )
                     await self.repository.record_failed_search(
                         original_query=query,
                         normalized_query=normalized_query,
@@ -125,10 +132,26 @@ class InformationFinderService:
                     )
 
         ranked = rank_sources(combined)[: self.options.answer_source_limit]
-        answer = await self.answers.generate(normalized_query, ranked)
+        if not ranked:
+            return InformationFinderOutput(
+                answer="Chưa có nguồn phù hợp để trả lời câu hỏi này.",
+                warnings=warnings,
+            )
+        try:
+            generated = await self.answers.generate(normalized_query, ranked)
+            answer, cited_sources = validate_and_render_answer(generated, ranked)
+        except AnswerProviderError as exc:
+            if (
+                not self.options.answer_fallback_enabled
+                or self.fallback_answers is None
+            ):
+                raise
+            fallback = await self.fallback_answers.generate(normalized_query, ranked)
+            answer, cited_sources = validate_and_render_answer(fallback, ranked)
+            warnings.append(f"answer_extractive_fallback:{exc.code}")
         return InformationFinderOutput(
             answer=answer,
-            sources=[self._citation(source) for source in ranked],
+            sources=[self._citation(source) for source in cited_sources],
             warnings=warnings,
         )
 
@@ -153,7 +176,10 @@ class InformationFinderService:
             if (
                 len(result.content.strip()) < self.options.minimum_content_chars
                 or score < self.options.provider_relevance_threshold
-                or any(domain == blocked or domain.endswith(f".{blocked}") for blocked in self.options.blocked_domains)
+                or any(
+                    domain == blocked or domain.endswith(f".{blocked}")
+                    for blocked in self.options.blocked_domains
+                )
                 or canonical_url in seen_urls
                 or digest in seen_hashes
             ):
@@ -176,7 +202,9 @@ class InformationFinderService:
         vector_index = 0
         prepared_sources = []
         embedded_at = datetime.now(timezone.utc)
-        for (result, canonical_url, domain, digest), chunks in zip(accepted, chunk_sets):
+        for (result, canonical_url, domain, digest), chunks in zip(
+            accepted, chunk_sets
+        ):
             prepared_chunks = []
             for index, (chunk, token_count) in enumerate(chunks):
                 prepared_chunks.append(

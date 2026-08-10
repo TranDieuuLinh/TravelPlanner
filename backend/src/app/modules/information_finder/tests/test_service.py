@@ -50,7 +50,8 @@ class StaticRepository:
         self.saved.extend(sources)
         return [
             source(
-                f"web-{index}", prepared.canonical_url,
+                f"web-{index}",
+                prepared.canonical_url,
                 score=prepared.result.provider_score or 0,
                 content=prepared.result.content,
             )
@@ -101,7 +102,11 @@ def service(repository, search=None, *, minimum=1):
 
 def test_fresh_sufficient_local_skips_tavily():
     search = FakeSearch()
-    output = asyncio.run(service(StaticRepository([source("1", "https://a.test/x")]), search).find("museum"))
+    output = asyncio.run(
+        service(StaticRepository([source("1", "https://a.test/x")]), search).find(
+            "museum"
+        )
+    )
     assert search.calls == 0
     assert len(output.sources) == 1
 
@@ -116,29 +121,41 @@ def test_empty_local_calls_tavily_and_saves():
 
 def test_insufficient_local_merges_local_and_tavily():
     repository = StaticRepository([source("1", "https://a.test/x")])
-    output = asyncio.run(service(repository, FakeSearch([web_result()]), minimum=2).find("museum"))
+    output = asyncio.run(
+        service(repository, FakeSearch([web_result()]), minimum=2).find("museum")
+    )
     assert {item.source_id for item in output.sources} == {"1", "web-0"}
 
 
 def test_expired_source_refreshes_with_tavily():
     search = FakeSearch([web_result()])
-    asyncio.run(service(StaticRepository([source("1", "https://a.test/x", fresh=False)]), search).find("museum"))
+    asyncio.run(
+        service(
+            StaticRepository([source("1", "https://a.test/x", fresh=False)]), search
+        ).find("museum")
+    )
     assert search.calls == 1
 
 
 def test_live_query_forces_refresh_even_with_good_local():
     search = FakeSearch([web_result()])
-    asyncio.run(service(StaticRepository([source("1", "https://a.test/x")]), search).find("giá hiện tại"))
+    asyncio.run(
+        service(StaticRepository([source("1", "https://a.test/x")]), search).find(
+            "giá hiện tại"
+        )
+    )
     assert search.calls == 1
 
 
 def test_url_and_content_deduplication():
     repository = StaticRepository()
-    search = FakeSearch([
-        web_result("https://EXAMPLE.com/a/?utm_source=x"),
-        web_result("https://example.com/a"),
-        web_result("https://other.test/a", content=CONTENT),
-    ])
+    search = FakeSearch(
+        [
+            web_result("https://EXAMPLE.com/a/?utm_source=x"),
+            web_result("https://example.com/a"),
+            web_result("https://other.test/a", content=CONTENT),
+        ]
+    )
     asyncio.run(service(repository, search).find("museum"))
     assert len(repository.saved) == 1
     assert repository.saved[0].canonical_url == "https://example.com/a"
@@ -147,18 +164,26 @@ def test_url_and_content_deduplication():
 
 def test_tavily_timeout_keeps_usable_local_source():
     repository = StaticRepository([source("1", "https://a.test/x", score=0.4)])
-    output = asyncio.run(service(repository, FakeSearch(error=SearchProviderTimeout)).find("museum"))
+    output = asyncio.run(
+        service(repository, FakeSearch(error=SearchProviderTimeout)).find("museum")
+    )
     assert len(output.sources) == 1
     assert repository.failures == ["provider_timeout"]
 
 
 def test_quota_is_mapped_to_warning():
-    output = asyncio.run(service(StaticRepository(), FakeSearch(error=SearchProviderQuotaExceeded)).find("museum"))
+    output = asyncio.run(
+        service(StaticRepository(), FakeSearch(error=SearchProviderQuotaExceeded)).find(
+            "museum"
+        )
+    )
     assert "provider_quota_exceeded" in output.warnings[0]
 
 
 def test_citation_date_kind_review_and_camel_case():
-    output = asyncio.run(service(StaticRepository([source("1", "https://a.test/x")])).find("museum"))
+    output = asyncio.run(
+        service(StaticRepository([source("1", "https://a.test/x")])).find("museum")
+    )
     payload = output.model_dump(mode="json", by_alias=True)
     citation = payload["sources"][0]
     assert citation["updatedAt"] and citation["dateKind"] == "last_fetched_at"

@@ -13,4 +13,3 @@ __all__ = [
     "SourceReference",
     "build_information_finder_graph",
 ]
-

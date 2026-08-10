@@ -58,4 +58,3 @@ def chunk_content(
         if start + target_tokens >= len(words):
             break
     return chunks
-

@@ -12,12 +12,32 @@ class LlmProviderError(LlmError):
     code = "llm_provider_error"
 
 
+class LlmUnauthorizedError(LlmProviderError):
+    code = "llm_unauthorized"
+
+
+class LlmQuotaError(LlmProviderError):
+    code = "llm_quota_exceeded"
+
+
+class LlmServerError(LlmProviderError):
+    code = "llm_server_error"
+
+
 class LlmResponseError(LlmProviderError):
     code = "llm_invalid_response"
 
 
+class LlmRefusalError(LlmResponseError):
+    code = "llm_refusal"
+
+
 class LlmTransportError(LlmError):
     code = "llm_transport_error"
+
+
+class LlmTimeoutError(LlmTransportError):
+    code = "llm_timeout"
 
 
 class LlmAllKeysUnavailable(LlmError):
