@@ -35,7 +35,7 @@ travelplanner/
 └── docker-compose.yml # Local service orchestration
 ```
 
-See [docs/01-codebase-structure.md](docs/01-codebase-structure.md) for the
+See [docs/codebase-structure.md](docs/codebase-structure.md) for the
 detailed backend module boundaries.
 
 ## Backend API
