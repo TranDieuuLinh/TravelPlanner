@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from app.integrations.llm.tracing import observe_application
 from app.modules.plans.domain.constraint_policy import ConstraintPolicy
 from app.modules.plans.domain.entities import (
     PlaceSelectionDay,
@@ -337,6 +338,7 @@ class PlaceSelectorService:
             travel_style=intent.travel_style,
         )
 
+    @observe_application("planner.place_selector")
     def fill_agent_plan(
         self,
         selection_input: PlaceSelectionInput,
@@ -426,6 +428,7 @@ class PlaceSelectorService:
             ),
         )
 
+    @observe_application("planner.prepare_mandatory_candidates")
     def prepare_mandatory_candidates(
         self,
         selection_input: PlaceSelectionInput,

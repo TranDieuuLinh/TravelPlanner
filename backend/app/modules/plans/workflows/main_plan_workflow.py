@@ -2,6 +2,7 @@ import time
 from typing import Callable
 from uuid import uuid4
 
+from app.integrations.llm.tracing import observe_application
 from app.modules.planning_runs.repository import PlanningRunRepository
 from app.modules.plans.checks.overall_checker import OverallChecker
 from app.modules.plans.domain.entities import (
@@ -193,6 +194,7 @@ class MainPlanWorkflow:
             region_stories=[],
         )
 
+    @observe_application("planner.main_plan")
     async def _run_planning(
         self,
         *,
@@ -297,6 +299,7 @@ class MainPlanWorkflow:
             )
         return plan
 
+    @observe_application("planner.execute_plan")
     async def _execute_planning(
         self,
         *,

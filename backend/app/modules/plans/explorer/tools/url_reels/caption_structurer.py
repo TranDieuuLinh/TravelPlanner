@@ -10,6 +10,11 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
+from app.integrations.llm.tracing import (
+    begin_external_generation,
+    finish_external_gemini_generation,
+    observe_external_generation,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     SpeechToTextObservation,
     UrlMetadata,
@@ -156,6 +161,7 @@ class GeminiCaptionStructurer:
             durationSeconds=time.perf_counter() - started_at,
         )
 
+    @observe_external_generation("llm.structure_source_caption")
     async def _structure_with_deadline(
         self,
         *,
@@ -164,6 +170,17 @@ class GeminiCaptionStructurer:
         started_at: float,
     ) -> CaptionStructureResult:
         last_error = "caption_structuring_unavailable"
+        begin_external_generation(
+            provider="gemini",
+            model=self.model_name,
+            operation="structure_source_caption",
+            input_summary={
+                "requestPayloadCharacters": len(
+                    json.dumps(request_payload, ensure_ascii=False)
+                ),
+                "responseSchemaProvided": True,
+            },
+        )
         request_timeout = httpx.Timeout(
             connect=min(10.0, self.timeout_seconds),
             read=min(30.0, self.timeout_seconds),
@@ -190,7 +207,8 @@ class GeminiCaptionStructurer:
                         continue
                     try:
                         response.raise_for_status()
-                        raw = _extract_text(response.json())
+                        data = response.json()
+                        raw = _extract_text(data)
                         output = CaptionStructureResult.model_validate_json(raw)
                     except (
                         httpx.HTTPError,
@@ -206,6 +224,16 @@ class GeminiCaptionStructurer:
                             start=1,
                         )
                     ]
+                    finish_external_gemini_generation(
+                        operation="structure_source_caption",
+                        configured_model=self.model_name,
+                        response=data,
+                        output_summary={
+                            "type": "captionStructure",
+                            "observationCount": len(observations),
+                            "regionStoryCharacters": len(output.region_story),
+                        },
+                    )
                     return output.model_copy(
                         update={
                             "observations": observations,

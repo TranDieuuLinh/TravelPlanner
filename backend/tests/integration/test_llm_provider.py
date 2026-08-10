@@ -297,6 +297,37 @@ def test_stub_rejects_non_supervisor_structured_generation() -> None:
         )
 
 
+def test_gemini_maps_provider_usage_to_exclusive_langfuse_buckets() -> None:
+    usage = GeminiLLMClient._usage_from_response(
+        {
+            "modelVersion": "gemini-test-version",
+            "responseId": "response-123",
+            "usageMetadata": {
+                "promptTokenCount": 100,
+                "candidatesTokenCount": 20,
+                "thoughtsTokenCount": 10,
+                "totalTokenCount": 130,
+                "cachedContentTokenCount": 0,
+            },
+        },
+        "requested-model",
+    )
+
+    assert usage is not None
+    assert usage.model == "gemini-test-version"
+    assert usage.input_tokens == 100
+    assert usage.output_tokens == 30
+    assert usage.total_tokens == 130
+    assert usage.details["candidateTokens"] == 20
+    assert usage.details["thinkingTokens"] == 10
+
+
+def test_gemini_does_not_report_zero_usage_when_metadata_is_absent() -> None:
+    assert (
+        GeminiLLMClient._usage_from_response({}, "requested-model") is None
+    )
+
+
 def test_gemini_grounded_json_returns_sources_and_search_queries(monkeypatch) -> None:
     FakeAsyncClient.responses = [_grounded_response(text='{"status": "free"}')]
     FakeAsyncClient.api_keys = []

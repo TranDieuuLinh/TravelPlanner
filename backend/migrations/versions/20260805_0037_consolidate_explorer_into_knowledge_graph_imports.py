@@ -34,6 +34,9 @@ def upgrade() -> None:
 
 
 def _create_source_documents() -> None:
+    inspector = sa.inspect(op.get_bind())
+    if "source_documents" in inspector.get_table_names():
+        return
     op.create_table(
         "source_documents",
         sa.Column("id", sa.String(36), primary_key=True),

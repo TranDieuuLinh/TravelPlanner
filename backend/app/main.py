@@ -26,6 +26,7 @@ from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
 )
 from app.modules.plans.url_job_worker import UrlImportJobWorker
 from app.integrations.llm.factory import get_llm_client
+from app.integrations.llm.tracing import shutdown_langfuse
 from app.modules.preferences.extractor import (
     DeterministicPreferenceExtractor,
     StructuredLLMPreferenceExtractor,
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI):
                 await task
         del app.state.url_import_worker
         del app.state.preference_observation_worker
+        shutdown_langfuse()
 
     if getattr(settings, "preload_url_reel_models", False):
         try:

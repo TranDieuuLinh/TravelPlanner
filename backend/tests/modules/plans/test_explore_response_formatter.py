@@ -135,11 +135,9 @@ def test_plain_vague_prompt_gets_v2_completeness_metadata(
     assert response.explorer.mode == "vague"
     assert response.explorer.input_completeness.value == "vague"
     assert response.explorer.intent.destination == ""
-    assert [item.field for item in response.explorer.missing_fields] == [
-        "destination",
-        "days",
-        "budget",
-    ]
+    # Destination is the only blocking field in the current V2 intake.
+    # Duration and budget use domain defaults and must not force another turn.
+    assert [item.field for item in response.explorer.missing_fields] == ["destination"]
     assert response.explorer.missing_info_questions == []
 
 

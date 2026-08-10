@@ -9,6 +9,7 @@ from uuid import uuid4
 import yaml
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.knowledge_graph.dataset import KnowledgeGraphDataset
 from app.modules.knowledge_graph.repositories import (
     GraphImportRepository,
@@ -309,6 +310,7 @@ class KnowledgeGraphImportService:
         self._refresh_counts(job)
         return self.import_repository.save(job)
 
+    @observe_application("knowledge_graph.extract_import")
     async def _extract(
         self,
         payload: GraphImportCreate,

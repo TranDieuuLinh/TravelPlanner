@@ -14,6 +14,11 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
+from app.integrations.llm.tracing import (
+    begin_external_generation,
+    finish_external_gemini_generation,
+    observe_external_generation,
+)
 from app.modules.plans.explorer.tools.url_reels.schema import (
     SpeechToTextObservation,
     SpeechToTextResult,
@@ -288,6 +293,7 @@ class GeminiAudioSpeechToText:
             retry_count,
         )
 
+    @observe_external_generation("llm.transcribe_reel_audio")
     def _transcribe_single(
         self,
         audio_path: Path,
@@ -301,6 +307,19 @@ class GeminiAudioSpeechToText:
         start = time.perf_counter()
         audio_bytes = audio_path.read_bytes()
         mime_type = "audio/mpeg" if audio_path.suffix.lower() == ".mp3" else "audio/wav"
+        begin_external_generation(
+            provider="gemini",
+            model=self.model_name,
+            operation="transcribe_reel_audio",
+            input_summary={
+                "audioBytes": len(audio_bytes),
+                "audioMimeType": mime_type,
+                "languageHintProvided": bool(language),
+                "initialPromptProvided": bool(initial_prompt),
+                "chunkIndex": chunk_index,
+                "chunkCount": chunk_count,
+            },
+        )
         prompt_parts = [
             "Transcribe this travel reel audio faithfully.",
             "Return only JSON matching the supplied schema.",
@@ -385,6 +404,15 @@ class GeminiAudioSpeechToText:
             raise RuntimeError(
                 "Gemini audio transcription returned invalid structured JSON."
             ) from exc
+        finish_external_gemini_generation(
+            operation="transcribe_reel_audio",
+            configured_model=self.model_name,
+            response=data,
+            output_summary={
+                "type": "transcript",
+                "characters": len(structured.transcript),
+            },
+        )
         return SpeechToTextResult(
             text=structured.transcript,
             observations=[],

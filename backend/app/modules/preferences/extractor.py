@@ -8,6 +8,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.integrations.llm.base import LLMClient
+from app.integrations.llm.tracing import observe_application
 from app.modules.preferences.schema import (
     PreferenceDimension,
     PreferenceSignal,
@@ -49,6 +50,7 @@ class StructuredLLMPreferenceExtractor:
     def __init__(self, llm: LLMClient) -> None:
         self.llm = llm
 
+    @observe_application("preferences.extract")
     async def extract(
         self,
         message: str,
