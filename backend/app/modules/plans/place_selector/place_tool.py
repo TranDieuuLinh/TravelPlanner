@@ -29,6 +29,30 @@ DESCRIPTION_RETRIEVAL_MULTIPLIER = 10
 MIN_DESCRIPTION_RETRIEVAL_LIMIT = 50
 MAX_REPOSITORY_CANDIDATES = 10000
 
+EVENING_FALLBACK_ACTIVITY_ORDER = (
+    "activity_evening_cultural_performance",
+    "activity_live_music",
+    "activity_evening_city_walk",
+    "activity_night_market",
+    "activity_rooftop_city_view",
+    "activity_night_sightseeing_tour",
+    "activity_nightlife_drink",
+    "activity_karaoke",
+    "activity_wellness_evening",
+)
+EVENING_FALLBACK_ACTIVITY_IDS = frozenset(EVENING_FALLBACK_ACTIVITY_ORDER)
+EVENING_FALLBACK_SEARCH_TERMS = [
+    "biểu diễn văn hóa buổi tối",
+    "nhạc sống buổi tối",
+    "đi bộ khám phá thành phố buổi tối",
+    "chợ đêm",
+    "rooftop buổi tối",
+    "tham quan Hà Nội về đêm",
+    "đồ uống buổi tối",
+    "karaoke",
+    "chăm sóc sức khỏe buổi tối",
+]
+
 logger = logging.getLogger(__name__)
 
 SEMANTIC_CATEGORY_TERMS: dict[str, set[str]] = {
@@ -591,6 +615,15 @@ class PlaceSelectionTool(Protocol):
         bbox_filter: tuple[float, float, float, float] | None = None,
     ) -> list[SelectablePlace]: ...
 
+    def search_evening_fallback(
+        self,
+        *,
+        region_key: str,
+        excluded_place_ids: set[str],
+        limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
+    ) -> list[SelectablePlace]: ...
+
 
 class PlaceSelectionRepository(Protocol):
     def get(self, place_id: str) -> Any | None: ...
@@ -602,6 +635,8 @@ class PlaceSelectionRepository(Protocol):
         limit: int = 10000,
     ) -> list[Any]: ...
 
+    def get_many(self, entity_ids: list[str]) -> list[Any]: ...
+
 
 class EmptyPlaceSelectionTool:
     def get(self, place_id: str) -> SelectablePlace | None:
@@ -612,6 +647,16 @@ class EmptyPlaceSelectionTool:
         *,
         region_key: str,
         target_tags: list[str],
+        excluded_place_ids: set[str],
+        limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
+    ) -> list[SelectablePlace]:
+        return []
+
+    def search_evening_fallback(
+        self,
+        *,
+        region_key: str,
         excluded_place_ids: set[str],
         limit: int,
         bbox_filter: tuple[float, float, float, float] | None = None,
@@ -641,7 +686,7 @@ class RepositoryPlaceSelectionTool:
         self.graph_repository = graph_repository
         self._scope_cache: dict[str, list[SelectablePlace]] = {}
         self._graph_activity_cache: dict[
-            tuple[str, tuple[str, ...], int],
+            tuple[str, tuple[str, ...], int, tuple[str, ...]],
             list[SelectablePlace],
         ] = {}
 
@@ -769,6 +814,52 @@ class RepositoryPlaceSelectionTool:
         )
         return shortlisted[:limit]
 
+    def search_evening_fallback(
+        self,
+        *,
+        region_key: str,
+        excluded_place_ids: set[str],
+        limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
+    ) -> list[SelectablePlace]:
+        """Return only graph-backed Places for approved evening Activities."""
+        candidates = self._load_graph_activity_candidates(
+            region_key=region_key,
+            target_tags=EVENING_FALLBACK_SEARCH_TERMS,
+            excluded_place_ids=excluded_place_ids,
+            limit=1000,
+            allowed_activity_ids=EVENING_FALLBACK_ACTIVITY_IDS,
+        )
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.activity_id in EVENING_FALLBACK_ACTIVITY_IDS
+            and (bbox_filter is None or _inside_bbox(candidate, bbox_filter))
+        ]
+        grouped: dict[str, list[SelectablePlace]] = {
+            activity_id: [] for activity_id in EVENING_FALLBACK_ACTIVITY_ORDER
+        }
+        for candidate in candidates:
+            if candidate.activity_id is not None:
+                grouped[candidate.activity_id].append(candidate)
+        for values in grouped.values():
+            values.sort(
+                key=lambda candidate: (
+                    -(candidate.rating or 0),
+                    -(candidate.review_count or 0),
+                    candidate.name.casefold(),
+                )
+            )
+        balanced: list[SelectablePlace] = []
+        while len(balanced) < limit and any(grouped.values()):
+            for activity_id in EVENING_FALLBACK_ACTIVITY_ORDER:
+                values = grouped[activity_id]
+                if values:
+                    balanced.append(values.pop(0))
+                    if len(balanced) >= limit:
+                        break
+        return balanced
+
     def _load_graph_activity_candidates(
         self,
         *,
@@ -776,15 +867,20 @@ class RepositoryPlaceSelectionTool:
         target_tags: list[str],
         excluded_place_ids: set[str],
         limit: int,
+        allowed_activity_ids: frozenset[str] | None = None,
     ) -> list[SelectablePlace]:
         if self.graph_repository is None or not target_tags:
             return []
-        if "Restaurant" in semantic_categories(set(target_tags)):
+        # A mixed activity query may contain a drink/nightlife identity as one
+        # of several approved evening options. Only a purely meal-oriented
+        # query should bypass OFFERS_ACTIVITY discovery.
+        if semantic_categories(set(target_tags)) == {"Restaurant"}:
             return []
         cache_key = (
             region_key,
             tuple(sorted(_normalized_terms(target_tags))),
             limit,
+            tuple(sorted(allowed_activity_ids or ())),
         )
         cached = self._graph_activity_cache.get(cache_key)
         if cached is not None:
@@ -799,12 +895,21 @@ class RepositoryPlaceSelectionTool:
         try:
             rows = loader(
                 region_key,
-                activity_terms=target_tags,
+                activity_terms=(None if allowed_activity_ids else target_tags),
+                activity_ids=(
+                    sorted(allowed_activity_ids)
+                    if allowed_activity_ids
+                    else None
+                ),
                 limit=max(limit, 100),
             )
         except TypeError:
             # Compatibility for lightweight test doubles and older adapters.
-            rows = loader(region_key, limit=max(limit, 100))
+            rows = loader(
+                region_key,
+                activity_terms=target_tags,
+                limit=max(limit, 100),
+            )
         query_terms = _normalized_terms(target_tags)
         best_by_place: dict[str, tuple[int, object]] = {}
         for row in rows:
@@ -825,8 +930,21 @@ class RepositoryPlaceSelectionTool:
             best_by_place.values(),
             key=lambda value: (-value[0], value[1].activityName.casefold()),
         )
+        ordered_rows = [row for _, row in ordered[:limit]]
+        batch_loader = getattr(self.repository, "get_many", None)
+        projected_by_id: dict[str, SelectablePlace] = {}
+        if callable(batch_loader):
+            projected_by_id = {
+                place.place_id: place
+                for record in batch_loader([row.placeId for row in ordered_rows])
+                if (place := self._to_selectable_place(record)).place_id is not None
+            }
         for _, row in ordered[:limit]:
-            place = self.get(row.placeId)
+            place = (
+                projected_by_id.get(row.placeId)
+                if callable(batch_loader)
+                else self.get(row.placeId)
+            )
             if place is None:
                 continue
             result.append(
@@ -977,6 +1095,7 @@ class RepositoryPlaceSelectionTool:
                 if isinstance(feature, str)
             ],
             openingHours=list(place.opening_hours or []),
+            preferredTimeWindows=list(place.preferred_time_windows or []),
             weatherSensitivity=(
                 str(metadata.get("weatherSensitivity"))
                 if metadata.get("weatherSensitivity") is not None

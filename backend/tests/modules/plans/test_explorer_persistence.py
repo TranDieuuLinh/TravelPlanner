@@ -16,7 +16,8 @@ from app.modules.knowledge_graph.model import (
 )
 from app.modules.places.resolver import PlaceResolution
 from app.modules.plans.explorer.repository import ExplorerPersistenceRepository
-from app.modules.plans.explorer.model import SourceDocument
+from app.modules.plans.explorer.model import DestinationRegionStory, SourceDocument
+from app.modules.plans.explorer.tools.url_reels.schema import UrlReelExtractionResult
 
 
 def _resolution(name: str = "Mì Quảng Bà Mua") -> PlaceResolution:
@@ -98,53 +99,75 @@ def test_explorer_persists_candidate_as_kg_import_node_with_minimal_snapshot() -
         assert selected[0].note_sources == []
 
 
-def test_explorer_loads_grounded_region_story_from_source_document() -> None:
+def test_explorer_loads_curated_destination_region_stories_from_database() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         repository = ExplorerPersistenceRepository(session)
-        repository.save(
-            intake_id="intake-region",
-            user_id=None,
-            destination="Hà Nội",
-            resolutions=[_resolution("Hoàng thành Thăng Long")],
-        )
-        document = SourceDocument(
-            id="source-region",
-            canonical_url="https://example.com/hanoi-reel",
-            platform="tiktok",
-            artifacts_json={},
-            extracted_context_json={
-                "regionStory": {
-                    "text": "Creator xem đây là một ngày đầu tiên hoàn hảo ở Hà Nội.",
-                    "evidence": "A perfect first day in Hanoi",
-                    "evidenceType": "caption",
-                    "confidence": 0.85,
-                }
-            },
-        )
-        session.add(document)
-        session.flush()
-        import_job = session.get(KnowledgeGraphImport, "intake-region")
-        node = session.scalar(
-            select(KnowledgeGraphImportNode).where(
-                KnowledgeGraphImportNode.import_id == "intake-region",
-                KnowledgeGraphImportNode.type != "Area",
+        session.add(
+            DestinationRegionStory(
+                id="vn-ha-noi-history",
+                region_key="vn,ha-noi",
+                story_type="destination_history",
+                text="Hanoi has more than a thousand years of history.",
+                source_url="https://english.hanoi.gov.vn/history",
+                evidence_types_json=["webpage"],
+                fetched_at=datetime(2026, 8, 8, tzinfo=timezone.utc),
+                sort_order=10,
+                is_active=True,
             )
         )
-        assert import_job is not None and node is not None
-        import_job.source_document_id = document.id
-        node.source_document_id = document.id
         session.commit()
 
-        stories = repository.load_region_stories("intake-region", None)
+        stories = repository.load_destination_region_stories("Hanoi")
 
         assert len(stories) == 1
-        assert stories[0].text == (
-            "Creator xem đây là một ngày đầu tiên hoàn hảo ở Hà Nội."
+        assert stories[0].type == "destination_history"
+        assert stories[0].text == "Hanoi has more than a thousand years of history."
+        assert stories[0].evidence is None
+        assert stories[0].ref == "https://english.hanoi.gov.vn/history"
+        assert stories[0].evidence_types == ["webpage"]
+
+
+def test_url_source_document_does_not_persist_region_story() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        repository = ExplorerPersistenceRepository(session)
+        result = UrlReelExtractionResult.model_validate(
+            {
+                "url": "https://www.instagram.com/reel/example/",
+                "platform": "instagram",
+                "metadata": {
+                    "originalUrl": "https://www.instagram.com/reel/example/",
+                    "canonicalUrl": "https://www.instagram.com/reel/example/",
+                    "platform": "instagram",
+                },
+                "artifacts": {},
+                "speechToText": {
+                    "text": "Hanoi story",
+                    "status": "ok",
+                    "source": "stt",
+                    "durationSeconds": 1,
+                },
+                "extractedContext": {
+                    "regionStory": {
+                        "text": "A URL-authored Hanoi story.",
+                        "evidence": "Hanoi story",
+                        "evidenceType": "stt",
+                    }
+                },
+                "timings": {},
+            }
         )
-        assert stories[0].evidence == "A perfect first day in Hanoi"
-        assert stories[0].ref == "https://example.com/hanoi-reel"
+        repository._save_source_documents(
+            {"https://www.instagram.com/reel/example/": [result]}
+        )
+
+        document = session.scalar(select(SourceDocument))
+
+        assert document is not None
+        assert "regionStory" not in document.extracted_context_json
 
 
 def test_explorer_keeps_critical_intake_when_kg_enrichment_fails() -> None:

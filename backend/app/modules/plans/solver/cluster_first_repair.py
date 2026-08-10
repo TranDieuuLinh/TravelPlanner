@@ -77,12 +77,25 @@ class ClusterFirstRepairSolver:
         days: list[list[PlanningCandidate]],
         matrix: MatrixSnapshot,
     ) -> int | None:
-        feasible: list[tuple[float, int]] = []
+        feasible: list[tuple[float, int, int]] = []
         for index, day in enumerate(days):
             if not self._fits(candidate, day, matrix):
                 continue
-            feasible.append((self._insertion_cost(candidate, day, matrix), index))
-        return min(feasible)[1] if feasible else None
+            # Geographic insertion remains the primary signal. When route
+            # costs tie (especially with the missing-coordinate fallback),
+            # balance occupied minutes instead of filling day one to its hard
+            # limit before considering day two.
+            occupied_minutes = sum(
+                item.duration_minutes for item in day if item.kind == candidate.kind
+            )
+            feasible.append(
+                (
+                    self._insertion_cost(candidate, day, matrix),
+                    occupied_minutes,
+                    index,
+                )
+            )
+        return min(feasible)[2] if feasible else None
 
     def _fits(
         self,

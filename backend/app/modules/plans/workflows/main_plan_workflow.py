@@ -27,6 +27,12 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.plans.explorer.explorer_service import ExplorerService
 from app.modules.plans.explorer.schema import PlaceCandidateReview
 from app.modules.plans.place_selector.service import PlaceSelectorService
+from app.modules.plans.solver.candidate_pool import (
+    build_selected_place_pool,
+    selected_place_identity,
+)
+from app.modules.plans.solver.cluster_first_repair import ClusterFirstRepairSolver
+from app.modules.plans.solver.contracts import PlanningSolver
 from app.modules.plans.trip_theme_planner.service import TripThemePlannerService
 from app.modules.plans.trip_theme_planner.region_context import normalize_region_key
 from app.modules.plans.schema import (
@@ -52,12 +58,14 @@ class MainPlanWorkflow:
         place_selector: PlaceSelectorService,
         checker: OverallChecker | None = None,
         planning_runs: PlanningRunRepository | None = None,
+        planning_solver: PlanningSolver | None = None,
     ) -> None:
         self.explorer = explorer
         self.trip_theme_planner = trip_theme_planner
         self.place_selector = place_selector
         self.checker = checker or OverallChecker()
         self.planning_runs = planning_runs
+        self.planning_solver = planning_solver or ClusterFirstRepairSolver()
 
     async def run(self, payload: MainPlanCreate) -> Plan:
         intent = self.explorer.explore(payload)
@@ -94,17 +102,8 @@ class MainPlanWorkflow:
         *,
         on_timing_update: Callable[[PlanTimingReport], None] | None = None,
         reuse_theme_plan: Plan | None = None,
-        capacity_preflight: tuple[float, dict[str, object]] | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         trace = PlanTimingTrace(on_update=on_timing_update)
-        if capacity_preflight is not None:
-            duration_seconds, details = capacity_preflight
-            trace.add_completed_stage(
-                "capacityPreflight",
-                "CapacityPreflight chọn số ngày và gom cụm",
-                duration_seconds=duration_seconds,
-                details=details,
-            )
         prepare_started_at = time.perf_counter()
         intent = TravelIntent(
             destination=payload.intent.destination,
@@ -153,6 +152,9 @@ class MainPlanWorkflow:
             ),
             intake_id=payload.intake_id,
             reuse_theme_plan=reuse_theme_plan,
+            expand_days_to_fit_mandatory_places=(
+                payload.expand_days_to_fit_selected_places
+            ),
         )
         return plan, trace.finish(plan)
 
@@ -210,6 +212,7 @@ class MainPlanWorkflow:
         intake_id: str | None = None,
         timing_trace: PlanTimingTrace | None = None,
         reuse_theme_plan: Plan | None = None,
+        expand_days_to_fit_mandatory_places: bool = False,
     ) -> Plan:
         run_id = None
         if self.planning_runs is not None:
@@ -256,6 +259,9 @@ class MainPlanWorkflow:
                 candidate_reviews=candidate_reviews,
                 region_stories=region_stories,
                 reuse_theme_plan=reuse_theme_plan,
+                expand_days_to_fit_mandatory_places=(
+                    expand_days_to_fit_mandatory_places
+                ),
             )
         except Exception as exc:
             if self.planning_runs is not None and run_id is not None:
@@ -308,6 +314,7 @@ class MainPlanWorkflow:
         candidate_reviews: list[PlaceCandidateReview],
         region_stories: list[PlanNoteSource],
         reuse_theme_plan: Plan | None = None,
+        expand_days_to_fit_mandatory_places: bool = False,
     ) -> Plan:
         region_key = normalize_region_key(intent.destination, explicit_region_key)
         theme_started = time.perf_counter()
@@ -395,7 +402,7 @@ class MainPlanWorkflow:
             selected_places,
             theme_output,
         )
-        selection_input = PlaceSelectionInput(
+        initial_selection_input = PlaceSelectionInput(
             mode=PlanningMode.main,
             intent=planning_intent,
             tripSpec=theme_output.trip_spec,
@@ -407,6 +414,84 @@ class MainPlanWorkflow:
             allowFinderGapFill=allow_finder_gap_fill,
             allowReplaceSourcePlaces=allow_replace_source_places,
         )
+        mandatory_pool_started = time.perf_counter()
+        prepared_input, unresolved_requirements = (
+            self.place_selector.prepare_mandatory_candidates(
+                initial_selection_input
+            )
+        )
+        mandatory_places = list(prepared_input.selected_places)
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "mandatoryCandidatePool",
+                "Tập hợp địa điểm bắt buộc",
+                mandatory_pool_started,
+                details={
+                    "sourceAndUserPlaceCount": len(selection_candidates),
+                    "resolvedRequiredExperienceCount": (
+                        len(mandatory_places) - len(selection_candidates)
+                    ),
+                    "unresolvedRequiredExperienceCount": len(
+                        unresolved_requirements
+                    ),
+                    "optionalSuggestionCount": 0,
+                },
+            )
+
+        capacity_started = time.perf_counter()
+        mandatory_pool = build_selected_place_pool(mandatory_places)
+        optimizer = getattr(self.place_selector, "route_optimizer", None)
+        matrix_provider = getattr(optimizer, "matrix_provider", None)
+        solution = self.planning_solver.solve(
+            mandatory_pool,
+            requested_days=trip_spec.days,
+            days_locked=not expand_days_to_fit_mandatory_places,
+            matrix_provider=matrix_provider,
+        )
+        assigned_days = solution.candidate_day
+        overflow_ids = set(solution.unscheduled_candidate_ids)
+        capacity_unscheduled = [
+            self._capacity_unscheduled(place)
+            for place in mandatory_places
+            if selected_place_identity(place) in overflow_ids
+        ]
+        schedulable_places = [
+            place.model_copy(
+                update={
+                    "source_day": assigned_days.get(
+                        selected_place_identity(place)
+                    )
+                    or place.source_day,
+                }
+            )
+            for place in mandatory_places
+            if selected_place_identity(place) not in overflow_ids
+        ]
+        if solution.day_count != trip_spec.days:
+            trip_spec = trip_spec.model_copy(
+                update={"days": solution.day_count}
+            )
+            intent = intent.model_copy(update={"days": solution.day_count})
+        selection_input = prepared_input.model_copy(
+            update={
+                "trip_spec": trip_spec,
+                "selected_places": schedulable_places,
+            }
+        )
+        if timing_trace is not None:
+            timing_trace.add_stage(
+                "capacityDayAllocation",
+                "Kiểm tra sức chứa và phân bổ ngày",
+                capacity_started,
+                details={
+                    "mandatoryCandidateCount": len(mandatory_pool.candidates),
+                    "requestedDays": theme_output.trip_spec.days,
+                    "selectedDays": solution.day_count,
+                    "daysLocked": not expand_days_to_fit_mandatory_places,
+                    "unscheduledMandatoryCount": len(capacity_unscheduled),
+                    "matrixProvider": solution.matrix.provider,
+                },
+            )
         selection_started = time.perf_counter()
         defer_route_enrichment = bool(
             getattr(self.place_selector.route_optimizer, "supports_fixed_anchors", False)
@@ -414,11 +499,16 @@ class MainPlanWorkflow:
         selection_output = self.place_selector.fill_agent_plan(
             selection_input,
             enrich_routes=not defer_route_enrichment,
+            requirements_prepared=True,
+            unresolved_requirements=[
+                *unresolved_requirements,
+                *capacity_unscheduled,
+            ],
         )
         if timing_trace is not None:
             timing_trace.add_stage(
-                "placeSelector",
-                "PlaceSelector chọn địa điểm và xếp tuyến",
+                "lazyGapFillTimeline",
+                "Lấp khoảng trống, xếp thứ tự và tạo timeline",
                 selection_started,
                 details={
                     "scheduledDayCount": len(selection_output.final_days),
@@ -581,6 +671,25 @@ class MainPlanWorkflow:
             key = item.candidate_id or item.place_id or item.name.casefold()
             unique.setdefault(key, item)
         return list(unique.values())
+
+    @staticmethod
+    def _capacity_unscheduled(place: SelectedPlaceContext) -> UnscheduledPlace:
+        return UnscheduledPlace(
+            placeId=place.place_id,
+            name=place.name,
+            day=place.source_day,
+            reasonCode="no_day_capacity",
+            reason=(
+                "Địa điểm bắt buộc không còn đủ sức chứa trong số ngày đã khóa."
+            ),
+            address=place.address,
+            latitude=place.latitude,
+            longitude=place.longitude,
+            tags=place.tags,
+            sourceRefs=place.source_refs,
+            sourceProvider=place.source_provider,
+            sourceActivity=place.source_activity,
+        )
 
     @staticmethod
     def _needs_review_unscheduled(

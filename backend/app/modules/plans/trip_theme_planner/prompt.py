@@ -8,7 +8,7 @@ from app.modules.plans.dto.agent_contracts import (
 from app.modules.preferences.schema import PreferenceDimension
 
 
-TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_highlight_v7_structured_output"
+TRIP_THEME_PROMPT_VERSION = "trip_theme_planner_intro_highlight_v8"
 
 _THEME_PROFILE_DIMENSIONS = {
     PreferenceDimension.category,
@@ -40,8 +40,9 @@ Ranh giới thẩm quyền:
 Quy tắc chọn điểm nhấn:
 1. Luôn trả tripThemes=[]. TripThemePlanner không còn tạo theme, quota activity,
    day brief, route, allocation hay lịch theo ngày.
-2. requiredExperiences chỉ biểu diễn điểm nhấn SPECIAL_EXPERIENCE. Danh sách có
-   thể rỗng, kể cả khi catalog không rỗng. Không chọn candidate thường để lấp số.
+2. requiredExperiences chỉ biểu diễn điểm nhấn SPECIAL_EXPERIENCE. Khi catalog
+   có candidate cụ thể, hãy chọn bộ giới thiệu ngắn cho khách lần đầu; chỉ trả
+   rỗng khi catalog không có candidate hợp lệ. Không chọn candidate thường.
 3. Không vượt themeSelectionPolicy.maximumHighlightExperiences. Đây là trần,
    không phải số lượng bắt buộc.
 4. Thứ tự ưu tiên khi cân nhắc candidate:
@@ -52,8 +53,8 @@ Quy tắc chọn điểm nhấn:
    Ràng buộc cứng và avoidPlaces luôn thắng mọi tín hiệu khác.
 5. recommendation.priority="must" chỉ có nghĩa trải nghiệm nổi bật với
    destination; nó KHÔNG biến trải nghiệm thành yêu cầu bắt buộc của user.
-6. Không ép đa dạng category, không chọn theo category quota và không cố phủ mọi
-   interest. Một điểm nhấn mạnh, phù hợp tốt hơn nhiều điểm yếu.
+6. Sau khi bảo toàn ràng buộc và mức phù hợp, ưu tiên Activity và category khác
+   nhau để bộ giới thiệu không lặp toàn quán ăn, cà phê hoặc mua sắm.
 7. Khi fit=unknown, chỉ chọn nếu evidence và ngữ cảnh user vẫn đủ thuyết phục;
    thêm warning ngắn về độ chưa chắc chắn. Không trình bày inferred hoặc
    source_backed như verified.
@@ -152,7 +153,9 @@ def build_theme_selection_policy(planner_input: TripThemePlanningInput) -> dict:
     else:
         selection_mode = "destination_special_experiences"
     days = planner_input.trip_spec.days
-    maximum_highlights = 1 if days <= 3 else 2 if days <= 6 else 3
+    # At most one destination-defining highlight per trip day. The downstream
+    # capacity solver may still leave one unscheduled rather than overfill a day.
+    maximum_highlights = max(1, min(days, 5))
     return {
         "priorityOrder": [
             "current_trip_intent",
@@ -165,6 +168,7 @@ def build_theme_selection_policy(planner_input: TripThemePlanningInput) -> dict:
         "confirmedPlaceCount": confirmed_place_count,
         "effectiveLongTermProfileValues": effective_profile_values,
         "specialExperienceOnly": True,
-        "allowEmptyHighlights": True,
+        "allowEmptyHighlights": False,
+        "diversifyBy": ["activity", "category"],
         "maximumHighlightExperiences": maximum_highlights,
     }

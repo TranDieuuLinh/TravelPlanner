@@ -208,6 +208,31 @@ def test_planner_repository_prioritizes_travel_places_before_food_when_bounded(
     assert [place.id for place in results] == ["travel_place_001"]
 
 
+def test_planner_repository_projects_catalog_preferred_time_windows(
+    db_session: Session,
+) -> None:
+    db_session.add_all(
+        [
+            _entity("drink-evening", "Local Craft Beer", "DrinkDessert"),
+            _property("drink-evening", "catalog_status", "active"),
+            _property("drink-evening", "region_key", "vn,ha-noi"),
+            _property("drink-evening", "latitude", "21.030"),
+            _property("drink-evening", "longitude", "105.850"),
+            _property(
+                "drink-evening",
+                "preferred_time_windows",
+                '[{"start":"18:00","end":"21:00"}]',
+            ),
+        ]
+    )
+    db_session.commit()
+
+    record = KnowledgeGraphPlaceRepository(db_session).get("drink-evening")
+
+    assert record is not None
+    assert record.preferred_time_windows == [{"start": "18:00", "end": "21:00"}]
+
+
 def test_search_repairs_legacy_cp437_utf8_text_at_projection_boundary(
     db_session: Session,
 ) -> None:

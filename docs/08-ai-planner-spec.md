@@ -213,8 +213,11 @@ YouTube long-form không chạy audio STT/frame OCR nên caption structurer dùn
 `GEMINI_CAPTION_API_KEYS` riêng khi có, hoặc mượn hợp của hai pool trên. Nó chọn
 key round-robin, failover tối đa hai credential cho lỗi `401`/`403`/`429` và có
 deadline tổng mặc định 60 giây; không thử tuần tự toàn bộ pool khi mạng timeout.
-STT transcript-only và frame vision chạy song song; Gemini Text fusion gộp tín
-hiệu sau khi cả hai hoàn tất. Khi hai source cùng nói về một địa điểm, OCR được
+Sau khi tải media hoàn tất, audio extraction -> STT và frame extraction -> frame
+vision là hai pipeline độc lập; một nhánh không chờ artifact của nhánh kia.
+Gemini Text fusion gộp tín hiệu sau khi cả hai hoàn tất. Runtime chỉ bỏ call này
+khi structured observations có expected count/order/evidence đầy đủ và không có
+xung đột tên; transcript thô cần suy luận vẫn bắt buộc đi qua fusion. Khi hai source cùng nói về một địa điểm, OCR được
 ưu tiên cho spelling/tên hiển thị, còn transcript ASR được ưu tiên cho day,
 time hint, activity, duration và `searchRegion`. Evidence của metadata,
 caption, STT và OCR vẫn được giữ tách biệt. Khi transcript chuyển một ngày sang day trip vùng khác, vùng đó
@@ -377,12 +380,15 @@ TripThemePlanner giữ tên runtime cũ nhưng chỉ chọn điểm nhấn cấp
   special experience đặc trưng của điểm đến;
 - catalog chỉ chứa Activity có `SPECIAL_EXPERIENCE`; `TARGETS_PLACE` cung cấp
   anchor trực tiếp và `OFFERS_ACTIVITY` chỉ bổ sung venue cho Activity đó;
-- model có thể chọn 0 điểm nhấn; trần là 1/2/3 cho chuyến 1–3/4–6/7+ ngày;
-  `must` trên graph là độ quan trọng với điểm đến, không bắt buộc cho user;
+- khi catalog có Place cụ thể, backend bảo đảm một bộ giới thiệu bounded; trần
+  là một điểm nhấn mỗi ngày và tối đa năm. Catalog rỗng vẫn trả 0 điểm nhấn;
+  `must` trên graph là độ quan trọng với điểm đến, không phải lựa chọn do user
+  trực tiếp xác nhận;
 - không chọn trải nghiệm lệch intent, ví dụ không bắt leo núi khi user chỉ muốn
   văn hóa và đời sống địa phương;
 - `requiredExperiences` chỉ chứa highlight có ít nhất một claim ID của chính
-  cạnh `SPECIAL_EXPERIENCE`; không ép minimum, diversity hay category coverage;
+  cạnh `SPECIAL_EXPERIENCE`; sau fit/ràng buộc, backend ưu tiên Activity và
+  category khác nhau để tránh một danh sách chỉ gồm food/coffee/shopping;
 - `tripThemes` luôn rỗng và không còn là quota đầu vào cho PlaceSelector;
 - ưu tiên profile ở cấp khu vực nhỏ nhất đang có trong `regionKey`;
 - hiểu travel style là nhịp và hình dạng hành trình, không lặp cùng một hoạt
@@ -448,8 +454,8 @@ PlaceSelector điền item cụ thể:
 - PlaceSelector dùng theme, day-part goal, region và constraint do Planner tạo để chọn
   địa điểm bù; stop nguồn không bị thay thế và suggestion phải được đánh dấu;
 - ở chế độ `route_first`, PlaceSelector tạo khung giờ thật theo
-  `preferredTimeWindows` và giữ timing claim làm provenance; giờ mở cửa không
-  được dùng để loại candidate;
+  `preferredTimeWindows` và giữ timing claim làm provenance. Candidate fallback
+  buổi tối phải khớp giờ mở cửa đã lưu; thiếu dữ liệu giờ được giữ là unknown;
 - rank Place bằng mô tả theo theme/goal của ngày trước, sau đó rerank bằng
   category, tags, region, confidence và các dữ liệu có cấu trúc;
 - với activity gap-fill, PlaceSelector bổ sung một bounded graph pool từ
@@ -457,6 +463,11 @@ PlaceSelector điền item cụ thể:
   thành `activityId`/`sourceActivity`, còn Activity ID hoặc tên chưa xuất hiện
   trong ngày được ưu tiên mềm. Pool này độc lập với `SPECIAL_EXPERIENCE`: cạnh
   special vẫn dành cho điểm nhấn, `OFFERS_ACTIVITY` thông thường chỉ lấp lịch;
+- chín Activity tối có identity riêng (`evening_cultural_performance`,
+  `live_music`, `evening_city_walk`, `night_market`, `rooftop_city_view`,
+  `night_sightseeing_tour`, `nightlife_drink`, `karaoke`,
+  `wellness_evening`). Chúng chỉ được dùng làm optional fallback khi window tối
+  còn trống, tối đa một item/ngày, và không tạo cạnh `SPECIAL_EXPERIENCE`;
 - fallback có kiểm soát lên region cha khi locality nhỏ thiếu Place, nhưng không
   dùng hotel/restaurant/transport để lấp activity sai chủ đề;
 - đặt breakfast/lunch/dinner làm anchor cố định, lấp số activity động theo
@@ -695,19 +706,23 @@ người đánh giá chất lượng lịch trình mang tính chủ quan.
 - Chỉ cache khi quyền riêng tư, độ mới và phạm vi user cho phép.
 - Giữ provider call sau `LLMClient`; domain code không gọi trực tiếp SDK của
   provider.
-## Capacity preflight và phân bổ ngày
+## Mandatory capacity và phân bổ ngày
 
 Với trip chưa khóa số ngày, Planner không được chạy lại toàn bộ workflow cho
-từng phương án 3/4/5/6 ngày. Sau khi Explorer resolve identity, các địa điểm
-nguồn bắt buộc được đưa qua `ClusterFirstRepairSolver`. Solver dùng capacity,
-meal anchors và khoảng cách để chọn số ngày/phân cụm trong bộ nhớ, sau đó
-ThemePlanner và PlaceSelector chỉ chạy một lần.
+từng phương án 3/4/5/6 ngày. Sau Explorer, TripThemePlanner chọn highlight; các
+required experience được resolve rồi gộp với Place từ URL/user thành mandatory
+pool. Chỉ lúc đó `ClusterFirstRepairSolver` dùng capacity, meal anchors và
+TravelTimeMatrix để chọn số ngày/phân cụm trong bộ nhớ. Suggestion dùng để lấp
+gap không tham gia quyết định tăng ngày.
 
 Theme là tín hiệu cấp chuyến đi, không phải contract cấp ngày. Số lượng
 `requiredExperiences` không phụ thuộc `tripSpec.days`; các ngày cần đa dạng hoạt
 động nhưng không có `dayTheme` bắt buộc. Snapshot Plan mới không phát hành field
 `days[].theme`, trong khi revision cũ vẫn đọc được.
 
-Nếu user khóa duration, solver không tự tăng ngày: optional bị loại trước và
-mandatory overflow phải xuất hiện trong `unscheduledPlaces`. Candidate
-`needs_review` không được tự xếp nhưng luôn được giữ trong danh sách này.
+Nếu user khóa duration, solver không tự tăng ngày và mandatory overflow phải
+xuất hiện trong `unscheduledPlaces`. Sau mandatory allocation, PlaceSelector
+phát hiện từng activity/meal gap, query một pool bounded và chỉ commit candidate
+thực sự vừa timeline. Suggestion không được chọn không trở thành
+`UnscheduledPlace`; candidate `needs_review` vẫn luôn được giữ trong danh sách
+này vì đó là cam kết nguồn chưa resolve, không phải suggestion.

@@ -124,6 +124,7 @@ class MealStopSelector:
             (place.stable_ref, self._meal_key(place.name, place.name), ()): _TripMealOption(
                 place=place,
                 meal_key=self._meal_key(place.name, place.name),
+                best_time_slots=self._place_time_slots(place),
             )
             for place in fallback
         }
@@ -236,6 +237,12 @@ class MealStopSelector:
                 anchor=anchor,
                 bbox_filter=bbox_filter,
             )
+            candidates = [
+                candidate
+                for candidate in candidates
+                if not candidate.preferred_time_windows
+                or self._matches_role(self._place_time_slots(candidate), role)
+            ]
             if coffee_used:
                 candidates = [
                     candidate
@@ -356,6 +363,13 @@ class MealStopSelector:
             place_region == requested
             or place_region.startswith(f"{requested},")
             or requested.startswith(f"{place_region},")
+        )
+
+    @staticmethod
+    def _place_time_slots(place: SelectablePlace) -> tuple[str, ...]:
+        return tuple(
+            f"{window.start}-{window.end}"
+            for window in place.preferred_time_windows
         )
 
     @staticmethod

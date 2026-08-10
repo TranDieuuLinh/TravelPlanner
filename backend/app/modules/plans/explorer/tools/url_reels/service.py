@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -8,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import httpx
+from yt_dlp.utils import DownloadError, UnsupportedError, YoutubeDLError
 
 from app.modules.plans.explorer.tools.url_reels.caption_structurer import (
     CaptionStructurer,
@@ -31,10 +33,13 @@ from app.modules.plans.explorer.tools.url_reels.schema import (
     UrlReelInput,
     UrlMetadata,
 )
-from app.modules.plans.explorer.tools.url_reels.speech_to_text import GeminiAudioSpeechToText
+from app.modules.plans.explorer.tools.url_reels.speech_to_text import (
+    GeminiAudioSpeechToText,
+)
 from app.modules.plans.explorer.tools.url_reels.source_observation_fuser import (
     SourceObservationFuser,
     SourceObservationFusionResult,
+    deterministic_source_observation_fusion,
 )
 from app.modules.plans.explorer.tools.url_reels.utils import (
     canonicalize_url,
@@ -66,9 +71,7 @@ class UrlReelExtractionService:
         self.speech_to_text = speech_to_text
         self.context_extractor = context_extractor or UrlReelContextExtractor()
         self.frame_vision = frame_vision
-        self.youtube_transcript = (
-            youtube_transcript or YouTubeTranscriptExtractor()
-        )
+        self.youtube_transcript = youtube_transcript or YouTubeTranscriptExtractor()
         self.caption_structurer = caption_structurer
         self.source_observation_fuser = source_observation_fuser
         self.web_page = web_page or (
@@ -139,6 +142,20 @@ class UrlReelExtractionService:
                     "youtubeTranscriptUnavailable": 1.0,
                     "mediaDownloadSkipped": 1.0,
                 }
+        elif (
+            "/photo/" not in payload.url
+            and callable(getattr(self.loader, "load_source", None))
+            and callable(getattr(self.media, "extract_audio", None))
+            and callable(getattr(self.media, "extract_frames", None))
+        ):
+            (
+                metadata,
+                metadata_duration,
+                artifacts,
+                media_timings,
+                prefetched_speech_result,
+                prefetched_vision_result,
+            ) = self._load_source_and_extract_signals(payload, work_dir)
         elif platform == "tiktok":
             # TikTok may challenge a client that opens the metadata request and
             # the media download at the same time.  Each branch already has up
@@ -187,10 +204,14 @@ class UrlReelExtractionService:
             or None
         )
 
-        speech_result = caption_result or prefetched_speech_result or SpeechToTextResult(
-            text="",
-            status="skipped",
-            durationSeconds=0.0,
+        speech_result = (
+            caption_result
+            or prefetched_speech_result
+            or SpeechToTextResult(
+                text="",
+                status="skipped",
+                durationSeconds=0.0,
+            )
         )
         vision_result = prefetched_vision_result or FrameVisionResult()
         expected_place_count = _expected_place_count(
@@ -209,29 +230,39 @@ class UrlReelExtractionService:
 
         fusion_result: SourceObservationFusionResult | None = None
         if self.source_observation_fuser is not None:
-            fusion_result = self.source_observation_fuser.fuse(
+            deterministic_started_at = time.perf_counter()
+            fusion_result = deterministic_source_observation_fusion(
                 transcript=speech_result.text,
-                visual_text=vision_result.text,
+                speech_observations=speech_result.observations,
                 visual_observations=vision_result.observations,
-                metadata=metadata,
                 expected_place_count=expected_place_count,
-                destination_hint=effective_destination,
             )
-            timings["sourceObservationFusion"] = fusion_result.duration_seconds
+            if fusion_result is not None:
+                timings["sourceObservationFusionDeterministic"] = 1.0
+                timings["sourceObservationFusion"] = (
+                    time.perf_counter() - deterministic_started_at
+                )
+            else:
+                fusion_result = self.source_observation_fuser.fuse(
+                    transcript=speech_result.text,
+                    visual_text=vision_result.text,
+                    visual_observations=vision_result.observations,
+                    metadata=metadata,
+                    expected_place_count=expected_place_count,
+                    destination_hint=effective_destination,
+                )
+                timings["sourceObservationFusion"] = fusion_result.duration_seconds
             if fusion_result.status == "ok":
                 timings["sourceObservationFusionUsed"] = 1.0
                 speech_result = speech_result.model_copy(
                     update={
                         "observations": fusion_result.observations,
                         "region_story": fusion_result.region_story,
-                        "region_story_evidence": (
-                            fusion_result.region_story_evidence
-                        ),
+                        "region_story_evidence": (fusion_result.region_story_evidence),
                     }
                 )
                 expected_place_count = (
-                    fusion_result.expected_place_count
-                    or expected_place_count
+                    fusion_result.expected_place_count or expected_place_count
                 )
             elif fusion_result.status == "failed":
                 timings["sourceObservationFusionFailed"] = 1.0
@@ -249,16 +280,13 @@ class UrlReelExtractionService:
                 metadata=metadata,
                 destination=effective_destination,
             )
-            timings["captionStructuring"] = (
-                structure_result.duration_seconds
-            )
+            timings["captionStructuring"] = structure_result.duration_seconds
             timings["captionStructuringUsed"] = 1.0
             if structure_result.status == "ok":
                 speech_result = speech_result.model_copy(
                     update={
                         "observations": (
-                            structure_result.observations
-                            or speech_result.observations
+                            structure_result.observations or speech_result.observations
                         ),
                         "region_story": structure_result.region_story,
                         "region_story_evidence": (
@@ -267,8 +295,7 @@ class UrlReelExtractionService:
                     }
                 )
                 expected_place_count = (
-                    structure_result.expected_place_count
-                    or expected_place_count
+                    structure_result.expected_place_count or expected_place_count
                 )
             elif structure_result.status == "failed":
                 timings["captionStructuringFailed"] = 1.0
@@ -291,7 +318,8 @@ class UrlReelExtractionService:
                     language=payload.stt_language,
                     initial_prompt=stt_prompt,
                 )
-                if platform != "youtube" and artifacts.audio_path is not None
+                if platform != "youtube"
+                and artifacts.audio_path is not None
                 and prefetched_speech_result is None
                 else None
             )
@@ -301,8 +329,7 @@ class UrlReelExtractionService:
                     artifacts.frame_paths,
                     destination=effective_destination,
                 )
-                if artifacts.frame_paths
-                and prefetched_vision_result is None
+                if artifacts.frame_paths and prefetched_vision_result is None
                 else None
             )
             if speech_future is not None:
@@ -329,17 +356,11 @@ class UrlReelExtractionService:
 
         timings["speechToText"] = speech_result.duration_seconds
         timings["sttChunkCount"] = float(speech_result.chunk_count)
-        timings["sttChunkRetryCount"] = float(
-            speech_result.chunk_retry_count
-        )
+        timings["sttChunkRetryCount"] = float(speech_result.chunk_retry_count)
         if speech_result.audio_duration_seconds is not None:
-            timings["sttAudioDuration"] = (
-                speech_result.audio_duration_seconds
-            )
+            timings["sttAudioDuration"] = speech_result.audio_duration_seconds
         if speech_result.chunk_duration_seconds:
-            timings["sttSlowestChunk"] = max(
-                speech_result.chunk_duration_seconds
-            )
+            timings["sttSlowestChunk"] = max(speech_result.chunk_duration_seconds)
         timings["frameVision"] = vision_result.duration_seconds
         if prefetched_speech_result is None and prefetched_vision_result is None:
             timings["extractSignalsWall"] = time.perf_counter() - start
@@ -356,17 +377,13 @@ class UrlReelExtractionService:
                 metadata=metadata,
                 destination=effective_destination,
             )
-            timings["regionStoryStructuring"] = (
-                metadata_story_result.duration_seconds
-            )
+            timings["regionStoryStructuring"] = metadata_story_result.duration_seconds
 
         context_arguments = {
             "metadata": metadata,
             "transcript": speech_result.text,
             "speech_observations": (
-                speech_result.observations
-                if speech_result.observations
-                else None
+                speech_result.observations if speech_result.observations else None
             ),
             "destination": effective_destination,
         }
@@ -377,9 +394,7 @@ class UrlReelExtractionService:
         if vision_result.places:
             context_arguments["visual_places"] = vision_result.places
         if vision_result.observations:
-            context_arguments["visual_observations"] = (
-                vision_result.observations
-            )
+            context_arguments["visual_observations"] = vision_result.observations
         context_start = time.perf_counter()
         context = self.context_extractor.extract(**context_arguments)
         region_story = None
@@ -442,12 +457,8 @@ class UrlReelExtractionService:
                     "coverage_status": "insufficient",
                 }
             )
-        timings["contextExtraction"] = (
-            time.perf_counter() - context_start
-        )
-        timings["totalExtraction"] = (
-            time.perf_counter() - extraction_start
-        )
+        timings["contextExtraction"] = time.perf_counter() - context_start
+        timings["totalExtraction"] = time.perf_counter() - extraction_start
 
         result = UrlReelExtractionResult(
             url=payload.url,
@@ -456,8 +467,7 @@ class UrlReelExtractionService:
             artifacts=artifacts,
             needsImageUpload=(
                 platform != "youtube"
-                and
-                not speech_result.text
+                and not speech_result.text
                 and artifacts.audio_path is None
                 and not artifacts.frame_paths
                 and not context.extracted_places
@@ -468,6 +478,205 @@ class UrlReelExtractionService:
             timings=timings,
         )
         return result
+
+    def _load_source_and_extract_signals(
+        self,
+        payload: UrlReelInput,
+        work_dir: Path,
+    ) -> tuple[
+        UrlMetadata,
+        float,
+        MediaArtifacts,
+        dict[str, float],
+        SpeechToTextResult,
+        FrameVisionResult,
+    ]:
+        """Fetch once, then independently pipeline audio/STT and frames/OCR."""
+
+        timings: dict[str, float] = {"metadataFromDownload": 1.0}
+        download_started_at = time.perf_counter()
+        try:
+            metadata, video_path = self.loader.load_source(
+                payload.url,
+                work_dir=work_dir,
+            )
+        except (DownloadError, UnsupportedError, YoutubeDLError):
+            timings["downloadVideo"] = time.perf_counter() - download_started_at
+            timings["mediaUnavailable"] = 1.0
+            metadata_started_at = time.perf_counter()
+            metadata = self.loader.load_metadata(payload.url)
+            return (
+                metadata,
+                time.perf_counter() - metadata_started_at,
+                MediaArtifacts(),
+                timings,
+                SpeechToTextResult(
+                    text="",
+                    status="skipped",
+                    durationSeconds=0.0,
+                ),
+                FrameVisionResult(),
+            )
+        timings["downloadVideo"] = time.perf_counter() - download_started_at
+
+        prompt_destination = (
+            usable_destination(payload.destination)
+            or infer_destination_from_text(metadata.title, metadata.description)
+            or None
+        )
+        stt_prompt = payload.stt_initial_prompt
+        if stt_prompt is None and prompt_destination:
+            stt_prompt = (
+                f"This is a travel itinerary video about {prompt_destination}. "
+                "It may mention destinations, cafes, restaurants, attractions, "
+                "hotels, neighborhoods, and transport."
+            )
+
+        key = video_path.stem
+        extraction_started_at = time.perf_counter()
+
+        def extract_audio_then_transcribe():
+            try:
+                audio_path = self.media.extract_audio(video_path, work_dir, key)
+            except (
+                FileNotFoundError,
+                RuntimeError,
+                OSError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                failed_at = time.perf_counter()
+                return None, None, failed_at, failed_at, exc
+            extraction_ended_at = time.perf_counter()
+            try:
+                result = (self.speech_to_text or GeminiAudioSpeechToText()).transcribe(
+                    audio_path,
+                    language=payload.stt_language,
+                    initial_prompt=stt_prompt,
+                )
+                return (
+                    audio_path,
+                    result,
+                    extraction_ended_at,
+                    time.perf_counter(),
+                    None,
+                )
+            except (RuntimeError, httpx.HTTPError) as exc:
+                return (
+                    audio_path,
+                    None,
+                    extraction_ended_at,
+                    time.perf_counter(),
+                    exc,
+                )
+
+        def extract_frames_then_analyze():
+            try:
+                frame_paths = self.media.extract_frames(video_path, work_dir, key)
+            except (
+                FileNotFoundError,
+                RuntimeError,
+                OSError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as exc:
+                failed_at = time.perf_counter()
+                return [], None, failed_at, failed_at, exc
+            extraction_ended_at = time.perf_counter()
+            try:
+                result = (self.frame_vision or GeminiReelFrameVision()).analyze(
+                    frame_paths,
+                    destination=prompt_destination,
+                )
+                return (
+                    frame_paths,
+                    result,
+                    extraction_ended_at,
+                    time.perf_counter(),
+                    None,
+                )
+            except (RuntimeError, httpx.HTTPError) as exc:
+                return (
+                    frame_paths,
+                    None,
+                    extraction_ended_at,
+                    time.perf_counter(),
+                    exc,
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            audio_future = executor.submit(extract_audio_then_transcribe)
+            vision_future = executor.submit(extract_frames_then_analyze)
+            audio_path, speech_result, audio_ready_at, audio_done_at, audio_error = (
+                audio_future.result()
+            )
+            (
+                frame_paths,
+                vision_result,
+                frames_ready_at,
+                vision_done_at,
+                vision_error,
+            ) = vision_future.result()
+
+        timings["extractAudio"] = max(
+            0.0,
+            audio_ready_at - extraction_started_at,
+        )
+        timings["extractFrames"] = max(
+            0.0,
+            frames_ready_at - extraction_started_at,
+        )
+        timings["prepareSignalsWall"] = max(
+            timings["extractAudio"],
+            timings["extractFrames"],
+        )
+        signal_starts = [
+            ready_at
+            for artifact, ready_at in (
+                (audio_path, audio_ready_at),
+                (frame_paths, frames_ready_at),
+            )
+            if artifact
+        ]
+        if signal_starts:
+            timings["extractSignalsWall"] = max(
+                audio_done_at,
+                vision_done_at,
+            ) - min(signal_starts)
+        timings["sampledFrames"] = float(len(frame_paths))
+        timings["audioAvailable"] = 1.0 if audio_path is not None else 0.0
+
+        if speech_result is None:
+            if audio_error is not None:
+                timings["speechToTextFailed"] = 1.0
+            speech_result = SpeechToTextResult(
+                text="",
+                status="failed" if audio_error is not None else "skipped",
+                error=str(audio_error) if audio_error is not None else None,
+                durationSeconds=max(0.0, audio_done_at - audio_ready_at),
+            )
+        if vision_result is None:
+            if vision_error is not None:
+                timings["frameVisionFailed"] = 1.0
+            vision_result = FrameVisionResult(
+                status="failed" if vision_error is not None else "skipped",
+                error=str(vision_error) if vision_error is not None else None,
+                durationSeconds=max(0.0, vision_done_at - frames_ready_at),
+            )
+        timings["speechToText"] = speech_result.duration_seconds
+        timings["frameVision"] = vision_result.duration_seconds
+        return (
+            metadata,
+            0.0,
+            MediaArtifacts(
+                videoPath=video_path,
+                audioPath=audio_path,
+                framePaths=frame_paths,
+            ),
+            timings,
+            speech_result,
+            vision_result,
+        )
 
     def _prepare_media_and_extract_signals(
         self,

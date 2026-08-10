@@ -1435,15 +1435,67 @@ def test_constraint_policy_reports_inland_selected_place_as_unscheduled() -> Non
     assert result.unscheduled_places[0].reason_code == "outside_geographic_scope"
 
 
+def test_route_first_adds_one_optional_graph_evening_fallback() -> None:
+    evening = _place(
+        "evening-jazz",
+        "Bình Minh Jazz Club",
+        tags=["live_music", "jazz", "indoor"],
+        intensity="light",
+        duration=90,
+        place_type="entertainment",
+    ).model_copy(
+        update={
+            "activity_id": "activity_live_music",
+            "source_activity": "Nghe nhạc sống buổi tối",
+            "selection_method": "offers_activity_graph",
+        }
+    )
+    tool = FakeFinderPlaceTool(
+        {evening.place_id: evening},
+        search_order=[],
+        evening_order=[evening.place_id],
+    )
+
+    result = PlaceSelectorService(
+        tool,
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer()),
+    ).fill_main_plan(
+        _macro_plan().model_copy(
+            update={
+                "selection_days": [
+                    _macro_plan().selection_days[0].model_copy(
+                        update={"allocated_selected_place_refs": []}
+                    )
+                ]
+            }
+        ),
+        _intent(),
+        [],
+        allow_finder_gap_fill=True,
+    )
+
+    evening_items = [
+        item
+        for item in result.days[0].items
+        if item.selection_method == "evening_gap_fill_offers_activity"
+    ]
+    assert len(evening_items) == 1
+    assert evening_items[0].activity_id == "activity_live_music"
+    assert evening_items[0].role == "optional"
+    assert evening_items[0].time_window.startswith("19:")
+
+
 class FakeFinderPlaceTool:
     def __init__(
         self,
         places: dict[str, SelectablePlace],
         *,
         search_order: list[str],
+        evening_order: list[str] | None = None,
     ) -> None:
         self.places = places
         self.search_order = search_order
+        self.evening_order = evening_order or []
         self.search_queries: list[list[str]] = []
 
     def get(self, place_id: str) -> SelectablePlace | None:
@@ -1462,6 +1514,20 @@ class FakeFinderPlaceTool:
         return [
             self.places[place_id]
             for place_id in self.search_order
+            if place_id not in excluded_place_ids
+        ][:limit]
+
+    def search_evening_fallback(
+        self,
+        *,
+        region_key: str,
+        excluded_place_ids: set[str],
+        limit: int,
+        bbox_filter: tuple[float, float, float, float] | None = None,
+    ) -> list[SelectablePlace]:
+        return [
+            self.places[place_id]
+            for place_id in self.evening_order
             if place_id not in excluded_place_ids
         ][:limit]
 

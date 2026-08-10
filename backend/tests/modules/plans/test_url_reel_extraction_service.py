@@ -26,6 +26,7 @@ from app.modules.plans.explorer.tools.url_reels.frame_vision import (
 from app.modules.plans.explorer.tools.url_reels.media import (
     UrlReelMediaExtractor,
 )
+from app.modules.plans.explorer.tools.url_reels.loader import UrlReelLoader
 from app.modules.plans.explorer.tools.url_reels.schema import (
     ExtractedContext,
     FrameVisionObservation,
@@ -48,6 +49,7 @@ from app.modules.plans.explorer.tools.url_reels.source_observation_fuser import 
     SourceObservationFusionResult,
     _build_source_payload,
     _ground_result,
+    deterministic_source_observation_fusion,
 )
 from app.modules.plans.explorer.tools.url_reels.utils import detect_platform
 
@@ -163,9 +165,7 @@ def build_service(media: FakeMedia | FailingMedia) -> UrlReelExtractionService:
 
 def test_region_story_requires_exact_source_evidence() -> None:
     accepted = _grounded_region_story(
-        story=(
-            "Creator mô tả Hà Nội phù hợp cho một ngày đầu tiên đi bộ chậm rãi."
-        ),
+        story=("Creator mô tả Hà Nội phù hợp cho một ngày đầu tiên đi bộ chậm rãi."),
         evidence="a perfect first day in Hanoi",
         source_text="Old Quarter, citadel — a perfect first day in Hanoi.",
         evidence_type="caption",
@@ -239,7 +239,9 @@ def test_source_observation_fusion_keeps_only_grounded_evidence() -> None:
     }
 
 
-def test_source_fusion_payload_removes_duplicate_caption_and_sufficient_ocr_text() -> None:
+def test_source_fusion_payload_removes_duplicate_caption_and_sufficient_ocr_text() -> (
+    None
+):
     metadata = UrlMetadata(
         originalUrl="https://example.com/reel",
         canonicalUrl="https://example.com/reel",
@@ -270,8 +272,11 @@ def test_source_fusion_payload_removes_duplicate_caption_and_sufficient_ocr_text
         destination_hint="Hà Nội",
     )
     sources = payload["sources"]
+    task = payload["task"]
 
     assert "description" not in sources["metadata"]
+    assert "placeName must be only a concise proper name" in task
+    assert "return two observations" in task
     assert sources["caption"] == "Văn Miếu và Hồ Hoàn Kiếm"
     assert sources["ocrText"] == ""
     assert sources["ocrObservations"][0] == {
@@ -299,9 +304,63 @@ def test_source_fusion_payload_keeps_raw_ocr_when_structured_coverage_is_low() -
         destination_hint="Hà Nội",
     )
 
-    assert payload["sources"]["ocrText"] == (
-        "VĂN MIẾU\nHỒ HOÀN KIẾM\nCHÙA TRẤN QUỐC"
+    assert payload["sources"]["ocrText"] == ("VĂN MIẾU\nHỒ HOÀN KIẾM\nCHÙA TRẤN QUỐC")
+
+
+def test_deterministic_fusion_merges_matching_structured_sources() -> None:
+    result = deterministic_source_observation_fusion(
+        transcript="Visit Hoan Kiem Lake in the morning",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Hoan Kiem Lake",
+                evidence="Hoan Kiem Lake",
+                timeHint="morning",
+                activity="walk",
+                confidence=0.95,
+            )
+        ],
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="Hoan Kiem Lake Hanoi",
+                evidence="HOAN KIEM LAKE HANOI",
+            )
+        ],
+        expected_place_count=1,
     )
+
+    assert result is not None
+    assert result.observations[0].place_name == "Hoan Kiem Lake Hanoi"
+    assert result.observations[0].time_hint == "morning"
+    assert result.observations[0].source_evidence == {
+        "stt": "Hoan Kiem Lake",
+        "ocr": "HOAN KIEM LAKE HANOI",
+    }
+
+
+def test_deterministic_fusion_falls_back_for_conflicting_names() -> None:
+    result = deterministic_source_observation_fusion(
+        transcript="Visit Hoan Kiem Lake",
+        speech_observations=[
+            SpeechToTextObservation(
+                order=1,
+                placeName="Hoan Kiem Lake",
+                evidence="Hoan Kiem Lake",
+                confidence=0.95,
+            )
+        ],
+        visual_observations=[
+            FrameVisionObservation(
+                order=1,
+                placeName="Temple of Literature",
+                evidence="TEMPLE OF LITERATURE",
+            )
+        ],
+        expected_place_count=1,
+    )
+
+    assert result is None
 
 
 def test_service_uses_unified_source_observations(tmp_path: Path) -> None:
@@ -340,6 +399,85 @@ def test_service_uses_unified_source_observations(tmp_path: Path) -> None:
     assert result.speech_to_text.observations[0].source_evidence == {
         "stt": "Hoan Kiem Lake"
     }
+
+
+def test_service_skips_model_fusion_for_unambiguous_structured_sources(
+    tmp_path: Path,
+) -> None:
+    class TopOneLoader(FakeLoader):
+        def load_metadata(self, url: str) -> UrlMetadata:
+            return (
+                super()
+                .load_metadata(url)
+                .model_copy(update={"title": "Top 1 place in Hanoi"})
+            )
+
+    class MediaWithFrame(FakeMedia):
+        def prepare(
+            self,
+            url: str,
+            work_dir: Path,
+        ) -> tuple[MediaArtifacts, dict[str, float]]:
+            artifacts, timings = super().prepare(url, work_dir)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            artifacts.frame_paths = [frame_path]
+            return artifacts, timings
+
+    class StructuredSpeech(FakeSpeechToText):
+        def transcribe(self, *args: object, **kwargs: object) -> SpeechToTextResult:
+            return SpeechToTextResult(
+                text="Visit Hoan Kiem Lake",
+                observations=[
+                    SpeechToTextObservation(
+                        order=1,
+                        placeName="Hoan Kiem Lake",
+                        evidence="Hoan Kiem Lake",
+                        activity="walk",
+                        confidence=0.95,
+                    )
+                ],
+                durationSeconds=0.1,
+            )
+
+    class StructuredVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            return FrameVisionResult(
+                observations=[
+                    FrameVisionObservation(
+                        order=1,
+                        placeName="Hoan Kiem Lake Hanoi",
+                        evidence="HOAN KIEM LAKE HANOI",
+                    )
+                ],
+                status="ok",
+                durationSeconds=0.1,
+            )
+
+    class ModelFusionMustNotRun:
+        def fuse(self, **kwargs: object) -> SourceObservationFusionResult:
+            raise AssertionError("deterministic fast path should skip Gemini")
+
+    service = UrlReelExtractionService(
+        loader=TopOneLoader(),
+        media=MediaWithFrame(),
+        speech_to_text=StructuredSpeech(),
+        frame_vision=StructuredVision(),  # type: ignore[arg-type]
+        context_extractor=UrlReelContextExtractor(),
+        source_observation_fuser=ModelFusionMustNotRun(),  # type: ignore[arg-type]
+    )
+
+    result = service.extract(
+        UrlReelInput(url="https://example.com/video", workDir=tmp_path)
+    )
+
+    assert result.timings["sourceObservationFusionDeterministic"] == 1.0
+    assert result.speech_to_text.observations[0].place_name == ("Hoan Kiem Lake Hanoi")
 
 
 def test_automatically_removes_owned_artifacts_after_extraction(
@@ -447,6 +585,87 @@ def test_loads_metadata_and_prepares_media_concurrently(tmp_path: Path) -> None:
 
     assert result.speech_to_text.status == "ok"
     assert result.timings["prepareSourceWall"] >= 0
+
+
+def test_unified_download_pipelines_stt_before_frames_finish(
+    tmp_path: Path,
+) -> None:
+    stt_started = Event()
+
+    class UnifiedLoader:
+        def load_source(
+            self,
+            url: str,
+            *,
+            work_dir: Path,
+        ) -> tuple[UrlMetadata, Path]:
+            video_path = work_dir / "reel.mp4"
+            video_path.write_bytes(b"video")
+            return (
+                UrlMetadata(
+                    originalUrl=url,
+                    canonicalUrl=url,
+                    platform="instagram",
+                    title="Hanoi",
+                ),
+                video_path,
+            )
+
+        def load_metadata(self, url: str) -> UrlMetadata:
+            raise AssertionError("successful unified fetch must reuse metadata")
+
+    class PipelinedMedia:
+        def prepare(self, url: str, work_dir: Path):
+            raise AssertionError("legacy media prepare must not run")
+
+        def extract_audio(self, video_path: Path, work_dir: Path, key: str) -> Path:
+            audio_path = work_dir / "audio.mp3"
+            audio_path.write_bytes(b"audio")
+            return audio_path
+
+        def extract_frames(
+            self,
+            video_path: Path,
+            work_dir: Path,
+            key: str,
+        ) -> list[Path]:
+            assert stt_started.wait(timeout=1)
+            frame_path = work_dir / "frame.jpg"
+            frame_path.write_bytes(b"frame")
+            return [frame_path]
+
+    class SignalingSpeech(FakeSpeechToText):
+        def transcribe(self, *args: object, **kwargs: object) -> SpeechToTextResult:
+            stt_started.set()
+            return super().transcribe(*args, **kwargs)
+
+    class FakeVision:
+        def analyze(
+            self,
+            frame_paths: list[Path],
+            *,
+            destination: str | None,
+        ) -> FrameVisionResult:
+            return FrameVisionResult(status="ok", durationSeconds=0.01)
+
+    service = UrlReelExtractionService(
+        loader=UnifiedLoader(),  # type: ignore[arg-type]
+        media=PipelinedMedia(),  # type: ignore[arg-type]
+        speech_to_text=SignalingSpeech(),
+        frame_vision=FakeVision(),  # type: ignore[arg-type]
+        context_extractor=FakeContextExtractor(),
+    )
+
+    result = service.extract(
+        UrlReelInput(
+            url="https://www.instagram.com/reel/ABC123/",
+            workDir=tmp_path,
+        )
+    )
+
+    assert result.timings["metadataFromDownload"] == 1.0
+    assert result.timings["sampledFrames"] == 1.0
+    assert result.speech_to_text.status == "ok"
 
 
 def test_tiktok_does_not_overlap_metadata_and_media_requests(
@@ -710,7 +929,9 @@ def test_detects_url_extraction_platform(url: str, platform: str) -> None:
 
 
 def test_platform_detection_does_not_accept_domain_suffix_spoofing() -> None:
-    assert detect_platform("https://youtube.com.attacker.example/shorts/123") == "unknown"
+    assert (
+        detect_platform("https://youtube.com.attacker.example/shorts/123") == "unknown"
+    )
 
 
 def test_photo_url_requires_uploaded_image() -> None:
@@ -770,6 +991,50 @@ def test_video_prepare_extracts_audio_and_frames(
     assert timings["sampledFrames"] == 2.0
 
 
+def test_unified_source_fetch_downloads_once_and_reuses_info_for_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, bool]] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, options: dict) -> None:
+            self.options = options
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def extract_info(self, url: str, download: bool) -> dict:
+            calls.append((url, download))
+            video_path = tmp_path / "reel_source.mp4"
+            video_path.write_bytes(b"video")
+            return {
+                "title": "Top 3 Hanoi",
+                "description": "A public reel",
+                "requested_downloads": [{"filepath": str(video_path)}],
+            }
+
+        def prepare_filename(self, info: dict) -> str:
+            return str(tmp_path / "reel_source.mp4")
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.loader.YoutubeDL",
+        FakeYoutubeDL,
+    )
+
+    metadata, video_path = UrlReelLoader().load_source(
+        "https://www.instagram.com/reel/ABC123/",
+        work_dir=tmp_path,
+    )
+
+    assert calls == [("https://www.instagram.com/reel/ABC123/", True)]
+    assert metadata.title == "Top 3 Hanoi"
+    assert video_path == tmp_path / "reel_source.mp4"
+
+
 def test_video_frame_sampling_is_capped_at_one_frame_per_second(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -811,8 +1076,7 @@ def test_video_frame_sampling_is_capped_at_one_frame_per_second(
 
 def test_video_frame_ocr_uses_gemini_35_flash_lite() -> None:
     assert (
-        GeminiReelFrameVision(api_key="test-key").model_name
-        == "gemini-3.5-flash-lite"
+        GeminiReelFrameVision(api_key="test-key").model_name == "gemini-3.5-flash-lite"
     )
 
 
@@ -895,9 +1159,7 @@ def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    speech = GeminiAudioSpeechToText(
-        api_key="stt-1,stt-2,stt-3,stt-4,stt-5"
-    )
+    speech = GeminiAudioSpeechToText(api_key="stt-1,stt-2,stt-3,stt-4,stt-5")
     audio_path = tmp_path / "audio.mp3"
     audio_path.write_bytes(b"audio")
     barrier = Barrier(3, timeout=2)
@@ -922,10 +1184,7 @@ def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
         assert source == audio_path
         assert duration_seconds == 120.0
         assert chunk_count == 3
-        paths = [
-            output_dir / f"chunk_{index:03d}.mp3"
-            for index in range(1, 4)
-        ]
+        paths = [output_dir / f"chunk_{index:03d}.mp3" for index in range(1, 4)]
         for path in paths:
             path.write_bytes(b"chunk")
         return paths
@@ -946,11 +1205,7 @@ def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
         with used_keys_lock:
             used_keys.append(api_keys)
         barrier.wait()
-        place_name = (
-            "Hồ Hoàn Kiếm"
-            if chunk_index in {1, 2}
-            else "Cà phê Đinh"
-        )
+        place_name = "Hồ Hoàn Kiếm" if chunk_index in {1, 2} else "Cà phê Đinh"
         return SpeechToTextResult(
             text=f"transcript chunk {chunk_index}",
             observations=[
@@ -988,14 +1243,11 @@ def test_long_audio_is_transcribed_in_parallel_ordered_chunks(
         "transcript chunk 2",
         "transcript chunk 3",
     ]
-    assert [
-        observation.place_name
-        for observation in result.observations
-    ] == ["Hồ Hoàn Kiếm", "Cà phê Đinh"]
-    assert [
-        observation.order
-        for observation in result.observations
-    ] == [1, 2]
+    assert [observation.place_name for observation in result.observations] == [
+        "Hồ Hoàn Kiếm",
+        "Cà phê Đinh",
+    ]
+    assert [observation.order for observation in result.observations] == [1, 2]
 
 
 def test_audio_stt_rotates_comma_separated_api_keys(
@@ -1033,11 +1285,7 @@ def test_audio_stt_rotates_comma_separated_api_keys(
                     "candidates": [
                         {
                             "content": {
-                                "parts": [
-                                        {
-                                            "text": '{"transcript":"Xin chào Hà Nội"}'
-                                        }
-                                ]
+                                "parts": [{"text": '{"transcript":"Xin chào Hà Nội"}'}]
                             }
                         }
                     ]
@@ -1051,9 +1299,9 @@ def test_audio_stt_rotates_comma_separated_api_keys(
     audio_path = tmp_path / "audio.mp3"
     audio_path.write_bytes(b"audio")
 
-    result = GeminiAudioSpeechToText(
-        api_key=" invalid-key, valid-key "
-    ).transcribe(audio_path)
+    result = GeminiAudioSpeechToText(api_key=" invalid-key, valid-key ").transcribe(
+        audio_path
+    )
 
     assert attempted_keys == ["invalid-key", "valid-key"]
     assert result.status == "ok"
@@ -1093,11 +1341,11 @@ def test_audio_stt_requests_and_validates_transcript_only_output(
                         {
                             "content": {
                                 "parts": [
-                                        {
-                                            "text": (
-                                                '{"transcript":"On day two, visit '
-                                                'Cafe Dinh for egg coffee."}'
-                                            )
+                                    {
+                                        "text": (
+                                            '{"transcript":"On day two, visit '
+                                            'Cafe Dinh for egg coffee."}'
+                                        )
                                     }
                                 ]
                             }
@@ -1204,14 +1452,22 @@ def test_caption_structurer_normalizes_rank_numbers_to_source_order(
                 200,
                 request=httpx.Request("POST", url),
                 json={
-                    "candidates": [{
-                        "content": {"parts": [{"text": (
-                            '{"observations":['
-                            '{"order":10,"placeName":"Lăng Bác","evidence":"số 10 Lăng Bác","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"},'
-                            '{"order":9,"placeName":"Bát Tràng","evidence":"số chín Bát Tràng","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"}'
-                            '],"expectedPlaceCount":2}'
-                        )}]}
-                    }]
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": (
+                                            '{"observations":['
+                                            '{"order":10,"placeName":"Lăng Bác","evidence":"số 10 Lăng Bác","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"},'
+                                            '{"order":9,"placeName":"Bát Tràng","evidence":"số chín Bát Tràng","dayNumber":null,"timeHint":"","activity":"","searchRegion":"Hà Nội","durationMinutes":null,"confidence":0.95,"entityType":"venue","aliases":[],"addressHint":null,"parentPlace":null,"evidenceSource":"caption","authority":"medium"}'
+                                            '],"expectedPlaceCount":2}'
+                                        )
+                                    }
+                                ]
+                            }
+                        }
+                    ]
                 },
             )
 
@@ -1641,8 +1897,7 @@ def test_context_extractor_spreads_consecutive_city_stays_across_days() -> None:
 
     assert context.extracted_places == []
     assert [
-        (stay.name, stay.start_day, stay.end_day)
-        for stay in context.destination_stays
+        (stay.name, stay.start_day, stay.end_day) for stay in context.destination_stays
     ] == [
         ("Hanoi", 1, 2),
         ("Ninh Binh", 3, 3),
@@ -1705,9 +1960,7 @@ def test_context_extractor_splits_tiktok_caption_venues_and_addresses() -> None:
             platform="tiktok",
             description=caption,
         ),
-        transcript=(
-            "This popular hole-in-the-wall dessert is worth visiting."
-        ),
+        transcript=("This popular hole-in-the-wall dessert is worth visiting."),
         destination="Hanoi",
         expected_place_count=6,
     )
@@ -1745,7 +1998,9 @@ def test_context_extractor_splits_tiktok_caption_venues_and_addresses() -> None:
     assert context.coverage_status == "sufficient"
 
 
-def test_context_extractor_splits_joined_aliases_and_drops_stt_only_false_stop() -> None:
+def test_context_extractor_splits_joined_aliases_and_drops_stt_only_false_stop() -> (
+    None
+):
     caption = (
         "Save this itinerary for your next Hanoi trip ep 2\n"
         "📍 Xôi Yến - 35b P. Nguyễn Hữu Huân, Hà Nội\n"
@@ -1901,10 +2156,7 @@ def test_context_extractor_keeps_caption_pins_canonical_for_hanoi_video() -> Non
     assert "Ethnology Mus" not in context.extracted_places
     assert "Coffee 9" not in context.extracted_places
     assert "Coffee Nang" in context.extracted_places
-    by_name = {
-        detail.name: detail
-        for detail in context.extracted_place_details
-    }
+    by_name = {detail.name: detail for detail in context.extracted_place_details}
     assert by_name["Cafe Pho Co"].address == "11 Hàng Gai"
     assert by_name["Ethnology Museum"].category.value == "other"
     assert by_name["Train Street Southern Entrance"].category.value == "other"
@@ -2281,10 +2533,7 @@ def test_service_backfills_destination_before_stt_and_vision(
 
 
 def test_context_extractor_does_not_cap_evidenced_places() -> None:
-    visual_places = [
-        f"Venue {index:02d} Museum"
-        for index in range(1, 61)
-    ]
+    visual_places = [f"Venue {index:02d} Museum" for index in range(1, 61)]
     context = UrlReelContextExtractor().extract(
         metadata=UrlMetadata(
             originalUrl="https://example.com/reel",
@@ -2333,10 +2582,11 @@ def test_context_extractor_uses_stt_day_to_correct_frame_ocr_day() -> None:
         ],
     )
 
-    assert [
-        detail.source_day
-        for detail in context.extracted_place_details[:3]
-    ] == [1, 1, 1]
+    assert [detail.source_day for detail in context.extracted_place_details[:3]] == [
+        1,
+        1,
+        1,
+    ]
 
 
 def test_context_extractor_assigns_day_trip_search_region_and_evidence() -> None:
@@ -2357,10 +2607,7 @@ def test_context_extractor_assigns_day_trip_search_region_and_evidence() -> None
             "On day six, I went to Cem Studio."
         ),
         destination="Hanoi",
-        visual_text=(
-            "PLACE: Hang Mua | DAY 2\n"
-            "PLACE: Trang An | DAY 2"
-        ),
+        visual_text=("PLACE: Hang Mua | DAY 2\n" "PLACE: Trang An | DAY 2"),
         visual_places=["Old Quarter", "Hang Mua", "Trang An", "Cem Studio"],
         visual_observations=[
             FrameVisionObservation(
@@ -2376,10 +2623,7 @@ def test_context_extractor_assigns_day_trip_search_region_and_evidence() -> None
         ],
     )
 
-    by_name = {
-        detail.name: detail
-        for detail in context.extracted_place_details
-    }
+    by_name = {detail.name: detail for detail in context.extracted_place_details}
     assert by_name["Old Quarter"].search_region == "Hanoi"
     assert by_name["Hang Mua"].search_region == "Ninh Binh"
     assert by_name["Trang An"].search_region == "Ninh Binh"
@@ -2409,9 +2653,7 @@ def test_tiktok_video_download_retries_with_browser_impersonation(
             attempts.append(str(impersonate) if impersonate else None)
             if str(impersonate) != "chrome-131:android-14":
                 raise DownloadError("TikTok challenge failed")
-            output = Path(
-                self.options["outtmpl"].replace("%(ext)s", "mp4")
-            )
+            output = Path(self.options["outtmpl"].replace("%(ext)s", "mp4"))
             output.write_bytes(b"impersonated-video")
 
     monkeypatch.setattr(
@@ -2539,7 +2781,9 @@ def test_context_extractor_preserves_hanoi_reel_stop_order() -> None:
     assert context.extracted_place_details[9].source_time_hint == "nightlife"
 
 
-def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity() -> None:
+def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity() -> (
+    None
+):
     url = "https://example.com/hanoi-reel"
     caption = (
         "Don't skip these 4 spots in 📍Hanoi 🇻🇳 "
@@ -2570,12 +2814,10 @@ def test_context_extractor_splits_pin_list_and_does_not_copy_caption_as_activity
         "Hang Ma St",
     ]
     assert all(
-        detail.source_activity is None
-        for detail in context.extracted_place_details
+        detail.source_activity is None for detail in context.extracted_place_details
     )
     assert all(
-        "Don't skip" not in detail.name
-        for detail in context.extracted_place_details
+        "Don't skip" not in detail.name for detail in context.extracted_place_details
     )
 
 
@@ -2616,9 +2858,9 @@ def test_context_extractor_parses_numbered_tiktok_caption_without_list_noise() -
         "GO! Supermarket",
         "Lotte Mart",
     ]
-    assert [
-        detail.source_order for detail in context.extracted_place_details
-    ] == list(range(1, 11))
+    assert [detail.source_order for detail in context.extracted_place_details] == list(
+        range(1, 11)
+    )
     assert all(
         detail.source_evidence.get("caption")
         for detail in context.extracted_place_details
@@ -2627,9 +2869,9 @@ def test_context_extractor_parses_numbered_tiktok_caption_without_list_noise() -
         "stay tune" in detail.name.casefold()
         for detail in context.extracted_place_details
     )
-    assert {
-        detail.search_region for detail in context.extracted_place_details
-    } == {"Hanoi"}
+    assert {detail.search_region for detail in context.extracted_place_details} == {
+        "Hanoi"
+    }
 
 
 def test_context_extractor_rejects_unsupported_ocr_logos() -> None:
@@ -2728,9 +2970,14 @@ def test_context_extractor_keeps_numbered_activities_and_day_trip_city() -> None
         "Water Puppet Show",
         "Head Spa",
     ]
-    assert [
-        detail.entity_type for detail in context.extracted_place_details
-    ] == ["venue", "venue", "activity", "city", "activity", "activity"]
+    assert [detail.entity_type for detail in context.extracted_place_details] == [
+        "venue",
+        "venue",
+        "activity",
+        "city",
+        "activity",
+        "activity",
+    ]
     assert context.extraction_coverage == 1.0
     assert context.coverage_status == "sufficient"
 
@@ -2777,10 +3024,7 @@ def test_context_extractor_preserves_numbered_youtube_list_and_splits_stops() ->
     assert [item.source_order for item in context.extracted_place_details] == list(
         range(1, 13)
     )
-    by_name = {
-        item.name: item
-        for item in context.extracted_place_details
-    }
+    by_name = {item.name: item for item in context.extracted_place_details}
     assert by_name["Tranquac Pagota"].category.value == "other"
 
 

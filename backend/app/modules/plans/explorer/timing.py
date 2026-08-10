@@ -94,45 +94,44 @@ class ExplorerTimingTrace:
             ExplorerSourceTiming(
                 sourceIndex=index,
                 platform=result.platform,
-                totalSeconds=_seconds(
-                    result.timings.get("totalExtraction", 0.0)
-                ),
+                totalSeconds=_seconds(result.timings.get("totalExtraction", 0.0)),
                 cacheStatus=(
                     "bypassed"
                     if result.timings.get("urlCacheBypassed") == 1.0
-                    else "hit"
-                    if result.timings.get("urlCacheHit") == 1.0
-                    else "miss"
+                    else "hit" if result.timings.get("urlCacheHit") == 1.0 else "miss"
                 ),
-                cacheLookupSeconds=_seconds(
-                    result.timings.get("urlCacheLookup", 0.0)
-                ),
+                cacheLookupSeconds=_seconds(result.timings.get("urlCacheLookup", 0.0)),
                 stages=[
                     ExplorerTimingStage(
                         key=key,
                         label=_DURATION_LABELS[key],
                         durationSeconds=_seconds(value),
+                        details=(
+                            {"mode": "deterministic"}
+                            if key == "sourceObservationFusion"
+                            and result.timings.get(
+                                "sourceObservationFusionDeterministic"
+                            )
+                            == 1.0
+                            else (
+                                {"source": "download"}
+                                if key == "loadMetadata"
+                                and result.timings.get("metadataFromDownload") == 1.0
+                                else {}
+                            )
+                        ),
                     )
                     for key, value in result.timings.items()
-                    if key in _DURATION_LABELS
-                    and key != "totalExtraction"
+                    if key in _DURATION_LABELS and key != "totalExtraction"
                 ],
-                sampledFrames=int(
-                    result.timings.get("sampledFrames", 0.0)
-                ),
+                sampledFrames=int(result.timings.get("sampledFrames", 0.0)),
                 speechStatus=result.speech_to_text.status,
                 speechSource=result.speech_to_text.source,
                 visionStatus=result.frame_vision.status,
                 sttChunkCount=result.speech_to_text.chunk_count,
-                sttAudioDurationSeconds=(
-                    result.speech_to_text.audio_duration_seconds
-                ),
-                sttChunkDurationSeconds=(
-                    result.speech_to_text.chunk_duration_seconds
-                ),
-                sttChunkRetryCount=(
-                    result.speech_to_text.chunk_retry_count
-                ),
+                sttAudioDurationSeconds=(result.speech_to_text.audio_duration_seconds),
+                sttChunkDurationSeconds=(result.speech_to_text.chunk_duration_seconds),
+                sttChunkRetryCount=(result.speech_to_text.chunk_retry_count),
                 extractedPlaceCount=len(
                     [
                         detail
@@ -140,12 +139,8 @@ class ExplorerTimingTrace:
                         if detail.authority != "low"
                     ]
                 ),
-                expectedPlaceCount=(
-                    result.extracted_context.expected_place_count
-                ),
-                extractionCoverage=(
-                    result.extracted_context.extraction_coverage
-                ),
+                expectedPlaceCount=(result.extracted_context.expected_place_count),
+                extractionCoverage=(result.extracted_context.extraction_coverage),
                 coverageStatus=result.extracted_context.coverage_status,
             )
             for index, result in enumerate(results, start=1)
@@ -173,9 +168,7 @@ class ExplorerTimingTrace:
                 for source in resolution.candidate.sources
                 if source.type.value == "url" and source.url
             }
-            attempts = resolution.provider_attempts or [
-                _synthetic_attempt(resolution)
-            ]
+            attempts = resolution.provider_attempts or [_synthetic_attempt(resolution)]
             for source_url in source_urls:
                 stats = source_stats.get(source_url)
                 if stats is None:
@@ -214,9 +207,7 @@ class ExplorerTimingTrace:
                         continue
                     stats["resolved_count"] += 1
                     provider = resolution.provider or "unknown"
-                    resolved_provider_counts = stats[
-                        "resolved_provider_counts"
-                    ]
+                    resolved_provider_counts = stats["resolved_provider_counts"]
                     resolved_provider_counts[provider] = (
                         resolved_provider_counts.get(provider, 0) + 1
                     )
@@ -227,9 +218,7 @@ class ExplorerTimingTrace:
                     "candidate_count": stats["candidate_count"],
                     "resolved_count": stats["resolved_count"],
                     "provider_counts": stats["provider_counts"],
-                    "resolved_provider_counts": (
-                        stats["resolved_provider_counts"]
-                    ),
+                    "resolved_provider_counts": (stats["resolved_provider_counts"]),
                 }
             )
             for source, result in zip(self.sources, url_results)
@@ -246,9 +235,7 @@ class ExplorerTimingTrace:
         self.resolved_provider_counts = {}
         self.provider_attempts = []
         for resolution in resolutions:
-            attempts = resolution.provider_attempts or [
-                _synthetic_attempt(resolution)
-            ]
+            attempts = resolution.provider_attempts or [_synthetic_attempt(resolution)]
             for attempt in attempts:
                 self.provider_counts[attempt.provider] = (
                     self.provider_counts.get(attempt.provider, 0) + 1

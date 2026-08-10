@@ -15,7 +15,6 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
-    KnowledgeAlias,
     KnowledgeEntity,
     KnowledgeGraphImport,
     KnowledgeGraphImportEdge,
@@ -25,7 +24,7 @@ from app.modules.knowledge_graph.model import (
 from app.modules.knowledge_graph.repositories.kg_repository import KnowledgeGraphRepository
 from app.modules.places.category import canonical_place_category
 from app.modules.places.resolver import PlaceResolution
-from app.modules.plans.explorer.model import SourceDocument
+from app.modules.plans.explorer.model import DestinationRegionStory, SourceDocument
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
     is_schedulable_place,
@@ -603,57 +602,35 @@ class ExplorerPersistenceRepository:
                 )
         return output
 
-    def load_region_stories(
+    def load_destination_region_stories(
         self,
-        intake_id: str,
-        user_id: str | None,
+        destination: str,
+        explicit_region_key: str | None = None,
     ) -> list[PlanNoteSource]:
-        """Load destination-level creator stories from validated source documents."""
+        """Load active, operator-curated destination guidance from PostgreSQL."""
 
-        import_job = self.session.get(KnowledgeGraphImport, intake_id)
-        if (
-            import_job is None
-            or import_job.import_kind != "explorer_intake"
-            or import_job.created_by != _numeric_user_id(user_id)
-        ):
-            return []
-        document_ids = {
-            document_id
-            for document_id in self.session.scalars(
-                select(KnowledgeGraphImportNode.source_document_id).where(
-                    KnowledgeGraphImportNode.import_id == intake_id,
-                    KnowledgeGraphImportNode.source_document_id.is_not(None),
-                )
+        region_key = normalize_region_key(destination, explicit_region_key)
+        rows = self.session.scalars(
+            select(DestinationRegionStory)
+            .where(
+                DestinationRegionStory.region_key == region_key,
+                DestinationRegionStory.is_active.is_(True),
             )
-            if document_id is not None
-        }
-        if import_job.source_document_id is not None:
-            document_ids.add(import_job.source_document_id)
-
-        stories: list[PlanNoteSource] = []
-        for document_id in sorted(document_ids):
-            document = self.session.get(SourceDocument, document_id)
-            if document is None:
-                continue
-            raw_story = (document.extracted_context_json or {}).get("regionStory")
-            if not isinstance(raw_story, dict):
-                continue
-            text = _optional_text(raw_story.get("text"))
-            evidence = _optional_text(raw_story.get("evidence"))
-            evidence_type = _optional_text(raw_story.get("evidenceType"))
-            if not text or not evidence or evidence_type not in {"caption", "stt"}:
-                continue
-            stories.append(
-                PlanNoteSource(
-                    type="url",
-                    text=text,
-                    evidence=evidence,
-                    ref=document.canonical_url,
-                    evidenceTypes=[evidence_type],
-                    fetchedAt=document.fetched_at,
-                )
+            .order_by(
+                DestinationRegionStory.sort_order,
+                DestinationRegionStory.id,
             )
-        return stories
+        )
+        return [
+            PlanNoteSource(
+                type=row.story_type,
+                text=row.text,
+                ref=row.source_url,
+                evidenceTypes=list(row.evidence_types_json or []),
+                fetchedAt=row.fetched_at,
+            )
+            for row in rows
+        ]
 
     def load_cached_url_result(self, url: str) -> UrlReelExtractionResult | None:
         source_url = _artifact_source_url(url)
@@ -926,6 +903,10 @@ class ExplorerPersistenceRepository:
         extracted_context = result.extracted_context.model_dump(
             mode="json", by_alias=True
         )
+        # Destination guidance is curated independently in
+        # destination_region_stories. URL extraction may still use a regional
+        # observation internally, but it must not become durable plan content.
+        extracted_context.pop("regionStory", None)
         extracted_context["_cacheVersion"] = URL_EXTRACTION_CACHE_VERSION
         row.platform = result.platform
         row.artifacts_json = artifacts

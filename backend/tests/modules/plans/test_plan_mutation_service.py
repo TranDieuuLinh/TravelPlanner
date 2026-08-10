@@ -262,7 +262,7 @@ def _graph_place(
     )
 
 
-def test_search_place_suggestions_reads_only_knowledge_graph():
+def test_search_place_suggestions_returns_knowledge_graph_without_provider_call():
     place = _graph_place(
         "place-coffee-9",
         name="Coffee 9",
@@ -275,8 +275,13 @@ def test_search_place_suggestions_reads_only_knowledge_graph():
             assert limit == 1
             return [place]
 
+    class UnexpectedProvider:
+        async def search(self, query, destination, top_k, filters=None):
+            raise AssertionError("provider must not run after a graph hit")
+
     service = PlanMutationService(
         graph_place_repository=FakeGraphRepository(),
+        place_suggestion_provider=UnexpectedProvider(),
     )
 
     suggestions = asyncio.run(
@@ -331,6 +336,91 @@ def test_search_place_suggestions_returns_empty_when_graph_misses():
             destination="Hà Nội",
             top_k=3,
         )
+    )
+
+    assert suggestions == []
+
+
+def test_search_place_suggestions_falls_back_to_google_maps_on_graph_miss():
+    class EmptyGraphRepository:
+        def search(self, query, destination, *, limit):
+            return []
+
+    class FakeGoogleMapsProvider:
+        async def search(self, query, destination, top_k, filters=None):
+            assert query == "bun cha"
+            assert destination == "Hà Nội"
+            assert top_k == 2
+            assert filters is None
+            return [
+                {
+                    "title": "Bún Chả Hương Liên",
+                    "address": "24 Lê Văn Hưu, Hà Nội",
+                    "latitude": 21.01845,
+                    "longitude": 105.85303,
+                    "place_id": "ChIJ-huong-lien",
+                    "category": "Nhà hàng",
+                    "review_rating": 4.2,
+                    "review_count": 7200,
+                    "image_url": "https://example.com/huong-lien.jpg",
+                    "opening_hours": [
+                        {"dayName": "Thứ Hai", "rawTimeSlots": "08:00–20:30"}
+                    ],
+                },
+                {
+                    "title": "Bún Chả Hương Liên duplicate",
+                    "latitude": 21.01845,
+                    "longitude": 105.85303,
+                    "place_id": "ChIJ-huong-lien",
+                },
+                {
+                    "title": "Result without coordinates",
+                    "place_id": "ChIJ-no-coordinates",
+                },
+            ]
+
+    service = PlanMutationService(
+        graph_place_repository=EmptyGraphRepository(),
+        place_suggestion_provider=FakeGoogleMapsProvider(),
+    )
+
+    suggestions = asyncio.run(
+        service.search_place_suggestions(
+            "bun cha",
+            destination="Hà Nội",
+            top_k=2,
+        )
+    )
+
+    assert len(suggestions) == 1
+    suggestion = suggestions[0]
+    assert suggestion.place_id == "ChIJ-huong-lien"
+    assert suggestion.name == "Bún Chả Hương Liên"
+    assert suggestion.latitude == 21.01845
+    assert suggestion.longitude == 105.85303
+    assert suggestion.rating == 4.2
+    assert suggestion.review_count == 7200
+    assert suggestion.opening_hours == ["Thứ Hai: 08:00–20:30"]
+    assert suggestion.source == "google_maps_scraper"
+    assert suggestion.is_verified is False
+
+
+def test_search_place_suggestions_degrades_to_empty_when_provider_fails():
+    class EmptyGraphRepository:
+        def search(self, query, destination, *, limit):
+            return []
+
+    class FailedProvider:
+        async def search(self, query, destination, top_k, filters=None):
+            raise TimeoutError
+
+    service = PlanMutationService(
+        graph_place_repository=EmptyGraphRepository(),
+        place_suggestion_provider=FailedProvider(),
+    )
+
+    suggestions = asyncio.run(
+        service.search_place_suggestions("missing place", destination="Hà Nội")
     )
 
     assert suggestions == []

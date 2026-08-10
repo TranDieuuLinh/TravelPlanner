@@ -84,25 +84,36 @@ năng tạo plan. Câu trả lời cập nhật cùng một draft, không bắt 
 SelectedPlaces + UserState + TripConstraints
                     |
                     v
-Explorer -> MacroPlan + DayBriefs
+Explorer -> TripIntent + resolved Places
                     |
                     v
-Finder Main Run -> TripDays + TripItems + Routes
+TripThemePlanner -> required experiences
                     |
                     v
-CheckOverall -> Main Plan đã kiểm tra
+Mandatory Pool -> Capacity + Day Allocation
+                    |
+                    v
+Lazy Gap Fill -> Timeline + Stop Ordering
+                    |
+                    v
+Detailed Route Enrichment -> CheckOverall
 ```
 
-1. Planner tạo `MacroPlan`: chủ đề, khu vực và mục tiêu của từng ngày.
-2. Mỗi `DayBrief` mô tả khung giờ, loại hoạt động, nhịp độ và địa điểm ưu tiên.
-3. Finder xếp địa điểm vào ngày và khung giờ, thêm bữa ăn, nghỉ, thời gian đệm và
-   chặng di chuyển.
+1. Explorer chuẩn hóa `TripIntent`; TripThemePlanner chỉ chọn điểm nhấn toàn
+   chuyến và không tạo `MacroPlan`/`DayBrief`.
+2. Mandatory pool gồm địa điểm URL/user, must-visit và required experience đã
+   resolve. Capacity solver quyết định số ngày khi duration chưa khóa và phân
+   bổ địa điểm bắt buộc theo cụm địa lý.
+3. PlaceSelector xếp mandatory place trước, phát hiện khoảng trống rồi mới tìm
+   một pool nhỏ suggestion theo từng gap. Candidate không được chọn không đi vào
+   danh sách chưa xếp. Sau đó hệ thống thêm meal, buffer và tạo timeline.
 4. Địa điểm người dùng xác nhận được giữ lại trừ khi vi phạm ràng buộc cứng. Nếu
    không thể xếp, hệ thống tự tăng số ngày khi user chưa khóa duration/date.
    Khi user đã nói rõ số ngày hoặc khoảng ngày đi, hệ thống giữ duration và đưa
    phần dư vào danh sách chưa xếp; user có thể kéo card vào một ngày, mở biểu
    mẫu thêm thủ công hoặc tạo prompt yêu cầu AI xếp.
-5. `CheckOverall` kiểm tra schema, thời gian chồng lấn, giờ hoạt động, tuyến
+5. Khi stop/thứ tự đã ổn định, route enrichment lấy duration, distance và
+   geometry cho từng leg. `CheckOverall` kiểm tra schema, thời gian chồng lấn, giờ hoạt động, tuyến
    đường, thời tiết khi phù hợp, mật độ, ngân sách và dữ liệu quá cũ.
 6. Người dùng xem cảnh báo, giả định và bằng chứng trước khi chọn Main Plan.
 7. Khi được chốt, Main Plan có version riêng; các lần chỉnh sửa tiếp theo tạo

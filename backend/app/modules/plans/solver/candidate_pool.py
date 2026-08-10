@@ -7,11 +7,15 @@ from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.place_selector.timeline_policy import (
     DEFAULT_ACTIVITY_DURATION_MINUTES,
 )
+from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.schema import SelectedPlaceCreate
 from app.modules.plans.solver.contracts import CandidatePool, PlanningCandidate
 
 
-def selected_place_identity(place: SelectedPlaceCreate) -> str:
+CandidatePlace = SelectedPlaceCreate | SelectedPlaceContext
+
+
+def selected_place_identity(place: CandidatePlace) -> str:
     if place.place_id:
         return f"place:{place.place_id}"
     normalized = unicodedata.normalize("NFKD", place.name.casefold())
@@ -21,9 +25,15 @@ def selected_place_identity(place: SelectedPlaceCreate) -> str:
 
 
 def build_selected_place_pool(
-    selected_places: list[SelectedPlaceCreate],
+    selected_places: list[CandidatePlace],
 ) -> CandidatePool:
-    """Build the mandatory source pool after Explorer identity resolution."""
+    """Build only the pool that Planner owes to the user.
+
+    URL/user-selected Places and resolved required experiences enter this
+    pool. Catalog candidates considered later for gap filling deliberately do
+    not: optional suggestions must never expand the trip or appear as unmet
+    user commitments.
+    """
 
     candidates: list[PlanningCandidate] = []
     seen: set[str] = set()

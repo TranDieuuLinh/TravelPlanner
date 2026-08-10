@@ -129,12 +129,16 @@ def get_plan_mutation_service(
     db: Annotated[Session, Depends(get_db)],
 ) -> PlanMutationService:
     place_repository = KnowledgeGraphPlaceRepository(db)
+    client = _get_gmaps_search_client()
     return PlanMutationService(
         place_resolver=_get_place_resolver(
             place_repository,
             session_factory=_resolver_session_factory(db),
         ),
         graph_place_repository=KnowledgeGraphPlaceSearchRepository(db),
+        place_suggestion_provider=(
+            GoogleMapsPlaceSearchProvider(client) if client is not None else None
+        ),
         route_optimizer=_get_route_optimizer(),
         checker=OverallChecker(),
     )

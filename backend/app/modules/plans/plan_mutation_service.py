@@ -1,4 +1,6 @@
+import math
 import unicodedata
+from typing import Any, Mapping, Protocol, Sequence
 from uuid import uuid4
 
 from app.modules.knowledge_graph.place_search import (
@@ -31,16 +33,142 @@ from app.modules.plans.routing.optimizer import GeographicRouteOptimizer
 from app.shared.errors import AppError
 
 
+class PlaceSuggestionProvider(Protocol):
+    async def search(
+        self,
+        query: str,
+        destination: str | None,
+        top_k: int,
+        filters: Mapping[str, object] | None = None,
+    ) -> Sequence[Mapping[str, Any]]: ...
+
+
+def _google_maps_place_suggestions(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    limit: int,
+) -> list[PlaceSuggestion]:
+    suggestions: list[PlaceSuggestion] = []
+    seen: set[tuple[object, ...]] = set()
+    for result in results:
+        name = str(result.get("title") or result.get("name") or "").strip()
+        latitude = _optional_float(_first_present(result, "latitude", "y"))
+        longitude = _optional_float(_first_present(result, "longitude", "x"))
+        if (
+            not name
+            or latitude is None
+            or longitude is None
+            or not -90 <= latitude <= 90
+            or not -180 <= longitude <= 180
+            or (latitude == 0 and longitude == 0)
+        ):
+            continue
+
+        place_id = _optional_text(result.get("place_id") or result.get("data_id"))
+        address = _optional_text(result.get("address") or result.get("complete_address"))
+        identity = (
+            ("provider", place_id)
+            if place_id
+            else (
+                "location",
+                unicodedata.normalize("NFKD", name)
+                .encode("ascii", "ignore")
+                .decode()
+                .casefold(),
+                round(latitude, 6),
+                round(longitude, 6),
+            )
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        suggestions.append(
+            PlaceSuggestion(
+                name=name,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                placeId=place_id,
+                imageUrl=_optional_text(result.get("image_url")),
+                rating=_optional_float(_first_present(result, "review_rating", "rating")),
+                reviewCount=_optional_int(result.get("review_count")),
+                priceLevel=_optional_int(result.get("price_level")),
+                placeType=_optional_text(result.get("category") or result.get("type")),
+                phone=_optional_text(result.get("phone")),
+                website=_optional_text(result.get("website")),
+                openingHours=_opening_hours_text(result.get("opening_hours")),
+                isVerified=False,
+                source="google_maps_scraper",
+            )
+        )
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _first_present(result: Mapping[str, Any], *keys: str) -> object:
+    for key in keys:
+        value = result.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _optional_float(value: object) -> float | None:
+    try:
+        parsed = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _opening_hours_text(value: object) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    entries: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            entries.append(item.strip())
+            continue
+        if not isinstance(item, Mapping):
+            continue
+        day = _optional_text(item.get("dayName"))
+        slots = _optional_text(item.get("rawTimeSlots"))
+        if day and slots:
+            entries.append(f"{day}: {slots}")
+        elif slots:
+            entries.append(slots)
+    return entries or None
+
+
 class PlanMutationService:
     def __init__(
         self,
         place_resolver: PlaceResolver | None = None,
         graph_place_repository: KnowledgeGraphPlaceSearchRepository | None = None,
+        place_suggestion_provider: PlaceSuggestionProvider | None = None,
         route_optimizer: GeographicRouteOptimizer | None = None,
         checker: OverallChecker | None = None,
     ) -> None:
         self.place_resolver = place_resolver or ProvisionalPlaceResolver()
         self.graph_place_repository = graph_place_repository
+        self.place_suggestion_provider = place_suggestion_provider
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
         self.checker = checker or OverallChecker()
 
@@ -58,11 +186,23 @@ class PlanMutationService:
             return []
         dest = (destination or "").strip()
 
-        return self._search_knowledge_graph(
+        graph_suggestions = self._search_knowledge_graph(
             cleaned,
             dest,
             limit=top_k,
         )
+        if graph_suggestions or self.place_suggestion_provider is None:
+            return graph_suggestions
+
+        try:
+            provider_results = await self.place_suggestion_provider.search(
+                cleaned,
+                dest or None,
+                top_k,
+            )
+        except Exception:
+            return []
+        return _google_maps_place_suggestions(provider_results, limit=top_k)
 
     def _search_knowledge_graph(
         self,

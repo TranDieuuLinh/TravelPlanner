@@ -13,6 +13,7 @@ model/migration với schema mục tiêu chưa triển khai.
 | `places` | Planned | Cần thêm module/model |
 | `places` | Implemented | `backend/app/modules/places/model.py`, migration `20260727_0002_create_places_table.py` |
 | `source_documents` | Implemented | Canonical URL + caption/STT/OCR + extracted context, migration `20260805_0037` |
+| `destination_region_stories` | Implemented | Catalog lịch sử/lưu ý destination theo `region_key`, migration `20260810_0048` |
 | `knowledge_graph_imports` | Implemented | Job/intake/admin import envelope; processing và review status tách biệt |
 | `knowledge_graph_import_nodes` | Implemented | Area/Venue proposal, evidence, note, Top K identity và provider snapshot |
 | `knowledge_graph_import_edges` | Implemented | Quan hệ graph đề xuất, chỉ promote sau review |
@@ -140,6 +141,29 @@ Một record cho mỗi canonical URL. `artifacts` chứa caption/STT/OCR/webpage
 language; `extracted_context` chứa observation chuẩn hóa. Hash, extractor
 version và timestamps giữ provenance/freshness. Không lưu raw HTML hoặc raw
 provider response.
+
+`extracted_context` không lưu `regionStory`; URL intake chỉ cung cấp place và
+ngữ cảnh gắn với source. Nội dung cấp destination được quản lý trong catalog
+riêng bên dưới.
+
+### `destination_region_stories`
+
+Catalog do operator quản lý cho lịch sử và lưu ý cấp destination. Planner đọc
+các row `is_active=true` theo `region_key`, sắp bằng `sort_order`, chuyển thành
+`Plan.regionStories` rồi lưu snapshot trong trip revision.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | varchar(64) PK | ID ổn định do operator đặt |
+| `region_key` | varchar(128) | Ví dụ `vn,ha-noi` |
+| `story_type` | varchar(40) | Bắt đầu bằng `destination_` |
+| `text` | text | Nội dung hiển thị |
+| `source_url` | text | Nguồn công khai của nội dung |
+| `evidence_types` | json | Ví dụ `["webpage"]` |
+| `fetched_at` | timestamptz | Freshness của nguồn |
+| `sort_order` | integer | Thứ tự ổn định trong UI |
+| `is_active` | boolean | Cho phép ẩn mà không xóa row |
+| `created_at`, `updated_at` | timestamptz | Audit thời gian |
 
 ### `knowledge_graph_imports`
 

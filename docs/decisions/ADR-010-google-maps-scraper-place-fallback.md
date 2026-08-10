@@ -22,21 +22,30 @@ hành.
   `shared URL/place cache -> Knowledge Graph Top-K -> google-maps-scraper (nếu cấu hình)`.
   Cache dùng snapshot đã chuẩn hóa, không dùng lại payload thô. Playwright được
   ưu tiên sau catalog nội bộ để thu thập snapshot Google Maps đầy đủ hơn.
-- Knowledge Graph xếp hạng tối đa `top K` entity theo canonical name/alias đã
-  review, vùng, evidence vị
+- Knowledge Graph ưu tiên exact canonical name/alias đã review, sau đó dùng
+  `pg_trgm` trên `normalized_name`/`normalized_alias` để lấy shortlist theo
+  trigram và word similarity. Migration 0035 đã bật extension cùng GIN index;
+  similarity chỉ mở rộng retrieval, không tự xác nhận identity. Resolver tiếp
+  tục xếp hạng tối đa `top K` entity theo tên/alias, vùng, evidence vị
   trí, category và độ tin cậy catalog. Chỉ nhận top-1 khi vượt ngưỡng điểm tuyệt
   đối và margin với top-2. Mặc định là `K=5`, score phải lớn hơn `0.82`, margin
-  `0.08`; score bằng `0.82` không đủ điều kiện. Route context chỉ phân xử các
-  record đã vượt ngưỡng và không được bỏ qua địa chỉ có provenance từ nguồn.
+  `0.08`; score bằng `0.82` không đủ điều kiện. Khi nhiều branch đều vượt
+  ngưỡng nhưng chưa tách được top-1, route context dùng các stop đã resolve liền
+  trước/sau trong cùng ngày và cùng nguồn để chọn branch tạo detour nhỏ nhất;
+  chỉ nhận khi khoảng cách với branch thứ hai đủ rõ. Route context không được
+  bỏ qua địa chỉ có provenance từ nguồn.
   Candidate chỉ là tên món/venue chung phải khớp địa chỉ nguồn; nếu không thì
-  giữ unresolved. DB
-  miss, điểm thấp và kết quả sát nhau đều đi tiếp tới Playwright. Score này là
-  heuristic nội bộ cần hiệu chỉnh bằng dữ liệu có nhãn.
+  giữ unresolved. DB miss hoặc toàn bộ shortlist dưới ngưỡng mới đi tiếp tới
+  Playwright. Kết quả nhiều branch còn sát nhau sau route context giữ
+  `ambiguous_name` để review và không được Google Maps tự quyết lại một identity
+  canonical đã có trong graph. Score này là heuristic nội bộ cần hiệu chỉnh
+  bằng dữ liệu có nhãn.
 - Gọi trực tiếp executable `google-maps-scraper`; không dùng API key.
 - Candidate chỉ có tối đa hai tên lookup gửi ra Google: tên chính thức tiếng Việt và tên
   canonical tiếng Anh/tên gốc. Các tên/alias candidate được tra trong Knowledge Graph theo
-  `region_key` canonical trước; Google Maps nhận fallback khi DB miss, điểm
-  thấp hoặc không tách được top-1 khỏi top-2.
+  `region_key` canonical trước; Google Maps nhận fallback khi DB miss hoặc
+  shortlist không còn match khả tín. Ambiguity giữa các branch KG được xử lý
+  bằng source address/route context hoặc giữ review, không fallback Google.
   Scraper tra tiếng Việt trước rồi tên Anh/tên gốc, luôn kèm `searchRegion` và
   address hint khi có, và không gửi quá hai query. Đọc JSON output rồi xóa thư
   mục tạm.

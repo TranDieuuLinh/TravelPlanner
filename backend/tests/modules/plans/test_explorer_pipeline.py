@@ -323,6 +323,27 @@ def _url_result(
     )
 
 
+def test_source_timing_describes_unified_download_and_deterministic_fusion() -> None:
+    result = _url_result("https://example.com/video", count=1)
+    result.timings.update(
+        {
+            "loadMetadata": 0.0,
+            "metadataFromDownload": 1.0,
+            "sourceObservationFusion": 0.001,
+            "sourceObservationFusionDeterministic": 1.0,
+        }
+    )
+    trace = ExplorerTimingTrace("intake-timing-details", url_count=1, image_count=0)
+
+    trace.add_url_results([result])
+
+    stages = {stage.key: stage for stage in trace.sources[0].stages}
+    assert stages["loadMetadata"].details == {"source": "download"}
+    assert stages["sourceObservationFusion"].details == {
+        "mode": "deterministic"
+    }
+
+
 def test_force_url_refresh_bypasses_cached_extraction() -> None:
     formatter = RecordingFormatter()
     url_reels = RecordingUrlReels(count=10)

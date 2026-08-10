@@ -9,6 +9,22 @@ const EMPTY_NOTE_VALUES = new Set([
 ]);
 
 const VIETNAMESE_NOTE_TRANSLATIONS: Record<string, string> = {
+  "hanoi has more than a thousand years of history. in 1010, emperor ly thai to chose it as the imperial capital and named it thang long, “ascending dragon.” dynasties, french colonial rule, wars and modernization shaped the layered city seen today":
+    "Hà Nội có hơn một nghìn năm lịch sử. Năm 1010, vua Lý Thái Tổ chọn nơi đây làm kinh đô và đặt tên là Thăng Long, nghĩa là “Rồng bay lên”. Các triều đại, thời kỳ Pháp thuộc, chiến tranh và quá trình hiện đại hóa đã tạo nên một thành phố nhiều lớp lang như ngày nay.",
+  "traffic in hanoi is busy and unpredictable. vehicles may approach from unexpected directions, so look carefully—even on one-way streets—and cross only when it is safe":
+    "Giao thông ở Hà Nội đông đúc và khó đoán. Các phương tiện có thể xuất hiện từ những hướng bất ngờ, vì vậy hãy quan sát kỹ — kể cả trên đường một chiều — và chỉ sang đường khi an toàn.",
+  "use grab or xanh sm. confirm that the licence plate, vehicle and driver match the information in the app before entering":
+    "Hãy sử dụng Grab hoặc Xanh SM. Trước khi lên xe, hãy xác nhận biển số, phương tiện và tài xế khớp với thông tin trong ứng dụng.",
+  "do not drink tap water. choose sealed bottled or adequately treated water, and be cautious about ice":
+    "Không uống nước máy. Hãy chọn nước đóng chai còn nguyên niêm phong hoặc nước đã được xử lý đạt yêu cầu, đồng thời thận trọng với đá.",
+  "keep bags zipped and in front of you in the old quarter, markets and public transport. stay alert to motorcycles approaching from behind":
+    "Hãy kéo khóa túi và giữ túi ở phía trước khi ở Phố Cổ, chợ và trên phương tiện công cộng. Chú ý các xe máy đi tới từ phía sau.",
+  "agree on the complete price and service before taking a cyclo or using an informal service":
+    "Hãy thống nhất toàn bộ mức giá và dịch vụ trước khi đi xích lô hoặc sử dụng một dịch vụ không chính thức.",
+  "cover your shoulders and knees when visiting temples and cultural sites, and follow instructions displayed at the entrance":
+    "Hãy che vai và đầu gối khi tham quan đền, chùa và các địa điểm văn hóa, đồng thời làm theo hướng dẫn được niêm yết tại lối vào.",
+  "train street is an active railway. never cross barriers, stand on the tracks or ignore current local restrictions":
+    "Phố đường tàu là tuyến đường sắt vẫn đang hoạt động. Tuyệt đối không vượt rào chắn, đứng trên đường ray hoặc phớt lờ các quy định hiện hành của địa phương.",
   "withdraw money": "Rút tiền",
   "eat dessert and wait for sightseeing bus":
     "Ăn món tráng miệng và chờ xe buýt tham quan",

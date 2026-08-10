@@ -376,6 +376,9 @@ class GoogleMapsSearchClient:
                 await asyncio.sleep(0.1)
             _write_google_maps_cancellation(cancellation_path)
             return []
+        except asyncio.CancelledError:
+            _write_google_maps_cancellation(cancellation_path)
+            raise
         except Exception:
             _write_google_maps_cancellation(cancellation_path)
             return []
@@ -696,8 +699,16 @@ class DatabasePlaceResolver(PlaceResolver):
         )
         exact_unique = _select_exact_unique_record(candidate, ranked_all)
         best_score, record = ranked[0]
+        plausible_identity_tie = (
+            best_score > self.minimum_score
+            or all(
+                _database_name_similarity(candidate, tied_record) >= 0.70
+                for _, tied_record in ranked[:2]
+            )
+        )
         if (
             len(ranked) > 1
+            and plausible_identity_tie
             and best_score - ranked[1][0] < self.minimum_margin
             and equivalent_duplicate is None
             and exact_unique is None
@@ -2200,7 +2211,7 @@ def _select_exact_unique_record(
 ) -> PlaceLookupRecord | None:
     """Return one safe exact identity even when optional score signals are absent."""
     candidate_names = {
-        _normalized(value)
+        _normalized_identity_name(value)
         for value in (
             candidate.name,
             candidate.original_name,
@@ -2220,9 +2231,9 @@ def _select_exact_unique_record(
         )
         verified_aliases, _ = _verified_aliases_from_metadata(metadata)
         verified_names = {
-            _normalized(value)
+            _normalized_identity_name(value)
             for value in (record.name, *verified_aliases)
-            if value and _normalized(value)
+            if value and _normalized_identity_name(value)
         }
         if candidate_names.isdisjoint(verified_names):
             continue
@@ -3381,3 +3392,11 @@ def _normalized(value: str) -> str:
         if unicodedata.category(character) != "Mn"
     ).replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "", without_marks)
+
+
+def _normalized_identity_name(value: str) -> str:
+    """Normalize harmless leading English articles for exact identity checks."""
+    tokens = _lookup_tokens(value)
+    if len(tokens) >= 3 and tokens[0] in {"a", "an", "the"}:
+        tokens = tokens[1:]
+    return "".join(tokens)

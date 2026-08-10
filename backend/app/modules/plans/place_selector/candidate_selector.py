@@ -17,6 +17,8 @@ from app.modules.plans.domain.entities import (
 from app.modules.plans.dto.agent_contracts import SelectedPlaceContext
 from app.modules.plans.explorer.place_policy import is_meal_place
 from app.modules.plans.place_selector.place_tool import (
+    EVENING_FALLBACK_ACTIVITY_IDS,
+    EVENING_FALLBACK_SEARCH_TERMS,
     SelectablePlace,
     PlaceSelectionTool,
     _normalize_text,
@@ -456,6 +458,69 @@ class CandidateSelector:
                     context.rejected_selected_places[candidate_ref] = rejection
                 continue
             return candidate
+        return None
+
+    def select_evening_fallback(
+        self,
+        context: CandidateSelectionContext,
+    ) -> SelectablePlace | None:
+        """Select one optional, graph-backed evening activity for a real gap."""
+        search = getattr(self.place_tool, "search_evening_fallback", None)
+        if not callable(search) or context.block.role != "bonus_activity":
+            return None
+        if any(
+            item.activity_id in EVENING_FALLBACK_ACTIVITY_IDS
+            for item in context.current_day_items
+        ):
+            return None
+        selected_place_ids = {
+            place.place_id
+            for place in context.selected_by_ref.values()
+            if place.place_id is not None
+        }
+        candidates = search(
+            region_key=context.brief.target_region_key or context.brief.target_area,
+            excluded_place_ids=(
+                set(context.plan_status.used_place_ids) | selected_place_ids
+            ),
+            limit=max(self.max_candidates_per_block * 4, 20),
+            bbox_filter=context.bbox_filter,
+        )
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.activity_id in EVENING_FALLBACK_ACTIVITY_IDS
+            and not self._duplicates_existing_identity(
+                candidate,
+                selected_places=context.selected_by_ref.values(),
+                occupied_items=context.occupied_items,
+            )
+        ]
+        candidates = self._rerank_for_proximity(
+            candidates,
+            context.user_status,
+            region_key=context.brief.target_region_key or context.brief.target_area,
+            target_tags=[*EVENING_FALLBACK_SEARCH_TERMS, *context.intent_interests],
+        )
+        for candidate in candidates:
+            rejection = self._candidate_rejection(
+                candidate,
+                context.block,
+                context.user_status,
+                is_selected=False,
+                query_categories=set(),
+                avoided_place_names=context.avoided_place_names,
+                intent_constraints=context.intent_constraints,
+                constraint_policy=context.constraint_policy,
+                budget_level=context.budget_level,
+                enforce_opening_hours=True,
+            )
+            if rejection is None:
+                return candidate.model_copy(
+                    update={
+                        "selection_method": "evening_gap_fill_offers_activity",
+                    }
+                )
         return None
 
     def _finder_coffee_allowed(self, context: CandidateSelectionContext) -> bool:

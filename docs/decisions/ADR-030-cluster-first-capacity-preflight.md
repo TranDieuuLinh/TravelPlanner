@@ -1,6 +1,6 @@
 # ADR-030: Cluster-first capacity preflight before AI planning
 
-- Status: Accepted
+- Status: Superseded by ADR-034
 - Date: 2026-08-07
 
 ## Context

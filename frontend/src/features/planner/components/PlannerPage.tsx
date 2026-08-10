@@ -175,6 +175,26 @@ function destinationNoteLabel(type: string, index: number) {
   return DESTINATION_NOTE_LABELS[type] ?? `Ghi chú địa phương ${index + 1}`;
 }
 
+function DestinationSourceLink({ href }: { href?: string | null }) {
+  if (!href?.startsWith("http")) return null;
+
+  return (
+    <a
+      aria-label="Xem nguồn"
+      className="destinationSourceIcon"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+      title="Xem nguồn"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M14 5h5v5M19 5l-9 9" />
+        <path d="M17 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h5" />
+      </svg>
+    </a>
+  );
+}
+
 type FloatingChatRect = {
   x: number;
   y: number;
@@ -6881,12 +6901,10 @@ function Planner() {
                         <article
                           key={`${story.ref ?? "destination-history"}-${index}`}
                         >
-                          <p>{text}</p>
-                          {story.ref?.startsWith("http") ? (
-                            <a href={story.ref} rel="noreferrer" target="_blank">
-                              Nguồn <span aria-hidden="true">↗</span>
-                            </a>
-                          ) : null}
+                          <p>
+                            {text}
+                            <DestinationSourceLink href={story.ref} />
+                          </p>
                         </article>
                       ))
                     ) : (
@@ -6912,15 +6930,13 @@ function Planner() {
                         <article
                           key={`${story.ref ?? story.type}-${index}`}
                         >
-                          <strong>
-                            {destinationNoteLabel(story.type, index)}
-                          </strong>
-                          <p>{text}</p>
-                          {story.ref?.startsWith("http") ? (
-                            <a href={story.ref} rel="noreferrer" target="_blank">
-                              Nguồn <span aria-hidden="true">↗</span>
-                            </a>
-                          ) : null}
+                          <p>
+                            <strong>
+                              {destinationNoteLabel(story.type, index)}.
+                            </strong>{" "}
+                            {text}
+                            <DestinationSourceLink href={story.ref} />
+                          </p>
                         </article>
                       ))
                     ) : (

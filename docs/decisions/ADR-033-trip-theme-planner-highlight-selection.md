@@ -2,6 +2,7 @@
 
 - Trạng thái: Đã chấp nhận
 - Ngày: 2026-08-09
+- Ghi chú: chính sách số lượng/diversity được ADR-035 thay thế một phần.
 
 ## Bối cảnh
 

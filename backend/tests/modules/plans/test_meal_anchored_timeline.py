@@ -191,6 +191,62 @@ def test_shifted_meal_refits_following_activity_and_uses_default_transition() ->
     }
 
 
+def test_url_selected_stop_displaces_optional_finder_stop_after_route_fit() -> None:
+    breakfast = _item(
+        "breakfast",
+        "Breakfast",
+        "08:00-09:00",
+        duration=60,
+        role="breakfast_meal",
+        category="food",
+    )
+    optional = _item(
+        "optional",
+        "Optional Finder stop",
+        "09:00-19:00",
+        duration=600,
+        role="main_activity_1",
+    ).model_copy(update={"source": "finder_suggestion"})
+    lunch = _item(
+        "lunch",
+        "Lunch",
+        "12:00-13:00",
+        duration=60,
+        role="lunch_meal",
+        category="food",
+    )
+    dinner = _item(
+        "dinner",
+        "Dinner",
+        "18:00-19:00",
+        duration=60,
+        role="dinner_meal",
+        category="food",
+    )
+    url_stop = _item(
+        "url-stop",
+        "The Note Coffee",
+        "19:00-22:00",
+        duration=180,
+        role="supporting_stop",
+        category="food",
+    ).model_copy(
+        update={
+            "source": "selected_place",
+            "source_refs": ["https://example.com/hanoi"],
+        }
+    )
+
+    scheduled, overflow = PlaceSelectorService()._apply_source_priority_timeline(
+        [breakfast, optional, lunch, dinner, url_stop],
+        [],
+    )
+
+    assert "The Note Coffee" in [item.name for item in scheduled]
+    assert "Optional Finder stop" not in [item.name for item in scheduled]
+    assert [item.name for item in overflow] == ["Optional Finder stop"]
+
+
 def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -> None:
     selector = PlaceSelectorService(
         route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer())
@@ -220,6 +276,49 @@ def test_route_first_selector_schedules_by_minutes_instead_of_activity_count() -
     ]
     assert [item.name for item in scheduled] == ["Stop 1", "Stop 2", "Stop 3", "Stop 4"]
     assert result.unscheduled_places == []
+
+
+def test_elapsed_url_time_hint_does_not_leave_selected_stop_unscheduled() -> None:
+    selector = PlaceSelectorService(
+        route_optimizer=RouteFirstItineraryOptimizer(GeographicRouteOptimizer())
+    )
+    selection_input = PlaceSelectionInput(
+        intent=PlanningIntent(destination="Hà Nội"),
+        tripSpec=TripPlanningSpec(days=1),
+        regionKey="vn,ha-noi",
+        selectedPlaces=[
+            SelectedPlaceContext(
+                name=name,
+                ontologyType=(
+                    "DrinkDessert" if name == "The Note Coffee" else None
+                ),
+                sourceRefs=["https://example.com/hanoi"],
+                sourceDurationMinutes=120,
+                sourceOrder=index,
+                sourceTimeHint="morning",
+            )
+            for index, name in enumerate(
+                ("Morning source stop", "The Note Coffee"),
+                start=1,
+            )
+        ],
+        allowFinderGapFill=False,
+    )
+
+    result = selector.fill_agent_plan(selection_input)
+
+    scheduled_names = [
+        item.name
+        for day in result.final_days
+        for item in day.items
+    ]
+    assert "Morning source stop" in scheduled_names
+    assert "The Note Coffee" in scheduled_names
+    assert result.unscheduled_places == []
+    assert any(
+        "source-suggested morning" in warning
+        for warning in result.warnings
+    )
 
 
 class _RequiredTimingPlaceTool:
@@ -278,7 +377,7 @@ def test_route_first_uses_graph_preferred_time_window() -> None:
         for item in result.final_days[0].items
         if item.timeline_category == "activity"
     )
-    assert activity.time_window == "19:00-20:00"
+    assert activity.time_window == "19:15-20:15"
     assert activity.preferred_time_windows[0].start == "19:00"
     assert not any(
         "outside its graph-recommended" in warning for warning in result.warnings
@@ -298,10 +397,46 @@ def test_route_first_falls_back_when_graph_window_cannot_fit_duration() -> None:
         for item in result.final_days[0].items
         if item.timeline_category == "activity"
     )
-    assert activity.time_window == "09:00-11:30"
+    assert activity.time_window == "09:15-11:45"
     assert any(
         "outside its graph-recommended" in warning for warning in result.warnings
     )
+
+
+def test_selected_meal_uses_catalog_window_when_source_hint_is_missing() -> None:
+    place = SelectedPlaceContext.model_validate(
+        {
+            "placeId": "craft-beer",
+            "name": "Local Craft Beer Restaurant",
+            "ontologyType": "Restaurant",
+            "preferredTimeWindows": [{"start": "18:00", "end": "21:00"}],
+        }
+    )
+
+    assignments = PlaceSelectorService._selected_meal_role_refs([place])
+
+    assert assignments == {"dinner_meal": "craft-beer"}
+
+
+def test_second_evening_only_meal_is_not_moved_to_morning() -> None:
+    places = [
+        SelectedPlaceContext.model_validate(
+            {
+                "placeId": place_id,
+                "name": name,
+                "ontologyType": "Restaurant",
+                "preferredTimeWindows": [{"start": "18:00", "end": "21:00"}],
+            }
+        )
+        for place_id, name in (
+            ("craft-beer", "Local Craft Beer Restaurant"),
+            ("wine-bar", "Local Wine Bar"),
+        )
+    ]
+
+    assignments = PlaceSelectorService._selected_meal_role_refs(places)
+
+    assert assignments == {"dinner_meal": "craft-beer"}
 
 
 def test_overflow_retries_once_in_another_day() -> None:

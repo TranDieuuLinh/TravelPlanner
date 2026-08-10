@@ -61,6 +61,7 @@ from app.modules.plans.place_selector.timeline_policy import (
     activity_allocation_cost,
     hint_matches_activity_window,
     selected_activity_duration,
+    time_hint_period,
 )
 from app.modules.plans.place_selector.time_windows import (
     format_clock_window,
@@ -92,14 +93,10 @@ class PlaceSelectorService:
         self.place_tool = place_tool or EmptyPlaceSelectionTool()
         self.skeleton_builder = skeleton_builder or DaySkeletonBuilder()
         self.route_optimizer = route_optimizer or GeographicRouteOptimizer()
-        route_first_mode = bool(
-            getattr(self.route_optimizer, "supports_fixed_anchors", False)
-        )
-        effective_candidate_limit = (
-            max(250, max_candidates_per_block)
-            if route_first_mode
-            else max_candidates_per_block
-        )
+        # Gap filling is lazy and bounded per open time window. Route-first
+        # used to inflate this to 250, even though only one candidate can be
+        # committed for the current gap. Keep a small ranked reserve instead.
+        effective_candidate_limit = max_candidates_per_block
         self.max_candidates_per_block = effective_candidate_limit
         self.candidate_selector = candidate_selector or CandidateSelector(
             self.place_tool,
@@ -340,29 +337,20 @@ class PlaceSelectorService:
         selection_input: PlaceSelectionInput,
         *,
         enrich_routes: bool = True,
+        requirements_prepared: bool = False,
+        unresolved_requirements: list[UnscheduledPlace] | None = None,
     ) -> PlaceSelectionOutput:
         # Day creation belongs to PlaceSelector. TripThemePlanner supplies only
         # trip-wide requirements and never returns calendar structure.
-        required_places, unresolved_requirements = self._required_experience_places(
-            selection_input
-        )
-        selected_places = list(selection_input.selected_places)
-        known_refs = {place.stable_ref for place in selected_places}
-        for place in required_places:
-            if place.stable_ref not in known_refs:
-                selected_places.append(place)
-                known_refs.add(place.stable_ref)
-        effective_input = selection_input.model_copy(
-            update={"selected_places": selected_places}
-        )
-        selected_places = self._fill_nearby_graph_experiences(
-            selected_places,
-            region_key=selection_input.region_key,
-            interests=selection_input.intent.interests,
-        )
-        effective_input = effective_input.model_copy(
-            update={"selected_places": selected_places}
-        )
+        if requirements_prepared:
+            effective_input = selection_input
+            selected_places = list(selection_input.selected_places)
+            unresolved = list(unresolved_requirements or [])
+        else:
+            effective_input, unresolved = self.prepare_mandatory_candidates(
+                selection_input
+            )
+            selected_places = list(effective_input.selected_places)
         selection_blueprint = self._build_selection_blueprint(effective_input)
         result = self._fill_days(
             selection_blueprint,
@@ -395,7 +383,7 @@ class PlaceSelectorService:
             for item in day.items
         )
         warnings = list(result.warnings)
-        if unresolved_requirements:
+        if unresolved:
             warnings.append(
                 "Một số special experience bắt buộc chưa resolve được thành "
                 "địa điểm cụ thể và được giữ ở danh sách chưa xếp."
@@ -406,7 +394,7 @@ class PlaceSelectorService:
             tripCostEstimate=None,
             unscheduledPlaces=[
                 *result.unscheduled_places,
-                *unresolved_requirements,
+                *unresolved,
             ],
             finalUserStatus=result.final_user_status,
             finalPlanStatus=result.final_plan_status,
@@ -428,9 +416,36 @@ class PlaceSelectorService:
                     "requiredExperienceCount="
                     f"{len(selection_input.required_experiences)}",
                     "unscheduledPlaceCount="
-                    f"{len(result.unscheduled_places) + len(unresolved_requirements)}",
+                    f"{len(result.unscheduled_places) + len(unresolved)}",
                 ],
             ),
+        )
+
+    def prepare_mandatory_candidates(
+        self,
+        selection_input: PlaceSelectionInput,
+    ) -> tuple[PlaceSelectionInput, list[UnscheduledPlace]]:
+        """Resolve required experiences before capacity/day allocation.
+
+        This boundary intentionally excludes nearby/catalog gap-fill Places.
+        Those candidates are queried lazily only after mandatory Places have
+        claimed the available timeline.
+        """
+
+        required_places, unresolved = self._required_experience_places(
+            selection_input
+        )
+        mandatory_places = list(selection_input.selected_places)
+        known_refs = {place.stable_ref for place in mandatory_places}
+        for place in required_places:
+            if place.stable_ref not in known_refs:
+                mandatory_places.append(place)
+                known_refs.add(place.stable_ref)
+        return (
+            selection_input.model_copy(
+                update={"selected_places": mandatory_places}
+            ),
+            unresolved,
         )
 
     def _required_experience_places(
@@ -1461,12 +1476,36 @@ class PlaceSelectorService:
                     ]
                     candidate = None
                     candidate_start = cursor
-                    remaining_refs = remaining_source_refs
+                    period_order = {
+                        "morning": 0,
+                        "afternoon": 1,
+                        "evening": 2,
+                    }
+                    remaining_refs = sorted(
+                        remaining_source_refs,
+                        key=lambda ref: (
+                            not hint_matches_activity_window(
+                                selected_by_ref[ref].source_time_hint,
+                                available_window_index,
+                            ),
+                            selected_by_ref[ref].source_order or 10_000,
+                        ),
+                    )
                     for preferred_ref in remaining_refs:
                         selected = selected_by_ref.get(preferred_ref)
-                        if selected is None or not hint_matches_activity_window(
-                            selected.source_time_hint, available_window_index
+                        if selected is None:
+                            continue
+                        preferred_period = time_hint_period(
+                            selected.source_time_hint
+                        )
+                        if (
+                            preferred_period is not None
+                            and period_order[preferred_period]
+                            > available_window_index
                         ):
+                            # Do not pull an evening source stop into morning,
+                            # but once its preferred period has passed, keeping
+                            # the selected stop is more important than the hint.
                             continue
                         duration = selected_activity_duration(
                             selected.source_duration_minutes
@@ -1540,6 +1579,46 @@ class PlaceSelectorService:
                         if candidate is not None:
                             candidate_start = timing_start
                             break
+                    if (
+                        candidate is None
+                        and allow_place_suggestions
+                        and available_window_index == 2
+                    ):
+                        candidate = self.candidate_selector.select_evening_fallback(
+                            CandidateSelectionContext(
+                                selection_blueprint=selection_blueprint,
+                                brief=selection_brief.model_copy(
+                                    update={"allocated_selected_place_refs": []}
+                                ),
+                                block=DayBlock(
+                                    role="bonus_activity",
+                                    time_window=block.time_window,
+                                    duration_minutes=block.duration_minutes,
+                                    activity=True,
+                                    optional=True,
+                                ),
+                                selected_by_ref=selected_by_ref,
+                                plan_status=plan_status,
+                                user_status=user_status,
+                                avoided_place_names=avoided_place_names,
+                                intent_constraints=intent_constraints,
+                                allow_place_suggestions=True,
+                                constraint_policy=constraint_policy,
+                                budget_level=budget_level,
+                                rejected_selected_places=rejected_selected_places,
+                                intent_interests=intent_interests,
+                                travel_style=travel_style,
+                                strict_day_theme=False,
+                                enforce_opening_hours=True,
+                                occupied_items=occupied_items,
+                                current_day_items=day_items,
+                                bbox_filter=(
+                                    area_profile.bbox
+                                    if area_profile is not None
+                                    else None
+                                ),
+                            )
+                        )
                     if candidate is None and allow_place_suggestions:
                         candidate = self.candidate_selector.select(
                             CandidateSelectionContext(
@@ -1593,11 +1672,16 @@ class PlaceSelectorService:
                     cursor = candidate_start
                     selected_source = candidate.stable_ref in selected_by_ref
                     duration = candidate_duration(candidate, block)
+                    evening_fallback = (
+                        candidate.selection_method
+                        == "evening_gap_fill_offers_activity"
+                    )
                     scheduled_block = DayBlock(
-                        role=role,
+                        role="bonus_activity" if evening_fallback else role,
                         time_window=format_clock_window(cursor, duration),
                         duration_minutes=remaining_minutes,
                         activity=True,
+                        optional=evening_fallback,
                     )
                     item = self._build_activity_item(
                         candidate,
@@ -1783,7 +1867,7 @@ class PlaceSelectorService:
                 avoid_modes=avoid_modes,
             )
             prefit_items = routed_items
-            routed_items, overflow_items = self._apply_travel_aware_timeline(
+            routed_items, overflow_items = self._apply_source_priority_timeline(
                 routed_items,
                 transport_legs,
             )
@@ -1926,8 +2010,8 @@ class PlaceSelectorService:
                 CandidateRejection(
                     "insufficient_time",
                     (
-                        "The visit duration and calculated transitions do not "
-                        "fit between the fixed meal anchors."
+                        "The selected place could not fit within the available "
+                        "day after visit durations and travel time were included."
                     ),
                 ),
             )
@@ -1959,12 +2043,95 @@ class PlaceSelectorService:
             warnings=warnings,
         )
 
+    def _apply_source_priority_timeline(
+        self,
+        items: list[PlanItem],
+        transport_legs: list[PlanTransportLeg],
+        *,
+        day: int = 1,
+        warnings: list[str] | None = None,
+        plan_status: PlaceSelectionStatus | None = None,
+    ) -> tuple[list[PlanItem], list[PlanItem]]:
+        """Keep selected source stops ahead of optional Finder gap-fill.
+
+        Route-aware fitting happens after candidate selection, so an optional
+        suggestion scheduled earlier in the day could previously remain in the
+        plan while a later URL/user-selected stop overflowed. Remove the minimum
+        number of unlocked Finder activities needed to give selected stops the
+        first claim on the available timeline. Displaced suggestions remain in
+        overflow so the existing alternate-day retry can still place them.
+        """
+
+        remaining_items = list(items)
+        displaced_suggestions: list[PlanItem] = []
+        fit_warnings = warnings if warnings is not None else []
+        fit_status = plan_status or PlaceSelectionStatus()
+
+        def fit_current() -> tuple[list[PlanItem], list[PlanItem]]:
+            result = self.timeline_fitter.fit(
+                remaining_items,
+                transport_legs,
+                day=day,
+                warnings=fit_warnings,
+                plan_status=fit_status,
+            )
+            return result.items, result.overflow_items
+
+        fitted, overflow = fit_current()
+        meal_roles = {anchor.role for anchor in MEAL_ANCHORS}
+        while any(item.source == "selected_place" for item in overflow):
+            selected_start = min(
+                (
+                    parse_clock_minutes(item.time_window) or 24 * 60
+                    for item in overflow
+                    if item.source == "selected_place"
+                ),
+                default=24 * 60,
+            )
+            optional_suggestions = [
+                item
+                for item in fitted
+                if item.source == "finder_suggestion"
+                and not item.locked
+                and item.role not in meal_roles
+            ]
+            if not optional_suggestions:
+                break
+            suggestions_before_source = [
+                item
+                for item in optional_suggestions
+                if (parse_clock_minutes(item.time_window) or 0) <= selected_start
+            ]
+            displaced = max(
+                suggestions_before_source or optional_suggestions,
+                key=lambda item: (
+                    parse_clock_minutes(item.time_window) or 0,
+                    item.duration_minutes or 0,
+                ),
+            )
+            removed = False
+            retained_items: list[PlanItem] = []
+            for item in remaining_items:
+                is_displaced = (
+                    item.item_id == displaced.item_id
+                    if displaced.item_id is not None
+                    else item is displaced
+                )
+                if is_displaced and not removed:
+                    removed = True
+                    continue
+                retained_items.append(item)
+            remaining_items = retained_items
+            displaced_suggestions.append(displaced)
+            fitted, overflow = fit_current()
+        return fitted, [*overflow, *displaced_suggestions]
+
     @staticmethod
     def _apply_travel_aware_timeline(
         items: list[PlanItem],
         transport_legs: list[PlanTransportLeg],
     ) -> tuple[list[PlanItem], list[PlanItem]]:
-        """Fit activities between fixed meals using calculated leg durations.
+        """Fit a meal-anchored day using calculated leg durations.
 
         Missing provider legs use a small deterministic transition estimate. The
         estimate is intentionally transport-mode agnostic; route mode remains a
@@ -2001,14 +2168,34 @@ class PlaceSelectorService:
                 preferred_modes=preferred_modes,
                 avoid_modes=avoid_modes,
             )
-            fit = self.timeline_fitter.fit(
-                routed,
-                legs,
-                day=day.day,
-                warnings=warnings,
-                plan_status=plan_status,
-            )
-            for item in fit.overflow_items:
+            while True:
+                fitted_items, overflow_items = self._apply_source_priority_timeline(
+                    routed,
+                    legs,
+                    day=day.day,
+                    warnings=warnings,
+                    plan_status=plan_status,
+                )
+                displaced_suggestion = any(
+                    item.source == "finder_suggestion" and not item.locked
+                    for item in overflow_items
+                )
+                if not displaced_suggestion or len(fitted_items) == len(routed):
+                    break
+                # Recalculate the direct legs after removing optional gap-fill;
+                # the first priority pass may have used the conservative
+                # transition fallback for newly adjacent selected stops.
+                routed, legs = self.route_optimizer.optimize(
+                    fitted_items,
+                    preserve_order=True,
+                    day=day.day,
+                    trip_start_date=trip_start_date,
+                    preferred_modes=preferred_modes,
+                    avoid_modes=avoid_modes,
+                )
+            for item in overflow_items:
+                if item.source == "finder_suggestion" and not item.locked:
+                    continue
                 unscheduled.append(
                     UnscheduledPlace(
                         placeId=item.place_id,
@@ -2028,7 +2215,7 @@ class PlaceSelectorService:
                 )
             fitted_pairs = {
                 (origin.item_id, destination.item_id)
-                for origin, destination in zip(fit.items, fit.items[1:])
+                for origin, destination in zip(fitted_items, fitted_items[1:])
             }
             fitted_legs = [
                 leg
@@ -2038,7 +2225,7 @@ class PlaceSelectorService:
             enriched_days.append(
                 day.model_copy(
                     update={
-                        "items": fit.items,
+                        "items": fitted_items,
                         "transport_legs": fitted_legs,
                     }
                 )
@@ -2200,7 +2387,26 @@ class PlaceSelectorService:
                 if any(value in hint for value in ("dinner", "evening", "night"))
                 else None
             )
+            if role is None and place.preferred_time_windows:
+                role = next(
+                    (
+                        candidate_role
+                        for candidate_role in remaining_roles
+                        if MealStopSelector._matches_role(
+                            tuple(
+                                f"{window.start}-{window.end}"
+                                for window in place.preferred_time_windows
+                            ),
+                            candidate_role,
+                        )
+                    ),
+                    None,
+                )
             if role is None or role not in remaining_roles:
+                if hint or place.preferred_time_windows:
+                    # Keep a constrained venue unscheduled instead of silently
+                    # assigning a second evening-only stop to breakfast/lunch.
+                    continue
                 deferred.append(place)
                 continue
             assignments[role] = place.stable_ref
@@ -2260,6 +2466,31 @@ class PlaceSelectorService:
         plan_status: PlaceSelectionStatus,
     ) -> None:
         for item in items:
+            source_period = time_hint_period(item.source_time_hint)
+            scheduled_start = parse_clock_minutes(item.time_window)
+            scheduled_period = (
+                "morning"
+                if scheduled_start is not None and scheduled_start < 12 * 60
+                else "afternoon"
+                if scheduled_start is not None and scheduled_start < 18 * 60
+                else "evening"
+                if scheduled_start is not None
+                else None
+            )
+            if (
+                source_period is not None
+                and scheduled_period is not None
+                and source_period != scheduled_period
+            ):
+                message = (
+                    f"{item.name} was scheduled in {scheduled_period} instead "
+                    f"of the source-suggested {source_period} period so the "
+                    "selected source stop would remain in the plan."
+                )
+                if message not in warnings:
+                    warnings.append(message)
+                if message not in plan_status.warnings:
+                    plan_status.warnings.append(message)
             if not item.preferred_time_windows:
                 continue
             duration = item.duration_minutes or selected_activity_duration(None)

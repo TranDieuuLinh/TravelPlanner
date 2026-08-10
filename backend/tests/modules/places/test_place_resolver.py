@@ -375,10 +375,54 @@ def test_knowledge_graph_name_search_prioritizes_exact_alias_before_limit() -> N
 
         results = KnowledgeGraphPlaceRepository(session).search_active_by_names(
             ["Nhà thờ lớn"],
-            limit=1,
+            limit=5,
         )
 
         assert [result.id for result in results] == ["zzz-exact-alias"]
+
+
+def test_knowledge_graph_name_search_retrieves_similar_non_substring_name() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        theatre = KnowledgeEntity(
+            id="thang-long-water-puppet-theatre",
+            canonical_name="Thang Long Water Puppet Theatre",
+            normalized_name="thang long water puppet theatre",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        theatre.properties.extend(
+            [
+                KnowledgeProperty(key="place_type", value="Theatre"),
+                KnowledgeProperty(key="latitude", value="21.0288"),
+                KnowledgeProperty(key="longitude", value="105.8524"),
+            ]
+        )
+        gallery = KnowledgeEntity(
+            id="thang-long-art-gallery",
+            canonical_name="Thang Long Art Gallery",
+            normalized_name="thang long art gallery",
+            entity_type="TravelPlace",
+            status="active",
+        )
+        gallery.properties.extend(
+            [
+                KnowledgeProperty(key="place_type", value="Art gallery"),
+                KnowledgeProperty(key="latitude", value="21.0310"),
+                KnowledgeProperty(key="longitude", value="105.8500"),
+            ]
+        )
+        session.add_all([gallery, theatre])
+        session.commit()
+
+        results = KnowledgeGraphPlaceRepository(session).search_active_by_names(
+            ["Thang Long Theater", "Thang Long Water Puppet Show"],
+            limit=5,
+        )
+
+        assert results
+        assert results[0].id == "thang-long-water-puppet-theatre"
 
 
 def test_knowledge_graph_collapses_collocated_exact_duplicates_before_fallback(
@@ -1662,8 +1706,22 @@ def test_database_resolver_uses_route_context_to_choose_clear_branch() -> None:
         ),
     ]
 
+    google = RecordingFallbackResolver(
+        PlaceResolution(
+            candidate=candidates[1],
+            status="resolved",
+            provider="google_maps_scraper",
+            externalId="google-highlands",
+            name="Highlands Coffee",
+            latitude=Decimal("21.0500"),
+            longitude=Decimal("105.8300"),
+        )
+    )
     results = asyncio.run(
-        DatabasePlaceResolver(repository).resolve_many(
+        FallbackPlaceResolver(
+            DatabasePlaceResolver(repository),
+            google,
+        ).resolve_many(
             candidates,
             destination="Hà Nội",
         )
@@ -1672,6 +1730,7 @@ def test_database_resolver_uses_route_context_to_choose_clear_branch() -> None:
     assert results[1].status == "resolved"
     assert results[1].external_id == "highlands-near-route"
     assert results[1].resolution_reason == "matched_route_context"
+    assert google.calls == 0
 
 
 def test_database_route_context_cannot_promote_match_below_threshold() -> None:
@@ -1926,6 +1985,107 @@ def test_fallback_chain_calls_google_after_database_miss() -> None:
     assert result.provider == "google_maps_scraper"
     assert database.calls == 1
     assert google.calls == 1
+
+
+def test_fallback_chain_calls_google_when_similar_database_rows_are_all_weak(
+) -> None:
+    class SimilarityShortlistRepository(FakePlaceRepository):
+        def search_active_by_names(
+            self,
+            names: list[str],
+            *,
+            limit: int = 100,
+        ) -> list[Any]:
+            self.global_name_searches.append(names)
+            return self.places[:limit]
+
+    def weak_match(place_id: str, name: str) -> Any:
+        return SimpleNamespace(
+            id=place_id,
+            name=name,
+            place_type="cafe",
+            address="Hoàn Kiếm, Hà Nội",
+            city="Hà Nội",
+            country="Việt Nam",
+            country_code="VN",
+            primary_area="Hoàn Kiếm",
+            latitude=Decimal("21.0300"),
+            longitude=Decimal("105.8500"),
+            data_confidence="high",
+            source_fetched_at=datetime.now(timezone.utc),
+            metadata_json={},
+            region_key="vn,ha-noi",
+            status="active",
+        )
+
+    candidate = UnifiedPlaceCandidate(
+        name="Alpha Beta",
+        searchRegion="Hà Nội",
+    )
+    google = RecordingFallbackResolver(
+        PlaceResolution(
+            candidate=candidate,
+            status="resolved",
+            provider="google_maps_scraper",
+            externalId="google-note-coffee",
+            name="Alpha Beta",
+            latitude=Decimal("21.0300"),
+            longitude=Decimal("105.8500"),
+        )
+    )
+    resolver = FallbackPlaceResolver(
+        DatabasePlaceResolver(
+            SimilarityShortlistRepository(
+                [
+                    weak_match("alpine-better", "Alpine Better"),
+                    weak_match("alpine-beater", "Alpine Beater"),
+                ]
+            )
+        ),
+        google,
+    )
+
+    result = asyncio.run(resolver.resolve(candidate, destination="Hà Nội"))
+
+    assert result.status == "resolved"
+    assert result.provider == "google_maps_scraper"
+    assert result.provider_attempts[0].rejection_reason == "low_database_score"
+    assert google.calls == 1
+
+
+def test_database_resolver_treats_leading_article_as_exact_unique_name() -> None:
+    record = SimpleNamespace(
+        id="the-note-coffee",
+        name="The Note Coffee",
+        place_type="cafe",
+        address="Hoàn Kiếm, Hà Nội",
+        city="Hà Nội",
+        country="Việt Nam",
+        country_code="VN",
+        primary_area="Hoàn Kiếm",
+        latitude=Decimal("21.0300"),
+        longitude=Decimal("105.8500"),
+        data_confidence="high",
+        source_fetched_at=datetime.now(timezone.utc),
+        metadata_json={},
+        region_key="vn,ha-noi",
+        status="active",
+    )
+    candidate = UnifiedPlaceCandidate(
+        name="Note Coffee",
+        searchRegion="Hà Nội",
+    )
+
+    result = asyncio.run(
+        DatabasePlaceResolver(FakePlaceRepository([record])).resolve(
+            candidate,
+            destination="Hà Nội",
+        )
+    )
+
+    assert result.status == "resolved"
+    assert result.external_id == "the-note-coffee"
+    assert result.resolution_reason == "exact_unique_database_match"
 
 
 def test_fallback_chain_learns_alias_only_from_stable_google_identity() -> None:

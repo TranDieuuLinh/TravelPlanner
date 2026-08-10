@@ -12,7 +12,16 @@ Explorer
 TripThemePlanner
    |
    v
-PlaceSelector
+Mandatory Candidate Pool
+   |
+   v
+Capacity + Day Allocation
+   |
+   v
+Lazy Gap Fill + Timeline/Stop Ordering
+   |
+   v
+Detailed Route Enrichment
    |
    v
 Checker -> Main Plan / Backup Plan
@@ -30,7 +39,15 @@ hữu việc tạo đủ số ngày, chọn Place, phân bổ capacity và tối
   Application chiếu aggregate này thành intent/trip spec nội bộ cho các agent
   downstream; hai projection đó không được lưu riêng.
 - `TripThemePlanner` chỉ trả yêu cầu trải nghiệm ở cấp toàn chuyến.
-- `PlaceSelector` tạo `PlanDay[]` và `UnscheduledPlace[]`.
+- Mandatory pool chỉ gồm Place từ URL/user, must-visit và required
+  experience đã resolve. Suggestion của hệ thống không được làm tăng số ngày
+  hoặc trở thành nghĩa vụ chưa xếp.
+- Capacity/day allocation chạy sau TripThemePlanner để required experience đã
+  resolve cùng tham gia tính sức chứa.
+- `PlaceSelector` tìm candidate theo từng gap với pool nhỏ, tạo `PlanDay[]` và
+  `UnscheduledPlace[]`; candidate suggestion không được chọn không đi vào
+  `UnscheduledPlace`. Contract alternatives có thể bổ sung sau mà không trộn
+  chúng với nghĩa vụ chưa đáp ứng.
 - `Checker` kiểm tra plan đã hoàn chỉnh; warning giữ plan ở trạng thái `draft`.
 - Backup Plan dùng lại `tripThemes` của Main Plan và chạy lại PlaceSelector với
   constraint dự phòng. Nó không chạy lại LLM và không sửa Main Plan.
@@ -154,18 +171,28 @@ Input là `PlaceSelectionInput`:
 }
 ```
 
-PlaceSelector tạo đúng số day slot từ `tripSpec.days`; không cần DayBrief từ
-LLM. `sourceDay` hợp lệ được giữ, các Place còn lại được xếp theo
-`sourceOrder/priority` với capacity cố định hai activity mỗi ngày. Place không
-xếp được nằm trong `unscheduledPlaces` với reason code như
-`no_day_capacity`, `avoided_by_user` hoặc `no_available_slot`.
+Sau khi required experience được resolve, `ClusterFirstRepairSolver` tạo một
+TravelTimeMatrix khi cần, kiểm tra capacity của mandatory pool, chọn số ngày khi
+duration chưa khóa và phân bổ sơ bộ theo cụm địa lý. Duration đã khóa giữ nguyên
+số ngày; mandatory overflow đi vào `unscheduledPlaces` với
+`reasonCode=no_day_capacity`.
+
+PlaceSelector tạo đúng số day slot từ kết quả capacity; không cần DayBrief từ
+LLM. Nó xếp mandatory Place trước, sau đó mới phát hiện từng khoảng trống và tìm
+tối đa một pool nhỏ candidate cho gap đó. Số activity phụ thuộc duration,
+transition và meal window, không dùng quota count cố định. Place bắt buộc không
+xếp được nằm trong `unscheduledPlaces` với reason code như `no_day_capacity`,
+`avoided_by_user` hoặc `no_available_slot`; suggestion không được chọn không
+xuất hiện ở đây.
 
 Output là `PlaceSelectionOutput` với `finalDays`, `unscheduledPlaces`, trạng thái
 cuối, warning và trace có agent `place_selector`.
 
-Route-first chọn hai activity, tối ưu hoạt động ở cấp toàn chuyến, rồi chèn các
-meal stop đã xác minh gần anchor tuyến. Stop từ URL giữ provenance và thứ tự
-nguồn. Route provider lỗi thì dùng ước tính địa lý và đánh dấu `verified=false`.
+Route-first tối ưu hoạt động ở cấp toàn chuyến rồi chèn các meal stop đã xác
+minh gần anchor tuyến. Stop từ URL giữ provenance và thứ tự nguồn. Sau khi stop
+và timeline ổn định, detailed route enrichment mới lấy duration/distance/
+geometry cho từng leg; provider lỗi thì dùng ước tính địa lý và đánh dấu
+`verified=false`.
 
 ## Plan persistence và tương thích
 

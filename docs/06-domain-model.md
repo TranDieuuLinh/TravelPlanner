@@ -94,9 +94,11 @@ ghi khi operator truyền `--apply`.
   chỉ là đầu vào định vị, không phải `SelectedPlace`. Kết quả giữ origin đã
   resolve, tâm địa lý, candidate venue và khoảng cách gần đúng; nó không tự sửa
   plan hoặc biến text trong `TripIntent.notes` thành stop.
-- `Plan.regionStories`: câu chuyện/tip cấp destination từ creator, tách khỏi
-  place note. Mỗi phần tử giữ text tiếng Việt, evidence span nguyên văn, URL và
-  loại evidence; không có nội dung region-specific thì mảng rỗng.
+- `Plan.regionStories`: lịch sử và hướng dẫn cấp destination do operator quản lý
+  trong `destination_region_stories`, tách khỏi place note và nội dung URL do
+  user nhập. Mỗi phần tử giữ `destination_*` type, text, URL nguồn, loại evidence
+  và freshness. Planner đọc theo `region_key` rồi chụp dữ liệu vào revision;
+  caption/STT/OCR không được ghi hoặc chiếu thành `regionStories`.
 - `PlanItem`: tên hiển thị, địa chỉ đã resolve khi có, tọa độ, khung giờ, loại
   địa điểm, source summary gộp trong `notes` chỉ để tương thích revision cũ,
   câu chuyện/mẹo chỉ đọc tách theo nguồn trong `noteSources` (gồm text tiếng
@@ -107,6 +109,11 @@ ghi khi operator truyền `--apply`.
   như địa chỉ, rating và giờ mở cửa không được diễn đạt lại thành note.
   Khung giờ phải nằm trọn trong cùng ngày địa phương và không được đạt/vượt
   `24:00`.
+  Place catalog có bằng chứng alcohol rõ ràng giữ property
+  `preferred_time_windows` trực tiếp trên Knowledge Graph; Planner hydrate
+  property này vào `PlanItem.preferredTimeWindows`. Khung giờ catalog không được
+  ghi giả thành `sourceTimeHint`, vì field đó chỉ dành cho timing cue có trong
+  URL/nội dung người dùng.
   Mỗi ngày route-first giữ ba meal anchor sáng, trưa và tối. Quán ăn đã resolve
   từ URL được ưu tiên vào đúng anchor theo timing cue; anchor chưa có venue dùng
   item `finder_rule` tổng quát để giữ cấu trúc bữa ăn mà không giả mạo một địa

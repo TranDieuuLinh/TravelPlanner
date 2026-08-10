@@ -255,6 +255,110 @@ def _enforce_experience_diversity(
     return selected, warnings
 
 
+def _build_requirement_from_candidate(
+    candidate: GraphExperienceCandidate,
+    *,
+    index: int,
+) -> RequiredExperience:
+    concrete_ids = list(
+        dict.fromkeys(candidate.candidate_place_ids or candidate.place_ids)
+    )
+    if len(candidate.anchor_place_ids) == 1:
+        policy = RequiredExperienceSelectionPolicy.required_anchor
+        anchor_ids = list(candidate.anchor_place_ids)
+        candidate_ids: list[str] = []
+    elif concrete_ids:
+        policy = RequiredExperienceSelectionPolicy.choose_one
+        anchor_ids = []
+        candidate_ids = concrete_ids
+    else:
+        policy = RequiredExperienceSelectionPolicy.open_candidate
+        anchor_ids = []
+        candidate_ids = []
+    activity_label = candidate.activity_name or "Trải nghiệm đặc trưng tại điểm đến"
+    stable_suffix = (candidate.activity_id or f"candidate_{candidate.rank}").replace(
+        "activity_", ""
+    )
+    return RequiredExperience(
+        requirementId=f"destination_highlight_{index}_{stable_suffix}",
+        theme=activity_label,
+        category=candidate.category,
+        activityId=candidate.activity_id,
+        selectionPolicy=policy,
+        anchorPlaceIds=anchor_ids,
+        candidatePlaceIds=candidate_ids,
+        minimumRequired=1,
+        priority="must",
+        reason=(
+            "Điểm nhấn đặc trưng có SPECIAL_EXPERIENCE và địa điểm cụ thể "
+            "trong knowledge graph của điểm đến."
+        ),
+        claimIds=list(candidate.claim_ids),
+        evidenceClaimIds=list(candidate.claim_ids),
+        sourceRefs=list(candidate.source_refs),
+    )
+
+
+def _ensure_introductory_highlights(
+    requirements: list[RequiredExperience],
+    catalog: GraphCandidateCatalog,
+    planner_input: TripThemePlanningInput,
+    *,
+    limit: int,
+) -> tuple[list[RequiredExperience], bool]:
+    """Fill a bounded, diverse first-time introduction from special edges."""
+    selected = list(requirements[:limit])
+    used_candidates = {
+        candidate_diversity_key(candidate)
+        for requirement in selected
+        for candidate in catalog.candidates
+        if _candidate_matches_requirement(requirement, candidate)
+    }
+    candidates = [
+        candidate
+        for candidate in catalog.candidates
+        if candidate.is_special_experience
+        and (candidate.place_ids or candidate.candidate_place_ids)
+    ]
+    candidates.sort(
+        key=lambda candidate: _candidate_priority(candidate, planner_input),
+        reverse=True,
+    )
+    target = min(limit, len(candidates))
+    added = False
+    while len(selected) < target:
+        remaining = [
+            candidate
+            for candidate in candidates
+            if candidate_diversity_key(candidate) not in used_candidates
+            and not any(
+                _candidate_matches_requirement(requirement, candidate)
+                for requirement in selected
+            )
+        ]
+        if not remaining:
+            break
+        used_categories = {key[1] for key in used_candidates}
+        chosen = min(
+            remaining,
+            key=lambda candidate: (
+                candidate.category in used_categories,
+                -_candidate_priority(candidate, planner_input)[0],
+                -_candidate_priority(candidate, planner_input)[1],
+                -_candidate_priority(candidate, planner_input)[2],
+                candidate.rank,
+            ),
+        )
+        requirement = _build_requirement_from_candidate(
+            chosen,
+            index=len(selected) + 1,
+        )
+        selected.append(validate_required_experience(requirement, catalog))
+        used_candidates.add(candidate_diversity_key(chosen))
+        added = True
+    return selected, added
+
+
 class TripThemePlannerService:
     def __init__(
         self,
@@ -758,11 +862,24 @@ class TripThemePlannerService:
         highlight_limit = int(selection_policy["maximumHighlightExperiences"])
         truncated_highlights = len(required_experiences) > highlight_limit
         required_experiences = required_experiences[:highlight_limit]
+        required_experiences, added_introductory_highlights = (
+            _ensure_introductory_highlights(
+                required_experiences,
+                graph_catalog,
+                planner_input,
+                limit=highlight_limit,
+            )
+        )
 
         warnings = list(draft.warnings)
         if truncated_highlights:
             warnings.append(
                 "Danh sách điểm nhấn đã được giới hạn theo thời lượng chuyến đi."
+            )
+        if added_introductory_highlights:
+            warnings.append(
+                "Backend đã bổ sung điểm nhấn SPECIAL_EXPERIENCE có địa điểm "
+                "cụ thể để tạo phần giới thiệu đa dạng cho khách lần đầu."
             )
         if discarded_themes:
             warnings.append(

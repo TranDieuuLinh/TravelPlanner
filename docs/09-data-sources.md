@@ -7,6 +7,11 @@
   trong `place_type`, chuẩn hóa category riêng cho tìm kiếm/Planner; thiếu dữ
   liệu provider thì dùng `other` thay vì đoán từ nội dung nguồn.
 
+- Controlled tags được lưu bằng assertion có provenance, confidence, status,
+  rule version và thời hạn. Backfill phải ghi scan result cho mọi Place; không
+  có bằng chứng thì để trống tag thay vì điền theo quota. Runtime chỉ đọc
+  assertion còn hiệu lực và đạt ngưỡng tin cậy.
+
 - Domain model của ứng dụng không được phụ thuộc payload riêng của provider.
 - Ghi nguồn, provider ID, thời điểm lấy, giới hạn license và độ tin cậy.
 - Ưu tiên dữ liệu mới từ provider cho thông tin vận hành và kinh nghiệm creator
@@ -82,10 +87,11 @@ Các ô tìm địa điểm của Planner dùng chung autocomplete Knowledge Gra
 tối đa `topK` kết quả đã xếp hạng để người dùng chọn, mặc định `K=5` và API chỉ
 chấp nhận từ 1 đến 10. Search chỉ trả canonical venue entity có tọa độ, thuộc
 destination qua `LOCATED_IN`; không trả Area, Activity hoặc item. Khi graph
-không đủ `topK`, autocomplete trả ngay số kết quả hiện có và không gọi
-provider bên ngoài để lấp đầy. Chọn một option giữ Knowledge Graph entity ID
-cùng tọa độ; nhập văn bản tự do không được coi là đã xác nhận đúng
-place identity.
+trả ít nhất một kết quả, autocomplete trả ngay số kết quả hiện có và không gọi
+provider bên ngoài để lấp đầy. Khi graph không có kết quả, autocomplete fallback
+sang Google Maps Playwright worker đã cấu hình và chỉ nhận option có tọa độ hợp
+lệ. Chọn một option giữ provider identity (khi có) cùng tọa độ; nhập văn bản tự
+do không được coi là đã xác nhận đúng place identity.
 Segment được giữ theo đúng thứ tự OTP trả về
 (`WALK` tới trạm, `BUS` giữa các trạm, rồi `WALK` tới điểm đến), kèm tên điểm
 đầu/cuối, thời gian, khoảng cách, tuyến và hướng xe khi nguồn có dữ liệu.
@@ -221,10 +227,13 @@ instruction.
    credential/quota và chịu một deadline tổng mặc định 60 giây; timeout mạng
    không được nhân lên qua toàn bộ pool. YouTube
    Shorts có path `/shorts/{videoId}`, TikTok video, Instagram Reels và Facebook
-   Reels tải media công khai tạm thời rồi
+   Reels dùng một lượt `yt-dlp extract_info(download=True)` để vừa tải media
+   công khai tạm thời vừa lấy metadata chuẩn hóa, tránh lặp request, rồi
    Gemini Audio chạy ở chế độ ASR transcript-only bằng `responseJsonSchema` nhỏ;
-   frame vision trả structured OCR observations trên frame lấy mẫu. STT và frame
-   vision chạy song song. Khi cả hai hoàn tất, một Gemini Text structured-output
+   frame vision trả structured OCR observations trên frame lấy mẫu. Ngay khi
+   audio tách xong thì STT bắt đầu mà không chờ frame extraction; tương tự Vision
+   bắt đầu khi frame extraction xong mà không chờ audio. Khi cả hai hoàn tất,
+   một Gemini Text structured-output
    nhận transcript, OCR observations, caption/metadata, expected count và
    destination hint để tạo source observations hợp nhất. Mỗi evidence phải
    grounded trong đúng source; destination hint không phải evidence và model
@@ -250,10 +259,14 @@ instruction.
    Heading thành phố có duration như `Hanoi - 2 days` được chuẩn hóa thành
    `destinationStay` phủ hai ngày và bị loại khỏi danh sách stop; duration không
    được hiểu thành một phần tên địa điểm.
-7. Metadata và nhánh media chạy song song, ngoại trừ TikTok phải hoàn tất
-   metadata trước khi bắt đầu tải media để tránh burst request làm nền tảng trả
-   challenge. Khi trip chưa có destination, nhánh media chỉ chờ metadata đủ để
-   tạo location hint rồi mới gọi STT/Vision. Validate
+7. Reel video lấy metadata và media trong cùng một lượt `yt-dlp`; nếu lượt tải
+   hợp nhất thất bại, runtime mới thử metadata-only để vẫn có thể tạo candidate
+   từ metadata công khai. Metadata từ lượt tải hợp nhất được dùng làm location
+   hint trước khi gọi STT/Vision. Trước Gemini Text fusion, runtime thử fast path
+   deterministic chỉ khi structured STT/OCR đạt expected count, order đầy đủ,
+   evidence grounded và tên cùng order không xung đột; video không lời cũng có
+   thể dùng OCR-only khi đạt cùng điều kiện. Trường hợp còn transcript thô cần
+   suy luận hoặc có conflict vẫn gọi Gemini fusion. Validate
    JSON, gộp/dedupe metadata + STT + OCR + caption, giữ evidence theo từng nguồn
    rồi chuyển thành place candidate. Metadata location cụ thể làm anchor; tên
    STT/OCR khác spelling được giữ trong `observedAliases`. Nếu tên candidate dính thêm câu review,
@@ -434,12 +447,13 @@ Mỗi source note giữ text cùng URL, loại evidence và freshness khi có.
 `personalNotes` giữ text do user nhập. UI không được gán nhãn video cho
 `finder_suggestion` chỉ có dữ liệu provider.
 
-Nhận xét/tip áp dụng cho cả destination được lưu riêng trong
-`Plan.regionStories`. Caption/STT structurer trả story tiếng Việt cùng một
-evidence span nguyên văn; backend chuẩn hóa whitespace và chỉ nhận khi span có
-thật trong đúng source text. Chỉ nhắc tên vùng, story không có evidence, hoặc
-chi tiết chỉ thuộc một place đều không tạo region story. UI hiển thị story dưới
-tiêu đề destination cùng liên kết URL nguồn.
+Nội dung áp dụng cho cả destination được quản lý độc lập trong bảng
+`destination_region_stories` và chiếu vào `Plan.regionStories` theo
+`region_key`. Đây là catalog do operator quản lý, không lấy từ caption, STT, OCR
+hoặc URL intake của user. `destination_history` hiển thị trong Lịch sử; các type
+`destination_*` khác hiển thị trong Điều cần biết. Mỗi record giữ URL nguồn,
+loại evidence, freshness, thứ tự và trạng thái active. Plan revision giữ snapshot
+để lịch sử chuyến đi không đổi ngoài ý muốn khi catalog được cập nhật.
 
 ### Ma trận trạng thái nguồn
 

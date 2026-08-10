@@ -11,9 +11,10 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from difflib import SequenceMatcher
 from typing import Any, Iterator
 
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.knowledge_graph.model import (
@@ -26,6 +27,7 @@ from app.modules.knowledge_graph.text import (
     normalize_knowledge_text,
     repair_cp437_utf8_mojibake,
 )
+from app.modules.knowledge_graph.tag_model import KnowledgeEntityTagAssertion
 from app.modules.places.auto_statistics.domain import PlaceStatisticsRecord
 from app.modules.places.eligibility import place_record_is_search_eligible
 from app.modules.places.model import KnowledgeEntityImage
@@ -34,6 +36,8 @@ from app.modules.places.model import KnowledgeEntityImage
 SEARCHABLE_ALIAS_STATUSES = {"imported", "verified", "active", "approved"}
 VERIFIED_ALIAS_STATUSES = {"verified", "active", "approved"}
 PROJECTION_BATCH_SIZE = 1_000
+PORTABLE_SIMILARITY_SCAN_LIMIT = 5_000
+PORTABLE_RETRIEVAL_MINIMUM_SCORE = 0.30
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,7 @@ class KnowledgeGraphPlaceRecord:
     region_key: str
     status: str
     opening_hours: list[dict]
+    preferred_time_windows: list[dict]
     typical_duration_minutes: int | None
     source_platform: str | None
     source_link: str | None
@@ -109,6 +114,23 @@ class KnowledgeGraphPlaceRepository:
     ) -> list[KnowledgeGraphPlaceRecord]:
         return self._list_by_region(region_key, limit=limit)
 
+    def get_many(self, entity_ids: list[str]) -> list[KnowledgeGraphPlaceRecord]:
+        """Project a bounded set of canonical Places without N+1 lookups."""
+        ordered_ids = list(dict.fromkeys(entity_ids))
+        if not ordered_ids:
+            return []
+        entities = list(
+            self.session.scalars(
+                select(KnowledgeEntity).where(
+                    KnowledgeEntity.id.in_(ordered_ids),
+                    KnowledgeEntity.entity_type.in_(PLACE_TYPES),
+                )
+            )
+        )
+        projected = self._active(self._project(entities))
+        by_id = {record.id: record for record in projected}
+        return [by_id[entity_id] for entity_id in ordered_ids if entity_id in by_id]
+
     def list_active_for_planner_research(
         self, region_key: str | None = None, *, limit: int = 5000
     ) -> list[KnowledgeGraphPlaceRecord]:
@@ -127,68 +149,187 @@ class KnowledgeGraphPlaceRepository:
     def search_active_by_names(
         self, names: list[str], *, limit: int = 100
     ) -> list[KnowledgeGraphPlaceRecord]:
-        keys = [normalize_knowledge_text(name) for name in names]
-        keys = [key for key in keys if key]
-        if not keys:
+        keys = list(dict.fromkeys(
+            key
+            for name in names
+            if (key := normalize_knowledge_text(name))
+        ))
+        if not keys or limit < 1:
             return []
-        predicates = []
-        exact_predicates = []
-        prefix_predicates = []
-        for key in keys:
-            pattern = f"%{key}%"
-            prefix_pattern = f"{key}%"
-            exact_predicates.extend(
-                [
-                    KnowledgeEntity.normalized_name == key,
-                    KnowledgeEntity.aliases.any(
-                        and_(
-                            KnowledgeAlias.normalized_alias == key,
-                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
-                        )
-                    ),
-                ]
+
+        if self.session.get_bind().dialect.name == "postgresql":
+            entities = self._search_postgresql_by_similarity(keys, limit=limit)
+        else:
+            # Runtime is PostgreSQL-only. This bounded deterministic fallback
+            # keeps isolated SQLite tests representative without requiring
+            # PostgreSQL extension functions in the test process.
+            entities = self._search_portable_by_similarity(keys, limit=limit)
+        return self._active(self._project(entities))
+
+    def _search_postgresql_by_similarity(
+        self,
+        keys: list[str],
+        *,
+        limit: int,
+    ) -> list[KnowledgeEntity]:
+        """Retrieve exact identities first, then trigram/word-similar rows.
+
+        Migration 0035 installs ``pg_trgm`` plus GIN indexes for both
+        normalized name columns. The indexed similarity operators form a
+        broad shortlist; the resolver remains responsible for strict identity,
+        region, source-address and branch-margin checks.
+        """
+        exact_predicates = [
+            predicate
+            for key in keys
+            for predicate in (
+                KnowledgeEntity.normalized_name == key,
+                KnowledgeEntity.aliases.any(
+                    and_(
+                        KnowledgeAlias.normalized_alias == key,
+                        KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                    )
+                ),
             )
-            prefix_predicates.extend(
-                [
-                    KnowledgeEntity.normalized_name.ilike(prefix_pattern),
-                    KnowledgeEntity.aliases.any(
-                        and_(
-                            KnowledgeAlias.normalized_alias.ilike(prefix_pattern),
-                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
-                        )
-                    ),
-                ]
-            )
-            predicates.extend(
-                [
-                    KnowledgeEntity.normalized_name.ilike(pattern),
-                    KnowledgeEntity.aliases.any(
-                        and_(
-                            KnowledgeAlias.normalized_alias.ilike(pattern),
-                            KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
-                        )
-                    ),
-                ]
-            )
-        entities = list(
+        ]
+        exact_entities = list(
             self.session.scalars(
                 select(KnowledgeEntity)
                 .where(
                     KnowledgeEntity.entity_type.in_(PLACE_TYPES),
-                    or_(*predicates),
+                    or_(*exact_predicates),
                 )
-                .order_by(
-                    case(
-                        (or_(*exact_predicates), 0),
-                        (or_(*prefix_predicates), 1),
-                        else_=2,
-                    ),
-                    KnowledgeEntity.id,
-                )
+                .order_by(KnowledgeEntity.id)
                 .limit(limit)
             )
         )
-        return self._active(self._project(entities))
+        if exact_entities:
+            return exact_entities
+
+        predicates = []
+        scores = []
+        for key in keys:
+            alias_exact = and_(
+                KnowledgeAlias.normalized_alias == key,
+                KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+            )
+            alias_similar = and_(
+                KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                or_(
+                    alias_exact,
+                    KnowledgeAlias.normalized_alias.op("%")(key),
+                    KnowledgeAlias.normalized_alias.op("%>")(key),
+                ),
+            )
+            alias_score = (
+                select(
+                    func.max(
+                        func.greatest(
+                            case((alias_exact, 2.0), else_=0.0),
+                            func.similarity(
+                                KnowledgeAlias.normalized_alias,
+                                key,
+                            ),
+                            func.word_similarity(
+                                key,
+                                KnowledgeAlias.normalized_alias,
+                            ),
+                        )
+                    )
+                )
+                .where(
+                    KnowledgeAlias.entity_id == KnowledgeEntity.id,
+                    KnowledgeAlias.status.in_(SEARCHABLE_ALIAS_STATUSES),
+                )
+                .correlate(KnowledgeEntity)
+                .scalar_subquery()
+            )
+            predicates.extend(
+                [
+                    KnowledgeEntity.normalized_name == key,
+                    KnowledgeEntity.normalized_name.op("%")(key),
+                    KnowledgeEntity.normalized_name.op("%>")(key),
+                    KnowledgeEntity.aliases.any(alias_similar),
+                ]
+            )
+            scores.append(
+                func.greatest(
+                    case(
+                        (KnowledgeEntity.normalized_name == key, 2.0),
+                        else_=0.0,
+                    ),
+                    func.similarity(KnowledgeEntity.normalized_name, key),
+                    func.word_similarity(key, KnowledgeEntity.normalized_name),
+                    func.coalesce(alias_score, 0.0),
+                )
+            )
+
+        retrieval_score = func.greatest(*scores)
+        statement = (
+            select(KnowledgeEntity)
+            .where(
+                KnowledgeEntity.entity_type.in_(PLACE_TYPES),
+                or_(*predicates),
+            )
+            .order_by(
+                retrieval_score.desc(),
+                KnowledgeEntity.canonical_name,
+                KnowledgeEntity.id,
+            )
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
+    def _search_portable_by_similarity(
+        self,
+        keys: list[str],
+        *,
+        limit: int,
+    ) -> list[KnowledgeEntity]:
+        entities = list(
+            self.session.scalars(
+                select(KnowledgeEntity)
+                .where(KnowledgeEntity.entity_type.in_(PLACE_TYPES))
+                .order_by(KnowledgeEntity.id)
+                .limit(PORTABLE_SIMILARITY_SCAN_LIMIT)
+            )
+        )
+        exact_entities = [
+            entity
+            for entity in entities
+            if any(
+                key == name
+                for key in keys
+                for name in (
+                    entity.normalized_name,
+                    *(
+                        alias.normalized_alias
+                        for alias in entity.aliases
+                        if alias.status in SEARCHABLE_ALIAS_STATUSES
+                    ),
+                )
+            )
+        ]
+        if exact_entities:
+            return exact_entities[:limit]
+
+        ranked = [
+            (_portable_entity_retrieval_score(entity, keys), entity)
+            for entity in entities
+        ]
+        ranked = [
+            item
+            for item in ranked
+            if item[0] >= PORTABLE_RETRIEVAL_MINIMUM_SCORE
+        ]
+        ranked.sort(
+            key=lambda item: (
+                -item[0],
+                normalize_knowledge_text(item[1].canonical_name),
+                item[1].id,
+            )
+        )
+        return [entity for _, entity in ranked[:limit]]
 
     def search_active_for_autocomplete(
         self,
@@ -375,6 +516,33 @@ class KnowledgeGraphPlaceRepository:
                         KnowledgeGraphImage(image.image_url)
                     )
 
+        effective_tags: dict[str, list[str]] = {
+            entity_id: [] for entity_id in entity_ids
+        }
+        for entity_id_batch in _batches(entity_ids, PROJECTION_BATCH_SIZE):
+            assertions = self.session.scalars(
+                select(KnowledgeEntityTagAssertion)
+                .where(
+                    KnowledgeEntityTagAssertion.entity_id.in_(entity_id_batch),
+                    KnowledgeEntityTagAssertion.status.in_(
+                        ("verified", "source_backed", "inferred")
+                    ),
+                    KnowledgeEntityTagAssertion.confidence >= 0.70,
+                    or_(
+                        KnowledgeEntityTagAssertion.expires_at.is_(None),
+                        KnowledgeEntityTagAssertion.expires_at > func.now(),
+                    ),
+                )
+                .order_by(
+                    KnowledgeEntityTagAssertion.entity_id,
+                    KnowledgeEntityTagAssertion.tag_key,
+                    KnowledgeEntityTagAssertion.confidence.desc(),
+                )
+            )
+            for assertion in assertions:
+                if assertion.tag_key not in effective_tags[assertion.entity_id]:
+                    effective_tags[assertion.entity_id].append(assertion.tag_key)
+
         return [
             _record_from_entity(
                 entity,
@@ -382,6 +550,7 @@ class KnowledgeGraphPlaceRepository:
                 aliases[entity.id],
                 verified_aliases[entity.id],
                 images[entity.id],
+                effective_tags[entity.id],
             )
             for entity in entities
         ]
@@ -393,6 +562,7 @@ def _record_from_entity(
     aliases: list[str],
     verified_aliases: list[str],
     images: list[KnowledgeGraphImage],
+    effective_tags: list[str],
 ) -> KnowledgeGraphPlaceRecord:
     metadata = _repair_text_tree(_json_object(props.get("metadata")))
     # ``description`` is stored as a flat property in the legacy graph dump,
@@ -402,7 +572,18 @@ def _record_from_entity(
         "description",
         repair_cp437_utf8_mojibake(props.get("description") or "") or None,
     )
-    metadata.setdefault("tags", _tags(props))
+    stored_tags = metadata.get("tags")
+    if not isinstance(stored_tags, list):
+        stored_tags = []
+    metadata["tags"] = list(
+        dict.fromkeys(
+            [
+                *(str(tag) for tag in stored_tags if isinstance(tag, str)),
+                *_tags(props),
+                *effective_tags,
+            ]
+        )
+    )
     metadata.setdefault("aliases", aliases)
     metadata.setdefault("verifiedAliases", verified_aliases)
     return KnowledgeGraphPlaceRecord(
@@ -420,6 +601,9 @@ def _record_from_entity(
         region_key=props.get("region_key") or "vn,unmapped",
         status=props.get("catalog_status") or "active",
         opening_hours=_json_list_of_objects(props.get("opening_hours")),
+        preferred_time_windows=_json_list_of_objects(
+            props.get("preferred_time_windows")
+        ),
         typical_duration_minutes=_integer(props.get("typical_duration_minutes")),
         source_platform=_text(props.get("source_platform")),
         source_link=_text(props.get("source_url")),
@@ -507,6 +691,53 @@ def _tags(props: dict[str, str]) -> list[str]:
         props.get("accommodation_type"),
     ]
     return [value for value in values if value]
+
+
+def _portable_entity_retrieval_score(
+    entity: KnowledgeEntity,
+    keys: list[str],
+) -> float:
+    names = [entity.normalized_name]
+    names.extend(
+        alias.normalized_alias
+        for alias in entity.aliases
+        if alias.status in SEARCHABLE_ALIAS_STATUSES
+    )
+    return max(
+        (
+            _portable_text_similarity(key, name)
+            for key in keys
+            for name in names
+        ),
+        default=0.0,
+    )
+
+
+def _portable_text_similarity(query: str, value: str) -> float:
+    """Approximate the PostgreSQL shortlist for isolated SQLite tests."""
+    query_key = normalize_knowledge_text(query)
+    value_key = normalize_knowledge_text(value)
+    if not query_key or not value_key:
+        return 0.0
+    if query_key == value_key:
+        return 2.0
+
+    query_tokens = query_key.split()
+    value_tokens = value_key.split()
+    if _contains_token_sequence(value_tokens, query_tokens):
+        return max(0.80, 0.92 - 0.02 * (len(value_tokens) - len(query_tokens)))
+    if _contains_token_sequence(query_tokens, value_tokens):
+        return max(0.75, 0.88 - 0.02 * (len(query_tokens) - len(value_tokens)))
+    return SequenceMatcher(None, query_key, value_key).ratio()
+
+
+def _contains_token_sequence(haystack: list[str], needle: list[str]) -> bool:
+    if not needle or len(needle) > len(haystack):
+        return False
+    return any(
+        haystack[index:index + len(needle)] == needle
+        for index in range(len(haystack) - len(needle) + 1)
+    )
 
 
 def _batches(values: list[str], size: int) -> Iterator[list[str]]:

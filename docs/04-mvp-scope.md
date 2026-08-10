@@ -67,7 +67,11 @@ nhưng MVP chỉ hoàn thành khi cả hai hành trình vượt qua tiêu chí n
 - Câu hỏi làm rõ có giá trị cao, cập nhật cùng draft.
 - TripThemePlanner giữ tên tương thích, chọn tối đa 1–3 điểm nhấn từ
   `SPECIAL_EXPERIENCE`, cho phép rỗng và không tạo ngày/theme quota.
-- PlaceSelector tạo đủ số ngày từ `tripSpec.days`, chọn địa điểm và tối ưu tuyến.
+- Sau TripThemePlanner, mandatory pool gồm URL/user Place và required experience
+  đã resolve; capacity solver quyết định số ngày khi duration chưa khóa.
+- PlaceSelector xếp mandatory Place trước, chỉ tìm candidate theo từng gap còn
+  trống, rồi tạo timeline và thứ tự stop. Suggestion không được chọn không trở
+  thành `UnscheduledPlace`.
 - Tạo `Main Plan` theo ngày với item ổn định, khung giờ, thời lượng, place, chi
   phí, nguồn và ghi chú.
 - PlaceSelector ưu tiên `SelectedPlaces`, gom khu vực hợp lý và đưa địa điểm chưa xếp

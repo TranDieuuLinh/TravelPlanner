@@ -13,6 +13,7 @@ from app.modules.plans.explorer.schema import (
 )
 from app.modules.plans.explorer.place_policy import (
     concise_source_activity,
+    has_url_source,
     is_credible_url_candidate,
 )
 from app.modules.plans.explorer.tools.url_reels.schema import (
@@ -36,6 +37,11 @@ class PlaceCandidateAggregator:
         # treating one generated URL candidate as proof that the whole source
         # was covered.
         candidates.extend(self._from_url_results(url_results))
+        candidates = [
+            variant
+            for candidate in candidates
+            for variant in _guarded_candidate_variants(candidate)
+        ]
 
         destination_key = _dedupe_key(destination)
         merged: dict[str, UnifiedPlaceCandidate] = {}
@@ -203,6 +209,120 @@ class PlaceCandidateAggregator:
                 for name in result.extracted_context.extracted_places
             )
         return candidates
+
+
+_COMPOSITE_PLACE_SUFFIX = re.compile(
+    r"\b(?:"
+    r"bridge|cathedral|church|citadel|garden|lake|market|mausoleum|"
+    r"museum|pagoda|palace|park|prison|square|st\.?|street|temple|"
+    r"theat(?:er|re)"
+    r")\s*$",
+    flags=re.IGNORECASE,
+)
+
+_PLACE_KIND_TOKENS = {
+    "bridge",
+    "cathedral",
+    "church",
+    "citadel",
+    "garden",
+    "lake",
+    "market",
+    "mausoleum",
+    "museum",
+    "pagoda",
+    "palace",
+    "park",
+    "prison",
+    "square",
+    "st",
+    "street",
+    "temple",
+    "theater",
+    "theatre",
+}
+
+_EQUIVALENT_PLACE_KINDS = {
+    "st": "street",
+    "theatre": "theater",
+}
+
+
+def _guarded_candidate_variants(
+    candidate: UnifiedPlaceCandidate,
+) -> list[UnifiedPlaceCandidate]:
+    """Repair only source-grounded activity/composite boundary mistakes.
+
+    The fuser owns semantic extraction. These rules are deliberately narrow:
+    an activity must already be stored separately before its leading phrase is
+    removed, and a composite is split only when both halves end like concrete
+    place names. Free-form proper names are otherwise preserved verbatim.
+    """
+    if not has_url_source(candidate):
+        return [candidate]
+
+    normalized = _strip_separate_activity_prefix(candidate)
+    return _split_composite_place_candidate(normalized)
+
+
+def _strip_separate_activity_prefix(
+    candidate: UnifiedPlaceCandidate,
+) -> UnifiedPlaceCandidate:
+    activity = " ".join((candidate.source_activity or "").split())
+    name = " ".join(candidate.name.split())
+    if not activity or not name:
+        return candidate
+    match = re.fullmatch(
+        rf"{re.escape(activity)}\s+(?:at|in|on|ở|tại)\s+(?P<place>.+)",
+        name,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return candidate
+    place_name = match.group("place").strip(" .,;:-")
+    if not place_name or len(place_name) > 80 or len(place_name.split()) > 10:
+        return candidate
+    return candidate.model_copy(
+        update={
+            "name": place_name,
+            "original_name": candidate.original_name or candidate.name,
+        }
+    )
+
+
+def _split_composite_place_candidate(
+    candidate: UnifiedPlaceCandidate,
+) -> list[UnifiedPlaceCandidate]:
+    parts = [
+        part.strip(" .,;:-")
+        for part in re.split(
+            r"\s+(?:&|and)\s+",
+            candidate.name,
+            flags=re.IGNORECASE,
+        )
+    ]
+    if (
+        len(parts) != 2
+        or not all(parts)
+        or not all(_COMPOSITE_PLACE_SUFFIX.search(part) for part in parts)
+    ):
+        return [candidate]
+
+    original_name = candidate.original_name or candidate.name
+    return [
+        candidate.model_copy(
+            deep=True,
+            update={
+                "name": part,
+                "original_name": original_name,
+                "alternate_names": [],
+                "search_names": [],
+                "observed_aliases": [],
+                "generated_lookup_aliases": [],
+            },
+        )
+        for part in parts
+    ]
 
 
 def _recover_place_name_from_evidence(
@@ -452,6 +572,10 @@ def _same_place_name(left: str, right: str, destination: str) -> bool:
         return True
     if len(left_tokens) != len(right_tokens):
         return False
+    left_kind = _place_kind(left_tokens)
+    right_kind = _place_kind(right_tokens)
+    if left_kind and right_kind and left_kind != right_kind:
+        return False
     differences = 0
     for left_token, right_token in zip(left_tokens, right_tokens, strict=True):
         if left_token == right_token:
@@ -463,6 +587,13 @@ def _same_place_name(left: str, right: str, destination: str) -> bool:
             return False
         differences += 1
     return differences == 1
+
+
+def _place_kind(tokens: list[str]) -> str | None:
+    terminal = tokens[-1]
+    if terminal not in _PLACE_KIND_TOKENS:
+        return None
+    return _EQUIVALENT_PLACE_KINDS.get(terminal, terminal)
 
 
 def _contains_token_sequence(values: list[str], expected: list[str]) -> bool:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.modules.plans.domain.entities import PlanItem
+from app.modules.plans.domain.entities import PreferredTimeWindow
 from app.modules.plans.place_selector.place_tool import SelectablePlace
 from app.modules.plans.place_selector.meal_selector import MealStopSelector
 from app.modules.plans.explorer.place_policy import is_meal_place
@@ -172,6 +173,41 @@ def test_meals_are_bounded_by_activity_radius_before_quality_ranking() -> None:
 
     assert selected["breakfast_meal"] is not None
     assert selected["breakfast_meal"].place_id == "near"
+
+
+def test_catalog_preferred_window_keeps_alcohol_venue_out_of_breakfast() -> None:
+    evening = _food(
+        "craft-beer",
+        "Local Craft Beer Restaurant",
+        21.03,
+        105.801,
+        "Restaurant",
+    ).model_copy(
+        update={
+            "preferred_time_windows": [
+                PreferredTimeWindow(start="18:00", end="21:00")
+            ]
+        }
+    )
+    places = [
+        evening,
+        _food("breakfast", "Breakfast restaurant", 21.03, 105.802, "Restaurant"),
+        _food("lunch", "Lunch restaurant", 21.03, 105.803, "Restaurant"),
+    ]
+
+    selected = MealStopSelector(_PlaceTool(places)).select_for_trip(
+        region_key="vn,ha-noi",
+        activities_by_day={
+            1: [
+                _activity("activity-1", 21.03, 105.80),
+                _activity("activity-2", 21.03, 105.82),
+            ]
+        },
+        excluded_place_ids={"activity-1", "activity-2"},
+    )
+
+    assert selected[1]["breakfast_meal"].place_id != "craft-beer"
+    assert selected[1]["dinner_meal"].place_id == "craft-beer"
 
 
 def test_trip_meals_load_specialties_once_and_avoid_duplicate_dishes() -> None:

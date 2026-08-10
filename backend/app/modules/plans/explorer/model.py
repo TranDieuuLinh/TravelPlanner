@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -44,6 +47,51 @@ class SourceDocument(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class DestinationRegionStory(Base):
+    """Curated destination guidance projected into immutable plan snapshots."""
+
+    __tablename__ = "destination_region_stories"
+    __table_args__ = (
+        CheckConstraint(
+            "story_type LIKE 'destination_%'",
+            name="ck_destination_region_stories_type",
+        ),
+        UniqueConstraint(
+            "region_key",
+            "story_type",
+            "source_url",
+            name="uq_destination_region_stories_source",
+        ),
+        Index(
+            "ix_destination_region_stories_region_active_order",
+            "region_key",
+            "is_active",
+            "sort_order",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    region_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    story_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_types_json: Mapped[list[str]] = mapped_column(
+        "evidence_types", JSON, nullable=False, default=list
+    )
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

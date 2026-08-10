@@ -82,12 +82,6 @@ from app.modules.plans.schema import (
     PlanningContextCreate,
     SelectedPlaceCreate,
 )
-from app.modules.plans.solver.candidate_pool import (
-    build_selected_place_pool,
-    selected_place_identity,
-)
-from app.modules.plans.solver.cluster_first_repair import ClusterFirstRepairSolver
-from app.modules.plans.solver.contracts import PlanningSolver
 from app.modules.plans.workflows.backup_plan_workflow import BackupPlanWorkflow
 from app.modules.plans.workflows.main_plan_workflow import MainPlanWorkflow
 from app.modules.plans.dto.agent_contracts import (
@@ -124,7 +118,6 @@ class PlanService:
         preference_learning: PreferenceLearningService | None = None,
         traveler_profile_repository: TravelerProfileRepository | None = None,
         background_preference_writer: BackgroundPreferenceWriter | None = None,
-        planning_solver: PlanningSolver | None = None,
         explorer_timing_logger: ExplorerTimingLogger | None = None,
         place_alias_enricher: PlaceAliasEnricher | None = None,
         planning_runs: PlanningRunRepository | None = None,
@@ -143,7 +136,6 @@ class PlanService:
         self.preference_learning = preference_learning or PreferenceLearningService()
         self.traveler_profile_repository = traveler_profile_repository
         self.background_preference_writer = background_preference_writer
-        self.planning_solver = planning_solver or ClusterFirstRepairSolver()
         self.explorer_timing_logger = explorer_timing_logger
         self.place_alias_enricher = place_alias_enricher
         self.planning_runs = planning_runs
@@ -163,7 +155,10 @@ class PlanService:
             FeatureMapItem(
                 stage="select",
                 feature="PlaceSelector",
-                description="Create day slots, select Places, optimize routes, and commit each day.",
+                description=(
+                    "Build the mandatory pool, allocate day capacity, then lazily "
+                    "fill real timeline gaps before detailed route enrichment."
+                ),
             ),
             FeatureMapItem(
                 stage="backup",
@@ -1094,7 +1089,14 @@ class PlanService:
         reuse_theme_plan: Plan | None = None,
     ) -> tuple[Plan, PlanTimingReport]:
         selected_places = list(payload.selected_places)
-        region_stories = list(payload.region_stories)
+        region_stories = (
+            list(payload.region_stories)
+            if self.explorer_persistence is None
+            else self.explorer_persistence.load_destination_region_stories(
+                payload.intent.destination,
+                payload.region_key,
+            )
+        )
         if payload.intake_id and self.explorer_persistence is not None:
             selected_places = _merge_selected_places(
                 selected_places,
@@ -1103,63 +1105,6 @@ class PlanService:
                     payload.user_id,
                 ),
             )
-            load_region_stories = getattr(
-                self.explorer_persistence,
-                "load_region_stories",
-                None,
-            )
-            if callable(load_region_stories):
-                persisted_region_stories = load_region_stories(
-                    payload.intake_id,
-                    payload.user_id,
-                )
-                if persisted_region_stories:
-                    region_stories = persisted_region_stories
-        # Resolve day capacity and geographic assignment once, before the LLM
-        # theme and PlaceSelector stages. This replaces full workflow retries
-        # for 3/4/5/6... days with one deterministic in-memory solve.
-        preflight_started = time.perf_counter()
-        requested_days = payload.trip_spec.days
-        pool = build_selected_place_pool(selected_places)
-        optimizer = getattr(
-            self.main_workflow.place_selector,
-            "route_optimizer",
-            None,
-        )
-        matrix_provider = getattr(optimizer, "matrix_provider", None)
-        solution = self.planning_solver.solve(
-            pool,
-            requested_days=payload.trip_spec.days,
-            days_locked=not payload.expand_days_to_fit_selected_places,
-            matrix_provider=matrix_provider,
-        )
-        assigned_days = solution.candidate_day
-        selected_places = [
-            place.model_copy(
-                update={
-                    "source_day": (
-                        place.source_day
-                        if not payload.expand_days_to_fit_selected_places
-                        and place.source_day is not None
-                        else assigned_days.get(selected_place_identity(place))
-                        or place.source_day
-                    ),
-                }
-            )
-            for place in selected_places
-        ]
-        if (
-            payload.expand_days_to_fit_selected_places
-            and solution.day_count != payload.trip_spec.days
-        ):
-            payload = payload.model_copy(
-                update={
-                    "trip_spec": payload.trip_spec.model_copy(
-                        update={"days": solution.day_count}
-                    ),
-                }
-            )
-        preflight_seconds = time.perf_counter() - preflight_started
         workflow_payload = payload.model_copy(
             update={
                 "selected_places": selected_places,
@@ -1170,20 +1115,6 @@ class PlanService:
             workflow_payload,
             on_timing_update=on_timing_update,
             reuse_theme_plan=reuse_theme_plan,
-            capacity_preflight=(
-                preflight_seconds,
-                {
-                    "candidateCount": len(pool.candidates),
-                    "requestedDays": requested_days,
-                    "selectedDays": solution.day_count,
-                    "daysLocked": not payload.expand_days_to_fit_selected_places,
-                    "unscheduledCandidateCount": len(
-                        solution.unscheduled_candidate_ids
-                    ),
-                    "matrixProvider": solution.matrix.provider,
-                    "preflightMatrixBuildCount": 1,
-                },
-            ),
         )
         if not workflow_payload.allow_replace_source_places:
             plan = _ensure_url_place_coverage(plan, selected_places)

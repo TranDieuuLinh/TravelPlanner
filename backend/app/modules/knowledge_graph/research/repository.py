@@ -134,6 +134,7 @@ class ScopeResolutionRepository:
         region_key: str,
         *,
         activity_terms: list[str] | None = None,
+        activity_ids: list[str] | None = None,
         limit: int = 1000,
     ) -> list[OfferedActivityCandidate]:
         """Project in-scope ``Place -> OFFERS_ACTIVITY -> Activity`` paths.
@@ -174,16 +175,7 @@ class ScopeResolutionRepository:
             .where(
                 located.relationship_type == "LOCATED_IN",
                 located.to_entity_id.in_(area_ids),
-                place.entity_type.in_(
-                    (
-                        "TravelPlace",
-                        "DrinkDessert",
-                        "Attraction",
-                        "Entertainment",
-                        "Cafe",
-                        "Shop",
-                    )
-                ),
+                place.entity_type.in_(PLACE_TYPES),
                 activity.entity_type.in_(ActivityTypes),
             )
             .order_by(
@@ -196,6 +188,14 @@ class ScopeResolutionRepository:
             )
             .limit(limit)
         )
+        if activity_ids:
+            # Dedicated planner fallbacks consume only the reconciled catalog
+            # source. Older provider-URL taxonomy edges remain available for
+            # audit but cannot silently enter the itinerary.
+            statement = statement.where(
+                activity.id.in_(activity_ids),
+                offer.source == "classifier:night-activity-offers:v1",
+            )
         normalized_terms = list(
             dict.fromkeys(
                 normalized
@@ -204,7 +204,7 @@ class ScopeResolutionRepository:
             )
         )
         rows = []
-        if normalized_terms:
+        if normalized_terms and not activity_ids:
             rows = self.db.execute(
                 statement.where(
                     or_(

@@ -528,6 +528,76 @@ def test_explorer_recovers_concise_place_name_from_evidence() -> None:
     )
 
 
+def test_explorer_removes_activity_prefix_only_when_activity_is_separate() -> None:
+    source_url = "https://www.instagram.com/reel/example"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hanoi",
+        generated=[
+            UnifiedPlaceCandidate(
+                name="Watch the train pass on Train Street",
+                sources=[{"type": "url", "url": source_url}],
+                sourceActivity="Watch the train pass",
+                sourceEvidence={
+                    "caption": "Watch the train pass on Train Street"
+                },
+                confidence=0.95,
+            )
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert [candidate.name for candidate in candidates] == ["Train Street"]
+    assert candidates[0].original_name == (
+        "Watch the train pass on Train Street"
+    )
+    assert candidates[0].source_activity == "Watch the train pass"
+
+
+def test_explorer_splits_two_concrete_places_from_composite_identity() -> None:
+    source_url = "https://www.instagram.com/reel/example"
+    composite = "Ho Chi Minh Mausoleum & One Pillar Pagoda"
+
+    candidates = PlaceCandidateAggregator().aggregate(
+        destination="Hanoi",
+        generated=[
+            UnifiedPlaceCandidate(
+                name=composite,
+                sources=[{"type": "url", "url": source_url}],
+                sourceActivity="Visit the mausoleum and pagoda",
+                sourceEvidence={"ocr": composite},
+                alternateNames=["Combined stop"],
+                confidence=0.95,
+            ),
+            UnifiedPlaceCandidate(
+                name="Ho Chi Minh Museum",
+                sources=[{"type": "url", "url": source_url}],
+                sourceActivity="Visit the museum",
+                sourceEvidence={"ocr": "Ho Chi Minh Museum"},
+                confidence=0.95,
+            ),
+        ],
+        explicit=[],
+        url_results=[],
+    )
+
+    assert [candidate.name for candidate in candidates] == [
+        "Ho Chi Minh Mausoleum",
+        "One Pillar Pagoda",
+        "Ho Chi Minh Museum",
+    ]
+    assert [candidate.original_name for candidate in candidates] == [
+        composite,
+        composite,
+        None,
+    ]
+    assert all(
+        not candidate.alternate_names
+        for candidate in candidates[:2]
+    )
+
+
 def test_brandneweats_hanoi_cache_aggregates_to_eight_places() -> None:
     source_url = (
         "https://www.tiktok.com/@brandneweats/video/7662905162960243989"

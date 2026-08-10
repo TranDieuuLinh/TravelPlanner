@@ -232,7 +232,7 @@ def test_main_workflow_reuses_theme_but_reruns_downstream_planning() -> None:
     theme_stage = next(stage for stage in timing.stages if stage.key == "tripThemePlanner")
     assert theme_stage.details["reused"] is True
     assert theme_stage.sub_stages == []
-    assert any(stage.key == "placeSelector" for stage in timing.stages)
+    assert any(stage.key == "lazyGapFillTimeline" for stage in timing.stages)
 
 
 def test_city_stay_spans_two_days_without_becoming_place() -> None:
@@ -316,7 +316,7 @@ def test_trip_theme_planner_uses_snapshot_and_returns_only_themes() -> None:
         note.startswith("researchPromptVersion=") for note in output.trace.notes
     )
     assert (
-        "promptVersion=trip_theme_planner_highlight_v7_structured_output"
+        "promptVersion=trip_theme_planner_intro_highlight_v8"
         in output.trace.notes
     )
     assert "snapshotId=snapshot-3" in output.trace.notes
@@ -498,9 +498,7 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
     assert "requiredExperiences=[]" in llm.system_prompt
     payload = json.loads(llm.user_payload)
     assert payload["stage"] == "trip_theme_plan"
-    assert payload["promptVersion"] == (
-        "trip_theme_planner_highlight_v7_structured_output"
-    )
+    assert payload["promptVersion"] == "trip_theme_planner_intro_highlight_v8"
     assert "requiredOutputShape" not in payload
     assert llm.response_schemas == [TripThemeDraft.model_json_schema()]
     assert (
@@ -510,8 +508,8 @@ def test_planner_sends_small_area_statistics_to_llm() -> None:
         == "vn,ha-noi,hoan-kiem"
     )
     assert payload["themeSelectionPolicy"]["selectionMode"] == ("current_trip_intent")
-    assert payload["themeSelectionPolicy"]["maximumHighlightExperiences"] == 1
-    assert payload["themeSelectionPolicy"]["allowEmptyHighlights"] is True
+    assert payload["themeSelectionPolicy"]["maximumHighlightExperiences"] == 2
+    assert payload["themeSelectionPolicy"]["allowEmptyHighlights"] is False
     assert "researchProposal" not in payload
     assert "verifiedResearch" not in payload
 
@@ -928,10 +926,11 @@ def test_plan_service_uses_persisted_explorer_places_from_intake() -> None:
     assert timing.status == "completed"
     assert timing.total_seconds >= 0
     assert [stage.key for stage in timing.stages] == [
-        "capacityPreflight",
         "preparePlanningContext",
         "tripThemePlanner",
-        "placeSelector",
+        "mandatoryCandidatePool",
+        "capacityDayAllocation",
+        "lazyGapFillTimeline",
         "assemblePlan",
         "checkOverall",
     ]
@@ -1682,6 +1681,14 @@ class FakeStatisticsProvider:
 
 
 class FakeExplorerPersistence:
+    def load_destination_region_stories(
+        self,
+        destination: str,
+        region_key: str | None,
+    ) -> list:
+        assert destination == "Hà Nội"
+        return []
+
     def load_must_places(
         self,
         intake_id: str,

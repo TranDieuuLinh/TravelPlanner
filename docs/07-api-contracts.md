@@ -115,8 +115,10 @@ client không được tự chọn role.
 - `GET /api/plans/places/search?query={text}&destination={destination}&topK={k}`:
   trả tối đa `topK` gợi ý có tọa độ từ Knowledge Graph canonical trong
   vùng đích; mặc định `K=5`, nhận giá trị từ 1 đến 10. Search không phân biệt dấu
-  và đọc cả alias có cấu trúc; endpoint autocomplete này không gọi provider
-  geocoding bên ngoài và không bị giới hạn bởi batch preload của Planner.
+  và đọc cả alias có cấu trúc. Khi Knowledge Graph không có kết quả, endpoint
+  fallback sang Google Maps Playwright worker nếu provider đã được cấu hình;
+  timeout hoặc provider lỗi trả danh sách rỗng thay vì làm hỏng form. Endpoint
+  không bị giới hạn bởi batch preload của Planner.
 - `POST /api/plans/{planId}/backup`
 
 ### Đánh giá địa điểm
@@ -483,7 +485,11 @@ job được commit atomically; unique message ID khiến retry không tăng obs
 hai lần. Job không tăng revision TripIntent và không sao chép raw message.
 Source timing có thể thêm stage `sourceObservationFusion`: Gemini Text hợp nhất
 transcript ASR, OCR observation và caption/metadata sau nhánh STT + vision song
-song. Report chỉ chứa duration/status; transcript, OCR text và evidence vẫn bị
+song. Duration gần 0 cùng detail `mode=deterministic` cho biết structured sources
+đã đi qua fast path không gọi provider. Với reel, metadata được tái sử dụng từ
+cùng lượt download và stage `loadMetadata` có detail `source=download`;
+duration 0 không có nghĩa metadata bị thiếu. Report chỉ chứa
+duration/status; transcript, OCR text và evidence vẫn bị
 loại khỏi timing log.
 Dropdown tác vụ URL hiển thị các stage theo thứ tự, duration và `details` an toàn;
 đồng thời tách `processed` từ `resolved` cho từng provider ở cấp intake và từng
@@ -670,8 +676,10 @@ rating giả. `PlanItem.notes` chỉ còn để đọc revision cũ.
 `PlanItem.noteSources[]` có shape
 `{ type, text?, evidence?, ref?, evidenceTypes?, fetchedAt? }` và chỉ chứa câu
 chuyện/mẹo source-owned có ích; Google/provider metadata không được tạo thành
-note. `Plan.regionStories[]` dùng cùng shape cho nhận xét/tip áp dụng cho cả
-destination và chỉ xuất hiện khi `evidence` là span có thật trong source.
+note. `Plan.regionStories[]` dùng cùng shape cho nội dung destination do operator
+quản lý trong PostgreSQL. `type=destination_history` thuộc nhóm Lịch sử; các
+type `destination_*` còn lại thuộc nhóm Điều cần biết. URL intake của user không
+tạo hoặc ghi đè field này.
 `PlanItem.personalNotes` là lời nhắc user
 chỉnh sửa qua mutation endpoint. Ba field được giữ trong cùng trip-chat revision
 và itinerary/map popup phải đọc cùng `PlanItem`. `PlanItem` trả lại cùng địa

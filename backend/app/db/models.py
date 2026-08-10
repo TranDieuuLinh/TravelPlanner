@@ -21,6 +21,7 @@ from app.modules.places.model import (
     PlaceReview,
 )
 from app.modules.plans.explorer.model import (
+    DestinationRegionStory,
     SourceDocument,
 )
 from app.modules.plans.chat_model import TripChat, TripChatMessage, TripRevision
@@ -44,10 +45,17 @@ from app.modules.knowledge_graph.model import (
     KnowledgeProperty,
     KnowledgeRelationship,
 )
+from app.modules.knowledge_graph.tag_model import (
+    KnowledgeEntityTagAssertion,
+    KnowledgeTag,
+    KnowledgeTagRun,
+    KnowledgeTagScanResult,
+)
 
 __all__ = [
     "AuditEvent",
     "AuthSession",
+    "DestinationRegionStory",
     "Entitlement",
     "Favorite",
     "Festival",
@@ -58,6 +66,10 @@ __all__ = [
     "KnowledgeGraphImportNode",
     "KnowledgeProperty",
     "KnowledgeRelationship",
+    "KnowledgeEntityTagAssertion",
+    "KnowledgeTag",
+    "KnowledgeTagRun",
+    "KnowledgeTagScanResult",
     "MarketplacePlan",
     "MarketplacePlanVersion",
     "Order",

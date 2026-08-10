@@ -817,7 +817,8 @@ class TestGraphCutoverEvaluations:
         policy = json.loads(llm.macro_payloads[0])["themeSelectionPolicy"]
         assert policy["selectionMode"] == "destination_special_experiences"
         assert llm.macro_calls == 1
-        assert output.required_experiences == []
+        assert len(output.required_experiences) == 1
+        assert output.required_experiences[0].activity_id == "activity-coffee-tour"
 
     def test_confirmed_places_take_priority_over_long_term_profile(self) -> None:
         llm = _GraphThemeScriptedLLM(
