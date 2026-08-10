@@ -120,13 +120,20 @@ README hoặc log.
 
 ## Giới hạn kích thước file
 
-- Không để file source, test hoặc tài liệu vượt quá 400 dòng nếu có thể tách nhỏ.
-- Khi file tiến gần hoặc vượt 400 dòng, tách theo trách nhiệm: contract/schema,
-  state, node, service, adapter/tool hoặc test case.
-- Không tách máy móc làm vỡ ranh giới module; file mới vẫn phải nằm trong đúng
-  module và giữ public API rõ ràng.
-- Sau khi sửa, kiểm tra các file thay đổi và chủ động tách file nếu vượt giới
-  hạn này.
+- Với backend, không để file source, test hoặc tài liệu vượt quá 400 dòng nếu có
+  thể tách nhỏ.
+- Khi file backend tiến gần hoặc vượt 400 dòng, tách theo trách nhiệm:
+  contract/schema, state, node, service, adapter/tool hoặc test case.
+- Với frontend, không áp dụng cứng giới hạn 400 dòng. Frontend phải được gom theo
+  tính năng và chức năng, giữ cho mỗi module/feature có ranh giới rõ ràng.
+- Nếu file frontend quá dài, khó đọc hoặc chứa quá nhiều trách nhiệm, phải đánh
+  giá refactor. Có thể hỏi lại người dùng trước khi thực hiện refactor lớn hoặc
+  thay đổi cấu trúc feature.
+- Không tách máy móc làm vỡ ranh giới module/feature; file mới vẫn phải nằm trong
+  đúng phạm vi và giữ public API rõ ràng.
+- Sau khi sửa, kiểm tra kích thước và mức độ tập trung trách nhiệm của các file
+  thay đổi; backend phải tuân thủ giới hạn 400 dòng, frontend phải tuân thủ ranh
+  giới tính năng/chức năng.
 
 ## Checklist trước khi sửa
 
