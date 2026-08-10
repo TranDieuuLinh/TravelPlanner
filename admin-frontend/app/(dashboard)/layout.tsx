@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AdminUser, listRuns, logout } from "../../lib/api";
+import { logout, type AdminUser } from "../../lib/api/auth";
+import { listRuns } from "../../lib/api/planning-runs";
 
 export default function DashboardLayout({
   children

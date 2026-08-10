@@ -19,15 +19,19 @@ Backend hiện tại là scaffold FastAPI/LangGraph theo kiến trúc module d�
   trực tiếp state, node hoặc service nội bộ của module khác.
 - Supervisor là classifier xác định tuyến xử lý.
 - Explorer mới phân tích destination và duration từ input đơn giản.
-- Information finder đang dùng provider chưa cấu hình.
+- Information finder ưu tiên cache PostgreSQL/pgvector, có Tavily Search qua
+  cấu hình. Answer generator có thể dùng shared Gemini client với structured
+  claims/citation validation; extractive vẫn là development/runtime fallback.
+  Model baseline chưa được production-evaluated.
 - Place checker dùng `DevelopmentCatalog`, chỉ tạo dữ liệu placeholder với
   `verified=false` và warning.
 - Itinerary planner dùng estimated routing, chưa dùng dữ liệu đường thực tế.
 - Checkpointer hiện lưu trong memory, cần durable storage trước khi production.
 - Hiện chưa triển khai authentication, Marketplace, import URL, lưu trữ bền
   vững cho graph state, live place data và live routing.
-- `backend/src/app/shared/` chỉ chứa contract/persistence dùng chung; chưa có
-  repository database hay SQLAlchemy model cho backend LangGraph mới.
+- `backend/src/app/shared/` chỉ chứa contract/persistence dùng chung; repository
+  `asyncpg` của Information Finder nằm trong chính module và chỉ sở hữu các bảng
+  tiền tố `information_finder_`.
 
 Không được mô tả tính năng mục tiêu hoặc placeholder như đã triển khai
 production. Không đưa tuyên bố sai về trạng thái hệ thống vào UI, API docs,

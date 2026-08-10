@@ -7,4 +7,3 @@ def create_find_node(service: InformationFinderService):
         return {"output": await service.find(state["query"])}
 
     return find
-

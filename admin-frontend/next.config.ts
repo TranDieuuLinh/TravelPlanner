@@ -1,11 +1,17 @@
+import { resolve } from "node:path";
 import type { NextConfig } from "next";
+
+const workspaceRoot = resolve(process.cwd(), "..");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@travelplanner/api-client"],
+  outputFileTracingRoot: workspaceRoot,
   distDir:
-    process.env.NODE_ENV === "development"
+    process.env.NEXT_DIST_DIR
+    ?? (process.env.NODE_ENV === "development"
       ? ".next-admin-dev"
-      : ".next-build"
+      : ".next-build")
 };
 
 export default nextConfig;
