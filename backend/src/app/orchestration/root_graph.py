@@ -7,9 +7,10 @@ from app.shared.persistence import create_checkpointer
 
 
 def create_root_graph(
-    *, checkpointer=None, information_finder_service=None, supervisor_service=None
+    *, checkpointer=None, information_finder_service=None, supervisor_service=None,
+    explorer_service=None,
 ):
-    nodes = RootNodes(information_finder_service, supervisor_service)
+    nodes = RootNodes(information_finder_service, supervisor_service, explorer_service)
     builder = StateGraph(RootState)
 
     builder.add_node("supervisor", nodes.run_supervisor)

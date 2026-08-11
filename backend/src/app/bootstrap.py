@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from app.core.config import Settings, get_settings
+from app.modules.explorer.public import build_explorer_graph, create_explorer_service
 from app.modules.information_finder.adapters.development import (
     ExtractiveAnswerGenerator,
     HashingEmbeddingProvider,
@@ -149,6 +150,34 @@ def create_supervisor_service(
     )
 
 
+def compose_explorer_service(
+    settings: Settings,
+    llm_client: LlmClient | None = None,
+) -> object:
+    client = llm_client
+    if settings.explorer_draft_provider == "gemini" and client is None:
+        client = GeminiLlmClient(
+            settings.gemini_api_key,
+            model=settings.gemini_model,
+            timeout_seconds=settings.gemini_timeout_seconds,
+            key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+        )
+    return create_explorer_service(
+        draft_provider=settings.explorer_draft_provider,
+        llm_client=client,
+        max_output_tokens=settings.explorer_llm_max_output_tokens,
+        url_timeout_seconds=settings.explorer_url_timeout_seconds,
+        ytdlp_cookie_file=settings.explorer_ytdlp_cookie_file,
+    )
+
+
+@lru_cache
+def get_explorer_graph():
+    settings = get_settings()
+    client = get_llm_client() if settings.explorer_draft_provider == "gemini" else None
+    return build_explorer_graph(compose_explorer_service(settings, client))
+
+
 @lru_cache
 def get_graph():
     settings = get_settings()
@@ -156,9 +185,11 @@ def get_graph():
     if (
         settings.supervisor_classifier_provider == "gemini"
         or settings.information_finder_answer_provider == "gemini"
+        or settings.explorer_draft_provider == "gemini"
     ):
         shared_llm_client = get_llm_client()
     return create_root_graph(
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
+        explorer_service=compose_explorer_service(settings, shared_llm_client),
     )

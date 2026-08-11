@@ -13,4 +13,4 @@ def route_after_explorer(
     state: RootState,
 ) -> Literal["place_checker", "finish"]:
     output = state["explorer_output"]
-    return "place_checker" if output.intent is not None else "finish"
+    return "place_checker" if output.status == "ready" else "finish"

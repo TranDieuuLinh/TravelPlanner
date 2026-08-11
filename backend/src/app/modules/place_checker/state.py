@@ -1,13 +1,17 @@
 from typing import TypedDict
 
+from app.modules.explorer.public import ExplorerBudget, ExplorerPeople, ExplorerPlace, RequestedItem, SourceNote
 from app.modules.place_checker.contract import PlaceCheckerOutput
-from app.shared.contracts.place import PlaceCandidate, VerifiedPlace
-from app.shared.contracts.trip import TripIntent
 
 
 class PlaceCheckerState(TypedDict, total=False):
-    intent: TripIntent
-    candidates: list[PlaceCandidate]
-    resolved_places: list[VerifiedPlace]
-    rejected_candidates: list[PlaceCandidate]
+    input_adm: str
+    places: list[ExplorerPlace] | None
+    input_items: list[RequestedItem] | None
+    url_notes: list[SourceNote] | None
+    days: int
+    budget: ExplorerBudget
+    people: ExplorerPeople
+    short_preferences: list[str]
+    short_avoids: list[str]
     output: PlaceCheckerOutput

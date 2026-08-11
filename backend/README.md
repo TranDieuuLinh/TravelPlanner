@@ -43,7 +43,14 @@ This is a working architecture scaffold, not a production travel-data system.
   structured Gemini classifier for ambiguous requests and a truthful
   deterministic fallback. The baseline model and routing policy are not
   production-evaluated.
-- Explorer currently parses destination and duration from simple text input.
+- Explorer now uses a two-route LangGraph intake flow. Prompt-only extraction
+  and parallel URL/image source import converge on normalization, ADM
+  reconciliation, defaults, and separate ready/clarification/failure snapshot
+  paths. The development adapter handles prompt and supplied OCR text. Raw
+  image OCR is not configured, while TikTok caption/metadata import uses
+  `yt-dlp`; snapshots remain process-local. TikTok challenge/login responses
+  may require `EXPLORER_YTDLP_COOKIE_FILE`. `EXPLORER_DRAFT_PROVIDER=gemini` enables structured Gemini
+  draft synthesis; `rules` is the offline default.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful
@@ -81,15 +88,17 @@ curl -X POST http://127.0.0.1:8000/v1/agent/invoke \
   -H 'content-type: application/json' \
   -d '{
     "thread_id": "demo-1",
-    "message": "Lập kế hoạch ở Đà Nẵng trong 2 ngày",
-    "supplied_candidates": [
-      {
-        "name": "Bảo tàng Đà Nẵng",
-        "coordinates": {"latitude": 16.0678, "longitude": 108.2208}
-      }
-    ]
+    "message": "Lập kế hoạch ở Đà Nẵng trong 2 ngày, tham quan Cầu Rồng"
   }'
 ```
+
+For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
+`rawPrompt`, `urls`, and/or `images`. This bypasses Supervisor, PlaceChecker,
+and ItineraryPlanner and returns the complete `ExplorerOutput`.
+For TikTok pages that require a logged-in session, export a Netscape-format
+cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
+absolute path. Cookie files are ignored by the backend `.gitignore`; never
+commit or log them.
 
 Run tests:
 
@@ -113,4 +122,3 @@ version through `GEMINI_MODEL` and document the evaluated snapshot.
 
 LangGraph Studio can load the graph declared in `langgraph.json` after the
 LangGraph CLI is installed.
-

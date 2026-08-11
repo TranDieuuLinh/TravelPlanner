@@ -13,12 +13,13 @@ class PlaceCheckerService:
         return max(2, days * 2)
 
     async def check(self, payload: PlaceCheckerInput) -> PlaceCheckerOutput:
+        intent = payload.trip_intent()
         resolved: list[VerifiedPlace] = []
         rejected: list[PlaceCandidate] = []
         seen: set[str] = set()
 
-        for candidate in payload.candidates:
-            place = await self.resolver.resolve(candidate, payload.intent)
+        for candidate in payload.candidates():
+            place = await self.resolver.resolve(candidate, intent)
             if place is None:
                 rejected.append(candidate)
                 continue
@@ -27,10 +28,10 @@ class PlaceCheckerService:
                 seen.add(identity)
                 resolved.append(place)
 
-        required = self.required_count(payload.intent.days)
+        required = self.required_count(intent.days)
         if len(resolved) < required:
             discovered = await self.discovery.discover(
-                payload.intent,
+                intent,
                 required - len(resolved),
             )
             for place in discovered:
