@@ -27,7 +27,8 @@ backend/
 │   ├── shared/
 │   │   ├── contracts/
 │   │   ├── persistence/
-│   │   └── llm/
+│   │   ├── llm/
+│   │   └── tools/
 │   └── modules/
 │       ├── supervisor/
 │       ├── explorer/
@@ -71,11 +72,34 @@ adapter.
 Backend hiện chỉ expose:
 
 - `GET /health`
+- `POST /v1/explorer/invoke`
 - `POST /v1/agent/invoke`
 
-Endpoint agent nhận thread id, yêu cầu của người dùng, danh sách place tùy
-chọn, itinerary hiện có và edit operation tùy chọn. Response trả về route đã
-chọn, câu trả lời, itinerary nếu có, câu hỏi cần làm rõ và warning.
+Endpoint agent nhận thread id, prompt tùy chọn, tối đa 20 URL, tối đa 20 ảnh,
+itinerary hiện có và edit operation tùy chọn. Mỗi request phải có ít nhất một
+trong prompt, URL hoặc ảnh. Ảnh JSON có thể mang `ocrText`; adapter OCR cho dữ
+liệu `dataBase64` thô chưa được cấu hình.
+
+Explorer là LangGraph subgraph có hai route. Prompt-only trích xuất draft trực
+tiếp. Source-import chạy URL và ảnh song song, đánh giá coverage trước khi tổng
+hợp, rồi hai route hội tụ tại normalize, reconcile ADM và policy mặc định.
+Success, clarification và failure lưu ba loại snapshot riêng; repository mặc
+định vẫn là in-memory. URL TikTok được đọc qua `yt-dlp`: adapter lấy caption,
+title, location và tag làm evidence có provenance. TikTok có thể yêu cầu cookie
+Netscape qua `EXPLORER_YTDLP_COOKIE_FILE`; lỗi provider được trả có cấu trúc,
+không tạo dữ liệu giả.
+
+Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
+orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
+`places[].sourcePlaces` phân biệt nguồn `input` và `url`; `sourceTimeHint` và
+`addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
+Draft generator nằm sau port; `EXPLORER_DRAFT_PROVIDER=rules` là mặc định
+offline và `gemini` dùng shared Gemini client với structured JSON output.
+
+Endpoint Explorer nhận trực tiếp `ExplorerInput`, bỏ qua root Supervisor,
+PlaceChecker và Planner, rồi trả nguyên `ExplorerOutput`. Endpoint này dùng để
+test/debug contract nhưng vẫn chạy cùng graph và provider configuration với
+runtime.
 
 Authentication is implemented as a vertical `auth` module. It owns the
 `auth_runtime_users` and `auth_runtime_sessions` tables, uses PostgreSQL when `DATABASE_URL` is
@@ -110,7 +134,16 @@ cooldown key khi provider trả về lỗi có thể thử lại. Các agent hi�
 được chuyển business behavior sang LLM ngoài Supervisor và Information Finder
 theo cấu hình của từng module.
 
-Authentication, Marketplace, import URL, dữ liệu place live và routing live
+`shared/tools/search_places/` cung cấp engine async dùng chung để module gọi
+qua dependency injection. Tool chuẩn hóa query, xếp hạng top-K, áp ngưỡng
+identity/margin, chặn ADM/type/toạ độ không hợp lệ, giữ kết quả nhập nhằng để
+review và chỉ fallback sang external provider khi Knowledge Graph miss hoặc
+mọi match đều yếu. Hiện package mới có provider port và adapter in-memory cho
+test/development; chưa có adapter PostgreSQL Knowledge Graph hoặc Google Maps
+Playwright được nối vào runtime. Tool chưa thay thế `DevelopmentCatalog` trong
+PlaceChecker.
+
+Authentication, Marketplace, import URL production, dữ liệu place live và routing live
 chưa nằm trong scaffold hiện tại. Checkpointer của root graph vẫn chưa bền vững.
 
 ## Cấu trúc style frontend

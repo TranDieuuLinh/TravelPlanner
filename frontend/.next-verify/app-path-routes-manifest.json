@@ -1,0 +1,19 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/creator/listings/[listingId]/edit/page": "/creator/listings/[listingId]/edit",
+  "/creator/listings/page": "/creator/listings",
+  "/admin/listings/page": "/admin/listings",
+  "/explore/page": "/explore",
+  "/groups/[groupId]/page": "/groups/[groupId]",
+  "/login/page": "/login",
+  "/orders/[orderId]/result/page": "/orders/[orderId]/result",
+  "/creator/listings/new/page": "/creator/listings/new",
+  "/admin/places/page": "/admin/places",
+  "/listings/[listingId]/page": "/listings/[listingId]",
+  "/orders/[orderId]/mock-momo/page": "/orders/[orderId]/mock-momo",
+  "/page": "/",
+  "/profile/page": "/profile",
+  "/planner/page": "/planner",
+  "/reels/page": "/reels",
+  "/register/page": "/register"
+}

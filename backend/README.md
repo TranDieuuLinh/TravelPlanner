@@ -84,15 +84,17 @@ curl -X POST http://127.0.0.1:8000/v1/agent/invoke \
   -H 'content-type: application/json' \
   -d '{
     "thread_id": "demo-1",
-    "message": "Lập kế hoạch ở Đà Nẵng trong 2 ngày",
-    "supplied_candidates": [
-      {
-        "name": "Bảo tàng Đà Nẵng",
-        "coordinates": {"latitude": 16.0678, "longitude": 108.2208}
-      }
-    ]
+    "message": "Lập kế hoạch ở Đà Nẵng trong 2 ngày, tham quan Cầu Rồng"
   }'
 ```
+
+For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
+`rawPrompt`, `urls`, and/or `images`. This bypasses Supervisor, PlaceChecker,
+and ItineraryPlanner and returns the complete `ExplorerOutput`.
+For TikTok pages that require a logged-in session, export a Netscape-format
+cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
+absolute path. Cookie files are ignored by the backend `.gitignore`; never
+commit or log them.
 
 Run tests:
 
@@ -141,4 +143,3 @@ version through `GEMINI_MODEL` and document the evaluated snapshot.
 
 LangGraph Studio can load the graph declared in `langgraph.json` after the
 LangGraph CLI is installed.
-

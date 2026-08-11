@@ -1,13 +1,15 @@
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.api.dependencies import get_graph
+from app.api.dependencies import get_explorer_graph, get_graph
 from app.api.schemas import InvokeRequest, InvokeResponse
 from app.modules.auth.public import router as auth_router
 from app.modules.knowledge_graph.public import router as knowledge_graph_router
 from app.modules.observability.public import router as observability_router
 from app.modules.observability.service import ObservabilityService
+from app.modules.explorer.public import ExplorerInput, ExplorerOutput
 from app.modules.supervisor.public import SupervisorClassificationError
 from app.modules.trip_chat.public import router as trip_chat_router
 
@@ -24,6 +26,47 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.post("/v1/explorer/invoke", response_model=ExplorerOutput)
+async def invoke_explorer(
+    payload: Annotated[
+        ExplorerInput,
+        Body(openapi_examples={
+            "prompt": {
+                "summary": "Prompt only",
+                "value": {
+                    "rawPrompt": "Lập kế hoạch ở Huế trong 3 ngày",
+                    "urls": [],
+                    "images": [],
+                },
+            },
+            "tiktok": {
+                "summary": "TikTok URL only",
+                "value": {
+                    "rawPrompt": None,
+                    "urls": ["https://www.tiktok.com/@creator/video/123"],
+                    "images": [],
+                },
+            },
+            "ocr": {
+                "summary": "Supplied image OCR",
+                "value": {
+                    "rawPrompt": None,
+                    "urls": [],
+                    "images": [{
+                        "fileName": "capture.png",
+                        "mimeType": "image/png",
+                        "ocrText": "Du lịch ở Đà Nẵng, tham quan Cầu Rồng",
+                    }],
+                },
+            },
+        }),
+    ],
+    graph=Depends(get_explorer_graph),
+) -> ExplorerOutput:
+    result = await graph.ainvoke({"payload": payload})
+    return result["output"]
+
+
 @router.post("/v1/agent/invoke", response_model=InvokeResponse)
 async def invoke_agent(
     payload: InvokeRequest,
@@ -33,8 +76,9 @@ async def invoke_agent(
     request_id = str(uuid4())
     graph_input = {
         "request_id": request_id,
-        "message": payload.message,
-        "supplied_candidates": payload.supplied_candidates,
+        "message": payload.message or "",
+        "urls": payload.urls,
+        "images": payload.images,
         "existing_itinerary": payload.existing_itinerary,
         "edit_operation": payload.edit_operation,
     }

@@ -22,6 +22,16 @@ def structured_edit_rule(payload: SupervisorInput) -> SupervisorDecision | None:
     return None
 
 
+def source_import_rule(payload: SupervisorInput) -> SupervisorDecision | None:
+    if payload.has_source_input:
+        return SupervisorDecision(
+            route="explorer",
+            confidence=1.0,
+            reason="A URL or image requires Explorer source import.",
+        )
+    return None
+
+
 def edit_clarification_rule(payload: SupervisorInput) -> SupervisorDecision | None:
     message = normalize_message(payload.message)
     if not _contains_edit_request(message):
@@ -152,6 +162,7 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
 def deterministic_decision(payload: SupervisorInput) -> SupervisorDecision | None:
     for rule in (
         structured_edit_rule,
+        source_import_rule,
         edit_clarification_rule,
         planning_rule,
         information_rule,
