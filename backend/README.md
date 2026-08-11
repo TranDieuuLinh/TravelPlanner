@@ -54,6 +54,9 @@ This is a working architecture scaffold, not a production travel-data system.
 - ItineraryPlanner uses estimated routing, not live road-network data.
 - The checkpointer is in memory and must be replaced by durable storage in
   production.
+- Root graph checkpoints retain up to six recent user messages as internal
+  conversation context for follow-up routing. This context is a routing hint,
+  not a durable chat-history or production memory system.
 - A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
   It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
   request receives a quota, authorization, transport, or server error. Existing
@@ -74,6 +77,7 @@ pip install -e '.[dev]'
 psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
 psql "$DATABASE_URL" -f migrations/002_auth.sql
 psql "$DATABASE_URL" -f migrations/003_knowledge_graph.sql
+psql "$DATABASE_URL" -f migrations/004_knowledge_auto_attach.sql
 uvicorn app.main:app --reload
 ```
 
@@ -110,8 +114,9 @@ seed accounts are configured by `AUTH_DEV_SEED_USERS`; do not use those default
 passwords outside local development.
 
 The admin Knowledge Graph module owns the `knowledge_*` tables created by
-`migrations/003_knowledge_graph.sql`. It provides entity, alias, property,
-relationship, stats, and ontology endpoints consumed by `admin-frontend`.
+`migrations/003_knowledge_graph.sql` and `migrations/004_knowledge_auto_attach.sql`.
+It provides entity, alias, property, relationship, auto-attach rule, stats, and
+ontology endpoints consumed by `admin-frontend`.
 Apply the migration manually for an existing PostgreSQL volume; Docker only
 applies init scripts when the volume is created.
 
@@ -122,6 +127,7 @@ For an existing volume, run the idempotent migration from the mounted file:
 ```powershell
 docker compose up -d postgres
 docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/003_knowledge_graph.sql
+docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql
 ```
 
 Configure `BACKEND_CORS_ORIGINS` with comma-separated browser origins (the local

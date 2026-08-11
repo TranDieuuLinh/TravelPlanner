@@ -74,6 +74,7 @@ export type KGEntityDetail = {
 };
 
 export type KGEntityUpdatePayload = {
+  entityId?: string;
   canonicalName?: string;
   entityType?: string;
   status?: string;
@@ -147,6 +148,7 @@ export function listKGEntities(filters: {
   entityType?: string;
   status?: string;
   excludeNames?: string;
+  missingProperties?: string;
   sortBy?: string;
   sortDirection?: "asc" | "desc";
 }): Promise<KGEntityListPage> {
@@ -157,6 +159,7 @@ export function listKGEntities(filters: {
   if (filters.entityType) params.set("entity_type", filters.entityType);
   if (filters.status) params.set("status", filters.status);
   if (filters.excludeNames) params.set("excludeNames", filters.excludeNames);
+  if (filters.missingProperties) params.set("missingProperties", filters.missingProperties);
   if (filters.sortBy) params.set("sortBy", filters.sortBy);
   if (filters.sortDirection) params.set("sortDirection", filters.sortDirection);
   const query = params.toString();
@@ -357,6 +360,70 @@ export function listKGRelationships(filters: {
 
 export function getKGOntology(): Promise<KGOntology> {
   return apiRequest("/admin/knowledge-graph/ontology");
+}
+
+export type KGAutoAttachTimeWindow = {
+  start: string;
+  end: string;
+};
+
+export type KGAutoAttachRule = {
+  ruleId: string;
+  name: string;
+  styleGroup: string;
+  entityTypes: string[];
+  keywords: string[];
+  exactNames: string[];
+  excludeKeywords: string[];
+  timeDuration: string;
+  timeWindows: KGAutoAttachTimeWindow[];
+  overrideCount: number;
+  status: string;
+  source: string;
+};
+
+export type KGAutoAttachRuleList = {
+  items: KGAutoAttachRule[];
+  total: number;
+};
+
+export function listKGAutoAttachRules(): Promise<KGAutoAttachRuleList> {
+  return apiRequest("/admin/knowledge-graph/auto-attach/rules");
+}
+
+export function upsertKGAutoAttachRule(rule: KGAutoAttachRule): Promise<KGAutoAttachRule> {
+  return apiRequest(`/admin/knowledge-graph/auto-attach/rules/${encodeURIComponent(rule.ruleId)}`, {
+    method: "PUT",
+    body: JSON.stringify(rule),
+  });
+}
+
+export function deleteKGAutoAttachRule(ruleId: string): Promise<void> {
+  return apiRequest(`/admin/knowledge-graph/auto-attach/rules/${encodeURIComponent(ruleId)}`, {
+    method: "DELETE",
+  });
+}
+
+export type KGAutoAttachAlias = {
+  keyword: string;
+  aliases: string[];
+  source: string;
+};
+
+export type KGAutoAttachAliasList = {
+  items: KGAutoAttachAlias[];
+  total: number;
+};
+
+export function listKGAutoAttachAliases(): Promise<KGAutoAttachAliasList> {
+  return apiRequest("/admin/knowledge-graph/auto-attach/aliases");
+}
+
+export function upsertKGAutoAttachAlias(alias: KGAutoAttachAlias): Promise<KGAutoAttachAlias> {
+  return apiRequest(`/admin/knowledge-graph/auto-attach/aliases/${encodeURIComponent(alias.keyword)}`, {
+    method: "PUT",
+    body: JSON.stringify(alias),
+  });
 }
 
 // --- Knowledge Graph AI Imports ---

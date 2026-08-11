@@ -111,6 +111,7 @@ export default function KnowledgeGraphPage() {
   const [entityTypeFilter, setEntityTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [excludeNames, setExcludeNames] = useState("");
+  const [missingProperties, setMissingProperties] = useState("");
   const [entitySortBy, setEntitySortBy] = useState("name");
   const [entitySortDirection, setEntitySortDirection] = useState<"asc" | "desc">("asc");
 
@@ -257,7 +258,8 @@ export default function KnowledgeGraphPage() {
       currentExcludeNames: string,
       currentSortBy: string,
       currentSortDirection: "asc" | "desc",
-      append = false
+      append = false,
+      currentMissingProperties = ""
     ) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -273,6 +275,7 @@ export default function KnowledgeGraphPage() {
           entityType: currentType || undefined,
           status: currentStatus || undefined,
           excludeNames: currentExcludeNames || undefined,
+          missingProperties: currentMissingProperties || undefined,
           sortBy: currentSortBy,
           sortDirection: currentSortDirection,
         });
@@ -355,9 +358,9 @@ export default function KnowledgeGraphPage() {
   // Trigger entity list reload when filters change
   useEffect(() => {
     if (!loading) {
-      loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
+      loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
     }
-  }, [search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, entityPage]);
+  }, [search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection, entityPage]);
 
   // Trigger relationship list reload when switching to tab or filters change
   useEffect(() => {
@@ -399,9 +402,9 @@ export default function KnowledgeGraphPage() {
       setSelectedEntity(updatedEntity);
       loadStats();
       loadFilterOptions();
-      loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
+      loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
     },
-    [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]
+    [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection]
   );
 
   const handleDeleteEntity = useCallback(async () => {
@@ -415,14 +418,14 @@ export default function KnowledgeGraphPage() {
       await Promise.all([
         loadStats(),
         loadFilterOptions(),
-        loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete entity");
     } finally {
       setDeletingEntity(false);
     }
-  }, [entityToDelete, entityPage, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
+  }, [entityToDelete, entityPage, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
 
   const handleOpenLowReviewDelete = useCallback(async () => {
     setLoadingLowReviewPreview(true);
@@ -447,7 +450,7 @@ export default function KnowledgeGraphPage() {
       await Promise.all([
         loadStats(),
         loadFilterOptions(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
       setEntityPage(1);
     } catch (err) {
@@ -455,7 +458,7 @@ export default function KnowledgeGraphPage() {
     } finally {
       setDeletingLowReviewEntities(false);
     }
-  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
 
   const handleCreateEntity = useCallback(async () => {
     const payload = {
@@ -479,14 +482,14 @@ export default function KnowledgeGraphPage() {
       await Promise.all([
         loadStats(),
         loadFilterOptions(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create entity");
     } finally {
       setCreatingEntity(false);
     }
-  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadFilterOptions, loadStats, newEntity, search, statusFilter]);
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, newEntity, search, statusFilter]);
 
   const handleCopyEntity = useCallback(async () => {
     if (!selectedEntity) return;
@@ -510,14 +513,14 @@ export default function KnowledgeGraphPage() {
       await Promise.all([
         loadStats(),
         loadFilterOptions(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to copy entity");
     } finally {
       setCopyingEntity(false);
     }
-  }, [copyEntityId, copyEntityName, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadFilterOptions, loadStats, search, selectedEntity, statusFilter]);
+  }, [copyEntityId, copyEntityName, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, selectedEntity, statusFilter]);
 
   // Jump directly to an entity ID from anywhere (e.g. relationship card)
   const handleJumpToEntity = useCallback(
@@ -554,6 +557,7 @@ export default function KnowledgeGraphPage() {
     setEntityTypeFilter("");
     setStatusFilter("");
     setExcludeNames("");
+    setMissingProperties("");
   }, []);
 
   // Reset relationship filters
@@ -571,8 +575,8 @@ export default function KnowledgeGraphPage() {
   const handleApplied = useCallback(() => {
     loadStats();
     loadFilterOptions();
-    loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
-  }, [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]);
+    loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
+  }, [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection]);
 
   if (!KNOWLEDGE_GRAPH_ENABLED) {
     return (
@@ -769,6 +773,17 @@ export default function KnowledgeGraphPage() {
               value={excludeNames}
             />
 
+            <input
+              className="kgSelectFilter"
+              aria-label="Missing property keys"
+              onChange={(event) => {
+                setMissingProperties(event.target.value);
+                setEntityPage(1);
+              }}
+              placeholder="Missing fields: description, image"
+              value={missingProperties}
+            />
+
             <select
               className="kgSelectFilter"
               aria-label="Entity sort order"
@@ -791,7 +806,7 @@ export default function KnowledgeGraphPage() {
             </select>
 
             {/* Reset Button */}
-            {(search || entityTypeFilter || statusFilter || excludeNames) && (
+            {(search || entityTypeFilter || statusFilter || excludeNames || missingProperties) && (
               <button type="button" className="kgResetBtn" onClick={handleResetEntityFilters}>
                 Reset Filters
               </button>

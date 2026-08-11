@@ -15,7 +15,10 @@ dân tộc Việt Nam. Hà Nội có nhiều công trình văn hóa và khu ph�
 
 
 def test_normalize_answer_text_removes_scraper_markers_and_collapses_whitespace():
-    assert normalize_answer_text("  Fact [1]  from\n  source. ") == "Fact from source."
+    assert (
+        normalize_answer_text("  Fact [1] [sửa | sửa mã nguồn] ### from\n  source. ")
+        == "Fact from source."
+    )
 
 
 def test_relevant_excerpt_skips_navigation_prefix():

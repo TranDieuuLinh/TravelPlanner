@@ -46,6 +46,35 @@ type EditableRelationshipRow = {
   toEntityId: string;
 };
 
+const ENTITY_ID_PREFIXES: Record<string, string> = {
+  ADM0: "adm0",
+  ADM1: "adm1",
+  ADM2: "adm2",
+  Activity: "activity",
+  ActivityItem: "activity_item",
+  Accommodation: "accommodation",
+  DrinkDessert: "drink_dessert",
+  DrinkItem: "drink_item",
+  FoodItem: "food_item",
+  ProductItem: "product_item",
+  Restaurant: "restaurant",
+  TravelPlace: "travel_place",
+};
+
+function entityIdPrefix(entityType: string): string {
+  return ENTITY_ID_PREFIXES[entityType] || entityType.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+function updateEntityIdPrefix(entityId: string, currentType: string, nextType: string): string {
+  const currentPrefix = `${entityIdPrefix(currentType)}_`;
+  const suffix = entityId.startsWith(currentPrefix)
+    ? entityId.slice(currentPrefix.length)
+    : entityId.includes("_")
+      ? entityId.slice(entityId.indexOf("_") + 1)
+      : entityId;
+  return `${entityIdPrefix(nextType)}_${suffix || "entity"}`;
+}
+
 export function EditableEntityDetailPanel({
   entity,
   onJumpToEntity,
@@ -69,8 +98,9 @@ export function EditableEntityDetailPanel({
   availableRelationshipTypes: string[];
   availablePropertyKeys: string[];
 }) {
-  const [draftEntity, setDraftEntity] = useState({
-    canonicalName: entity.canonicalName,
+    const [draftEntity, setDraftEntity] = useState({
+      entityId: entity.id,
+      canonicalName: entity.canonicalName,
     entityType: entity.entityType,
     status: entity.status,
   });
@@ -87,8 +117,9 @@ export function EditableEntityDetailPanel({
   );
 
   useEffect(() => {
-    setDraftEntity({
-      canonicalName: entity.canonicalName,
+      setDraftEntity({
+        entityId: entity.id,
+        canonicalName: entity.canonicalName,
       entityType: entity.entityType,
       status: entity.status,
     });
@@ -211,6 +242,7 @@ export function EditableEntityDetailPanel({
     }
     await saveSection("entity", () =>
       updateKGEntity(entity.id, {
+        entityId: draftEntity.entityId,
         canonicalName,
         entityType,
         status,
@@ -377,7 +409,7 @@ export function EditableEntityDetailPanel({
           <div className="kgSectionForm kgIdentitySectionForm">
             <label className="kgIdentityFieldFull">
               <span>ID</span>
-              <input value={entity.id} disabled />
+              <input value={draftEntity.entityId} disabled />
             </label>
             <label>
               <span>Name</span>
@@ -390,7 +422,13 @@ export function EditableEntityDetailPanel({
               <span>Type</span>
               <select
                 value={draftEntity.entityType}
-                onChange={(event) => setDraftEntity((current) => ({ ...current, entityType: event.target.value }))}
+                onChange={(event) =>
+                  setDraftEntity((current) => ({
+                    ...current,
+                    entityType: event.target.value,
+                    entityId: updateEntityIdPrefix(current.entityId, current.entityType, event.target.value),
+                  }))
+                }
               >
                 {availableEntityTypes.map((type) => (
                   <option key={type} value={type}>

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.modules.knowledge_graph.adapters.postgres import PostgresKnowledgeGraphStore
 from app.modules.knowledge_graph.contract import (
     AliasUpsert,
+    AutoAttachRule,
     EntityCreate,
     EntityUpdate,
     PropertyUpsert,
@@ -35,6 +36,29 @@ class KnowledgeGraphService:
     async def relationships(self, **filters) -> tuple[list[dict], int]:
         return await self.store.list_relationships(**filters)
 
+    async def auto_attach_rules(self) -> list[dict]:
+        return await self.store.list_auto_attach_rules()
+
+    async def upsert_auto_attach_rule(self, payload: AutoAttachRule) -> dict:
+        try:
+            return await self.store.upsert_auto_attach_rule(
+                **payload.model_dump(by_alias=False)
+            )
+        except Exception as exc:
+            if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
+                raise KnowledgeGraphError(409, "KG_AUTO_ATTACH_EXISTS", "Auto-attach rule Ä‘Ã£ tá»“n táº¡i.") from exc
+            raise
+
+    async def delete_auto_attach_rule(self, rule_id: str) -> None:
+        if not await self.store.delete_auto_attach_rule(rule_id):
+            raise KnowledgeGraphError(404, "KG_AUTO_ATTACH_NOT_FOUND", "KhÃ´ng tÃ¬m tháº¥y auto-attach rule.")
+
+    async def auto_attach_aliases(self) -> list[dict]:
+        return await self.store.list_auto_attach_aliases()
+
+    async def upsert_auto_attach_alias(self, keyword: str, aliases: list[str], source: str) -> dict:
+        return await self.store.upsert_auto_attach_alias(keyword=keyword, aliases=aliases, source=source)
+
     async def entity(self, entity_id: str, **limits) -> dict:
         result = await self.store.get_entity(entity_id, **limits)
         if not result:
@@ -50,7 +74,12 @@ class KnowledgeGraphService:
             raise
 
     async def update_entity(self, entity_id: str, payload: EntityUpdate) -> dict:
-        result = await self.store.update_entity(entity_id, **payload.model_dump(exclude_unset=True, by_alias=False))
+        try:
+            result = await self.store.update_entity(entity_id, **payload.model_dump(exclude_unset=True, by_alias=False))
+        except Exception as exc:
+            if any(marker in str(exc).lower() for marker in ("duplicate", "unique", "already exists")):
+                raise KnowledgeGraphError(409, "KG_ENTITY_EXISTS", "Entity ID đã tồn tại.") from exc
+            raise
         if not result:
             raise KnowledgeGraphError(404, "KG_ENTITY_NOT_FOUND", "Không tìm thấy entity.")
         return result

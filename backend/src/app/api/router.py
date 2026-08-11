@@ -83,23 +83,34 @@ async def invoke_agent(
         "edit_operation": payload.edit_operation,
     }
     observability: ObservabilityService = request.app.state.observability_service
+    trace_callback = observability.start_trace(
+        request_id=request_id,
+        metadata={"requestId": request_id, "threadId": payload.thread_id},
+    )
+    graph_config = {"configurable": {"thread_id": payload.thread_id}}
+    if trace_callback is not None:
+        graph_config["callbacks"] = [trace_callback]
     try:
         result = await graph.ainvoke(
             graph_input,
-            config={"configurable": {"thread_id": payload.thread_id}},
+            config=graph_config,
         )
     except SupervisorClassificationError as exc:
-        await observability.record_agent_invoke(
-            request_id=request_id,
-            route=None,
-            success=False,
-            message_length=len(payload.message),
-            warning_count=0,
-            source_count=0,
-            has_itinerary=payload.existing_itinerary is not None,
-            error_code="SUPERVISOR_UNAVAILABLE",
-        )
+        if trace_callback is None:
+            await observability.record_agent_invoke(
+                request_id=request_id,
+                route=None,
+                success=False,
+                message_length=len(payload.message),
+                warning_count=0,
+                source_count=0,
+                has_itinerary=payload.existing_itinerary is not None,
+                error_code="SUPERVISOR_UNAVAILABLE",
+            )
         raise HTTPException(status_code=503, detail=str(exc)) from None
+    finally:
+        if trace_callback is not None:
+            await trace_callback.flush()
     information_output = result.get("information_output")
     response = InvokeResponse(
         request_id=request_id,
@@ -110,14 +121,15 @@ async def invoke_agent(
         warnings=result.get("warnings", []),
         sources=information_output.sources if information_output else [],
     )
-    await observability.record_agent_invoke(
-        request_id=request_id,
-        route=response.route,
-        success=True,
-        message_length=len(payload.message),
-        warning_count=len(response.warnings),
-        source_count=len(response.sources),
-        has_itinerary=response.itinerary is not None,
-    )
+    if trace_callback is None:
+        await observability.record_agent_invoke(
+            request_id=request_id,
+            route=response.route,
+            success=True,
+            message_length=len(payload.message),
+            warning_count=len(response.warnings),
+            source_count=len(response.sources),
+            has_itinerary=response.itinerary is not None,
+        )
     return response
 

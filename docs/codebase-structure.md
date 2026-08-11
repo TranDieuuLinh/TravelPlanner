@@ -125,7 +125,8 @@ route `finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting
 trợ lý hoặc yêu cầu ngoài phạm vi. Rule deterministic chỉ là provider offline
 hoặc runtime fallback. `SUPERVISOR_CLASSIFIER_PROVIDER=rules` chạy offline; cấu
 hình `gemini` yêu cầu `GEMINI_API_KEY`. Routing baseline chưa
-được production-evaluated.
+được production-evaluated. Root graph truyền tối đa sáu user message gần nhất
+từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải durable memory.
 
 `shared/llm/` cung cấp port và Gemini REST adapter dùng chung, bao gồm tùy chọn
 URL Context tool cho module cần Gemini đọc URL public. `GEMINI_API_KEY`

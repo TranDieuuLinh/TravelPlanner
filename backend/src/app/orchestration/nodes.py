@@ -30,9 +30,14 @@ class RootNodes:
         self.plan_editor = build_plan_editor_graph()
 
     async def run_supervisor(self, state: RootState) -> dict:
+        conversation_context = [
+            *state.get("conversation_context", []),
+            *([state["message"]] if state.get("message") else []),
+        ][-6:]
         result = await self.supervisor.ainvoke(
             {
                 "message": state["message"],
+                "conversation_context": conversation_context,
                 "has_source_input": bool(state.get("urls") or state.get("images")),
                 "has_itinerary": state.get("existing_itinerary") is not None,
                 "has_edit_operation": state.get("edit_operation") is not None,
@@ -41,6 +46,7 @@ class RootNodes:
         decision = result["decision"]
         update = {
             "decision": decision,
+            "conversation_context": conversation_context,
             "warnings": decision.warnings,
         }
         if decision.response is not None:

@@ -88,6 +88,7 @@ class EntityCopy(KGModel):
 
 
 class EntityUpdate(KGModel):
+    entity_id: str | None = Field(default=None, min_length=1, max_length=200)
     canonical_name: str | None = Field(default=None, min_length=1, max_length=500)
     entity_type: str | None = Field(default=None, min_length=1, max_length=100)
     status: str | None = Field(default=None, min_length=1, max_length=40)
@@ -123,3 +124,39 @@ class LowReviewResponse(KGModel):
     threshold: int
     entity_count: int
     deleted_entity_count: int | None = None
+
+
+class AutoAttachTimeWindow(KGModel):
+    start: str = Field(min_length=1, max_length=16)
+    end: str = Field(min_length=1, max_length=16)
+
+
+class AutoAttachRule(KGModel):
+    rule_id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=500)
+    style_group: str = Field(min_length=1, max_length=100)
+    entity_types: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    exact_names: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    time_duration: str = Field(default="PT60M", min_length=1, max_length=32)
+    time_windows: list[AutoAttachTimeWindow] = Field(default_factory=list)
+    override_count: int = Field(default=0, ge=0)
+    status: str = Field(default="pending", min_length=1, max_length=40)
+    source: str = Field(default="attach_auto.yml", min_length=1, max_length=200)
+
+
+class AutoAttachRuleList(KGModel):
+    items: list[AutoAttachRule]
+    total: int
+
+
+class AutoAttachAlias(KGModel):
+    keyword: str = Field(min_length=1, max_length=500)
+    aliases: list[str] = Field(default_factory=list)
+    source: str = Field(default="attach_auto.yml", min_length=1, max_length=200)
+
+
+class AutoAttachAliasList(KGModel):
+    items: list[AutoAttachAlias]
+    total: int

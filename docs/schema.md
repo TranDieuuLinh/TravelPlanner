@@ -19,7 +19,7 @@ trực tiếp.
 | `POST /auth/logout` | Session + CSRF cookie | `204 No Content` |
 | `GET /admin/knowledge-graph/stats` | Admin session | Knowledge Graph counts |
 | `GET /admin/knowledge-graph/ontology` | Admin session | Node types, property keys, and relationship types from `trung-plans/plans-for-new-version/knowledge/schema.yml` |
-| `GET /admin/knowledge-graph/entities` | Admin session + filters | Paginated entities |
+| `GET /admin/knowledge-graph/entities` | Admin session + filters | Paginated entities; `search`, `excludeNames`, and `missingProperties` support comma-separated keywords |
 | `GET /admin/knowledge-graph/entities/filters` | Admin session | Distinct entity types/statuses from `knowledge_entities`, property keys from `knowledge_properties`, and relationship types from `knowledge_relationships` |
 | `GET /admin/knowledge-graph/relationships` | Admin session + filters | Paginated relationships |
 | `GET/PATCH/DELETE /admin/knowledge-graph/entities/{id}` | Admin session | Entity detail or mutation |
@@ -63,6 +63,9 @@ response ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý hoặc
 phạm vi.
 
 Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
+Root state nội bộ có `conversation_context` gồm tối đa sáu user message gần
+nhất để Supervisor xử lý follow-up. API không nhận raw history riêng; context
+được giữ theo `thread_id` trong checkpointer hiện tại.
 
 ### Explorer
 
@@ -135,7 +138,9 @@ schema; they do not imply that all catalog data is production-verified. Entity t
 status filter options are queried from `knowledge_entities` at runtime; property
 keys and relationship types are queried from their graph tables. A
 relationship edit can set both `fromEntityId` and `toEntityId`; the current
-entity remains the admin context for the mutation.
+entity remains the admin context for the mutation. Updating an entity type in
+the admin UI also sends the synchronized entity ID; the backend moves child
+records and relationship endpoints transactionally when that ID changes.
 
 Các schema dùng chung chính:
 
@@ -158,6 +163,10 @@ Các schema dùng chung chính:
   `clarification_question`, `warnings`, `sources`.
 
 ## Durable trip-chat API
+
+## Auto-attach Style rules
+
+The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
 
 The current frontend planner uses the authenticated `/v1/trip-chats` contract.
 Each chat owns a LangGraph thread identifier and persists user/assistant

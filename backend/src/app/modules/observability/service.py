@@ -3,6 +3,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.modules.observability.contract import LangfusePage, LangfuseStatus
+from app.modules.observability.langfuse_callback import LangfuseTraceCallback
 from app.modules.observability.ports import LangfuseClient, LangfuseProviderError
 
 
@@ -18,6 +19,11 @@ class ObservabilityService:
     def __init__(self, client: LangfuseClient, host: str) -> None:
         self.client = client
         self.host = host
+
+    def start_trace(self, *, request_id: str, metadata: dict[str, Any]) -> LangfuseTraceCallback | None:
+        if not self.client.configured:
+            return None
+        return LangfuseTraceCallback(self.client, trace_id=request_id, metadata=metadata)
 
     async def status(self) -> LangfuseStatus:
         if not self.client.configured:

@@ -201,10 +201,7 @@ class GeminiEmbeddingProvider:
             if isinstance(error, Mapping) and isinstance(error.get("message"), str):
                 message = " ".join(error["message"].split())[:300]
         suffix = f": {message}" if message else ""
-        return (
-            f"Gemini embedding provider returned HTTP {response.status_code}"
-            f"{suffix}"
-        )
+        return f"Gemini embedding provider returned HTTP {response.status_code}{suffix}"
 
     async def _next_available_key(self) -> tuple[int, str]:
         async with self._key_lock:

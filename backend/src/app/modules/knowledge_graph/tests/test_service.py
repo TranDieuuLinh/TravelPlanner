@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from app.modules.knowledge_graph.contract import EntityCreate, EntityUpdate, RelationshipUpsert
+from app.modules.knowledge_graph.contract import AutoAttachRule, EntityCreate, EntityUpdate, RelationshipUpsert
 from app.modules.knowledge_graph.ontology import ontology_payload
 from app.modules.knowledge_graph.service import KnowledgeGraphError, KnowledgeGraphService
 
@@ -110,3 +110,21 @@ def test_relationship_contract_allows_custom_source_entity() -> None:
 
     assert store.added is not None
     assert store.added[0] == "source"
+
+
+def test_auto_attach_rule_contract_accepts_camel_case() -> None:
+    payload = AutoAttachRule.model_validate(
+        {
+            "ruleId": "style_archery",
+            "name": "Ngoài trời",
+            "styleGroup": "outdoor",
+            "entityTypes": ["ActivityItem"],
+            "keywords": ["bắn cung"],
+            "timeDuration": "PT90M",
+            "timeWindows": [{"start": "08:00", "end": "18:00"}],
+            "overrideCount": 1,
+        }
+    )
+
+    assert payload.rule_id == "style_archery"
+    assert payload.time_windows[0].end == "18:00"
