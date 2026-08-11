@@ -32,9 +32,9 @@ def decide(service: SupervisorService, message: str, **flags):
     return asyncio.run(service.decide(SupervisorInput(message=message, **flags)))
 
 
-def test_structured_edit_has_highest_precedence_and_skips_llm():
+def test_configured_classifier_handles_structured_edit():
     classifier = FakeClassifier(
-        ClassifierResult(route="information_finder", confidence=1, reason="wrong")
+        ClassifierResult(route="plan_editor", confidence=1, reason="Structured edit")
     )
     decision = decide(
         SupervisorService(classifier),
@@ -43,7 +43,7 @@ def test_structured_edit_has_highest_precedence_and_skips_llm():
         has_edit_operation=True,
     )
     assert decision.route == "plan_editor"
-    assert classifier.calls == 0
+    assert classifier.calls == 1
 
 
 def test_edit_operation_without_itinerary_never_routes_to_editor():
@@ -112,6 +112,50 @@ def test_valid_llm_result_is_parsed_and_used_for_ambiguous_message():
     decision = decide(SupervisorService(classifier), "Can you help with this place?")
     assert decision.route == "information_finder"
     assert classifier.calls == 1
+
+
+def test_configured_classifier_runs_before_free_text_rules():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="information_finder",
+            confidence=0.95,
+            reason="Historical destination information",
+        )
+    )
+    decision = decide(
+        SupervisorService(classifier), "Cho tôi lịch sửa Hồ Chí Minh"
+    )
+    assert decision.route == "information_finder"
+    assert classifier.calls == 1
+
+
+def test_contextual_follow_up_uses_conversation_context():
+    decision = decide(
+        SupervisorService(),
+        "Còn chỗ này thì sao?",
+        conversation_context=["Tôi muốn biết thêm về Hải Phòng."],
+    )
+    assert decision.route == "information_finder"
+
+
+def test_destination_follow_up_without_context_is_still_information():
+    assert decide(SupervisorService(), "Còn Hà Nội thì sao.").route == (
+        "information_finder"
+    )
+
+
+def test_llm_finish_response_uses_the_users_language():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="finish",
+            confidence=0.9,
+            reason="Meta question",
+            response="Tôi là trợ lý lập kế hoạch du lịch của bạn.",
+        )
+    )
+    decision = decide(SupervisorService(classifier), "Bạn là ai vậy?")
+    assert decision.route == "finish"
+    assert decision.response == "Tôi là trợ lý lập kế hoạch du lịch của bạn."
 
 
 def test_llm_failure_uses_safe_fallback_when_enabled():

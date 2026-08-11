@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 
 from app.modules.information_finder.adapters.development import InMemorySourceRepository
 from app.modules.information_finder.adapters.gemini_embedding import (
@@ -15,6 +16,7 @@ from app.modules.information_finder.contract import (
     PreparedSource,
     SearchResult,
 )
+from app.modules.information_finder.errors import EmbeddingProviderError
 from app.modules.information_finder.ports import SearchProviderQuotaExceeded
 
 NOW = datetime.now(timezone.utc)
@@ -104,13 +106,29 @@ def test_gemini_embedding_uses_retrieval_tasks_and_normalizes_vectors():
 
     assert query == [1.0] + [0.0] * 383
     assert documents == [[1.0] + [0.0] * 383]
-    assert requests[0][1]["embedContentConfig"] == {
-        "taskType": "RETRIEVAL_QUERY",
-        "outputDimensionality": 384,
-    }
-    assert requests[1][1]["requests"][0]["embedContentConfig"]["taskType"] == (
-        "RETRIEVAL_DOCUMENT"
-    )
+    assert requests[0][1]["taskType"] == "RETRIEVAL_QUERY"
+    assert requests[0][1]["outputDimensionality"] == 384
+    assert requests[1][1]["requests"][0]["taskType"] == "RETRIEVAL_DOCUMENT"
+    assert requests[1][1]["requests"][0]["outputDimensionality"] == 384
+    assert "embedContentConfig" not in requests[0][1]
+
+
+def test_gemini_embedding_splits_batches_at_provider_limit():
+    batch_sizes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        batch_sizes.append(len(body["requests"]))
+        values = [{"values": [1.0] + [0.0] * 383} for _ in body["requests"]]
+        return httpx.Response(200, json={"embeddings": values})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiEmbeddingProvider("secret", client=client)
+    vectors = asyncio.run(provider.embed_documents(["document"] * 101))
+    asyncio.run(client.aclose())
+
+    assert len(vectors) == 101
+    assert batch_sizes == [100, 1]
 
 
 def test_gemini_embedding_rotates_comma_separated_keys_on_quota():
@@ -129,6 +147,32 @@ def test_gemini_embedding_rotates_comma_separated_keys_on_quota():
 
     assert provider.key_count == 2
     assert seen_keys == ["api1", "api2"]
+
+
+def test_gemini_embedding_includes_provider_message_for_bad_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "Invalid argument: output dimensionality",
+                    "details": [{"private": "must not be logged"}],
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiEmbeddingProvider("api1", client=client)
+    try:
+        with pytest.raises(EmbeddingProviderError) as error:
+            asyncio.run(provider.embed_query("query"))
+        assert str(error.value) == (
+            "Gemini embedding provider returned HTTP 400: "
+            "Invalid argument: output dimensionality"
+        )
+        assert "must not be logged" not in str(error.value)
+    finally:
+        asyncio.run(client.aclose())
 
 
 def test_tavily_maps_quota_error_without_exposing_raw_payload():

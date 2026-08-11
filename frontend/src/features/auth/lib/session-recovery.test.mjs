@@ -10,6 +10,7 @@ test("keeps the current session on a temporary network failure", () => {
 test("clears the session only when authentication is rejected", () => {
   assert.equal(authLoadFailureAction(401), "clear-session");
   assert.equal(authLoadFailureAction(403), "clear-session");
+  assert.equal(authLoadFailureAction(404), "clear-session");
 });
 
 test("does not hide unexpected API failures", () => {

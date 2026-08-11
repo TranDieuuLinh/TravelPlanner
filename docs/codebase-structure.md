@@ -35,7 +35,9 @@ backend/
 │       ├── information_finder/
 │       ├── place_checker/
 │       ├── itinerary_planner/
-│       └── plan_editor/
+│       ├── plan_editor/
+│       ├── auth/
+│       └── knowledge_graph/
 └── tests/
 ```
 
@@ -99,9 +101,16 @@ PlaceChecker và Planner, rồi trả nguyên `ExplorerOutput`. Endpoint này d�
 test/debug contract nhưng vẫn chạy cùng graph và provider configuration với
 runtime.
 
+Authentication is implemented as a vertical `auth` module. It owns the
+`auth_runtime_users` and `auth_runtime_sessions` tables, uses PostgreSQL when `DATABASE_URL` is
+configured, and uses an in-memory repository only for tests or development
+without a database. Sessions are opaque cookies; the raw token is never stored
+in the database.
+
 Information Finder hiện có service cache-first, các port `SearchProvider`,
-`SourceRepository`, `EmbeddingProvider`, `AnswerGenerator`, adapter Tavily,
-Gemini embeddings và PostgreSQL/pgvector. Các bảng do module sở hữu có tiền tố
+`SourceRepository`, `EmbeddingProvider`, `SourceChunker`, `AnswerGenerator`,
+adapter Tavily, Gemini URL Context chunker, Gemini embeddings và PostgreSQL/pgvector.
+Các bảng do module sở hữu có tiền tố
 `information_finder_`; module không dùng bảng legacy. Khi thiếu database hoặc
 API key, development/test dùng fallback trung thực trong process.
 
@@ -110,13 +119,17 @@ dependency injection. Prompt, structured claim contract, source budget,
 citation validation và fallback policy vẫn thuộc module Information Finder;
 shared client chỉ sở hữu transport Gemini và key rotation.
 
-Supervisor là hybrid intent classifier: các rule deterministic có tín hiệu mạnh
-được ưu tiên, request còn mơ hồ có thể dùng structured Gemini qua `shared/llm/`,
-và fallback an toàn được bật mặc định. `SUPERVISOR_CLASSIFIER_PROVIDER=rules`
-chạy offline; cấu hình `gemini` yêu cầu `GEMINI_API_KEY`. Routing baseline chưa
-được production-evaluated.
+Supervisor là intent classifier có provider cấu hình được. Khi provider là
+`gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;
+route `finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting, câu hỏi về
+trợ lý hoặc yêu cầu ngoài phạm vi. Rule deterministic chỉ là provider offline
+hoặc runtime fallback. `SUPERVISOR_CLASSIFIER_PROVIDER=rules` chạy offline; cấu
+hình `gemini` yêu cầu `GEMINI_API_KEY`. Routing baseline chưa
+được production-evaluated. Root graph truyền tối đa sáu user message gần nhất
+từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải durable memory.
 
-`shared/llm/` cung cấp port và Gemini REST adapter dùng chung. `GEMINI_API_KEY`
+`shared/llm/` cung cấp port và Gemini REST adapter dùng chung, bao gồm tùy chọn
+URL Context tool cho module cần Gemini đọc URL public. `GEMINI_API_KEY`
 là một chuỗi chứa nhiều key phân tách bằng dấu phẩy; adapter xoay vòng key và
 cooldown key khi provider trả về lỗi có thể thử lại. Các agent hiện có chưa
 được chuyển business behavior sang LLM ngoài Supervisor và Information Finder
@@ -140,6 +153,10 @@ chưa nằm trong scaffold hiện tại. Checkpointer của root graph vẫn ch�
 các `@import`. CSS theo vùng chức năng nằm trong `frontend/src/styles/global/`,
 được import theo đúng thứ tự cascade hiện tại; style riêng của Planner nằm trong
 `frontend/src/features/planner/styles/`.
+
+The existing planner UI remains the active entrypoint. Its API adapter in
+`frontend/src/features/planner/api/plans.ts` maps the current `/v1/trip-chats`
+contract to the existing view models without changing the planner layout.
 
 `admin-frontend/app/globals.css` cũng chỉ giữ các import. Style admin được chia
 theo shell/run, responsive, Knowledge Graph và AI import trong

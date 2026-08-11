@@ -53,3 +53,25 @@ def test_image_without_prompt_routes_to_explorer() -> None:
 
     assert result["decision"].route == "explorer"
     assert result["explorer_output"].input_adm == "Huế"
+
+
+def test_same_thread_keeps_user_context_for_follow_up_routing() -> None:
+    graph = create_root_graph()
+    thread_id = str(uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+
+    asyncio.run(
+        graph.ainvoke(
+            {"request_id": "context-1", "message": "Tôi muốn biết về Hải Phòng."},
+            config=config,
+        )
+    )
+    result = asyncio.run(
+        graph.ainvoke(
+            {"request_id": "context-2", "message": "Còn chỗ này thì sao?"},
+            config=config,
+        )
+    )
+
+    assert result["decision"].route == "information_finder"
+    assert result.get("itinerary") is None

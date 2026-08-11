@@ -1,6 +1,2 @@
-export {
-  testConstraintResearch,
-  testFestivalDiscovery,
-  testRegionOverview
-} from "../api";
-export { APIError } from "../api";
+// DEPRECATED: functionality replaced by Langfuse Playground embed under /observability/playground
+export {};

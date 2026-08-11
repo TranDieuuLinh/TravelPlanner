@@ -10,6 +10,7 @@ from app.modules.information_finder.contract import (
     RetrievedSource,
 )
 from app.modules.information_finder.freshness import FreshnessPolicy
+from app.modules.information_finder.normalization import select_relevant_excerpt
 
 
 class HashingEmbeddingProvider:
@@ -140,6 +141,13 @@ class ExtractiveAnswerGenerator:
     ) -> GeneratedAnswer:
         claims = []
         for source in sources[:4]:
-            snippet = " ".join(source.content.split())[:500].rstrip()
+            snippet = select_relevant_excerpt(
+                source.content,
+                query,
+                title=source.title,
+                max_chars=500,
+            )
+            if not snippet:
+                continue
             claims.append(AnswerClaim(text=snippet, source_ids=[source.source_id]))
         return GeneratedAnswer(claims=claims)

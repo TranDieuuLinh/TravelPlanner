@@ -207,7 +207,7 @@ export function GlobalPlannerAssistant() {
             onPointerMove={updateMove}
             onPointerUp={endMove}
           >
-            <PenguinMascot className="globalPlannerPenguin" size={82} variant="chatSpeaking" />
+            <PenguinMascot className="globalPlannerPenguin" priority size={82} variant="chatSpeaking" />
             <svg aria-hidden="true" className="globalPlannerBubble" viewBox="0 0 24 24">
               <path d="M5.25 4.75h13.5A2.25 2.25 0 0 1 21 7v8.5a2.25 2.25 0 0 1-2.25 2.25H11l-4.75 3v-3h-1A2.25 2.25 0 0 1 3 15.5V7a2.25 2.25 0 0 1 2.25-2.25Z" />
               <circle cx="8" cy="11.25" r="1" />

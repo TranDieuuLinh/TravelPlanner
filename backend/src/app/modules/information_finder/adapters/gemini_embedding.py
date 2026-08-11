@@ -42,6 +42,7 @@ class GeminiEmbeddingProvider:
     """Gemini retrieval embeddings backed by the REST Embed Content API."""
 
     _base_url = "https://generativelanguage.googleapis.com/v1beta"
+    _max_batch_size = 100
 
     def __init__(
         self,
@@ -89,29 +90,37 @@ class GeminiEmbeddingProvider:
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        payload = {
-            "requests": [self._request(text, "RETRIEVAL_DOCUMENT") for text in texts]
-        }
-        data = await self._post(":batchEmbedContents", payload)
-        embeddings = data.get("embeddings")
-        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
-            raise EmbeddingProviderInvalidOutput(
-                "Gemini returned an invalid embedding batch"
-            )
-        return [self._vector(item) for item in embeddings]
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self._max_batch_size):
+            batch = texts[start : start + self._max_batch_size]
+            payload = {
+                "requests": [
+                    self._request(text, "RETRIEVAL_DOCUMENT") for text in batch
+                ]
+            }
+            data = await self._post(":batchEmbedContents", payload)
+            embeddings = data.get("embeddings")
+            if not isinstance(embeddings, list) or len(embeddings) != len(batch):
+                raise EmbeddingProviderInvalidOutput(
+                    "Gemini returned an invalid embedding batch"
+                )
+            vectors.extend(self._vector(item) for item in embeddings)
+        return vectors
 
     async def _embed_one(self, text: str, task_type: str) -> list[float]:
         data = await self._post(":embedContent", self._request(text, task_type))
         return self._vector(data.get("embedding"))
 
     def _request(self, text: str, task_type: str) -> dict[str, Any]:
+        # The v1beta REST endpoint currently honors these compatibility fields
+        # at the request root. Sending the same values only inside
+        # embedContentConfig returns the model's full 3072-dimensional vector,
+        # which violates the module's persisted 384-dimensional identity.
         return {
             "model": self._model_path,
             "content": {"parts": [{"text": text}]},
-            "embedContentConfig": {
-                "taskType": task_type,
-                "outputDimensionality": self.identity.dimensions,
-            },
+            "taskType": task_type,
+            "outputDimensionality": self.identity.dimensions,
         }
 
     async def _post(self, operation: str, payload: dict[str, Any]) -> Mapping[str, Any]:
@@ -151,12 +160,10 @@ class GeminiEmbeddingProvider:
                     )
                 elif response.status_code == 408 or response.status_code >= 500:
                     last_error = EmbeddingProviderError(
-                        f"Gemini embedding provider returned HTTP {response.status_code}"
+                        self._http_error_message(response)
                     )
                 elif response.is_error:
-                    raise EmbeddingProviderError(
-                        f"Gemini embedding provider returned HTTP {response.status_code}"
-                    )
+                    raise EmbeddingProviderError(self._http_error_message(response))
                 else:
                     return self._parse_response(response)
                 await self._cool_down(key_index)
@@ -181,6 +188,20 @@ class GeminiEmbeddingProvider:
                 "Gemini embedding response was not an object"
             )
         return data
+
+    @staticmethod
+    def _http_error_message(response: httpx.Response) -> str:
+        message = None
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, Mapping):
+            error = payload.get("error")
+            if isinstance(error, Mapping) and isinstance(error.get("message"), str):
+                message = " ".join(error["message"].split())[:300]
+        suffix = f": {message}" if message else ""
+        return f"Gemini embedding provider returned HTTP {response.status_code}{suffix}"
 
     async def _next_available_key(self) -> tuple[int, str]:
         async with self._key_lock:

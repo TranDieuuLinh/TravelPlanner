@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { login, type AdminUser } from "../../lib/api/auth";
+import { login } from "../../lib/shared/auth";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -17,7 +17,7 @@ export default function LoginScreen() {
     setError("");
     try {
       await login(email, password);
-      router.push("/runs");
+      router.push("/observability");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Không thể đăng nhập."

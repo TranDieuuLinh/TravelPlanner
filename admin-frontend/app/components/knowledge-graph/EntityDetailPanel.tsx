@@ -5,8 +5,7 @@ import {
   KG_DEFAULT_COLLAPSED_SECTIONS,
   useCollapsedSections,
 } from "./KnowledgeGraphSections";
-import { RelationshipGraph } from "./RelationshipGraph";
-import type { KGEntityDetail } from "../../../lib/api/knowledge-graph";
+import type { KGEntityDetail } from "../../features/knowledge-graph/lib";
 
 export function EntityDetailPanel({
   entity,
@@ -177,7 +176,6 @@ export function EntityDetailPanel({
                   </p>
                 )}
               </div>
-              <RelationshipGraph entity={entity} onJumpToEntity={onJumpToEntity} />
             </>
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">

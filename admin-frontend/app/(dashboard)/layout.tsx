@@ -3,8 +3,45 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { logout, type AdminUser } from "../../lib/api/auth";
-import { listRuns } from "../../lib/api/planning-runs";
+import { logout, type AdminUser } from "../../lib/shared/auth";
+
+type NavLink = {
+  href: string;
+  label: string;
+  icon: string;
+  description: string;
+  external?: boolean;
+};
+
+const KNOWLEDGE_GRAPH_ENABLED = process.env.NEXT_PUBLIC_KNOWLEDGE_GRAPH_ENABLED !== "false";
+
+const NAV_LINKS: NavLink[] = [
+  {
+    href: "/observability",
+    label: "Observability",
+    icon: "⌁",
+    description: "Langfuse traces, sessions, playground"
+  },
+  {
+    href: "/knowledge-graph",
+    label: "Knowledge Graph",
+    icon: "⌘",
+    description: "Catalog entity, alias và relationship"
+  },
+  {
+    href: "/knowledge-graph/auto-attach",
+    label: "Auto Attach",
+    icon: "AA",
+    description: "Manage Style keyword attachment rules"
+  }
+];
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/observability") {
+    return pathname === "/observability" || pathname.startsWith("/observability/");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function DashboardLayout({
   children
@@ -17,11 +54,25 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   useEffect(() => {
-    // A quick way to verify if we are logged in
-    listRuns({ limit: 1 })
-      .then(() => {
-        // Assume logged in if it succeeds
-        // We don't get the user info from listRuns directly in the old code either
+    fetch("/api/admin-session", {
+      credentials: "include"
+    })
+      .then((response) => {
+        if (!response.ok) {
+          setAuthenticated(false);
+          router.push("/login");
+          return null;
+        }
+        return response.json();
+      })
+      .then((payload: AdminUser | null) => {
+        if (!payload) return;
+        if (payload.role !== "admin") {
+          setAuthenticated(false);
+          router.push("/login");
+          return;
+        }
+        setUser(payload);
         setAuthenticated(true);
       })
       .catch(() => {
@@ -40,7 +91,7 @@ export default function DashboardLayout({
   }
 
   if (!authenticated) {
-    return null; // Will redirect
+    return null;
   }
 
   async function signOut() {
@@ -54,7 +105,7 @@ export default function DashboardLayout({
   return (
     <main className="appShell">
       <header className="topbarNav" role="banner">
-        <Link href="/runs" className="topbarNavBrand" aria-label="TravelPlanner home">
+        <Link href="/observability" className="topbarNavBrand" aria-label="TravelPlanner home">
           <span className="topbarNavBrandMark">TP</span>
           <div>
             <b>TravelPlanner</b>
@@ -62,38 +113,17 @@ export default function DashboardLayout({
           </div>
         </Link>
         <nav className="topbarNavLinks" aria-label="Primary">
-          <Link
-            href="/runs"
-            className={pathname === "/runs" ? "active" : ""}
-            title="Planning runs"
-          >
-            <span aria-hidden="true">⌁</span>
-            <span>Planning runs</span>
-          </Link>
-          <Link
-            href="/golden"
-            className={pathname === "/golden" ? "active" : ""}
-            title="Golden dataset"
-          >
-            <span aria-hidden="true">◇</span>
-            <span>Golden dataset</span>
-          </Link>
-          <Link
-            href="/knowledge-graph"
-            className={pathname === "/knowledge-graph" ? "active" : ""}
-            title="Knowledge Graph"
-          >
-            <span aria-hidden="true">⌘</span>
-            <span>Knowledge Graph</span>
-          </Link>
-          <Link
-            href="/tools"
-            className={pathname === "/tools" ? "active" : ""}
-            title="Tools Tester"
-          >
-            <span aria-hidden="true">⌂</span>
-            <span>Tools Tester</span>
-          </Link>
+          {NAV_LINKS.filter((link) => KNOWLEDGE_GRAPH_ENABLED || link.href !== "/knowledge-graph").map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={isActive(pathname ?? "", link.href) ? "active" : ""}
+              title={link.description}
+            >
+              <span aria-hidden="true">{link.icon}</span>
+              <span>{link.label}</span>
+            </Link>
+          ))}
         </nav>
         <div className="topbarNavUser">
           <div className="adminAvatar" aria-hidden="true">

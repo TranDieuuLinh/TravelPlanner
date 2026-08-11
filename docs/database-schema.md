@@ -46,7 +46,7 @@ chạy migration thủ công và kiểm tra backup trước.
 |---|---|
 | `information_finder_source_documents` | Canonical URL duy nhất, domain, title, provider và `review_status` mặc định `pending`. |
 | `information_finder_source_snapshots` | Nội dung theo content hash; phân biệt `published_at`, `source_updated_at`, `last_fetched_at`, `expires_at` và provenance Tavily. |
-| `information_finder_source_chunks` | Chunk khoảng 300 token, overlap khoảng 50 token và generated `tsvector`. |
+| `information_finder_source_chunks` | Semantic chunk từ Gemini URL Context (được giới hạn theo số từ) hoặc fallback khoảng 300 từ/overlap 50 từ; có generated `tsvector`. Phiên bản chunking nằm ở `source_snapshots.extractor_version`. |
 | `information_finder_source_embeddings` | Vector 384 chiều cùng model, revision, dimensions và `embedded_at`. |
 | `information_finder_search_runs` | Query gốc/chuẩn hóa, tham số, request id, trạng thái và lỗi provider. |
 | `information_finder_search_run_sources` | Snapshot thuộc search run, rank, provider score và snippet. |
@@ -123,6 +123,19 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 ## Bảng planner và hội thoại
 
 ### `trip_chats`
+
+The legacy `trip_chats` tables documented below are not used by the current
+agent planner. The current runtime owns the isolated tables below instead.
+
+### `agent_trip_chats`
+
+Stores the authenticated user's chat id, LangGraph `thread_id`, revision and
+latest itinerary JSON. Created by `backend/migrations/003_trip_chat.sql`.
+
+### `agent_trip_chat_messages`
+
+Stores ordered user/assistant messages, route metadata, warnings and sources.
+Rows cascade with their owning `agent_trip_chats` record.
 
 Ngày sửa đổi cuối cùng: 2026-08-10.
 
@@ -781,6 +794,10 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `resolution` | text | Có | Kết quả xử lý. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
+
+### `knowledge_auto_attach_rules`
+
+Owned by the Knowledge Graph module and created by `backend/migrations/004_knowledge_auto_attach.sql`. The table persists admin-editable Style attachment rules, including keyword arrays, exclusions, exact names, default time windows, and the pending review status used for generated `Has_Style` candidates.
 
 ## Ghi chú quan trọng
 

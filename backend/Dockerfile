@@ -9,7 +9,14 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir "."
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
+RUN python -m pip install --no-cache-dir \
+    --index-url "${PIP_INDEX_URL}" \
+    --retries 10 \
+    --timeout 120 \
+    "."
+
 RUN playwright install --with-deps chromium
 
 ENV PYTHONPATH=/app/src

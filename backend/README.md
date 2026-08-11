@@ -64,6 +64,12 @@ This is a working architecture scaffold, not a production travel-data system.
   canonical URL, extractor version, and a seven-day default TTL. The adapter
   reads legacy `old_one` version-6 artifacts and writes normalized version 7.
   `forceRefresh=true` bypasses a hit; cache failures do not block extraction.
+- The supervisor uses structured Gemini classification first when
+  `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`. The classifier also produces a short
+  same-language response for greeting, assistant-meta, and out-of-scope
+  `finish` requests. Deterministic rules remain the offline provider and runtime
+  fallback. The baseline model and routing policy are not production-evaluated.
+- Explorer currently parses destination and duration from simple text input.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful
@@ -73,6 +79,9 @@ This is a working architecture scaffold, not a production travel-data system.
 - ItineraryPlanner uses estimated routing, not live road-network data.
 - The checkpointer is in memory and must be replaced by durable storage in
   production.
+- Root graph checkpoints retain up to six recent user messages as internal
+  conversation context for follow-up routing. This context is a routing hint,
+  not a durable chat-history or production memory system.
 - A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
   It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
   request receives a quota, authorization, transport, or server error. Existing
@@ -94,6 +103,9 @@ python -m playwright install chromium
 psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
 psql "$DATABASE_URL" -f migrations/002_explorer_source_document_cache.sql
 psql "$DATABASE_URL" -f migrations/003_explorer_draft_cache.sql
+psql "$DATABASE_URL" -f migrations/002_auth.sql
+psql "$DATABASE_URL" -f migrations/003_knowledge_graph.sql
+psql "$DATABASE_URL" -f migrations/004_knowledge_auto_attach.sql
 uvicorn app.main:app --reload
 ```
 
@@ -125,7 +137,34 @@ Run tests:
 pytest
 ```
 
-Configure `DATABASE_URL` for the module-owned PostgreSQL cache,
+Authentication owns `auth_runtime_users` and `auth_runtime_sessions` through
+`migrations/002_auth.sql`. Run that migration for an existing PostgreSQL
+volume before using `/auth/login` or `/auth/register`. When `DATABASE_URL` is
+empty, tests and local development use an in-memory fallback. The development
+seed accounts are configured by `AUTH_DEV_SEED_USERS`; do not use those default
+passwords outside local development.
+
+The admin Knowledge Graph module owns the `knowledge_*` tables created by
+`migrations/003_knowledge_graph.sql` and `migrations/004_knowledge_auto_attach.sql`.
+It provides entity, alias, property, relationship, auto-attach rule, stats, and
+ontology endpoints consumed by `admin-frontend`.
+Apply the migration manually for an existing PostgreSQL volume; Docker only
+applies init scripts when the volume is created.
+
+With Docker, a fresh `travelplanner_postgres_data_v2` volume runs the migration
+automatically because `docker-compose.yml` mounts it into PostgreSQL initdb.
+For an existing volume, run the idempotent migration from the mounted file:
+
+```powershell
+docker compose up -d postgres
+docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/003_knowledge_graph.sql
+docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql
+```
+
+Configure `BACKEND_CORS_ORIGINS` with comma-separated browser origins (the local
+frontend and admin frontend use `http://localhost:3000` and
+`http://localhost:3001`), and configure `DATABASE_URL` for the module-owned
+PostgreSQL cache,
 `GEMINI_API_KEY` for Gemini embeddings/answer generation, and `TAVILY_API_KEY`
 for web refreshes. Gemini embeddings use `gemini-embedding-001` with 384 output
 dimensions by default, matching the current pgvector schema; no local embedding

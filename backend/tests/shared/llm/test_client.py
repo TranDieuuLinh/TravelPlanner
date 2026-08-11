@@ -110,6 +110,22 @@ def test_client_sends_official_json_schema_generation_config() -> None:
     _run(client.aclose())
 
 
+def test_client_sends_gemini_tools_at_request_root() -> None:
+    request_body = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_body.update(__import__("json").loads(request.content))
+        return _response("ok")
+
+    client = GeminiLlmClient(
+        "api1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    _run(client.generate("read this URL", tools=[{"url_context": {}}]))
+    assert request_body["tools"] == [{"url_context": {}}]
+    _run(client.aclose())
+
+
 def test_client_does_not_retry_unauthorized_forever() -> None:
     calls = 0
 

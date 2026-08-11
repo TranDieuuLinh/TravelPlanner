@@ -147,7 +147,8 @@ class PostgresSourceRepository:
         )
         document_id = row["id"]
         existing_snapshot = await connection.fetchrow(
-            """SELECT id, content_hash FROM information_finder_source_snapshots
+            """SELECT id, content_hash, extractor_version
+               FROM information_finder_source_snapshots
                WHERE source_document_id=$1 AND content_hash=$2 FOR UPDATE""",
             document_id,
             source.content_hash,
@@ -157,21 +158,27 @@ class PostgresSourceRepository:
             await connection.execute(
                 """UPDATE information_finder_source_snapshots SET
                    last_fetched_at=$2, expires_at=$3,
-                   source_updated_at=COALESCE($4, source_updated_at), updated_at=now()
+                   source_updated_at=COALESCE($4, source_updated_at),
+                   extractor_version=$5, updated_at=now()
                    WHERE id=$1""",
                 snapshot_id,
                 source.result.fetched_at,
                 source.expires_at,
                 source.result.source_updated_at,
+                source.chunking_version,
             )
+            if existing_snapshot["extractor_version"] != source.chunking_version:
+                await self._replace_chunks(
+                    connection, snapshot_id, source.chunks, identity
+                )
         else:
             snapshot_id = uuid4()
             await connection.execute(
                 """INSERT INTO information_finder_source_snapshots
                    (id, source_document_id, content, content_hash, published_at,
                     source_updated_at, last_fetched_at, expires_at,
-                    provider_external_id, provider_request_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)""",
+                    provider_external_id, provider_request_id, extractor_version)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",
                 snapshot_id,
                 document_id,
                 source.result.content,
@@ -182,32 +189,9 @@ class PostgresSourceRepository:
                 source.expires_at,
                 source.result.provider_external_id,
                 source.result.provider_request_id,
+                source.chunking_version,
             )
-            for chunk in source.chunks:
-                chunk_id = uuid4()
-                await connection.execute(
-                    """INSERT INTO information_finder_source_chunks
-                       (id, source_snapshot_id, chunk_index, content, token_count, content_hash)
-                       VALUES ($1,$2,$3,$4,$5,$6)""",
-                    chunk_id,
-                    snapshot_id,
-                    chunk.chunk_index,
-                    chunk.content,
-                    chunk.token_count,
-                    chunk.content_hash,
-                )
-                await connection.execute(
-                    """INSERT INTO information_finder_source_embeddings
-                       (id, source_chunk_id, model_name, model_revision, dimensions,
-                        embedding, embedded_at) VALUES ($1,$2,$3,$4,$5,$6::vector,$7)""",
-                    uuid4(),
-                    chunk_id,
-                    identity.model_name,
-                    identity.model_revision,
-                    identity.dimensions,
-                    _vector_literal(chunk.embedding),
-                    chunk.embedded_at,
-                )
+            await self._replace_chunks(connection, snapshot_id, source.chunks, identity)
         return RetrievedSource(
             source_id=str(document_id),
             snapshot_id=str(snapshot_id),
@@ -222,6 +206,46 @@ class PostgresSourceRepository:
             expires_at=source.expires_at,
             review_status=row["review_status"],
         )
+
+    @staticmethod
+    async def _replace_chunks(connection, snapshot_id, chunks, identity) -> None:
+        await connection.execute(
+            """DELETE FROM information_finder_source_embeddings
+               WHERE source_chunk_id IN (
+                 SELECT id FROM information_finder_source_chunks
+                 WHERE source_snapshot_id=$1
+               )""",
+            snapshot_id,
+        )
+        await connection.execute(
+            "DELETE FROM information_finder_source_chunks WHERE source_snapshot_id=$1",
+            snapshot_id,
+        )
+        for chunk in chunks:
+            chunk_id = uuid4()
+            await connection.execute(
+                """INSERT INTO information_finder_source_chunks
+                   (id, source_snapshot_id, chunk_index, content, token_count, content_hash)
+                   VALUES ($1,$2,$3,$4,$5,$6)""",
+                chunk_id,
+                snapshot_id,
+                chunk.chunk_index,
+                chunk.content,
+                chunk.token_count,
+                chunk.content_hash,
+            )
+            await connection.execute(
+                """INSERT INTO information_finder_source_embeddings
+                   (id, source_chunk_id, model_name, model_revision, dimensions,
+                    embedding, embedded_at) VALUES ($1,$2,$3,$4,$5,$6::vector,$7)""",
+                uuid4(),
+                chunk_id,
+                identity.model_name,
+                identity.model_revision,
+                identity.dimensions,
+                _vector_literal(chunk.embedding),
+                chunk.embedded_at,
+            )
 
     async def record_failed_search(self, **kwargs) -> None:
         pool = await self._get_pool()

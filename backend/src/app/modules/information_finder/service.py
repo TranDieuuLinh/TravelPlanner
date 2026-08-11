@@ -11,13 +11,17 @@ from app.modules.information_finder.contract import (
     SourceReference,
 )
 from app.modules.information_finder.answering import validate_and_render_answer
-from app.modules.information_finder.errors import AnswerProviderError
+from app.modules.information_finder.errors import (
+    AnswerProviderError,
+    SourceChunkingError,
+)
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
     EmbeddingProvider,
     SearchProvider,
     SearchProviderError,
+    SourceChunker,
     SourceRepository,
 )
 from app.modules.information_finder.ranking import (
@@ -37,13 +41,18 @@ class InformationFinderOptions:
     retrieval_limit: int = 10
     answer_source_limit: int = 5
     minimum_local_sources: int = 2
-    similarity_threshold: float = 0.65
+    similarity_threshold: float = 0.8
     provider_relevance_threshold: float = 0.5
     minimum_content_chars: int = 80
     blocked_domains: tuple[str, ...] = ()
     chunk_tokens: int = 300
     chunk_overlap: int = 50
+    topic_overlap_threshold: float = 0.75
+    max_tavily_attempts: int = 3
     answer_fallback_enabled: bool = True
+
+
+DETERMINISTIC_CHUNKING_VERSION = "deterministic-v1"
 
 
 class InformationFinderService:
@@ -54,6 +63,7 @@ class InformationFinderService:
         embeddings: EmbeddingProvider,
         answers: AnswerGenerator,
         fallback_answers: AnswerGenerator | None = None,
+        chunker: SourceChunker | None = None,
         search_provider: SearchProvider | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
@@ -62,6 +72,7 @@ class InformationFinderService:
         self.embeddings = embeddings
         self.answers = answers
         self.fallback_answers = fallback_answers
+        self.chunker = chunker
         self.search_provider = search_provider
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
@@ -77,13 +88,20 @@ class InformationFinderService:
             self.options.retrieval_limit,
         )
         now = datetime.now(timezone.utc)
-        fresh_local = [source for source in local if source.expires_at > now]
+        fresh_local = [
+            source
+            for source in local
+            if source.expires_at > now
+            and source.semantic_score >= self.options.similarity_threshold
+        ]
         decision = self.freshness.for_query(normalized_query)
         local_sufficient = has_sufficient_local_sources(
             fresh_local,
+            query=normalized_query,
             minimum_sources=self.options.minimum_local_sources,
             similarity_threshold=self.options.similarity_threshold,
             minimum_content_chars=self.options.minimum_content_chars,
+            topic_overlap_threshold=self.options.topic_overlap_threshold,
         )
         warnings: list[str] = []
         combined = list(fresh_local)
@@ -94,48 +112,78 @@ class InformationFinderService:
                     "Web search is not configured; the answer may use incomplete local sources."
                 )
             else:
-                try:
-                    response = await self.search_provider.search(normalized_query)
-                    prepared = await self._prepare_sources(
-                        response.results,
-                        query_embedding=query_embedding,
-                        expires_at=now + decision.ttl,
-                    )
-                    saved = await self.repository.save_search(
-                        original_query=query,
-                        normalized_query=normalized_query,
-                        sources=prepared,
-                        identity=identity,
-                        provider_request_id=response.provider_request_id,
-                        search_parameters={
-                            "forceRefresh": decision.force_refresh,
-                            "resultCount": len(response.results),
-                        },
-                    )
-                    self._score_saved_sources(
-                        saved,
-                        prepared,
-                        query_embedding,
-                        normalized_query,
-                    )
-                    combined.extend(saved)
-                except SearchProviderError as exc:
+                failures: list[SearchProviderError] = []
+                for attempt, search_query in enumerate(
+                    self._search_queries(normalized_query), start=1
+                ):
+                    try:
+                        response = await self.search_provider.search(search_query)
+                        prepared = await self._prepare_sources(
+                            response.results,
+                            query_embedding=query_embedding,
+                            expires_at=now + decision.ttl,
+                        )
+                        saved = await self.repository.save_search(
+                            original_query=query,
+                            normalized_query=normalized_query,
+                            sources=prepared,
+                            identity=identity,
+                            provider_request_id=response.provider_request_id,
+                            search_parameters={
+                                "forceRefresh": decision.force_refresh,
+                                "attempt": attempt,
+                                "searchQuery": search_query,
+                                "resultCount": len(response.results),
+                            },
+                        )
+                        self._score_saved_sources(
+                            saved,
+                            prepared,
+                            query_embedding,
+                            normalized_query,
+                        )
+                        combined.extend(
+                            source
+                            for source in saved
+                            if source.semantic_score
+                            >= self.options.similarity_threshold
+                        )
+                        if has_sufficient_local_sources(
+                            combined,
+                            query=normalized_query,
+                            minimum_sources=self.options.minimum_local_sources,
+                            similarity_threshold=self.options.similarity_threshold,
+                            minimum_content_chars=self.options.minimum_content_chars,
+                            topic_overlap_threshold=self.options.topic_overlap_threshold,
+                        ):
+                            break
+                    except SearchProviderError as exc:
+                        failures.append(exc)
+
+                if failures and not combined:
+                    error = failures[-1]
                     warnings.append(
-                        f"Web search unavailable ({exc.code}); local sources were used."
+                        f"Web search unavailable ({error.code}); local sources were used."
                     )
                     await self.repository.record_failed_search(
                         original_query=query,
                         normalized_query=normalized_query,
                         provider="tavily",
-                        error_code=exc.code,
-                        search_parameters={"forceRefresh": decision.force_refresh},
+                        error_code=error.code,
+                        search_parameters={
+                            "forceRefresh": decision.force_refresh,
+                            "attempts": len(failures),
+                        },
                     )
 
         ranked = rank_sources(combined)[: self.options.answer_source_limit]
         if not ranked:
             return InformationFinderOutput(
                 answer="Chưa có nguồn phù hợp để trả lời câu hỏi này.",
-                warnings=warnings,
+                warnings=[
+                    *warnings,
+                    "No source met the semantic similarity threshold.",
+                ],
             )
         try:
             generated = await self.answers.generate(normalized_query, ranked)
@@ -188,25 +236,42 @@ class InformationFinderService:
             seen_hashes.add(digest)
             accepted.append((result, canonical_url, domain, digest))
 
-        chunk_sets = [
-            chunk_content(
-                result.content,
-                title=result.title,
-                target_tokens=self.options.chunk_tokens,
-                overlap_tokens=self.options.chunk_overlap,
-            )
-            for result, *_ in accepted
-        ]
-        texts = [chunk for chunks in chunk_sets for chunk, _ in chunks]
+        chunk_sets: list[tuple[list[tuple[str, int]], str]] = []
+        for result, *_ in accepted:
+            chunking_version = DETERMINISTIC_CHUNKING_VERSION
+            if self.chunker is not None:
+                try:
+                    semantic_chunks = await self.chunker.chunk(result)
+                    source_chunks = [
+                        (chunk, len(chunk.split())) for chunk in semantic_chunks
+                    ]
+                    chunking_version = self.chunker.version
+                except SourceChunkingError:
+                    source_chunks = chunk_content(
+                        result.content,
+                        title=result.title,
+                        target_tokens=self.options.chunk_tokens,
+                        overlap_tokens=self.options.chunk_overlap,
+                    )
+            else:
+                source_chunks = chunk_content(
+                    result.content,
+                    title=result.title,
+                    target_tokens=self.options.chunk_tokens,
+                    overlap_tokens=self.options.chunk_overlap,
+                )
+            chunk_sets.append((source_chunks, chunking_version))
+        texts = [chunk for source_chunks, _ in chunk_sets for chunk, _ in source_chunks]
         vectors = await self.embeddings.embed_documents(texts) if texts else []
         vector_index = 0
-        prepared_sources = []
+        prepared_sources: list[PreparedSource] = []
         embedded_at = datetime.now(timezone.utc)
-        for (result, canonical_url, domain, digest), chunks in zip(
-            accepted, chunk_sets
-        ):
-            prepared_chunks = []
-            for index, (chunk, token_count) in enumerate(chunks):
+        for (result, canonical_url, domain, digest), (
+            source_chunks,
+            chunking_version,
+        ) in zip(accepted, chunk_sets):
+            prepared_chunks: list[PreparedChunk] = []
+            for index, (chunk, token_count) in enumerate(source_chunks):
                 prepared_chunks.append(
                     PreparedChunk(
                         chunk_index=index,
@@ -226,6 +291,7 @@ class InformationFinderService:
                     content_hash=digest,
                     expires_at=expires_at,
                     chunks=prepared_chunks,
+                    chunking_version=chunking_version,
                 )
             )
         return prepared_sources
@@ -271,3 +337,11 @@ class InformationFinderService:
             review_status=source.review_status,
             published_at=source.published_at,
         )
+
+    def _search_queries(self, query: str) -> list[str]:
+        candidates = [
+            query,
+            f"{query}; giới thiệu tổng quan địa phương và điểm đến du lịch",
+            f"{query}; địa danh liên quan, lịch sử và điểm tham quan nổi bật",
+        ]
+        return candidates[: max(1, min(self.options.max_tavily_attempts, 3))]

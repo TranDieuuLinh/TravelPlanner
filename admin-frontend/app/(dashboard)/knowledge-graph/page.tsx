@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getKGStats,
+  getKGEntityFilterOptions,
   listKGEntities,
   getKGEntityDetail,
   listKGRelationships,
@@ -23,14 +24,16 @@ import {
   deleteKGLowReviewEntities,
   getKGLowReviewEntityCount,
   type KGStats,
+  type KGEntityFilterOptions,
   type KGEntitySummary,
   type KGEntityDetail,
   type KGRelationshipSummary,
   type KGOntology,
-} from "../../../lib/api/knowledge-graph";
+} from "../../features/knowledge-graph/lib";
 import { KnowledgeGraphAIImports } from "../../components/KnowledgeGraphAIImports";
 import { EditableEntityDetailPanel } from "../../components/knowledge-graph/EditableEntityDetailPanel";
 import { EntityDetailPanel } from "../../components/knowledge-graph/EntityDetailPanel";
+import { RelationshipGraph } from "../../components/knowledge-graph/RelationshipGraph";
 import { KG_DETAIL_PROPERTY_FETCH_LIMIT } from "../../components/knowledge-graph/KnowledgeGraphSections";
 
 type WorkspaceTab = "entities" | "relationships" | "aiImports";
@@ -42,6 +45,17 @@ const TABS: Array<{ id: WorkspaceTab; label: string }> = [
 ];
 
 const DEFAULT_PAGE_SIZE = 50;
+const KNOWLEDGE_GRAPH_ENABLED = process.env.NEXT_PUBLIC_KNOWLEDGE_GRAPH_ENABLED !== "false";
+const ENTITY_TYPE_ICONS: Record<string, string> = {
+  Destination: "\u{1f9ed}",
+  TravelPlace: "\u{1f4cd}",
+  Attraction: "\u{1f3af}",
+  Hotel: "\u{1f3e8}",
+  Restaurant: "\u{1f37d}\ufe0f",
+  FoodItem: "\u{1f35c}",
+  Activity: "\u{1f3ab}",
+  Topic: "\u{1f3f7}\ufe0f",
+};
 
 // Compact number formatter for the topbar stats badge.
 //   0–999 → "123", 1k–999k → "1.2K", ≥1M → "1.2M".
@@ -60,21 +74,13 @@ function formatCompactNumber(value: number): string {
   return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1).replace(/\.0$/, "")}M`;
 }
 
-// Common quick entity types for pill selection
-const QUICK_ENTITY_TYPES = [
-  "Destination",
-  "Attraction",
-  "Hotel",
-  "Restaurant",
-  "Activity",
-  "Topic",
-  "Tag",
-];
-
 export default function KnowledgeGraphPage() {
   const [stats, setStats] = useState<KGStats | null>(null);
+  const [filterOptions, setFilterOptions] = useState<KGEntityFilterOptions | null>(null);
   const [ontology, setOntology] = useState<KGOntology | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<KGEntityDetail | null>(null);
+  const [showOutgoingRelations, setShowOutgoingRelations] = useState(true);
+  const [showIncomingRelations, setShowIncomingRelations] = useState(true);
   const [entityToDelete, setEntityToDelete] = useState<KGEntityDetail | null>(null);
   const [deletingEntity, setDeletingEntity] = useState(false);
   const [lowReviewEntityCount, setLowReviewEntityCount] = useState<number | null>(null);
@@ -98,7 +104,6 @@ export default function KnowledgeGraphPage() {
   const [totalEntities, setTotalEntities] = useState(0);
   const [entityOffset, setEntityOffset] = useState(0);
   const [entityPage, setEntityPage] = useState(1);
-  const [hasMoreEntities, setHasMoreEntities] = useState(false);
 
   // Entity filters
   const [search, setSearch] = useState("");
@@ -106,6 +111,7 @@ export default function KnowledgeGraphPage() {
   const [entityTypeFilter, setEntityTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [excludeNames, setExcludeNames] = useState("");
+  const [missingProperties, setMissingProperties] = useState("");
   const [entitySortBy, setEntitySortBy] = useState("name");
   const [entitySortDirection, setEntitySortDirection] = useState<"asc" | "desc">("asc");
 
@@ -200,8 +206,19 @@ export default function KnowledgeGraphPage() {
     };
   }, [toEntityInput, toEntityFilter]);
 
+  useEffect(() => {
+    if (!filterOptions?.statuses.length) return;
+    setNewEntity((current) => ({
+      ...current,
+      status: filterOptions.statuses.includes(current.status)
+        ? current.status
+        : filterOptions.statuses[0],
+    }));
+  }, [filterOptions]);
+
   // Load stats
   const loadStats = useCallback(async () => {
+    if (!KNOWLEDGE_GRAPH_ENABLED) return;
     try {
       const data = await getKGStats();
       setStats(data);
@@ -212,11 +229,22 @@ export default function KnowledgeGraphPage() {
 
   // Load ontology
   const loadOntology = useCallback(async () => {
+    if (!KNOWLEDGE_GRAPH_ENABLED) return;
     try {
       const data = await getKGOntology();
       setOntology(data);
     } catch (err) {
       console.error("Failed to load ontology:", err);
+    }
+  }, []);
+
+  // Load filter values from the entity table instead of a frontend enum.
+  const loadFilterOptions = useCallback(async () => {
+    if (!KNOWLEDGE_GRAPH_ENABLED) return;
+    try {
+      setFilterOptions(await getKGEntityFilterOptions());
+    } catch (err) {
+      console.error("Failed to load entity filter options:", err);
     }
   }, []);
 
@@ -230,7 +258,8 @@ export default function KnowledgeGraphPage() {
       currentExcludeNames: string,
       currentSortBy: string,
       currentSortDirection: "asc" | "desc",
-      append = false
+      append = false,
+      currentMissingProperties = ""
     ) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -246,6 +275,7 @@ export default function KnowledgeGraphPage() {
           entityType: currentType || undefined,
           status: currentStatus || undefined,
           excludeNames: currentExcludeNames || undefined,
+          missingProperties: currentMissingProperties || undefined,
           sortBy: currentSortBy,
           sortDirection: currentSortDirection,
         });
@@ -256,7 +286,6 @@ export default function KnowledgeGraphPage() {
           setEntities(data.items);
         }
         setTotalEntities(data.total);
-        setHasMoreEntities(data.hasMore);
         setEntityOffset(currentOffset + data.items.length);
       } catch (err) {
         if (err instanceof Error && err.name !== "AbortError") {
@@ -316,17 +345,22 @@ export default function KnowledgeGraphPage() {
 
   // Initial load
   useEffect(() => {
+    if (!KNOWLEDGE_GRAPH_ENABLED) {
+      setLoading(false);
+      return;
+    }
     loadStats();
+    loadFilterOptions();
     loadOntology();
     loadEntities(0, "", "", "", "", "name", "asc", false);
-  }, [loadStats, loadOntology, loadEntities]);
+  }, [loadStats, loadFilterOptions, loadOntology, loadEntities]);
 
   // Trigger entity list reload when filters change
   useEffect(() => {
     if (!loading) {
-      loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
+      loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
     }
-  }, [search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, entityPage]);
+  }, [search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection, entityPage]);
 
   // Trigger relationship list reload when switching to tab or filters change
   useEffect(() => {
@@ -349,6 +383,11 @@ export default function KnowledgeGraphPage() {
     }
   }, []);
 
+  useEffect(() => {
+    setShowOutgoingRelations(true);
+    setShowIncomingRelations(true);
+  }, [selectedEntity?.id]);
+
   // Handle entity selection
   const handleSelectEntity = useCallback(
     (entity: KGEntitySummary) => {
@@ -362,9 +401,10 @@ export default function KnowledgeGraphPage() {
     (updatedEntity: KGEntityDetail) => {
       setSelectedEntity(updatedEntity);
       loadStats();
-      loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
+      loadFilterOptions();
+      loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
     },
-    [loadStats, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]
+    [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection]
   );
 
   const handleDeleteEntity = useCallback(async () => {
@@ -377,14 +417,15 @@ export default function KnowledgeGraphPage() {
       setEntityToDelete(null);
       await Promise.all([
         loadStats(),
-        loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadFilterOptions(),
+        loadEntities((entityPage - 1) * DEFAULT_PAGE_SIZE, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete entity");
     } finally {
       setDeletingEntity(false);
     }
-  }, [entityToDelete, entityPage, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, statusFilter]);
+  }, [entityToDelete, entityPage, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
 
   const handleOpenLowReviewDelete = useCallback(async () => {
     setLoadingLowReviewPreview(true);
@@ -408,7 +449,8 @@ export default function KnowledgeGraphPage() {
       setSelectedEntity(null);
       await Promise.all([
         loadStats(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadFilterOptions(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
       setEntityPage(1);
     } catch (err) {
@@ -416,7 +458,7 @@ export default function KnowledgeGraphPage() {
     } finally {
       setDeletingLowReviewEntities(false);
     }
-  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, statusFilter]);
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, statusFilter]);
 
   const handleCreateEntity = useCallback(async () => {
     const payload = {
@@ -439,14 +481,15 @@ export default function KnowledgeGraphPage() {
       setEntityPage(1);
       await Promise.all([
         loadStats(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadFilterOptions(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create entity");
     } finally {
       setCreatingEntity(false);
     }
-  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, newEntity, search, statusFilter]);
+  }, [entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, newEntity, search, statusFilter]);
 
   const handleCopyEntity = useCallback(async () => {
     if (!selectedEntity) return;
@@ -469,14 +512,15 @@ export default function KnowledgeGraphPage() {
       setEntityPage(1);
       await Promise.all([
         loadStats(),
-        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false),
+        loadFilterOptions(),
+        loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to copy entity");
     } finally {
       setCopyingEntity(false);
     }
-  }, [copyEntityId, copyEntityName, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, loadEntities, loadStats, search, selectedEntity, statusFilter]);
+  }, [copyEntityId, copyEntityName, entitySortBy, entitySortDirection, entityTypeFilter, excludeNames, missingProperties, loadEntities, loadFilterOptions, loadStats, search, selectedEntity, statusFilter]);
 
   // Jump directly to an entity ID from anywhere (e.g. relationship card)
   const handleJumpToEntity = useCallback(
@@ -487,12 +531,17 @@ export default function KnowledgeGraphPage() {
     [loadEntityDetail]
   );
 
-  // Load more entities
-  const handleLoadMoreEntities = useCallback(() => {
-    if (!loadingEntities && hasMoreEntities) {
-      setEntityPage((current) => current + 1);
-    }
-  }, [loadingEntities, hasMoreEntities]);
+  // Keep entity pagination inside the valid page range.
+  const handleEntityPageChange = useCallback(
+    (nextPage: number) => {
+      const totalPages = Math.max(1, Math.ceil(totalEntities / DEFAULT_PAGE_SIZE));
+      if (loadingEntities || nextPage < 1 || nextPage > totalPages || nextPage === entityPage) {
+        return;
+      }
+      setEntityPage(nextPage);
+    },
+    [entityPage, loadingEntities, totalEntities]
+  );
 
   // Load more relationships
   const handleLoadMoreRelationships = useCallback(() => {
@@ -508,6 +557,7 @@ export default function KnowledgeGraphPage() {
     setEntityTypeFilter("");
     setStatusFilter("");
     setExcludeNames("");
+    setMissingProperties("");
   }, []);
 
   // Reset relationship filters
@@ -524,27 +574,90 @@ export default function KnowledgeGraphPage() {
   // Refresh after AI import apply
   const handleApplied = useCallback(() => {
     loadStats();
-    loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false);
-  }, [loadStats, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection]);
+    loadFilterOptions();
+    loadEntities(0, search, entityTypeFilter, statusFilter, excludeNames, entitySortBy, entitySortDirection, false, missingProperties);
+  }, [loadStats, loadFilterOptions, loadEntities, search, entityTypeFilter, statusFilter, excludeNames, missingProperties, entitySortBy, entitySortDirection]);
 
-  // List of available node types from ontology or defaults
+  if (!KNOWLEDGE_GRAPH_ENABLED) {
+    return (
+      <section className="kgPage">
+        <header className="topbar kgTopbar">
+          <div>
+            <p className="eyebrow">Catalog intelligence</p>
+            <h1>Knowledge Graph</h1>
+            <p className="kgLead">
+              Knowledge Graph UI is disabled until the refactored backend exposes its admin contract.
+            </p>
+          </div>
+        </header>
+        <div className="kgNotice" role="status">
+          <span>i</span>
+          <p>
+            Set <code>NEXT_PUBLIC_KNOWLEDGE_GRAPH_ENABLED=true</code> only after the matching
+            <code>/admin/knowledge-graph/*</code> endpoints are available.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  // Ontology is used for import validation; entity filters come from PostgreSQL.
   const availableNodeTypes = ontology?.nodeTypes?.length
     ? ontology.nodeTypes
     : ["Destination", "Attraction", "Hotel", "Restaurant", "Activity", "Topic", "Tag", "Region", "Event", "TransportHub"];
 
-  // List of available relationship types from ontology
-  const availableRelTypes = ontology?.relationshipTypes || [];
+  // Keep ontology keys available even when a key/type has not been used in the DB yet.
+  const availableRelTypes = ontology?.relationshipTypes?.length
+    ? ontology.relationshipTypes
+    : filterOptions?.relationshipTypes || [];
+  const availableEntityTypes = filterOptions?.entityTypes || [];
+  const availableStatuses = filterOptions?.statuses || [];
+  const selectedEntityPropertySchema = selectedEntity
+    ? ontology?.nodeTypeProperties[selectedEntity.entityType]
+    : undefined;
+  const availablePropertyKeys = Array.from(
+    new Set([
+      ...(ontology?.propertyKeys || []),
+      ...(filterOptions?.propertyKeys || []),
+      ...(selectedEntityPropertySchema?.requiredProperties || []),
+      ...(selectedEntityPropertySchema?.optionalProperties || []),
+      ...(selectedEntity?.properties.map((property) => property.key) || []),
+    ])
+  ).sort();
+  const relationshipDirectionStats = selectedEntity
+    ? selectedEntity.relationships.reduce(
+        (stats, relationship) => ({
+          outgoing: stats.outgoing + (relationship.fromEntityId === selectedEntity.id ? 1 : 0),
+          incoming: stats.incoming + (relationship.toEntityId === selectedEntity.id ? 1 : 0),
+        }),
+        { outgoing: 0, incoming: 0 }
+      )
+    : { outgoing: 0, incoming: 0 };
 
   return (
     <section className="kgPage">
-      <header className="topbar kgTopbar">
-        <div>
-          <p className="eyebrow">Catalog intelligence</p>
-          <h1>Knowledge Graph</h1>
-          <p className="kgLead">
-            Quản lý entity, alias, relationship và ontology từ PostgreSQL backend.
-          </p>
+      {error && (
+        <div className="kgNotice" role="alert">
+          <span>!</span>
+          <p>{error}</p>
+          <button type="button" aria-label="Dismiss error" onClick={() => setError("")}>
+            ×
+          </button>
         </div>
+      )}
+
+      {/* Tabs */}
+      <nav className="kgWorkspaceTabs" aria-label="Knowledge graph sections">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={activeTab === tab.id ? "active" : ""}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
         <div
           className="kgSourceBadge"
           title={
@@ -570,30 +683,6 @@ export default function KnowledgeGraphPage() {
           <span>{stats ? formatCompactNumber(stats.relationshipCount) : "—"}</span>
           <span className="kgSourceBadgeUnit">rel</span>
         </div>
-      </header>
-
-      {error && (
-        <div className="kgNotice" role="alert">
-          <span>!</span>
-          <p>{error}</p>
-          <button type="button" aria-label="Dismiss error" onClick={() => setError("")}>
-            ×
-          </button>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <nav className="kgWorkspaceTabs" aria-label="Knowledge graph sections">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={activeTab === tab.id ? "active" : ""}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
       </nav>
 
       {/* AI Imports Tab */}
@@ -648,7 +737,7 @@ export default function KnowledgeGraphPage() {
               }}
             >
               <option value="">All Entity Types</option>
-              {availableNodeTypes.map((type) => (
+              {availableEntityTypes.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
@@ -666,10 +755,11 @@ export default function KnowledgeGraphPage() {
               }}
             >
               <option value="">All Statuses</option>
-              <option value="active">active</option>
-              <option value="draft">draft</option>
-              <option value="missing">missing</option>
-              <option value="archived">archived</option>
+              {availableStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </select>
 
             <input
@@ -681,6 +771,17 @@ export default function KnowledgeGraphPage() {
               }}
               placeholder="Exclude names: coffee, cafe"
               value={excludeNames}
+            />
+
+            <input
+              className="kgSelectFilter"
+              aria-label="Missing property keys"
+              onChange={(event) => {
+                setMissingProperties(event.target.value);
+                setEntityPage(1);
+              }}
+              placeholder="Missing fields: description, image"
+              value={missingProperties}
             />
 
             <select
@@ -705,7 +806,7 @@ export default function KnowledgeGraphPage() {
             </select>
 
             {/* Reset Button */}
-            {(search || entityTypeFilter || statusFilter || excludeNames) && (
+            {(search || entityTypeFilter || statusFilter || excludeNames || missingProperties) && (
               <button type="button" className="kgResetBtn" onClick={handleResetEntityFilters}>
                 Reset Filters
               </button>
@@ -735,7 +836,7 @@ export default function KnowledgeGraphPage() {
             >
               All Types
             </button>
-            {QUICK_ENTITY_TYPES.map((type) => (
+            {availableEntityTypes.map((type) => (
               <button
                 key={type}
                 type="button"
@@ -756,12 +857,31 @@ export default function KnowledgeGraphPage() {
             {/* Entity List */}
             <div className="runList kgEntityList">
               <header>
-                <span>{totalEntities.toLocaleString()} total match</span>
+                <span>Entities</span>
                 {(search || entityTypeFilter || statusFilter) && (
                   <small>
                     Filtered: {[search && `"${search}"`, entityTypeFilter, statusFilter].filter(Boolean).join(" • ")}
                   </small>
                 )}
+                <div className="kgPagination kgPaginationInline" aria-label="Entity pages">
+                  <button
+                    type="button"
+                    aria-label="Previous entity page"
+                    onClick={() => handleEntityPageChange(entityPage - 1)}
+                    disabled={loadingEntities || entityPage <= 1}
+                  >
+                    ‹
+                  </button>
+                  <span>{entityPage} / {Math.max(1, Math.ceil(totalEntities / DEFAULT_PAGE_SIZE))}</span>
+                  <button
+                    type="button"
+                    aria-label="Next entity page"
+                    onClick={() => handleEntityPageChange(entityPage + 1)}
+                    disabled={loadingEntities || entityPage >= Math.max(1, Math.ceil(totalEntities / DEFAULT_PAGE_SIZE))}
+                  >
+                    ›
+                  </button>
+                </div>
               </header>
 
               {loadingEntities && entities.length === 0 ? (
@@ -782,55 +902,105 @@ export default function KnowledgeGraphPage() {
                       className={selectedEntity?.id === entity.id ? "kgEntityCard active" : "kgEntityCard"}
                       onClick={() => handleSelectEntity(entity)}
                     >
-                      <div className="kgEntityCardTop">
-                        <span className={`kgNodeType kgNode-${entity.entityType.toLowerCase()}`}>
-                          {entity.entityType}
+                      <div className="kgEntityCardRow">
+                        <h3>{entity.canonicalName}</h3>
+                        <span
+                          className={`kgEntityTypeIcon kgNode-${entity.entityType.toLowerCase()}`}
+                          title={entity.entityType}
+                          aria-label={`Entity type: ${entity.entityType}`}
+                        >
+                          {ENTITY_TYPE_ICONS[entity.entityType] || "\u{1f517}"}
                         </span>
-                        <span className={`status status-${entity.status === "missing" ? "failed" : entity.status}`}>
-                          {entity.status}
-                        </span>
+                        <span
+                          className={`kgEntityStatusDot status-${entity.status === "missing" ? "failed" : entity.status}`}
+                          title={`Status: ${entity.status}`}
+                          aria-label={`Entity status: ${entity.status}`}
+                        />
                       </div>
-                      <h3>{entity.canonicalName}</h3>
-                      <small>{entity.reviewCount == null ? "No review count" : `${entity.reviewCount.toLocaleString()} reviews`}</small>
-                      <code>{entity.id}</code>
                     </button>
                   ))}
 
-                  <div className="kgPagination">
-                    <button type="button" className="kgLoadMoreButton" onClick={() => setEntityPage((current) => Math.max(1, current - 1))} disabled={loadingEntities || entityPage === 1}>Previous</button>
-                    <span>Page {entityPage} / {Math.max(1, Math.ceil(totalEntities / DEFAULT_PAGE_SIZE))}</span>
-                    <button type="button" className="kgLoadMoreButton" onClick={handleLoadMoreEntities} disabled={loadingEntities || !hasMoreEntities}>Next</button>
-                  </div>
                 </>
               )}
             </div>
 
-            {/* Entity Detail Panel */}
-            <div className="detailPane kgInspector">
-              {loadingDetail ? (
-                <div className="detailLoading">
-                  <b>Loading entity detail...</b>
-                </div>
-              ) : selectedEntity ? (
-                <EditableEntityDetailPanel
+            {/* Relationship map */}
+            {selectedEntity ? (
+              <section className="kgRelationshipOverview" aria-label="Relationship map">
+                <header className="kgRelationshipOverviewHeader">
+                  <div>
+                    <p className="eyebrow">Relationship map</p>
+                  </div>
+                  <div className="kgRelationshipOverviewStats" aria-label="Relationship direction statistics">
+                    <span className="kgRelationshipOverviewCount">
+                      {selectedEntity.relationshipTotal} total
+                    </span>
+                    <span className="kgRelationshipStat loaded" title="Relationships currently loaded for this entity">
+                      {selectedEntity.relationships.length} loaded
+                    </span>
+                    <button
+                      type="button"
+                      className={`kgRelationshipStat directionToggle outgoing${showOutgoingRelations ? " active" : ""}`}
+                      aria-pressed={showOutgoingRelations}
+                      onClick={() => setShowOutgoingRelations((visible) => !visible)}
+                    >
+                      <b>→</b> {relationshipDirectionStats.outgoing} outgoing
+                    </button>
+                    <button
+                      type="button"
+                      className={`kgRelationshipStat directionToggle incoming${showIncomingRelations ? " active" : ""}`}
+                      aria-pressed={showIncomingRelations}
+                      onClick={() => setShowIncomingRelations((visible) => !visible)}
+                    >
+                      <b>←</b> {relationshipDirectionStats.incoming} incoming
+                    </button>
+                  </div>
+                </header>
+                <RelationshipGraph
                   entity={selectedEntity}
                   onJumpToEntity={handleJumpToEntity}
-                  onUpdated={handleEntityUpdated}
-                  onRequestDelete={() => setEntityToDelete(selectedEntity)}
-                  onRequestCopy={() => {
-                    setCopyEntityId("");
-                    setCopyEntityName(`Copy of ${selectedEntity.canonicalName}`);
-                    setCopyEntityOpen(true);
-                  }}
-                  onError={setError}
-                  availableNodeTypes={availableNodeTypes}
+                  showOutgoing={showOutgoingRelations}
+                  showIncoming={showIncomingRelations}
                 />
-              ) : (
+              </section>
+            ) : (
+              <section className="kgRelationshipOverview kgRelationshipOverviewEmpty" aria-label="Relationship map">
                 <div className="detailEmpty">
-                  <b>Select an entity to view details</b>
-                  <p>Click on an entity from the list to see its aliases, properties, and relationships.</p>
+                  <b>Select an entity to view its relationship map</b>
+                  <p>The icon map will appear here after you select an entity.</p>
                 </div>
-              )}
+              </section>
+            )}
+
+            {/* Entity Detail Panel */}
+            <div className="detailPane kgInspector">
+                {loadingDetail ? (
+                  <div className="detailLoading">
+                    <b>Loading entity detail...</b>
+                  </div>
+                ) : selectedEntity ? (
+                  <EditableEntityDetailPanel
+                    entity={selectedEntity}
+                    onJumpToEntity={handleJumpToEntity}
+                    onUpdated={handleEntityUpdated}
+                    onRequestDelete={() => setEntityToDelete(selectedEntity)}
+                    onRequestCopy={() => {
+                      setCopyEntityId("");
+                      setCopyEntityName(`Copy of ${selectedEntity.canonicalName}`);
+                      setCopyEntityOpen(true);
+                    }}
+                    onError={setError}
+                    availableEntityTypes={availableEntityTypes}
+                    availableStatuses={availableStatuses}
+                    availableRelationshipTypes={availableRelTypes}
+                    availablePropertyKeys={availablePropertyKeys}
+                  />
+                ) : (
+                  <div className="detailEmpty">
+                    <b>Select an entity to view details</b>
+                    <p>Click on an entity from the list to see its aliases, properties, and relationships.</p>
+                  </div>
+                )}
             </div>
           </section>
         </>
@@ -1053,8 +1223,8 @@ export default function KnowledgeGraphPage() {
             <div className="kgSectionForm kgIdentitySectionForm">
               <label><span>ID</span><input value={newEntity.entityId} onChange={(event) => setNewEntity((current) => ({ ...current, entityId: event.target.value }))} placeholder="place_example" /></label>
               <label><span>Name</span><input value={newEntity.canonicalName} onChange={(event) => setNewEntity((current) => ({ ...current, canonicalName: event.target.value }))} placeholder="Example place" /></label>
-              <label><span>Type</span><select value={newEntity.entityType} onChange={(event) => setNewEntity((current) => ({ ...current, entityType: event.target.value }))}><option value="">Select type</option>{availableNodeTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-              <label><span>Status</span><select value={newEntity.status} onChange={(event) => setNewEntity((current) => ({ ...current, status: event.target.value }))}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label>
+              <label><span>Type</span><select value={newEntity.entityType} onChange={(event) => setNewEntity((current) => ({ ...current, entityType: event.target.value }))}><option value="">Select type</option>{availableEntityTypes.map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+              <label><span>Status</span><select value={newEntity.status} onChange={(event) => setNewEntity((current) => ({ ...current, status: event.target.value }))}>{availableStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
             </div>
             <div className="kgDeleteDialogActions">
               <button type="button" className="kgSectionEdit" disabled={creatingEntity} onClick={() => setCreateEntityOpen(false)}>Cancel</button>

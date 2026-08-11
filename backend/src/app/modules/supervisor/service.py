@@ -5,7 +5,10 @@ from app.modules.supervisor.contract import (
 )
 from app.modules.supervisor.errors import SupervisorClassificationError
 from app.modules.supervisor.ports import IntentClassifier
-from app.modules.supervisor.rules import deterministic_decision, fallback_decision
+from app.modules.supervisor.rules import (
+    deterministic_decision,
+    fallback_decision,
+)
 
 
 class SupervisorService:
@@ -23,11 +26,8 @@ class SupervisorService:
         self._confidence_threshold = confidence_threshold
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
-        deterministic = deterministic_decision(payload)
-        if deterministic is not None:
-            return deterministic
         if self._classifier is None:
-            return fallback_decision(payload)
+            return deterministic_decision(payload) or fallback_decision(payload)
         try:
             result = await self._classifier.classify(payload)
             return self._accept_classifier_result(payload, result)
@@ -36,6 +36,12 @@ class SupervisorService:
                 raise SupervisorClassificationError(
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
+            deterministic = deterministic_decision(payload)
+            if deterministic is not None:
+                deterministic.warnings.append(
+                    "LLM intent classification failed; deterministic fallback used."
+                )
+                return deterministic
             return fallback_decision(
                 payload,
                 warning="LLM intent classification failed; deterministic fallback used.",
@@ -64,6 +70,10 @@ class SupervisorService:
                 payload,
                 warning="LLM plan_editor result lacked required structured state.",
             )
+        if result.route == "finish" and not result.response:
+            raise SupervisorClassificationError(
+                "Supervisor finish result did not include a user response."
+            )
         decision = SupervisorDecision(
             route=result.route,
             confidence=result.confidence,
@@ -73,9 +83,6 @@ class SupervisorService:
                 "plan_editor": "Structured classifier selected a structured edit.",
                 "finish": "Structured classifier selected a completed response.",
             }[result.route],
+            response=result.response if result.route == "finish" else None,
         )
-        if decision.route == "finish" and decision.response is None:
-            decision.response = (
-                "I can help with travel planning and destination information."
-            )
         return decision
