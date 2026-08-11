@@ -18,6 +18,8 @@ services:
       # the old volume for an explicit data migration if needed.
       - travelplanner_postgres_data_v2:/var/lib/postgresql/data
       - ./backend/migrations/001_information_finder_source_cache.sql:/docker-entrypoint-initdb.d/001_information_finder_source_cache.sql:ro
+      - ./backend/migrations/002_explorer_source_document_cache.sql:/docker-entrypoint-initdb.d/002_explorer_source_document_cache.sql:ro
+      - ./backend/migrations/003_explorer_draft_cache.sql:/docker-entrypoint-initdb.d/003_explorer_draft_cache.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
@@ -63,6 +65,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       PYTHONPATH: /app/src
       DATABASE_URL: postgresql://travelplanner:travelplanner@postgres:5432/travelplanner
@@ -70,10 +75,6 @@ services:
       TAVILY_SEARCH_DEPTH: ${TAVILY_SEARCH_DEPTH:-basic}
       TAVILY_MAX_RESULTS: ${TAVILY_MAX_RESULTS:-5}
       TAVILY_TIMEOUT_SECONDS: ${TAVILY_TIMEOUT_SECONDS:-15}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
-      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
-      GEMINI_KEY_COOLDOWN_SECONDS: ${GEMINI_KEY_COOLDOWN_SECONDS:-60}
       INFORMATION_FINDER_EMBEDDING_MODEL: ${INFORMATION_FINDER_EMBEDDING_MODEL:-gemini-embedding-001}
       INFORMATION_FINDER_EMBEDDING_REVISION: ${INFORMATION_FINDER_EMBEDDING_REVISION:-}
       INFORMATION_FINDER_EMBEDDING_OUTPUT_DIMENSIONS: ${INFORMATION_FINDER_EMBEDDING_OUTPUT_DIMENSIONS:-384}

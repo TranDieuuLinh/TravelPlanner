@@ -1,6 +1,6 @@
 # TravelPlanner
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 TravelPlanner is a travel-planning product with a Next.js user frontend, a
 separate admin frontend, and a modular FastAPI/LangGraph backend.
@@ -14,8 +14,11 @@ user request -> supervisor -> explorer/place checker -> itinerary planner
 ```
 
 It is not yet a production travel-data system. Provider integrations,
-durable persistence, authentication, Marketplace workflows, URL ingestion,
-and live routing still need to be implemented behind the module interfaces.
+durable persistence, authentication, Marketplace workflows, anti-bot-resilient
+URL ingestion, and live routing still need production implementations behind
+the module interfaces. Explorer currently has bounded YouTube/social/website
+and image import adapters, but individual third-party sources may still block
+automated downloads.
 
 ## Repository structure
 
@@ -47,16 +50,20 @@ detailed backend module boundaries.
 The backend runs on port `8000`.
 
 - `GET /health` returns the service health status.
+- `POST /v1/explorer/invoke` runs Explorer extraction directly for testing.
 - `POST /v1/agent/invoke` invokes the root planning graph.
 
-The invoke request uses `thread_id`, `message`, `supplied_candidates`,
-`existing_itinerary`, and `edit_operation`.
+The agent request uses camelCase fields `threadId`, `message`, `urls`, `images`,
+optional `forceRefresh`, `existingItinerary`, and `editOperation`. Explorer
+caches normalized URL artifacts in PostgreSQL `source_documents` when
+`DATABASE_URL` is configured; `forceRefresh: true` bypasses the cache lookup.
 
 ## Run locally
 
 With Docker Compose:
 
 ```bash
+cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
