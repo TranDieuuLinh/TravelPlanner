@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 ## Phạm vi và trạng thái
 
@@ -17,6 +17,13 @@ tố `information_finder_`. Vì vậy cần phân biệt:
 - **Backend mới:** không sử dụng các table legacy; graph state vẫn dùng
   `InMemorySaver`. Information Finder sẽ dùng các bảng cache mô tả bên dưới khi
   có `DATABASE_URL` và migration đã được áp dụng.
+
+`shared/tools/search_places/` hiện chỉ định nghĩa provider port và engine
+xếp hạng/policy. Thay đổi này không thêm migration, không đọc trực tiếp các bảng
+Knowledge Graph legacy và chưa nối PostgreSQL runtime. Adapter Knowledge Graph
+tương lai phải nhận ownership/database đích rõ ràng trước khi query entity,
+alias, property và quan hệ ADM; external adapter chỉ được trả payload đã chuẩn
+hóa qua contract.
 
 ## Schema cache nguồn Information Finder
 

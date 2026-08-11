@@ -27,7 +27,8 @@ backend/
 │   ├── shared/
 │   │   ├── contracts/
 │   │   ├── persistence/
-│   │   └── llm/
+│   │   ├── llm/
+│   │   └── tools/
 │   └── modules/
 │       ├── supervisor/
 │       ├── explorer/
@@ -97,6 +98,15 @@ là một chuỗi chứa nhiều key phân tách bằng dấu phẩy; adapter xo
 cooldown key khi provider trả về lỗi có thể thử lại. Các agent hiện có chưa
 được chuyển business behavior sang LLM ngoài Supervisor và Information Finder
 theo cấu hình của từng module.
+
+`shared/tools/search_places/` cung cấp engine async dùng chung để module gọi
+qua dependency injection. Tool chuẩn hóa query, xếp hạng top-K, áp ngưỡng
+identity/margin, chặn ADM/type/toạ độ không hợp lệ, giữ kết quả nhập nhằng để
+review và chỉ fallback sang external provider khi Knowledge Graph miss hoặc
+mọi match đều yếu. Hiện package mới có provider port và adapter in-memory cho
+test/development; chưa có adapter PostgreSQL Knowledge Graph hoặc Google Maps
+Playwright được nối vào runtime. Tool chưa thay thế `DevelopmentCatalog` trong
+PlaceChecker.
 
 Authentication, Marketplace, import URL, dữ liệu place live và routing live
 chưa nằm trong scaffold hiện tại. Checkpointer của root graph vẫn chưa bền vững.

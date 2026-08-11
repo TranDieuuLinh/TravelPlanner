@@ -66,6 +66,23 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
 | `EstimatedRoutingProvider.travel_minutes` | `itinerary_planner` | Hai giá trị `VerifiedPlace` | Số phút dạng `int` |
 | `GeminiLlmClient.generate` | `shared/llm` | system/user prompt | Text response; xoay vòng key từ `GEMINI_API_KEY` |
+| `SearchPlacesTool.search` | `shared/tools/search_places` | `PlaceSearchRequest` | `PlaceSearchResult` có status, selected, top matches, provider attempts và resolution reason |
+
+`SearchPlacesTool` hỗ trợ hai mode: `named_place` để xác minh identity được nêu
+tên và `requirement` để tìm venue phù hợp với món ăn, đồ uống hoặc hoạt động.
+Với named place, policy mặc định chỉ nhận top-1 khi score lớn hơn `0.82` và
+margin với top-2 ít nhất `0.08`. Match mạnh nhưng quá sát nhau trả
+`needs_review` và không dùng external provider để đoán lại branch đã có trong
+Knowledge Graph. KG miss hoặc toàn bộ match yếu mới được fallback khi caller
+cho phép và adapter external đã được cấu hình.
+
+Contract dùng chung của tool gồm `AdministrativeArea`, `PlaceSearchRequest`,
+`PlaceProviderCandidate`, `PlaceSearchMatch`, `ProviderAttempt` và
+`PlaceSearchResult`. Result phân biệt `resolved`, `needs_review`, `unresolved`
+và `provider_error`; lỗi provider retryable không bị diễn giải thành no-match.
+Package hiện chỉ có `InMemoryPlaceSearch` cho test/development và adapter này
+không tự tạo place placeholder. PostgreSQL KG và Playwright production adapter
+chưa được triển khai; PlaceChecker hiện vẫn dùng `DevelopmentCatalog`.
 
 Các provider interface bên ngoài hiện có:
 
@@ -77,6 +94,8 @@ Các provider interface bên ngoài hiện có:
 - `PlaceDiscovery`
 - `RoutingProvider`
 - `LlmClient`
+- `KnowledgeGraphPlaceSearch`
+- `ExternalPlaceSearch`
 
 ## Shared contract
 
