@@ -14,12 +14,13 @@ from app.shared.llm.errors import (
     LlmTransportError,
     LlmUnauthorizedError,
 )
-from app.shared.llm.ports import LlmClient
+from app.shared.llm.ports import InlineMedia, LlmClient
 
 __all__ = [
     "GeminiLlmClient",
     "LlmAllKeysUnavailable",
     "LlmClient",
+    "InlineMedia",
     "LlmConfigurationError",
     "LlmError",
     "LlmProviderError",

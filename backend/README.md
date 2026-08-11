@@ -46,11 +46,24 @@ This is a working architecture scaffold, not a production travel-data system.
 - Explorer now uses a two-route LangGraph intake flow. Prompt-only extraction
   and parallel URL/image source import converge on normalization, ADM
   reconciliation, defaults, and separate ready/clarification/failure snapshot
-  paths. The development adapter handles prompt and supplied OCR text. Raw
-  image OCR is not configured, while TikTok caption/metadata import uses
-  `yt-dlp`; snapshots remain process-local. TikTok challenge/login responses
-  may require `EXPLORER_YTDLP_COOKIE_FILE`. `EXPLORER_DRAFT_PROVIDER=gemini` enables structured Gemini
-  draft synthesis; `rules` is the offline default.
+  paths. With Gemini configured, raw images use OCR; TikTok/Instagram media use
+  yt-dlp with curl-cffi Chrome impersonation, an Android Chrome fallback, and a
+  small muxed MP4 preference. Analysis uses 1.5-second frame sampling capped at
+  72 frames and 10 images per parallel Gemini batch, plus three parallel STT
+  chunks. OCR uses
+  `GEMINI_IMAGE_OCR_MODEL`, while STT uses `GEMINI_AUDIO_MODEL`; a failed media
+  branch is logged and reported without discarding successful evidence from the
+  other branch. YouTube is metadata-only. Generic websites use `httpx` plus
+  `trafilatura`, trying Safari-impersonated `curl-cffi` and then a bounded
+  Playwright Chromium fallback after HTTP block.
+  Snapshots remain process-local, and
+  anti-bot responses may require `EXPLORER_YTDLP_COOKIE_FILE` or remain a
+  partial source failure. Source synthesis uses Gemini when available so
+  `urlNotes` retain only useful evidence-backed details.
+  URL extraction is cached in Explorer-owned PostgreSQL `source_documents` by
+  canonical URL, extractor version, and a seven-day default TTL. The adapter
+  reads legacy `old_one` version-6 artifacts and writes normalized version 7.
+  `forceRefresh=true` bypasses a hit; cache failures do not block extraction.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful
@@ -76,8 +89,11 @@ added without changing public graph contracts.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev]'
+python -m pip install -r requirements.txt
+python -m playwright install chromium
 psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
+psql "$DATABASE_URL" -f migrations/002_explorer_source_document_cache.sql
+psql "$DATABASE_URL" -f migrations/003_explorer_draft_cache.sql
 uvicorn app.main:app --reload
 ```
 
@@ -93,12 +109,15 @@ curl -X POST http://127.0.0.1:8000/v1/agent/invoke \
 ```
 
 For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
-`rawPrompt`, `urls`, and/or `images`. This bypasses Supervisor, PlaceChecker,
+`rawPrompt`, `urls`, and/or `images`. Send `forceRefresh: true` to bypass the
+URL cache. This bypasses Supervisor, PlaceChecker,
 and ItineraryPlanner and returns the complete `ExplorerOutput`.
 For TikTok pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
 absolute path. Cookie files are ignored by the backend `.gitignore`; never
 commit or log them.
+Docker Compose loads provider and Explorer settings from `backend/.env` when
+that file exists; copy `.env.example` before starting the stack.
 
 Run tests:
 

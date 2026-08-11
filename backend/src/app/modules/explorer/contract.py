@@ -114,6 +114,7 @@ class ExplorerInput(ExplorerModel):
     raw_prompt: str | None = Field(default=None, max_length=4000)
     urls: list[str] = Field(default_factory=list, max_length=20)
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
+    force_refresh: bool = False
 
     @model_validator(mode="after")
     def has_input(self) -> "ExplorerInput":

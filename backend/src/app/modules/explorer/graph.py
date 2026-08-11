@@ -2,12 +2,6 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
-from app.modules.explorer.adapters.development import (
-    InMemoryExplorerSnapshotRepository,
-    InlineImageSourceExtractor,
-    RuleBasedExplorerDraftGenerator,
-    UnconfiguredUrlSourceExtractor,
-)
 from app.modules.explorer.nodes import ExplorerNodes
 from app.modules.explorer.service import ExplorerService
 from app.modules.explorer.state import ExplorerState
@@ -30,13 +24,7 @@ def route_completion(state: ExplorerState) -> Literal["ready", "clarification"]:
     return "ready" if state["output"].status == "ready" else "clarification"
 
 
-def build_explorer_graph(service: ExplorerService | None = None):
-    if service is None:
-        drafts = RuleBasedExplorerDraftGenerator()
-        service = ExplorerService(
-            drafts, UnconfiguredUrlSourceExtractor(), InlineImageSourceExtractor(drafts),
-            InMemoryExplorerSnapshotRepository(),
-        )
+def build_explorer_graph(service: ExplorerService):
     nodes = ExplorerNodes(service)
     builder = StateGraph(ExplorerState)
     for name in (

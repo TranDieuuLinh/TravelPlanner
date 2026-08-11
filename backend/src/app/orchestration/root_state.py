@@ -14,6 +14,7 @@ class RootState(TypedDict, total=False):
     message: str
     urls: list[str]
     images: list[ExplorerImageInput]
+    force_refresh: bool
     existing_itinerary: Itinerary | None
     edit_operation: EditOperation | None
 
