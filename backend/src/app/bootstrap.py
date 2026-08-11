@@ -9,6 +9,9 @@ from app.modules.information_finder.adapters.development import (
 from app.modules.information_finder.adapters.gemini_embedding import (
     GeminiEmbeddingProvider,
 )
+from app.modules.information_finder.adapters.gemini_url_chunker import (
+    GeminiUrlSourceChunker,
+)
 from app.modules.information_finder.adapters.llm_answer_generator import (
     StructuredLlmAnswerGenerator,
 )
@@ -88,6 +91,15 @@ def get_information_finder_service() -> InformationFinderService:
         for domain in settings.information_finder_blocked_domains.split(",")
         if domain.strip()
     )
+    chunker = None
+    if (
+        settings.information_finder_chunking_provider == "gemini_url"
+        and settings.gemini_api_key
+    ):
+        chunker = GeminiUrlSourceChunker(
+            get_llm_client(),
+            max_output_tokens=settings.information_finder_chunking_max_output_tokens,
+        )
     answers = create_answer_generator(
         settings,
         get_llm_client()
@@ -104,6 +116,7 @@ def get_information_finder_service() -> InformationFinderService:
         embeddings=embeddings,
         answers=answers,
         fallback_answers=fallback_answers,
+        chunker=chunker,
         search_provider=search_provider,
         options=InformationFinderOptions(
             minimum_local_sources=settings.information_finder_min_local_sources,

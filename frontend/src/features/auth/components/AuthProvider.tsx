@@ -41,8 +41,8 @@ type ProfileInput = {
 type AuthContextValue = {
   user: CurrentUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (fullName: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<CurrentUser>;
+  register: (fullName: string, email: string, password: string) => Promise<CurrentUser>;
   logout: () => Promise<void>;
   updateProfile: (input: ProfileInput) => Promise<CurrentUser>;
   submitCreatorApplication: (bio: string, portfolioUrls: string[]) => Promise<CurrentUser>;
@@ -118,6 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password })
       }, false);
       setUser(response.user);
+      return response.user;
     },
     async register(fullName, email, password) {
       const response = await apiFetch<{ user: CurrentUser }>("/auth/register", {
@@ -125,10 +126,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ fullName, email, password })
       }, false);
       setUser(response.user);
+      return response.user;
     },
     async logout() {
-      await apiFetch<void>("/auth/logout", { method: "POST" }, false);
-      setUser(null);
+      try {
+        await apiFetch<void>("/auth/logout", { method: "POST" }, false);
+      } finally {
+        setUser(null);
+      }
     },
     async updateProfile(input) {
       const updated = await apiFetch<CurrentUser>("/me/profile", {

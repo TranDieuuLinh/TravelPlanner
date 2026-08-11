@@ -6,6 +6,7 @@ from app.modules.information_finder.contract import (
     PreparedSource,
     RetrievedSource,
     SearchResponse,
+    SearchResult,
 )
 
 
@@ -67,6 +68,13 @@ class EmbeddingProvider(Protocol):
     async def embed_query(self, text: str) -> list[float]: ...
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
+
+
+class SourceChunker(Protocol):
+    @property
+    def version(self) -> str: ...
+
+    async def chunk(self, source: SearchResult) -> list[str]: ...
 
 
 class AnswerGenerator(Protocol):

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, Ref } from "react";
 import dynamic from "next/dynamic";
-import { getKGEntityDetail, type KGEntityDetail, type KGEntitySummary } from "../../../lib/api/knowledge-graph";
+import { getKGEntityDetail, type KGEntityDetail, type KGEntitySummary } from "../../features/knowledge-graph/lib";
 
 type GraphNode = {
   id: string;
@@ -17,12 +17,22 @@ type GraphNode = {
 };
 
 type GraphLink = {
-  source: string;
-  target: string;
+  source: string | GraphNode;
+  target: string | GraphNode;
   relationship: string;
   direction: "out" | "in";
   sourceId: string;
   targetId: string;
+};
+
+type GraphForce = {
+  distance?: (value: number) => GraphForce;
+  strength?: (value: number) => GraphForce;
+};
+
+type ForceGraphHandle = {
+  d3Force: (forceName: string) => GraphForce | undefined;
+  d3ReheatSimulation: () => void;
 };
 
 type ForceGraph2DComponent = ComponentType<{
@@ -36,9 +46,13 @@ type ForceGraph2DComponent = ComponentType<{
   nodeCanvasObjectMode?: () => "replace" | "before" | "after";
   nodeLabel?: (node: GraphNode) => string;
   linkColor?: (link: GraphLink) => string;
+  linkLineDash?: (link: GraphLink) => number[] | null;
   linkWidth?: (link: GraphLink) => number;
+  linkCanvasObject?: (link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => void;
+  linkCanvasObjectMode?: () => "replace" | "before" | "after";
   linkLabel?: (link: GraphLink) => string;
   linkDirectionalArrowLength?: number;
+  linkDirectionalArrowColor?: (link: GraphLink) => string;
   linkDirectionalArrowRelPos?: number;
   linkDirectionalParticles?: (link: GraphLink) => number;
   linkDirectionalParticleSpeed?: number;
@@ -52,28 +66,53 @@ type ForceGraph2DComponent = ComponentType<{
   d3AlphaDecay?: number;
   d3VelocityDecay?: number;
   warmupTicks?: number;
+  ref?: Ref<ForceGraphHandle | null>;
 }>;
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d") as Promise<{ default: ForceGraph2DComponent }>, { ssr: false }) as unknown as ForceGraph2DComponent;
 
 const ENTITY_TYPE_PALETTE: Record<string, string> = {
   Destination: "#67e8bd",
+  TravelPlace: "#67e8bd",
   Attraction: "#fbbf24",
   Hotel: "#a78bfa",
   Restaurant: "#f87171",
+  FoodItem: "#ef8dcf",
   Activity: "#60a5fa",
   Topic: "#94a3b8",
 };
 
 const ENTITY_TYPE_DEFAULT_COLOR = "#67e8bd";
 const ENTITY_TYPE_ICON: Record<string, string> = {
-  Destination: "◆",
-  Attraction: "★",
-  Hotel: "▣",
-  Restaurant: "●",
-  Activity: "▲",
-  Topic: "◌",
+  Destination: "\u{1f9ed}",
+  TravelPlace: "\u{1f4cd}",
+  Attraction: "\u{1f3af}",
+  Hotel: "\u{1f3e8}",
+  Restaurant: "\u{1f37d}\ufe0f",
+  FoodItem: "\u{1f35c}",
+  Activity: "\u{1f3ab}",
+  Topic: "\u{1f3f7}\ufe0f",
 };
+const RELATIONSHIP_ICON: Record<string, string> = {
+  adjacent_to: "\u{1f91d}",
+  located_in: "\u{1f4cc}",
+  offer_item: "\u{1f381}",
+  special_experience: "\u2b50",
+  special_near: "\u{1f4cd}",
+  has_accommodation: "\u{1f3e8}",
+  has_activity: "\u{1f3ab}",
+  has_place: "\u{1f4cd}",
+  has_restaurant: "\u{1f37d}\ufe0f",
+  is_in_area: "\u{1f5fa}\ufe0f",
+  is_in_city: "\u{1f3d9}\ufe0f",
+  is_in_district: "\u{1f3d8}\ufe0f",
+  serves_food: "\u{1f35c}",
+};
+
+function relationshipIcon(relationship: string): string {
+  const normalized = relationship.trim().toLowerCase().replace(/\s+/g, "_");
+  return RELATIONSHIP_ICON[normalized] || "\u{1f517}";
+}
 
 // Draw a small glyph centered inside a node circle. The glyph scales with the
 // circle radius (clamped) so it stays readable at the new bigger node sizes.
@@ -81,15 +120,15 @@ function drawNodeIcon(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  radius: number,
-  glyph: string
+  glyph: string,
+  globalScale: number,
+  iconPixels: number
 ): void {
-  const iconSize = Math.max(8, Math.min(radius * 1.1, 14));
+  const iconSize = iconPixels / globalScale;
   ctx.save();
-  ctx.font = `${iconSize}px var(--mono, monospace)`;
+  ctx.font = `${iconSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(11, 22, 20, 0.85)";
   ctx.fillText(glyph, x, y + 1);
   ctx.restore();
 }
@@ -97,12 +136,17 @@ function drawNodeIcon(
 export function RelationshipGraph({
   entity,
   onJumpToEntity,
+  showOutgoing = true,
+  showIncoming = true,
 }: {
   entity: KGEntityDetail;
   onJumpToEntity: (entityId: string) => void;
+  showOutgoing?: boolean;
+  showIncoming?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 320 });
+  const graphRef = useRef<ForceGraphHandle | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 180 });
   const [neighbors, setNeighbors] = useState<Record<string, KGEntitySummary>>({});
   const [loadError, setLoadError] = useState("");
 
@@ -115,8 +159,12 @@ export function RelationshipGraph({
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
-        if (w > 0) {
-          setSize((prev) => ({ ...prev, width: w }));
+        const h = entry.contentRect.height;
+        if (w > 0 || h > 0) {
+          setSize((prev) => ({
+            width: w > 0 ? w : prev.width,
+            height: h > 0 ? h : prev.height,
+          }));
         }
       }
     });
@@ -128,11 +176,16 @@ export function RelationshipGraph({
   const neighborIds = useMemo(() => {
     const ids = new Set<string>();
     for (const rel of entity.relationships) {
+      const isOutgoing = rel.fromEntityId === entity.id;
+      const isIncoming = rel.toEntityId === entity.id;
+      if ((!isOutgoing && !isIncoming) || (!showOutgoing && isOutgoing) || (!showIncoming && isIncoming)) {
+        continue;
+      }
       if (rel.fromEntityId !== entity.id) ids.add(rel.fromEntityId);
       if (rel.toEntityId !== entity.id) ids.add(rel.toEntityId);
     }
     return Array.from(ids);
-  }, [entity.id, entity.relationships]);
+  }, [entity.id, entity.relationships, showIncoming, showOutgoing]);
 
   // Fetch missing neighbor summaries (cached for the lifetime of this graph).
   useEffect(() => {
@@ -191,8 +244,15 @@ export function RelationshipGraph({
         status: n.status,
         isCenter: false,
       }));
+    const availableNodeIds = new Set([entity.id, ...neighborNodes.map((node) => node.id)]);
     const links: GraphLink[] = entity.relationships
-      .filter((rel) => rel.fromEntityId in neighbors || rel.toEntityId in neighbors || rel.fromEntityId === entity.id || rel.toEntityId === entity.id)
+      .filter(
+        (rel) =>
+          (rel.fromEntityId === entity.id || rel.toEntityId === entity.id) &&
+          ((rel.fromEntityId === entity.id && showOutgoing) || (rel.toEntityId === entity.id && showIncoming)) &&
+          availableNodeIds.has(rel.fromEntityId) &&
+          availableNodeIds.has(rel.toEntityId)
+      )
       .map((rel) => {
         const isOut = rel.fromEntityId === entity.id;
         return {
@@ -205,7 +265,15 @@ export function RelationshipGraph({
         };
       });
     return { nodes: [centerNode, ...neighborNodes], links };
-  }, [entity, neighborIds, neighbors]);
+  }, [entity, neighborIds, neighbors, showIncoming, showOutgoing]);
+
+  useEffect(() => {
+    const linkForce = graphRef.current?.d3Force("link");
+    const chargeForce = graphRef.current?.d3Force("charge");
+    linkForce?.distance?.(48);
+    chargeForce?.strength?.(-90);
+    graphRef.current?.d3ReheatSimulation();
+  }, [graphData]);
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
@@ -218,7 +286,7 @@ export function RelationshipGraph({
 
   const drawNode = useCallback(
     (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const radius = node.isCenter ? 14 : 10;
+      const radius = (node.isCenter ? 22 : 12) / globalScale;
       const color =
         (node.type && ENTITY_TYPE_PALETTE[node.type]) || ENTITY_TYPE_DEFAULT_COLOR;
       ctx.beginPath();
@@ -234,19 +302,10 @@ export function RelationshipGraph({
       ctx.fill();
       ctx.stroke();
 
-      // Type glyph centered inside the circle.
-      const glyph = ENTITY_TYPE_ICON[node.type ?? ""] ?? "◇";
-      drawNodeIcon(ctx, node.x ?? 0, node.y ?? 0, radius, glyph);
-
-      // Label below node — fixed pixel size so text stays small even when the
-// camera is zoomed out (low globalScale would otherwise inflate the font).
-      const fontSize = node.isCenter ? 5 : 4;
-      ctx.font = `${fontSize}px var(--mono, monospace)`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillStyle = node.isCenter ? "#c8ddd5" : "#9fb3ad";
-      const label = node.name.length > 22 ? `${node.name.slice(0, 21)}…` : node.name;
-      ctx.fillText(label, node.x ?? 0, (node.y ?? 0) + radius + 2);
+      // Type icon centered inside the circle. The name remains available in
+      // the hover tooltip so the compact map stays readable.
+      const glyph = ENTITY_TYPE_ICON[node.type ?? ""] ?? "\u{1f517}";
+      drawNodeIcon(ctx, node.x ?? 0, node.y ?? 0, glyph, globalScale, node.isCenter ? 24 : 16);
     },
     []
   );
@@ -256,8 +315,32 @@ export function RelationshipGraph({
     (link: GraphLink) => (link.direction === "out" ? "rgba(103, 232, 189, 0.55)" : "rgba(167, 215, 198, 0.45)"),
     []
   );
+  const linkLineDash = useCallback((link: GraphLink) => (link.direction === "in" ? [5, 4] : null), []);
   const linkWidth = useCallback((link: GraphLink) => (link.sourceId === entity.id || link.targetId === entity.id ? 1.4 : 0.9), [entity.id]);
   const linkLabel = useCallback((link: GraphLink) => link.relationship, []);
+  const linkCanvasObject = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const source = typeof link.source === "object" ? link.source : undefined;
+    const target = typeof link.target === "object" ? link.target : undefined;
+    if (source?.x == null || source.y == null || target?.x == null || target.y == null) {
+      return;
+    }
+    const x = (source.x + target.x) / 2;
+    const y = (source.y + target.y) / 2;
+    const icon = relationshipIcon(link.relationship);
+    const iconSize = 13 / globalScale;
+    const badgeRadius = 9 / globalScale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, badgeRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(7, 16, 15, 0.92)";
+    ctx.fill();
+    ctx.font = `${iconSize}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(icon, x, y + 1);
+    ctx.restore();
+  }, []);
+  const linkCanvasObjectMode = useCallback(() => "after" as const, []);
 
   if (neighborIds.length === 0) {
     return (
@@ -275,6 +358,7 @@ export function RelationshipGraph({
       <div ref={containerRef} className="kgRelationshipGraphCanvas" aria-busy={!ready}>
         {size.width > 0 && (
           <ForceGraph2D
+            ref={graphRef}
             graphData={graphData}
             width={size.width}
             height={size.height}
@@ -287,9 +371,13 @@ export function RelationshipGraph({
               `${node.name}\n${node.type} · ${node.status}${node.isCenter ? "\n(current entity)" : "\nClick to jump"}`
             }
             linkColor={linkColor}
+            linkLineDash={linkLineDash}
             linkWidth={linkWidth}
+            linkCanvasObject={linkCanvasObject}
+            linkCanvasObjectMode={linkCanvasObjectMode}
             linkLabel={linkLabel}
             linkDirectionalArrowLength={4}
+            linkDirectionalArrowColor={(link: GraphLink) => (link.direction === "out" ? "#67e8bd" : "#a7d7c6")}
             linkDirectionalArrowRelPos={0.85}
             linkDirectionalParticles={(link: GraphLink) => (link.sourceId === entity.id ? 1 : 0)}
             linkDirectionalParticleSpeed={0.006}
@@ -299,20 +387,20 @@ export function RelationshipGraph({
             enableNodeDrag={false}
             enableZoomInteraction={false}
             enablePanInteraction={false}
-            cooldownTime={2000}
+            cooldownTime={1200}
             d3AlphaDecay={0.05}
             d3VelocityDecay={0.4}
-            warmupTicks={40}
+            warmupTicks={28}
           />
         )}
       </div>
       <div className="kgRelationshipGraphLegend">
         <span className="kgRelationshipGraphLegendItem">
-          <span className="kgRelationshipGraphLegendDot" style={{ background: "var(--mint)" }} />
+          <span className="kgRelationshipGraphDirectionIcon outgoing">➜</span>
           Outgoing
         </span>
         <span className="kgRelationshipGraphLegendItem">
-          <span className="kgRelationshipGraphLegendDot" style={{ background: "rgba(167, 215, 198, 0.7)" }} />
+          <span className="kgRelationshipGraphDirectionIcon incoming">⬅</span>
           Incoming
         </span>
         <span className="kgRelationshipGraphLegendHint">

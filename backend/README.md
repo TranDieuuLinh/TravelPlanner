@@ -39,10 +39,11 @@ modules/<module>/
 
 This is a working architecture scaffold, not a production travel-data system.
 
-- The supervisor uses deterministic high-signal rules first, with an optional
-  structured Gemini classifier for ambiguous requests and a truthful
-  deterministic fallback. The baseline model and routing policy are not
-  production-evaluated.
+- The supervisor uses structured Gemini classification first when
+  `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`. The classifier also produces a short
+  same-language response for greeting, assistant-meta, and out-of-scope
+  `finish` requests. Deterministic rules remain the offline provider and runtime
+  fallback. The baseline model and routing policy are not production-evaluated.
 - Explorer currently parses destination and duration from simple text input.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
@@ -71,6 +72,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
+psql "$DATABASE_URL" -f migrations/002_auth.sql
+psql "$DATABASE_URL" -f migrations/003_knowledge_graph.sql
 uvicorn app.main:app --reload
 ```
 
@@ -97,7 +100,32 @@ Run tests:
 pytest
 ```
 
-Configure `DATABASE_URL` for the module-owned PostgreSQL cache,
+Authentication owns `auth_runtime_users` and `auth_runtime_sessions` through
+`migrations/002_auth.sql`. Run that migration for an existing PostgreSQL
+volume before using `/auth/login` or `/auth/register`. When `DATABASE_URL` is
+empty, tests and local development use an in-memory fallback. The development
+seed accounts are configured by `AUTH_DEV_SEED_USERS`; do not use those default
+passwords outside local development.
+
+The admin Knowledge Graph module owns the `knowledge_*` tables created by
+`migrations/003_knowledge_graph.sql`. It provides entity, alias, property,
+relationship, stats, and ontology endpoints consumed by `admin-frontend`.
+Apply the migration manually for an existing PostgreSQL volume; Docker only
+applies init scripts when the volume is created.
+
+With Docker, a fresh `travelplanner_postgres_data_v2` volume runs the migration
+automatically because `docker-compose.yml` mounts it into PostgreSQL initdb.
+For an existing volume, run the idempotent migration from the mounted file:
+
+```powershell
+docker compose up -d postgres
+docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/003_knowledge_graph.sql
+```
+
+Configure `BACKEND_CORS_ORIGINS` with comma-separated browser origins (the local
+frontend and admin frontend use `http://localhost:3000` and
+`http://localhost:3001`), and configure `DATABASE_URL` for the module-owned
+PostgreSQL cache,
 `GEMINI_API_KEY` for Gemini embeddings/answer generation, and `TAVILY_API_KEY`
 for web refreshes. Gemini embeddings use `gemini-embedding-001` with 384 output
 dimensions by default, matching the current pgvector schema; no local embedding

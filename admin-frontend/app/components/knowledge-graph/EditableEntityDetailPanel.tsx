@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  type KGEntityDetail,
+} from "../../features/knowledge-graph/lib";
+import {
   createKGAlias,
   createKGProperty,
   createKGRelationship,
@@ -13,15 +16,13 @@ import {
   updateKGEntity,
   updateKGProperty,
   updateKGRelationship,
-  type KGEntityDetail,
-} from "../../../lib/api/knowledge-graph";
+} from "../../features/knowledge-graph/lib";
 import {
   InspectorSection,
   KG_DEFAULT_COLLAPSED_SECTIONS,
   KG_DETAIL_PROPERTY_FETCH_LIMIT,
   useCollapsedSections,
-} from "../knowledge-graph/KnowledgeGraphSections";
-import { RelationshipGraph } from "../knowledge-graph/RelationshipGraph";
+} from "./KnowledgeGraphSections";
 
 type EditableAliasRow = {
   clientKey: string;
@@ -40,6 +41,7 @@ type EditablePropertyRow = {
 type EditableRelationshipRow = {
   clientKey: string;
   id: number | null;
+  fromEntityId: string;
   relationship: string;
   toEntityId: string;
 };
@@ -51,7 +53,10 @@ export function EditableEntityDetailPanel({
   onRequestDelete,
   onRequestCopy,
   onError,
-  availableNodeTypes,
+  availableEntityTypes,
+  availableStatuses,
+  availableRelationshipTypes,
+  availablePropertyKeys,
 }: {
   entity: KGEntityDetail;
   onJumpToEntity: (entityId: string) => void;
@@ -59,7 +64,10 @@ export function EditableEntityDetailPanel({
   onRequestDelete: () => void;
   onRequestCopy: () => void;
   onError: (message: string) => void;
-  availableNodeTypes: string[];
+  availableEntityTypes: string[];
+  availableStatuses: string[];
+  availableRelationshipTypes: string[];
+  availablePropertyKeys: string[];
 }) {
   const [draftEntity, setDraftEntity] = useState({
     canonicalName: entity.canonicalName,
@@ -104,6 +112,7 @@ export function EditableEntityDetailPanel({
       entity.relationships.map((rel) => ({
         clientKey: `relationship-${rel.id}`,
         id: rel.id,
+        fromEntityId: rel.fromEntityId,
         relationship: rel.relationship,
         toEntityId: rel.toEntityId,
       }))
@@ -165,8 +174,11 @@ export function EditableEntityDetailPanel({
   }, [createRowKey]);
 
   const addPropertyRow = useCallback(() => {
-    setPropertyRows((current) => [...current, { clientKey: createRowKey(), id: null, key: "", value: "" }]);
-  }, [createRowKey]);
+    setPropertyRows((current) => [
+      ...current,
+      { clientKey: createRowKey(), id: null, key: availablePropertyKeys[0] ?? "", value: "" },
+    ]);
+  }, [availablePropertyKeys, createRowKey]);
 
   const addRelationshipRow = useCallback(() => {
     setRelationshipRows((current) => [
@@ -174,11 +186,12 @@ export function EditableEntityDetailPanel({
       {
         clientKey: createRowKey(),
         id: null,
-        relationship: availableNodeTypes[0] ?? "",
+        fromEntityId: entity.id,
+        relationship: availableRelationshipTypes[0] ?? "",
         toEntityId: "",
       },
     ]);
-  }, [availableNodeTypes, createRowKey]);
+  }, [availableRelationshipTypes, createRowKey]);
 
   const saveEntity = useCallback(async () => {
     const canonicalName = draftEntity.canonicalName.trim();
@@ -282,7 +295,12 @@ export function EditableEntityDetailPanel({
   const saveRelationship = useCallback(
     async (row: EditableRelationshipRow) => {
       const relationship = row.relationship.trim();
+      const fromEntityId = row.fromEntityId.trim();
       const toEntityId = row.toEntityId.trim();
+      if (!fromEntityId) {
+        reportError("From entity ID không được để trống.");
+        return;
+      }
       if (!relationship) {
         reportError("Relationship không được để trống.");
         return;
@@ -294,10 +312,12 @@ export function EditableEntityDetailPanel({
       await saveSection(`relationship-${row.clientKey}`, () =>
         row.id === null
           ? createKGRelationship(entity.id, {
+              fromEntityId,
               relationship,
               toEntityId,
             })
           : updateKGRelationship(entity.id, row.id, {
+              fromEntityId,
               relationship,
               toEntityId,
             })
@@ -331,20 +351,31 @@ export function EditableEntityDetailPanel({
           <h2>{entity.canonicalName}</h2>
           <p>{entity.id}</p>
         </div>
-        <span className={`status status-${entity.status === "missing" ? "failed" : entity.status}`}>
-          {entity.status}
-        </span>
+        <div className="kgEntityHeaderActions">
+          <div className="kgSectionActions kgEntityHeaderButtons">
+            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={onRequestCopy}>
+              Copy entity
+            </button>
+            <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={onRequestDelete}>
+              Delete entity
+            </button>
+          </div>
+          <span className={`status status-${entity.status === "missing" ? "failed" : entity.status}`}>
+            {entity.status}
+          </span>
+        </div>
       </header>
 
       <div className="kgInspectorBody kgInspectorAll">
         <InspectorSection
           sectionId="information"
           title="Information"
+          collapsible={false}
           isCollapsed={sections.isCollapsed("information")}
           onToggle={() => sections.toggle("information")}
         >
           <div className="kgSectionForm kgIdentitySectionForm">
-            <label>
+            <label className="kgIdentityFieldFull">
               <span>ID</span>
               <input value={entity.id} disabled />
             </label>
@@ -361,7 +392,7 @@ export function EditableEntityDetailPanel({
                 value={draftEntity.entityType}
                 onChange={(event) => setDraftEntity((current) => ({ ...current, entityType: event.target.value }))}
               >
-                {availableNodeTypes.map((type) => (
+                {availableEntityTypes.map((type) => (
                   <option key={type} value={type}>
                     {type}
                   </option>
@@ -374,22 +405,17 @@ export function EditableEntityDetailPanel({
                 value={draftEntity.status}
                 onChange={(event) => setDraftEntity((current) => ({ ...current, status: event.target.value }))}
               >
-                <option value="active">active</option>
-                <option value="draft">draft</option>
-                <option value="missing">missing</option>
-                <option value="archived">archived</option>
+                {availableStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
-          <div className="kgSectionActions" style={{ marginTop: "10px" }}>
+          <div className="kgSectionActions kgIdentityActions">
             <button type="button" className="save" disabled={isSaving} onClick={() => void saveEntity()}>
               {savingKey === "entity" ? "Saving..." : "Save entity"}
-            </button>
-            <button type="button" className="kgMiniDanger" disabled={isSaving} onClick={onRequestDelete}>
-              Delete entity
-            </button>
-            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={onRequestCopy}>
-              Copy entity
             </button>
           </div>
         </InspectorSection>
@@ -476,14 +502,24 @@ export function EditableEntityDetailPanel({
             <div className="kgSectionEditList">
               {propertyRows.map((row) => (
                 <div key={row.clientKey} className="kgPropertyEditRow">
-                  <input
+                  <select
                     value={row.key}
                     onChange={(event) =>
                       updatePropertyRow(row.clientKey, (current) => ({ ...current, key: event.target.value }))
                     }
-                    placeholder="Key"
+                    aria-label="Property key"
                     disabled={isSaving}
-                  />
+                  >
+                    <option value="">Select property key</option>
+                    {availablePropertyKeys.map((key) => (
+                      <option key={key} value={key}>
+                        {key}
+                      </option>
+                    ))}
+                    {row.key && !availablePropertyKeys.includes(row.key) && (
+                      <option value={row.key}>{row.key}</option>
+                    )}
+                  </select>
                   <input
                     value={row.value}
                     onChange={(event) =>
@@ -540,19 +576,39 @@ export function EditableEntityDetailPanel({
               {relationshipRows.map((row) => (
                 <div key={row.clientKey} className="kgRelationshipEditRow">
                   <input
+                    value={row.fromEntityId}
+                    onChange={(event) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, fromEntityId: event.target.value }))
+                    }
+                    placeholder="From ID"
+                    aria-label="From entity ID"
+                    disabled={isSaving}
+                  />
+                  <select
                     value={row.relationship}
                     onChange={(event) =>
                       updateRelationshipRow(row.clientKey, (current) => ({ ...current, relationship: event.target.value }))
                     }
-                    placeholder="Type"
+                    aria-label="Relationship type"
                     disabled={isSaving}
-                  />
+                  >
+                    <option value="">Select relationship type</option>
+                    {availableRelationshipTypes.map((relationshipType) => (
+                      <option key={relationshipType} value={relationshipType}>
+                        {relationshipType}
+                      </option>
+                    ))}
+                    {row.relationship && !availableRelationshipTypes.includes(row.relationship) && (
+                      <option value={row.relationship}>{row.relationship}</option>
+                    )}
+                  </select>
                   <input
                     value={row.toEntityId}
                     onChange={(event) =>
                       updateRelationshipRow(row.clientKey, (current) => ({ ...current, toEntityId: event.target.value }))
                     }
                     placeholder="To ID"
+                    aria-label="To entity ID"
                     disabled={isSaving}
                   />
                   <button
@@ -588,9 +644,6 @@ export function EditableEntityDetailPanel({
               <span>◇</span>
               <b>No relationships</b>
             </div>
-          )}
-          {entity.relationships.length > 0 && (
-            <RelationshipGraph entity={entity} onJumpToEntity={onJumpToEntity} />
           )}
         </InspectorSection>
 

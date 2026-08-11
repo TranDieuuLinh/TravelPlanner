@@ -30,13 +30,13 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def source(identifier, domain="example.test"):
+def source(identifier, domain="example.test", content=CONTENT):
     return RetrievedSource(
         source_id=identifier,
         snapshot_id=f"snap-{identifier}",
         title=f"Source {identifier}",
         url=f"https://{domain}/{identifier}",
-        content=CONTENT,
+        content=content,
         semantic_score=0.9,
         lexical_score=0.5,
         last_fetched_at=NOW,
@@ -52,15 +52,23 @@ class Repository:
         return self.local
 
     async def save_search(self, *, sources, **kwargs):
-        return [source(f"web-{index}", "web.test") for index, _ in enumerate(sources)]
+        return [
+            source(
+                f"web-{index}",
+                "web.test",
+                content=item.result.content,
+            )
+            for index, item in enumerate(sources)
+        ]
 
     async def record_failed_search(self, **kwargs):
         return None
 
 
 class Search:
-    def __init__(self):
+    def __init__(self, content=CONTENT):
         self.calls = 0
+        self.content = content
 
     async def search(self, query):
         self.calls += 1
@@ -69,7 +77,7 @@ class Search:
                 SearchResult(
                     title="Web",
                     url="https://web.test/result",
-                    content=CONTENT,
+                    content=self.content,
                     provider_score=0.9,
                     fetched_at=NOW,
                 )
@@ -174,6 +182,6 @@ def test_cache_hit_skips_tavily_and_calls_llm_once():
 
 def test_cache_miss_calls_tavily_and_llm_once():
     answer = Answer(generated(("Fact", ["web-0"])))
-    search = Search()
+    search = Search(content="hours " * 100)
     run(make_service(Repository(), answer, search=search).find("hours"))
     assert search.calls == 1 and answer.calls == 1

@@ -9,7 +9,6 @@ const KG_COLLAPSED_SECTIONS_STORAGE_KEY = "vsf.admin.kg.section.collapsed";
 // preference exists yet. Users can still expand individually; their choice is
 // then stored in localStorage and reused on subsequent visits.
 export const KG_DEFAULT_COLLAPSED_SECTIONS: readonly string[] = [
-  "information",
   "aliases",
   "properties",
   "relationships",
@@ -86,6 +85,7 @@ export function InspectorSection({
   title,
   count,
   headerExtras,
+  collapsible = true,
   isCollapsed,
   onToggle,
   children,
@@ -94,23 +94,25 @@ export function InspectorSection({
   title: string;
   count?: number;
   headerExtras?: ReactNode;
+  collapsible?: boolean;
   isCollapsed: boolean;
   onToggle: () => void;
   children: ReactNode;
 }) {
   return (
     <section
-      className={`kgInspectorSection${isCollapsed ? " kgInspectorSectionCollapsed" : ""}`}
+      className={`kgInspectorSection${collapsible && isCollapsed ? " kgInspectorSectionCollapsed" : ""}${collapsible ? "" : " kgInspectorSectionStatic"}`}
       data-section-id={sectionId}
     >
       <header className="kgSectionHeaderActions">
         <button
           type="button"
           className="kgSectionToggle"
-          onClick={onToggle}
-          aria-expanded={!isCollapsed}
-          aria-label={isCollapsed ? `Expand ${title} section` : `Collapse ${title} section`}
-          title={isCollapsed ? `Expand ${title}` : `Collapse ${title}`}
+          onClick={collapsible ? onToggle : undefined}
+          disabled={!collapsible}
+          aria-expanded={collapsible ? !isCollapsed : true}
+          aria-label={collapsible ? (isCollapsed ? `Expand ${title} section` : `Collapse ${title} section`) : title}
+          title={collapsible ? (isCollapsed ? `Expand ${title}` : `Collapse ${title}`) : title}
         >
           <span className={`kgSectionChevron${isCollapsed ? " kgSectionChevronCollapsed" : ""}`} aria-hidden="true">
             ▾

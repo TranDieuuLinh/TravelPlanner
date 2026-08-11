@@ -40,3 +40,7 @@ class EmbeddingProviderQuotaExceeded(EmbeddingProviderError):
 
 class EmbeddingProviderInvalidOutput(EmbeddingProviderError):
     code = "embedding_provider_invalid_output"
+
+
+class SourceChunkingError(RuntimeError):
+    code = "source_chunking_error"

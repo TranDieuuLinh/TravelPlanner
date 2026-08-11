@@ -11,13 +11,14 @@ from app.modules.information_finder.contract import (
     SourceReference,
 )
 from app.modules.information_finder.answering import validate_and_render_answer
-from app.modules.information_finder.errors import AnswerProviderError
+from app.modules.information_finder.errors import AnswerProviderError, SourceChunkingError
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
     EmbeddingProvider,
     SearchProvider,
     SearchProviderError,
+    SourceChunker,
     SourceRepository,
 )
 from app.modules.information_finder.ranking import (
@@ -37,13 +38,17 @@ class InformationFinderOptions:
     retrieval_limit: int = 10
     answer_source_limit: int = 5
     minimum_local_sources: int = 2
-    similarity_threshold: float = 0.65
+    similarity_threshold: float = 0.8
     provider_relevance_threshold: float = 0.5
     minimum_content_chars: int = 80
     blocked_domains: tuple[str, ...] = ()
     chunk_tokens: int = 300
     chunk_overlap: int = 50
+    topic_overlap_threshold: float = 0.5
     answer_fallback_enabled: bool = True
+
+
+DETERMINISTIC_CHUNKING_VERSION = "deterministic-v1"
 
 
 class InformationFinderService:
@@ -54,6 +59,7 @@ class InformationFinderService:
         embeddings: EmbeddingProvider,
         answers: AnswerGenerator,
         fallback_answers: AnswerGenerator | None = None,
+        chunker: SourceChunker | None = None,
         search_provider: SearchProvider | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
@@ -62,6 +68,7 @@ class InformationFinderService:
         self.embeddings = embeddings
         self.answers = answers
         self.fallback_answers = fallback_answers
+        self.chunker = chunker
         self.search_provider = search_provider
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
@@ -77,13 +84,20 @@ class InformationFinderService:
             self.options.retrieval_limit,
         )
         now = datetime.now(timezone.utc)
-        fresh_local = [source for source in local if source.expires_at > now]
+        fresh_local = [
+            source
+            for source in local
+            if source.expires_at > now
+            and source.semantic_score >= self.options.similarity_threshold
+        ]
         decision = self.freshness.for_query(normalized_query)
         local_sufficient = has_sufficient_local_sources(
             fresh_local,
+            query=normalized_query,
             minimum_sources=self.options.minimum_local_sources,
             similarity_threshold=self.options.similarity_threshold,
             minimum_content_chars=self.options.minimum_content_chars,
+            topic_overlap_threshold=self.options.topic_overlap_threshold,
         )
         warnings: list[str] = []
         combined = list(fresh_local)
@@ -118,7 +132,11 @@ class InformationFinderService:
                         query_embedding,
                         normalized_query,
                     )
-                    combined.extend(saved)
+                    combined.extend(
+                        source
+                        for source in saved
+                        if source.semantic_score >= self.options.similarity_threshold
+                    )
                 except SearchProviderError as exc:
                     warnings.append(
                         f"Web search unavailable ({exc.code}); local sources were used."
@@ -135,7 +153,10 @@ class InformationFinderService:
         if not ranked:
             return InformationFinderOutput(
                 answer="Chưa có nguồn phù hợp để trả lời câu hỏi này.",
-                warnings=warnings,
+                warnings=[
+                    *warnings,
+                    "No source met the semantic similarity threshold.",
+                ],
             )
         try:
             generated = await self.answers.generate(normalized_query, ranked)
@@ -188,16 +209,34 @@ class InformationFinderService:
             seen_hashes.add(digest)
             accepted.append((result, canonical_url, domain, digest))
 
-        chunk_sets = [
-            chunk_content(
-                result.content,
-                title=result.title,
-                target_tokens=self.options.chunk_tokens,
-                overlap_tokens=self.options.chunk_overlap,
-            )
-            for result, *_ in accepted
+        chunk_sets = []
+        for result, *_ in accepted:
+            chunking_version = DETERMINISTIC_CHUNKING_VERSION
+            if self.chunker is not None:
+                try:
+                    semantic_chunks = await self.chunker.chunk(result)
+                    chunks = [(chunk, len(chunk.split())) for chunk in semantic_chunks]
+                    chunking_version = self.chunker.version
+                except SourceChunkingError:
+                    chunks = chunk_content(
+                        result.content,
+                        title=result.title,
+                        target_tokens=self.options.chunk_tokens,
+                        overlap_tokens=self.options.chunk_overlap,
+                    )
+            else:
+                chunks = chunk_content(
+                    result.content,
+                    title=result.title,
+                    target_tokens=self.options.chunk_tokens,
+                    overlap_tokens=self.options.chunk_overlap,
+                )
+            chunk_sets.append((chunks, chunking_version))
+        texts = [
+            chunk
+            for chunks, _ in chunk_sets
+            for chunk, _ in chunks
         ]
-        texts = [chunk for chunks in chunk_sets for chunk, _ in chunks]
         vectors = await self.embeddings.embed_documents(texts) if texts else []
         vector_index = 0
         prepared_sources = []
@@ -206,6 +245,7 @@ class InformationFinderService:
             accepted, chunk_sets
         ):
             prepared_chunks = []
+            chunks, chunking_version = chunks
             for index, (chunk, token_count) in enumerate(chunks):
                 prepared_chunks.append(
                     PreparedChunk(
@@ -226,6 +266,7 @@ class InformationFinderService:
                     content_hash=digest,
                     expires_at=expires_at,
                     chunks=prepared_chunks,
+                    chunking_version=chunking_version,
                 )
             )
         return prepared_sources
