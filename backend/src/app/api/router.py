@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from app.api.dependencies import get_explorer_graph, get_graph
 from app.api.schemas import InvokeRequest, InvokeResponse
