@@ -56,10 +56,8 @@ class ItineraryPlannerService:
             intent=payload.intent,
             days=days,
             total_estimated_cost=sum(
-                place.estimated_cost * payload.intent.people
-                for place in payload.places
+                place.estimated_cost * payload.intent.people for place in payload.places
             ),
             warnings=warnings,
         )
         return ItineraryPlannerOutput(itinerary=itinerary)
-

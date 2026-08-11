@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -69,7 +69,7 @@ added without changing public graph contracts.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev,embeddings]'
+pip install -e '.[dev]'
 psql "$DATABASE_URL" -f migrations/001_information_finder_source_cache.sql
 uvicorn app.main:app --reload
 ```
@@ -97,8 +97,11 @@ Run tests:
 pytest
 ```
 
-Configure `DATABASE_URL` for the module-owned PostgreSQL cache and
-`TAVILY_API_KEY` for web refreshes. See `.env.example` for thresholds, timeout,
+Configure `DATABASE_URL` for the module-owned PostgreSQL cache,
+`GEMINI_API_KEY` for Gemini embeddings/answer generation, and `TAVILY_API_KEY`
+for web refreshes. Gemini embeddings use `gemini-embedding-001` with 384 output
+dimensions by default, matching the current pgvector schema; no local embedding
+model is installed in the backend image. See `.env.example` for thresholds, timeout,
 search depth, model revision, and blocked domains. Docker initializes the SQL
 migration only for a new PostgreSQL volume; run it manually for an existing
 volume. Set `INFORMATION_FINDER_ANSWER_PROVIDER=gemini` and `GEMINI_API_KEY` to

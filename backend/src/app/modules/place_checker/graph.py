@@ -15,4 +15,3 @@ def build_place_checker_graph(service: PlaceCheckerService | None = None):
     builder.add_edge(START, "check_places")
     builder.add_edge("check_places", END)
     return builder.compile()
-

@@ -7,9 +7,7 @@ def test_routes_information_request() -> None:
     graph = build_supervisor_graph()
 
     result = asyncio.run(
-        graph.ainvoke(
-            {"message": "Thời tiết ở Hà Nội là gì?", "has_itinerary": False}
-        )
+        graph.ainvoke({"message": "Thời tiết ở Hà Nội là gì?", "has_itinerary": False})
     )
 
     assert result["decision"].route == "information_finder"

@@ -27,4 +27,3 @@ class RootState(TypedDict, total=False):
     response: str
     clarification_question: str | None
     warnings: list[str]
-

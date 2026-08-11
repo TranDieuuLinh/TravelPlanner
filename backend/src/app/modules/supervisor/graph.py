@@ -11,4 +11,3 @@ def build_supervisor_graph(service: SupervisorService | None = None):
     builder.add_edge(START, "decide")
     builder.add_edge("decide", END)
     return builder.compile()
-

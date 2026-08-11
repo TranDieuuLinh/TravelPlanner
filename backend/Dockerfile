@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir ".[embeddings]"
+RUN pip install --no-cache-dir "."
 
 ENV PYTHONPATH=/app/src
 EXPOSE 8000

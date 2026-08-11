@@ -1,6 +1,6 @@
 # ADR 001: Runtime source cache của Information Finder
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 ## Trạng thái
 
@@ -21,10 +21,11 @@ transaction. Migration ban đầu là SQL versioned tại
 có migration framework. Docker chỉ tự chạy file này khi khởi tạo volume mới;
 volume đã tồn tại phải chạy migration thủ công.
 
-`intfloat/multilingual-e5-small` là embedding adapter mặc định khi có
-`DATABASE_URL`. Model được lazy-load một lần và query/passage dùng đúng prefix.
-Khi không có database, development/test dùng cache trong process và hashing
-embedding, không được coi là semantic retrieval production.
+`gemini-embedding-001` là embedding adapter mặc định khi có `DATABASE_URL` và
+`GEMINI_API_KEY`. Query/document dùng task type retrieval tương ứng và output
+384 chiều để tương thích schema pgvector hiện tại. Khi không có database,
+development/test dùng cache trong process và hashing embedding, không được coi
+là semantic retrieval production.
 
 Information Finder có thể dùng shared Gemini LLM client theo ADR 002 để tạo
 structured claims. `ExtractiveAnswerGenerator` vẫn là fallback rõ ràng; model

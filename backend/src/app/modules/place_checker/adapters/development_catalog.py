@@ -47,4 +47,3 @@ class DevelopmentCatalog:
             )
             for index in range(limit)
         ]
-

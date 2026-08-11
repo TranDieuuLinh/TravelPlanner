@@ -8,4 +8,3 @@ class SupervisorState(TypedDict, total=False):
     has_itinerary: bool
     has_edit_operation: bool
     decision: SupervisorDecision
-

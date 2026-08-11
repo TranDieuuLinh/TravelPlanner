@@ -22,9 +22,6 @@ dependencies = [
 dev = [
   "pytest>=8,<9",
 ]
-embeddings = [
-  "sentence-transformers>=3,<6",
-]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -137,4 +137,3 @@ class RootNodes:
                 "I can help with travel planning and destination information.",
             )
         }
-

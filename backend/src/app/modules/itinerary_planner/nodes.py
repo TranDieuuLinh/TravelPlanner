@@ -15,4 +15,3 @@ def create_plan_node(service: ItineraryPlannerService):
         return {"output": output}
 
     return plan
-

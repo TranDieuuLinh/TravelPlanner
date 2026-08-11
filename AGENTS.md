@@ -3,7 +3,7 @@
 Đây là điểm bắt đầu dành cho coding agent làm việc với TravelPlanner. Phải đọc
 file này trước khi thay đổi code.
 
-Ngày cập nhật: 2026-08-10.
+Ngày cập nhật: 2026-08-11.
 
 ## Trạng thái backend hiện tại
 
@@ -19,7 +19,7 @@ Backend hiện tại là scaffold FastAPI/LangGraph theo kiến trúc module d�
   trực tiếp state, node hoặc service nội bộ của module khác.
 - Supervisor là classifier xác định tuyến xử lý.
 - Explorer mới phân tích destination và duration từ input đơn giản.
-- Information finder ưu tiên cache PostgreSQL/pgvector, có Tavily Search qua
+- Information finder ưu tiên cache PostgreSQL/pgvector với Gemini embeddings, có Tavily Search qua
   cấu hình. Answer generator có thể dùng shared Gemini client với structured
   claims/citation validation; extractive vẫn là development/runtime fallback.
   Model baseline chưa được production-evaluated.

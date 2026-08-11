@@ -14,4 +14,3 @@ def create_check_node(service: PlaceCheckerService):
         return {"output": output}
 
     return check
-

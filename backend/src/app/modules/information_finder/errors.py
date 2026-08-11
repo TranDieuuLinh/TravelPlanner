@@ -20,3 +20,23 @@ class AnswerProviderInvalidOutput(AnswerProviderError):
 
 class AnswerProviderRefusal(AnswerProviderError):
     code = "answer_provider_refusal"
+
+
+class EmbeddingProviderError(RuntimeError):
+    code = "embedding_provider_error"
+
+
+class EmbeddingProviderTimeout(EmbeddingProviderError):
+    code = "embedding_provider_timeout"
+
+
+class EmbeddingProviderUnauthorized(EmbeddingProviderError):
+    code = "embedding_provider_unauthorized"
+
+
+class EmbeddingProviderQuotaExceeded(EmbeddingProviderError):
+    code = "embedding_provider_quota_exceeded"
+
+
+class EmbeddingProviderInvalidOutput(EmbeddingProviderError):
+    code = "embedding_provider_invalid_output"

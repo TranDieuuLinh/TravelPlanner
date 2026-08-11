@@ -51,4 +51,3 @@ class PlaceCheckerService:
             coverage_status=status,
             warnings=warnings,
         )
-

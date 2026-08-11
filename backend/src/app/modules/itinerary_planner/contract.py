@@ -13,4 +13,3 @@ class ItineraryPlannerInput(BaseModel):
 
 class ItineraryPlannerOutput(BaseModel):
     itinerary: Itinerary
-

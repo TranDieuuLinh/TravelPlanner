@@ -6,9 +6,7 @@ from app.modules.explorer.public import build_explorer_graph
 def test_extracts_destination_and_days() -> None:
     graph = build_explorer_graph()
 
-    result = asyncio.run(
-        graph.ainvoke({"message": "Lập kế hoạch ở Huế trong 3 ngày"})
-    )
+    result = asyncio.run(graph.ainvoke({"message": "Lập kế hoạch ở Huế trong 3 ngày"}))
 
     assert result["output"].intent.destination == "Huế"
     assert result["output"].intent.days == 3

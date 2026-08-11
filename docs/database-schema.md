@@ -250,7 +250,7 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 
 ### `knowledge_properties`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -261,10 +261,11 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `source` | text | Có | Nguồn dữ liệu. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `note` | text | Có | Ghi chú property. |
+| `fetch_at` | timestamptz | Có | Thời điểm dữ liệu property được lấy từ nguồn. |
 
 ### `knowledge_relationships`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -274,6 +275,7 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `to_entity_id` | varchar | Không | Entity đích. |
 | `recommendations` | json | Có | Recommendation liên quan. |
 | `source` | text | Có | Nguồn quan hệ. |
+| `source_note` | text | Có | Ghi chú hoặc bằng chứng mô tả nguồn của quan hệ. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 

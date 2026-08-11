@@ -15,4 +15,3 @@ def create_decide_node(service: SupervisorService):
         return {"decision": decision}
 
     return decide
-

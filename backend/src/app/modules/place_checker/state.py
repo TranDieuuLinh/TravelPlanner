@@ -11,4 +11,3 @@ class PlaceCheckerState(TypedDict, total=False):
     resolved_places: list[VerifiedPlace]
     rejected_candidates: list[PlaceCandidate]
     output: PlaceCheckerOutput
-

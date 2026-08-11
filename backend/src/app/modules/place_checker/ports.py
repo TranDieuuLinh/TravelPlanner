@@ -18,4 +18,3 @@ class PlaceDiscovery(Protocol):
         intent: TripIntent,
         limit: int,
     ) -> list[VerifiedPlace]: ...
-
