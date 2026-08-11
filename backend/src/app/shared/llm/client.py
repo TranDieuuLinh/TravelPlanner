@@ -95,6 +95,7 @@ class GeminiLlmClient:
         temperature: float | None = None,
         max_output_tokens: int | None = None,
         response_json_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         if not user_prompt.strip():
             raise LlmConfigurationError("LLM user prompt must not be empty.")
@@ -104,6 +105,7 @@ class GeminiLlmClient:
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             response_json_schema=response_json_schema,
+            tools=tools,
         )
         last_error: Exception | None = None
 
@@ -179,6 +181,7 @@ class GeminiLlmClient:
         temperature: float | None,
         max_output_tokens: int | None,
         response_json_schema: dict[str, Any] | None,
+        tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": user_prompt}]}]
@@ -195,6 +198,8 @@ class GeminiLlmClient:
             generation_config["responseJsonSchema"] = response_json_schema
         if generation_config:
             payload["generationConfig"] = generation_config
+        if tools:
+            payload["tools"] = tools
         return payload
 
     @staticmethod

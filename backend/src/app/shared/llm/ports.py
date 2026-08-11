@@ -10,5 +10,6 @@ class LlmClient(Protocol):
         temperature: float | None = None,
         max_output_tokens: int | None = None,
         response_json_schema: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         """Generate text from a user prompt."""
