@@ -1,0 +1,1 @@
+"""Knowledge Graph admin module."""

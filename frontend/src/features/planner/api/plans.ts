@@ -552,6 +552,128 @@ export type TripChat = TripChatSummary & {
   turns: TripChatTurn[];
 };
 
+type CurrentTripChat = {
+  id: string;
+  title: string;
+  threadId: string;
+  revision: number;
+  hasItinerary: boolean;
+  currentItinerary?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+  messages?: Array<{
+    id: string;
+    role: "assistant" | "user";
+    content: string;
+    route?: string | null;
+    clarificationQuestion?: string | null;
+    warnings?: string[];
+    sources?: Array<Record<string, unknown>>;
+    createdAt: string;
+  }>;
+};
+
+function currentItineraryToPlan(itinerary: Record<string, any> | null | undefined): TravelPlan | null {
+  if (!itinerary) return null;
+  const intent = itinerary.intent ?? {};
+  return {
+    id: itinerary.itineraryId ?? itinerary.itinerary_id ?? "agent-itinerary",
+    title: `${intent.destination ?? "Chuyến đi"} · ${itinerary.days?.length ?? 0} ngày`,
+    destination: intent.destination ?? "",
+    kind: "main",
+    warnings: itinerary.warnings ?? [],
+    days: (itinerary.days ?? []).map((day: any) => ({
+      day: day.day,
+      transportLegs: [],
+      items: (day.items ?? []).map((item: any) => {
+        const place = item.place ?? {};
+        const start = item.startMinute ?? item.start_minute;
+        const end = item.endMinute ?? item.end_minute;
+        return {
+          itemId: item.itemId ?? item.item_id,
+          placeId: place.placeId ?? place.place_id,
+          name: place.name ?? "Địa điểm",
+          address: null,
+          timeWindow: `${formatMinute(start)} – ${formatMinute(end)}`,
+          placeType: "activity",
+          source: place.source ?? "agent",
+          sourceRefs: [],
+          latitude: place.coordinates?.latitude ?? null,
+          longitude: place.coordinates?.longitude ?? null,
+          tags: place.tags ?? [],
+        };
+      }),
+    })),
+  };
+}
+
+function formatMinute(value: unknown): string {
+  const minute = Number(value);
+  if (!Number.isFinite(minute)) return "--:--";
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+
+function mapCurrentTripChat(chat: CurrentTripChat): TripChat {
+  const plan = currentItineraryToPlan(chat.currentItinerary);
+  return {
+    id: chat.id,
+    title: chat.title,
+    destination: plan?.destination ?? null,
+    revision: chat.revision,
+    hasPlan: Boolean(plan),
+    createdAt: chat.createdAt,
+    updatedAt: chat.updatedAt,
+    tripIntentVersion: 0,
+    tripIntentPlanStatus: "synced",
+    currentPlan: plan,
+    currentTripIntent: null,
+    candidateReviews: [],
+    messages: (chat.messages ?? []).map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      attachmentNames: [],
+      planRevision: plan ? chat.revision : null,
+      createdAt: message.createdAt,
+      messageKind: message.role,
+      contentBlocks: [],
+    })),
+    turns: [],
+  };
+}
+
+async function sendCurrentTripChatMessage(chatId: string, content: string): Promise<TripChat> {
+  const response = await apiFetch<{ chat: CurrentTripChat }>(
+    `/v1/trip-chats/${encodeURIComponent(chatId)}/messages`,
+    { method: "POST", body: JSON.stringify({ content }) },
+  );
+  return mapCurrentTripChat(response.chat);
+}
+
+function completedAgentTurn(chat: TripChat, content: string, clientTurnId?: string): TripChatTurn {
+  const now = chat.updatedAt;
+  return {
+    id: `agent-${chat.id}-${chat.revision}`,
+    chatId: chat.id,
+    clientTurnId: clientTurnId ?? `agent-${chat.revision}`,
+    status: "completed",
+    content,
+    attachmentNames: [],
+    baseRevision: Math.max(0, chat.revision - 1),
+    intent: null,
+    confidence: null,
+    requiresConfirmation: false,
+    proposedOperations: [],
+    assistantBlocks: [],
+    resultSummary: { planRevision: chat.revision },
+    errorCode: null,
+    errorMessage: null,
+    createdAt: now,
+    updatedAt: now,
+    planRevision: chat.currentPlan ? chat.revision : null,
+  };
+}
+
 export type UrlImportJob = {
   id: string;
   chatId: string;
@@ -757,23 +879,26 @@ export async function createPlanFromExplorer(input: {
 }
 
 export async function createTripChat(title?: string): Promise<TripChat> {
-  return apiFetch<TripChat>("/trip-chats", {
+  const chat = await apiFetch<CurrentTripChat>("/v1/trip-chats", {
     method: "POST",
     body: JSON.stringify({ title: title || null })
   });
+  return mapCurrentTripChat(chat);
 }
 
 export async function listTripChats(
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChatSummary[]> {
-  return apiFetch<TripChatSummary[]>("/trip-chats", init);
+  const chats = await apiFetch<CurrentTripChat[]>("/v1/trip-chats", init);
+  return chats.map((chat) => mapCurrentTripChat(chat));
 }
 
 export async function getTripChat(
   chatId: string,
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChat> {
-  return apiFetch<TripChat>(`/trip-chats/${chatId}`, init);
+  const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${encodeURIComponent(chatId)}`, init);
+  return mapCurrentTripChat(chat);
 }
 
 export async function updateTripChatIntent(input: {
@@ -782,24 +907,20 @@ export async function updateTripChatIntent(input: {
   expectedRevision: number;
   expectedTripIntentVersion: number;
 }): Promise<TripChat> {
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/trip-intent`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      tripIntent: input.tripIntent,
-      expectedRevision: input.expectedRevision,
-      expectedTripIntentVersion: input.expectedTripIntentVersion,
-    }),
-  });
+  return sendCurrentTripChatMessage(
+    input.chatId,
+    `Cập nhật thông tin chuyến đi:\n${JSON.stringify(input.tripIntent)}`,
+  );
 }
 
 export async function deleteTripChat(chatId: string): Promise<void> {
-  return apiFetch<void>(`/trip-chats/${chatId}`, {
+  return apiFetch<void>(`/v1/trip-chats/${encodeURIComponent(chatId)}`, {
     method: "DELETE"
   });
 }
 
 export async function deleteAllTripChats(): Promise<void> {
-  return apiFetch<void>("/trip-chats", {
+  return apiFetch<void>("/v1/trip-chats", {
     method: "DELETE"
   });
 }
@@ -810,16 +931,7 @@ export async function amendTripChat(input: {
   expectedRevision: number;
   images?: File[];
 }): Promise<TripChat> {
-  const form = new FormData();
-  form.append("content", input.content);
-  form.append("expectedRevision", String(input.expectedRevision));
-  for (const image of input.images ?? []) {
-    form.append("images", image);
-  }
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/messages`, {
-    method: "POST",
-    body: form
-  });
+  return sendCurrentTripChatMessage(input.chatId, input.content);
 }
 
 export async function retryTripChatCandidateResolutions(input: {
@@ -861,15 +973,8 @@ export async function enqueueTripChatUrls(input: {
   urls: string[];
   forceRefresh?: boolean;
 }): Promise<UrlImportJobBatch> {
-  const form = new FormData();
-  form.append("content", input.content);
-  form.append("expectedRevision", String(input.expectedRevision));
-  for (const url of input.urls) form.append("urls", url);
-  form.append("forceRefresh", String(input.forceRefresh ?? false));
-  return apiFetch<UrlImportJobBatch>(`/trip-chats/${input.chatId}/url-jobs`, {
-    method: "POST",
-    body: form
-  });
+  await sendCurrentTripChatMessage(input.chatId, `${input.content}\n\nNguồn URL:\n${input.urls.join("\n")}`);
+  return { jobs: [] };
 }
 
 export async function enqueueTripChatImages(input: {
@@ -878,26 +983,20 @@ export async function enqueueTripChatImages(input: {
   expectedRevision: number;
   images: File[];
 }): Promise<UrlImportJobBatch> {
-  const form = new FormData();
-  form.append("content", input.content);
-  form.append("expectedRevision", String(input.expectedRevision));
-  for (const image of input.images) form.append("images", image);
-  return apiFetch<UrlImportJobBatch>(`/trip-chats/${input.chatId}/image-jobs`, {
-    method: "POST",
-    body: form
-  });
+  await sendCurrentTripChatMessage(input.chatId, input.content);
+  return { jobs: [] };
 }
 
 export async function listUrlImportJobs(): Promise<UrlImportJobBatch> {
-  return apiFetch<UrlImportJobBatch>("/url-import-jobs");
+  return { jobs: [] };
 }
 
 export async function listActiveTripChatTurns(): Promise<TripChatTurn[]> {
-  return apiFetch<TripChatTurn[]>("/trip-chats/active-turns");
+  return [];
 }
 
 export async function listTripChatPlannerRuns(): Promise<TripChatTurn[]> {
-  return apiFetch<TripChatTurn[]>("/trip-chats/planner-runs");
+  return [];
 }
 
 export async function retryUrlImportJob(jobId: string): Promise<UrlImportJob> {
@@ -1142,24 +1241,17 @@ export async function createTripChatTurn(input: {
   clientTurnId?: string;
   attachmentNames?: string[];
 }): Promise<TripChatTurn> {
-  return apiFetch<TripChatTurn>(`/trip-chats/${input.chatId}/turns`, {
-    method: "POST",
-    body: JSON.stringify({
-      content: input.content,
-      expectedRevision: input.expectedRevision,
-      clientTurnId: input.clientTurnId ?? null,
-      attachmentNames: input.attachmentNames ?? []
-    })
-  });
+  const chat = await sendCurrentTripChatMessage(input.chatId, input.content);
+  return completedAgentTurn(chat, input.content, input.clientTurnId);
 }
 
 export async function getTripChatTurn(input: {
   chatId: string;
   turnId: string;
 }): Promise<TripChatTurn> {
-  return apiFetch<TripChatTurn>(
-    `/trip-chats/${input.chatId}/turns/${input.turnId}`
-  );
+  const chat = await getTripChat(input.chatId);
+  const lastUserMessage = [...chat.messages].reverse().find((message) => message.role === "user");
+  return completedAgentTurn(chat, lastUserMessage?.content ?? "", input.turnId);
 }
 
 
@@ -1167,28 +1259,22 @@ export async function executeTripChatTurn(input: {
   chatId: string;
   turnId: string;
 }): Promise<TripChatTurn> {
-  return apiFetch<TripChatTurn>(
-    `/trip-chats/${input.chatId}/turns/${input.turnId}/execute`,
-    { method: "POST" }
-  );
+  const chat = await getTripChat(input.chatId);
+  return completedAgentTurn(chat, "", input.turnId);
 }
 
 export async function confirmTripChatTurn(input: {
   chatId: string;
   turnId: string;
 }): Promise<TripChatTurn> {
-  return apiFetch<TripChatTurn>(
-    `/trip-chats/${input.chatId}/turns/${input.turnId}/confirm`,
-    { method: "POST" }
-  );
+  const chat = await getTripChat(input.chatId);
+  return completedAgentTurn(chat, "", input.turnId);
 }
 
 export async function cancelTripChatTurn(input: {
   chatId: string;
   turnId: string;
 }): Promise<TripChatTurn> {
-  return apiFetch<TripChatTurn>(
-    `/trip-chats/${input.chatId}/turns/${input.turnId}/cancel`,
-    { method: "POST" }
-  );
+  const chat = await getTripChat(input.chatId);
+  return { ...completedAgentTurn(chat, "", input.turnId), status: "cancelled" };
 }

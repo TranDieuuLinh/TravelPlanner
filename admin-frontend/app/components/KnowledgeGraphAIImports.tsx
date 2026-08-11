@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { APIError } from "../../lib/shared/api-client";
 import {
-  APIError,
   GraphImportMeta,
   GraphImportSummary,
   ProposedEdgePage,
@@ -23,7 +23,7 @@ import {
   revalidateGraphImport,
   updateProposedGraphEdge,
   updateProposedGraphNode
-} from "../../lib/api/knowledge-graph";
+} from "../features/knowledge-graph/lib";
 
 type ReviewTab = "nodes" | "edges" | "source";
 

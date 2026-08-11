@@ -3,12 +3,29 @@
   min-width: 0;
 }
 
+.workspace:has(.kgPage) {
+  padding: 10px;
+}
+
 .kgLead {
   max-width: 660px;
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.6;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.kgTopbar {
+  gap: 16px;
+}
+
+.kgTopbar h1 {
+  font-size: 1.65rem;
+}
+
+.kgTopbar .eyebrow {
+  margin-bottom: 4px;
+  font-size: 0.6rem;
 }
 
 .kgHeaderActions,
@@ -137,8 +154,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
-  margin-top: 6px;
+  align-self: center;
+  margin-top: 0;
   padding: 6px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -150,6 +167,11 @@
   cursor: default;
   user-select: none;
   transition: border-color 120ms ease, color 120ms ease;
+}
+
+.kgWorkspaceTabs .kgSourceBadge {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .kgSourceBadge:hover {
@@ -234,7 +256,7 @@
 .kgWorkspaceTabs {
   display: flex;
   gap: 4px;
-  margin-top: 20px;
+  margin-top: 0;
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
 }
@@ -245,11 +267,11 @@
   gap: 7px;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 13px 15px;
+  padding: 8px 12px;
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: 0.6rem;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -273,15 +295,66 @@
 }
 
 .kgDataLayout {
+  grid-template-columns: 240px minmax(280px, 0.9fr) minmax(420px, 1.35fr);
+  align-items: stretch;
+  height: min(720px, calc(100vh - 180px));
+  min-height: 0;
   margin-top: 12px;
 }
 
+.kgEntityList,
+.kgRelationshipOverview,
+.kgInspector {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
 .kgEntityList {
-  max-height: 720px;
+  overflow-y: auto;
 }
 
 .kgEntityList>header small {
   color: var(--red);
+}
+
+.kgEntityList>header {
+  align-items: center;
+  gap: 8px;
+}
+
+.kgPagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+}
+
+.kgPaginationInline {
+  margin-left: auto;
+  padding: 0;
+}
+
+.kgPagination button {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mint);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.kgPagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .kgEntityCard {
@@ -304,16 +377,20 @@
   box-shadow: inset 2px 0 var(--lime);
 }
 
-.kgEntityCardTop {
-  display: flex;
+.kgEntityCardRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 
-.kgEntityCard h3 {
-  margin: 15px 0 5px;
+.kgEntityCardRow h3 {
+  min-width: 0;
+  margin: 0;
   font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   overflow-wrap: anywhere;
 }
 
@@ -333,13 +410,46 @@
   margin: 11px 0 0;
 }
 
-.kgNodeType {
+.kgEntityTypeIcon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
   border: 1px solid currentColor;
-  border-radius: 6px;
-  padding: 4px 7px;
-  font-family: var(--mono);
-  font-size: 0.56rem;
-  font-weight: 800;
+  border-radius: 8px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.kgEntityStatusDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 3px rgba(134, 162, 154, 0.08);
+}
+
+.kgEntityStatusDot.status-completed,
+.kgEntityStatusDot.status-passed {
+  background: var(--mint);
+  box-shadow: 0 0 0 3px rgba(103, 232, 189, 0.1);
+}
+
+.kgEntityStatusDot.status-running {
+  background: var(--blue);
+  box-shadow: 0 0 0 3px rgba(121, 168, 255, 0.1);
+}
+
+.kgEntityStatusDot.status-failed {
+  background: var(--red);
+  box-shadow: 0 0 0 3px rgba(255, 116, 108, 0.1);
+}
+
+.kgEntityStatusDot.status-blocked,
+.kgEntityStatusDot.status-warning,
+.kgEntityStatusDot.status-draft {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245, 185, 66, 0.1);
 }
 
 .kgNode-place {
@@ -363,12 +473,23 @@
 }
 
 .kgInspector {
-  max-height: 720px;
   overflow-y: auto;
 }
 
 .kgInspectorHeader {
   align-items: center;
+}
+
+.kgEntityHeaderActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.kgEntityHeaderButtons {
+  justify-content: flex-end;
 }
 
 .kgInspectorActions {
@@ -415,6 +536,14 @@
   margin-bottom: 0;
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+.kgInspectorSectionStatic .kgSectionToggle {
+  cursor: default;
+}
+
+.kgInspectorSectionStatic .kgSectionChevron {
+  display: none;
 }
 
 .kgInspectorSection>header {
@@ -624,7 +753,7 @@
 .kgSectionForm,
 /* Relationship graph visualization */
 .kgRelationshipGraph {
-  margin-top: 12px;
+  margin-top: 0;
   border: 1px solid rgba(103, 232, 189, 0.16);
   border-radius: 10px;
   background: rgba(7, 17, 15, 0.4);
@@ -634,7 +763,7 @@
 .kgRelationshipGraphCanvas {
   position: relative;
   width: 100%;
-  height: 320px;
+  height: 180px;
   background: rgba(11, 23, 21, 0.4);
 }
 
@@ -680,6 +809,27 @@
   border-radius: 50%;
 }
 
+.kgRelationshipGraphDirectionIcon {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  font-family: "Segoe UI Symbol", "Segoe UI Emoji", sans-serif;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.kgRelationshipGraphDirectionIcon.outgoing {
+  color: var(--mint);
+  background: rgba(103, 232, 189, 0.12);
+}
+
+.kgRelationshipGraphDirectionIcon.incoming {
+  color: #a7d7c6;
+  background: rgba(167, 215, 198, 0.12);
+}
+
 .kgRelationshipGraphLegendHint {
   margin-left: auto;
   color: var(--muted);
@@ -691,6 +841,95 @@
   border-top: 1px dashed rgba(248, 113, 113, 0.4);
   color: #f87171;
   font-size: 0.7rem;
+}
+
+.kgRelationshipOverview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(11, 23, 21, 0.58);
+  align-content: start;
+}
+
+.kgRelationshipOverview .kgRelationshipGraph {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
+.kgRelationshipOverview .kgRelationshipGraphCanvas {
+  min-height: 180px;
+  height: 100%;
+}
+
+.kgRelationshipOverviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kgRelationshipOverviewHeader h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.kgRelationshipOverviewHeader p:last-child {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.kgRelationshipOverviewCount {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(103, 232, 189, 0.25);
+  border-radius: 999px;
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+}
+
+.kgRelationshipOverviewStats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kgRelationshipStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.kgRelationshipStat b {
+  font-size: 0.75rem;
+}
+
+.kgRelationshipStat.outgoing {
+  color: var(--mint);
+}
+
+.kgRelationshipStat.loaded {
+  color: var(--muted);
+}
+
+.kgRelationshipStat.incoming {
+  color: #a7d7c6;
 }
 
 .kgSectionEditList {
@@ -707,7 +946,19 @@
 }
 
 .kgIdentitySectionForm {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 0.8fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.kgIdentitySectionForm > .kgIdentityFieldFull {
+  grid-column: 1 / -1;
+}
+
+.kgIdentityActions {
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .kgSectionForm label {
@@ -802,7 +1053,7 @@
 }
 
 .kgRelationshipEditRow {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
   align-items: center;
   padding: 6px 8px;
   gap: 6px;

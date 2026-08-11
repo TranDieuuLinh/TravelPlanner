@@ -26,9 +26,9 @@ class ClassifierResult(BaseModel):
     route: SupervisorRoute
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(min_length=1, max_length=240)
+    response: str | None = Field(default=None, max_length=1000)
 
 
 class SupervisorDecision(ClassifierResult):
-    response: str | None = Field(default=None, max_length=1000)
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list, max_length=10)

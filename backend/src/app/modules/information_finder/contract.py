@@ -88,6 +88,7 @@ class PreparedSource(BaseModel):
     content_hash: str
     expires_at: datetime
     chunks: list[PreparedChunk]
+    chunking_version: str = "deterministic-v1"
 
 
 class RetrievedSource(BaseModel):

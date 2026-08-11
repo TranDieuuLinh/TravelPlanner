@@ -5,7 +5,13 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir "."
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
+
+RUN python -m pip install --no-cache-dir \
+    --index-url "${PIP_INDEX_URL}" \
+    --retries 10 \
+    --timeout 120 \
+    "."
 
 ENV PYTHONPATH=/app/src
 EXPOSE 8000
