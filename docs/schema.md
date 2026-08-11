@@ -11,6 +11,7 @@ trực tiếp.
 | Endpoint | Input | Output |
 |---|---|---|
 | `GET /health` | Không có | `{ "status": "ok" }` |
+| `POST /v1/explorer/invoke` | `ExplorerInput` | `ExplorerOutput` |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `POST /auth/login` | `LoginInput` | `LoginResponse` + cookies |
 | `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
@@ -66,6 +67,35 @@ Root state nội bộ có `conversation_context` gồm tối đa sáu user messa
 nhất để Supervisor xử lý follow-up. API không nhận raw history riêng; context
 được giữ theo `thread_id` trong checkpointer hiện tại.
 
+### Explorer
+
+`ExplorerInput` nhận `rawPrompt` tùy chọn, `urls` và `images`. Explorer output
+không có `schemaVersion` và gồm:
+
+- `status`: `ready`, `clarification` hoặc `error`;
+- `intakeId`, `input_ADM`;
+- `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
+  `addressHint`; không có `sourceOrder`/`sourceDay`;
+- `inputItems`, chỉ lấy food, drink hoặc activity được nêu rõ trong raw prompt;
+- `urlNotes`, chứa tóm tắt evidence từ URL/ảnh/OCR/transcript/metadata;
+- `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`;
+- clarification, warnings hoặc structured `AgentError` khi phù hợp.
+
+Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
+động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems` và có
+thể liên kết bằng `relatedPlaceName`; evidence từ source tương tự nằm trong
+`urlNotes`. Explorer không resolve place.
+
+Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=1 adult` và
+chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
+whole-trip URL, rồi `low`. Giá vé/món riêng không phải whole-trip budget.
+Draft generator có adapter deterministic và structured Gemini; provider được
+chọn bằng `EXPLORER_DRAFT_PROVIDER`.
+
+`PlaceCheckerInput` nhận trực tiếp `input_ADM`, `places`, `inputItems`,
+`urlNotes`, `days`, `budget`, `people`, `shortPreferences` và `shortAvoids` từ
+Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
+
 ## Tool và provider adapter
 
 Hiện chưa có standalone tool registry. Các tool/adapter đang có:
@@ -93,6 +123,8 @@ Các provider interface bên ngoài hiện có:
 - `PlaceDiscovery`
 - `RoutingProvider`
 - `LlmClient`
+- `KnowledgeGraphPlaceSearch`
+- `ExternalPlaceSearch`
 
 ## Shared contract
 
@@ -125,7 +157,7 @@ Các schema dùng chung chính:
 
 ## Schema request và response của API
 
-- `InvokeRequest`: `thread_id`, `message`, `supplied_candidates`,
+- `InvokeRequest`: `thread_id`, `message` tùy chọn, `urls`, `images`,
   `existing_itinerary`, `edit_operation`.
 - `InvokeResponse`: `request_id`, `route`, `response`, `itinerary`,
   `clarification_question`, `warnings`, `sources`.
