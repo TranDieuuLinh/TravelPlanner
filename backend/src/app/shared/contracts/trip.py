@@ -8,4 +8,3 @@ class TripIntent(BaseModel):
     people: int = Field(default=1, ge=1, le=100)
     preferences: list[str] = Field(default_factory=list)
     avoids: list[str] = Field(default_factory=list)
-

@@ -30,4 +30,3 @@ class VerifiedPlace(BaseModel):
         if not self.place_id.strip() or not self.name.strip():
             raise ValueError("place_id and name must not be blank")
         return self
-

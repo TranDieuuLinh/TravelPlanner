@@ -163,7 +163,9 @@ def deterministic_decision(payload: SupervisorInput) -> SupervisorDecision | Non
     return None
 
 
-def fallback_decision(payload: SupervisorInput, *, warning: str | None = None) -> SupervisorDecision:
+def fallback_decision(
+    payload: SupervisorInput, *, warning: str | None = None
+) -> SupervisorDecision:
     warnings = [warning] if warning else []
     return SupervisorDecision(
         route="explorer",
@@ -208,7 +210,6 @@ def _is_greeting_or_thanks(message: str) -> bool:
 
 def _contains_any(message: str, markers: tuple[str, ...]) -> bool:
     return any(
-        re.search(rf"(?<!\w){re.escape(marker.strip())}(?!\w)", message)
-        is not None
+        re.search(rf"(?<!\w){re.escape(marker.strip())}(?!\w)", message) is not None
         for marker in markers
     )

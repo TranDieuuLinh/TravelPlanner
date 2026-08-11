@@ -19,4 +19,3 @@ class PlaceCheckerOutput(BaseModel):
     rejected_candidates: list[PlaceCandidate] = Field(default_factory=list)
     coverage_status: CoverageStatus
     warnings: list[str] = Field(default_factory=list)
-

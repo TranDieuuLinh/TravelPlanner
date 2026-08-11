@@ -8,4 +8,3 @@ class PlanEditorState(TypedDict, total=False):
     itinerary: Itinerary
     operation: EditOperation
     output: PlanEditorOutput
-

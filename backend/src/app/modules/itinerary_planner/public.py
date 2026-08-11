@@ -11,4 +11,3 @@ __all__ = [
     "RoutingProvider",
     "build_itinerary_planner_graph",
 ]
-

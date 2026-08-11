@@ -6,8 +6,8 @@ from app.modules.information_finder.adapters.development import (
     HashingEmbeddingProvider,
     InMemorySourceRepository,
 )
-from app.modules.information_finder.adapters.multilingual_e5 import (
-    MultilingualE5EmbeddingProvider,
+from app.modules.information_finder.adapters.gemini_embedding import (
+    GeminiEmbeddingProvider,
 )
 from app.modules.information_finder.adapters.llm_answer_generator import (
     StructuredLlmAnswerGenerator,
@@ -56,10 +56,21 @@ def get_information_finder_service() -> InformationFinderService:
     settings = get_settings()
     if settings.database_url:
         repository: SourceRepository = PostgresSourceRepository(settings.database_url)
-        embeddings: EmbeddingProvider = MultilingualE5EmbeddingProvider(
-            settings.information_finder_embedding_model,
-            settings.information_finder_embedding_revision,
-        )
+        if settings.gemini_api_key:
+            embeddings: EmbeddingProvider = GeminiEmbeddingProvider(
+                settings.gemini_api_key,
+                model_name=settings.information_finder_embedding_model,
+                model_revision=settings.information_finder_embedding_revision,
+                dimensions=settings.information_finder_embedding_output_dimensions,
+                timeout_seconds=settings.information_finder_embedding_timeout_seconds,
+                key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+            )
+        elif settings.app_env in ("development", "test"):
+            embeddings = HashingEmbeddingProvider()
+        else:
+            raise ValueError(
+                "GEMINI_API_KEY is required for PostgreSQL Information Finder embeddings"
+            )
     else:
         repository = InMemorySourceRepository()
         embeddings = HashingEmbeddingProvider()

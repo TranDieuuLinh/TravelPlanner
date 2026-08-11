@@ -10,4 +10,3 @@ class ItineraryPlannerState(TypedDict, total=False):
     places: list[VerifiedPlace]
     upstream_warnings: list[str]
     output: ItineraryPlannerOutput
-

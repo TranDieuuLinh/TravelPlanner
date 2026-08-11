@@ -1,9 +1,12 @@
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
+import httpx
+
 from app.modules.information_finder.adapters.development import InMemorySourceRepository
-from app.modules.information_finder.adapters.multilingual_e5 import (
-    MultilingualE5EmbeddingProvider,
+from app.modules.information_finder.adapters.gemini_embedding import (
+    GeminiEmbeddingProvider,
 )
 from app.modules.information_finder.adapters.tavily_search import TavilySearchProvider
 from app.modules.information_finder.contract import (
@@ -82,18 +85,50 @@ def test_repository_does_not_mix_embedding_model_or_revision():
     assert len(found) == 1 and wrong == []
 
 
-def test_multilingual_e5_applies_query_and_passage_prefixes():
-    provider = MultilingualE5EmbeddingProvider()
-    seen = []
+def test_gemini_embedding_uses_retrieval_tasks_and_normalizes_vectors():
+    requests = []
 
-    async def fake_encode(texts):
-        seen.extend(texts)
-        return [[0.0] * 384 for _ in texts]
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((str(request.url), json.loads(request.content)))
+        body = requests[-1][1]
+        if "batchEmbedContents" in str(request.url):
+            values = [{"values": [3.0] + [0.0] * 383} for _ in body["requests"]]
+            return httpx.Response(200, json={"embeddings": values})
+        return httpx.Response(200, json={"embedding": {"values": [4.0] + [0.0] * 383}})
 
-    provider._encode = fake_encode
-    asyncio.run(provider.embed_query("xin chào"))
-    asyncio.run(provider.embed_documents(["nội dung"]))
-    assert seen == ["query: xin chào", "passage: nội dung"]
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiEmbeddingProvider("secret", client=client)
+    query = asyncio.run(provider.embed_query("query"))
+    documents = asyncio.run(provider.embed_documents(["document"]))
+    asyncio.run(client.aclose())
+
+    assert query == [1.0] + [0.0] * 383
+    assert documents == [[1.0] + [0.0] * 383]
+    assert requests[0][1]["embedContentConfig"] == {
+        "taskType": "RETRIEVAL_QUERY",
+        "outputDimensionality": 384,
+    }
+    assert requests[1][1]["requests"][0]["embedContentConfig"]["taskType"] == (
+        "RETRIEVAL_DOCUMENT"
+    )
+
+
+def test_gemini_embedding_rotates_comma_separated_keys_on_quota():
+    seen_keys = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_keys.append(request.headers["x-goog-api-key"])
+        if len(seen_keys) == 1:
+            return httpx.Response(429, json={"error": "quota"})
+        return httpx.Response(200, json={"embedding": {"values": [1.0] + [0.0] * 383}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = GeminiEmbeddingProvider("api1, api2,api1", client=client)
+    asyncio.run(provider.embed_query("query"))
+    asyncio.run(client.aclose())
+
+    assert provider.key_count == 2
+    assert seen_keys == ["api1", "api2"]
 
 
 def test_tavily_maps_quota_error_without_exposing_raw_payload():

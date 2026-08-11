@@ -31,4 +31,3 @@ class Itinerary(BaseModel):
     total_estimated_cost: float = Field(default=0, ge=0)
     warnings: list[str] = Field(default_factory=list)
     revision: int = Field(default=1, ge=1)
-

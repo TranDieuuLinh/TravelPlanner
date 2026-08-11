@@ -46,4 +46,3 @@ def create_root_graph(
 
 
 graph = create_root_graph()
-

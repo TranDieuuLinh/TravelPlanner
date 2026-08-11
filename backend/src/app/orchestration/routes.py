@@ -14,4 +14,3 @@ def route_after_explorer(
 ) -> Literal["place_checker", "finish"]:
     output = state["explorer_output"]
     return "place_checker" if output.intent is not None else "finish"
-

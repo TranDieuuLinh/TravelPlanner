@@ -15,4 +15,3 @@ def build_itinerary_planner_graph(
     builder.add_edge(START, "build_itinerary")
     builder.add_edge("build_itinerary", END)
     return builder.compile()
-

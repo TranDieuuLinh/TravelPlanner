@@ -1,4 +1,8 @@
-from app.modules.supervisor.contract import ClassifierResult, SupervisorDecision, SupervisorInput
+from app.modules.supervisor.contract import (
+    ClassifierResult,
+    SupervisorDecision,
+    SupervisorInput,
+)
 from app.modules.supervisor.errors import SupervisorClassificationError
 from app.modules.supervisor.ports import IntentClassifier
 from app.modules.supervisor.rules import deterministic_decision, fallback_decision

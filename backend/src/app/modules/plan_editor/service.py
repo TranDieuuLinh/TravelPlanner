@@ -64,4 +64,3 @@ class PlanEditorService:
 
         itinerary.revision += 1
         return PlanEditorOutput(itinerary=itinerary, changed=True)
-

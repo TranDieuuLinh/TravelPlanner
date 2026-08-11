@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -59,7 +59,7 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 |---|---|---|---|
 | `TavilySearchProvider` | `information_finder` | query chuẩn hóa | kết quả tìm kiếm nội bộ có provenance |
 | `PostgresSourceRepository` | `information_finder` | query/vector hoặc prepared sources | nguồn cache hybrid |
-| `MultilingualE5EmbeddingProvider` | `information_finder` | query/passage | vector chuẩn hóa 384 chiều |
+| `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |
 | `ExtractiveAnswerGenerator` | `information_finder` | query và nguồn | câu trả lời fallback có citation |
 | `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim và source ID |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |

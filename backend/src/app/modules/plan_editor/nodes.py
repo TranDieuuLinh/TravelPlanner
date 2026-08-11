@@ -14,4 +14,3 @@ def create_edit_node(service: PlanEditorService):
         return {"output": output}
 
     return edit
-

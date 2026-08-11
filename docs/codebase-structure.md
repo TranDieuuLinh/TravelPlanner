@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-10.
+Cập nhật lần cuối: 2026-08-11.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -77,7 +77,7 @@ chọn, câu trả lời, itinerary nếu có, câu hỏi cần làm rõ và war
 
 Information Finder hiện có service cache-first, các port `SearchProvider`,
 `SourceRepository`, `EmbeddingProvider`, `AnswerGenerator`, adapter Tavily,
-multilingual-e5 và PostgreSQL/pgvector. Các bảng do module sở hữu có tiền tố
+Gemini embeddings và PostgreSQL/pgvector. Các bảng do module sở hữu có tiền tố
 `information_finder_`; module không dùng bảng legacy. Khi thiếu database hoặc
 API key, development/test dùng fallback trung thực trong process.
 

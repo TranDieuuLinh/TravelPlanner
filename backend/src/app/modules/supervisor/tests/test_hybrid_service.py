@@ -13,7 +13,9 @@ from app.modules.supervisor.service import SupervisorService
 
 
 class FakeClassifier:
-    def __init__(self, result: ClassifierResult | None = None, error: Exception | None = None):
+    def __init__(
+        self, result: ClassifierResult | None = None, error: Exception | None = None
+    ):
         self.result = result
         self.error = error
         self.calls = 0
@@ -89,21 +91,23 @@ def test_out_of_scope_request_finishes_honestly():
 
 def test_narrow_rules_avoid_common_substring_false_positives():
     assert information_rule(SupervisorInput(message="The address is useful"))
-    assert planning_rule(SupervisorInput(message="What should I do in Da Nang for 3 days"))
+    assert planning_rule(
+        SupervisorInput(message="What should I do in Da Nang for 3 days")
+    )
     assert structured_edit_rule(SupervisorInput(message="addendum")) is None
     assert decide(SupervisorService(), "The addendum is ready").route == "explorer"
 
 
 def test_multi_intent_uses_planning_action_after_structured_precedence():
-    decision = decide(
-        SupervisorService(), "Lập kế hoạch Đà Nẵng và cho biết giá vé"
-    )
+    decision = decide(SupervisorService(), "Lập kế hoạch Đà Nẵng và cho biết giá vé")
     assert decision.route == "explorer"
 
 
 def test_valid_llm_result_is_parsed_and_used_for_ambiguous_message():
     classifier = FakeClassifier(
-        ClassifierResult(route="information_finder", confidence=0.9, reason="A focused fact request")
+        ClassifierResult(
+            route="information_finder", confidence=0.9, reason="A focused fact request"
+        )
     )
     decision = decide(SupervisorService(classifier), "Can you help with this place?")
     assert decision.route == "information_finder"

@@ -28,4 +28,3 @@ class PlanEditorOutput(BaseModel):
     itinerary: Itinerary
     changed: bool
     warnings: list[str] = Field(default_factory=list)
-
