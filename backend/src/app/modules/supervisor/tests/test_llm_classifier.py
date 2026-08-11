@@ -36,12 +36,29 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
     payload = json.loads(client.calls[0][0])
     assert payload == {
         "message": "What is the ticket price?",
+        "conversationContext": [],
         "hasItinerary": True,
         "hasEditOperation": False,
     }
     assert client.calls[0][1]["temperature"] == 0.0
     assert client.calls[0][1]["max_output_tokens"] == 256
     assert "response_json_schema" in client.calls[0][1]
+
+
+def test_classifier_receives_bounded_conversation_context():
+    client = FakeLlmClient(
+        '{"route":"information_finder","confidence":0.9,"reason":"Follow-up"}'
+    )
+    asyncio.run(
+        GeminiIntentClassifier(client).classify(
+            SupervisorInput(
+                message="Còn Hà Nội thì sao?",
+                conversation_context=["Tôi muốn biết về Hải Phòng."],
+            )
+        )
+    )
+    payload = json.loads(client.calls[0][0])
+    assert payload["conversationContext"] == ["Tôi muốn biết về Hải Phòng."]
 
 
 @pytest.mark.parametrize(

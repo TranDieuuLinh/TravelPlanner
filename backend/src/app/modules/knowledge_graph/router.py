@@ -9,6 +9,10 @@ from app.modules.knowledge_graph.adapters.postgres import PostgresKnowledgeGraph
 from app.modules.knowledge_graph.contract import (
     AliasDetail,
     AliasUpsert,
+    AutoAttachRule,
+    AutoAttachRuleList,
+    AutoAttachAlias,
+    AutoAttachAliasList,
     DeleteResponse,
     EntityCopy,
     EntityCreate,
@@ -57,14 +61,75 @@ async def ontology(_: Annotated[object, Depends(require_admin)]) -> dict[str, ob
     return ontology_payload()
 
 
+@router.get("/auto-attach/rules", response_model=AutoAttachRuleList)
+async def list_auto_attach_rules(
+    _: Annotated[object, Depends(require_admin)],
+    service: Annotated[KnowledgeGraphService, Depends(get_service)],
+) -> AutoAttachRuleList:
+    rules = [AutoAttachRule.model_validate(rule) for rule in await service.auto_attach_rules()]
+    return AutoAttachRuleList(items=rules, total=len(rules))
+
+
+@router.put("/auto-attach/rules/{rule_id}", response_model=AutoAttachRule)
+async def upsert_auto_attach_rule(
+    rule_id: str,
+    payload: AutoAttachRule,
+    _: Annotated[object, Depends(require_admin_write)],
+    service: Annotated[KnowledgeGraphService, Depends(get_service)],
+) -> AutoAttachRule:
+    if payload.rule_id != rule_id:
+        raise HTTPException(status_code=422, detail={"code": "KG_AUTO_ATTACH_ID_MISMATCH", "message": "Rule ID khÃ´ng khá»›p URL."})
+    try:
+        return AutoAttachRule.model_validate(await service.upsert_auto_attach_rule(payload))
+    except KnowledgeGraphError as error:
+        handle(error)
+
+
+@router.delete("/auto-attach/rules/{rule_id}", status_code=204)
+async def delete_auto_attach_rule(
+    rule_id: str,
+    _: Annotated[object, Depends(require_admin_write)],
+    service: Annotated[KnowledgeGraphService, Depends(get_service)],
+) -> Response:
+    try:
+        await service.delete_auto_attach_rule(rule_id)
+    except KnowledgeGraphError as error:
+        handle(error)
+    return Response(status_code=204)
+
+
+@router.get("/auto-attach/aliases", response_model=AutoAttachAliasList)
+async def list_auto_attach_aliases(
+    _: Annotated[object, Depends(require_admin)],
+    service: Annotated[KnowledgeGraphService, Depends(get_service)],
+) -> AutoAttachAliasList:
+    aliases = [AutoAttachAlias.model_validate(item) for item in await service.auto_attach_aliases()]
+    return AutoAttachAliasList(items=aliases, total=len(aliases))
+
+
+@router.put("/auto-attach/aliases/{keyword}", response_model=AutoAttachAlias)
+async def upsert_auto_attach_alias(
+    keyword: str,
+    payload: AutoAttachAlias,
+    _: Annotated[object, Depends(require_admin_write)],
+    service: Annotated[KnowledgeGraphService, Depends(get_service)],
+) -> AutoAttachAlias:
+    if payload.keyword != keyword:
+        raise HTTPException(status_code=422, detail={"code": "KG_AUTO_ATTACH_KEYWORD_MISMATCH", "message": "Keyword khÃ´ng khá»›p URL."})
+    return AutoAttachAlias.model_validate(
+        await service.upsert_auto_attach_alias(payload.keyword, payload.aliases, payload.source)
+    )
+
+
 @router.get("/entities", response_model=EntityListPage)
 async def list_entities(
     _: Annotated[object, Depends(require_admin)], service: Annotated[KnowledgeGraphService, Depends(get_service)],
     limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), search: str | None = None,
     entity_type: str | None = Query(None), status: str | None = None, exclude_names: str | None = Query(None, alias="excludeNames"),
+    missing_properties: str | None = Query(None, alias="missingProperties"),
     sort_by: str = Query("name", alias="sortBy"), sort_direction: str = Query("asc", alias="sortDirection"),
 ) -> EntityListPage:
-    items, total = await service.entities(limit=limit, offset=offset, search=search, entity_type=entity_type, status=status, exclude_names=exclude_names, sort_by=sort_by, sort_direction=sort_direction)
+    items, total = await service.entities(limit=limit, offset=offset, search=search, entity_type=entity_type, status=status, exclude_names=exclude_names, missing_properties=missing_properties, sort_by=sort_by, sort_direction=sort_direction)
     return EntityListPage(items=[EntitySummary.model_validate(item) for item in items], total=total, limit=limit, offset=offset, has_more=offset + len(items) < total)
 
 

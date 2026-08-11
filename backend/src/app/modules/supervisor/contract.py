@@ -14,7 +14,9 @@ SupervisorRoute = Literal[
 class SupervisorInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    message: str = Field(min_length=1, max_length=4000)
+    message: str = Field(default="", max_length=4000)
+    conversation_context: list[str] = Field(default_factory=list, max_length=6)
+    has_source_input: bool = False
     has_itinerary: bool = False
     has_edit_operation: bool = False
 

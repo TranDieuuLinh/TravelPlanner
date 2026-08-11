@@ -53,6 +53,7 @@ ACTIVITY_OPTIONAL = ENTITY_OPTIONAL + [
     "story",
     "image",
 ]
+STYLE_OPTIONAL = ENTITY_OPTIONAL + ["style_group", "time_windows", "time_duration", "story"]
 
 NODE_TYPES = [
     "ADM0",
@@ -65,6 +66,7 @@ NODE_TYPES = [
     "FoodItem",
     "ProductItem",
     "Restaurant",
+    "Style",
     "TravelPlace",
 ]
 
@@ -72,6 +74,7 @@ RELATIONSHIP_TYPES = [
     "Adjacent_To",
     "Located_In",
     "Offer_Item",
+    "Has_Style",
     "Special_Experience",
     "Special_Near",
 ]
@@ -104,6 +107,7 @@ PROPERTY_KEYS = [
     "menu_urls",
     "icon",
     "note",
+    "style_group",
 ]
 
 NODE_TYPE_PROPERTIES: dict[str, NodeTypeProperties] = {
@@ -134,6 +138,10 @@ NODE_TYPE_PROPERTIES.update(
 NODE_TYPE_PROPERTIES["ActivityItem"] = {
     "requiredProperties": ENTITY_REQUIRED,
     "optionalProperties": ACTIVITY_OPTIONAL,
+}
+NODE_TYPE_PROPERTIES["Style"] = {
+    "requiredProperties": ENTITY_REQUIRED,
+    "optionalProperties": STYLE_OPTIONAL,
 }
 
 

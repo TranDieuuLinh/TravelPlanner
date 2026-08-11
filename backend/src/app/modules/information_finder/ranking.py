@@ -63,7 +63,7 @@ def has_sufficient_local_sources(
     minimum_sources: int,
     similarity_threshold: float,
     minimum_content_chars: int,
-    topic_overlap_threshold: float = 0.5,
+    topic_overlap_threshold: float = 0.75,
 ) -> bool:
     qualified = [
         source
@@ -76,8 +76,7 @@ def has_sufficient_local_sources(
         qualified = [
             source
             for source in qualified
-            if _topic_overlap(source.content, topic_terms)
-            >= topic_overlap_threshold
+            if _topic_overlap(source.content, topic_terms) >= topic_overlap_threshold
         ]
     domains = {source.url.split("/", 3)[2].casefold() for source in qualified}
     required_domains = min(2, minimum_sources)
@@ -100,6 +99,4 @@ def _topic_overlap(content: str, topic_terms: set[str]) -> float:
 
 def _fold(value: str) -> str:
     decomposed = unicodedata.normalize("NFD", value.casefold())
-    return "".join(
-        char for char in decomposed if unicodedata.category(char) != "Mn"
-    )
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")

@@ -18,9 +18,10 @@ class RootNodes:
         self,
         information_finder_service: InformationFinderService | None = None,
         supervisor_service: SupervisorService | None = None,
+        explorer_service=None,
     ) -> None:
         self.supervisor = build_supervisor_graph(supervisor_service)
-        self.explorer = build_explorer_graph()
+        self.explorer = build_explorer_graph(explorer_service)
         self.information_finder = build_information_finder_graph(
             information_finder_service
         )
@@ -29,9 +30,15 @@ class RootNodes:
         self.plan_editor = build_plan_editor_graph()
 
     async def run_supervisor(self, state: RootState) -> dict:
+        conversation_context = [
+            *state.get("conversation_context", []),
+            *([state["message"]] if state.get("message") else []),
+        ][-6:]
         result = await self.supervisor.ainvoke(
             {
                 "message": state["message"],
+                "conversation_context": conversation_context,
+                "has_source_input": bool(state.get("urls") or state.get("images")),
                 "has_itinerary": state.get("existing_itinerary") is not None,
                 "has_edit_operation": state.get("edit_operation") is not None,
             }
@@ -39,6 +46,7 @@ class RootNodes:
         decision = result["decision"]
         update = {
             "decision": decision,
+            "conversation_context": conversation_context,
             "warnings": decision.warnings,
         }
         if decision.response is not None:
@@ -49,23 +57,27 @@ class RootNodes:
 
     async def run_explorer(self, state: RootState) -> dict:
         result = await self.explorer.ainvoke(
-            {
-                "message": state["message"],
-                "supplied_candidates": state.get("supplied_candidates", []),
-            }
+            {"payload": {
+                "rawPrompt": state.get("message") or None,
+                "urls": state.get("urls", []),
+                "images": state.get("images", []),
+            }}
         )
         output = result["output"]
-        update = {"explorer_output": output}
-        if output.intent is None:
+        update = {
+            "explorer_output": output,
+            "warnings": [*state.get("warnings", []), *output.warnings],
+        }
+        if output.status != "ready":
             update.update(
                 {
                     "clarification_question": output.clarification_question,
                     "response": output.clarification_question
-                    or "More trip information is required.",
+                    or (output.error.message if output.error else "Explorer failed."),
                 }
             )
         else:
-            update["intent"] = output.intent
+            update["intent"] = output_to_intent(output)
         return update
 
     async def run_information_finder(self, state: RootState) -> dict:
@@ -80,8 +92,15 @@ class RootNodes:
     async def run_place_checker(self, state: RootState) -> dict:
         result = await self.place_checker.ainvoke(
             {
-                "intent": state["intent"],
-                "candidates": state["explorer_output"].candidates,
+                "input_adm": state["explorer_output"].input_adm,
+                "places": state["explorer_output"].places,
+                "input_items": state["explorer_output"].input_items,
+                "url_notes": state["explorer_output"].url_notes,
+                "days": state["explorer_output"].days,
+                "budget": state["explorer_output"].budget,
+                "people": state["explorer_output"].people,
+                "short_preferences": state["explorer_output"].short_preferences,
+                "short_avoids": state["explorer_output"].short_avoids,
             }
         )
         output = result["output"]
@@ -137,3 +156,16 @@ class RootNodes:
                 "I can help with travel planning and destination information.",
             )
         }
+
+
+def output_to_intent(output):
+    from app.shared.contracts.trip import TripIntent
+
+    return TripIntent(
+        destination=output.input_adm,
+        days=output.days,
+        budget=float(output.budget.target_amount) if output.budget.target_amount else None,
+        people=output.people.total,
+        preferences=output.short_preferences,
+        avoids=output.short_avoids,
+    )

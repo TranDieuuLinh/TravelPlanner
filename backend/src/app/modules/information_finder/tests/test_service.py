@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.modules.information_finder.adapters.development import (
     ExtractiveAnswerGenerator,
     HashingEmbeddingProvider,
+    InMemorySourceRepository,
 )
 from app.modules.information_finder.contract import (
     RetrievedSource,
@@ -152,7 +153,48 @@ def test_topic_mismatch_forces_tavily_even_with_high_embedding_score():
 
     asyncio.run(service(repository, search).find("Thông tin về Hồ Chí Minh"))
 
-    assert search.calls == 1
+    assert search.calls == 3
+
+
+def test_new_destination_refreshes_tavily_after_hanoi_cache_is_populated():
+    class DestinationSearch:
+        calls = 0
+
+        async def search(self, query):
+            self.calls += 1
+            destination = "Hà Nội" if self.calls == 1 else "Hải Phòng"
+            return SearchResponse(
+                results=[
+                    web_result(
+                        url=f"https://travel.test/{self.calls}",
+                        content=(
+                            f"{destination} là điểm đến nổi bật của Việt Nam. "
+                            "Nơi đây có nhiều địa danh, món ăn và hoạt động cho du khách. "
+                        )
+                        * 3,
+                    )
+                ],
+                provider_request_id=f"req-{self.calls}",
+            )
+
+    search = DestinationSearch()
+    repository = InMemorySourceRepository()
+    finder = InformationFinderService(
+        repository=repository,
+        embeddings=HashingEmbeddingProvider(),
+        answers=ExtractiveAnswerGenerator(),
+        search_provider=search,
+        options=InformationFinderOptions(
+            minimum_local_sources=1,
+            similarity_threshold=0.9,
+            provider_relevance_threshold=0.5,
+        ),
+    )
+
+    asyncio.run(finder.find("Mô tả Hà Nội"))
+    asyncio.run(finder.find("Mô tả Hải Phòng"))
+
+    assert search.calls == 6
 
 
 def test_insufficient_local_merges_local_and_tavily():
@@ -180,7 +222,7 @@ def test_live_query_forces_refresh_even_with_good_local():
             "giá hiện tại"
         )
     )
-    assert search.calls == 1
+    assert search.calls == 3
 
 
 def test_url_and_content_deduplication():
@@ -219,12 +261,10 @@ def test_semantic_chunker_output_is_embedded_and_prepared():
 def test_tavily_timeout_keeps_usable_local_source():
     search = FakeSearch(error=SearchProviderTimeout)
     repository = StaticRepository([source("1", "https://a.test/x", score=0.4)])
-    output = asyncio.run(
-        service(repository, search).find("museum")
-    )
+    output = asyncio.run(service(repository, search).find("museum"))
     assert output.sources == []
     assert "semantic similarity threshold" in output.warnings[-1]
-    assert search.calls == 1
+    assert search.calls == 3
     assert repository.failures == ["provider_timeout"]
 
 

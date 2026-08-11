@@ -20,6 +20,8 @@ services:
       - ./backend/migrations/001_information_finder_source_cache.sql:/docker-entrypoint-initdb.d/001_information_finder_source_cache.sql:ro
       - ./backend/migrations/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
       - ./backend/migrations/003_knowledge_graph.sql:/docker-entrypoint-initdb.d/003_knowledge_graph.sql:ro
+      - ./backend/migrations/004_knowledge_auto_attach.sql:/docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql:ro
+      - ./backend/migrations/005_knowledge_relationship_provenance.sql:/docker-entrypoint-initdb.d/005_knowledge_relationship_provenance.sql:ro
       - ./backend/migrations/003_trip_chat.sql:/docker-entrypoint-initdb.d/003_trip_chat.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]

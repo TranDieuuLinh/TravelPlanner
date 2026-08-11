@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     supervisor_llm_max_output_tokens: int = 256
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
+    explorer_draft_provider: Literal["rules", "gemini"] = "rules"
+    explorer_llm_max_output_tokens: int = 1600
+    explorer_url_timeout_seconds: float = 30.0
+    explorer_ytdlp_cookie_file: str | None = None
     information_finder_embedding_model: str = "gemini-embedding-001"
     information_finder_embedding_revision: str | None = None
     information_finder_embedding_output_dimensions: int = 384

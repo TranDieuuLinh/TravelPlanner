@@ -8,6 +8,8 @@ def create_decide_node(service: SupervisorService):
         decision = await service.decide(
             SupervisorInput(
                 message=state["message"],
+                conversation_context=state.get("conversation_context", []),
+                has_source_input=state.get("has_source_input", False),
                 has_itinerary=state.get("has_itinerary", False),
                 has_edit_operation=state.get("has_edit_operation", False),
             )

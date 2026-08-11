@@ -778,6 +778,10 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 
+### `knowledge_auto_attach_rules`
+
+Owned by the Knowledge Graph module and created by `backend/migrations/004_knowledge_auto_attach.sql`. The table persists admin-editable Style attachment rules, including keyword arrays, exclusions, exact names, default time windows, and the pending review status used for generated `Has_Style` candidates.
+
 ## Ghi chú quan trọng
 
 Schema trên phản ánh database legacy đang tồn tại, không chứng minh rằng

@@ -27,7 +27,9 @@ def validate_and_render_answer(
     for claim in generated.claims:
         claim_text = normalize_answer_text(claim.text)
         if not claim_text:
-            raise AnswerProviderInvalidOutput("Answer claim became empty after normalization")
+            raise AnswerProviderInvalidOutput(
+                "Answer claim became empty after normalization"
+            )
         unique_claim_ids = list(dict.fromkeys(claim.source_ids))
         markers = "".join(f"[{citation_number[item]}]" for item in unique_claim_ids)
         rendered_claims.append(f"{claim_text} {markers}")

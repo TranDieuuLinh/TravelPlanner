@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from app.modules.knowledge_graph.adapters.auto_attach import AutoAttachStoreMixin
+
 
 def _asyncpg_url(database_url: str) -> str:
     return database_url.replace("postgresql+psycopg://", "postgresql://").replace(
@@ -13,7 +15,7 @@ def _json_value(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
-class PostgresKnowledgeGraphStore:
+class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
     """Owns the knowledge_* tables used by the admin graph UI."""
 
     def __init__(self, database_url: str, *, command_timeout: float = 15.0) -> None:
@@ -56,16 +58,40 @@ class PostgresKnowledgeGraphStore:
             values.append(value)
             clauses.append(sql.replace("$VALUE", f"${len(values)}"))
 
-        search = filters.get("search")
-        if search:
-            add_clause("(canonical_name ILIKE '%' || $VALUE || '%' OR id ILIKE '%' || $VALUE || '%')", search)
+        search_terms = [
+            item.strip()
+            for item in (filters.get("search") or "").split(",")
+            if item.strip()
+        ]
+        if search_terms:
+            search_patterns = [f"%{item}%" for item in search_terms]
+            add_clause(
+                "(canonical_name ILIKE ANY($VALUE::text[]) OR id ILIKE ANY($VALUE::text[]))",
+                search_patterns,
+            )
         if filters.get("entity_type"):
             add_clause("entity_type = $VALUE", filters["entity_type"])
         if filters.get("status"):
             add_clause("status = $VALUE", filters["status"])
-        excluded = [item.strip().lower() for item in (filters.get("exclude_names") or "").split(",") if item.strip()]
+        excluded = [
+            f"%{item.strip().lower()}%"
+            for item in (filters.get("exclude_names") or "").split(",")
+            if item.strip()
+        ]
         if excluded:
-            add_clause("lower(canonical_name) <> ALL($VALUE::text[])", excluded)
+            add_clause("NOT (lower(canonical_name) LIKE ANY($VALUE::text[]))", excluded)
+        missing_properties = [
+            item.strip()
+            for item in (filters.get("missing_properties") or "").split(",")
+            if item.strip()
+        ]
+        if missing_properties:
+            add_clause(
+                "(SELECT count(DISTINCT key) FROM knowledge_properties "
+                "WHERE entity_id=knowledge_entities.id AND key = ANY($VALUE::text[])) "
+                "< cardinality($VALUE::text[])",
+                missing_properties,
+            )
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sort = {"name": "canonical_name", "id": "id", "type": "entity_type", "status": "status"}.get(
@@ -188,19 +214,72 @@ class PostgresKnowledgeGraphStore:
 
     async def update_entity(self, entity_id: str, **payload) -> dict | None:
         updates = {key: value for key, value in payload.items() if value is not None}
-        if not updates:
+        new_entity_id = updates.pop("entity_id", None)
+        if new_entity_id == entity_id:
+            new_entity_id = None
+        if not updates and new_entity_id is None:
             return await self.get_entity(entity_id)
         if "canonical_name" in updates:
             updates["normalized_name"] = updates["canonical_name"].strip().lower()
-        assignments = []
-        values: list[object] = [entity_id]
-        for key, value in updates.items():
-            values.append(value)
-            assignments.append(f"{key}=${len(values)}")
         pool = await self._get_pool()
-        async with pool.acquire() as connection:
-            await connection.execute(f"UPDATE knowledge_entities SET {', '.join(assignments)}, updated_at=now() WHERE id=$1", *values)
-        return await self.get_entity(entity_id)
+        async with pool.acquire() as connection, connection.transaction():
+            if new_entity_id is not None:
+                duplicate = await connection.fetchval(
+                    "SELECT 1 FROM knowledge_entities WHERE id=$1",
+                    new_entity_id,
+                )
+                if duplicate:
+                    raise ValueError("entity id already exists")
+                source = await connection.fetchrow(
+                    """SELECT canonical_name, normalized_name, entity_type, status, review_count
+                       FROM knowledge_entities WHERE id=$1""",
+                    entity_id,
+                )
+                if not source:
+                    return None
+                await connection.execute(
+                    """INSERT INTO knowledge_entities
+                       (id, canonical_name, normalized_name, entity_type, status, review_count)
+                       VALUES ($1,$2,$3,$4,$5,$6)""",
+                    new_entity_id,
+                    updates.get("canonical_name", source["canonical_name"]),
+                    updates.get("normalized_name", source["normalized_name"]),
+                    updates.get("entity_type", source["entity_type"]),
+                    updates.get("status", source["status"]),
+                    source["review_count"],
+                )
+                await connection.execute(
+                    "UPDATE knowledge_aliases SET entity_id=$2 WHERE entity_id=$1",
+                    entity_id,
+                    new_entity_id,
+                )
+                await connection.execute(
+                    "UPDATE knowledge_properties SET entity_id=$2 WHERE entity_id=$1",
+                    entity_id,
+                    new_entity_id,
+                )
+                await connection.execute(
+                    "UPDATE knowledge_relationships SET from_entity_id=$2 WHERE from_entity_id=$1",
+                    entity_id,
+                    new_entity_id,
+                )
+                await connection.execute(
+                    "UPDATE knowledge_relationships SET to_entity_id=$2 WHERE to_entity_id=$1",
+                    entity_id,
+                    new_entity_id,
+                )
+                await connection.execute("DELETE FROM knowledge_entities WHERE id=$1", entity_id)
+            else:
+                assignments = []
+                values: list[object] = [entity_id]
+                for key, value in updates.items():
+                    values.append(value)
+                    assignments.append(f"{key}=${len(values)}")
+                await connection.execute(
+                    f"UPDATE knowledge_entities SET {', '.join(assignments)}, updated_at=now() WHERE id=$1",
+                    *values,
+                )
+        return await self.get_entity(new_entity_id or entity_id)
 
     async def delete_entity(self, entity_id: str) -> bool:
         pool = await self._get_pool()

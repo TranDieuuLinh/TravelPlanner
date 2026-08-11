@@ -14,6 +14,9 @@ class GeminiIntentClassifier:
     async def classify(self, payload: SupervisorInput) -> ClassifierResult:
         user_payload = {
             "message": payload.message,
+            "conversationContext": [
+                item[-500:] for item in payload.conversation_context[-3:]
+            ],
             "hasItinerary": payload.has_itinerary,
             "hasEditOperation": payload.has_edit_operation,
         }

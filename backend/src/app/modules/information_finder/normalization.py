@@ -20,6 +20,13 @@ _SEGMENT_BREAK = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 def normalize_answer_text(text: str) -> str:
     """Normalize extracted/generated text without changing its factual content."""
     normalized = text.replace("\u00a0", " ")
+    normalized = re.sub(
+        r"\[(?:sửa|edit)\s*\|\s*(?:sửa mã nguồn|edit source)\]",
+        " ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"#{1,6}\s*", "", normalized)
     normalized = re.sub(r"\[\d+\]", "", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
@@ -122,15 +129,9 @@ def _has_navigation_marker(segment: str) -> bool:
 
 
 def _tokens(text: str) -> set[str]:
-    return {
-        token
-        for token in re.findall(r"[\wÀ-ỹ]+", _fold(text))
-        if len(token) > 1
-    }
+    return {token for token in re.findall(r"[\wÀ-ỹ]+", _fold(text)) if len(token) > 1}
 
 
 def _fold(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", text.casefold())
-    return "".join(
-        char for char in decomposed if unicodedata.category(char) != "Mn"
-    )
+    return "".join(char for char in decomposed if unicodedata.category(char) != "Mn")

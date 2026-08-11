@@ -27,6 +27,12 @@ const NAV_LINKS: NavLink[] = [
     label: "Knowledge Graph",
     icon: "⌘",
     description: "Catalog entity, alias và relationship"
+  },
+  {
+    href: "/knowledge-graph/auto-attach",
+    label: "Auto Attach",
+    icon: "AA",
+    description: "Manage Style keyword attachment rules"
   }
 ];
 

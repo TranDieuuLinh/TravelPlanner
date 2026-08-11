@@ -129,6 +129,21 @@ def test_configured_classifier_runs_before_free_text_rules():
     assert classifier.calls == 1
 
 
+def test_contextual_follow_up_uses_conversation_context():
+    decision = decide(
+        SupervisorService(),
+        "Còn chỗ này thì sao?",
+        conversation_context=["Tôi muốn biết thêm về Hải Phòng."],
+    )
+    assert decision.route == "information_finder"
+
+
+def test_destination_follow_up_without_context_is_still_information():
+    assert decide(SupervisorService(), "Còn Hà Nội thì sao.").route == (
+        "information_finder"
+    )
+
+
 def test_llm_finish_response_uses_the_users_language():
     classifier = FakeClassifier(
         ClassifierResult(
