@@ -20,6 +20,11 @@ services:
       - ./backend/migrations/001_information_finder_source_cache.sql:/docker-entrypoint-initdb.d/001_information_finder_source_cache.sql:ro
       - ./backend/migrations/002_explorer_source_document_cache.sql:/docker-entrypoint-initdb.d/002_explorer_source_document_cache.sql:ro
       - ./backend/migrations/003_explorer_draft_cache.sql:/docker-entrypoint-initdb.d/003_explorer_draft_cache.sql:ro
+      - ./backend/migrations/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
+      - ./backend/migrations/003_knowledge_graph.sql:/docker-entrypoint-initdb.d/003_knowledge_graph.sql:ro
+      - ./backend/migrations/004_knowledge_auto_attach.sql:/docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql:ro
+      - ./backend/migrations/005_knowledge_relationship_provenance.sql:/docker-entrypoint-initdb.d/005_knowledge_relationship_provenance.sql:ro
+      - ./backend/migrations/003_trip_chat.sql:/docker-entrypoint-initdb.d/003_trip_chat.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
@@ -84,6 +89,7 @@ services:
       INFORMATION_FINDER_LLM_MAX_CHARS_PER_SOURCE: ${INFORMATION_FINDER_LLM_MAX_CHARS_PER_SOURCE:-4000}
       INFORMATION_FINDER_LLM_MAX_TOTAL_SOURCE_CHARS: ${INFORMATION_FINDER_LLM_MAX_TOTAL_SOURCE_CHARS:-12000}
       INFORMATION_FINDER_LLM_FALLBACK_ENABLED: ${INFORMATION_FINDER_LLM_FALLBACK_ENABLED:-true}
+      LANGFUSE_HOST: http://langfuse:3000
     depends_on:
       postgres:
         condition: service_healthy

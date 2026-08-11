@@ -12,8 +12,10 @@ from app.shared.contracts.trip import TripIntent
 class RootState(TypedDict, total=False):
     request_id: str
     message: str
+    conversation_context: list[str]
     urls: list[str]
     images: list[ExplorerImageInput]
+    force_refresh: bool
     existing_itinerary: Itinerary | None
     edit_operation: EditOperation | None
 

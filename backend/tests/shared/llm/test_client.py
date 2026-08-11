@@ -5,6 +5,7 @@ import pytest
 
 from app.shared.llm import (
     GeminiLlmClient,
+    InlineMedia,
     LlmConfigurationError,
     LlmRefusalError,
     LlmResponseError,
@@ -109,6 +110,22 @@ def test_client_sends_official_json_schema_generation_config() -> None:
     _run(client.aclose())
 
 
+def test_client_sends_gemini_tools_at_request_root() -> None:
+    request_body = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_body.update(__import__("json").loads(request.content))
+        return _response("ok")
+
+    client = GeminiLlmClient(
+        "api1",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    _run(client.generate("read this URL", tools=[{"url_context": {}}]))
+    assert request_body["tools"] == [{"url_context": {}}]
+    _run(client.aclose())
+
+
 def test_client_does_not_retry_unauthorized_forever() -> None:
     calls = 0
 
@@ -158,4 +175,35 @@ def test_client_retries_server_error_only_up_to_configured_key_count() -> None:
     )
     assert _run(client.generate("retry server")) == "recovered"
     assert used_keys == ["api1", "api2"]
+    _run(client.aclose())
+
+
+def test_client_sends_inline_media_and_rotates_concurrent_calls() -> None:
+    used_keys = []
+    request_bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        used_keys.append(request.headers["x-goog-api-key"])
+        request_bodies.append(__import__("json").loads(request.content))
+        return _response('{"observations":[]}')
+
+    client = GeminiLlmClient(
+        "api1,api2,api3,api4",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    async def run_batch():
+        return await asyncio.gather(*(
+            client.generate_media(
+                f"frame batch {index}",
+                [InlineMedia(mime_type="image/jpeg", data_base64="YWJj")],
+            )
+            for index in range(4)
+        ))
+
+    _run(run_batch())
+
+    assert set(used_keys) == {"api1", "api2", "api3", "api4"}
+    inline = request_bodies[0]["contents"][0]["parts"][1]["inlineData"]
+    assert inline == {"mimeType": "image/jpeg", "data": "YWJj"}
     _run(client.aclose())

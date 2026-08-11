@@ -30,12 +30,46 @@ class BudgetSignal(InternalModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
 
 
+ArtifactType = Literal[
+    "url_metadata",
+    "caption",
+    "transcript",
+    "stt",
+    "frame_ocr",
+    "web_text",
+    "image_ocr",
+]
+
+
+class SourceArtifact(InternalModel):
+    artifact_type: ArtifactType
+    text: str = Field(min_length=1, max_length=60_000)
+    source_url: str | None = Field(default=None, max_length=2048)
+    source_time_hint: str | None = Field(default=None, max_length=80)
+    language: str | None = Field(default=None, max_length=20)
+    observed_at: str | None = None
+
+
+SourceBranch = Literal["frame_ocr", "stt"]
+
+
+class SourceBranchFailure(InternalModel):
+    branch: SourceBranch
+    error: AgentError
+
+
+class MediaAnalysisResult(InternalModel):
+    artifacts: list[SourceArtifact] = Field(default_factory=list)
+    failures: list[SourceBranchFailure] = Field(default_factory=list)
+
+
 SourceStatus = Literal[
     "succeeded",
     "partial",
     "failed_retryable",
     "failed_permanent",
 ]
+CacheStatus = Literal["hit", "miss", "bypassed"]
 
 
 class SourceExtractionResult(InternalModel):
@@ -52,6 +86,9 @@ class SourceExtractionResult(InternalModel):
     expected_place_count: int | None = Field(default=None, ge=0)
     extracted_place_count: int = Field(default=0, ge=0)
     error: AgentError | None = None
+    artifacts: list[SourceArtifact] = Field(default_factory=list)
+    branch_failures: list[SourceBranchFailure] = Field(default_factory=list)
+    cache_status: CacheStatus | None = None
 
 
 class ExplorerDraft(InternalModel):

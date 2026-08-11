@@ -1,5 +1,6 @@
 from app.modules.information_finder.contract import GeneratedAnswer, RetrievedSource
 from app.modules.information_finder.errors import AnswerProviderInvalidOutput
+from app.modules.information_finder.normalization import normalize_answer_text
 
 
 def validate_and_render_answer(
@@ -24,9 +25,14 @@ def validate_and_render_answer(
     }
     rendered_claims = []
     for claim in generated.claims:
+        claim_text = normalize_answer_text(claim.text)
+        if not claim_text:
+            raise AnswerProviderInvalidOutput(
+                "Answer claim became empty after normalization"
+            )
         unique_claim_ids = list(dict.fromkeys(claim.source_ids))
         markers = "".join(f"[{citation_number[item]}]" for item in unique_claim_ids)
-        rendered_claims.append(f"{claim.text.strip()} {markers}")
+        rendered_claims.append(f"{claim_text} {markers}")
     if generated.caveat and generated.caveat.strip():
         rendered_claims.append(generated.caveat.strip())
     return "\n\n".join(rendered_claims), [source_by_id[item] for item in cited_ids]

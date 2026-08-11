@@ -1,2 +1,2 @@
-export { APIError, login, logout } from "../api";
-export type { AdminUser } from "../api";
+// DEPRECATED: moved to ../../../lib/shared/auth
+export {};

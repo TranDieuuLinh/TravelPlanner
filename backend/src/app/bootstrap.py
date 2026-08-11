@@ -10,6 +10,9 @@ from app.modules.information_finder.adapters.development import (
 from app.modules.information_finder.adapters.gemini_embedding import (
     GeminiEmbeddingProvider,
 )
+from app.modules.information_finder.adapters.gemini_url_chunker import (
+    GeminiUrlSourceChunker,
+)
 from app.modules.information_finder.adapters.llm_answer_generator import (
     StructuredLlmAnswerGenerator,
 )
@@ -89,6 +92,15 @@ def get_information_finder_service() -> InformationFinderService:
         for domain in settings.information_finder_blocked_domains.split(",")
         if domain.strip()
     )
+    chunker = None
+    if (
+        settings.information_finder_chunking_provider == "gemini_url"
+        and settings.gemini_api_key
+    ):
+        chunker = GeminiUrlSourceChunker(
+            get_llm_client(),
+            max_output_tokens=settings.information_finder_chunking_max_output_tokens,
+        )
     answers = create_answer_generator(
         settings,
         get_llm_client()
@@ -105,6 +117,7 @@ def get_information_finder_service() -> InformationFinderService:
         embeddings=embeddings,
         answers=answers,
         fallback_answers=fallback_answers,
+        chunker=chunker,
         search_provider=search_provider,
         options=InformationFinderOptions(
             minimum_local_sources=settings.information_finder_min_local_sources,
@@ -155,26 +168,58 @@ def compose_explorer_service(
     llm_client: LlmClient | None = None,
 ) -> object:
     client = llm_client
-    if settings.explorer_draft_provider == "gemini" and client is None:
+    if settings.gemini_api_key and client is None:
         client = GeminiLlmClient(
             settings.gemini_api_key,
             model=settings.gemini_model,
             timeout_seconds=settings.gemini_timeout_seconds,
             key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
         )
+    image_client = None
+    audio_client = None
+    if settings.gemini_api_key:
+        common_options = {
+            "timeout_seconds": settings.gemini_timeout_seconds,
+            "key_cooldown_seconds": settings.gemini_key_cooldown_seconds,
+        }
+        image_client = GeminiLlmClient(
+            settings.gemini_api_key,
+            model=settings.gemini_image_ocr_model,
+            **common_options,
+        )
+        audio_client = GeminiLlmClient(
+            settings.gemini_api_key,
+            model=settings.gemini_audio_model,
+            **common_options,
+        )
     return create_explorer_service(
         draft_provider=settings.explorer_draft_provider,
         llm_client=client,
+        image_llm_client=image_client,
+        audio_llm_client=audio_client,
         max_output_tokens=settings.explorer_llm_max_output_tokens,
         url_timeout_seconds=settings.explorer_url_timeout_seconds,
         ytdlp_cookie_file=settings.explorer_ytdlp_cookie_file,
+        frame_interval_seconds=settings.explorer_frame_interval_seconds,
+        frame_batch_size=settings.explorer_frame_batch_size,
+        max_frames=settings.explorer_max_frames,
+        frame_max_concurrency=settings.explorer_frame_max_concurrency,
+        audio_chunk_count=settings.explorer_audio_chunk_count,
+        max_video_seconds=settings.explorer_max_video_seconds,
+        max_media_mb=settings.explorer_max_media_mb,
+        database_url=settings.database_url,
+        url_cache_ttl_seconds=settings.explorer_url_cache_ttl_seconds,
+        draft_cache_ttl_seconds=settings.explorer_draft_cache_ttl_seconds,
+        draft_cache_namespace=(
+            f"v1:{settings.explorer_draft_provider}:{settings.gemini_model}"
+        ),
     )
 
 
 @lru_cache
 def get_explorer_graph():
     settings = get_settings()
-    client = get_llm_client() if settings.explorer_draft_provider == "gemini" else None
+    client = get_llm_client() if settings.gemini_api_key else None
     return build_explorer_graph(compose_explorer_service(settings, client))
 
 
@@ -186,6 +231,7 @@ def get_graph():
         settings.supervisor_classifier_provider == "gemini"
         or settings.information_finder_answer_provider == "gemini"
         or settings.explorer_draft_provider == "gemini"
+        or bool(settings.gemini_api_key)
     ):
         shared_llm_client = get_llm_client()
     return create_root_graph(

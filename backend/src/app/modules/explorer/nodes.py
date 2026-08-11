@@ -1,5 +1,3 @@
-from app.modules.explorer.contract import ExplorerInput
-from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.service import ExplorerService
 from app.modules.explorer.state import ExplorerState
 from app.shared.contracts.agent import AgentError
@@ -16,33 +14,28 @@ class ExplorerNodes:
         try:
             return {"draft": await self.service.prompt_draft(state["payload"].raw_prompt or "")}
         except Exception as exc:
-            return {"failure": self._error(exc, "DRAFT_GENERATION_FAILED")}
+            return {"failure": self.service.error_from_exception(
+                exc, "DRAFT_GENERATION_FAILED"
+            )}
 
     async def extract_sources(self, state: ExplorerState) -> dict:
         return {"source_results": await self.service.extract_sources(state["payload"])}
 
     def evaluate_batch_coverage(self, state: ExplorerState) -> dict:
-        coverage = self.service.coverage(state["source_results"])
-        if coverage == "fatal":
-            source_errors = [
-                result.error for result in state["source_results"] if result.error
-            ]
-            error = source_errors[0] if len(source_errors) == 1 else AgentError(
-                code="SOURCE_EXTRACTION_FAILED",
-                message="Không nguồn URL/ảnh nào trích xuất thành công sau một lần thử lại.",
-            )
-            return {
-                "coverage": coverage,
-                "failure": error,
-            }
-        return {"coverage": coverage}
+        coverage, failure = self.service.evaluate_coverage(state["source_results"])
+        update = {"coverage": coverage}
+        if failure is not None:
+            update["failure"] = failure
+        return update
 
     async def synthesize_explorer_draft(self, state: ExplorerState) -> dict:
         try:
             draft = await self.service.source_draft(state["payload"], state["source_results"])
             return {"draft": draft}
         except Exception as exc:
-            return {"failure": self._error(exc, "DRAFT_GENERATION_FAILED")}
+            return {"failure": self.service.error_from_exception(
+                exc, "DRAFT_GENERATION_FAILED"
+            )}
 
     def normalize_and_validate(self, state: ExplorerState) -> dict:
         return {"normalized_draft": self.service.normalize(
@@ -58,6 +51,7 @@ class ExplorerNodes:
             intake_id=state["intake_id"], draft=state["normalized_draft"],
             input_adm=state.get("input_adm"), adm_conflict=state.get("adm_conflict", False),
             prompt_days=state.get("prompt_days"), coverage=state.get("coverage"),
+            source_results=state.get("source_results"),
         )}
 
     def mark_failure(self, state: ExplorerState) -> dict:
@@ -76,18 +70,5 @@ class ExplorerNodes:
         return await self._persist(state, "failure")
 
     async def _persist(self, state: ExplorerState, kind: str) -> dict:
-        try:
-            await self.service.persist(state["output"], kind)
-            return {}
-        except Exception:
-            error = AgentError(
-                code="SNAPSHOT_PERSISTENCE_FAILED",
-                message="Không thể lưu snapshot Explorer sau một lần thử lại.",
-            )
-            return {"output": self.service.failure(state["intake_id"], error)}
-
-    @staticmethod
-    def _error(exc: Exception, fallback_code: str) -> AgentError:
-        if isinstance(exc, ExplorerOperationError):
-            return AgentError(code=exc.code, message=str(exc), retryable=exc.retryable)
-        return AgentError(code=fallback_code, message="Không thể tạo dữ liệu Explorer.")
+        failure_output = await self.service.persist_or_failure(state["output"], kind)
+        return {"output": failure_output} if failure_output is not None else {}

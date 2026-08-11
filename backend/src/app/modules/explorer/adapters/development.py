@@ -52,6 +52,8 @@ _NAMED_ITEM = re.compile(
 _VISIT = re.compile(
     r"\b(?:tham quan|ghé|visit|see)\s+(?P<venue>.+?)"
     r"(?=\s+(?:và|and)\s+(?:ăn|uống|thử|eat|drink|try|ngắm|xem|watch)|"
+    r"\s+(?:ở|tại|in)\s+(?:Hà Nội|Ha Noi|Hanoi|Đà Nẵng|Da Nang|Huế|Hue|"
+    r"TP\.?\s*HCM|TP\.?\s*Hồ Chí Minh|Sài Gòn|Ho Chi Minh City)|"
     r"\s+(?:trong|for)\s+\d+\s*(?:ngày|days?)|[,.;!?]|$)",
     re.IGNORECASE,
 )
@@ -263,7 +265,13 @@ class RuleBasedExplorerDraftGenerator:
     def _preferences(prompt: str) -> list[str]:
         normalized = _ascii(prompt)
         values = []
-        for marker, value in (("yen tinh", "quiet_places"), ("chup anh", "photography"), ("dia phuong", "local_experience")):
+        for marker, value in (
+            ("yen tinh", "quiet_places"),
+            ("chup anh", "photography"),
+            ("van hoa", "culture"),
+            ("ca phe", "coffee"),
+            ("dia phuong", "local_experience"),
+        ):
             if marker in normalized:
                 values.append(value)
         return values

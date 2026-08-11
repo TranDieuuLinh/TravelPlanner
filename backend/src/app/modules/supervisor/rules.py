@@ -92,10 +92,12 @@ def planning_rule(payload: SupervisorInput) -> SupervisorDecision | None:
 
 def information_rule(payload: SupervisorInput) -> SupervisorDecision | None:
     message = normalize_message(payload.message)
-    if not _contains_any(
+    has_information_signal = _contains_any(
         message,
         (
             "thong tin",
+            "muon biet them",
+            "gioi thieu ve",
             "thoi tiet",
             "gio mo cua",
             "gia ve",
@@ -119,9 +121,17 @@ def information_rule(payload: SupervisorInput) -> SupervisorDecision | None:
             "tell me about",
             "current information",
             "latest information",
+            "what about",
         ),
-    ):
+    )
+    if not has_information_signal and not _is_destination_follow_up(message):
         return None
+    if _is_destination_follow_up(message):
+        return SupervisorDecision(
+            route="information_finder",
+            confidence=0.91,
+            reason="The message is a destination information follow-up.",
+        )
     return SupervisorDecision(
         route="information_finder",
         confidence=0.93,
@@ -159,11 +169,25 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
     return None
 
 
+def contextual_follow_up_rule(payload: SupervisorInput) -> SupervisorDecision | None:
+    if not payload.conversation_context:
+        return None
+    message = normalize_message(payload.message)
+    if not re.fullmatch(r"(?:con|the con)\s+.+", message):
+        return None
+    return SupervisorDecision(
+        route="information_finder",
+        confidence=0.9,
+        reason="Conversation context indicates a travel-information follow-up.",
+    )
+
+
 def deterministic_decision(payload: SupervisorInput) -> SupervisorDecision | None:
     for rule in (
         structured_edit_rule,
         source_import_rule,
         edit_clarification_rule,
+        contextual_follow_up_rule,
         planning_rule,
         information_rule,
         greeting_or_scope_rule,
@@ -216,6 +240,16 @@ def _is_greeting_or_thanks(message: str) -> bool:
             r"(?:xin chao|chao|hello|hi|hey|good morning|good afternoon|cam on|thank you|thanks)(?:[ ,.].*)?",
             message,
         )
+    )
+
+
+def _is_destination_follow_up(message: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"(?:con|the con)\s+.+?\s+thi sao[?.! ]*",
+            message,
+        )
+        or re.fullmatch(r"what about\s+.+?[?.! ]*", message)
     )
 
 
