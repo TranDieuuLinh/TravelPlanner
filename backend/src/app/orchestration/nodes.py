@@ -61,6 +61,7 @@ class RootNodes:
                 "rawPrompt": state.get("message") or None,
                 "urls": state.get("urls", []),
                 "images": state.get("images", []),
+                "forceRefresh": state.get("force_refresh", False),
             }}
         )
         output = result["output"]

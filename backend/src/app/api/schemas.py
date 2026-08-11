@@ -19,12 +19,16 @@ class InvokeRequest(ApiModel):
     message: str | None = Field(default=None, max_length=4000)
     urls: list[str] = Field(default_factory=list, max_length=20)
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
+    force_refresh: bool = False
     existing_itinerary: Itinerary | None = None
     edit_operation: EditOperation | None = None
 
     def model_post_init(self, __context) -> None:
         explorer_input = ExplorerInput(
-            raw_prompt=self.message, urls=self.urls, images=self.images
+            raw_prompt=self.message,
+            urls=self.urls,
+            images=self.images,
+            force_refresh=self.force_refresh,
         )
         self.message = explorer_input.raw_prompt
         self.urls = explorer_input.urls

@@ -17,6 +17,7 @@ from app.shared.llm.errors import (
     LlmTransportError,
     LlmUnauthorizedError,
 )
+from app.shared.llm.ports import InlineMedia
 
 
 @dataclass
@@ -107,6 +108,42 @@ class GeminiLlmClient:
             response_json_schema=response_json_schema,
             tools=tools,
         )
+        return await self._send_payload(payload)
+
+    async def generate_media(
+        self,
+        user_prompt: str,
+        media: list[InlineMedia],
+        *,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
+        response_json_schema: dict[str, Any] | None = None,
+    ) -> str:
+        if not user_prompt.strip() or not media:
+            raise LlmConfigurationError("Multimodal requests need a prompt and media.")
+        parts: list[dict[str, Any]] = [{"text": user_prompt}]
+        parts.extend(
+            {
+                "inlineData": {
+                    "mimeType": item.mime_type,
+                    "data": item.data_base64,
+                }
+            }
+            for item in media
+        )
+        payload = self._build_payload(
+            user_prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            response_json_schema=response_json_schema,
+            tools=None,
+            parts=parts,
+        )
+        return await self._send_payload(payload)
+
+    async def _send_payload(self, payload: dict[str, Any]) -> str:
         last_error: Exception | None = None
 
         for _ in range(len(self._keys)):
@@ -182,9 +219,10 @@ class GeminiLlmClient:
         max_output_tokens: int | None,
         response_json_schema: dict[str, Any] | None,
         tools: list[dict[str, Any]] | None,
+        parts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}]
+            "contents": [{"role": "user", "parts": parts or [{"text": user_prompt}]}]
         }
         if system_prompt and system_prompt.strip():
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}

@@ -79,6 +79,7 @@ async def invoke_agent(
         "message": payload.message or "",
         "urls": payload.urls,
         "images": payload.images,
+        "force_refresh": payload.force_refresh,
         "existing_itinerary": payload.existing_itinerary,
         "edit_operation": payload.edit_operation,
     }

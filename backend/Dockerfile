@@ -2,16 +2,22 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
+ARG PIP_INDEX_URL=https://pypi.org/simple
 
 RUN python -m pip install --no-cache-dir \
     --index-url "${PIP_INDEX_URL}" \
     --retries 10 \
     --timeout 120 \
     "."
+
+RUN playwright install --with-deps chromium
 
 ENV PYTHONPATH=/app/src
 EXPOSE 8000
