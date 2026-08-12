@@ -1,0 +1,302 @@
+{
+  "schema_version": "place_checker.v1",
+  "status": "conditional",
+  "trip_context": {
+    "destination": {
+      "input_name": "Hanoi",
+      "adm_id": "adm1_vn_ha_noi",
+      "canonical_name": "Hà Nội",
+      "country_code": "VN",
+      "region_key": "vn,ha_noi",
+      "status": "resolved"
+    },
+    "days": 4,
+    "pace": "balanced",
+    "capacity": {
+      "minimum_minutes": 1440,
+      "typical_minutes": 1920,
+      "maximum_minutes": 2400
+    },
+    "budget_mode": "relative_level",
+    "budget": {
+      "level": "low",
+      "target_amount": null,
+      "currency": "VND",
+      "source": "raw_prompt"
+    },
+    "people": {
+      "adults": 1,
+      "children": 0,
+      "infants": 0
+    },
+    "preferences": [],
+    "avoids": [
+      "nightlife"
+    ]
+  },
+  "checked_places": [
+    {
+      "place_id": "kg_ho_chi_minh_mausoleum",
+      "canonical_name": "Ho Chi Minh Mausoleum",
+      "original_names": [
+        "Ho Chi Minh Mausoleum"
+      ],
+      "aliases": [
+        "Lăng Chủ tịch Hồ Chí Minh"
+      ],
+      "coordinates": {
+        "latitude": 21.0368,
+        "longitude": 105.8346
+      },
+      "destination": {
+        "adm_id": "adm1_vn_ha_noi",
+        "compatible": true
+      },
+      "source_tier": "direct_user",
+      "mandatory": true,
+      "removable": false,
+      "category": "landmark",
+      "tags": [
+        "history",
+        "culture"
+      ],
+      "duration": {
+        "minimum_minutes": 60,
+        "typical_minutes": 90,
+        "maximum_minutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0,
+        "typical": 0,
+        "maximum": 0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "example_schedule_only"
+        ],
+        "operational_status": "active",
+        "reservation_required": false,
+        "known": true
+      },
+      "time_preferences": [],
+      "suitability": {
+        "adults": true,
+        "children": true,
+        "infants": true,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identity_confidence": 0.96,
+        "provider": "knowledge_graph",
+        "fetched_at": "2026-08-11T00:00:00Z"
+      },
+      "evaluation": {
+        "state": "planner_ready",
+        "planner_eligible": true,
+        "preference_matches": [],
+        "avoid_conflicts": [],
+        "findings": [],
+        "planner_constraints": [],
+        "data_quality": {
+          "completeness_score": 1.0,
+          "missing_fields": [],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": null,
+        "reasons": [
+          "mandatory_place_not_removed_by_ranking"
+        ]
+      },
+      "provenance": {
+        "source_places": [
+          {
+            "origin": "input",
+            "evidence_type": "raw_prompt",
+            "source_url": null,
+            "evidence": "I want to visit Ho Chi Minh Mausoleum",
+            "source_time_hint": null,
+            "address_hint": null
+          }
+        ],
+        "url_notes": []
+      },
+      "warnings": []
+    }
+  ],
+  "planner_eligible_place_ids": [
+    "kg_ho_chi_minh_mausoleum"
+  ],
+  "resolved_items": [],
+  "special_experiences": [],
+  "budget_analysis": {
+    "mode": "relative_level",
+    "status": "within",
+    "target_amount": null,
+    "currency": "VND",
+    "mandatory": {
+      "place_count": 1,
+      "known_amount_count": 1,
+      "unknown_amount_count": 0,
+      "amount_range": {
+        "minimum": 0,
+        "typical": 0,
+        "maximum": 0,
+        "currency": "VND",
+        "complete": true
+      },
+      "tier_distribution": {
+        "free": 1
+      }
+    },
+    "optional": {
+      "place_count": 0,
+      "known_amount_count": 0,
+      "unknown_amount_count": 0,
+      "amount_range": {
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "currency": "VND",
+        "complete": true
+      },
+      "tier_distribution": {}
+    },
+    "total": {
+      "place_count": 1,
+      "known_amount_count": 1,
+      "unknown_amount_count": 0,
+      "amount_range": {
+        "minimum": 0,
+        "typical": 0,
+        "maximum": 0,
+        "currency": "VND",
+        "complete": true
+      },
+      "tier_distribution": {
+        "free": 1
+      }
+    },
+    "warnings": []
+  },
+  "capacity_analysis": {
+    "status": "underloaded",
+    "available_minutes": {
+      "minimum_minutes": 1440,
+      "typical_minutes": 1920,
+      "maximum_minutes": 2400
+    },
+    "mandatory": {
+      "place_count": 1,
+      "known_duration_count": 1,
+      "unknown_duration_count": 0,
+      "minimum_minutes": 60,
+      "typical_minutes": 90,
+      "maximum_minutes": 120
+    },
+    "preferred": {
+      "place_count": 0,
+      "known_duration_count": 0,
+      "unknown_duration_count": 0,
+      "minimum_minutes": 0,
+      "typical_minutes": 0,
+      "maximum_minutes": 0
+    },
+    "optional": {
+      "place_count": 0,
+      "known_duration_count": 0,
+      "unknown_duration_count": 0,
+      "minimum_minutes": 0,
+      "typical_minutes": 0,
+      "maximum_minutes": 0
+    },
+    "total": {
+      "place_count": 1,
+      "known_duration_count": 1,
+      "unknown_duration_count": 0,
+      "minimum_minutes": 60,
+      "typical_minutes": 90,
+      "maximum_minutes": 120
+    },
+    "geographic_overhead": {
+      "known_coordinate_count": 1,
+      "unknown_coordinate_count": 0,
+      "spread": "unknown",
+      "radius_km": null,
+      "estimated_minutes": 0
+    },
+    "typical_utilization": 0.046875,
+    "warnings": []
+  },
+  "coverage_analysis": {
+    "level": "partial",
+    "planner_eligible_place_count": 1,
+    "mandatory_place_count": 1,
+    "category_distribution": {
+      "landmark": 1
+    },
+    "resolved_item_count": 0,
+    "unresolved_item_count": 0,
+    "food_covered": false,
+    "experience_covered": true,
+    "time_hints": []
+  },
+  "geographic_analysis": {
+    "known_coordinate_count": 1,
+    "unknown_coordinate_count": 0,
+    "spread": "unknown",
+    "radius_km": null,
+    "coarse_overhead_minutes": 0
+  },
+  "gap_analysis": {
+    "gaps": [
+      {
+        "gap_id": "gap:trip_capacity",
+        "gap_type": "trip_capacity",
+        "severity": "low",
+        "status": "open",
+        "trigger": "Capacity status là underloaded.",
+        "suggested_action": "Bổ sung optional experience nếu người dùng muốn lịch dày hơn.",
+        "related_place_ids": [],
+        "related_item_indexes": [],
+        "resolved_place_ids": []
+      },
+      {
+        "gap_id": "gap:food_coverage",
+        "gap_type": "food_coverage",
+        "severity": "medium",
+        "status": "open",
+        "trigger": "Chưa có food venue trong candidate set.",
+        "suggested_action": "Tìm optional food venue phù hợp budget và destination.",
+        "related_place_ids": [],
+        "related_item_indexes": [],
+        "resolved_place_ids": []
+      }
+    ],
+    "open_count": 2,
+    "critical_count": 0
+  },
+  "unresolved_entities": [],
+  "planner_constraints": [],
+  "warnings": [],
+  "metadata": {
+    "request_id": "example-request-id",
+    "correlation_id": "example-correlation-id",
+    "place_checker_version": "place_checker.v1",
+    "generated_at": "2026-08-11T00:00:00Z",
+    "sample_data": true,
+    "tool_calls": {
+      "adm_resolver": 1,
+      "search_places_named": 1,
+      "search_places_requirement": 0,
+      "metadata_repository": 1,
+      "external_search": 0
+    }
+  }
+}

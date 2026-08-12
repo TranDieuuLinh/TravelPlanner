@@ -1,0 +1,81 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Ho Chi Minh Mausoleum",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "I want to visit Ho Chi Minh Mausoleum",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    },
+    {
+      "name": "Lăng Chủ tịch Hồ Chí Minh",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "url",
+          "evidenceType": "frame_ocr",
+          "sourceUrl": "https://example.com/travel-video",
+          "evidence": "OCR: Lăng Chủ tịch Hồ Chí Minh",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": "2026-08-11T10:00:00Z"
+        }
+      ]
+    },
+    {
+      "name": "Templ of Litereture",
+      "addressHint": null,
+      "confidence": 0.68,
+      "sourcePlaces": [
+        {
+          "origin": "url",
+          "evidenceType": "stt",
+          "sourceUrl": "https://example.com/travel-video",
+          "evidence": "STT nhận dạng chưa chính xác: Templ of Litereture",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": "2026-08-11T10:00:00Z"
+        }
+      ]
+    }
+  ],
+  "inputItems": [
+    {
+      "name": "bún chả",
+      "itemType": "food",
+      "action": "eat",
+      "relatedPlaceName": null,
+      "evidence": "muốn thử bún chả",
+      "confidence": 0.95
+    }
+  ],
+  "urlNotes": null,
+  "days": 3,
+  "budget": {
+    "level": "medium",
+    "targetAmount": null,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [
+    "history",
+    "local_food"
+  ],
+  "shortAvoids": []
+}

@@ -122,6 +122,56 @@ def test_true_knowledge_graph_ambiguity_does_not_call_external_provider() -> Non
     assert external.calls == []
 
 
+def test_address_hint_disambiguates_two_strong_branches() -> None:
+    kg = InMemoryPlaceSearch(
+        [
+            _candidate("Café Giảng", "branch-1", address="57 Tràng Tiền, Hà Nội"),
+            _candidate(
+                "Café Giảng",
+                "branch-2",
+                address="39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+            ),
+        ],
+        provider_name="knowledge_graph",
+    )
+
+    result = _run(
+        SearchPlacesTool(kg).search(
+            PlaceSearchRequest(
+                query="Café Giảng",
+                addressHint="39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+                inputAdm=HANOI,
+            )
+        )
+    )
+
+    assert result.status == "resolved"
+    assert result.selected is not None
+    assert result.selected.place_id == "branch-2"
+    assert result.resolution_reason == "address_hint_identity"
+
+
+def test_distinctive_full_name_disambiguates_related_landmarks() -> None:
+    kg = InMemoryPlaceSearch(
+        [
+            _candidate("Ho Chi Minh's Mausoleum", "mausoleum"),
+            _candidate("Ho Chi Minh Museum", "museum"),
+        ],
+        provider_name="knowledge_graph",
+    )
+
+    result = _run(
+        SearchPlacesTool(kg).search(
+            PlaceSearchRequest(query="Ho Chi Minh Mausoleum", inputAdm=HANOI)
+        )
+    )
+
+    assert result.status == "resolved"
+    assert result.selected is not None
+    assert result.selected.place_id == "mausoleum"
+    assert result.resolution_reason == "distinctive_name_identity"
+
+
 def test_route_context_can_disambiguate_two_strong_branches() -> None:
     anchor = Coordinates(latitude=21.0368, longitude=105.8346)
     kg = InMemoryPlaceSearch(

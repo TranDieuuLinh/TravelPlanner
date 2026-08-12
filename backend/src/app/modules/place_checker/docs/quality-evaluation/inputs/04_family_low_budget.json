@@ -1,0 +1,76 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Hanoi Zoo",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Gia đình muốn đưa trẻ đi sở thú",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    },
+    {
+      "name": "Vietnam Museum of Ethnology",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Muốn cho trẻ tham quan bảo tàng",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    }
+  ],
+  "inputItems": [
+    {
+      "name": "khu vui chơi trẻ em",
+      "itemType": "activity",
+      "action": "play",
+      "relatedPlaceName": null,
+      "evidence": "cần chỗ chơi cho trẻ",
+      "confidence": 0.95
+    },
+    {
+      "name": "bánh mì",
+      "itemType": "food",
+      "action": "eat",
+      "relatedPlaceName": null,
+      "evidence": "ăn bánh mì nhanh và rẻ",
+      "confidence": 0.95
+    }
+  ],
+  "urlNotes": null,
+  "days": 2,
+  "budget": {
+    "level": "low",
+    "targetAmount": 1000000,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 2,
+    "infants": 1
+  },
+  "shortPreferences": [
+    "family_friendly",
+    "outdoor"
+  ],
+  "shortAvoids": [
+    "nightlife",
+    "alcohol"
+  ]
+}

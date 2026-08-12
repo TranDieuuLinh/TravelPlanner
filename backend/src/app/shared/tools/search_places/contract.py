@@ -55,8 +55,9 @@ class PlaceSearchRequest(ToolModel):
     source_evidence: str | None = Field(default=None, max_length=500)
     source_time_hint: str | None = Field(default=None, max_length=80)
     previous_place: Coordinates | None = None
+    anchor_place_id: str | None = Field(default=None, max_length=200)
     next_place: Coordinates | None = None
-    top_k: int = Field(default=5, ge=1, le=10)
+    top_k: int = Field(default=5, ge=1, le=60)
     allow_external_fallback: bool = True
 
     @field_validator("query")
@@ -90,6 +91,8 @@ class PlaceProviderCandidate(ToolModel):
     adm_names: list[str] = Field(default_factory=list)
     canonical_type: str | None = Field(default=None, max_length=80)
     tags: list[str] = Field(default_factory=list)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
     data_confidence: float = Field(default=0.5, ge=0, le=1)
     fetched_at: datetime | None = None
 
@@ -107,6 +110,8 @@ class PlaceSearchMatch(ToolModel):
     address: str | None = None
     coordinates: Coordinates | None = None
     tags: list[str] = Field(default_factory=list)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
     score: float = Field(ge=0, le=1)
     score_components: dict[str, float] = Field(default_factory=dict)
     rejection_reasons: list[str] = Field(default_factory=list)
@@ -132,4 +137,3 @@ class PlaceSearchResult(ToolModel):
     provider_attempts: list[ProviderAttempt] = Field(default_factory=list)
     resolution_reason: str
     retryable: bool = False
-

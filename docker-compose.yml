@@ -1,21 +1,18 @@
 services:
   postgres:
-    # Existing development volumes may still contain the experimental
-    # `places.embedding` vector column. Keep a pgvector-capable PostgreSQL
-    # image so those volumes remain readable after the feature-code revert.
+    # This workspace owns its database through the Compose project-scoped
+    # travelplanner_postgres_data_v2 volume below.
     image: pgvector/pgvector:0.8.2-pg16
     environment:
       POSTGRES_DB: travelplanner
       POSTGRES_USER: travelplanner
       POSTGRES_PASSWORD: travelplanner
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     restart: unless-stopped
     volumes:
-      # The previous development volume was initialized with the `vsf` role
-      # and `vsf_travel` database. Use a versioned volume so PostgreSQL applies
-      # the current travelplanner credentials on first startup while retaining
-      # the old volume for an explicit data migration if needed.
+      # Compose prefixes this volume with the current project name, so it is
+      # independent from volumes created by other TravelPlanner workspaces.
       - travelplanner_postgres_data_v2:/var/lib/postgresql/data
       - ./backend/migrations/001_information_finder_source_cache.sql:/docker-entrypoint-initdb.d/001_information_finder_source_cache.sql:ro
       - ./backend/migrations/002_explorer_source_document_cache.sql:/docker-entrypoint-initdb.d/002_explorer_source_document_cache.sql:ro
@@ -25,6 +22,7 @@ services:
       - ./backend/migrations/004_knowledge_auto_attach.sql:/docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql:ro
       - ./backend/migrations/005_knowledge_relationship_provenance.sql:/docker-entrypoint-initdb.d/005_knowledge_relationship_provenance.sql:ro
       - ./backend/migrations/003_trip_chat.sql:/docker-entrypoint-initdb.d/003_trip_chat.sql:ro
+      - ./backend/migrations/006_place_checker_catalog.sql:/docker-entrypoint-initdb.d/006_place_checker_catalog.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U travelplanner -d travelplanner"]
       interval: 5s
@@ -33,7 +31,6 @@ services:
 
   langfuse-db:
     image: postgres:16-alpine
-    container_name: travelplanner-langfuse-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
@@ -51,7 +48,6 @@ services:
 
   langfuse:
     image: langfuse/langfuse:2.95.11
-    container_name: travelplanner-langfuse
     restart: unless-stopped
     depends_on:
       langfuse-db:
@@ -94,7 +90,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
     healthcheck:
       test:

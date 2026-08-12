@@ -1,0 +1,409 @@
+{
+  "schemaVersion": "place_checker.v1",
+  "status": "blocked",
+  "tripContext": {
+    "destination": {
+      "inputName": "Atlantis",
+      "status": "unresolved",
+      "admId": null,
+      "canonicalName": null,
+      "countryCode": null,
+      "regionKey": null,
+      "alternatives": []
+    },
+    "days": 3,
+    "pace": "balanced",
+    "capacity": {
+      "minimumMinutes": 1080,
+      "typicalMinutes": 1440,
+      "maximumMinutes": 1800
+    },
+    "budgetMode": "relative_level",
+    "budget": {
+      "level": "medium",
+      "targetAmount": null,
+      "currency": "VND",
+      "source": "raw_prompt"
+    },
+    "people": {
+      "adults": 2,
+      "children": 0,
+      "infants": 0
+    },
+    "preferences": [],
+    "avoids": []
+  },
+  "checkedPlaces": [
+    {
+      "placeId": null,
+      "canonicalName": null,
+      "originalNames": [
+        "West Lake"
+      ],
+      "aliases": [],
+      "coordinates": null,
+      "destination": {
+        "admId": null,
+        "compatible": null
+      },
+      "sourceTier": "direct_user",
+      "mandatory": true,
+      "removable": false,
+      "category": null,
+      "tags": [],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "unknown",
+        "currency": null,
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "known": false
+      },
+      "opening": {
+        "hours": null,
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": false
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "unresolved",
+        "identityConfidence": null,
+        "provider": null,
+        "fetchedAt": null
+      },
+      "evaluation": {
+        "state": "blocked",
+        "plannerEligible": false,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "identity_not_resolved",
+            "dimension": "identity",
+            "severity": "critical",
+            "hard": true,
+            "message": "Địa điểm chưa có canonical identity đủ tin cậy."
+          },
+          {
+            "code": "coordinates_missing",
+            "dimension": "destination",
+            "severity": "critical",
+            "hard": true,
+            "message": "Địa điểm chưa có tọa độ hợp lệ."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.0,
+          "missingFields": [
+            "coordinates",
+            "category",
+            "duration",
+            "cost",
+            "opening_hours",
+            "operational_status",
+            "freshness"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": null,
+        "reasons": [
+          "mandatory_place_not_removed_by_ranking"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "input",
+            "evidenceType": "raw_prompt",
+            "sourceUrl": null,
+            "evidence": "Tôi muốn đi Hồ Tây tại Atlantis",
+            "sourceTimeHint": null,
+            "addressHint": null,
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Không thể phân giải place khi destination ADM chưa rõ.",
+        "Địa điểm chưa có canonical identity đủ tin cậy.",
+        "Địa điểm chưa có tọa độ hợp lệ."
+      ]
+    }
+  ],
+  "plannerEligiblePlaceIds": [],
+  "resolvedItems": [],
+  "specialExperiences": [],
+  "budgetAnalysis": {
+    "mode": "relative_level",
+    "status": "unknown",
+    "targetAmount": null,
+    "currency": "VND",
+    "mandatory": {
+      "placeCount": 1,
+      "knownAmountCount": 0,
+      "unknownAmountCount": 1,
+      "amountRange": {
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "currency": "VND",
+        "complete": false
+      },
+      "tierDistribution": {
+        "free": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "premium": 0,
+        "unknown": 1
+      }
+    },
+    "optional": {
+      "placeCount": 0,
+      "knownAmountCount": 0,
+      "unknownAmountCount": 0,
+      "amountRange": {
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "currency": "VND",
+        "complete": true
+      },
+      "tierDistribution": {
+        "free": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "premium": 0,
+        "unknown": 0
+      }
+    },
+    "total": {
+      "placeCount": 1,
+      "knownAmountCount": 0,
+      "unknownAmountCount": 1,
+      "amountRange": {
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "currency": "VND",
+        "complete": false
+      },
+      "tierDistribution": {
+        "free": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "premium": 0,
+        "unknown": 1
+      }
+    },
+    "warnings": [
+      "1 place(s) chưa đủ amount/currency."
+    ]
+  },
+  "capacityAnalysis": {
+    "status": "unknown",
+    "availableMinutes": {
+      "minimumMinutes": 1080,
+      "typicalMinutes": 1440,
+      "maximumMinutes": 1800
+    },
+    "mandatory": {
+      "placeCount": 1,
+      "knownDurationCount": 0,
+      "unknownDurationCount": 1,
+      "minimumMinutes": 0,
+      "typicalMinutes": 0,
+      "maximumMinutes": 0
+    },
+    "preferred": {
+      "placeCount": 0,
+      "knownDurationCount": 0,
+      "unknownDurationCount": 0,
+      "minimumMinutes": 0,
+      "typicalMinutes": 0,
+      "maximumMinutes": 0
+    },
+    "optional": {
+      "placeCount": 0,
+      "knownDurationCount": 0,
+      "unknownDurationCount": 0,
+      "minimumMinutes": 0,
+      "typicalMinutes": 0,
+      "maximumMinutes": 0
+    },
+    "total": {
+      "placeCount": 1,
+      "knownDurationCount": 0,
+      "unknownDurationCount": 1,
+      "minimumMinutes": 0,
+      "typicalMinutes": 0,
+      "maximumMinutes": 0
+    },
+    "geographicOverhead": {
+      "knownCoordinateCount": 0,
+      "unknownCoordinateCount": 1,
+      "spread": "unknown",
+      "radiusKm": null,
+      "estimatedMinutes": 0
+    },
+    "typicalUtilization": 0.0,
+    "warnings": [
+      "1 place(s) chưa có typical duration."
+    ]
+  },
+  "coverageAnalysis": {
+    "level": "insufficient",
+    "plannerEligiblePlaceCount": 0,
+    "mandatoryPlaceCount": 1,
+    "categoryDistribution": {},
+    "resolvedItemCount": 0,
+    "unresolvedItemCount": 0,
+    "foodCovered": false,
+    "experienceCovered": false,
+    "timeHints": []
+  },
+  "geographicAnalysis": {
+    "knownCoordinateCount": 0,
+    "unknownCoordinateCount": 1,
+    "spread": "unknown",
+    "radiusKm": null,
+    "coarseOverheadMinutes": 0
+  },
+  "gapAnalysis": {
+    "gaps": [
+      {
+        "gapId": "gap:mandatory_identity_metadata",
+        "gapType": "mandatory_identity_metadata",
+        "severity": "critical",
+        "status": "open",
+        "trigger": "1 mandatory place thiếu identity hoặc tọa độ.",
+        "suggestedAction": "Xác minh identity/metadata; không tự loại yêu cầu của người dùng.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:trip_capacity",
+        "gapType": "trip_capacity",
+        "severity": "high",
+        "status": "open",
+        "trigger": "Capacity status là unknown.",
+        "suggestedAction": "Bổ sung duration hoặc optional experience phù hợp.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:food_coverage",
+        "gapType": "food_coverage",
+        "severity": "medium",
+        "status": "open",
+        "trigger": "Chưa có food venue đủ tin cậy cho requirement/trip coverage.",
+        "suggestedAction": "Tìm optional food venue trong đúng ADM và budget profile.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:experience_coverage",
+        "gapType": "experience_coverage",
+        "severity": "medium",
+        "status": "open",
+        "trigger": "Chưa có experience đủ tin cậy hoặc explicit item chưa resolve.",
+        "suggestedAction": "Tìm optional experience phù hợp preference và people profile.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:budget",
+        "gapType": "budget",
+        "severity": "high",
+        "status": "open",
+        "trigger": "Budget status là unknown.",
+        "suggestedAction": "Xác minh unknown cost hoặc ưu tiên optional place cost thấp.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:data_quality",
+        "gapType": "data_quality",
+        "severity": "high",
+        "status": "open",
+        "trigger": "Một hoặc nhiều place thiếu cost/opening/duration/freshness data.",
+        "suggestedAction": "Enrich các field cần thiết trước final planning.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      }
+    ],
+    "openCount": 6,
+    "criticalCount": 1
+  },
+  "unresolvedEntities": [
+    {
+      "entityType": "adm",
+      "inputIndex": null,
+      "inputName": "Atlantis",
+      "reason": "destination_unresolved",
+      "mandatory": true
+    },
+    {
+      "entityType": "place",
+      "inputIndex": 0,
+      "inputName": "West Lake",
+      "reason": "identity_not_resolved",
+      "mandatory": true
+    }
+  ],
+  "plannerConstraints": [],
+  "warnings": [
+    "Không thể phân giải place khi destination ADM chưa rõ.",
+    "Địa điểm chưa có canonical identity đủ tin cậy.",
+    "Địa điểm chưa có tọa độ hợp lệ.",
+    "Không thể phân giải item khi destination ADM chưa rõ."
+  ],
+  "metadata": {
+    "requestId": "quality-eval:08_unknown_destination",
+    "correlationId": "quality-eval:08_unknown_destination",
+    "placeCheckerVersion": "place_checker.v1",
+    "generatedAt": "2026-08-11T21:44:16.571365Z",
+    "durationMs": 3,
+    "phaseDurationMs": {
+      "trip_context": 3,
+      "identity_resolution": 0,
+      "evidence_and_items": 0,
+      "evaluation_and_analysis": 0
+    },
+    "toolCalls": {
+      "admResolver": 1,
+      "searchPlacesNamed": 1,
+      "searchPlacesRequirement": 0,
+      "retrievalSearch": 0,
+      "externalSearch": 0,
+      "metadataRepository": 1
+    },
+    "partial": true,
+    "sampleData": false
+  }
+}

@@ -29,6 +29,7 @@ from app.modules.information_finder.service import (
     InformationFinderOptions,
     InformationFinderService,
 )
+from app.modules.place_checker.public import build_postgres_place_checker_pipeline
 from app.modules.supervisor.adapters import GeminiIntentClassifier
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
@@ -238,4 +239,9 @@ def get_graph():
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
         explorer_service=compose_explorer_service(settings, shared_llm_client),
+        place_checker_pipeline=(
+            build_postgres_place_checker_pipeline(settings.database_url)
+            if settings.database_url
+            else None
+        ),
     )

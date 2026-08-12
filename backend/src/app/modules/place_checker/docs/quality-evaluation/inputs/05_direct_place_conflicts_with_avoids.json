@@ -1,0 +1,59 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Ta Hien Beer Street",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi vẫn muốn ghé phố bia Tạ Hiện",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    },
+    {
+      "name": "Hanoi Old Quarter",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Đi bộ trong phố cổ",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    }
+  ],
+  "inputItems": [],
+  "urlNotes": null,
+  "days": 2,
+  "budget": {
+    "level": "low",
+    "targetAmount": null,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [
+    "street_food"
+  ],
+  "shortAvoids": [
+    "nightlife",
+    "alcohol",
+    "crowded_places"
+  ]
+}

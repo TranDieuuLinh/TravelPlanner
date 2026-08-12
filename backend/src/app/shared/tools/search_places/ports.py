@@ -24,6 +24,7 @@ class KnowledgeGraphPlaceSearch(Protocol):
         input_adm: AdministrativeArea,
         place_type_hint: str | None,
         limit: int,
+        anchor_place_id: str | None = None,
     ) -> list[PlaceProviderCandidate]: ...
 
 
@@ -37,5 +38,5 @@ class ExternalPlaceSearch(Protocol):
         input_adm: AdministrativeArea,
         place_type_hint: str | None,
         limit: int,
+        anchor_place_id: str | None = None,
     ) -> list[PlaceProviderCandidate]: ...
-

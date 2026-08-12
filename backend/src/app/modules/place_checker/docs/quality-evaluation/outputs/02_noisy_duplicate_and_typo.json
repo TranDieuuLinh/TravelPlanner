@@ -1,0 +1,4032 @@
+{
+  "schemaVersion": "place_checker.v1",
+  "status": "conditional",
+  "tripContext": {
+    "destination": {
+      "inputName": "Hanoi",
+      "status": "resolved",
+      "admId": "area_city_0c21619b4e",
+      "canonicalName": "Hà Nội",
+      "countryCode": "VN",
+      "regionKey": "vn,adm1,ha_noi",
+      "alternatives": []
+    },
+    "days": 3,
+    "pace": "balanced",
+    "capacity": {
+      "minimumMinutes": 1080,
+      "typicalMinutes": 1440,
+      "maximumMinutes": 1800
+    },
+    "budgetMode": "relative_level",
+    "budget": {
+      "level": "medium",
+      "targetAmount": null,
+      "currency": "VND",
+      "source": "raw_prompt"
+    },
+    "people": {
+      "adults": 2,
+      "children": 0,
+      "infants": 0
+    },
+    "preferences": [
+      "history",
+      "local_food"
+    ],
+    "avoids": []
+  },
+  "checkedPlaces": [
+    {
+      "placeId": "travel_place_ChIJF13BXqGrNTERTE3hz8KFDmI",
+      "canonicalName": "Ho Chi Minh's Mausoleum",
+      "originalNames": [
+        "Ho Chi Minh Mausoleum",
+        "Lăng Chủ tịch Hồ Chí Minh"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.036897,
+        "longitude": 105.834667
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "direct_user",
+      "mandatory": true,
+      "removable": false,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.91875,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": null,
+        "reasons": [
+          "mandatory_place_not_removed_by_ranking"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "input",
+            "evidenceType": "raw_prompt",
+            "sourceUrl": null,
+            "evidence": "I want to visit Ho Chi Minh Mausoleum",
+            "sourceTimeHint": null,
+            "addressHint": null,
+            "observedAt": null
+          },
+          {
+            "origin": "url",
+            "evidenceType": "frame_ocr",
+            "sourceUrl": "https://example.com/travel-video",
+            "evidence": "OCR: Lăng Chủ tịch Hồ Chí Minh",
+            "sourceTimeHint": null,
+            "addressHint": null,
+            "observedAt": "2026-08-11T10:00:00Z"
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": null,
+      "canonicalName": null,
+      "originalNames": [
+        "Templ of Litereture"
+      ],
+      "aliases": [],
+      "coordinates": null,
+      "destination": {
+        "admId": null,
+        "compatible": null
+      },
+      "sourceTier": "url",
+      "mandatory": false,
+      "removable": true,
+      "category": null,
+      "tags": [],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "unknown",
+        "currency": null,
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "known": false
+      },
+      "opening": {
+        "hours": null,
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": false
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "unresolved",
+        "identityConfidence": 0.761615,
+        "provider": null,
+        "fetchedAt": null
+      },
+      "evaluation": {
+        "state": "rejected",
+        "plannerEligible": false,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "identity_not_resolved",
+            "dimension": "identity",
+            "severity": "critical",
+            "hard": true,
+            "message": "Địa điểm chưa có canonical identity đủ tin cậy."
+          },
+          {
+            "code": "coordinates_missing",
+            "dimension": "destination",
+            "severity": "critical",
+            "hard": true,
+            "message": "Địa điểm chưa có tọa độ hợp lệ."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.0,
+          "missingFields": [
+            "coordinates",
+            "category",
+            "duration",
+            "cost",
+            "opening_hours",
+            "operational_status",
+            "freshness"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": null,
+        "reasons": []
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "url",
+            "evidenceType": "stt",
+            "sourceUrl": "https://example.com/travel-video",
+            "evidence": "STT nhận dạng chưa chính xác: Templ of Litereture",
+            "sourceTimeHint": null,
+            "addressHint": null,
+            "observedAt": "2026-08-11T10:00:00Z"
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Không tìm thấy identity đủ tin cậy trong đúng ADM.",
+        "Địa điểm chưa có canonical identity đủ tin cậy.",
+        "Địa điểm chưa có tọa độ hợp lệ."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJS_M4qgCrNTERGc0FxMJCqC4",
+      "canonicalName": "Era Restaurant",
+      "originalNames": [
+        "Era Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.035326,
+        "longitude": 105.85332
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Chả giò",
+        "item:Hải sản",
+        "item:Nấm"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "medium",
+        "currency": "VND",
+        "minimum": 100000.0,
+        "typical": 150000.0,
+        "maximum": 200000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "10:30-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.93425,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.650379,
+        "reasons": []
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "48 Mã Mây, Phường, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJ_6DVuQ-rNTERk3j-0EANbew",
+      "canonicalName": "Tam Da Market",
+      "originalNames": [
+        "Tam Da Market"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.042831,
+        "longitude": 105.818645
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Mua sắm"
+      ],
+      "duration": {
+        "minimumMinutes": 90,
+        "typicalMinutes": 120,
+        "maximumMinutes": 150,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "10:00-12:00",
+          "14:00-21:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.797803,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.64289,
+        "reasons": [
+          "duplicate_experience"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "Tây Hồ, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJCTV1KjqrNTERpXLX7CVG6BU",
+      "canonicalName": "S'Cafe",
+      "originalNames": [
+        "S'Cafe"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.034546,
+        "longitude": 105.851796
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "experience:Dùng bữa",
+        "item:Trà",
+        "item:Sinh tố",
+        "item:Bánh mì",
+        "item:Phở",
+        "item:Chả giò",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:30-17:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.8135,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.644342,
+        "reasons": [
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "11 Ngõ Hài Tượng, phố Tạ Hiện, Hoàn Kiếm, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJK111AwurNTERB8u6Ap8YDjg",
+      "canonicalName": "B52 Victory Museum",
+      "originalNames": [
+        "B52 Victory Museum"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.034843,
+        "longitude": 105.825981
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.75475,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.640738,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "157 Đội Cấn, Ngọc Hà, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJA9hjcdurNTER__fyEGdqfGM",
+      "canonicalName": "Bodhi Temple",
+      "originalNames": [
+        "Bodhi Temple"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.035923,
+        "longitude": 105.866701
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan văn hóa và tín ngưỡng"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-11:00",
+          "14:00-17:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.814583,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.618729,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "90 P. Phú Viên, Bồ Đề, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJG4JimDmpNTERToHe1MmUkfs",
+      "canonicalName": "Rose Park",
+      "originalNames": [
+        "Rose Park"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.016095,
+        "longitude": 105.90276
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Đi dạo ngoài trời"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 50000.0,
+        "typical": 50000.0,
+        "maximum": 50000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "06:00-09:00",
+          "16:00-18:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.792885,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.611644,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "2W83+C4J Rose Park, Khu sinh, Long Biên, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJg38KTlirNTERvn1PXHQy3ec",
+      "canonicalName": "Cái Mâm Restaurant",
+      "originalNames": [
+        "Cái Mâm Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.036394,
+        "longitude": 105.852651
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Hải sản"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "medium",
+        "currency": "VND",
+        "minimum": 200000.0,
+        "typical": 250000.0,
+        "maximum": 300000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "10:30-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.93425,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.650379,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "23 P. Đào Duy Từ, Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội 10000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJ_8OSWgCrNTERUjH5ICI4pW8",
+      "canonicalName": "Dong xuan market",
+      "originalNames": [
+        "Dong xuan market"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.038143,
+        "longitude": 105.850039
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Mua sắm"
+      ],
+      "duration": {
+        "minimumMinutes": 90,
+        "typicalMinutes": 120,
+        "maximumMinutes": 150,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "10:00-12:00",
+          "14:00-21:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.786,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.6423,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "Đồng Xuân Market, 23 P. Cầu Đông, Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJp9lm3BmrNTERWtaHEiHIxKc",
+      "canonicalName": "Mơ Cafe",
+      "originalNames": [
+        "Mơ Cafe"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.045604,
+        "longitude": 105.840922
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.786545,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.579721,
+        "reasons": [
+          "repeated_category",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "28 P. Nguyễn Khắc Hiếu, Ba Đình, Hà Nội 10000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJIRzxNQCrNTERjRKXOA_tqkM",
+      "canonicalName": "Ja café",
+      "originalNames": [
+        "Ja café"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.034019,
+        "longitude": 105.84419
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Dùng bữa",
+        "experience:Uống cà phê",
+        "item:Trà",
+        "item:Phở",
+        "item:Bánh mì",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.785795,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.639684,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "9 P. Tôn Thất Thiệp, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJb-sdLqCrNTER0UkLBD-JnZQ",
+      "canonicalName": "Ho Chi Minh Museum",
+      "originalNames": [
+        "Ho Chi Minh Museum"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.035641,
+        "longitude": 105.832663
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 40000.0,
+        "typical": 40000.0,
+        "maximum": 40000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.754,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.6347,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "19 P. Ngọc Hà, Ba Đình, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJW_RP8-yrNTERXij01LScXB8",
+      "canonicalName": "Virtual Park",
+      "originalNames": [
+        "Virtual Park"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.025586,
+        "longitude": 105.805466
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Vui chơi dành cho trẻ em"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "medium",
+        "currency": "VND",
+        "minimum": 200000.0,
+        "typical": 200000.0,
+        "maximum": 200000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "00:00-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": true,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.75925,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.567629,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "36 Ng. 84 P. Chùa Láng, Láng, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJzY42CD-rNTERL2xDAKm6kdY",
+      "canonicalName": "Duck 34 Restaurant",
+      "originalNames": [
+        "Duck 34 Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.018333,
+        "longitude": 105.811075
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Lẩu",
+        "item:Cơm",
+        "item:Xôi"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "medium",
+        "currency": "VND",
+        "minimum": 100000.0,
+        "typical": 150000.0,
+        "maximum": 200000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "10:00-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.9335,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.625342,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "33 Huỳnh Thúc Kháng, Láng, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJX-BpQu2qNTERTwHCd4hPbag",
+      "canonicalName": "T Cafe",
+      "originalNames": [
+        "T Cafe"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.07868,
+        "longitude": 105.816444
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "experience:Uống trà",
+        "experience:Dùng bữa",
+        "item:Cà phê",
+        "item:Trà"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "06:30-17:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.80825,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.619079,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "682 Đ. Lạc Long Quân, Tây Hồ, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJxwnWy6usNTERS_TY4hfsH2s",
+      "canonicalName": "Hanoi Museum",
+      "originalNames": [
+        "Hanoi Museum"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.009923,
+        "longitude": 105.786302
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.813083,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.618654,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "Phạm Hùng, Từ Liêm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJp4s0qe6rNTER9xX9MObmmnM",
+      "canonicalName": "Geology Museum",
+      "originalNames": [
+        "Geology Museum"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.023497,
+        "longitude": 105.85881
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.78975,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.617488,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "6 Phạm Ngũ Lão, Cửa Nam, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJAcpzbwCrNTERSsISiGsRwDQ",
+      "canonicalName": "Bảo Tàng I-Museum",
+      "originalNames": [
+        "Bảo Tàng I-Museum"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.025112,
+        "longitude": 105.853472
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "medium",
+        "currency": "VND",
+        "minimum": 150000.0,
+        "typical": 150000.0,
+        "maximum": 150000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.761609,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.61608,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "24 P. Hai Bà Trưng, Cửa Nam, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJ67gYq6atNTER6Fq5FZGso_s",
+      "canonicalName": "Cafe 30",
+      "originalNames": [
+        "Cafe 30"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.003337,
+        "longitude": 105.811323
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống trà",
+        "experience:Thưởng thức đồ uống",
+        "experience:Uống cà phê",
+        "item:Trà",
+        "item:Trà sữa",
+        "item:Sinh tố",
+        "item:Nước trái cây",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.786545,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.554721,
+        "reasons": [
+          "repeated_category",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "Ngõ 179 P. Quan Nhân, Thanh Xuân, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJq-0MSB6rNTERxDzcifkHmTw",
+      "canonicalName": "Museum of Infantry",
+      "originalNames": [
+        "Museum of Infantry"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.056079,
+        "longitude": 105.808981
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 20000.0,
+        "typical": 20000.0,
+        "maximum": 20000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.75325,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.609662,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "290 Đ. Lạc Long Quân, Trích Sài, Tây Hồ, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJ28hXpDqrNTERKIuEQpbXnFw",
+      "canonicalName": "Museum of Armored Forces",
+      "originalNames": [
+        "Museum of Armored Forces"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.046722,
+        "longitude": 105.794312
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 20000.0,
+        "typical": 20000.0,
+        "maximum": 20000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "08:00-11:30",
+          "14:00-17:30"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.7205,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.608025,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "108 Hoàng Quốc Việt, Nghĩa Đô, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_ChIJr7enHa-rNTERbivpCTqoenY",
+      "canonicalName": "Tran Quoc Pagoda",
+      "originalNames": [
+        "Tran Quoc Pagoda"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.047871,
+        "longitude": 105.836874
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Tham quan văn hóa và tín ngưỡng",
+        "experience:Tham quan địa danh"
+      ],
+      "duration": {
+        "minimumMinutes": 60,
+        "typicalMinutes": 90,
+        "maximumMinutes": 120,
+        "known": true
+      },
+      "cost": {
+        "tier": "free",
+        "currency": "VND",
+        "minimum": 0.0,
+        "typical": 0.0,
+        "maximum": 0.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-11:00",
+          "14:00-17:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.9305,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [],
+        "dataQuality": {
+          "completenessScore": 0.857143,
+          "missingFields": [
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.608008,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "Thanh Niên, Tây Hồ, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "travel_place_dessert_ChIJU5KfV_kLNTERyU1rGZKjPco",
+      "canonicalName": "Literature Park",
+      "originalNames": [
+        "Literature Park"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.008362,
+        "longitude": 105.796307
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "travel_place",
+      "tags": [
+        "travel place",
+        "experience:Hát karaoke"
+      ],
+      "duration": {
+        "minimumMinutes": 90,
+        "typicalMinutes": 120,
+        "maximumMinutes": 150,
+        "known": true
+      },
+      "cost": {
+        "tier": "unknown",
+        "currency": null,
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "known": false
+      },
+      "opening": {
+        "hours": [
+          "19:00-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.75625,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "verify_cost_profile",
+            "message": "Xác minh cost profile trước khi chốt ngân sách."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "cost",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.541479,
+        "reasons": [
+          "duplicate_experience",
+          "repeated_category",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "216 Đ. Trần Duy Hưng, Yên Hòa, Hà Nội 12345, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJA6RWK7-rNTERFE9ZbT3-60I",
+      "canonicalName": "Cafe 20",
+      "originalNames": [
+        "Cafe 20"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.036507,
+        "longitude": 105.849972
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "01:30-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.785795,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.579684,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "20 Ng. Gạch, Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJpTR8LB2rNTERaM6Aqju5iIo",
+      "canonicalName": "Khuê Restaurant",
+      "originalNames": [
+        "Khuê Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.043101,
+        "longitude": 105.843788
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "unknown",
+        "currency": null,
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "known": false
+      },
+      "opening": {
+        "hours": [
+          "11:00-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.93425,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          },
+          {
+            "code": "verify_cost_profile",
+            "message": "Xác minh cost profile trước khi chốt ngân sách."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.571429,
+          "missingFields": [
+            "duration",
+            "cost",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.576046,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "46A P. Nguyễn Trường Tộ, Ba Đình, Hà Nội 10000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJ0xSE-a-rNTERxnSfwSyefxg",
+      "canonicalName": "1968 Restaurant",
+      "originalNames": [
+        "1968 Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.033221,
+        "longitude": 105.846557
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Bún chả",
+        "item:Chả giò"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "high",
+        "currency": "VND",
+        "minimum": 200000.0,
+        "typical": 400000.0,
+        "maximum": 600000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "06:30-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.93425,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.572379,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "33 P. Đường Thành, Phố cổ Hà Nội, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJK0HXl0urNTEROaDNOk9AogI",
+      "canonicalName": "MIAs restaurant",
+      "originalNames": [
+        "MIAs restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.030185,
+        "longitude": 105.850348
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Mì Quảng",
+        "item:Cơm"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "high",
+        "currency": "VND",
+        "minimum": 200000.0,
+        "typical": 400000.0,
+        "maximum": 600000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "11:00-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.93425,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.572379,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "22 P. Báo Khánh, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJnX7xZ8ZVNDERFktM8pNi9io",
+      "canonicalName": "J Cafe",
+      "originalNames": [
+        "J Cafe"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.037698,
+        "longitude": 105.780094
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "experience:Uống trà",
+        "item:Cà phê",
+        "item:Trà",
+        "item:Trà sữa"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:00-23:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.8135,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.559342,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "2 Đ. Hồ Tùng Mậu, Phú Diễn, Hà Nội 11309, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "drink_dessert_ChIJM99bjBKrNTERgyymVnRAKwU",
+      "canonicalName": "8 Cafe",
+      "originalNames": [
+        "8 Cafe"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.020512,
+        "longitude": 105.857464
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "drink_dessert",
+      "tags": [
+        "drink dessert",
+        "experience:Uống cà phê",
+        "experience:Uống trà",
+        "item:Trà",
+        "item:Cà phê"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "low",
+        "currency": "VND",
+        "minimum": 1.0,
+        "typical": 50000.5,
+        "maximum": 100000.0,
+        "known": true
+      },
+      "opening": {
+        "hours": [
+          "07:30-18:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.81275,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.714286,
+          "missingFields": [
+            "duration",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.559304,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "3B Phan Huy Chú, Cửa Nam, Hà Nội, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    },
+    {
+      "placeId": "restaurant_ChIJ08DIhCmrNTERomgi_mQ4KaI",
+      "canonicalName": "CTaste Restaurant",
+      "originalNames": [
+        "CTaste Restaurant"
+      ],
+      "aliases": [],
+      "coordinates": {
+        "latitude": 21.032397,
+        "longitude": 105.855256
+      },
+      "destination": {
+        "admId": "area_city_0c21619b4e",
+        "compatible": true
+      },
+      "sourceTier": "system_suggested",
+      "mandatory": false,
+      "removable": true,
+      "category": "restaurant",
+      "tags": [
+        "restaurant",
+        "experience:Dùng bữa",
+        "item:Kem",
+        "item:Bánh mì",
+        "item:Hải sản"
+      ],
+      "duration": {
+        "minimumMinutes": null,
+        "typicalMinutes": null,
+        "maximumMinutes": null,
+        "known": false
+      },
+      "cost": {
+        "tier": "unknown",
+        "currency": null,
+        "minimum": null,
+        "typical": null,
+        "maximum": null,
+        "known": false
+      },
+      "opening": {
+        "hours": [
+          "11:00-22:00"
+        ],
+        "operationalStatus": "unknown",
+        "reservationRequired": null,
+        "known": true
+      },
+      "timePreferences": [],
+      "suitability": {
+        "adults": true,
+        "children": null,
+        "infants": null,
+        "accessibility": []
+      },
+      "verification": {
+        "status": "verified_kg",
+        "identityConfidence": 0.935,
+        "provider": "knowledge_graph_postgres",
+        "fetchedAt": "2026-08-10T23:35:03.586507Z"
+      },
+      "evaluation": {
+        "state": "conditional",
+        "plannerEligible": true,
+        "preferenceMatches": [
+          "local_food"
+        ],
+        "avoidConflicts": [],
+        "findings": [
+          {
+            "code": "operational_status_unknown",
+            "dimension": "operational",
+            "severity": "medium",
+            "hard": false,
+            "message": "Chưa xác định được trạng thái hoạt động hiện tại."
+          }
+        ],
+        "plannerConstraints": [
+          {
+            "code": "estimate_duration",
+            "message": "Cần ước lượng duration trước khi xếp timeline."
+          },
+          {
+            "code": "verify_cost_profile",
+            "message": "Xác minh cost profile trước khi chốt ngân sách."
+          }
+        ],
+        "dataQuality": {
+          "completenessScore": 0.571429,
+          "missingFields": [
+            "duration",
+            "cost",
+            "operational_status"
+          ],
+          "stale": false
+        }
+      },
+      "ranking": {
+        "score": 0.551083,
+        "reasons": [
+          "repeated_category",
+          "repeated_experience",
+          "same_geographic_cluster"
+        ]
+      },
+      "provenance": {
+        "sourcePlaces": [
+          {
+            "origin": "system",
+            "evidenceType": "verified_retrieval",
+            "sourceUrl": null,
+            "evidence": "Normalized evidence from knowledge_graph",
+            "sourceTimeHint": null,
+            "addressHint": "9 P. Hàng Thùng, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+            "observedAt": null
+          }
+        ],
+        "urlNotes": []
+      },
+      "warnings": [
+        "Chưa xác định được trạng thái hoạt động hiện tại."
+      ]
+    }
+  ],
+  "plannerEligiblePlaceIds": [
+    "travel_place_ChIJF13BXqGrNTERTE3hz8KFDmI",
+    "restaurant_ChIJS_M4qgCrNTERGc0FxMJCqC4",
+    "travel_place_ChIJ_6DVuQ-rNTERk3j-0EANbew",
+    "drink_dessert_ChIJCTV1KjqrNTERpXLX7CVG6BU",
+    "travel_place_ChIJK111AwurNTERB8u6Ap8YDjg",
+    "travel_place_ChIJA9hjcdurNTER__fyEGdqfGM",
+    "travel_place_ChIJG4JimDmpNTERToHe1MmUkfs",
+    "restaurant_ChIJg38KTlirNTERvn1PXHQy3ec",
+    "travel_place_ChIJ_8OSWgCrNTERUjH5ICI4pW8",
+    "drink_dessert_ChIJp9lm3BmrNTERWtaHEiHIxKc",
+    "drink_dessert_ChIJIRzxNQCrNTERjRKXOA_tqkM",
+    "travel_place_ChIJb-sdLqCrNTER0UkLBD-JnZQ",
+    "travel_place_ChIJW_RP8-yrNTERXij01LScXB8",
+    "restaurant_ChIJzY42CD-rNTERL2xDAKm6kdY",
+    "drink_dessert_ChIJX-BpQu2qNTERTwHCd4hPbag",
+    "travel_place_ChIJxwnWy6usNTERS_TY4hfsH2s",
+    "travel_place_ChIJp4s0qe6rNTER9xX9MObmmnM",
+    "travel_place_ChIJAcpzbwCrNTERSsISiGsRwDQ",
+    "drink_dessert_ChIJ67gYq6atNTER6Fq5FZGso_s",
+    "travel_place_ChIJq-0MSB6rNTERxDzcifkHmTw",
+    "travel_place_ChIJ28hXpDqrNTERKIuEQpbXnFw",
+    "travel_place_ChIJr7enHa-rNTERbivpCTqoenY",
+    "travel_place_dessert_ChIJU5KfV_kLNTERyU1rGZKjPco",
+    "drink_dessert_ChIJA6RWK7-rNTERFE9ZbT3-60I",
+    "restaurant_ChIJpTR8LB2rNTERaM6Aqju5iIo",
+    "restaurant_ChIJ0xSE-a-rNTERxnSfwSyefxg",
+    "restaurant_ChIJK0HXl0urNTEROaDNOk9AogI",
+    "drink_dessert_ChIJnX7xZ8ZVNDERFktM8pNi9io",
+    "drink_dessert_ChIJM99bjBKrNTERgyymVnRAKwU",
+    "restaurant_ChIJ08DIhCmrNTERomgi_mQ4KaI"
+  ],
+  "resolvedItems": [
+    {
+      "itemIndex": 0,
+      "item": {
+        "name": "bún chả",
+        "itemType": "food",
+        "action": "eat",
+        "relatedPlaceName": null,
+        "evidence": "muốn thử bún chả",
+        "confidence": 0.95
+      },
+      "normalizedRequirement": "bun cha",
+      "status": "resolved",
+      "selected": {
+        "placeId": "restaurant_ChIJffCuEKmrNTERB8DandcfxG4",
+        "name": "Yến Bún Chả",
+        "provider": "knowledge_graph",
+        "providerId": null,
+        "category": "restaurant",
+        "address": "69 P. Nguyễn Thái Học, Văn Miếu - Quốc Tử Giám, Hà Nội, Vietnam",
+        "coordinates": {
+          "latitude": 21.029465,
+          "longitude": 105.839714
+        },
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Bún chả",
+          "item:Trà"
+        ],
+        "costTier": "low",
+        "childrenSuitable": null,
+        "infantsSuitable": null,
+        "minimumDurationMinutes": null,
+        "typicalDurationMinutes": null,
+        "maximumDurationMinutes": null,
+        "anchorDistanceKm": 0.978,
+        "proximityStatus": "nearby",
+        "score": 0.856472,
+        "rejectionReasons": []
+      },
+      "alternatives": [
+        {
+          "placeId": "restaurant_ChIJYyFcW36rNTER85reKPxt6dM",
+          "name": "The Hanoian - 5 Trần Phú",
+          "provider": "knowledge_graph",
+          "providerId": null,
+          "category": "restaurant",
+          "address": "5 Trần Phú, Phường, Hoàn Kiếm, Hà Nội 10000, Vietnam",
+          "coordinates": {
+            "latitude": 21.029976,
+            "longitude": 105.843583
+          },
+          "tags": [
+            "restaurant",
+            "experience:Dùng bữa",
+            "item:Bánh tôm",
+            "item:Bánh xèo",
+            "item:Bún chả",
+            "item:Chả giò",
+            "item:Nấm"
+          ],
+          "costTier": "unknown",
+          "childrenSuitable": null,
+          "infantsSuitable": null,
+          "minimumDurationMinutes": null,
+          "typicalDurationMinutes": null,
+          "maximumDurationMinutes": null,
+          "anchorDistanceKm": 1.204,
+          "proximityStatus": "nearby",
+          "score": 0.842895,
+          "rejectionReasons": []
+        },
+        {
+          "placeId": "restaurant_ChIJA4UzWfKrNTERKcg8I2A-Gew",
+          "name": "Quán Bún Chả Gia Truyền34 _ Nước Ép Sinh Tố Bé Mập",
+          "provider": "knowledge_graph",
+          "providerId": null,
+          "category": "restaurant",
+          "address": "34A P. Phạm Hồng Thái, Ba Đình, Hà Nội 000084, Vietnam",
+          "coordinates": {
+            "latitude": 21.043867,
+            "longitude": 105.844539
+          },
+          "tags": [
+            "restaurant",
+            "experience:Dùng bữa",
+            "item:Bún chả",
+            "item:Cà phê",
+            "item:Chả giò",
+            "item:Nước trái cây",
+            "item:Sinh tố",
+            "item:Trà"
+          ],
+          "costTier": "low",
+          "childrenSuitable": null,
+          "infantsSuitable": null,
+          "minimumDurationMinutes": null,
+          "typicalDurationMinutes": null,
+          "maximumDurationMinutes": null,
+          "anchorDistanceKm": 1.285,
+          "proximityStatus": "nearby",
+          "score": 0.842895,
+          "rejectionReasons": []
+        },
+        {
+          "placeId": "restaurant_ChIJn7UAJkerNTERen9bKcHBA3c",
+          "name": "Hanoi-Oi Kitchen",
+          "provider": "knowledge_graph",
+          "providerId": null,
+          "category": "restaurant",
+          "address": "38 P. Bát Đàn, phường, Hoàn Kiếm, Hà Nội 100000, Vietnam",
+          "coordinates": {
+            "latitude": 21.03372,
+            "longitude": 105.846706
+          },
+          "tags": [
+            "restaurant",
+            "experience:Dùng bữa",
+            "item:Bún chả",
+            "item:Chả giò"
+          ],
+          "costTier": "medium",
+          "childrenSuitable": null,
+          "infantsSuitable": null,
+          "minimumDurationMinutes": null,
+          "typicalDurationMinutes": null,
+          "maximumDurationMinutes": null,
+          "anchorDistanceKm": 1.298,
+          "proximityStatus": "nearby",
+          "score": 0.842895,
+          "rejectionReasons": []
+        },
+        {
+          "placeId": "restaurant_ChIJo3DjLwBTNDERLG5GgF9WhQ0",
+          "name": "Bún chả 27",
+          "provider": "knowledge_graph",
+          "providerId": null,
+          "category": "restaurant",
+          "address": "8 Ng. 20 Phố Văn Phú, Khu đô thị Văn Phú, Kiến Hưng, Hà Nội, Vietnam",
+          "coordinates": {
+            "latitude": 20.962747,
+            "longitude": 105.767996
+          },
+          "tags": [
+            "restaurant",
+            "experience:Dùng bữa",
+            "experience:Uống trà",
+            "item:Bún chả",
+            "item:Chả giò"
+          ],
+          "costTier": "low",
+          "childrenSuitable": null,
+          "infantsSuitable": null,
+          "minimumDurationMinutes": null,
+          "typicalDurationMinutes": null,
+          "maximumDurationMinutes": null,
+          "anchorDistanceKm": 10.765,
+          "proximityStatus": "far",
+          "score": 0.872485,
+          "rejectionReasons": []
+        }
+      ],
+      "confidence": 0.813648,
+      "selectionReason": "context_and_proximity_reranked_requirement_match",
+      "evidence": "muốn thử bún chả",
+      "specialExperience": null,
+      "providerAttempts": [
+        {
+          "provider": "knowledge_graph",
+          "outcome": "candidates",
+          "queries": [
+            "bún chả"
+          ],
+          "candidateCount": 50,
+          "durationMs": 197,
+          "errorCode": null
+        }
+      ],
+      "warnings": []
+    }
+  ],
+  "specialExperiences": [],
+  "budgetAnalysis": {
+    "mode": "relative_level",
+    "status": "at_risk",
+    "targetAmount": null,
+    "currency": "VND",
+    "mandatory": {
+      "placeCount": 1,
+      "knownAmountCount": 1,
+      "unknownAmountCount": 0,
+      "amountRange": {
+        "minimum": "0.0",
+        "typical": "0.0",
+        "maximum": "0.0",
+        "currency": "VND",
+        "complete": true
+      },
+      "tierDistribution": {
+        "free": 1,
+        "low": 0,
+        "medium": 0,
+        "high": 0,
+        "premium": 0,
+        "unknown": 0
+      }
+    },
+    "optional": {
+      "placeCount": 30,
+      "knownAmountCount": 26,
+      "unknownAmountCount": 4,
+      "amountRange": {
+        "minimum": "1280008.0",
+        "typical": "2230004.0",
+        "maximum": "3180000.0",
+        "currency": "VND",
+        "complete": false
+      },
+      "tierDistribution": {
+        "free": 7,
+        "low": 13,
+        "medium": 5,
+        "high": 2,
+        "premium": 0,
+        "unknown": 3
+      }
+    },
+    "total": {
+      "placeCount": 31,
+      "knownAmountCount": 27,
+      "unknownAmountCount": 4,
+      "amountRange": {
+        "minimum": "1280008.0",
+        "typical": "2230004.0",
+        "maximum": "3180000.0",
+        "currency": "VND",
+        "complete": false
+      },
+      "tierDistribution": {
+        "free": 8,
+        "low": 13,
+        "medium": 5,
+        "high": 2,
+        "premium": 0,
+        "unknown": 3
+      }
+    },
+    "warnings": [
+      "4 place(s) chưa đủ amount/currency."
+    ]
+  },
+  "capacityAnalysis": {
+    "status": "overloaded",
+    "availableMinutes": {
+      "minimumMinutes": 1080,
+      "typicalMinutes": 1440,
+      "maximumMinutes": 1800
+    },
+    "mandatory": {
+      "placeCount": 1,
+      "knownDurationCount": 1,
+      "unknownDurationCount": 0,
+      "minimumMinutes": 60,
+      "typicalMinutes": 90,
+      "maximumMinutes": 120
+    },
+    "preferred": {
+      "placeCount": 1,
+      "knownDurationCount": 0,
+      "unknownDurationCount": 1,
+      "minimumMinutes": 0,
+      "typicalMinutes": 0,
+      "maximumMinutes": 0
+    },
+    "optional": {
+      "placeCount": 29,
+      "knownDurationCount": 13,
+      "unknownDurationCount": 16,
+      "minimumMinutes": 870,
+      "typicalMinutes": 1260,
+      "maximumMinutes": 1650
+    },
+    "total": {
+      "placeCount": 31,
+      "knownDurationCount": 14,
+      "unknownDurationCount": 17,
+      "minimumMinutes": 930,
+      "typicalMinutes": 1350,
+      "maximumMinutes": 1770
+    },
+    "geographicOverhead": {
+      "knownCoordinateCount": 31,
+      "unknownCoordinateCount": 0,
+      "spread": "moderate",
+      "radiusKm": 7.315,
+      "estimatedMinutes": 900
+    },
+    "typicalUtilization": 1.5625,
+    "warnings": [
+      "17 place(s) chưa có typical duration."
+    ]
+  },
+  "coverageAnalysis": {
+    "level": "sufficient",
+    "plannerEligiblePlaceCount": 30,
+    "mandatoryPlaceCount": 1,
+    "categoryDistribution": {
+      "travel place": 15,
+      "restaurant": 7,
+      "drink dessert": 8
+    },
+    "resolvedItemCount": 1,
+    "unresolvedItemCount": 0,
+    "foodCovered": true,
+    "experienceCovered": true,
+    "timeHints": []
+  },
+  "geographicAnalysis": {
+    "knownCoordinateCount": 31,
+    "unknownCoordinateCount": 0,
+    "spread": "moderate",
+    "radiusKm": 7.315,
+    "coarseOverheadMinutes": 900
+  },
+  "gapAnalysis": {
+    "gaps": [
+      {
+        "gapId": "gap:trip_capacity",
+        "gapType": "trip_capacity",
+        "severity": "critical",
+        "status": "open",
+        "trigger": "Capacity status là overloaded.",
+        "suggestedAction": "Giữ mandatory place và yêu cầu Planner xử lý overload.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:budget",
+        "gapType": "budget",
+        "severity": "high",
+        "status": "open",
+        "trigger": "Budget status là at_risk.",
+        "suggestedAction": "Xác minh unknown cost hoặc ưu tiên optional place cost thấp.",
+        "relatedPlaceIds": [],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      },
+      {
+        "gapId": "gap:data_quality",
+        "gapType": "data_quality",
+        "severity": "high",
+        "status": "open",
+        "trigger": "Một hoặc nhiều place thiếu cost/opening/duration/freshness data.",
+        "suggestedAction": "Enrich các field cần thiết trước final planning.",
+        "relatedPlaceIds": [
+          "travel_place_ChIJF13BXqGrNTERTE3hz8KFDmI",
+          "restaurant_ChIJS_M4qgCrNTERGc0FxMJCqC4",
+          "travel_place_ChIJ_6DVuQ-rNTERk3j-0EANbew",
+          "drink_dessert_ChIJCTV1KjqrNTERpXLX7CVG6BU",
+          "travel_place_ChIJK111AwurNTERB8u6Ap8YDjg",
+          "travel_place_ChIJA9hjcdurNTER__fyEGdqfGM",
+          "travel_place_ChIJG4JimDmpNTERToHe1MmUkfs",
+          "restaurant_ChIJg38KTlirNTERvn1PXHQy3ec",
+          "travel_place_ChIJ_8OSWgCrNTERUjH5ICI4pW8",
+          "drink_dessert_ChIJp9lm3BmrNTERWtaHEiHIxKc",
+          "drink_dessert_ChIJIRzxNQCrNTERjRKXOA_tqkM",
+          "travel_place_ChIJb-sdLqCrNTER0UkLBD-JnZQ",
+          "travel_place_ChIJW_RP8-yrNTERXij01LScXB8",
+          "restaurant_ChIJzY42CD-rNTERL2xDAKm6kdY",
+          "drink_dessert_ChIJX-BpQu2qNTERTwHCd4hPbag",
+          "travel_place_ChIJxwnWy6usNTERS_TY4hfsH2s",
+          "travel_place_ChIJp4s0qe6rNTER9xX9MObmmnM",
+          "travel_place_ChIJAcpzbwCrNTERSsISiGsRwDQ",
+          "drink_dessert_ChIJ67gYq6atNTER6Fq5FZGso_s",
+          "travel_place_ChIJq-0MSB6rNTERxDzcifkHmTw",
+          "travel_place_ChIJ28hXpDqrNTERKIuEQpbXnFw",
+          "travel_place_ChIJr7enHa-rNTERbivpCTqoenY",
+          "travel_place_dessert_ChIJU5KfV_kLNTERyU1rGZKjPco",
+          "drink_dessert_ChIJA6RWK7-rNTERFE9ZbT3-60I",
+          "restaurant_ChIJpTR8LB2rNTERaM6Aqju5iIo",
+          "restaurant_ChIJ0xSE-a-rNTERxnSfwSyefxg",
+          "restaurant_ChIJK0HXl0urNTEROaDNOk9AogI",
+          "drink_dessert_ChIJnX7xZ8ZVNDERFktM8pNi9io",
+          "drink_dessert_ChIJM99bjBKrNTERgyymVnRAKwU",
+          "restaurant_ChIJ08DIhCmrNTERomgi_mQ4KaI"
+        ],
+        "relatedItemIndexes": [],
+        "resolvedPlaceIds": []
+      }
+    ],
+    "openCount": 3,
+    "criticalCount": 1
+  },
+  "unresolvedEntities": [
+    {
+      "entityType": "place",
+      "inputIndex": 1,
+      "inputName": "Templ of Litereture",
+      "reason": "identity_not_resolved",
+      "mandatory": false
+    }
+  ],
+  "plannerConstraints": [
+    {
+      "code": "estimate_duration",
+      "message": "Cần ước lượng duration trước khi xếp timeline."
+    },
+    {
+      "code": "verify_cost_profile",
+      "message": "Xác minh cost profile trước khi chốt ngân sách."
+    }
+  ],
+  "warnings": [
+    "Chưa xác định được trạng thái hoạt động hiện tại.",
+    "Không tìm thấy identity đủ tin cậy trong đúng ADM.",
+    "Địa điểm chưa có canonical identity đủ tin cậy.",
+    "Địa điểm chưa có tọa độ hợp lệ."
+  ],
+  "metadata": {
+    "requestId": "quality-eval:02_noisy_duplicate_and_typo",
+    "correlationId": "quality-eval:02_noisy_duplicate_and_typo",
+    "placeCheckerVersion": "place_checker.v1",
+    "generatedAt": "2026-08-11T21:44:06.914195Z",
+    "durationMs": 1874,
+    "phaseDurationMs": {
+      "trip_context": 4,
+      "identity_resolution": 557,
+      "evidence_and_items": 221,
+      "evaluation_and_analysis": 0,
+      "retrieval_and_ranking": 1092
+    },
+    "toolCalls": {
+      "admResolver": 1,
+      "searchPlacesNamed": 3,
+      "searchPlacesRequirement": 1,
+      "retrievalSearch": 8,
+      "externalSearch": 0,
+      "metadataRepository": 1
+    },
+    "partial": false,
+    "sampleData": false
+  }
+}

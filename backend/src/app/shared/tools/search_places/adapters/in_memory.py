@@ -28,6 +28,7 @@ class InMemoryPlaceSearch:
         input_adm: AdministrativeArea,
         place_type_hint: str | None,
         limit: int,
+        anchor_place_id: str | None = None,
     ) -> list[PlaceProviderCandidate]:
         self.calls.append(lookup_names)
         if self.error is not None:
@@ -48,4 +49,3 @@ class InMemoryPlaceSearch:
             ),
         )
         return ranked[:limit]
-

@@ -2,15 +2,24 @@ from langgraph.graph import END, START, StateGraph
 
 from app.orchestration.nodes import RootNodes
 from app.orchestration.root_state import RootState
-from app.orchestration.routes import route_after_explorer, route_supervisor
+from app.orchestration.routes import (
+    route_after_explorer,
+    route_after_place_checker,
+    route_supervisor,
+)
 from app.shared.persistence import create_checkpointer
 
 
 def create_root_graph(
     *, checkpointer=None, information_finder_service=None, supervisor_service=None,
-    explorer_service=None,
+    explorer_service=None, place_checker_pipeline=None,
 ):
-    nodes = RootNodes(information_finder_service, supervisor_service, explorer_service)
+    nodes = RootNodes(
+        information_finder_service,
+        supervisor_service,
+        explorer_service,
+        place_checker_pipeline,
+    )
     builder = StateGraph(RootState)
 
     builder.add_node("supervisor", nodes.run_supervisor)
@@ -37,7 +46,11 @@ def create_root_graph(
         route_after_explorer,
         {"place_checker": "place_checker", "finish": "finish"},
     )
-    builder.add_edge("place_checker", "itinerary_planner")
+    builder.add_conditional_edges(
+        "place_checker",
+        route_after_place_checker,
+        {"itinerary_planner": "itinerary_planner", "finish": "finish"},
+    )
     builder.add_edge("itinerary_planner", "finish")
     builder.add_edge("information_finder", "finish")
     builder.add_edge("plan_editor", "finish")
