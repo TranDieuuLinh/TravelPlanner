@@ -83,7 +83,6 @@ def create_explorer_service(
     )
     youtube = YtDlpMetadataSourceExtractor(metadata_client, platform="YouTube")
     website = WebsiteSourceExtractor(
-        timeout_seconds=url_timeout_seconds,
         impersonated_fetcher=CurlCffiWebsiteFetcher(
             timeout_seconds=url_timeout_seconds
         ),

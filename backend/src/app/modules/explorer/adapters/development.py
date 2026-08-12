@@ -36,6 +36,10 @@ _PEOPLE = re.compile(
     r"\b(?P<count>\d{1,3})\s*(?:người|adults?|people|persons?)\b",
     re.IGNORECASE,
 )
+_PER_PERSON = re.compile(
+    r"(?:/\s*(?:người|person)|mỗi\s+(?:người|person)|per\s+person)",
+    re.IGNORECASE,
+)
 _AMOUNT = re.compile(
     r"(?P<amount>\d+(?:[.,]\d+)?)\s*(?P<unit>triệu|trieu|million|k|nghìn|nghin)?"
     r"\s*(?P<currency>vnd|đ|usd|\$)?",
@@ -254,7 +258,13 @@ class RuleBasedExplorerDraftGenerator:
             amount = round(value * multiplier)
             currency = "USD" if (match.group("currency") or "").casefold() in {"usd", "$"} else "VND"
             break
-        return ExplorerBudget(level=level, targetAmount=amount, currency=currency, source="raw_prompt" if amount is not None or level == "low" else "default")
+        return ExplorerBudget(
+            level=level,
+            targetAmount=amount,
+            currency=currency,
+            source="raw_prompt" if amount is not None or level == "low" else "default",
+            basis="per_person" if _PER_PERSON.search(prompt) else "group_total",
+        )
 
     @staticmethod
     def _prompt_people(prompt: str) -> ExplorerPeople:

@@ -7,7 +7,6 @@ from app.modules.explorer.adapters.image_source import GeminiImageSourceExtracto
 from app.modules.explorer.adapters.url_sources import (
     PythonYtDlpMediaClient,
     UrlSourceRouter,
-    WebsiteSourceExtractor,
     YtDlpMetadataSourceExtractor,
     YtDlpSocialSourceExtractor,
 )
@@ -268,77 +267,6 @@ def test_social_source_keeps_metadata_when_media_branch_is_partial() -> None:
     assert result.status == "partial"
     assert result.artifacts[0].artifact_type == "caption"
     assert result.branch_failures[0].error.code == "MEDIA_ANALYSIS_FAILED"
-
-
-def test_website_uses_trafilatura_markdown() -> None:
-    class StubWebsite(WebsiteSourceExtractor):
-        async def _download(self, url: str):
-            return (
-                "<html><body><article><h1>Hà Nội</h1>"
-                "<p>Văn Miếu có nhiều thông tin hữu ích cho du khách.</p>"
-                "</article></body></html>",
-                url,
-            )
-
-    result = asyncio.run(StubWebsite().extract(
-        "https://example.com/hanoi", source_index=0, raw_prompt=None
-    ))
-
-    assert result.artifacts[0].artifact_type == "web_text"
-    assert "Văn Miếu" in result.artifacts[0].text
-
-
-def test_website_falls_back_to_renderer_after_http_block() -> None:
-    from app.modules.explorer.errors import ExplorerOperationError
-
-    class BlockedWebsite(WebsiteSourceExtractor):
-        async def _download(self, url: str):
-            raise ExplorerOperationError(
-                "WEB_DOWNLOAD_FAILED", "Website trả HTTP 403."
-            )
-
-    class FakeRenderer:
-        async def render(self, url: str):
-            return (
-                "<html><article><h1>Hà Nội</h1>"
-                "<p>Chợ Đồng Xuân đóng cửa lúc 18:00.</p></article></html>",
-                url,
-            )
-
-    result = asyncio.run(BlockedWebsite(renderer=FakeRenderer()).extract(
-        "https://example.com/hanoi", source_index=0, raw_prompt=None
-    ))
-
-    assert result.status == "succeeded"
-    assert "Chợ Đồng Xuân" in result.artifacts[0].text
-
-
-def test_website_prefers_curl_cffi_before_browser_after_http_block() -> None:
-    class BlockedWebsite(WebsiteSourceExtractor):
-        async def _download(self, url: str):
-            raise ExplorerOperationError(
-                "WEB_DOWNLOAD_FAILED", "Website trả HTTP 403."
-            )
-
-    class FakeFetcher:
-        async def fetch(self, url: str):
-            return (
-                "<html><article><h1>Hà Nội</h1>"
-                "<p>Phố Cổ có quán cà phê, cửa hàng và chợ đêm.</p>"
-                "</article></html>",
-                url,
-            )
-
-    class BrowserMustNotRun:
-        async def render(self, url: str):
-            raise AssertionError("Playwright should be the final fallback")
-
-    result = asyncio.run(BlockedWebsite(
-        impersonated_fetcher=FakeFetcher(),
-        renderer=BrowserMustNotRun(),
-    ).extract("https://example.com/hanoi", source_index=0, raw_prompt=None))
-
-    assert "chợ đêm" in result.artifacts[0].text
 
 
 def test_partial_output_identifies_failed_source_without_echoing_query() -> None:

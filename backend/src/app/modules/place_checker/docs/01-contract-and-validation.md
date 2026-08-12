@@ -39,7 +39,9 @@ không bị hỏng.
 - `observedAt` nếu có phải parse được thành datetime hợp lệ.
 - `relatedPlaceName` là liên kết mềm từ item tới place đã được Explorer nhận diện.
 - Số people không âm và tổng people phải lớn hơn 0.
-- `target_amount` nếu có phải không âm và phải có currency.
+- `target_amount` nếu có phải không âm và phải có currency; `basis` nhận
+  `per_person` hoặc `group_total`. Explorer chuyển group total về per-person
+  trước handoff, còn default `per_person` giữ tương thích input cũ.
 - Preference và avoid array rỗng là hợp lệ.
 
 Candidate malformed nên trở thành candidate-level validation issue nếu có thể

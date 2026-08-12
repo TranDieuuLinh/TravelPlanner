@@ -7,7 +7,7 @@ from app.modules.explorer.errors import ExplorerOperationError
 
 
 class CurlCffiWebsiteFetcher:
-    """Safari-impersonated HTTP fallback with bounded redirects and SSRF checks."""
+    """Primary Safari-impersonated fetcher with bounded redirects and SSRF checks."""
 
     def __init__(
         self, *, timeout_seconds: float = 30, max_bytes: int = 5_000_000

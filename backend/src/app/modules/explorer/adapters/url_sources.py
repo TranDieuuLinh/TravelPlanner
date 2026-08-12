@@ -1,13 +1,10 @@
 import asyncio
-import ipaddress
-import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
-import httpx
 import trafilatura
 
 from app.modules.explorer.errors import ExplorerOperationError
@@ -210,28 +207,32 @@ class WebsiteSourceExtractor:
     def __init__(
         self,
         *,
-        timeout_seconds: float = 20,
-        max_bytes: int = 5_000_000,
         impersonated_fetcher: WebsiteFetcher | None = None,
         renderer: WebsiteRenderer | None = None,
     ) -> None:
-        self.timeout_seconds = timeout_seconds
-        self.max_bytes = max_bytes
         self.impersonated_fetcher = impersonated_fetcher
         self.renderer = renderer
 
     async def extract(self, url: str, *, source_index: int, raw_prompt: str | None):
+        rendered = False
         try:
             html, final_url = await self._download(url)
         except ExplorerOperationError as exc:
             if exc.code not in {
-                "WEB_DOWNLOAD_FAILED", "WEB_REDIRECT_LIMIT"
+                "WEB_IMPERSONATED_DOWNLOAD_FAILED", "WEB_REDIRECT_LIMIT"
             }:
                 raise
-            html, final_url = await self._fallback_download(url, exc)
+            html, final_url = await self._render(url, exc)
+            rendered = True
         markdown = await self._markdown(html, final_url)
-        if (not markdown or not markdown.strip()) and self.renderer is not None:
-            html, final_url = await self.renderer.render(url)
+        if (not markdown or not markdown.strip()) and not rendered:
+            html, final_url = await self._render(
+                url,
+                ExplorerOperationError(
+                    "WEB_TEXT_EMPTY",
+                    "Website không có nội dung chính để trích xuất.",
+                ),
+            )
             markdown = await self._markdown(html, final_url)
         if not markdown or not markdown.strip():
             raise ExplorerOperationError(
@@ -246,15 +247,9 @@ class WebsiteSourceExtractor:
             status="succeeded", artifacts=[artifact],
         )
 
-    async def _fallback_download(
+    async def _render(
         self, url: str, original_error: ExplorerOperationError
     ) -> tuple[str, str]:
-        if self.impersonated_fetcher is not None:
-            try:
-                return await self.impersonated_fetcher.fetch(url)
-            except ExplorerOperationError:
-                if self.renderer is None:
-                    raise
         if self.renderer is not None:
             return await self.renderer.render(url)
         raise original_error
@@ -272,73 +267,12 @@ class WebsiteSourceExtractor:
         )
 
     async def _download(self, url: str) -> tuple[str, str]:
-        current = url
-        async with httpx.AsyncClient(
-            timeout=self.timeout_seconds,
-            headers={
-                "user-agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/126.0.0.0 Safari/537.36"
-                ),
-                "accept": (
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                    "image/avif,image/webp,*/*;q=0.8"
-                ),
-                "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-            },
-            follow_redirects=False,
-        ) as client:
-            for _ in range(4):
-                await self._validate_public_url(current)
-                try:
-                    response = await client.get(current)
-                except httpx.HTTPError as exc:
-                    raise ExplorerOperationError(
-                        "WEB_DOWNLOAD_FAILED", "Không tải được website.", retryable=True
-                    ) from exc
-                if response.is_redirect:
-                    location = response.headers.get("location")
-                    if not location:
-                        break
-                    current = urljoin(current, location)
-                    continue
-                if response.status_code >= 400:
-                    raise ExplorerOperationError(
-                        "WEB_DOWNLOAD_FAILED",
-                        f"Website trả HTTP {response.status_code}.",
-                        retryable=response.status_code >= 500,
-                    )
-                content_type = response.headers.get("content-type", "")
-                if "html" not in content_type:
-                    raise ExplorerOperationError(
-                        "WEB_CONTENT_UNSUPPORTED", "URL không trả nội dung HTML."
-                    )
-                if len(response.content) > self.max_bytes:
-                    raise ExplorerOperationError(
-                        "WEB_CONTENT_TOO_LARGE", "Website vượt giới hạn tải."
-                    )
-                return response.text, str(response.url)
-        raise ExplorerOperationError("WEB_REDIRECT_LIMIT", "Website redirect quá nhiều lần.")
-
-    @staticmethod
-    async def _validate_public_url(url: str) -> None:
-        parsed = urlparse(url)
-        host = parsed.hostname
-        if parsed.scheme not in {"http", "https"} or not host:
-            raise ExplorerOperationError("UNSUPPORTED_URL", "Website URL không hợp lệ.")
-        try:
-            records = await asyncio.to_thread(socket.getaddrinfo, host, None)
-        except socket.gaierror as exc:
+        if self.impersonated_fetcher is None:
             raise ExplorerOperationError(
-                "WEB_DNS_FAILED", "Không phân giải được website.", retryable=True
-            ) from exc
-        for record in records:
-            address = ipaddress.ip_address(record[4][0])
-            if not address.is_global:
-                raise ExplorerOperationError(
-                    "WEB_PRIVATE_ADDRESS", "Website trỏ đến địa chỉ nội bộ bị chặn."
-                )
+                "WEB_FETCHER_UNAVAILABLE",
+                "curl-cffi website fetcher chưa được cấu hình.",
+            )
+        return await self.impersonated_fetcher.fetch(url)
 
 
 class UrlSourceRouter:
