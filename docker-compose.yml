@@ -1,3 +1,5 @@
+name: TrungLinhLoi-Travel
+
 services:
   postgres:
     # Existing development volumes may still contain the experimental
