@@ -81,6 +81,8 @@ export default function KnowledgeGraphPage() {
   const [selectedEntity, setSelectedEntity] = useState<KGEntityDetail | null>(null);
   const [showOutgoingRelations, setShowOutgoingRelations] = useState(true);
   const [showIncomingRelations, setShowIncomingRelations] = useState(true);
+  const [hiddenGraphNodeIds, setHiddenGraphNodeIds] = useState<Set<string>>(new Set());
+  const [hiddenGraphLinkIds, setHiddenGraphLinkIds] = useState<Set<number>>(new Set());
   const [entityToDelete, setEntityToDelete] = useState<KGEntityDetail | null>(null);
   const [deletingEntity, setDeletingEntity] = useState(false);
   const [lowReviewEntityCount, setLowReviewEntityCount] = useState<number | null>(null);
@@ -386,6 +388,8 @@ export default function KnowledgeGraphPage() {
   useEffect(() => {
     setShowOutgoingRelations(true);
     setShowIncomingRelations(true);
+    setHiddenGraphNodeIds(new Set());
+    setHiddenGraphLinkIds(new Set());
   }, [selectedEntity?.id]);
 
   // Handle entity selection
@@ -961,6 +965,29 @@ export default function KnowledgeGraphPage() {
                   onJumpToEntity={handleJumpToEntity}
                   showOutgoing={showOutgoingRelations}
                   showIncoming={showIncomingRelations}
+                  hiddenNodeIds={hiddenGraphNodeIds}
+                  hiddenLinkIds={hiddenGraphLinkIds}
+                  onHideNode={(nodeId) => setHiddenGraphNodeIds((current) => new Set(current).add(nodeId))}
+                  onHideRelationship={(relationshipId, nodeIds) => {
+                    setHiddenGraphLinkIds((current) => new Set(current).add(relationshipId));
+                    setHiddenGraphNodeIds((current) => new Set([...current, ...nodeIds]));
+                  }}
+                  onShowRelationshipType={(_relationshipType, relationshipIds, nodeIds) => {
+                    setHiddenGraphLinkIds((current) => {
+                      const next = new Set(current);
+                      relationshipIds.forEach((id) => next.delete(id));
+                      return next;
+                    });
+                    setHiddenGraphNodeIds((current) => {
+                      const next = new Set(current);
+                      nodeIds.forEach((id) => next.delete(id));
+                      return next;
+                    });
+                  }}
+                  onResetVisibility={() => {
+                    setHiddenGraphNodeIds(new Set());
+                    setHiddenGraphLinkIds(new Set());
+                  }}
                 />
               </section>
             ) : (

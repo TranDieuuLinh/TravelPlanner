@@ -21,6 +21,7 @@ from app.modules.knowledge_graph.contract import (
     EntityListPage,
     EntitySummary,
     EntityUpdate,
+    KGSearchStats,
     KGStats,
     LowReviewResponse,
     PropertyDetail,
@@ -54,6 +55,18 @@ def handle(error: KnowledgeGraphError) -> None:
 @router.get("/stats", response_model=KGStats)
 async def stats(_: Annotated[object, Depends(require_admin)], service: Annotated[KnowledgeGraphService, Depends(get_service)]) -> KGStats:
     return KGStats.model_validate(await service.stats())
+
+
+@router.get("/search-stats", response_model=KGSearchStats)
+async def search_stats(
+    query: str = Query(..., min_length=1, max_length=200),
+    _: Annotated[object, Depends(require_admin)] = None,
+    service: Annotated[KnowledgeGraphService, Depends(get_service)] = None,
+) -> KGSearchStats:
+    normalized_query = query.strip()
+    if not normalized_query:
+        raise HTTPException(status_code=422, detail="Query must not be blank.")
+    return KGSearchStats.model_validate(await service.search_stats(normalized_query))
 
 
 @router.get("/ontology")

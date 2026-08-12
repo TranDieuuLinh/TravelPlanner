@@ -16,6 +16,8 @@ import {
   updateKGEntity,
   updateKGProperty,
   updateKGRelationship,
+  listKGEntities,
+  type KGEntitySummary,
 } from "../../features/knowledge-graph/lib";
 import {
   InspectorSection,
@@ -45,6 +47,112 @@ type EditableRelationshipRow = {
   relationship: string;
   toEntityId: string;
 };
+
+type RelationshipSearchFilter = {
+  name?: string;
+  relationship?: string;
+  from?: string;
+  to?: string;
+  id?: string;
+};
+
+function parseRelationshipSearch(value: string): RelationshipSearchFilter | null {
+  const query = value.trim();
+  if (!query) return {};
+  try {
+    const parsed: unknown = JSON.parse(query);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const filter: RelationshipSearchFilter = {};
+    for (const key of ["name", "relationship", "from", "to", "id"] as const) {
+      const field = (parsed as Record<string, unknown>)[key];
+      if (typeof field === "string" && field.trim()) filter[key] = field.trim();
+    }
+    return filter;
+  } catch {
+    return null;
+  }
+}
+
+function NodeFilterSelect({
+  value,
+  currentIds,
+  options,
+  labels,
+  onSearch,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  currentIds: string[];
+  options: KGEntitySummary[];
+  labels: Record<string, string>;
+  onSearch: (query: string) => void;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredCurrentIds = currentIds.filter((id) => id.toLocaleLowerCase().includes(normalizedQuery));
+  const filteredOptions = options.filter((option) =>
+    `${option.canonicalName} ${option.id}`.toLocaleLowerCase().includes(normalizedQuery)
+  );
+
+  return (
+    <div className="kgNodeFilterSelect">
+      <button
+        type="button"
+        className="kgNodeFilterTrigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-label="Select to entity"
+        aria-expanded={open}
+        disabled={disabled}
+      >
+        <span>{(value && labels[value]) || value || "Chọn node đích..."}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="kgNodeFilterMenu">
+          <input
+            autoFocus
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              onSearch(event.target.value);
+            }}
+            placeholder="Search node..."
+            aria-label="Search nodes"
+          />
+          <div className="kgNodeFilterOptions">
+            <button type="button" onClick={() => { onChange(""); setOpen(false); }}>
+              Clear selection
+            </button>
+            {filteredOptions.map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                onClick={() => { onChange(option.id); setOpen(false); }}
+              >
+                <strong>{option.canonicalName}</strong>
+                <small>{option.id}</small>
+              </button>
+            ))}
+            {filteredCurrentIds.map((id) => (
+              <button type="button" key={`current-${id}`} onClick={() => { onChange(id); setOpen(false); }}>
+                <strong>{labels[id] || id}</strong>
+                {labels[id] && <small>{id}</small>}
+              </button>
+            ))}
+            {filteredOptions.length === 0 && filteredCurrentIds.length === 0 && (
+              <span className="kgNodeFilterEmpty">Không tìm thấy node</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const ENTITY_ID_PREFIXES: Record<string, string> = {
   ADM0: "adm0",
@@ -107,6 +215,11 @@ export function EditableEntityDetailPanel({
   const [aliasRows, setAliasRows] = useState<EditableAliasRow[]>([]);
   const [propertyRows, setPropertyRows] = useState<EditablePropertyRow[]>([]);
   const [relationshipRows, setRelationshipRows] = useState<EditableRelationshipRow[]>([]);
+  const [hiddenRelationshipTypes, setHiddenRelationshipTypes] = useState<Set<string>>(new Set());
+  const [relationshipSearch, setRelationshipSearch] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [nodeOptions, setNodeOptions] = useState<KGEntitySummary[]>([]);
+  const [nodeLabels, setNodeLabels] = useState<Record<string, string>>({});
   const [localError, setLocalError] = useState("");
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const sections = useCollapsedSections(KG_DEFAULT_COLLAPSED_SECTIONS);
@@ -148,11 +261,109 @@ export function EditableEntityDetailPanel({
         toEntityId: rel.toEntityId,
       }))
     );
+    setHiddenRelationshipTypes(new Set());
     setLocalError("");
     setSavingKey(null);
   }, [entity]);
 
   const isSaving = savingKey !== null;
+  const relationshipNodeIds = Array.from(
+    new Set(
+      relationshipRows
+        .flatMap((row) => [row.fromEntityId.trim(), row.toEntityId.trim()])
+        .filter(Boolean)
+    )
+  );
+
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(relationshipRows.flatMap((row) => [row.fromEntityId, row.toEntityId]).filter(Boolean))
+    );
+    if (ids.length === 0) return;
+    let cancelled = false;
+    const chunks = Array.from({ length: Math.ceil(ids.length / 40) }, (_, index) => ids.slice(index * 40, index * 40 + 40));
+    void Promise.all(chunks.map((chunk) => listKGEntities({ limit: 200, search: chunk.join(",") }))).then((results) => {
+      if (cancelled) return;
+      const labels: Record<string, string> = {};
+      results.flatMap((result) => result.items).forEach((item) => {
+        labels[item.id] = item.canonicalName;
+      });
+      setNodeLabels(labels);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [relationshipRows]);
+  const relationshipTypes = Array.from(
+    new Set(relationshipRows.map((row) => row.relationship).filter(Boolean))
+  ).sort();
+  const parsedRelationshipSearch = parseRelationshipSearch(relationshipSearch);
+  const visibleRelationshipRows = relationshipRows.filter(
+    (row) => {
+      if (row.id !== null && hiddenRelationshipTypes.has(row.relationship)) return false;
+      if (parsedRelationshipSearch === null) return false;
+      if (Object.keys(parsedRelationshipSearch).length === 0) return true;
+      const matches = (value: string | undefined, filter: string | undefined) =>
+        !filter || value?.toLocaleLowerCase().includes(filter.toLocaleLowerCase());
+      const fromName = nodeLabels[row.fromEntityId];
+      const toName = nodeLabels[row.toEntityId];
+      if (!matches(row.relationship, parsedRelationshipSearch.relationship)) return false;
+      if (!matches(row.fromEntityId, parsedRelationshipSearch.from)) return false;
+      if (!matches(row.toEntityId, parsedRelationshipSearch.to)) return false;
+      if (!matches(String(row.id ?? ""), parsedRelationshipSearch.id)) return false;
+      if (
+        parsedRelationshipSearch.name &&
+        !matches(fromName, parsedRelationshipSearch.name) &&
+        !matches(toName, parsedRelationshipSearch.name)
+      ) return false;
+      return true;
+    }
+  );
+  /*
+   * Keep the old free-text behavior out of the JSON filter path. The editor is
+   * intentionally queryable with a predictable object shape, like an Excel
+   * filter with named columns.
+   */
+  const filteredRelationshipRows = relationshipSearch.trim().startsWith("{")
+    ? visibleRelationshipRows
+    : relationshipRows.filter((row) => {
+        if (row.id !== null && hiddenRelationshipTypes.has(row.relationship)) return false;
+        const query = relationshipSearch.trim().toLocaleLowerCase();
+        if (!query) return true;
+        const searchable = [
+          row.relationship,
+          row.fromEntityId,
+        row.toEntityId,
+        nodeLabels[row.fromEntityId],
+        nodeLabels[row.toEntityId],
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLocaleLowerCase();
+        return searchable.includes(query);
+      });
+
+  useEffect(() => {
+    const query = nodeSearch.trim();
+    if (!query) {
+      setNodeOptions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void listKGEntities({ limit: 50, search: query, sortBy: "name", sortDirection: "asc" })
+        .then((result) => {
+          if (!cancelled) setNodeOptions(result.items);
+        })
+        .catch(() => {
+          if (!cancelled) setNodeOptions([]);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [nodeSearch]);
 
   const reportError = useCallback(
     (message: string) => {
@@ -213,7 +424,6 @@ export function EditableEntityDetailPanel({
 
   const addRelationshipRow = useCallback(() => {
     setRelationshipRows((current) => [
-      ...current,
       {
         clientKey: createRowKey(),
         id: null,
@@ -221,6 +431,7 @@ export function EditableEntityDetailPanel({
         relationship: availableRelationshipTypes[0] ?? "",
         toEntityId: "",
       },
+      ...current,
     ]);
   }, [availableRelationshipTypes, createRowKey]);
 
@@ -604,22 +815,71 @@ export function EditableEntityDetailPanel({
           isCollapsed={sections.isCollapsed("relationships")}
           onToggle={() => sections.toggle("relationships")}
           headerExtras={
-            <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addRelationshipRow}>
-              Add relationship
-            </button>
+            <div className="kgRelationshipHeaderActions">
+              <input
+                className="kgRelationshipSearch"
+                type="search"
+                value={relationshipSearch}
+                onChange={(event) => setRelationshipSearch(event.target.value)}
+                placeholder='{"name":"Hà Nội", "relationship":"special_experience"}'
+                aria-label="Search relationships"
+              />
+              <details className="kgRelationshipHideFilter">
+                <summary>Ẩn cạnh</summary>
+                <div className="kgRelationshipHideMenu">
+                  {relationshipTypes.map((relationshipType) => (
+                    <label key={relationshipType}>
+                      <input
+                        type="checkbox"
+                        checked={hiddenRelationshipTypes.has(relationshipType)}
+                        onChange={() =>
+                          setHiddenRelationshipTypes((current) => {
+                            const next = new Set(current);
+                            if (next.has(relationshipType)) next.delete(relationshipType);
+                            else next.add(relationshipType);
+                            return next;
+                          })
+                        }
+                      />
+                      {relationshipType}
+                    </label>
+                  ))}
+                  {hiddenRelationshipTypes.size > 0 && (
+                    <button type="button" onClick={() => setHiddenRelationshipTypes(new Set())}>
+                      Hiện lại tất cả
+                    </button>
+                  )}
+                </div>
+              </details>
+              <button type="button" className="kgSectionEdit" disabled={isSaving} onClick={addRelationshipRow}>
+                Add relationship
+              </button>
+            </div>
           }
         >
-          {relationshipRows.length > 0 ? (
+          {filteredRelationshipRows.length > 0 ? (
             <div className="kgSectionEditList">
-              {relationshipRows.map((row) => (
+              <datalist id="kg-relationship-node-options">
+                {relationshipNodeIds.map((nodeId) => (
+                  <option key={`current-${nodeId}`} value={nodeId} />
+                ))}
+                {nodeOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.canonicalName}
+                  </option>
+                ))}
+              </datalist>
+              {filteredRelationshipRows.map((row) => (
                 <div key={row.clientKey} className="kgRelationshipEditRow">
-                  <input
+                  <NodeFilterSelect
                     value={row.fromEntityId}
-                    onChange={(event) =>
-                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, fromEntityId: event.target.value }))
+                    currentIds={relationshipNodeIds}
+                    options={nodeOptions}
+                    labels={nodeLabels}
+                    onSearch={setNodeSearch}
+                    onChange={(value) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, fromEntityId: value }))
                     }
-                    placeholder="From ID"
-                    aria-label="From entity ID"
                     disabled={isSaving}
                   />
                   <select
@@ -640,13 +900,15 @@ export function EditableEntityDetailPanel({
                       <option value={row.relationship}>{row.relationship}</option>
                     )}
                   </select>
-                  <input
+                  <NodeFilterSelect
                     value={row.toEntityId}
-                    onChange={(event) =>
-                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, toEntityId: event.target.value }))
+                    currentIds={relationshipNodeIds}
+                    options={nodeOptions}
+                    labels={nodeLabels}
+                    onSearch={setNodeSearch}
+                    onChange={(value) =>
+                      updateRelationshipRow(row.clientKey, (current) => ({ ...current, toEntityId: value }))
                     }
-                    placeholder="To ID"
-                    aria-label="To entity ID"
                     disabled={isSaving}
                   />
                   <button
@@ -680,7 +942,7 @@ export function EditableEntityDetailPanel({
           ) : (
             <div className="kgInspectorEmpty kgInspectorEmptyCompact">
               <span>◇</span>
-              <b>No relationships</b>
+              <b>Relationships đang bị ẩn theo filter</b>
             </div>
           )}
         </InspectorSection>

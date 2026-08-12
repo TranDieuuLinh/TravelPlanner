@@ -6,6 +6,15 @@ export type KGStats = {
   relationshipCount: number;
 };
 
+export type KGSearchStats = {
+  query: string;
+  entityCount: number;
+  aliasCount: number;
+  propertyCount: number;
+  relationshipCount: number;
+  totalCount: number;
+};
+
 export type KGEntitySummary = {
   id: string;
   canonicalName: string;
@@ -135,6 +144,10 @@ export type KGLowReviewEntityResponse = {
 
 export function getKGStats(): Promise<KGStats> {
   return apiRequest("/admin/knowledge-graph/stats");
+}
+
+export function getKGSearchStats(query: string): Promise<KGSearchStats> {
+  return apiRequest(`/admin/knowledge-graph/search-stats?query=${encodeURIComponent(query)}`);
 }
 
 export function getKGEntityFilterOptions(): Promise<KGEntityFilterOptions> {

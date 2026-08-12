@@ -28,8 +28,7 @@ backend/
 │   ├── shared/
 │   │   ├── contracts/
 │   │   ├── persistence/
-│   │   ├── llm/
-│   │   └── tools/
+│   │   └── llm/
 │   └── modules/
 │       ├── supervisor/
 │       ├── explorer/
@@ -73,7 +72,6 @@ adapter.
 Backend hiện chỉ expose:
 
 - `GET /health`
-- `POST /v1/explorer/invoke`
 - `POST /v1/agent/invoke`
 
 Endpoint agent nhận thread id, prompt tùy chọn, tối đa 20 URL, tối đa 20 ảnh,

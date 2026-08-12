@@ -14,6 +14,15 @@ class KGStats(KGModel):
     relationship_count: int
 
 
+class KGSearchStats(KGModel):
+    query: str
+    entity_count: int
+    alias_count: int
+    property_count: int
+    relationship_count: int
+    total_count: int
+
+
 class EntitySummary(KGModel):
     id: str
     canonical_name: str

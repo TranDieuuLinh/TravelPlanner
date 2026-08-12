@@ -11,7 +11,6 @@ trực tiếp.
 | Endpoint | Input | Output |
 |---|---|---|
 | `GET /health` | Không có | `{ "status": "ok" }` |
-| `POST /v1/explorer/invoke` | `ExplorerInput` | `ExplorerOutput` |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `POST /auth/login` | `LoginInput` | `LoginResponse` + cookies |
 | `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
@@ -181,8 +180,6 @@ Các provider interface bên ngoài hiện có:
 - `PlaceDiscovery`
 - `RoutingProvider`
 - `LlmClient`
-- `KnowledgeGraphPlaceSearch`
-- `ExternalPlaceSearch`
 
 ## Shared contract
 
@@ -215,7 +212,7 @@ Các schema dùng chung chính:
 
 ## Schema request và response của API
 
-- `InvokeRequest`: `thread_id`, `message` tùy chọn, `urls`, `images`,
+- `InvokeRequest`: `thread_id`, `message`, `supplied_candidates`,
   `existing_itinerary`, `edit_operation`.
 - `InvokeResponse`: `request_id`, `route`, `response`, `itinerary`,
   `clarification_question`, `warnings`, `sources`.

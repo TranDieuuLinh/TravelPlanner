@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_explorer_graph, get_graph
+from app.api.dependencies import get_graph
 from app.main import create_app
 from app.modules.information_finder.contract import (
     InformationFinderOutput,

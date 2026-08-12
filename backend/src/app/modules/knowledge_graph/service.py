@@ -27,6 +27,9 @@ class KnowledgeGraphService:
     async def stats(self) -> dict:
         return await self.store.stats()
 
+    async def search_stats(self, query: str) -> dict:
+        return await self.store.search_stats(query)
+
     async def entities(self, **filters) -> tuple[list[dict], int]:
         return await self.store.list_entities(**filters)
 

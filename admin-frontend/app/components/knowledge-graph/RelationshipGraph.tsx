@@ -17,6 +17,7 @@ type GraphNode = {
 };
 
 type GraphLink = {
+  id: number;
   source: string | GraphNode;
   target: string | GraphNode;
   relationship: string;
@@ -138,17 +139,31 @@ export function RelationshipGraph({
   onJumpToEntity,
   showOutgoing = true,
   showIncoming = true,
+  hiddenNodeIds,
+  hiddenLinkIds,
+  onHideNode,
+  onHideRelationship,
+  onShowRelationshipType,
+  onResetVisibility,
 }: {
   entity: KGEntityDetail;
   onJumpToEntity: (entityId: string) => void;
   showOutgoing?: boolean;
   showIncoming?: boolean;
+  hiddenNodeIds: Set<string>;
+  hiddenLinkIds: Set<number>;
+  onHideNode: (nodeId: string) => void;
+  onHideRelationship: (relationshipId: number, nodeIds: string[]) => void;
+  onShowRelationshipType: (relationshipType: string, relationshipIds: number[], nodeIds: string[]) => void;
+  onResetVisibility: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphHandle | null>(null);
   const [size, setSize] = useState({ width: 0, height: 180 });
   const [neighbors, setNeighbors] = useState<Record<string, KGEntitySummary>>({});
   const [loadError, setLoadError] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [selectedNodeId, setSelectedNodeId] = useState("");
 
   // Track container size for canvas sizing (no zoom/pan, so width is fixed).
   useEffect(() => {
@@ -251,11 +266,15 @@ export function RelationshipGraph({
           (rel.fromEntityId === entity.id || rel.toEntityId === entity.id) &&
           ((rel.fromEntityId === entity.id && showOutgoing) || (rel.toEntityId === entity.id && showIncoming)) &&
           availableNodeIds.has(rel.fromEntityId) &&
-          availableNodeIds.has(rel.toEntityId)
+          availableNodeIds.has(rel.toEntityId) &&
+          !hiddenLinkIds.has(rel.id) &&
+          !hiddenNodeIds.has(rel.fromEntityId) &&
+          !hiddenNodeIds.has(rel.toEntityId)
       )
       .map((rel) => {
         const isOut = rel.fromEntityId === entity.id;
         return {
+          id: rel.id,
           source: rel.fromEntityId,
           target: rel.toEntityId,
           sourceId: rel.fromEntityId,
@@ -264,8 +283,11 @@ export function RelationshipGraph({
           direction: isOut ? "out" : "in",
         };
       });
-    return { nodes: [centerNode, ...neighborNodes], links };
-  }, [entity, neighborIds, neighbors, showIncoming, showOutgoing]);
+    return {
+      nodes: [centerNode, ...neighborNodes].filter((node) => !hiddenNodeIds.has(node.id)),
+      links,
+    };
+  }, [entity, hiddenLinkIds, hiddenNodeIds, neighborIds, neighbors, showIncoming, showOutgoing]);
 
   useEffect(() => {
     const linkForce = graphRef.current?.d3Force("link");
@@ -352,6 +374,31 @@ export function RelationshipGraph({
   }
 
   const ready = neighborIds.every((id) => id in neighbors);
+  const visibleRelationships = entity.relationships.filter(
+    (rel) =>
+      (rel.fromEntityId === entity.id || rel.toEntityId === entity.id) &&
+      ((rel.fromEntityId === entity.id && showOutgoing) || (rel.toEntityId === entity.id && showIncoming))
+  );
+  const nodeVisibilityOptions = neighborIds
+    .map((id) => neighbors[id])
+    .filter((neighbor): neighbor is KGEntitySummary => Boolean(neighbor));
+  const hideSelectedNode = () => {
+    if (!selectedNodeId) return;
+    onHideNode(selectedNodeId);
+  };
+  const hideRelationshipType = (relationshipType: string) => {
+    const matchingRelationships = visibleRelationships
+      .filter((rel) => rel.relationship === relationshipType)
+    const linkIds = matchingRelationships.map((rel) => rel.id);
+    const nodeIds = matchingRelationships.flatMap((rel) => [rel.fromEntityId, rel.toEntityId]);
+    onHideRelationship(linkIds[0] ?? -1, nodeIds.filter((nodeId) => nodeId !== entity.id));
+    linkIds.slice(1).forEach((linkId) => onHideRelationship(linkId, []));
+  };
+  const filteredNodeOptions = nodeVisibilityOptions.filter((node) => {
+    const query = nodeSearch.trim().toLocaleLowerCase();
+    return !query || `${node.canonicalName} ${node.id}`.toLocaleLowerCase().includes(query);
+  });
+  const relationshipTypes = Array.from(new Set(visibleRelationships.map((rel) => rel.relationship))).sort();
 
   return (
     <div className="kgRelationshipGraph">
@@ -407,6 +454,80 @@ export function RelationshipGraph({
           {ready ? "Click a node to jump to that entity." : `Loading neighbors…`}
         </span>
       </div>
+      <details className="kgRelationshipGraphVisibility">
+        <summary>Ẩn node / edge chỉ định</summary>
+        <div className="kgRelationshipGraphVisibilityGrid">
+          <div>
+            <b>Nodes</b>
+            <input
+              type="search"
+              value={nodeSearch}
+              onChange={(event) => setNodeSearch(event.target.value)}
+              placeholder="Tìm node theo tên hoặc ID"
+              aria-label="Tìm node để ẩn"
+            />
+            <select
+              value={selectedNodeId}
+              onChange={(event) => setSelectedNodeId(event.target.value)}
+              aria-label="Chọn node để ẩn"
+            >
+              <option value="">Chọn node...</option>
+              {filteredNodeOptions.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.canonicalName} — {node.id}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={hideSelectedNode} disabled={!selectedNodeId}>
+              Ẩn node đã chọn
+            </button>
+            {hiddenNodeIds.size > 0 && <small>Đang ẩn {hiddenNodeIds.size} node</small>}
+          </div>
+          <div>
+            <b>Edges</b>
+            <details className="kgRelationshipMapHideFilter">
+              <summary>Chọn loại edge...</summary>
+              <div className="kgRelationshipMapHideMenu">
+                {relationshipTypes.map((relationshipType) => {
+                  const typeLinks = visibleRelationships.filter((rel) => rel.relationship === relationshipType);
+                  const isHidden = typeLinks.length > 0 && typeLinks.every((rel) => hiddenLinkIds.has(rel.id));
+                  return (
+                    <label key={relationshipType}>
+                      <input
+                        type="checkbox"
+                        checked={isHidden}
+                        onChange={() => {
+                          const nodeIds = typeLinks.flatMap((rel) => [rel.fromEntityId, rel.toEntityId]);
+                          if (isHidden) {
+                            onShowRelationshipType(
+                              relationshipType,
+                              typeLinks.map((rel) => rel.id),
+                              nodeIds.filter((nodeId) => nodeId !== entity.id)
+                            );
+                          } else {
+                            hideRelationshipType(relationshipType);
+                          }
+                        }}
+                      />
+                      {relationshipType}
+                    </label>
+                  );
+                })}
+              </div>
+            </details>
+            {hiddenLinkIds.size > 0 && <small>Đang ẩn {hiddenLinkIds.size} edge</small>}
+          </div>
+        </div>
+        {(hiddenNodeIds.size > 0 || hiddenLinkIds.size > 0) && (
+          <button
+            type="button"
+            className="kgRelationshipGraphResetVisibility"
+            onClick={onResetVisibility}
+          >
+            Hiện lại tất cả
+          </button>
+        )}
+      </details>
       {loadError && (
         <p className="kgRelationshipGraphError" role="alert">
           {loadError}
