@@ -51,6 +51,29 @@ def test_invoke_accepts_and_returns_camel_case_source_contract():
     assert "request_id" not in payload
 
 
+def test_agent_invoke_forwards_force_refresh_to_root_graph():
+    received = {}
+
+    class CapturingGraph(FakeGraph):
+        async def ainvoke(self, graph_input, config):
+            received.update(graph_input)
+            return await super().ainvoke(graph_input, config)
+
+    app = create_app()
+    app.dependency_overrides[get_graph] = lambda: CapturingGraph()
+    response = TestClient(app).post(
+        "/v1/agent/invoke",
+        json={
+            "threadId": "thread-refresh",
+            "urls": ["https://example.test/post"],
+            "forceRefresh": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert received["force_refresh"] is True
+
+
 def test_invoke_returns_finish_fields_in_camel_case():
     class FinishGraph:
         async def ainvoke(self, graph_input, config):
@@ -98,3 +121,33 @@ def test_invoke_maps_disabled_supervisor_fallback_to_safe_service_error():
     assert response.json()["detail"] == (
         "Supervisor intent classification failed and fallback is disabled."
     )
+
+
+def test_explorer_invoke_returns_full_explorer_contract():
+    class ExplorerGraph:
+        async def ainvoke(self, graph_input):
+            from app.modules.explorer.public import ExplorerOutput
+
+            assert graph_input["payload"].raw_prompt == "Lập kế hoạch ở Huế"
+            assert graph_input["payload"].force_refresh is True
+            return {
+                "output": ExplorerOutput(
+                    status="ready",
+                    intakeId="intake-test",
+                    input_ADM="Huế",
+                )
+            }
+
+    app = create_app()
+    app.dependency_overrides[get_explorer_graph] = lambda: ExplorerGraph()
+    response = TestClient(app).post(
+        "/v1/explorer/invoke",
+        json={"rawPrompt": "Lập kế hoạch ở Huế", "forceRefresh": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["input_ADM"] == "Huế"
+    assert payload["days"] == 3
+    assert "schemaVersion" not in payload

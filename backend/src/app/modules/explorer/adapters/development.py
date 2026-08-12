@@ -36,6 +36,10 @@ _PEOPLE = re.compile(
     r"\b(?P<count>\d{1,3})\s*(?:người|adults?|people|persons?)\b",
     re.IGNORECASE,
 )
+_PER_PERSON = re.compile(
+    r"(?:/\s*(?:người|person)|mỗi\s+(?:người|person)|per\s+person)",
+    re.IGNORECASE,
+)
 _AMOUNT = re.compile(
     r"(?P<amount>\d+(?:[.,]\d+)?)\s*(?P<unit>triệu|trieu|million|k|nghìn|nghin)?"
     r"\s*(?P<currency>vnd|đ|usd|\$)?",
@@ -52,6 +56,8 @@ _NAMED_ITEM = re.compile(
 _VISIT = re.compile(
     r"\b(?:tham quan|ghé|visit|see)\s+(?P<venue>.+?)"
     r"(?=\s+(?:và|and)\s+(?:ăn|uống|thử|eat|drink|try|ngắm|xem|watch)|"
+    r"\s+(?:ở|tại|in)\s+(?:Hà Nội|Ha Noi|Hanoi|Đà Nẵng|Da Nang|Huế|Hue|"
+    r"TP\.?\s*HCM|TP\.?\s*Hồ Chí Minh|Sài Gòn|Ho Chi Minh City)|"
     r"\s+(?:trong|for)\s+\d+\s*(?:ngày|days?)|[,.;!?]|$)",
     re.IGNORECASE,
 )
@@ -252,7 +258,13 @@ class RuleBasedExplorerDraftGenerator:
             amount = round(value * multiplier)
             currency = "USD" if (match.group("currency") or "").casefold() in {"usd", "$"} else "VND"
             break
-        return ExplorerBudget(level=level, targetAmount=amount, currency=currency, source="raw_prompt" if amount is not None or level == "low" else "default")
+        return ExplorerBudget(
+            level=level,
+            targetAmount=amount,
+            currency=currency,
+            source="raw_prompt" if amount is not None or level == "low" else "default",
+            basis="per_person" if _PER_PERSON.search(prompt) else "group_total",
+        )
 
     @staticmethod
     def _prompt_people(prompt: str) -> ExplorerPeople:
@@ -263,7 +275,13 @@ class RuleBasedExplorerDraftGenerator:
     def _preferences(prompt: str) -> list[str]:
         normalized = _ascii(prompt)
         values = []
-        for marker, value in (("yen tinh", "quiet_places"), ("chup anh", "photography"), ("dia phuong", "local_experience")):
+        for marker, value in (
+            ("yen tinh", "quiet_places"),
+            ("chup anh", "photography"),
+            ("van hoa", "culture"),
+            ("ca phe", "coffee"),
+            ("dia phuong", "local_experience"),
+        ):
             if marker in normalized:
                 values.append(value)
         return values

@@ -12,6 +12,7 @@ class RootGraphInput(BaseModel):
     message: str = Field(default="", max_length=4000)
     urls: list[str] = Field(default_factory=list, max_length=20)
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
+    force_refresh: bool = False
     existing_itinerary: Itinerary | None = None
     edit_operation: EditOperation | None = None
 

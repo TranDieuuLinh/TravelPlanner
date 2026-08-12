@@ -17,6 +17,24 @@ def test_prompt_only_extracts_adm_and_prompt_days() -> None:
     assert output.days == 4
 
 
+def test_group_budget_is_normalized_per_person_before_output() -> None:
+    output = invoke({
+        "rawPrompt": "Lập kế hoạch ở Huế 4 ngày cho 4 người, budget 8 triệu"
+    })
+
+    assert output.budget.target_amount == 2_000_000
+    assert output.budget.basis == "per_person"
+
+
+def test_explicit_per_person_budget_is_preserved() -> None:
+    output = invoke({
+        "rawPrompt": "Lập kế hoạch ở Huế cho 4 người, budget 2 triệu/người"
+    })
+
+    assert output.budget.target_amount == 2_000_000
+    assert output.budget.basis == "per_person"
+
+
 def test_defaults_do_not_infer_days_from_image() -> None:
     output = invoke({
         "images": [{
@@ -33,6 +51,19 @@ def test_defaults_do_not_infer_days_from_image() -> None:
     assert output.url_notes[0].evidence_type == "image_ocr"
 
 
+def test_source_flow_preserves_explicit_prompt_preferences() -> None:
+    output = invoke({
+        "rawPrompt": "Đi Hà Nội, ưu tiên văn hóa, cà phê và trải nghiệm địa phương",
+        "images": [{
+            "fileName": "capture.png",
+            "mimeType": "image/png",
+            "ocrText": "Hà Nội, tham quan Văn Miếu",
+        }],
+    })
+
+    assert output.short_preferences == ["culture", "coffee", "local_experience"]
+
+
 def test_named_venue_keeps_only_proper_name_and_links_prompt_item() -> None:
     output = invoke({
         "rawPrompt": (
@@ -44,6 +75,14 @@ def test_named_venue_keeps_only_proper_name_and_links_prompt_item() -> None:
     assert output.places[0].name == "Phở Gia Truyền Bát Đàn"
     assert output.input_items[0].name == "phở"
     assert output.input_items[0].related_place_name == "Phở Gia Truyền Bát Đàn"
+
+
+def test_visit_place_name_excludes_adm_context() -> None:
+    output = invoke({
+        "rawPrompt": "Tôi muốn tham quan Văn Miếu tại Hà Nội trong 2 ngày"
+    })
+
+    assert output.places[0].name == "Văn Miếu"
 
 
 def test_missing_adm_uses_clarification_path() -> None:

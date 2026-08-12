@@ -134,12 +134,14 @@ class SearchPlacesTool:
     ) -> tuple[list[PlaceProviderCandidate], bool]:
         started_at = time.perf_counter()
         try:
-            candidates = await provider.search(
-                names,
-                input_adm=request.input_adm,
-                place_type_hint=request.place_type_hint,
-                limit=request.top_k,
-            )
+            provider_kwargs = {
+                "input_adm": request.input_adm,
+                "place_type_hint": request.place_type_hint,
+                "limit": request.top_k,
+            }
+            if request.anchor_place_id is not None:
+                provider_kwargs["anchor_place_id"] = request.anchor_place_id
+            candidates = await provider.search(names, **provider_kwargs)
         except PlaceSearchProviderTimeout as exc:
             attempts.append(
                 self._attempt(
@@ -198,6 +200,10 @@ class SearchPlacesTool:
                 >= self.policy.ambiguity_name_score
             )
             if margin < self.policy.named_minimum_margin and both_name_matches:
+                if self._address_hint_disambiguates(request, top, second):
+                    return "resolved", top, "address_hint_identity"
+                if self._distinctive_name_disambiguates(top, second):
+                    return "resolved", top, "distinctive_name_identity"
                 if self._route_context_disambiguates(top, second):
                     return "resolved", top, "route_context_identity"
                 return "needs_review", None, "branch_or_identity_ambiguous"
@@ -242,6 +248,27 @@ class SearchPlacesTool:
         if left.coordinates is None or right.coordinates is None:
             return False
         return distance_km(left.coordinates, right.coordinates) <= 0.2
+
+    @staticmethod
+    def _distinctive_name_disambiguates(
+        top: PlaceSearchMatch,
+        second: PlaceSearchMatch,
+    ) -> bool:
+        top_name = top.score_components.get("nameSimilarity", 0)
+        second_name = second.score_components.get("nameSimilarity", 0)
+        return top_name >= 0.94 and top_name - second_name >= 0.07
+
+    @staticmethod
+    def _address_hint_disambiguates(
+        request: PlaceSearchRequest,
+        top: PlaceSearchMatch,
+        second: PlaceSearchMatch,
+    ) -> bool:
+        if not request.address_hint:
+            return False
+        top_address = top.score_components.get("addressCompatibility", 0)
+        second_address = second.score_components.get("addressCompatibility", 0)
+        return top_address >= 0.70 and top_address - second_address >= 0.15
 
     @staticmethod
     def _route_context_disambiguates(

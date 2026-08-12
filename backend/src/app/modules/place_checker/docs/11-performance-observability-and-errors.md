@@ -1,0 +1,57 @@
+# Task 11: Performance, observability và xử lý lỗi
+
+## Mục tiêu
+
+Đảm bảo PlaceChecker có giới hạn tài nguyên, dễ chẩn đoán và chịu được lỗi cục
+bộ từ source/tool.
+
+## Chính sách hiệu năng
+
+- Batch ADM, identity và metadata KG query.
+- Cache ADM resolution, identity result và metadata với freshness phù hợp.
+- Không search lại entity đã verify và còn fresh.
+- Giới hạn candidate trước khi enrichment tốn chi phí.
+- Áp external call budget và top-K budget cho từng gap.
+- Không chạy N x N route matrix; detailed routing thuộc downstream.
+- Dùng bounded concurrency và database session tách biệt khi cần.
+
+## Chính sách lỗi
+
+Place-level failure tạo structured finding và cho candidate khác tiếp tục.
+Request-level failure chỉ dành cho core input sai hoặc destination context không
+thể dùng. KG/internal/external timeout trả partial output khi an toàn. Unknown
+cost/opening giữ nguyên unknown. Promotion failure không rollback planning output.
+
+## Khả năng quan sát
+
+Ghi planning run stage, correlation ID, latency theo phase, KG hit rate, cache
+hit rate, external fallback/corroboration rate, ambiguity, gap resolution,
+unknown-cost ratio và promotion failure.
+
+Log không được chứa raw third-party payload, full prompt, secret hoặc dữ liệu cá
+nhân không cần thiết. Chỉ persist normalized provenance và freshness.
+
+## Test và điều kiện hoàn thành
+
+Test từng loại timeout, partial output, call limit, cache behavior, concurrency
+bound, log đã redact và correlation metadata ổn định. Hoàn thành khi lỗi một
+source/place không thể làm crash request vẫn còn dữ liệu sử dụng được.
+
+## Hiện thực tại Checkpoint 6
+
+- Giới hạn input: 100 place, 50 item và 200 URL note mỗi request.
+- Entity và item resolution dùng semaphore, mặc định tối đa 10 call song song.
+- Retrieval chỉ giữ top-K, tối đa hai external provider và dừng khi đã đủ
+  candidate verify. Không có distance matrix N x N.
+- Có wrapper cache TTL cho ADM, named/requirement search và metadata batch.
+  Provider error không được cache; metadata chỉ query ID còn thiếu.
+- Output metadata có request ID, correlation ID, tổng latency, latency theo
+  phase, tool-call summary và cờ partial.
+- Metrics port ghi duration, checked/eligible count, open gap, unresolved count,
+  external search count và unknown-cost ratio. Lỗi metrics không làm request lỗi.
+- Provider/place/promotion failure trả partial result hoặc warning có cấu trúc;
+  không log raw payload, full prompt hay secret.
+
+Cache hiện là in-process wrapper và metrics adapter hiện là in-memory cho test.
+Durable/distributed cache, metrics backend và planning-run persistence thuộc
+runtime infrastructure, chưa được mô tả là production-ready.

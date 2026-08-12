@@ -21,4 +21,3 @@ class LangfuseStatus(ObservabilityModel):
     reachable: bool
     message: str
     project_count: int | None = None
-

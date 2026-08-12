@@ -1,0 +1,93 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Phở Gia Truyền Bát Đàn",
+      "addressHint": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi muốn ăn phở tại Phở Gia Truyền Bát Đàn",
+          "sourceTimeHint": null,
+          "addressHint": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
+          "observedAt": null
+        }
+      ]
+    },
+    {
+      "name": "Café Giảng",
+      "addressHint": "39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "url",
+          "evidenceType": "stt",
+          "sourceUrl": "https://example.com/travel-video",
+          "evidence": "Buổi sáng ghé Café Giảng uống cà phê trứng",
+          "sourceTimeHint": "morning",
+          "addressHint": "39 Nguyễn Hữu Huân, Hoàn Kiếm, Hà Nội",
+          "observedAt": "2026-08-11T10:00:00Z"
+        }
+      ]
+    },
+    {
+      "name": "Hồ Tây",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi muốn ngắm hoàng hôn ở Hồ Tây",
+          "sourceTimeHint": "sunset",
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    }
+  ],
+  "inputItems": [
+    {
+      "name": "phở",
+      "itemType": "food",
+      "action": "eat",
+      "relatedPlaceName": "Phở Gia Truyền Bát Đàn",
+      "evidence": "ăn phở tại Phở Gia Truyền Bát Đàn",
+      "confidence": 0.95
+    },
+    {
+      "name": "ngắm hoàng hôn",
+      "itemType": "activity",
+      "action": "watch",
+      "relatedPlaceName": "Hồ Tây",
+      "evidence": "ngắm hoàng hôn ở Hồ Tây",
+      "confidence": 0.95
+    }
+  ],
+  "urlNotes": null,
+  "days": 4,
+  "budget": {
+    "level": "low",
+    "targetAmount": 6000000,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [
+    "local_food",
+    "sunset_views",
+    "traditional_drinks"
+  ],
+  "shortAvoids": [
+    "crowded_places",
+    "nightlife"
+  ]
+}

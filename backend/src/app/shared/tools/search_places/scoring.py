@@ -1,5 +1,5 @@
 from difflib import SequenceMatcher
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, log10, radians, sin, sqrt
 
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places.contract import (
@@ -69,7 +69,18 @@ def _name_score(request: PlaceSearchRequest, candidate: PlaceProviderCandidate) 
     names = [candidate.name, *candidate.aliases]
     if request.search_mode == "requirement":
         names.extend(candidate.tags)
-    return max(text_similarity(request.query, name) for name in names)
+        return max(text_similarity(request.query, name) for name in names)
+    query_tokens = _tokens(request.query)
+    scores = []
+    for name in names:
+        name_tokens = _tokens(name)
+        coverage = (
+            len(query_tokens & name_tokens) / len(query_tokens)
+            if query_tokens
+            else 0.0
+        )
+        scores.append(text_similarity(request.query, name) * 0.70 + coverage * 0.30)
+    return max(scores, default=0.0)
 
 
 def _adm_score(request: PlaceSearchRequest, candidate: PlaceProviderCandidate) -> float:
@@ -113,14 +124,19 @@ def score_candidate(
     )
     place_type = _type_score(request, candidate)
     confidence = candidate.data_confidence
+    rating_score = (candidate.rating or 0.0) / 5.0
+    review_score = min(1.0, log10((candidate.review_count or 0) + 1) / 5.0)
     anchor_distance = _anchor_distance(request, candidate)
     if request.search_mode == "requirement":
         score = (
-            name * 0.35
-            + adm * 0.20
-            + place_type * 0.20
-            + confidence * 0.15
-            + address * 0.10
+            name * 0.16
+            + adm * 0.16
+            + place_type * 0.16
+            + confidence * 0.08
+            + address * 0.05
+            + rating_score * 0.06
+            + review_score * 0.02
+            + candidate.relationship_score * 0.31
         )
     else:
         score = (
@@ -148,6 +164,9 @@ def score_candidate(
         address=candidate.address,
         coordinates=candidate.coordinates,
         tags=candidate.tags,
+        rating=candidate.rating,
+        reviewCount=candidate.review_count,
+        relationshipScore=candidate.relationship_score,
         score=round(min(1.0, max(0.0, score)), 6),
         scoreComponents={
             "nameSimilarity": round(name, 6),
@@ -155,6 +174,9 @@ def score_candidate(
             "addressCompatibility": round(address, 6),
             "typeCompatibility": round(place_type, 6),
             "dataConfidence": round(confidence, 6),
+            "rating": round(rating_score, 6),
+            "reviewCount": round(review_score, 6),
+            "relationshipScore": round(candidate.relationship_score, 6),
             **(
                 {"anchorDistanceKm": round(anchor_distance, 6)}
                 if anchor_distance is not None

@@ -1,29 +1,62 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-11.
+Cập nhật lần cuối: 2026-08-12.
 
 ## Phạm vi và trạng thái
 
 Tài liệu này được lấy trực tiếp từ database `travelplanner` trong container
 PostgreSQL `pgvector/pgvector:0.8.2-pg16` đang chạy qua Docker Compose.
 
-Database hiện có schema legacy với 31 table. Backend LangGraph mới trong
-`backend/src/app` không có SQLAlchemy model để đọc các table legacy. Information
-Finder có repository `asyncpg` và migration SQL riêng, chỉ sở hữu các bảng tiền
-tố `information_finder_`. Vì vậy cần phân biệt:
+Database sau migration 003 có 47 table trong schema `public`, gồm 8 table knowledge được
+khôi phục từ export ngày 2026-08-11 và 6 table cache của Information Finder.
+Bốn table tag legacy (`knowledge_tags`, `knowledge_tag_runs`,
+`knowledge_tag_scan_results`, `knowledge_entity_tag_assertions`) đã được xóa.
+Backend LangGraph mới trong `backend/src/app` không có SQLAlchemy model để đọc
+các table legacy. Information Finder có repository `asyncpg` và migration SQL
+riêng, chỉ sở hữu các bảng tiền tố `information_finder_`. Explorer đã nhận
+ownership bảng `source_documents` và `explorer_draft_cache` qua asyncpg adapter
+và migration 002/003. Vì vậy
+cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới vẫn tồn tại trong
   PostgreSQL volume.
-- **Backend mới:** không sử dụng các table legacy; graph state vẫn dùng
-  `InMemorySaver`. Information Finder sẽ dùng các bảng cache mô tả bên dưới khi
-  có `DATABASE_URL` và migration đã được áp dụng.
+- **Backend mới:** không sử dụng các table legacy khác; graph state vẫn dùng
+  `InMemorySaver`. Explorer dùng `source_documents` và `explorer_draft_cache`;
+  Information Finder dùng
+  các bảng cache mô tả bên dưới khi có `DATABASE_URL` và migration tương ứng đã
+  được áp dụng.
+
+`shared/tools/search_places/` hiện chỉ định nghĩa provider port và engine
+xếp hạng/policy. Thay đổi này không thêm migration, không đọc trực tiếp các bảng
+Knowledge Graph legacy và chưa nối PostgreSQL runtime. Adapter Knowledge Graph
+tương lai phải nhận ownership/database đích rõ ràng trước khi query entity,
+alias, property và quan hệ ADM; external adapter chỉ được trả payload đã chuẩn
+hóa qua contract.
+
+Explorer có ba loại snapshot logic: `ready`, `clarification` và `failure`.
+Thay đổi hiện tại dùng `InMemoryExplorerSnapshotRepository`, không tạo table
+hay migration và không ghi raw prompt/raw third-party payload. Trước production
+cần xác định database ownership rồi triển khai durable adapter cho port
+`ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
+PlaceChecker.
+YouTube/TikTok/Instagram importer dùng `yt-dlp`; website dùng `httpx`,
+`curl-cffi`, fallback Playwright và `trafilatura`; OCR/STT dùng Gemini. Migration
+`002_explorer_source_document_cache.sql` nhận ownership bảng
+`source_documents`. Cache chỉ lưu `SourceArtifact` đã chuẩn hóa và lỗi nhánh
+gọn; media tạm và raw third-party payload không được lưu. Media tạm được xóa
+sau extraction và snapshot chỉ nhận Explorer output đã chuẩn hóa cùng
+provenance.
+
+Migration `003_explorer_draft_cache.sql` tạo `explorer_draft_cache`. Bảng lưu
+`ExplorerDraft` đã chuẩn hóa theo hash của prompt và evidence, namespace/model,
+TTL ứng dụng; không lưu media hoặc raw third-party payload.
 
 ## Schema cache nguồn Information Finder
 
 Migration nguồn: `backend/migrations/001_information_finder_source_cache.sql`.
-Migration chưa được tự động áp vào volume đang tồn tại trong lần cập nhật tài
-liệu này. Docker áp migration khi khởi tạo volume mới; với volume hiện hữu cần
-chạy migration thủ công và kiểm tra backup trước.
+Migration đã được áp dụng thủ công vào volume runtime ngày 2026-08-11 sau khi
+tạo backup. Docker vẫn chỉ tự áp migration khi khởi tạo volume mới; volume hiện
+hữu khác cần chạy migration thủ công và kiểm tra backup trước.
 
 | Bảng | Trách nhiệm chính |
 |---|---|
@@ -230,7 +263,7 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 
 ### `knowledge_entities`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -241,10 +274,11 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `status` | varchar | Không | Trạng thái entity. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
+| `review_count` | integer | Có | Tổng số review theo dữ liệu nguồn; không thay thế các row trong `reviews`. |
 
 ### `knowledge_aliases`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -294,7 +328,7 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 ### `knowledge_entity_images`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -305,7 +339,11 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 
 ### `source_documents`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-11. Bảng cache này hiện do module Explorer sở
+hữu; migration là `backend/migrations/002_explorer_source_document_cache.sql`.
+Adapter đọc tương thích artifact version 6 của `old_one`, ghi version 7, dùng
+TTL mặc định 7 ngày và unique canonical URL. Đây không phải bảng của
+Information Finder.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -319,6 +357,20 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `fetched_at` | timestamptz | Không | Thời điểm lấy dữ liệu. |
 | `created_at` | timestamptz | Không | Thời điểm tạo record. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
+
+### `explorer_draft_cache`
+
+Ngày sửa đổi cuối cùng: 2026-08-11. Bảng do Explorer sở hữu; migration là
+`backend/migrations/003_explorer_draft_cache.sql`. Cache key bao gồm prompt,
+evidence chuẩn hóa, model namespace và policy version.
+
+| Cột | Kiểu | Nullable | Giải thích |
+|---|---|---|---|
+| `cache_key` | varchar | Không | SHA-256 của input synthesis chuẩn hóa. |
+| `namespace` | varchar | Không | Version policy, provider và model. |
+| `draft` | json | Không | `ExplorerDraft` đã tổng hợp. |
+| `created_at` | timestamptz | Không | Thời điểm tạo record. |
+| `updated_at` | timestamptz | Không | Lần cập nhật gần nhất và mốc TTL. |
 
 ### `reviews`
 
@@ -785,6 +837,6 @@ Owned by the Knowledge Graph module and created by `backend/migrations/004_knowl
 ## Ghi chú quan trọng
 
 Schema trên phản ánh database legacy đang tồn tại, không chứng minh rằng
-backend mới đã hỗ trợ các nghiệp vụ tương ứng. Đặc biệt, backend mới hiện
-chưa kết nối tới PostgreSQL và container `backend` cần được kiểm tra riêng vì
-đang ở trạng thái restart loop.
+backend mới đã hỗ trợ các nghiệp vụ tương ứng. Ngoại lệ được nhận ownership rõ
+là `source_documents` của Explorer và các bảng tiền tố `information_finder_`;
+các bảng còn lại không mặc nhiên là runtime contract của backend mới.

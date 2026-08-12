@@ -57,4 +57,3 @@ async def list_resource(
         return await service.list_records(resource, page=page, limit=limit)
     except ObservabilityError as error:
         handle(error)
-

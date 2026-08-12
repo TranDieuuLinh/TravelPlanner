@@ -1,7 +1,11 @@
 from app.modules.explorer.public import ExplorerBudget, ExplorerPeople
 from app.modules.place_checker.contract import PlaceCheckerInput
 from app.modules.place_checker.service import PlaceCheckerService
-from app.modules.place_checker.state import PlaceCheckerState
+from app.modules.place_checker.pipeline import PlaceCheckerPipeline
+from app.modules.place_checker.state import (
+    PlaceCheckerPipelineState,
+    PlaceCheckerState,
+)
 
 
 def create_check_node(service: PlaceCheckerService):
@@ -20,5 +24,18 @@ def create_check_node(service: PlaceCheckerService):
             )
         )
         return {"output": output}
+
+    return check
+
+
+def create_pipeline_node(pipeline: PlaceCheckerPipeline):
+    async def check(state: PlaceCheckerPipelineState) -> dict:
+        payload = PlaceCheckerInput.model_validate(state["payload"])
+        result = await pipeline.check(
+            payload,
+            request_id=state["request_id"],
+            correlation_id=state.get("correlation_id"),
+        )
+        return {"result": result}
 
     return check

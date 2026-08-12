@@ -79,6 +79,7 @@ async def invoke_agent(
         "message": payload.message or "",
         "urls": payload.urls,
         "images": payload.images,
+        "force_refresh": payload.force_refresh,
         "existing_itinerary": payload.existing_itinerary,
         "edit_operation": payload.edit_operation,
     }
@@ -101,7 +102,7 @@ async def invoke_agent(
                 request_id=request_id,
                 route=None,
                 success=False,
-                message_length=len(payload.message),
+                message_length=len(payload.message or ""),
                 warning_count=0,
                 source_count=0,
                 has_itinerary=payload.existing_itinerary is not None,
@@ -126,10 +127,9 @@ async def invoke_agent(
             request_id=request_id,
             route=response.route,
             success=True,
-            message_length=len(payload.message),
+            message_length=len(payload.message or ""),
             warning_count=len(response.warnings),
             source_count=len(response.sources),
             has_itinerary=response.itinerary is not None,
         )
     return response
-

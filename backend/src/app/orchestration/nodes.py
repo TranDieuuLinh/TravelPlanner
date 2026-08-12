@@ -5,7 +5,14 @@ from app.modules.information_finder.public import (
 )
 from app.modules.itinerary_planner.public import build_itinerary_planner_graph
 from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
-from app.modules.place_checker.public import build_place_checker_graph
+from app.modules.place_checker.public import (
+    PlaceCheckerInput,
+    PlaceCheckerPipeline,
+    PlaceCheckerPlanningProjector,
+    build_place_checker_graph,
+    build_place_checker_pipeline_graph,
+)
+from app.shared.contracts.place import VerifiedPlace
 from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
@@ -19,13 +26,19 @@ class RootNodes:
         information_finder_service: InformationFinderService | None = None,
         supervisor_service: SupervisorService | None = None,
         explorer_service=None,
+        place_checker_pipeline: PlaceCheckerPipeline | None = None,
     ) -> None:
         self.supervisor = build_supervisor_graph(supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
         self.information_finder = build_information_finder_graph(
             information_finder_service
         )
-        self.place_checker = build_place_checker_graph()
+        self.rich_place_checker = place_checker_pipeline is not None
+        self.place_checker = (
+            build_place_checker_pipeline_graph(place_checker_pipeline)
+            if place_checker_pipeline is not None
+            else build_place_checker_graph()
+        )
         self.itinerary_planner = build_itinerary_planner_graph()
         self.plan_editor = build_plan_editor_graph()
 
@@ -61,6 +74,7 @@ class RootNodes:
                 "rawPrompt": state.get("message") or None,
                 "urls": state.get("urls", []),
                 "images": state.get("images", []),
+                "forceRefresh": state.get("force_refresh", False),
             }}
         )
         output = result["output"]
@@ -90,6 +104,52 @@ class RootNodes:
         }
 
     async def run_place_checker(self, state: RootState) -> dict:
+        if self.rich_place_checker:
+            explorer = state["explorer_output"]
+            payload = PlaceCheckerInput.model_validate(
+                {
+                    "inputADM": explorer.input_adm,
+                    "places": explorer.places,
+                    "inputItems": explorer.input_items,
+                    "urlNotes": explorer.url_notes,
+                    "days": explorer.days,
+                    "budget": explorer.budget,
+                    "people": explorer.people,
+                    "shortPreferences": explorer.short_preferences,
+                    "shortAvoids": explorer.short_avoids,
+                }
+            )
+            graph_result = await self.place_checker.ainvoke(
+                {
+                    "request_id": state["request_id"],
+                    "correlation_id": state.get("request_id"),
+                    "payload": payload,
+                }
+            )
+            output = graph_result["result"]
+            projection = PlaceCheckerPlanningProjector().project(output)
+            planner_places, compatibility_warnings = self._planner_places(projection)
+            update = {
+                "place_output": output,
+                "planner_places": planner_places,
+                "warnings": [
+                    *state.get("warnings", []),
+                    *projection.warnings,
+                    *compatibility_warnings,
+                ],
+            }
+            if output.status.value == "blocked":
+                update.update(
+                    {
+                        "clarification_question": (
+                            "Một địa điểm bắt buộc chưa được xác minh. "
+                            "Bạn có thể bổ sung tên hoặc địa chỉ chính xác hơn không?"
+                        ),
+                        "response": "PlaceChecker cần làm rõ dữ liệu trước khi lập lịch.",
+                    }
+                )
+            return update
+
         result = await self.place_checker.ainvoke(
             {
                 "input_adm": state["explorer_output"].input_adm,
@@ -110,22 +170,56 @@ class RootNodes:
         }
 
     async def run_itinerary_planner(self, state: RootState) -> dict:
+        planner_places = state.get("planner_places")
+        if planner_places is None:
+            planner_places = state["place_output"].places
         result = await self.itinerary_planner.ainvoke(
             {
                 "intent": state["intent"],
-                "places": state["place_output"].places,
+                "places": planner_places,
                 "upstream_warnings": state.get("warnings", []),
             }
         )
         itinerary = result["output"].itinerary
         return {
             "itinerary": itinerary,
-            "warnings": [*state.get("warnings", []), *itinerary.warnings],
+            "warnings": list(dict.fromkeys(itinerary.warnings)),
             "response": (
                 f"Created a {len(itinerary.days)}-day itinerary for "
                 f"{itinerary.intent.destination}."
             ),
         }
+
+    @staticmethod
+    def _planner_places(projection) -> tuple[list[VerifiedPlace], list[str]]:
+        places: list[VerifiedPlace] = []
+        warnings: list[str] = []
+        for place in projection.places:
+            duration = place.typical_duration_minutes
+            if duration is None:
+                duration = 90
+                warnings.append(
+                    f"{place.canonical_name}: Planner tạm dùng duration 90 phút."
+                )
+            cost = place.typical_cost
+            if cost is None:
+                cost = 0
+                warnings.append(
+                    f"{place.canonical_name}: Planner chưa có chi phí, tạm dùng 0."
+                )
+            places.append(
+                VerifiedPlace(
+                    place_id=place.place_id,
+                    name=place.canonical_name,
+                    coordinates=place.coordinates,
+                    source="place_checker",
+                    verified=True,
+                    estimated_visit_minutes=duration,
+                    estimated_cost=cost,
+                    tags=place.tags,
+                )
+            )
+        return places, warnings
 
     async def run_plan_editor(self, state: RootState) -> dict:
         itinerary = state.get("existing_itinerary")

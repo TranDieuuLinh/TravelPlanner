@@ -1,6 +1,6 @@
 # TravelPlanner
 
-Cập nhật lần cuối: 2026-08-11.
+Cập nhật lần cuối: 2026-08-12.
 
 TravelPlanner is a travel-planning product with a Next.js user frontend, a
 separate admin frontend, and a modular FastAPI/LangGraph backend.
@@ -13,10 +13,13 @@ user request -> supervisor -> explorer/place checker -> itinerary planner
                          -> information finder or plan editor
 ```
 
-It is not yet a production travel-data system. Provider integrations,
-Marketplace workflows, URL ingestion, and live routing still need to be
-implemented behind the module interfaces. Authentication now has a durable
-PostgreSQL-backed development flow; configure the auth migration before use.
+It is not yet a production travel-data system. Production-grade provider
+coverage, durable graph-state persistence, Marketplace workflows,
+anti-bot-resilient URL ingestion, and live routing still need implementations
+behind the module interfaces. Authentication now has a PostgreSQL-backed
+development flow; configure the auth migration before use. Explorer currently
+has bounded YouTube/social/website and image import adapters, but individual
+third-party sources may still block automated downloads.
 
 ## Repository structure
 
@@ -61,18 +64,22 @@ detailed backend module boundaries.
 The backend runs on port `8000`.
 
 - `GET /health` returns the service health status.
+- `POST /v1/explorer/invoke` runs Explorer extraction directly for testing.
 - `POST /v1/agent/invoke` invokes the root planning graph.
 - `POST /auth/login` and `POST /auth/register` create cookie sessions.
 - `GET /me` reads the current session; `POST /auth/logout` revokes it.
 
-The invoke request uses `thread_id`, `message`, `supplied_candidates`,
-`existing_itinerary`, and `edit_operation`.
+The agent request uses camelCase fields `threadId`, `message`, `urls`, `images`,
+optional `forceRefresh`, `existingItinerary`, and `editOperation`. Explorer
+caches normalized URL artifacts in PostgreSQL `source_documents` when
+`DATABASE_URL` is configured; `forceRefresh: true` bypasses the cache lookup.
 
 ## Run locally
 
 With Docker Compose:
 
 ```bash
+cp backend/.env.example backend/.env
 docker compose up --build
 ```
 

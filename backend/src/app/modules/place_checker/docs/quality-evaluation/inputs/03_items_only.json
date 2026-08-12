@@ -1,0 +1,49 @@
+{
+  "inputADM": "Hanoi",
+  "places": [],
+  "inputItems": [
+    {
+      "name": "bún chả",
+      "itemType": "food",
+      "action": "eat",
+      "relatedPlaceName": null,
+      "evidence": "ăn bún chả Hà Nội",
+      "confidence": 0.95
+    },
+    {
+      "name": "cà phê trứng",
+      "itemType": "drink",
+      "action": "drink",
+      "relatedPlaceName": null,
+      "evidence": "thử cà phê trứng",
+      "confidence": 0.95
+    },
+    {
+      "name": "múa rối nước",
+      "itemType": "activity",
+      "action": "watch",
+      "relatedPlaceName": null,
+      "evidence": "xem múa rối nước",
+      "confidence": 0.95
+    }
+  ],
+  "urlNotes": null,
+  "days": 3,
+  "budget": {
+    "level": "low",
+    "targetAmount": null,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [
+    "local_food",
+    "traditional_drinks",
+    "culture"
+  ],
+  "shortAvoids": []
+}
