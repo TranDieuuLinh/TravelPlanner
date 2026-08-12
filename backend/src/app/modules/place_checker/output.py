@@ -29,9 +29,14 @@ from app.modules.place_checker.item_contract import ItemResolutionBatch
 from app.modules.place_checker.output_contract import (
     CheckedPlace,
     PlaceCheckerExecutionMetadata,
+    PlaceCheckerPlannerOutput,
     PlaceCheckerPlanningProjection,
     PlaceCheckerResult,
+    PlannerOutputPlace,
     PlannerPlaceContext,
+    PlannerOutputTrip,
+    PlannerBudget,
+    PlannerPrice,
     UnresolvedEntity,
 )
 from app.modules.place_checker.retrieval_contract import RetrievalBatch
@@ -265,6 +270,7 @@ class PlaceCheckerOutputAssembler:
             distance_from_anchor_km=(
                 scored.distance_from_anchor_km if scored else None
             ),
+            relationship_score=scored.candidate.relationship_score if scored else 0,
             provenance=CheckedProvenance(
                 source_places=place.source_places,
                 url_notes=place.url_notes,
@@ -371,6 +377,7 @@ class PlaceCheckerPlanningProjector:
                     rating=checked.rating,
                     review_count=checked.review_count,
                     distance_from_anchor_km=checked.distance_from_anchor_km,
+                    relationship_score=checked.relationship_score,
                     minimum_duration_minutes=metadata.minimum_duration_minutes,
                     typical_duration_minutes=metadata.typical_duration_minutes,
                     maximum_duration_minutes=metadata.maximum_duration_minutes,
@@ -407,4 +414,105 @@ class PlaceCheckerPlanningProjector:
                 "place_checker_request_id": result.metadata.request_id,
                 "place_checker_schema_version": result.metadata.schema_version,
             },
+        )
+
+
+class PlaceCheckerPlannerOutputBuilder:
+    """Build the compact JSON contract consumed by the final planner."""
+
+    def build(
+        self,
+        result: PlaceCheckerResult,
+        *,
+        start_date: str | None = None,
+    ) -> PlaceCheckerPlannerOutput:
+        places: list[PlannerOutputPlace] = []
+        food: list[PlannerOutputPlace] = []
+        for checked in result.checked_places:
+            if not checked.canonical_name:
+                continue
+            compact = self._place(checked)
+            if checked.category in {"restaurant", "drink_dessert"}:
+                food.append(compact)
+            else:
+                places.append(compact)
+
+        budget = result.trip_context.budget
+        return PlaceCheckerPlannerOutput(
+            trip=PlannerOutputTrip(
+                destination=(
+                    result.trip_context.destination.canonical_name
+                    or result.trip_context.destination.input_name
+                ),
+                days=result.trip_context.days,
+                start_date=start_date,
+                people=result.trip_context.people.total,
+                budget=PlannerBudget(
+                    amount=budget.target_amount,
+                    currency=budget.currency or "VND",
+                ),
+                preferences=result.trip_context.preferences,
+                avoids=result.trip_context.avoids,
+            ),
+            places=places,
+            food=food,
+        )
+
+    @classmethod
+    def _place(cls, checked: CheckedPlace) -> PlannerOutputPlace:
+        relationships = [
+            tag.split(":", 1)[1]
+            for tag in checked.tags
+            if tag.startswith(("relation:", "experience:", "item:"))
+        ]
+        notes = next(
+            (
+                source.evidence
+                for source in checked.provenance.source_places
+                if source.evidence
+            ),
+            None,
+        )
+        priority = "user_input" if checked.mandatory else None
+        if not priority and any(
+            tag.startswith(("relation:", "experience:")) for tag in checked.tags
+        ):
+            priority = "special_experience"
+        return PlannerOutputPlace(
+            place_id=checked.place_id,
+            name=checked.canonical_name or "",
+            coordinates=checked.coordinates,
+            address=checked.address,
+            priority=priority,
+            notes=notes,
+            tags=checked.tags,
+            rating=checked.rating,
+            review_count=checked.review_count,
+            duration_minutes=checked.duration.typical_minutes,
+            opening_hours=checked.opening.hours,
+            preferred_time_windows=checked.time_preferences,
+            price=cls._price(checked),
+            relationships=list(dict.fromkeys(relationships)),
+        )
+
+    @staticmethod
+    def _price(checked: CheckedPlace) -> PlannerPrice:
+        minimum = checked.cost.minimum
+        maximum = checked.cost.maximum
+        if minimum is not None and maximum is not None:
+            cost = (minimum + maximum) / 2
+        elif checked.cost.typical is not None:
+            cost = checked.cost.typical
+        elif checked.cost.tier.value == "free":
+            cost = 0
+            minimum = minimum if minimum is not None else 0
+            maximum = maximum if maximum is not None else 0
+        else:
+            cost = None
+        return PlannerPrice(
+            cost=cost,
+            minimum=minimum,
+            maximum=maximum,
+            currency=checked.cost.currency or "VND",
+            basis="perPerson",
         )

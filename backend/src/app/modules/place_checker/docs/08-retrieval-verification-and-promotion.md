@@ -12,7 +12,8 @@ Task 07. Đây là task đầu tiên có thể cần migration cho promotion out
 ## Chiến lược truy xuất
 
 ```text
-targeted KG query
+relation-first KG query
+-> relation query through the anchor's ADM
 -> normalized internal search/cache
 -> external source A
 -> external source B khi cần corroboration
@@ -20,7 +21,36 @@ targeted KG query
 
 Không gọi external search khi kết quả KG/internal đã đủ giải quyết gap. Search
 theo gap type, ADM, category/experience, budget tier, people policy và time
-constraint liên quan.
+constraint liên quan. Keyword không phải nguồn ưu tiên; chỉ được dùng để lấp
+phần thiếu sau khi đã lấy ứng viên có quan hệ.
+
+Mỗi truy vấn pool nhận thêm `anchor_place_ids` của các địa điểm người dùng nhập
+trực tiếp. Knowledge Graph dùng edge `Near` và `Must_Visit` để ưu tiên candidate
+quanh điểm neo. Nếu điểm neo không có cạnh đủ trực tiếp, truy vấn mở rộng qua
+ADM chứa điểm neo để đọc `Must_Visit` và `Special_Experience` của khu vực.
+Candidate được gắn nhãn như `relation:near`, `relation:must_visit`,
+`relation:area_special_experience` hoặc `retrieval:keyword_fallback` để
+downstream giải thích được lý do chọn.
+
+Thứ tự ưu tiên quan hệ là:
+
+```text
+Must_Visit trực tiếp
+-> Near trực tiếp
+-> Special_Experience/Offer_Item/Has_Style trực tiếp
+-> Must_Visit/Special_Experience từ ADM chứa điểm neo
+-> cùng cụm địa lý
+-> keyword fallback
+```
+
+Khi pool có ít quan hệ, fallback vẫn được phép để đủ số lượng nhưng không được
+giả dạng là candidate liên quan mạnh; candidate đó phải có nhãn fallback và
+được trừ điểm ở bước ranking.
+
+Với item như `pho`, truy vấn food được mở rộng thành `pho restaurant` và dùng
+edge `Offer_Item` để khớp món. Với hoạt động, các edge `Special_Experience` và
+`Has_Style` được đưa vào tags để nhận diện trải nghiệm và phong cách thay vì
+chỉ dựa vào tên địa điểm.
 
 ## Xác minh
 
@@ -58,8 +88,8 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
 - Candidate đã link KG được làm giàu qua `PlaceMetadataRepository` trước scoring
   để lấy duration, cost, opening và suitability nếu repository có dữ liệu.
   Repository lỗi hoặc thiếu field chỉ tạo warning/unknown, không bịa giá trị.
-- Số candidate dự phòng tăng theo độ dài chuyến đi: tối thiểu 5, thông thường
-  khoảng `10 địa điểm/ngày`, tối thiểu 20 và tối đa 60 cho toàn bộ pool. Mỗi gap
+- Số candidate dự phòng tăng theo độ dài chuyến đi: mục tiêu `15 địa điểm/ngày`,
+  tối thiểu 20 và tối đa 120 cho toàn bộ pool. Mỗi gap
   được cấp một phần giới hạn phù hợp. Đây là pool để Planner lựa chọn, không
   phải số địa điểm bắt buộc phải xếp vào lịch.
 - Đồng thuận external yêu cầu hai provider khác nhau cùng khớp tên, ADM,

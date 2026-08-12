@@ -17,7 +17,10 @@ from app.modules.place_checker.errors import CandidateSourceTimeout
 from app.modules.place_checker.promotion import PromotionWorker
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.retrieval import TargetedRetrievalService
-from app.modules.place_checker.retrieval_contract import RetrievalEvidence
+from app.modules.place_checker.retrieval_contract import (
+    RetrievalEvidence,
+    TargetedRetrievalQuery,
+)
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import (
@@ -271,6 +274,7 @@ def test_search_places_adapter_scopes_requirement_to_adm() -> None:
                 name="Pho Bat Dan",
                 coordinates=Coordinates(latitude=21.034, longitude=105.847),
                 score=0.9,
+                relationship_score=1.0,
             ),
             top_matches=[
                 PlaceSearchMatch(
@@ -279,6 +283,7 @@ def test_search_places_adapter_scopes_requirement_to_adm() -> None:
                     name="Pho Bat Dan",
                     coordinates=Coordinates(latitude=21.034, longitude=105.847),
                     score=0.9,
+                    relationship_score=1.0,
                 )
             ],
             resolution_reason="requirement_match",
@@ -295,15 +300,75 @@ def test_search_places_adapter_scopes_requirement_to_adm() -> None:
         verified_target_per_gap=1,
     )
 
-    result = asyncio.run(service.retrieve(gap(), analysis_context()))
+    result = asyncio.run(
+        service.retrieve(
+            gap(),
+            analysis_context(),
+            anchor_place_ids=["kg:anchor"],
+        )
+    )
 
     request = tool.requests[0]
     assert request.search_mode == "requirement"
     assert request.input_adm.adm_id == "adm1_vn_ha_noi"
     assert request.allow_external_fallback is False
+    assert request.anchor_place_id == "kg:anchor"
     assert result.gaps[0].candidates[0].place_id == "kg:pho"
+    assert result.gaps[0].candidates[0].relationship_score == 1.0
     assert result.gaps[0].candidates[0].metadata.cost_tier == CostTier.low
     assert result.gaps[0].candidates[0].metadata.typical_duration_minutes == 60
+
+
+def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:
+    fallback = PlaceSearchMatch(
+        place_id="kg:keyword",
+        provider="knowledge_graph",
+        name="Keyword Place",
+        coordinates=Coordinates(latitude=21.034, longitude=105.847),
+        score=0.95,
+        relationship_score=0,
+    )
+    related = PlaceSearchMatch(
+        place_id="kg:related",
+        provider="knowledge_graph",
+        name="Related Place",
+        coordinates=Coordinates(latitude=21.035, longitude=105.848),
+        score=0.70,
+        relationship_score=0.85,
+    )
+    tool = FakeSearchTool(
+        PlaceSearchResult(
+            status="resolved",
+            query="culture",
+            normalized_query="culture",
+            search_mode="requirement",
+            top_matches=[fallback, related],
+            resolution_reason="requirement_match",
+        )
+    )
+    source = SearchPlacesGapSource(
+        tool,
+        provider_name="knowledge_graph",
+        source_kind=RetrievalSourceKind.knowledge_graph,
+    )
+    query = TargetedRetrievalQuery(
+        gap_id="pool:culture_alternatives",
+        gap_type=GapType.experience_coverage,
+        severity=IssueSeverity.low,
+        query_text="culture",
+        adm_id="adm1_vn_ha_noi",
+        adm_name="Hà Nội",
+        country_code="VN",
+        budget_level="low",
+        anchor_place_ids=["kg:anchor"],
+        limit=1,
+    )
+
+    result = asyncio.run(source.search(query))
+
+    assert [item.entity_id for item in result] == ["kg:related"]
+    assert "retrieval:relation" in result[0].tags
+    assert tool.requests[0].top_k == 3
 
 
 def test_external_call_budget_uses_at_most_two_sources() -> None:

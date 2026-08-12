@@ -32,6 +32,13 @@ Chuẩn hóa mỗi component về 0-1 và giữ lại component value để audi
 outlier, duplicate experience, low verification và stale operational data.
 Hard violation được filter trước scoring.
 
+Độ liên quan theo Knowledge Graph được ưu tiên cao trong điểm tìm kiếm.
+Candidate có edge `Must_Visit`, `Near`, `Special_Experience`, `Offer_Item` hoặc
+`Has_Style` với điểm neo/khu vực chứa điểm neo được xếp trước candidate chỉ
+khớp từ khóa. Candidate keyword fallback vẫn được giữ để đủ pool nhưng phải có
+nhãn `retrieval:keyword_fallback` và chịu penalty riêng. Quan hệ không thay thế
+kiểm tra ADM, category và policy.
+
 ## Xếp hạng lại
 
 Dùng deterministic greedy reranking. Sau khi chọn mỗi optional candidate, phạt
@@ -61,8 +68,8 @@ data snapshot.
 - `reranking.py` chọn greedy theo cách xác định. Sau mỗi lựa chọn, candidate còn
   lại bị phạt nếu lặp category, experience type hoặc nằm trong bán kính 2 km
   của candidate đã chọn.
-- Mỗi gap giữ số candidate dự phòng theo số ngày: tối thiểu 5, thông thường
-  khoảng `10 địa điểm/ngày`, tối thiểu 20 và tối đa 60 cho toàn bộ pool. Có thể
+- Mỗi gap giữ số candidate dự phòng theo số ngày: mục tiêu `15 địa điểm/ngày`,
+  tối thiểu 20 và tối đa 120 cho toàn bộ pool. Có thể
   truyền `reserve_limit_per_gap` để override trong
   test hoặc một flow đặc biệt. Candidate trùng `candidate_key` giữa nhiều kết
   quả chỉ được giữ bản có điểm tốt nhất.

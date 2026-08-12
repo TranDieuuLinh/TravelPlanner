@@ -86,3 +86,31 @@ Root graph mặc định vẫn chạy compatibility `PlaceCheckerService` vì re
 hiện chưa có production ADM/KG/metadata/external adapter. Việc bật pipeline V1
 ở runtime phải inject các dependency thật; không thay đổi contract hoặc code của
 FinalItineraryPlanner trong checkpoint này.
+
+## Output gọn cho FinalItineraryPlanner
+
+`PlaceCheckerPlannerOutputBuilder` tạo thêm dạng JSON gọn theo mẫu tích hợp:
+
+```json
+{
+  "trip": {},
+  "places": [],
+  "food": []
+}
+```
+
+`restaurant` và `drink_dessert` được đưa vào `food`; các loại còn lại nằm trong
+`places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,
+giờ mở cửa, quan hệ và `price`.
+
+Giá `price.cost` được tính theo thứ tự:
+
+```text
+minimum và maximum đều có -> (minimum + maximum) / 2
+chỉ có typical -> typical
+địa điểm free -> 0
+không có dữ liệu -> null
+```
+
+`minimum` và `maximum` vẫn được giữ nguyên trong JSON để Planner biết khoảng
+giá. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.

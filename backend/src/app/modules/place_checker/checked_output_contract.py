@@ -110,6 +110,7 @@ class CheckedPlace(ContractModel):
     evaluation: CheckedEvaluation
     ranking: CheckedRanking
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
+    relationship_score: float = Field(default=0, ge=0, le=1)
     provenance: CheckedProvenance
     warnings: list[str] = Field(default_factory=list)
     internal_evaluation: PlaceEvaluation | None = Field(

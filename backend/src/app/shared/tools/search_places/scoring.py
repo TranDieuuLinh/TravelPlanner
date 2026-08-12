@@ -129,13 +129,14 @@ def score_candidate(
     anchor_distance = _anchor_distance(request, candidate)
     if request.search_mode == "requirement":
         score = (
-            name * 0.30
-            + adm * 0.20
-            + place_type * 0.20
-            + confidence * 0.10
-            + address * 0.10
-            + rating_score * 0.07
-            + review_score * 0.03
+            name * 0.16
+            + adm * 0.16
+            + place_type * 0.16
+            + confidence * 0.08
+            + address * 0.05
+            + rating_score * 0.06
+            + review_score * 0.02
+            + candidate.relationship_score * 0.31
         )
     else:
         score = (
@@ -165,6 +166,7 @@ def score_candidate(
         tags=candidate.tags,
         rating=candidate.rating,
         reviewCount=candidate.review_count,
+        relationshipScore=candidate.relationship_score,
         score=round(min(1.0, max(0.0, score)), 6),
         scoreComponents={
             "nameSimilarity": round(name, 6),
@@ -174,6 +176,7 @@ def score_candidate(
             "dataConfidence": round(confidence, 6),
             "rating": round(rating_score, 6),
             "reviewCount": round(review_score, 6),
+            "relationshipScore": round(candidate.relationship_score, 6),
             **(
                 {"anchorDistanceKm": round(anchor_distance, 6)}
                 if anchor_distance is not None

@@ -98,6 +98,11 @@ class PlaceCheckerPipeline:
                 analysis.gaps,
                 context,
                 items,
+                anchor_place_ids=[
+                    place.place_id
+                    for place in enriched.places
+                    if place.place_id
+                ],
             )
             ranking = self.scoring.rank(retrieval, context, evaluated)
             optional_places, verification_by_id, ranking_by_id = (

@@ -36,10 +36,14 @@ from app.modules.place_checker.ports import (
     PromotionCatalog,
     PromotionOutbox,
 )
-from app.modules.place_checker.output import PlaceCheckerPlanningProjector
+from app.modules.place_checker.output import (
+    PlaceCheckerPlannerOutputBuilder,
+    PlaceCheckerPlanningProjector,
+)
 from app.modules.place_checker.output_contract import (
     CheckedPlace,
     PlaceCheckerPlanningProjection,
+    PlaceCheckerPlannerOutput,
     PlaceCheckerResult,
     PlannerPlaceContext,
 )
@@ -95,6 +99,8 @@ __all__ = [
     "PlaceCheckerPipeline",
     "PlaceCheckerPlanningProjection",
     "PlaceCheckerPlanningProjector",
+    "PlaceCheckerPlannerOutputBuilder",
+    "PlaceCheckerPlannerOutput",
     "PlaceCheckerResult",
     "PlaceDiscovery",
     "PlaceMetadata",

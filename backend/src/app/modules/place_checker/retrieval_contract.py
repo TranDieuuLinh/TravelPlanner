@@ -26,6 +26,8 @@ class TargetedRetrievalQuery(ContractModel):
     budget_level: str = Field(min_length=1, max_length=20)
     people_tags: list[str] = Field(default_factory=list)
     time_hints: list[str] = Field(default_factory=list)
+    anchor_place_ids: list[str] = Field(default_factory=list, max_length=10)
+    relation_terms: list[str] = Field(default_factory=list, max_length=20)
     limit: int = Field(default=10, ge=1, le=60)
 
 
@@ -43,6 +45,7 @@ class RetrievalEvidence(ContractModel):
     coordinates: Coordinates | None = None
     tags: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0, le=1)
+    relationship_score: float = Field(default=0, ge=0, le=1)
     fetched_at: datetime | None = None
     metadata: PlaceMetadata | None = None
 
@@ -78,6 +81,7 @@ class RetrievedCandidate(ContractModel):
     evidence: list[RetrievalEvidence] = Field(min_length=1)
     conflicts: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    relationship_score: float = Field(default=0, ge=0, le=1)
 
     @model_validator(mode="after")
     def eligibility_requires_verification(self) -> "RetrievedCandidate":

@@ -81,6 +81,19 @@ POOL_QUERY_SPECS = {
     "pool:local_activity_alternatives": (GapType.experience_coverage, "local activity authentic experience", "travel place"),
 }
 
+POOL_RELATION_TERMS = {
+    "pool:culture_alternatives": ["văn hóa", "tham quan", "heritage", "museum"],
+    "pool:nature_alternatives": ["ngoài trời", "đi dạo", "cắm trại", "nature", "garden", "lake"],
+    "pool:shopping_alternatives": ["mua sắm", "khám phá", "hoạt động mua bán địa phương", "market", "craft"],
+    "pool:nightlife_alternatives": ["cuộc sống về đêm", "nightlife", "ăn nhậu", "karaoke"],
+    "pool:workshop_alternatives": ["làm đồ thủ công", "workshop", "pottery", "class"],
+    "pool:performance_alternatives": ["văn hóa & giải trí", "vui chơi & giải trí", "performance", "theater", "show"],
+    "pool:outdoor_alternatives": ["ngoài trời", "đi dạo", "cắm trại", "cưỡi ngựa", "climbing"],
+    "pool:family_alternatives": ["vui chơi & giải trí", "trẻ em", "family", "children"],
+    "pool:special_experience_alternatives": ["trải nghiệm", "văn hóa", "làm đồ thủ công", "đi dạo"],
+    "pool:local_activity_alternatives": ["hoạt động mua bán địa phương", "làm đồ thủ công", "local", "craft"],
+}
+
 
 class TargetedRetrievalService:
     def __init__(
@@ -107,6 +120,7 @@ class TargetedRetrievalService:
         gaps: GapAnalysis,
         context: TripEvaluationContext,
         items: ItemResolutionBatch | None = None,
+        anchor_place_ids: list[str] | None = None,
     ) -> RetrievalBatch:
         results: list[GapRetrievalResult] = []
         event_ids: list[str] = []
@@ -130,8 +144,22 @@ class TargetedRetrievalService:
                     trigger=f"Cần pool bổ sung theo nhóm {intent}.",
                     suggested_action=f"Tìm thêm địa điểm thuộc nhóm {category}.",
                     related_item_indexes=(
-                        [item.item_index for item in (items.items if items else [])]
-                        if gap_type == GapType.food_coverage
+                        [
+                            item.item_index
+                            for item in (items.items if items else [])
+                            if (
+                                gap_id == "pool:food_alternatives"
+                                and item.item.item_type == "food"
+                            )
+                            or (
+                                gap_id == "pool:drink_alternatives"
+                                and item.item.item_type == "drink"
+                            )
+                        ]
+                        if gap_id in {
+                            "pool:food_alternatives",
+                            "pool:drink_alternatives",
+                        }
                         else []
                     ),
                 )
@@ -145,7 +173,13 @@ class TargetedRetrievalService:
         for gap in retrieval_gaps:
             if gap.status != GapStatus.open:
                 continue
-            query = self._query(gap, context, items, limit=per_gap_limit)
+            query = self._query(
+                gap,
+                context,
+                items,
+                anchor_place_ids=anchor_place_ids or [],
+                limit=per_gap_limit,
+            )
             if gap.gap_type not in DISCOVERY_GAPS:
                 results.append(
                     GapRetrievalResult(
@@ -347,6 +381,7 @@ class TargetedRetrievalService:
             coordinates=representative.coordinates,
             tags=list(dict.fromkeys(tag for item in evidence for tag in item.tags)),
             metadata=metadata,
+            relationship_score=max(item.relationship_score for item in evidence),
             verification_status=status,
             planner_eligible=status in {
                 VerificationStatus.verified_kg,
@@ -434,6 +469,7 @@ class TargetedRetrievalService:
         context: TripEvaluationContext,
         items: ItemResolutionBatch | None,
         *,
+        anchor_place_ids: list[str],
         limit: int | None = None,
     ) -> TargetedRetrievalQuery:
         destination = context.destination
@@ -460,15 +496,19 @@ class TargetedRetrievalService:
             people_tags.append("children_suitable")
         if context.people.infants:
             people_tags.append("infants_suitable")
+        pool_spec = POOL_QUERY_SPECS.get(gap.gap_id)
+        query_text = pool_spec[1] if pool_spec else intent
+        if gap.gap_id == "pool:food_alternatives" and item_names:
+            query_text = f"{', '.join(item_names)} restaurant"
+        elif gap.gap_id == "pool:drink_alternatives" and item_names:
+            query_text = f"{', '.join(item_names)} cafe"
         return TargetedRetrievalQuery(
             gap_id=gap.gap_id,
             gap_type=gap.gap_type,
             severity=gap.severity,
             # ADM is a structured filter. Repeating its display name in the
             # text query would favor venues merely containing that city name.
-            query_text=POOL_QUERY_SPECS.get(gap.gap_id, (None, intent, None))[1]
-            if gap.gap_id in POOL_QUERY_SPECS
-            else intent,
+            query_text=query_text,
             adm_id=destination.adm_id,
             adm_name=destination.canonical_name,
             country_code=destination.country_code,
@@ -478,6 +518,8 @@ class TargetedRetrievalService:
             budget_level=context.budget.level,
             people_tags=people_tags,
             time_hints=[],
+            anchor_place_ids=list(dict.fromkeys(anchor_place_ids))[:10],
+            relation_terms=POOL_RELATION_TERMS.get(gap.gap_id, []),
             # Longer trips need a wider reserve, while PlaceChecker still
             # leaves day assignment and route ordering to the final planner.
             limit=limit or per_gap_pool_target(context.days, 1),

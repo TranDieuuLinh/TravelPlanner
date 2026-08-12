@@ -170,15 +170,123 @@ class PostgresPlaceCatalog:
                    props.address, props.latitude, props.longitude,
                    props.rating, props.review_count, props.updated_at,
                    tags.values AS tags,
-                   CASE WHEN $5::text IS NOT NULL AND EXISTS (
-                       SELECT 1
-                       FROM knowledge_relationships nearby_edge
-                       WHERE nearby_edge.from_entity_id = $5::text
-                         AND nearby_edge.to_entity_id = e.id
-                         AND nearby_edge.relationship_type IN (
-                             'Near', 'NEAR', 'Must_Visit', 'MUST_VISIT'
-                         )
-                   ) THEN 1 ELSE 0 END AS near_score,
+                   CASE
+                       WHEN $5::text IS NULL THEN 0
+                       WHEN EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Must_Visit'
+                       ) THEN 0.95
+                       WHEN EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Near'
+                       ) THEN 0.85
+                       WHEN EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Special_Experience'
+                       ) THEN 0.75
+                       WHEN EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Offer_Item'
+                       ) THEN 0.72
+                       WHEN EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Has_Style'
+                       ) THEN 0.55
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM knowledge_relationships anchor_location
+                           JOIN knowledge_relationships area_edge
+                             ON area_edge.from_entity_id = anchor_location.to_entity_id
+                            AND area_edge.to_entity_id = e.id
+                           WHERE anchor_location.from_entity_id = $5::text
+                             AND anchor_location.relationship_type = 'Located_In'
+                             AND area_edge.relationship_type = 'Must_Visit'
+                       ) THEN 0.78
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM knowledge_relationships anchor_location
+                           JOIN knowledge_relationships area_edge
+                             ON area_edge.from_entity_id = anchor_location.to_entity_id
+                            AND area_edge.to_entity_id = e.id
+                           WHERE anchor_location.from_entity_id = $5::text
+                             AND anchor_location.relationship_type = 'Located_In'
+                             AND area_edge.relationship_type = 'Special_Experience'
+                       ) THEN 0.70
+                       ELSE 0
+                   END AS relationship_score,
+                   CASE
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Must_Visit'
+                       ) THEN 'relation:must_visit'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Near'
+                       ) THEN 'relation:near'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Special_Experience'
+                       ) THEN 'relation:special_experience'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Offer_Item'
+                       ) THEN 'relation:offer_item'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM knowledge_relationships edge
+                           WHERE (
+                               (edge.from_entity_id = $5::text AND edge.to_entity_id = e.id)
+                               OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
+                           ) AND edge.relationship_type = 'Has_Style'
+                       ) THEN 'relation:has_style'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1
+                           FROM knowledge_relationships anchor_location
+                           JOIN knowledge_relationships area_edge
+                             ON area_edge.from_entity_id = anchor_location.to_entity_id
+                            AND area_edge.to_entity_id = e.id
+                           WHERE anchor_location.from_entity_id = $5::text
+                             AND anchor_location.relationship_type = 'Located_In'
+                             AND area_edge.relationship_type = 'Must_Visit'
+                       ) THEN 'relation:area_must_visit'
+                       WHEN $5::text IS NOT NULL AND EXISTS (
+                           SELECT 1
+                           FROM knowledge_relationships anchor_location
+                           JOIN knowledge_relationships area_edge
+                             ON area_edge.from_entity_id = anchor_location.to_entity_id
+                            AND area_edge.to_entity_id = e.id
+                           WHERE anchor_location.from_entity_id = $5::text
+                             AND anchor_location.relationship_type = 'Located_In'
+                             AND area_edge.relationship_type = 'Special_Experience'
+                       ) THEN 'relation:area_special_experience'
+                       ELSE NULL
+                   END AS anchor_relation,
                    GREATEST(
                        similarity(e.normalized_name, $1),
                        COALESCE(aliases.score, 0),
@@ -205,8 +313,9 @@ class PostgresPlaceCatalog:
                 SELECT array_agg(DISTINCT
                            CASE r.relationship_type
                                WHEN 'Special_Experience' THEN 'experience:' || target.canonical_name
-                               WHEN 'SPECIAL_EXPERIENCE' THEN 'experience:' || target.canonical_name
-                               ELSE 'item:' || target.canonical_name
+                               WHEN 'Offer_Item' THEN 'item:' || target.canonical_name
+                               WHEN 'Has_Style' THEN 'style:' || target.canonical_name
+                               ELSE 'relation:' || lower(r.relationship_type)
                            END
                        ) AS values,
                        max(similarity(target.normalized_name, $1)) AS score
@@ -215,8 +324,7 @@ class PostgresPlaceCatalog:
                     FROM knowledge_relationships r
                     WHERE r.from_entity_id = e.id
                       AND r.relationship_type IN (
-                          'Special_Experience', 'SPECIAL_EXPERIENCE',
-                          'Offer_Item', 'OFFERS_ITEM'
+                          'Special_Experience', 'Offer_Item', 'Has_Style'
                       )
                     UNION ALL
                     SELECT r.relationship_type, r.to_entity_id
@@ -232,11 +340,34 @@ class PostgresPlaceCatalog:
                 JOIN knowledge_entities target ON target.id = r.to_entity_id
             ) tags ON true
             WHERE $1 = ''
+               OR (
+                   $5::text IS NOT NULL
+                   AND EXISTS (
+                       SELECT 1 FROM knowledge_relationships relation_edge
+                       WHERE (
+                           (relation_edge.from_entity_id = $5::text AND relation_edge.to_entity_id = e.id)
+                           OR (relation_edge.from_entity_id = e.id AND relation_edge.to_entity_id = $5::text)
+                       )
+                       AND relation_edge.relationship_type IN (
+                           'Near', 'Must_Visit', 'Special_Experience', 'Offer_Item', 'Has_Style'
+                       )
+                   )
+                   OR EXISTS (
+                       SELECT 1
+                       FROM knowledge_relationships anchor_location
+                       JOIN knowledge_relationships area_edge
+                         ON area_edge.from_entity_id = anchor_location.to_entity_id
+                        AND area_edge.to_entity_id = e.id
+                       WHERE anchor_location.from_entity_id = $5::text
+                         AND anchor_location.relationship_type = 'Located_In'
+                         AND area_edge.relationship_type IN ('Must_Visit', 'Special_Experience')
+                   )
+               )
                OR similarity(e.normalized_name, $1) > 0.16
                OR COALESCE(aliases.score, 0) > 0.16
                OR COALESCE(tags.score, 0) > 0.16
                OR cardinality($3::text[]) < 4
-            ORDER BY near_score DESC,
+            ORDER BY relationship_score DESC,
                      match_score DESC,
                      NULLIF(props.rating, '')::double precision DESC NULLS LAST,
                      NULLIF(props.review_count, '')::bigint DESC NULLS LAST,
@@ -387,6 +518,8 @@ class PostgresPlaceCatalog:
         rating = PostgresPlaceCatalog._number(row["rating"])
         confidence = 0.75 if rating is None else min(0.98, 0.65 + rating / 20)
         raw_tags = list(row["tags"] or [])
+        if row["anchor_relation"]:
+            raw_tags.append(row["anchor_relation"])
         tags = [category.replace("_", " "), *raw_tags]
         return PlaceProviderCandidate(
             provider="knowledge_graph",
@@ -403,6 +536,7 @@ class PostgresPlaceCatalog:
             tags=list(dict.fromkeys(tags)),
             rating=rating,
             review_count=PostgresPlaceCatalog._integer(row["review_count"]),
+            relationship_score=float(row["relationship_score"] or 0),
             data_confidence=confidence,
             fetched_at=row["updated_at"],
         )

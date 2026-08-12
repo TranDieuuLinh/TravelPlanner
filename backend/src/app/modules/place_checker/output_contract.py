@@ -114,6 +114,7 @@ class PlannerPlaceContext(ContractModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
+    relationship_score: float = Field(default=0, ge=0, le=1)
     minimum_duration_minutes: int | None = Field(default=None, ge=1)
     typical_duration_minutes: int | None = Field(default=None, ge=1)
     maximum_duration_minutes: int | None = Field(default=None, ge=1)
@@ -146,3 +147,49 @@ class PlaceCheckerPlanningProjection(ContractModel):
     blocked_mandatory_place_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlannerPrice(ContractModel):
+    cost: float | None = Field(default=None, ge=0)
+    minimum: float | None = Field(default=None, ge=0)
+    maximum: float | None = Field(default=None, ge=0)
+    currency: str = "VND"
+    basis: str = "perPerson"
+
+
+class PlannerBudget(ContractModel):
+    amount: float | None = Field(default=None, ge=0)
+    currency: str = "VND"
+
+
+class PlannerOutputPlace(ContractModel):
+    place_id: str | None = None
+    name: str
+    coordinates: Coordinates | None = None
+    address: str | None = None
+    priority: str | None = None
+    notes: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
+    duration_minutes: int | None = Field(default=None, ge=1)
+    opening_hours: list[str] | None = None
+    preferred_time_windows: list[str] = Field(default_factory=list)
+    price: PlannerPrice
+    relationships: list[str] = Field(default_factory=list)
+
+
+class PlannerOutputTrip(ContractModel):
+    destination: str
+    days: int = Field(ge=1)
+    start_date: str | None = None
+    people: int = Field(ge=1)
+    budget: PlannerBudget
+    preferences: list[str] = Field(default_factory=list)
+    avoids: list[str] = Field(default_factory=list)
+
+
+class PlaceCheckerPlannerOutput(ContractModel):
+    trip: PlannerOutputTrip
+    places: list[PlannerOutputPlace] = Field(default_factory=list)
+    food: list[PlannerOutputPlace] = Field(default_factory=list)
