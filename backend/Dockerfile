@@ -8,15 +8,18 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    for attempt in 1 2 3; do \
+    for index_url in https://pypi.org/simple/ https://pypi.python.org/simple/; do \
         python -m pip install \
+            --isolated \
             --disable-pip-version-check \
-            --retries 10 \
-            --timeout 120 \
+            --no-cache-dir \
+            --index-url "$index_url" \
+            --retries 3 \
+            --timeout 30 \
             -r requirements.txt && exit 0; \
-        if [ "$attempt" -eq 3 ]; then exit 1; fi; \
-        echo "pip install failed (attempt $attempt/3); retrying..."; \
-    done
+        echo "pip install failed using $index_url; trying the fallback index..."; \
+    done; \
+    exit 1
 
 COPY . .
 

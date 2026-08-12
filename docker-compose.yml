@@ -1,3 +1,5 @@
+name: TrungLinhLoi-Travel
+
 services:
   postgres:
     # Existing development volumes may still contain the experimental
@@ -25,7 +27,6 @@ services:
 
   langfuse-db:
     image: postgres:16-alpine
-    container_name: travelplanner-langfuse-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
@@ -43,7 +44,6 @@ services:
 
   langfuse:
     image: langfuse/langfuse:2.95.11
-    container_name: travelplanner-langfuse
     restart: unless-stopped
     depends_on:
       langfuse-db:
