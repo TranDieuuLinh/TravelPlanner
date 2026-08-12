@@ -24,6 +24,7 @@ from app.modules.plans.explorer.tools.url_reels.frame_vision import (
     _split_balanced_batches,
 )
 from app.modules.plans.explorer.tools.url_reels.media import (
+    UrlMediaUnavailableError,
     UrlReelMediaExtractor,
 )
 from app.modules.plans.explorer.tools.url_reels.loader import UrlReelLoader
@@ -2638,6 +2639,14 @@ def test_tiktok_video_download_retries_with_browser_impersonation(
 ) -> None:
     attempts: list[str | None] = []
 
+    monkeypatch.setattr(
+        UrlReelMediaExtractor,
+        "_download_tiktok_from_embedded_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            UrlMediaUnavailableError("fixture fallback")
+        ),
+    )
+
     class FakeYoutubeDL:
         def __init__(self, options: dict) -> None:
             self.options = options
@@ -2668,6 +2677,54 @@ def test_tiktok_video_download_retries_with_browser_impersonation(
 
     assert attempts == [None, "chrome", "chrome-131:android-14"]
     assert path.read_bytes() == b"impersonated-video"
+
+
+def test_tiktok_download_uses_embedded_play_addr_before_ytdlp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        status_code = 200
+        text = (
+            '<script id="SIGI_STATE">'
+            '{"ItemModule":{"123":{"video":{"playAddr":'
+            '"https://v16.tiktokcdn.com/video.mp4"}}}}'
+            "</script>"
+        )
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_content(self, chunk_size: int):
+            assert chunk_size > 0
+            yield b"embedded-video"
+
+    class FakeSession:
+        def __init__(self, **kwargs: object) -> None:
+            assert kwargs == {"impersonate": "safari"}
+
+        def get(self, url: str, **kwargs: object) -> FakeResponse:
+            calls.append((url, kwargs["headers"]["Accept"]))
+            return FakeResponse()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.modules.plans.explorer.tools.url_reels.media.curl_requests.Session",
+        FakeSession,
+    )
+
+    path = UrlReelMediaExtractor().download_video(
+        "https://www.tiktok.com/@creator/video/123",
+        tmp_path,
+    )
+
+    assert path.read_bytes() == b"embedded-video"
+    assert calls[0][0].startswith("https://www.tiktok.com/")
+    assert calls[1][0] == "https://v16.tiktokcdn.com/video.mp4"
 
 
 def test_frame_ocr_filters_promotional_cta_place(

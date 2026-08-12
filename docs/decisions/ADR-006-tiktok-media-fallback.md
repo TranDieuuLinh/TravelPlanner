@@ -35,3 +35,9 @@ media tương tự.
 - `curl_cffi` làm image backend lớn hơn và phải được cập nhật cùng `yt-dlp`.
 - Domain Planner chỉ nhận claim/candidate chuẩn hóa, không nhận payload TikTok
   thô.
+
+### Runtime implementation update (2026-08-12)
+
+For TikTok video URLs, runtime first uses curl-cffi with Safari impersonation
+to fetch HTML, extracts embedded JSON `playAddr`, and downloads that URL
+directly from TikTok CDN. If this fails, the existing yt-dlp fallback remains.

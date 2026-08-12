@@ -143,6 +143,8 @@ class UrlReelExtractionService:
                     "mediaDownloadSkipped": 1.0,
                 }
         elif (
+            platform != "tiktok"
+            and
             "/photo/" not in payload.url
             and callable(getattr(self.loader, "load_source", None))
             and callable(getattr(self.media, "extract_audio", None))

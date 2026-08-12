@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import html as html_lib
+import json
+import re
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
+from curl_cffi import requests as curl_requests
 from yt_dlp import YoutubeDL
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import DownloadError, UnsupportedError, YoutubeDLError
@@ -18,7 +23,108 @@ class UrlMediaUnavailableError(RuntimeError):
     """Raised when the reel media cannot be downloaded or prepared."""
 
 
+_TIKTOK_PLAY_URL_KEYS = {"playAddr", "play_addr"}
+_TIKTOK_SCRIPT_RE = re.compile(
+    r"<script[^>]*>(?P<body>.*?)</script>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _walk_json_for_play_addr(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key in _TIKTOK_PLAY_URL_KEYS and isinstance(child, str):
+                if child.startswith(("http://", "https://")):
+                    return html_lib.unescape(child)
+            found = _walk_json_for_play_addr(child)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _walk_json_for_play_addr(child)
+            if found:
+                return found
+    return None
+
+
+def _extract_tiktok_play_addr(document: str) -> str | None:
+    """Read the first normalized playAddr from TikTok's embedded JSON."""
+    for match in _TIKTOK_SCRIPT_RE.finditer(document):
+        body = html_lib.unescape(match.group("body")).strip()
+        if not body or body[0] not in "[{":
+            continue
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        found = _walk_json_for_play_addr(payload)
+        if found:
+            return found
+
+    # Some TikTok responses place the JSON in an escaped script string rather
+    # than a standalone JSON script element.
+    escaped = re.search(
+        r"(?:playAddr|play_addr)\\?['\"]\s*:\s*\\?['\"](?P<url>https?://[^'\"\\]+)",
+        document,
+        flags=re.IGNORECASE,
+    )
+    return html_lib.unescape(escaped.group("url")) if escaped else None
+
+
 class UrlReelMediaExtractor:
+    def _download_tiktok_from_embedded_json(self, url: str, work_dir: Path) -> Path:
+        key = artifact_key(url)
+        output_path = work_dir / f"reel_{key}.mp4"
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://www.tiktok.com/",
+        }
+        failures: list[Exception] = []
+        # TikTok can return a small anti-bot shell for one TLS fingerprint and
+        # the full rehydration document for another. Keep this direct HTML/CDN
+        # path bounded, then let the caller fall back to yt-dlp.
+        for impersonate in ("safari", "chrome", "chrome131", "safari"):
+            session = curl_requests.Session(impersonate=impersonate)
+            try:
+                page = session.get(
+                    url,
+                    headers=headers,
+                    timeout=settings.url_reel_network_timeout_seconds,
+                    allow_redirects=True,
+                )
+                page.raise_for_status()
+                play_addr = _extract_tiktok_play_addr(page.text)
+                if not play_addr:
+                    raise UrlMediaUnavailableError(
+                        f"TikTok HTML ({impersonate}) did not contain playAddr"
+                    )
+                media = session.get(
+                    play_addr,
+                    headers={
+                        **headers,
+                        "Accept": "video/mp4,video/*;q=0.9,*/*;q=0.8",
+                    },
+                    timeout=settings.url_reel_network_timeout_seconds,
+                    stream=True,
+                )
+                media.raise_for_status()
+                with output_path.open("wb") as handle:
+                    for chunk in media.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            handle.write(chunk)
+                if output_path.stat().st_size == 0:
+                    raise UrlMediaUnavailableError("TikTok CDN returned an empty video")
+                return output_path
+            except (OSError, ValueError, UrlMediaUnavailableError, curl_requests.errors.RequestsError) as exc:
+                failures.append(exc)
+                output_path.unlink(missing_ok=True)
+            finally:
+                session.close()
+        raise UrlMediaUnavailableError(
+            "TikTok embedded playAddr download failed after browser-profile retries"
+        ) from failures[-1]
+
     def download_video(self, url: str, work_dir: Path) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         key = artifact_key(url)
@@ -29,6 +135,14 @@ class UrlReelMediaExtractor:
         )
         if existing_matches:
             return existing_matches[0]
+
+        if "tiktok.com" in url.casefold():
+            try:
+                return self._download_tiktok_from_embedded_json(url, work_dir)
+            except UrlMediaUnavailableError:
+                # Keep yt-dlp as a direct-request fallback for pages that do
+                # not expose playAddr in their server-rendered HTML.
+                pass
 
         output_template = str(work_dir / f"reel_{key}.%(ext)s")
         base_options = {
