@@ -18,23 +18,6 @@ tố `information_finder_`. Vì vậy cần phân biệt:
   `InMemorySaver`. Information Finder sẽ dùng các bảng cache mô tả bên dưới khi
   có `DATABASE_URL` và migration đã được áp dụng.
 
-`shared/tools/search_places/` hiện chỉ định nghĩa provider port và engine
-xếp hạng/policy. Thay đổi này không thêm migration, không đọc trực tiếp các bảng
-Knowledge Graph legacy và chưa nối PostgreSQL runtime. Adapter Knowledge Graph
-tương lai phải nhận ownership/database đích rõ ràng trước khi query entity,
-alias, property và quan hệ ADM; external adapter chỉ được trả payload đã chuẩn
-hóa qua contract.
-
-Explorer có ba loại snapshot logic: `ready`, `clarification` và `failure`.
-Thay đổi hiện tại dùng `InMemoryExplorerSnapshotRepository`, không tạo table
-hay migration và không ghi raw prompt/raw third-party payload. Trước production
-cần xác định database ownership rồi triển khai durable adapter cho port
-`ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
-PlaceChecker.
-TikTok importer dùng `yt-dlp` và không thêm table hay migration. Media/raw
-third-party payload không được lưu vào database; snapshot chỉ nhận Explorer
-output đã chuẩn hóa cùng provenance.
-
 ## Schema cache nguồn Information Finder
 
 Migration nguồn: `backend/migrations/001_information_finder_source_cache.sql`.

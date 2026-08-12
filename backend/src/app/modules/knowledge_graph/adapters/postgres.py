@@ -48,6 +48,31 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
             )
         return dict(row)
 
+    async def search_stats(self, query: str) -> dict:
+        pool = await self._get_pool()
+        pattern = f"%{query}%"
+        async with pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """SELECT
+                    (SELECT count(*) FROM knowledge_entities
+                     WHERE canonical_name ILIKE $1 OR id ILIKE $1) AS entity_count,
+                    (SELECT count(*) FROM knowledge_aliases
+                     WHERE alias ILIKE $1 OR normalized_alias ILIKE $1) AS alias_count,
+                    (SELECT count(*) FROM knowledge_properties
+                     WHERE key ILIKE $1 OR value ILIKE $1 OR source ILIKE $1) AS property_count,
+                    (SELECT count(*) FROM knowledge_relationships
+                     WHERE relationship_type ILIKE $1 OR from_entity_id ILIKE $1
+                        OR to_entity_id ILIKE $1 OR source ILIKE $1) AS relationship_count""",
+                pattern,
+            )
+        result = dict(row)
+        result["query"] = query
+        result["total_count"] = sum(
+            result[key]
+            for key in ("entity_count", "alias_count", "property_count", "relationship_count")
+        )
+        return result
+
     async def list_entities(self, **filters) -> tuple[list[dict], int]:
         limit = filters["limit"]
         offset = filters["offset"]
@@ -188,7 +213,7 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
                 )
                 SELECT id, from_entity_id, relationship, to_entity_id, source, created_at
                 FROM directed
-                ORDER BY direction_rank, direction_order, id
+                ORDER BY direction_rank, direction_order, id DESC
                 LIMIT $2 OFFSET $3""", entity_id, rel_limit, rel_offset)
             alias_total = await connection.fetchval("SELECT count(*) FROM knowledge_aliases WHERE entity_id=$1", entity_id)
             prop_total = await connection.fetchval("SELECT count(*) FROM knowledge_properties WHERE entity_id=$1", entity_id)
