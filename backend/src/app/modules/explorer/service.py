@@ -17,6 +17,7 @@ from app.modules.explorer.ports import (
     UrlSourceExtractor,
 )
 from app.modules.explorer.retry import run_with_one_retry
+from app.modules.explorer.tools import normalize_budget_per_person
 from app.shared.contracts.agent import AgentError
 
 
@@ -312,6 +313,7 @@ class ExplorerService:
         budget = draft.budget
         if budget.source == "default":
             budget = ExplorerBudget(level="low", source="default")
+        budget = normalize_budget_per_person(budget, draft.people)
         if not input_adm:
             question = (
                 "Các nguồn có địa điểm hành chính mâu thuẫn. Bạn muốn đi đâu?"

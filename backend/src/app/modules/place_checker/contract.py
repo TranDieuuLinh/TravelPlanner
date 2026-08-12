@@ -104,6 +104,7 @@ class BudgetInput(ContractModel):
     target_amount: Decimal | None = Field(default=None, ge=0)
     currency: str | None = None
     source: str = Field(min_length=1, max_length=80)
+    basis: Literal["group_total", "per_person"] = "per_person"
 
     @field_validator("currency")
     @classmethod

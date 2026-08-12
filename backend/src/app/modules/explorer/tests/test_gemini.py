@@ -23,6 +23,40 @@ class ActivityNoteClient:
         })
 
 
+class PlaceNameClient:
+    def __init__(self) -> None:
+        self.system_prompt = ""
+
+    async def generate(self, user_prompt: str, **kwargs) -> str:
+        self.system_prompt = kwargs["system_prompt"]
+        return json.dumps({
+            "places": [{
+                "name": "Lăng Chủ tịch Hồ Chí Minh",
+                "confidence": 0.9,
+                "sourcePlaces": [{
+                    "origin": "input",
+                    "evidenceType": "raw_prompt",
+                    "evidence": "ghé lăng bác",
+                }],
+            }]
+        })
+
+
+def test_prompt_requests_semantic_place_name_normalization_in_name_only() -> None:
+    client = PlaceNameClient()
+    generator = GeminiExplorerDraftGenerator(client)  # type: ignore[arg-type]
+
+    draft = asyncio.run(generator.from_prompt("Tôi muốn ghé lăng bác"))
+
+    assert draft.places[0].name == "Lăng Chủ tịch Hồ Chí Minh"
+    assert "place-name expert" in client.system_prompt
+    assert "name normalization, not verification" in client.system_prompt
+    assert "Return the normalized value only in places[].name" in client.system_prompt
+    assert set(draft.places[0].model_dump(by_alias=True)) == {
+        "name", "addressHint", "confidence", "sourcePlaces"
+    }
+
+
 def test_source_prompt_keeps_supported_activities_as_url_notes() -> None:
     client = ActivityNoteClient()
     generator = GeminiExplorerDraftGenerator(client)  # type: ignore[arg-type]

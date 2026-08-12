@@ -17,6 +17,24 @@ def test_prompt_only_extracts_adm_and_prompt_days() -> None:
     assert output.days == 4
 
 
+def test_group_budget_is_normalized_per_person_before_output() -> None:
+    output = invoke({
+        "rawPrompt": "Lập kế hoạch ở Huế 4 ngày cho 4 người, budget 8 triệu"
+    })
+
+    assert output.budget.target_amount == 2_000_000
+    assert output.budget.basis == "per_person"
+
+
+def test_explicit_per_person_budget_is_preserved() -> None:
+    output = invoke({
+        "rawPrompt": "Lập kế hoạch ở Huế cho 4 người, budget 2 triệu/người"
+    })
+
+    assert output.budget.target_amount == 2_000_000
+    assert output.budget.basis == "per_person"
+
+
 def test_defaults_do_not_infer_days_from_image() -> None:
     output = invoke({
         "images": [{

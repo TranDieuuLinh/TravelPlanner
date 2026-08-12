@@ -86,6 +86,7 @@ class SourceNote(ExplorerModel):
 
 BudgetLevel = Literal["low", "medium", "high"]
 BudgetSource = Literal["default", "raw_prompt", "image", "url"]
+BudgetBasis = Literal["group_total", "per_person"]
 
 
 class ExplorerBudget(ExplorerModel):
@@ -93,6 +94,7 @@ class ExplorerBudget(ExplorerModel):
     target_amount: int | None = Field(default=None, ge=0)
     currency: str = Field(default="VND", min_length=3, max_length=3)
     source: BudgetSource = "default"
+    basis: BudgetBasis = "group_total"
 
     @field_validator("currency")
     @classmethod
