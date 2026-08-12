@@ -1,0 +1,74 @@
+# Từ điển gắn tag tự động dựa trên tên địa điểm.
+# Mỗi key là một tag; danh sách bên phải là từ khóa dùng để nhận diện.
+# Có thể gắn nhiều tag nếu tên địa điểm khớp nhiều nhóm.
+# Cập nhật lần cuối: 2026-08-12
+
+di tích: [lăng mộ, lăng, đền, pháo đài, khu di tích, di tích, thành cổ, hoàng thành, kinh thành, cố đô, khu tưởng niệm, đài tưởng niệm, historical site, heritage site, monument, memorial]
+
+lịch sử: [lăng mộ, lăng, đền, pháo đài, khu di tích, di tích lịch sử, bảo tàng lịch sử, thành cổ, hoàng thành, kinh thành, chiến trường, nhà tù, history, historical, war museum, prison museum]
+
+Tâm linh: [lăng mộ, lăng, đền, chùa, miếu, đình, nhà thờ, thánh thất, am, phủ, điện, tịnh xá, temple, pagoda, shrine, church, cathedral, monastery]
+
+quân sự: [pháo đài, thành lũy, căn cứ quân sự, bảo tàng quân đội, bảo tàng quân sự, chiến trường, hầm, địa đạo, nhà tù, fortress, citadel, military base, military museum, battlefield, tunnel]
+
+Văn hóa: [đền, chùa, miếu, đình, nhà thờ, làng cổ, phố cổ, làng nghề, bảo tàng, di sản, lễ hội, nhà văn hóa, culture, cultural, heritage, festival, old town, craft village]
+
+kiến thức: [bảo tàng, thư viện, nhà trưng bày, triển lãm, di tích, khu tưởng niệm, trung tâm khoa học, cung thiên văn, museum, library, exhibition, science center, planetarium]
+
+kiến trúc: [thành cổ, hoàng thành, kinh thành, nhà thờ, chùa, đình, phố cổ, làng cổ, tháp, cầu, cung điện]
+
+thiên nhiên: [biển, bãi biển, đảo, quần đảo, vịnh, núi, đồi, cao nguyên, sông, hồ, suối, thác, hang động, rừng, vườn quốc gia, khu bảo tồn, nature, natural, island, mountain, river, lake, waterfall, cave, forest, national park, nature reserve]
+
+biển: [biển, bãi biển, đảo, quần đảo, vịnh, bãi tắm, hòn, beach, island, bay, coast, seaside]
+
+núi: [núi, đồi, cao nguyên, đỉnh, đèo, thung lũng]
+
+sinh thái: [vườn quốc gia, khu bảo tồn, rừng, khu sinh thái, vườn thực vật, vườn quốc gia]
+
+cảnh quan: [view, điểm ngắm cảnh, ngắm cảnh, phong cảnh, cảnh quan, bình minh, hoàng hôn, thung lũng, đèo]
+
+địa phương: [phở, bún, bánh mì, cơm tấm, đặc sản, món địa phương, ẩm thực địa phương, chợ, chợ nổi, chợ truyền thống, làng nghề, local, local food, specialty, market, floating market, traditional market]
+
+ẩm thực: [nhà hàng, quán ăn, phở, bún, bánh mì, cơm, đặc sản, món ngon, ẩm thực, food, food tour, restaurant, dining, cuisine]
+
+đồ uống: [cà phê, cafe, coffee, trà, trà sữa, nước ép, sinh tố, cocktail, bia, rượu, wine, whisky, vodka, pub, bar, drinks, beverage, tea, juice, smoothie]
+
+rượu bia: [bia, beer, rượu, wine, whisky, vodka, cocktail, beer club, pub, bar]
+
+drunk: [bia, beer, rượu, wine, whisky, vodka, cocktail, beer club, pub, bar, drinking]
+
+18+: [bar, pub, club, nightclub, beer club, cocktail, rượu, bia, adult only, người lớn]
+
+nightlife: [bar, pub, club, nightclub, beer club, karaoke, phố đi bộ, chợ đêm, night market, nightlife]
+
+mạo hiểm: [mạo hiểm, adventure, extreme, trekking, hiking, leo núi, zipline, bungee, dù lượn, lặn biển, diving, snorkeling, kayak, chèo thuyền, lướt sóng, rock climbing, rafting, paragliding]
+
+thể thao: [trekking, hiking, leo núi, đạp xe, xe đạp, chạy bộ, zipline, kayak, chèo thuyền, lặn biển, surfing, lướt sóng]
+
+hoạt động: [tham quan, trải nghiệm, check-in, chụp ảnh, trekking, hiking, leo núi, mua sắm, spa, massage, yoga, câu cá, chèo thuyền, visit, experience, activity, sightseeing, shopping, fishing, boating]
+
+chụp ảnh: [check-in, sống ảo, điểm chụp ảnh, photo spot, view đẹp, cầu, tháp, phố cổ, biển, hoàng hôn, bình minh]
+
+nghỉ dưỡng: [resort, khu nghỉ dưỡng, villa, bungalow, spa, biển, bãi biển, suối khoáng, onsen, vacation, retreat, wellness resort]
+
+thư giãn: [spa, massage, yoga, thiền, resort, nghỉ dưỡng, suối khoáng, onsen, công viên, vườn hoa]
+
+mua sắm: [chợ, chợ đêm, chợ nổi, trung tâm thương mại, mall, shopping, phố mua sắm, làng nghề]
+
+gia đình: [công viên, khu vui chơi, công viên nước, thiếu nhi, trẻ em, family, kids, sở thú, thủy cung]
+
+phong cách Việt: [phở, bún, bánh mì, cơm tấm, món việt, ẩm thực việt, việt nam]
+
+phong cách Nhật: [sushi, sashimi, ramen, udon, izakaya, tempura, nhật bản, nhật, japanese, onsen]
+
+phong cách Hàn: [kimchi, barbecue hàn, k-food, hàn quốc, hàn, korean, tokbokki]
+
+phong cách Trung Hoa: [dimsum, lẩu tứ xuyên, món hoa, trung hoa, trung quốc, chinese, vịt quay]
+
+phong cách Thái: [tom yum, pad thai, thái lan, thái, thai]
+
+phong cách phương Tây: [pizza, pasta, steak, hamburger, âu, âu mỹ, phương tây, western, american, italian, french]
+
+giá rẻ: [bình dân, giá rẻ, tiết kiệm, budget, cheap, street food]
+
+sang trọng: [cao cấp, sang trọng, luxury, premium, five star, fine dining]

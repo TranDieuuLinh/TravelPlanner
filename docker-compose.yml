@@ -45,6 +45,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
   langfuse:
     image: langfuse/langfuse:2.95.11
@@ -80,7 +81,10 @@ services:
       INFORMATION_FINDER_EMBEDDING_REVISION: ${INFORMATION_FINDER_EMBEDDING_REVISION:-}
       INFORMATION_FINDER_EMBEDDING_OUTPUT_DIMENSIONS: ${INFORMATION_FINDER_EMBEDDING_OUTPUT_DIMENSIONS:-384}
       INFORMATION_FINDER_EMBEDDING_TIMEOUT_SECONDS: ${INFORMATION_FINDER_EMBEDDING_TIMEOUT_SECONDS:-30}
-      INFORMATION_FINDER_ANSWER_PROVIDER: ${INFORMATION_FINDER_ANSWER_PROVIDER:-gemini}
+      # Development defaults must work without third-party API keys.
+      INFORMATION_FINDER_ANSWER_PROVIDER: ${INFORMATION_FINDER_ANSWER_PROVIDER:-extractive}
+      SUPERVISOR_CLASSIFIER_PROVIDER: ${SUPERVISOR_CLASSIFIER_PROVIDER:-rules}
+      EXPLORER_DRAFT_PROVIDER: ${EXPLORER_DRAFT_PROVIDER:-rules}
       INFORMATION_FINDER_LLM_MAX_OUTPUT_TOKENS: ${INFORMATION_FINDER_LLM_MAX_OUTPUT_TOKENS:-800}
       INFORMATION_FINDER_LLM_MAX_CHARS_PER_SOURCE: ${INFORMATION_FINDER_LLM_MAX_CHARS_PER_SOURCE:-4000}
       INFORMATION_FINDER_LLM_MAX_TOTAL_SOURCE_CHARS: ${INFORMATION_FINDER_LLM_MAX_TOTAL_SOURCE_CHARS:-12000}
@@ -106,9 +110,10 @@ services:
       start_period: 10s
 
   valhalla:
+    profiles: ["routing"]
     image: ghcr.io/valhalla/valhalla-scripted:latest
     environment:
-      tile_urls: https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
+      tile_urls: ${VALHALLA_TILE_URLS:-https://download.geofabrik.de/asia/vietnam-latest.osm.pbf}
       force_rebuild: "false"
       server_threads: "2"
       build_admins: "true"
@@ -146,4 +151,6 @@ services:
 
 volumes:
   travelplanner_postgres_data_v2:
+    # Reuse the database volume from the previous TravelPlanner Compose project.
+    name: vsf_travelplanner_travelplanner_postgres_data_v2
   langfuse_postgres_data:
