@@ -1,3 +1,20 @@
+Has_Style: Bia Hơi Đất Mỏ → Ăn nhậu (TravelPlace/Restaurant/DrinkDessert -> style)
+Located_In: ADM1 Locted in ADM0, Places loacted in ADM...
+Offer_Item: Places offer activity (normal activity)
+Offer_Item: Places special expereince ( activity/places)
+Special_Near: places->places
+
+Phạm vi triển khai của module này bắt đầu từ public JSON đã được upstream
+chuẩn bị. FinalItineraryPlanner không query Knowledge Graph, không search DB và
+không sửa behavior của PlaceChecker.
+
+Tài liệu triển khai chi tiết:
+
+1. `02-input-boundary-and-preprocessing.md`
+2. `03-valhalla-matrix-and-sparse-arcs.md`
+3. `04-cp-sat-model-and-solving.md`
+4. `05-runtime-testing-and-rollout.md`
+
 TẦNG 1 — PRIORITY
 
 1. Tối đa số user_input được xếp
@@ -50,30 +67,3 @@ selected[van_mieu] = 1
 assigned[van_mieu, 1] = 1
 start[van_mieu, 1] = 540 → 09:00
 end[van_mieu, 1] = 630 → 10:30
-
-
-
-
-Explorer
-   ↓
-PlaceChecker đọc Knowledge Graph
-   ↓
-PlaceChecker tạo candidate pool hoàn chỉnh
-   ↓
-Xuất đúng một JSON trip + places + food
-   ↓
-FinalItineraryPlanner validate JSON
-   ↓
-Gọi Valhalla lấy global matrix
-   ↓
-Tạo biến + hard constraints CP-SAT
-   ↓
-Tối ưu user_input
-   ↓ khóa
-Tối ưu URL
-   ↓ khóa
-Tối ưu planUtility
-   ↓
-Lấy route chi tiết cho arc được chọn
-   ↓
-Trả itinerary + unscheduled

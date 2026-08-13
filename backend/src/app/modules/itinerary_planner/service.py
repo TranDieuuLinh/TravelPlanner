@@ -1,9 +1,9 @@
 from uuid import uuid4
 
 from app.modules.itinerary_planner.contract import (
-    ItineraryPlannerInput,
     ItineraryPlannerOutput,
 )
+from app.modules.itinerary_planner.legacy_contract import LegacyItineraryPlannerInput
 from app.modules.itinerary_planner.ports import RoutingProvider
 from app.shared.contracts.itinerary import Itinerary, ItineraryDay, ItineraryItem
 
@@ -12,7 +12,9 @@ class ItineraryPlannerService:
     def __init__(self, routing: RoutingProvider) -> None:
         self.routing = routing
 
-    async def plan(self, payload: ItineraryPlannerInput) -> ItineraryPlannerOutput:
+    async def plan(
+        self, payload: LegacyItineraryPlannerInput
+    ) -> ItineraryPlannerOutput:
         day_places = [[] for _ in range(payload.intent.days)]
         for index, place in enumerate(payload.places):
             day_places[index % payload.intent.days].append(place)
