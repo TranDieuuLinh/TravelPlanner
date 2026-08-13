@@ -82,6 +82,11 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
+The Compose backend mounts `backend/src` directly into the container and runs
+Uvicorn with reload enabled for development. After changing Python source,
+the server reloads automatically; rebuild only when changing the Dockerfile,
+Python dependencies, base image, or system packages.
+
 Docker Compose loads backend environment variables from `backend/.env`; the
 backend uses the cloud PostgreSQL connection in `DATABASE_URL` without a local
 database service or URL override.

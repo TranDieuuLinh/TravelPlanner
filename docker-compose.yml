@@ -26,6 +26,22 @@ services:
       INFORMATION_FINDER_LLM_FALLBACK_ENABLED: ${INFORMATION_FINDER_LLM_FALLBACK_ENABLED:-true}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    # Development mode: use the working tree directly so source changes do
+    # not require rebuilding the image. Remove this mount for production.
+    volumes:
+      - ./backend/src:/app/src
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
     restart: unless-stopped
     healthcheck:
       test:
