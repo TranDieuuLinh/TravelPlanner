@@ -1,5 +1,9 @@
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
+from app.modules.place_checker.adapters.postgres_catalog_mapping import (
+    PostgresCatalogMappingMixin,
+)
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.shared.tools.search_places import PlaceProviderCandidate
 
 
@@ -42,7 +46,71 @@ def test_generic_travel_pool_rejects_non_tourism_service_tags() -> None:
 
 
 def test_postgres_search_uses_trigram_prefilter_and_bounded_top_k() -> None:
-    assert "e.normalized_name % $1" in PLACE_SEARCH_SQL
-    assert "a.normalized_alias % $1" in PLACE_SEARCH_SQL
+    assert "entity.normalized_name % $1" in PLACE_SEARCH_SQL
+    assert "alias.normalized_alias % $1" in PLACE_SEARCH_SQL
     assert "target.normalized_name % $1" in PLACE_SEARCH_SQL
     assert "LIMIT $4" in PLACE_SEARCH_SQL
+
+
+def test_postgres_search_supports_cloud_relationship_shape() -> None:
+    assert "WITH RECURSIVE adm_descendants" in PLACE_SEARCH_SQL
+    assert "adm_ancestors" in PLACE_SEARCH_SQL
+    assert "'Special_Near', 'Near', 'Must_Visit'" in PLACE_SEARCH_SQL
+    assert "special.to_entity_id" in PLACE_SEARCH_SQL
+    assert "special.from_entity_id IN (SELECT id FROM adm_scope)" in PLACE_SEARCH_SQL
+    assert "relationship_evidence" in PLACE_SEARCH_SQL
+
+
+def test_style_time_properties_only_fill_missing_place_metadata() -> None:
+    relationship = PlaceRelationshipEvidence(
+        relationship_type="Has_Style",
+        direction="place_to_attribute",
+        scope="place",
+        from_entity_id="place:1",
+        to_entity_id="style:nightlife",
+        priority=80,
+        properties={
+            "time_windows": [{"start": "18:00", "end": "23:59"}],
+            "time_duration": "PT120M",
+        },
+        score=0.65,
+    )
+
+    fallback = PostgresCatalogMappingMixin._metadata(
+        "place:1", "TravelPlace", {}, [], None, [relationship]
+    )
+    direct = PostgresCatalogMappingMixin._metadata(
+        "place:1",
+        "TravelPlace",
+        {"time_windows": '[{"start":"09:00","end":"10:00"}]', "time_duration": "PT45M"},
+        [],
+        None,
+        [relationship],
+    )
+
+    assert fallback.typical_duration_minutes == 120
+    assert fallback.opening_hours == ["18:00-23:59"]
+    assert direct.typical_duration_minutes == 45
+    assert direct.opening_hours == ["09:00-10:00"]
+
+
+def test_special_near_score_decreases_with_distance() -> None:
+    base = {
+        "relationship_type": "Special_Near",
+        "direction": "place_to_place",
+        "scope": "anchor",
+        "from_entity_id": "place:1",
+        "to_entity_id": "place:2",
+        "related_entity_id": "place:2",
+        "related_name": "Nearby",
+        "source": "derived",
+        "source_note": None,
+    }
+    near = PostgresPlaceCatalog._metadata_relationship(
+        {**base, "recommendations": '{"distance_km":1,"threshold_km":5}'}
+    )
+    far = PostgresPlaceCatalog._metadata_relationship(
+        {**base, "recommendations": '{"distance_km":4,"threshold_km":5}'}
+    )
+
+    assert near["score"] > far["score"]

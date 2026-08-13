@@ -135,6 +135,7 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 | `avatar_url` | varchar | Có | URL ảnh đại diện. |
 | `created_at` | timestamptz | Không | Thời điểm tạo user. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
+
 | `status` | varchar | Không | Trạng thái tài khoản. |
 | `password_hash` | varchar | Có | Hash mật khẩu. |
 | `bio` | text | Có | Giới thiệu user. |
@@ -333,6 +334,18 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 | `source_note` | text | Có | Ghi chú hoặc bằng chứng mô tả nguồn của quan hệ. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
+
+Runtime relationship semantics observed on 2026-08-13:
+
+- `Located_In`: place/ADM child → ADM parent;
+- `Special_Experience`: ADM → `TravelPlace`, recommendations object may carry
+  `status` and `match_type`;
+- `Special_Near`: `TravelPlace` ↔ `TravelPlace`, stored bidirectionally, with
+  `distance_km`, `threshold_km` and optional derivation rule;
+- `Offer_Item`: place → item; recommendations may be an evidence array or an
+  object containing status/priority;
+- `Has_Style`: place → style; object may contain priority and fallback
+  `time_windows`/`time_duration` properties.
 
 ### `knowledge_entity_images`
 

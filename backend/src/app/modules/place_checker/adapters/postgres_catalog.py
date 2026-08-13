@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+import json
 from typing import Any
 
 from app.modules.place_checker.contract import AdmResolution, AdmResolutionStatus
@@ -129,6 +130,10 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 for candidate in candidates
                 if candidate.canonical_type != "travel_place"
                 or self._has_tourism_experience(candidate.tags)
+                or any(
+                    relationship.get("relationshipType") == "Special_Experience"
+                    for relationship in candidate.relationship_evidence
+                )
             ]
             candidates = self._cap_tourism_experience_groups(
                 candidates,
@@ -152,14 +157,40 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             """,
             place_ids,
         )
-        tag_rows = await pool.fetch(
+        relationship_rows = await pool.fetch(
             """
-            SELECT r.from_entity_id AS entity_id, r.relationship_type,
-                   target.canonical_name
-            FROM knowledge_relationships r
-            JOIN knowledge_entities target ON target.id = r.to_entity_id
-            WHERE r.from_entity_id = ANY($1::text[])
-              AND r.relationship_type IN ('Special_Experience', 'Offer_Item')
+            SELECT relation.*, owner.entity_id,
+                   related.id AS related_entity_id,
+                   related.canonical_name AS related_name,
+                   owner.direction, owner.scope
+            FROM knowledge_relationships relation
+            JOIN LATERAL (
+                SELECT relation.from_entity_id AS entity_id,
+                       CASE WHEN relation.relationship_type IN (
+                           'Special_Near', 'Near', 'Must_Visit'
+                       ) THEN 'place_to_place' ELSE 'place_to_attribute' END AS direction,
+                       CASE WHEN relation.relationship_type IN (
+                           'Special_Near', 'Near', 'Must_Visit'
+                       ) THEN 'anchor' ELSE 'place' END AS scope
+                WHERE relation.from_entity_id = ANY($1::text[])
+                UNION ALL
+                SELECT relation.to_entity_id,
+                       CASE WHEN relation.relationship_type = 'Special_Experience'
+                            THEN 'area_to_place' ELSE 'place_to_place' END,
+                       CASE WHEN relation.relationship_type = 'Special_Experience'
+                            THEN 'destination' ELSE 'anchor' END
+                WHERE relation.to_entity_id = ANY($1::text[])
+                  AND relation.relationship_type IN (
+                      'Special_Experience', 'Special_Near', 'Near', 'Must_Visit'
+                  )
+            ) owner ON true
+            JOIN knowledge_entities related ON related.id = CASE
+                WHEN owner.entity_id = relation.from_entity_id
+                THEN relation.to_entity_id ELSE relation.from_entity_id END
+            WHERE relation.relationship_type IN (
+                'Special_Experience', 'Special_Near', 'Near', 'Must_Visit',
+                'Offer_Item', 'Has_Style'
+            )
             """,
             place_ids,
         )
@@ -171,9 +202,22 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             if current is None or row["updated_at"] > current:
                 fetched_at[row["entity_id"]] = row["updated_at"]
         tags: dict[str, list[str]] = defaultdict(list)
-        for row in tag_rows:
-            prefix = "experience" if row["relationship_type"] == "Special_Experience" else "item"
-            tags[row["entity_id"]].append(f"{prefix}:{row['canonical_name']}")
+        relationships = defaultdict(list)
+        for row in relationship_rows:
+            relationship = self._relationships(
+                [self._metadata_relationship(row)]
+            )[0]
+            relationships[row["entity_id"]].append(relationship)
+            if row["relationship_type"] == "Special_Experience":
+                tags[row["entity_id"]].append("experience:special_experience")
+            elif row["relationship_type"] == "Offer_Item":
+                tags[row["entity_id"]].append(f"item:{row['related_name']}")
+            elif row["relationship_type"] == "Has_Style":
+                tags[row["entity_id"]].append(f"style:{row['related_name']}")
+            elif row["relationship_type"] in {"Special_Near", "Near", "Must_Visit"}:
+                tags[row["entity_id"]].append(
+                    f"relation:{row['relationship_type'].casefold()}"
+                )
         return {
             row["id"]: self._metadata(
                 row["id"],
@@ -181,6 +225,56 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 properties[row["id"]],
                 tags[row["id"]],
                 fetched_at.get(row["id"]),
+                relationships[row["id"]],
             )
             for row in entity_rows
+        }
+
+    @staticmethod
+    def _metadata_relationship(row):
+        raw = row["recommendations"]
+        try:
+            recommendations = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (TypeError, ValueError):
+            recommendations = {}
+        payload = recommendations if isinstance(recommendations, dict) else {}
+        evidence = recommendations if isinstance(recommendations, list) else []
+        confidences = [
+            item.get("confidence")
+            for item in evidence
+            if isinstance(item, dict) and isinstance(item.get("confidence"), (int, float))
+        ]
+        relationship_type = row["relationship_type"]
+        distance = payload.get("distance_km")
+        threshold = payload.get("threshold_km")
+        if relationship_type == "Special_Near":
+            ratio = distance / threshold if distance is not None and threshold else 1
+            score = max(0.65, 0.95 - 0.30 * ratio)
+        elif relationship_type == "Near":
+            score = 0.85
+        elif relationship_type == "Must_Visit":
+            score = 0.95
+        elif relationship_type == "Special_Experience":
+            score = 0.55 if payload.get("status") == "pending" else 0.78
+        elif relationship_type == "Offer_Item":
+            score = max(confidences, default=0.45 if payload.get("status") == "pending" else 0.72)
+        else:
+            score = min(0.75, 0.45 + float(payload.get("priority", 40)) / 400)
+        return {
+            "relationshipType": relationship_type,
+            "direction": row["direction"],
+            "scope": row["scope"],
+            "fromEntityId": row["from_entity_id"],
+            "toEntityId": row["to_entity_id"],
+            "relatedEntityId": row["related_entity_id"],
+            "relatedName": row["related_name"],
+            "status": payload.get("status"),
+            "confidence": max(confidences) if confidences else None,
+            "priority": payload.get("priority"),
+            "distanceKm": distance,
+            "thresholdKm": threshold,
+            "source": row["source"],
+            "sourceNote": row["source_note"],
+            "properties": payload.get("properties") or {},
+            "score": min(1, max(0, score)),
         }

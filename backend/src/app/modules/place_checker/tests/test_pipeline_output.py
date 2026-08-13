@@ -24,7 +24,9 @@ from app.modules.place_checker.evidence import EvidenceEnrichmentService
 from app.modules.place_checker.graph import build_place_checker_pipeline_graph
 from app.modules.place_checker.input_projection import ExplorerInputProjector
 from app.modules.place_checker.item_resolution import InputItemResolutionService
-from app.modules.place_checker.output import PlaceCheckerPlanningProjector
+from app.modules.place_checker.planning_output import (
+    PlaceCheckerPlanningProjector,
+)
 from app.modules.place_checker.output_contract import PlaceCheckerResult
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution import EntityResolutionService
@@ -196,6 +198,7 @@ def pipeline(*, metrics=None) -> PlaceCheckerPipeline:
             adm_names=["Hà Nội"],
             canonical_type="restaurant",
             tags=["pho", "food"],
+            relationship_score=0.9,
             coordinates=Coordinates(latitude=21.0338, longitude=105.8340),
             data_confidence=0.95,
         ),

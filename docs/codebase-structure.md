@@ -213,6 +213,10 @@ GIN `pg_trgm` trên canonical name, alias và relationship target trước khi t
 áp score cuối. Retrieval chỉ chạy cho gap phân tích thực, không tự mở fixed
 reserve pool. Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
 Google Maps/external live provider chưa được nối.
+Candidate contract của tool giữ relationship evidence chuẩn hóa ở dạng dữ liệu
+trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`/`Near`,
+`Special_Experience`, `Offer_Item` và `Has_Style`, duyệt ADM đệ quy và chuyển
+evidence có provenance sang scoring/output.
 
 Authentication, Marketplace, URL import chịu được mọi anti-bot, dữ liệu place
 live và routing live chưa nằm trong scaffold hiện tại. Checkpointer của root

@@ -181,6 +181,7 @@ class EvidenceEnrichmentService:
                 address=place.address,
                 category=place.category,
                 tags=place.tags,
+                relationships=place.relationships,
             )
         return stored.model_copy(
             update={
@@ -188,6 +189,19 @@ class EvidenceEnrichmentService:
                 "address": stored.address or place.address,
                 "category": stored.category or place.category,
                 "tags": list(dict.fromkeys([*stored.tags, *place.tags])),
+                "relationships": list(
+                    {
+                        (
+                            relationship.relationship_type,
+                            relationship.from_entity_id,
+                            relationship.to_entity_id,
+                        ): relationship
+                        for relationship in [
+                            *stored.relationships,
+                            *place.relationships,
+                        ]
+                    }.values()
+                ),
             }
         )
 

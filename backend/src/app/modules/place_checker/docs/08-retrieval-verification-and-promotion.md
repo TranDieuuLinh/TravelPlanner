@@ -25,7 +25,8 @@ constraint liên quan. Keyword không phải nguồn ưu tiên; chỉ được d
 phần thiếu sau khi đã lấy ứng viên có quan hệ.
 
 Mỗi truy vấn pool nhận thêm `anchor_place_ids` của các địa điểm người dùng nhập
-trực tiếp. Knowledge Graph dùng edge `Near` và `Must_Visit` để ưu tiên candidate
+trực tiếp. Knowledge Graph dùng edge `Special_Near` (và alias legacy `Near`)
+cùng `Must_Visit` để ưu tiên candidate
 quanh điểm neo. Nếu điểm neo không có cạnh đủ trực tiếp, truy vấn mở rộng qua
 ADM chứa điểm neo để đọc `Must_Visit` và `Special_Experience` của khu vực.
 Candidate được gắn nhãn như `relation:near`, `relation:must_visit`,
@@ -36,9 +37,9 @@ Thứ tự ưu tiên quan hệ là:
 
 ```text
 Must_Visit trực tiếp
--> Near trực tiếp
--> Special_Experience/Offer_Item/Has_Style trực tiếp
--> Must_Visit/Special_Experience từ ADM chứa điểm neo
+-> Special_Near/Near trực tiếp
+-> Special_Experience từ ADM trong destination
+-> Offer_Item/Has_Style của place
 -> cùng cụm địa lý
 -> keyword fallback
 ```
@@ -51,6 +52,13 @@ Với item như `pho`, truy vấn food được mở rộng thành `pho restaura
 edge `Offer_Item` để khớp món. Với hoạt động, các edge `Special_Experience` và
 `Has_Style` được đưa vào tags để nhận diện trải nghiệm và phong cách thay vì
 chỉ dựa vào tên địa điểm.
+
+PostgreSQL adapter duyệt cây `Located_In` đệ quy từ destination xuống các ADM
+con, nên query ADM1 vẫn lấy được place gắn trực tiếp vào ADM2. Mỗi edge được
+chuẩn hóa thành evidence gồm type, direction, scope, status, confidence,
+priority, distance, source và source note. `Special_Experience` pending được
+dùng mở rộng pool nhưng nhận score thấp và warning/penalty; nó không được diễn
+giải thành recommendation đã review.
 
 ## Xác minh
 

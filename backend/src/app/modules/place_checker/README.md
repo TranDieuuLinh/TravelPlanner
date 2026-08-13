@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-12.
+Cập nhật lần cuối: 2026-08-13.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -18,6 +18,10 @@ Explorer
 
 PlaceChecker phân giải, xác minh, làm giàu và đánh giá candidate. Module không
 phân bổ ngày, chọn khung giờ chính xác, tối ưu thứ tự route hoặc tạo itinerary.
+PostgreSQL adapter đọc quan hệ Knowledge Graph theo ngữ nghĩa hiện hành:
+`Special_Near`/`Near` giữa các place, `Special_Experience` từ ADM tới place,
+`Offer_Item` và `Has_Style` từ place tới thuộc tính. Evidence quan hệ giữ trạng
+thái, nguồn, confidence/priority và khoảng cách để phục vụ audit và scoring.
 
 ## Input từ Explorer
 

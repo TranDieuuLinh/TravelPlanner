@@ -99,6 +99,12 @@ FinalItineraryPlanner trong checkpoint này.
 }
 ```
 
+Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
+`places`/`food`, biểu diễn giờ bằng `startMinute`/`endMinute`, thêm
+`supportedMeals` cho food. `priority` phân biệt `user_input`,
+`special_experience`, `special_near`; `relationships` chứa canonical place ID
+liên quan thay vì tên tag.
+
 `restaurant` và `drink_dessert` được đưa vào `food`; các loại còn lại nằm trong
 `places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,
 giờ mở cửa, quan hệ và `price`.
@@ -112,5 +118,6 @@ chỉ có typical -> typical
 không có dữ liệu -> null
 ```
 
-`minimum` và `maximum` vẫn được giữ nguyên trong JSON để Planner biết khoảng
-giá. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.
+Output chỉ phát `price.cost` và `price.currency` đúng contract JSON của Planner;
+`minimum`/`maximum` vẫn được giữ trong rich output nội bộ để phục vụ phân tích
+ngân sách. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.

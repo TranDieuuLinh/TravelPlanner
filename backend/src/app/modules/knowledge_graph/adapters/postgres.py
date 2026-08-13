@@ -344,7 +344,7 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
     async def delete_property(self, entity_id: str, prop_id: int) -> bool:
         return await self._delete_child("knowledge_properties", entity_id, prop_id)
 
-    async def add_relationship(self, entity_id: str, relationship: str, to_entity_id: str, source: str | None, recommendations: dict | None) -> dict | None:
+    async def add_relationship(self, entity_id: str, relationship: str, to_entity_id: str, source: str | None, recommendations: dict | list[dict] | None) -> dict | None:
         return await self._mutate_detail("INSERT INTO knowledge_relationships(from_entity_id, relationship_type, to_entity_id, source, recommendations) VALUES($1,$2,$3,$4,$5::jsonb)", entity_id, relationship, to_entity_id, source, json.dumps(recommendations or {}))
 
     async def update_relationship(
@@ -354,7 +354,7 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
         relationship: str,
         to_entity_id: str,
         source: str | None,
-        recommendations: dict | None,
+        recommendations: dict | list[dict] | None,
         *,
         from_entity_id: str | None = None,
     ) -> dict | None:

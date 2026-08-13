@@ -77,6 +77,8 @@ RELATIONSHIP_TYPES = [
     "Has_Style",
     "Special_Experience",
     "Special_Near",
+    "Near",
+    "Must_Visit",
 ]
 
 PROPERTY_KEYS = [

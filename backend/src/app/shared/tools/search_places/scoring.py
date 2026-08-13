@@ -167,6 +167,7 @@ def score_candidate(
         rating=candidate.rating,
         reviewCount=candidate.review_count,
         relationshipScore=candidate.relationship_score,
+        relationshipEvidence=candidate.relationship_evidence,
         score=round(min(1.0, max(0.0, score)), 6),
         scoreComponents={
             "nameSimilarity": round(name, 6),

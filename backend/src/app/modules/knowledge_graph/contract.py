@@ -119,7 +119,7 @@ class RelationshipUpsert(KGModel):
     relationship: str = Field(min_length=1, max_length=100)
     to_entity_id: str = Field(min_length=1, max_length=200)
     source: str | None = Field(default=None, max_length=2000)
-    recommendations: dict[str, object] | None = None
+    recommendations: dict[str, object] | list[dict[str, object]] | None = None
 
 
 class DeleteResponse(KGModel):

@@ -36,7 +36,7 @@ from app.modules.place_checker.ports import (
     PromotionCatalog,
     PromotionOutbox,
 )
-from app.modules.place_checker.output import (
+from app.modules.place_checker.planning_output import (
     PlaceCheckerPlannerOutputBuilder,
     PlaceCheckerPlanningProjector,
 )

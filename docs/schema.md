@@ -235,6 +235,10 @@ Các schema dùng chung chính:
 
 The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
 
+Relationship contract accepts `recommendations` as either an object or an
+array of evidence objects, matching the runtime Knowledge Graph. Ontology also
+exposes `Special_Near`; PlaceChecker keeps compatibility with legacy `Near`.
+
 The current frontend planner uses the authenticated `/v1/trip-chats` contract.
 Each chat owns a LangGraph thread identifier and persists user/assistant
 messages plus the latest itinerary snapshot in PostgreSQL.

@@ -115,6 +115,7 @@ class PlannerPlaceContext(ContractModel):
     review_count: int | None = Field(default=None, ge=0)
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationships: list[str] = Field(default_factory=list)
     minimum_duration_minutes: int | None = Field(default=None, ge=1)
     typical_duration_minutes: int | None = Field(default=None, ge=1)
     maximum_duration_minutes: int | None = Field(default=None, ge=1)
@@ -151,15 +152,17 @@ class PlaceCheckerPlanningProjection(ContractModel):
 
 class PlannerPrice(ContractModel):
     cost: float | None = Field(default=None, ge=0)
-    minimum: float | None = Field(default=None, ge=0)
-    maximum: float | None = Field(default=None, ge=0)
     currency: str = "VND"
-    basis: str = "perPerson"
 
 
 class PlannerBudget(ContractModel):
     amount: float | None = Field(default=None, ge=0)
     currency: str = "VND"
+
+
+class PlannerTimeWindow(ContractModel):
+    start_minute: int = Field(ge=0, le=1439)
+    end_minute: int = Field(ge=1, le=1440)
 
 
 class PlannerOutputPlace(ContractModel):
@@ -173,20 +176,24 @@ class PlannerOutputPlace(ContractModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     duration_minutes: int | None = Field(default=None, ge=1)
-    opening_hours: list[str] | None = None
-    preferred_time_windows: list[str] = Field(default_factory=list)
+    opening_hours: dict[str, list[PlannerTimeWindow]] | None = None
+    preferred_time_windows: list[PlannerTimeWindow] = Field(default_factory=list)
     price: PlannerPrice
     relationships: list[str] = Field(default_factory=list)
+    supported_meals: list[str] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+    )
 
 
 class PlannerOutputTrip(ContractModel):
     destination: str
     days: int = Field(ge=1)
     start_date: str | None = None
+    timezone: str = "Asia/Ho_Chi_Minh"
     people: int = Field(ge=1)
     budget: PlannerBudget
     preferences: list[str] = Field(default_factory=list)
-    avoids: list[str] = Field(default_factory=list)
 
 
 class PlaceCheckerPlannerOutput(ContractModel):

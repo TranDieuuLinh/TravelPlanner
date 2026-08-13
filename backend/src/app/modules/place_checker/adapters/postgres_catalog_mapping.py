@@ -6,6 +6,7 @@ from typing import Any
 
 from app.modules.place_checker.enums import CostTier, OperationalStatus
 from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
@@ -74,6 +75,8 @@ class PostgresCatalogMappingMixin:
             normalize_text(tag.split(":", 1)[1])
             for tag in tags if tag.startswith("experience:")
         ]
+        if "special experience" in values:
+            return "area_special"
         groups = (
             ("camping", ("cam trai",)), ("culture", ("van hoa", "tin nguong", "ghe chua")),
             ("landmark", ("dia danh", "ngam ", "qua cau")),
@@ -95,6 +98,9 @@ class PostgresCatalogMappingMixin:
         rating = PostgresCatalogMappingMixin._number(row["rating"])
         confidence = 0.75 if rating is None else min(0.98, 0.65 + rating / 20)
         raw_tags = list(row["tags"] or [])
+        relationships = PostgresCatalogMappingMixin._relationships(
+            row["relationship_evidence"]
+        )
         if row["anchor_relation"]:
             raw_tags.append(row["anchor_relation"])
         return PlaceProviderCandidate(
@@ -105,6 +111,9 @@ class PostgresCatalogMappingMixin:
             canonical_type=category, tags=list(dict.fromkeys([category.replace("_", " "), *raw_tags])),
             rating=rating, review_count=PostgresCatalogMappingMixin._integer(row["review_count"]),
             relationship_score=float(row["relationship_score"] or 0),
+            relationship_evidence=[
+                relationship.model_dump(by_alias=True) for relationship in relationships
+            ],
             data_confidence=confidence, fetched_at=row["updated_at"],
         )
 
@@ -112,7 +121,23 @@ class PostgresCatalogMappingMixin:
     def _metadata(
         cls, place_id: str, entity_type: str, values: dict[str, Any],
         tags: list[str], fetched_at: datetime | None,
+        relationships: list[PlaceRelationshipEvidence] | None = None,
     ) -> PlaceMetadata:
+        relationships = relationships or []
+        relationships = list(
+            {
+                (
+                    relationship.relationship_type,
+                    relationship.related_entity_id,
+                    relationship.scope,
+                ): relationship
+                for relationship in sorted(
+                    relationships,
+                    key=lambda item: item.score,
+                )
+            }.values()
+        )
+        values = cls._with_style_defaults(values, relationships)
         minimum_cost = cls._number(values.get("price_min"))
         maximum_cost = cls._number(values.get("price_max"))
         duration = cls._duration(values.get("time_duration"))
@@ -133,7 +158,42 @@ class PostgresCatalogMappingMixin:
             operational_status=OperationalStatus.unknown,
             children_suitable=True if child_tag else None, infants_suitable=None,
             source="knowledge_graph_postgres", fetched_at=fetched_at,
+            relationships=relationships,
         )
+
+    @staticmethod
+    def _relationships(value: Any) -> list[PlaceRelationshipEvidence]:
+        if value in (None, ""):
+            return []
+        try:
+            payload = json.loads(value) if isinstance(value, str) else value
+            return [PlaceRelationshipEvidence.model_validate(item) for item in payload]
+        except (TypeError, ValueError):
+            return []
+
+    @staticmethod
+    def _with_style_defaults(
+        values: dict[str, Any],
+        relationships: list[PlaceRelationshipEvidence],
+    ) -> dict[str, Any]:
+        merged = dict(values)
+        styles = sorted(
+            (
+                relationship
+                for relationship in relationships
+                if relationship.relationship_type == "Has_Style"
+                and relationship.properties
+            ),
+            key=lambda relationship: relationship.priority or 0,
+            reverse=True,
+        )
+        for relationship in styles:
+            properties = relationship.properties
+            if not merged.get("time_windows") and properties.get("time_windows"):
+                merged["time_windows"] = json.dumps(properties["time_windows"])
+            if not merged.get("time_duration") and properties.get("time_duration"):
+                merged["time_duration"] = properties["time_duration"]
+        return merged
 
     @staticmethod
     def _coordinates(latitude: Any, longitude: Any) -> Coordinates | None:

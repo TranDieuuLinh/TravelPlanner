@@ -94,6 +94,7 @@ class PlaceProviderCandidate(ToolModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationship_evidence: list[dict[str, object]] = Field(default_factory=list)
     data_confidence: float = Field(default=0.5, ge=0, le=1)
     fetched_at: datetime | None = None
 
@@ -114,6 +115,7 @@ class PlaceSearchMatch(ToolModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationship_evidence: list[dict[str, object]] = Field(default_factory=list)
     score: float = Field(ge=0, le=1)
     score_components: dict[str, float] = Field(default_factory=dict)
     rejection_reasons: list[str] = Field(default_factory=list)

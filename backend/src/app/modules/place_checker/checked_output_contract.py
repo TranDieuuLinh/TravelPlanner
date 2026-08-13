@@ -21,6 +21,7 @@ from app.modules.place_checker.evaluation_contract import (
     PlannerConstraint,
 )
 from app.shared.contracts.place import Coordinates
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 
 
 class CheckedDestination(ContractModel):
@@ -111,6 +112,7 @@ class CheckedPlace(ContractModel):
     ranking: CheckedRanking
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationship_evidence: list[PlaceRelationshipEvidence] = Field(default_factory=list)
     provenance: CheckedProvenance
     warnings: list[str] = Field(default_factory=list)
     internal_evaluation: PlaceEvaluation | None = Field(

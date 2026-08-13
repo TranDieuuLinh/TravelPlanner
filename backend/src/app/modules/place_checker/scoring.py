@@ -197,6 +197,10 @@ class CandidateScoringService:
             VerificationStatus.verified_external,
         }:
             penalties["low_verification"] = 0.20
+        if "retrieval:keyword_fallback" in candidate.tags:
+            penalties["keyword_fallback"] = 0.08
+        if any(relationship.is_pending for relationship in candidate.relationships):
+            penalties["pending_relationship_evidence"] = 0.04
         fetched_at = candidate.metadata.fetched_at if candidate.metadata else None
         if fetched_at is not None and fetched_at.tzinfo is None:
             fetched_at = fetched_at.replace(tzinfo=UTC)

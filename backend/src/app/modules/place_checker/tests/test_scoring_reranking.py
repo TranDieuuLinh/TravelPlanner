@@ -158,6 +158,18 @@ def test_penalty_is_bounded() -> None:
     assert "geographic_outlier" in result.penalties
 
 
+def test_keyword_fallback_receives_real_ranking_penalty() -> None:
+    fallback = candidate("fallback", tags=["museum", "retrieval:keyword_fallback"])
+
+    result = CandidateScoringService(now=NOW).rank(
+        retrieval(fallback),
+        analysis_context(),
+        empty_places(),
+    ).ranked[0]
+
+    assert result.penalties["keyword_fallback"] == 0.08
+
+
 def test_low_budget_prefers_low_cost_candidate() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(

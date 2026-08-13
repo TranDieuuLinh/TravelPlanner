@@ -4,6 +4,7 @@ from app.modules.place_checker.contract import ContractModel, InputItem
 from app.modules.place_checker.enums import CostTier, ItemResolutionStatus
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import ProviderAttempt
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 
 
 class ItemPlaceOption(ContractModel):
@@ -18,6 +19,12 @@ class ItemPlaceOption(ContractModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     cost_tier: CostTier = CostTier.unknown
+    cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    minimum_cost: float | None = Field(default=None, ge=0)
+    typical_cost: float | None = Field(default=None, ge=0)
+    maximum_cost: float | None = Field(default=None, ge=0)
+    opening_hours: list[str] | None = None
+    relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
     children_suitable: bool | None = None
     infants_suitable: bool | None = None
     minimum_duration_minutes: int | None = Field(default=None, ge=1, le=1440)

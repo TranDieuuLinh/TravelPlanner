@@ -18,6 +18,7 @@ from app.modules.place_checker.enums import (
     SimilarityMethod,
 )
 from app.shared.contracts.place import Coordinates
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.shared.tools.search_places import ProviderAttempt
 
 
@@ -33,6 +34,7 @@ class CatalogPlace(ContractModel):
     coordinates: Coordinates | None = None
     provider_ids: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
 
 
 class SimilarityComponents(ContractModel):
@@ -91,6 +93,7 @@ class PlaceMetadata(ContractModel):
     coordinates: Coordinates | None = None
     address: str | None = Field(default=None, max_length=500)
     category: str | None = Field(default=None, max_length=120)
+    pool_category: str | None = Field(default=None, max_length=120)
     tags: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
@@ -110,6 +113,7 @@ class PlaceMetadata(ContractModel):
     infants_suitable: bool | None = None
     source: str | None = Field(default=None, max_length=120)
     fetched_at: datetime | None = None
+    relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
 
 
 class EnrichedIdentityPlace(ContractModel):

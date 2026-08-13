@@ -41,6 +41,7 @@ class RetrievalCandidateProjector:
                     address=candidate.address,
                     category=candidate.category,
                     tags=self._tags(candidate),
+                    relationships=candidate.relationships,
                 )
             else:
                 metadata = candidate.metadata.model_copy(
@@ -63,6 +64,7 @@ class RetrievalCandidateProjector:
                     if item.provider_id
                 ],
                 tags=self._tags(candidate),
+                relationships=candidate.relationships,
             )
             option = PlaceMatchOption(
                 place=catalog,

@@ -112,12 +112,21 @@ class SearchPlacesGapSource:
                 coordinates=match.coordinates,
                 tags=[
                     *match.tags,
+                    *(
+                        ["relationship:pending"]
+                        if any(
+                            relationship.get("status") == "pending"
+                            for relationship in match.relationship_evidence
+                        )
+                        else []
+                    ),
                     *([
                         "retrieval:relation"
                     ] if match.relationship_score > 0 else ["retrieval:keyword_fallback"]),
                 ],
                 confidence=match.score,
                 relationship_score=match.relationship_score,
+                relationships=match.relationship_evidence,
                 fetched_at=match.fetched_at,
             )
             for match in selected_matches
@@ -144,6 +153,11 @@ class SearchPlacesGapSource:
             return False
         name_score = match.score_components.get("nameSimilarity", 0)
         if match.relationship_score > 0:
+            if any(
+                relationship.get("relationshipType") == "Special_Experience"
+                for relationship in match.relationship_evidence
+            ):
+                return True
             return not query.relation_terms or cls._matches_relation_terms(
                 match.tags, query.relation_terms
             )

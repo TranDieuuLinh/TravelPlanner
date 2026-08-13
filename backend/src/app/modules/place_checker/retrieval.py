@@ -382,6 +382,17 @@ class TargetedRetrievalService:
             tags=list(dict.fromkeys(tag for item in evidence for tag in item.tags)),
             metadata=metadata,
             relationship_score=max(item.relationship_score for item in evidence),
+            relationships=list(
+                {
+                    (
+                        relationship.relationship_type,
+                        relationship.from_entity_id,
+                        relationship.to_entity_id,
+                    ): relationship
+                    for item in evidence
+                    for relationship in item.relationships
+                }.values()
+            ),
             verification_status=status,
             planner_eligible=status in {
                 VerificationStatus.verified_kg,

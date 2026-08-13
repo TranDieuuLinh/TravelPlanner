@@ -33,11 +33,18 @@ outlier, duplicate experience, low verification và stale operational data.
 Hard violation được filter trước scoring.
 
 Độ liên quan theo Knowledge Graph được ưu tiên cao trong điểm tìm kiếm.
-Candidate có edge `Must_Visit`, `Near`, `Special_Experience`, `Offer_Item` hoặc
+Candidate có edge `Must_Visit`, `Special_Near`/`Near`, `Special_Experience`, `Offer_Item` hoặc
 `Has_Style` với điểm neo/khu vực chứa điểm neo được xếp trước candidate chỉ
 khớp từ khóa. Candidate keyword fallback vẫn được giữ để đủ pool nhưng phải có
 nhãn `retrieval:keyword_fallback` và chịu penalty riêng. Quan hệ không thay thế
 kiểm tra ADM, category và policy.
+
+Điểm quan hệ không còn chỉ phụ thuộc tên edge: `Special_Near` giảm theo
+`distance_km/threshold_km`; `Offer_Item` dùng confidence/status;
+`Has_Style` dùng priority; `Special_Experience` pending có boost thấp hơn.
+Keyword fallback chịu penalty `0.08`, relationship pending chịu penalty
+`0.04`. Time window/duration của `Has_Style` chỉ lấp metadata còn thiếu, không
+ghi đè property trực tiếp của place.
 
 ## Xếp hạng lại
 

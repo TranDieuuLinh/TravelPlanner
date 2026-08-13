@@ -302,6 +302,12 @@ class InputItemResolutionService:
         return option.model_copy(
             update={
                 "cost_tier": metadata.cost_tier,
+                "cost_currency": metadata.cost_currency,
+                "minimum_cost": metadata.minimum_cost,
+                "typical_cost": metadata.typical_cost,
+                "maximum_cost": metadata.maximum_cost,
+                "opening_hours": metadata.opening_hours,
+                "relationships": metadata.relationships,
                 "address": metadata.address or option.address,
                 "coordinates": metadata.coordinates or option.coordinates,
                 "category": metadata.category or option.category,
@@ -341,6 +347,7 @@ class InputItemResolutionService:
             review_count=match.review_count,
             score=match.score,
             rejection_reasons=match.rejection_reasons,
+            relationships=match.relationship_evidence,
         )
         return ItemProximityPolicy.with_distance(option, anchor)
 

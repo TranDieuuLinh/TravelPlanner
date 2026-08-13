@@ -11,6 +11,7 @@ from app.modules.place_checker.enums import (
     VerificationStatus,
 )
 from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.shared.contracts.place import Coordinates
 
 
@@ -46,6 +47,7 @@ class RetrievalEvidence(ContractModel):
     tags: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0, le=1)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
     fetched_at: datetime | None = None
     metadata: PlaceMetadata | None = None
 
@@ -82,6 +84,7 @@ class RetrievedCandidate(ContractModel):
     conflicts: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     relationship_score: float = Field(default=0, ge=0, le=1)
+    relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def eligibility_requires_verification(self) -> "RetrievedCandidate":

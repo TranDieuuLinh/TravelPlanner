@@ -250,6 +250,7 @@ class EntityResolutionService:
             coordinates=match.coordinates,
             provider_ids=[match.provider_id] if match.provider_id else [],
             tags=match.tags,
+            relationships=match.relationship_evidence,
         )
         conflicts = list(match.rejection_reasons)
         if cls._has_address_conflict(address_hint, match.address):
