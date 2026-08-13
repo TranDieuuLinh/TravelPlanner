@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-11.
+Cập nhật lần cuối: 2026-08-13.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -128,8 +128,9 @@ For TikTok pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
 absolute path. Cookie files are ignored by the backend `.gitignore`; never
 commit or log them.
-Docker Compose loads provider and Explorer settings from `backend/.env` when
-that file exists; copy `.env.example` before starting the stack.
+Docker Compose loads provider, Explorer, and cloud database settings from
+`backend/.env` when that file exists; copy `.env.example` and set the cloud
+`DATABASE_URL` before starting the stack.
 
 Run tests:
 
@@ -148,19 +149,8 @@ The admin Knowledge Graph module owns the `knowledge_*` tables created by
 `migrations/003_knowledge_graph.sql` and `migrations/004_knowledge_auto_attach.sql`.
 It provides entity, alias, property, relationship, auto-attach rule, stats, and
 ontology endpoints consumed by `admin-frontend`.
-Apply the migration manually for an existing PostgreSQL volume; Docker only
-applies init scripts when the volume is created.
-
-With Docker, `DATABASE_URL` is read from `backend/.env` when provided. A fresh
-`travelplanner_postgres_data_v2` volume runs the migration
-automatically because `docker-compose.yml` mounts it into PostgreSQL initdb.
-For an existing volume, run the idempotent migration from the mounted file:
-
-```powershell
-docker compose up -d postgres
-docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/003_knowledge_graph.sql
-docker compose exec -T postgres psql -U travelplanner -d travelplanner -f /docker-entrypoint-initdb.d/004_knowledge_auto_attach.sql
-```
+Apply the migration directly against the cloud database before using the
+Knowledge Graph or PlaceChecker catalog. The migration is idempotent.
 
 Configure `BACKEND_CORS_ORIGINS` with comma-separated browser origins (the local
 frontend and admin frontend use `http://localhost:3000` and
@@ -170,9 +160,8 @@ PostgreSQL cache,
 for web refreshes. Gemini embeddings use `gemini-embedding-001` with 384 output
 dimensions by default, matching the current pgvector schema; no local embedding
 model is installed in the backend image. See `.env.example` for thresholds, timeout,
-search depth, model revision, and blocked domains. Docker initializes the SQL
-migration only for a new PostgreSQL volume; run it manually for an existing
-volume. Set `INFORMATION_FINDER_ANSWER_PROVIDER=gemini` and `GEMINI_API_KEY` to
+search depth, model revision, and blocked domains. Set
+`INFORMATION_FINDER_ANSWER_PROVIDER=gemini` and `GEMINI_API_KEY` to
 enable structured claims. The module validates source IDs and only exposes cited
 sources; provider failures use extractive fallback only when
 `INFORMATION_FINDER_LLM_FALLBACK_ENABLED=true`. `gemini-2.5-flash` is a

@@ -4,8 +4,9 @@ Cập nhật lần cuối: 2026-08-13.
 
 ## Phạm vi và trạng thái
 
-Tài liệu này được lấy trực tiếp từ database `travelplanner` trong container
-PostgreSQL `pgvector/pgvector:0.8.2-pg16` đang chạy qua Docker Compose.
+Tài liệu này mô tả schema PostgreSQL cloud được backend truy cập qua
+`DATABASE_URL`. Không có PostgreSQL container hoặc volume local nào là runtime
+dependency của backend.
 
 Database runtime hiện có 52 table trong schema `public`, gồm các bảng cache, planner,
 Knowledge Graph, profile, social và marketplace được
@@ -21,8 +22,8 @@ ownership bảng `source_documents` và `explorer_draft_cache` qua asyncpg adapt
 và migration 002/003. Vì vậy
 cần phân biệt:
 
-- **Database runtime:** các table được liệt kê bên dưới vẫn tồn tại trong
-  PostgreSQL volume.
+- **Database runtime:** các table được liệt kê bên dưới tồn tại trong database
+  PostgreSQL cloud sau khi migration tương ứng đã được áp dụng.
 - **Backend mới:** không sử dụng các table legacy khác; graph state vẫn dùng
   `InMemorySaver`. Explorer dùng `source_documents` và `explorer_draft_cache`;
   Information Finder dùng

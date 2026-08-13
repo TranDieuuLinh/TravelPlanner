@@ -1,6 +1,6 @@
 # TravelPlanner
 
-Cập nhật lần cuối: 2026-08-12.
+Cập nhật lần cuối: 2026-08-13.
 
 TravelPlanner is a travel-planning product with a Next.js user frontend, a
 separate admin frontend, and a modular FastAPI/LangGraph backend.
@@ -51,9 +51,8 @@ travelplanner/
 ├── packages/          # Shared frontend workspace packages
 │   └── api-client/    # Shared API errors and request helpers
 ├── docs/              # Current codebase documentation
-├── database/          # Data assets used by supporting tools
 ├── routing-data/      # Optional routing engine data
-└── docker-compose.yml # Local service orchestration
+└── docker-compose.yml # Backend and optional routing service orchestration
 ```
 
 See [docs/codebase-structure.md](docs/codebase-structure.md) for the
@@ -83,8 +82,9 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
-Docker Compose loads backend environment variables from `backend/.env`.
-`DATABASE_URL` is intentionally overridden for the Docker PostgreSQL service.
+Docker Compose loads backend environment variables from `backend/.env`; the
+backend uses the cloud PostgreSQL connection in `DATABASE_URL` without a local
+database service or URL override.
 
 Run the backend directly:
 

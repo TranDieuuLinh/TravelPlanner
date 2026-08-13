@@ -143,7 +143,7 @@ tại là đã áp 70/30 hoặc 60/40; cần thêm PlaceSelector trước bướ
 ```bash
 docker run --rm \
   --network travelplanner-develop-ver-2_default \
-  -e DATABASE_URL=postgresql://travelplanner:travelplanner@postgres:5432/travelplanner \
+  -e DATABASE_URL \
   -e PYTHONPATH=/app/src \
   -v "$PWD/backend/src:/app/src:ro" \
   -v "$PWD/backend/scripts:/work/scripts:ro" \
