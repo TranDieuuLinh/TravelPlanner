@@ -26,12 +26,13 @@ cần phân biệt:
   các bảng cache mô tả bên dưới khi có `DATABASE_URL` và migration tương ứng đã
   được áp dụng.
 
-`shared/tools/search_places/` hiện chỉ định nghĩa provider port và engine
-xếp hạng/policy. Thay đổi này không thêm migration, không đọc trực tiếp các bảng
-Knowledge Graph legacy và chưa nối PostgreSQL runtime. Adapter Knowledge Graph
-tương lai phải nhận ownership/database đích rõ ràng trước khi query entity,
-alias, property và quan hệ ADM; external adapter chỉ được trả payload đã chuẩn
-hóa qua contract.
+PlaceChecker hiện nối `PostgresPlaceCatalog` read-only vào bốn bảng Knowledge
+Graph core khi có `DATABASE_URL`. Candidate generation được scope ADM/type,
+dùng top-K cùng toán tử `pg_trgm` `%` trên `normalized_name`,
+`normalized_alias` và tên target relationship. Các GIN trigram index từ
+migration 006 phục vụ prefilter; `SearchPlacesTool` vẫn sở hữu score và
+acceptance policy cuối. Adapter không ghi Knowledge Graph và external live
+provider chưa được nối.
 
 Explorer có ba loại snapshot logic: `ready`, `clarification` và `failure`.
 Thay đổi hiện tại dùng `InMemoryExplorerSnapshotRepository`, không tạo table
@@ -339,9 +340,9 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 ### `source_documents`
 
-Ngày sửa đổi cuối cùng: 2026-08-11. Bảng cache này hiện do module Explorer sở
+Ngày sửa đổi cuối cùng: 2026-08-12. Bảng cache này hiện do module Explorer sở
 hữu; migration là `backend/migrations/002_explorer_source_document_cache.sql`.
-Adapter đọc tương thích artifact version 6 của `old_one`, ghi version 7, dùng
+Adapter đọc tương thích artifact version 6 của `old_one`, ghi version 8, dùng
 TTL mặc định 7 ngày và unique canonical URL. Đây không phải bảng của
 Information Finder.
 

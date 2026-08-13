@@ -88,7 +88,13 @@ song rồi merge theo precedence để không làm mất tín hiệu rõ từ ng
 Success, clarification và failure lưu ba loại snapshot riêng; repository mặc
 định vẫn là in-memory. Mỗi source tạo `SourceArtifact` nội bộ có loại evidence,
 URL, time hint và thời điểm quan sát trước khi Gemini tổng hợp output. YouTube
-chỉ đọc title/caption/description/tag bằng `yt-dlp`, không chạy STT. TikTok ưu
+ưu tiên đúng một track subtitle/automatic caption (`vi` rồi `en`) bằng
+`yt-dlp --skip-download`, giữ toàn bộ timeline mà không tải video. Nếu không có
+caption, adapter chỉ tải audio stream, chia mặc định thành chunk 5 phút có
+overlap 5 giây và transcribe song song qua Gemini; media tạm bị xóa sau request.
+Timestamp `t=`/`start=` chỉ ưu tiên chunk gần mốc đó vào hàng đợi trước; toàn bộ
+caption/audio vẫn được xử lý.
+TikTok ưu
 tiên `curl-cffi` Safari đọc JSON
 `__UNIVERSAL_DATA_FOR_REHYDRATION__`, lấy URL CDN thuộc allowlist và stream MP4
 với giới hạn dung lượng; nếu HTML không có media mới fallback sang `yt-dlp`
@@ -111,7 +117,7 @@ Trước khi tải URL, Explorer tra cache PostgreSQL do module sở hữu trong
 `EXPLORER_URL_CACHE_TTL_SECONDS` (mặc định 7 ngày). Cache đọc được artifact
 legacy v6; TikTok/Instagram/Facebook bỏ toàn bộ query khi tạo cache key để URL
 được chia sẻ từ frontend vẫn khớp cùng video. Adapter ghi contract chuẩn hóa
-version 7; không lưu raw
+version 8 cùng metadata coverage transcript; không lưu raw
 third-party payload. `forceRefresh=true` bỏ qua cache lookup và cập nhật record
 sau extraction. Lỗi đọc/ghi cache chỉ được log và không chặn extractor. Khi
 không có `DATABASE_URL`, development/test dùng cache in-memory theo process.
@@ -142,8 +148,13 @@ Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
 `places[].sourcePlaces` phân biệt nguồn `input` và `url`; `sourceTimeHint` và
 `addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
-Draft generator nằm sau port; prompt-only có thể dùng rules hoặc Gemini. Khi
-có source và Gemini key, structured Gemini synthesis lọc `urlNotes` chỉ giữ
+Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
+riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký
+tự, gọi structured Gemini song song, giữ chunk thành công khi chunk khác lỗi,
+rồi consolidation nhỏ merge alias/dịch thuật và lọc mention không phải place.
+Chunk structured-output lỗi lặp lại được chia đôi tối đa hai cấp; quota/cooldown
+được retry có chờ và coverage vẫn được báo nếu provider chưa xử lý đủ.
+Khi có source và Gemini key, structured Gemini synthesis lọc `urlNotes` chỉ giữ
 chi tiết hữu ích có evidence như access/timing/price/caution, hoạt động cụ thể,
 trải nghiệm đặc trưng hoặc fun fact; lời quảng cáo chung chung bị loại. Shared Gemini client xoay key
 cho các lời gọi song song. Source synthesis dùng `GEMINI_MODEL`, frame/ảnh OCR
@@ -192,10 +203,12 @@ theo cấu hình của từng module.
 qua dependency injection. Tool chuẩn hóa query, xếp hạng top-K, áp ngưỡng
 identity/margin, chặn ADM/type/toạ độ không hợp lệ, giữ kết quả nhập nhằng để
 review và chỉ fallback sang external provider khi Knowledge Graph miss hoặc
-mọi match đều yếu. Hiện package mới có provider port và adapter in-memory cho
-test/development; chưa có adapter PostgreSQL Knowledge Graph hoặc Google Maps
-Playwright được nối vào runtime. Tool chưa thay thế `DevelopmentCatalog` trong
-PlaceChecker.
+mọi match đều yếu. PlaceChecker runtime dùng `PostgresPlaceCatalog` khi có
+`DATABASE_URL`: candidate generation được scope ADM/type, dùng top-K và toán tử
+GIN `pg_trgm` trên canonical name, alias và relationship target trước khi tool
+áp score cuối. Retrieval chỉ chạy cho gap phân tích thực, không tự mở fixed
+reserve pool. Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
+Google Maps/external live provider chưa được nối.
 
 Authentication, Marketplace, URL import chịu được mọi anti-bot, dữ liệu place
 live và routing live chưa nằm trong scaffold hiện tại. Checkpointer của root

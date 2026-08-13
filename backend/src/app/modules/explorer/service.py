@@ -4,7 +4,13 @@ import re
 import unicodedata
 from uuid import uuid4
 
-from app.modules.explorer.contract import ExplorerBudget, ExplorerInput, ExplorerOutput
+from app.modules.explorer.contract import (
+    ExplorerBudget,
+    ExplorerCompleteness,
+    ExplorerInput,
+    ExplorerOutput,
+    SourceCompleteness,
+)
 from app.modules.explorer.draft_key import explorer_draft_cache_key
 from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.models import BatchCoverage, ExplorerDraft, SourceExtractionResult
@@ -17,6 +23,7 @@ from app.modules.explorer.ports import (
     UrlSourceExtractor,
 )
 from app.modules.explorer.retry import run_with_one_retry
+from app.modules.explorer.source_warnings import source_warnings
 from app.modules.explorer.tools import normalize_budget_per_person
 from app.shared.contracts.agent import AgentError
 
@@ -37,6 +44,7 @@ class ExplorerService:
         url_cache: UrlSourceCache | None = None,
         draft_cache: ExplorerDraftCache | None = None,
         draft_cache_namespace: str = "explorer-draft-v1",
+        minimum_synthesis_coverage: float = 0.8,
     ) -> None:
         self.drafts = drafts
         self.url_extractor = url_extractor
@@ -45,6 +53,7 @@ class ExplorerService:
         self.url_cache = url_cache
         self.draft_cache = draft_cache
         self.draft_cache_namespace = draft_cache_namespace
+        self.minimum_synthesis_coverage = minimum_synthesis_coverage
 
     def prepare(self, payload: ExplorerInput | dict) -> dict:
         if not isinstance(payload, ExplorerInput):
@@ -296,20 +305,8 @@ class ExplorerService:
         coverage: BatchCoverage | None,
         source_results: list[SourceExtractionResult] | None = None,
     ) -> ExplorerOutput:
-        warnings = []
-        if coverage == "partial":
-            warnings.append("Một số nguồn không trích xuất được; kết quả dùng các nguồn còn lại.")
-        for result in source_results or []:
-            label = self._source_label(result)
-            for failure in result.branch_failures:
-                branch = "OCR frame" if failure.branch == "frame_ocr" else "STT audio"
-                warnings.append(
-                    f"Nguồn {label} bị lỗi nhánh {branch} ({failure.error.code})."
-                )
-            if result.status not in {"failed_retryable", "failed_permanent"}:
-                continue
-            code = result.error.code if result.error else "SOURCE_EXTRACTION_FAILED"
-            warnings.append(f"Nguồn {label} thất bại ({code}).")
+        warnings = source_warnings(coverage, source_results)
+        completeness = self._completeness(source_results, len(draft.places))
         budget = draft.budget
         if budget.source == "default":
             budget = ExplorerBudget(level="low", source="default")
@@ -326,14 +323,56 @@ class ExplorerService:
                 budget=budget, people=draft.people,
                 shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
                 clarificationQuestion=question, warnings=warnings,
+                completeness=completeness,
             )
+        status = "ready"
+        if completeness and not completeness.complete:
+            status = "partial"
         return ExplorerOutput(
-            status="ready", intakeId=intake_id, input_ADM=input_adm,
+            status=status, intakeId=intake_id, input_ADM=input_adm,
             places=draft.places or None, inputItems=draft.input_items or None,
             urlNotes=draft.url_notes or None, days=prompt_days or 3,
             budget=budget, people=draft.people,
             shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
             warnings=warnings,
+            completeness=completeness,
+        )
+
+    def _completeness(
+        self, results: list[SourceExtractionResult] | None, deduplicated: int
+    ) -> ExplorerCompleteness | None:
+        if not results:
+            return None
+        discarded: dict[str, int] = {}
+        sources = []
+        complete = True
+        for result in results:
+            for key, count in result.discarded_mentions.items():
+                discarded[key] = discarded.get(key, 0) + count
+            synthesis = result.synthesis_coverage_ratio
+            complete = complete and result.status == "succeeded" and (
+                synthesis is None or synthesis >= self.minimum_synthesis_coverage
+            )
+            sources.append(SourceCompleteness(
+                sourceIndex=result.source_index,
+                sourceRef=result.source_ref,
+                coverageStatus=result.coverage_status,
+                coverageRatio=result.coverage_ratio,
+                rawMentionCount=result.raw_mention_count,
+                filteredMentionCount=result.filtered_mention_count,
+                deduplicatedPlaceCount=result.deduplicated_place_count,
+                sourceChunkCount=result.source_chunk_count,
+                processedSourceChunkCount=result.processed_source_chunk_count,
+                synthesisCoverageRatio=synthesis,
+                discarded=result.discarded_mentions,
+            ))
+        return ExplorerCompleteness(
+            sources=sources,
+            rawMentionCount=sum(item.raw_mention_count for item in results),
+            filteredMentionCount=sum(item.filtered_mention_count for item in results),
+            deduplicatedPlaceCount=deduplicated,
+            discarded=discarded,
+            complete=complete,
         )
 
     def failure(self, intake_id: str, error: AgentError) -> ExplorerOutput:
@@ -380,12 +419,3 @@ class ExplorerService:
     @classmethod
     def _adm_key(cls, value: str) -> str:
         return cls._key(value).replace(" ", "")
-
-    @staticmethod
-    def _source_label(result: SourceExtractionResult) -> str:
-        if result.source_kind == "url":
-            from urllib.parse import urlparse
-
-            host = urlparse(result.source_ref).hostname or "URL"
-            return f"URL #{result.source_index + 1} ({host})"
-        return f"ảnh #{result.source_index + 1}"

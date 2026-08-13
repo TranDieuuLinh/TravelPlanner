@@ -37,6 +37,8 @@ def build_postgres_place_checker_pipeline(
             gap_source,
             metadata_repository=catalog,
             verified_target_per_gap=5,
-            expand_pool=True,
+            # Retrieve only for analysis gaps. A broad fixed reserve pool made
+            # unrelated KG entities planner-eligible and multiplied latency.
+            expand_pool=False,
         ),
     )

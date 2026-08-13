@@ -91,15 +91,22 @@ thể liên kết bằng `relatedPlaceName`; evidence từ source tương tự n
 Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=1 adult` và
 chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
 whole-trip URL, rồi `low`. Giá vé/món riêng không phải whole-trip budget.
-Draft generator có adapter deterministic và structured Gemini; provider được
-chọn bằng `EXPLORER_DRAFT_PROVIDER`.
+Draft generator có adapter deterministic và structured Gemini; prompt provider
+được chọn bằng `EXPLORER_DRAFT_PROVIDER`, source provider bằng
+`EXPLORER_SOURCE_DRAFT_PROVIDER`.
 
 `SourceArtifact` là contract nội bộ giữa importer và bước synthesis, không phải
 field public của `ExplorerOutput`. Artifact phân biệt `url_metadata`, `caption`,
 `stt`, `frame_ocr`, `web_text` và `image_ocr`, đồng thời giữ URL/time hint. URL
 cache canonicalize TikTok/Instagram/Facebook bằng cách bỏ toàn bộ query trước
 khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ảnh
-trong cùng request được chạy song song. YouTube chỉ dùng metadata;
+trong cùng request được chạy song song. YouTube ưu tiên full subtitle/automatic
+caption mà không tải video; nếu không có caption mới tải audio-only, chia chunk
+có timestamp và transcribe Gemini song song. Transcript dài được extract place
+theo từng chunk thay vì đưa vào một structured request duy nhất. Query `t=` hoặc
+`start=` ưu tiên chunk gần timestamp nhưng không giới hạn phạm vi transcription;
+text chunk mặc định 20.000 ký tự với tối đa 8.000 output token để tránh tạo quá
+nhiều request khi transcript dài.
 TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
 MP4 có giới hạn; nếu thất bại mới dùng `yt-dlp` legacy. Instagram dùng `yt-dlp`
 theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
@@ -116,9 +123,12 @@ Kết quả source nội bộ có `cacheStatus` (`hit`, `miss`, `bypassed`) đ�
 luồng cache, nhưng field này không được gửi cho Gemini synthesis và không thuộc
 `ExplorerOutput` public. Cache PostgreSQL dùng canonical URL, TTL và extractor
 version; adapter tương thích đọc artifact version 6 của `old_one` và ghi version
-7 theo `SourceArtifact` hiện tại. Draft synthesis được cache riêng theo prompt,
+8 theo `SourceArtifact` hiện tại, kèm metadata coverage. Draft synthesis được cache riêng theo prompt,
 artifact evidence, model namespace và policy version; draft cache không thuộc
 public output và bị bypass khi `forceRefresh=true`.
+Source result còn theo dõi duration/coverage transcript, tổng số synthesis
+chunk, số chunk thành công và synthesis coverage. Chunk lỗi làm source
+`partial` nhưng không xóa kết quả chunk thành công.
 
 Đây là state machine LangGraph thực, không phải pipeline gọi tuần tự trong API:
 `prepare_intake` dùng conditional edge chọn prompt-only hoặc source-import;

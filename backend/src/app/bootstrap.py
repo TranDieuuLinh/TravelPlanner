@@ -195,10 +195,17 @@ def compose_explorer_service(
         )
     return create_explorer_service(
         draft_provider=settings.explorer_draft_provider,
+        source_draft_provider=settings.explorer_source_draft_provider,
         llm_client=client,
         image_llm_client=image_client,
         audio_llm_client=audio_client,
         max_output_tokens=settings.explorer_llm_max_output_tokens,
+        source_chunk_characters=settings.explorer_source_chunk_characters,
+        source_max_output_tokens=settings.explorer_source_max_output_tokens,
+        source_max_concurrency=settings.explorer_source_max_concurrency,
+        minimum_synthesis_coverage=settings.explorer_minimum_synthesis_coverage,
+        dedupe_provider=settings.explorer_dedupe_provider,
+        note_provider=settings.explorer_note_provider,
         url_timeout_seconds=settings.explorer_url_timeout_seconds,
         ytdlp_cookie_file=settings.explorer_ytdlp_cookie_file,
         frame_interval_seconds=settings.explorer_frame_interval_seconds,
@@ -206,13 +213,24 @@ def compose_explorer_service(
         max_frames=settings.explorer_max_frames,
         frame_max_concurrency=settings.explorer_frame_max_concurrency,
         audio_chunk_count=settings.explorer_audio_chunk_count,
+        youtube_audio_chunk_seconds=settings.explorer_youtube_audio_chunk_seconds,
+        youtube_audio_chunk_overlap_seconds=(
+            settings.explorer_youtube_audio_chunk_overlap_seconds
+        ),
+        youtube_audio_max_concurrency=(
+            settings.explorer_youtube_audio_max_concurrency
+        ),
+        youtube_max_duration_seconds=settings.explorer_youtube_max_duration_seconds,
         max_video_seconds=settings.explorer_max_video_seconds,
         max_media_mb=settings.explorer_max_media_mb,
         database_url=settings.database_url,
         url_cache_ttl_seconds=settings.explorer_url_cache_ttl_seconds,
         draft_cache_ttl_seconds=settings.explorer_draft_cache_ttl_seconds,
         draft_cache_namespace=(
-            f"v1:{settings.explorer_draft_provider}:{settings.gemini_model}"
+            f"v2:{settings.explorer_draft_provider}:"
+            f"{settings.explorer_source_draft_provider}:{settings.gemini_model}:"
+            f"c{settings.explorer_source_chunk_characters}:"
+            f"o{settings.explorer_source_max_output_tokens}"
         ),
     )
 

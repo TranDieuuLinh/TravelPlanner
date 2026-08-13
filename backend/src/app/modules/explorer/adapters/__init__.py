@@ -8,6 +8,10 @@ from app.modules.explorer.adapters.draft_cache import (
     InMemoryExplorerDraftCache,
     PostgresExplorerDraftCache,
 )
+from app.modules.explorer.adapters.source_extraction_cache import (
+    InMemorySourceExtractionCache,
+    PostgresSourceExtractionCache,
+)
 from app.modules.explorer.adapters.gemini import (
     GeminiExplorerDraftGenerator,
     RoutedExplorerDraftGenerator,
@@ -32,6 +36,12 @@ from app.modules.explorer.adapters.url_sources import (
     YtDlpMetadataSourceExtractor,
     YtDlpSocialSourceExtractor,
 )
+from app.modules.explorer.adapters.youtube_transcript import (
+    GeminiAudioTranscriber,
+    YouTubeTranscriptSourceExtractor,
+    YtDlpAudioClient,
+    YtDlpCaptionClient,
+)
 __all__ = [
     "GeminiExplorerDraftGenerator",
     "CurlCffiWebsiteFetcher",
@@ -39,6 +49,7 @@ __all__ = [
     "GeminiMediaAnalyzer",
     "InMemoryExplorerSnapshotRepository",
     "InMemoryExplorerDraftCache",
+    "InMemorySourceExtractionCache",
     "InMemoryUrlSourceCache",
     "InlineImageSourceExtractor",
     "FallbackUrlMediaClient",
@@ -47,6 +58,7 @@ __all__ = [
     "PlaywrightWebsiteRenderer",
     "PostgresUrlSourceCache",
     "PostgresExplorerDraftCache",
+    "PostgresSourceExtractionCache",
     "RuleBasedExplorerDraftGenerator",
     "RoutedExplorerDraftGenerator",
     "TikTokHtmlMediaClient",
@@ -55,4 +67,8 @@ __all__ = [
     "WebsiteSourceExtractor",
     "YtDlpMetadataSourceExtractor",
     "YtDlpSocialSourceExtractor",
+    "GeminiAudioTranscriber",
+    "YouTubeTranscriptSourceExtractor",
+    "YtDlpAudioClient",
+    "YtDlpCaptionClient",
 ]

@@ -20,8 +20,9 @@ def route_draft(state: ExplorerState) -> Literal["normalize", "failure"]:
     return "failure" if state.get("failure") else "normalize"
 
 
-def route_completion(state: ExplorerState) -> Literal["ready", "clarification"]:
-    return "ready" if state["output"].status == "ready" else "clarification"
+def route_completion(state: ExplorerState) -> Literal["ready", "partial", "clarification"]:
+    status = state["output"].status
+    return status if status in {"ready", "partial"} else "clarification"
 
 
 def build_explorer_graph(service: ExplorerService):
@@ -31,7 +32,8 @@ def build_explorer_graph(service: ExplorerService):
         "prepare_intake", "extract_prompt_structured_draft", "extract_sources",
         "evaluate_batch_coverage", "synthesize_explorer_draft", "normalize_and_validate",
         "reconcile_input_adm", "apply_defaults_and_precedence", "mark_failure",
-        "persist_ready_snapshot", "persist_clarification_snapshot", "persist_failure_snapshot",
+        "persist_ready_snapshot", "persist_partial_snapshot",
+        "persist_clarification_snapshot", "persist_failure_snapshot",
     ):
         builder.add_node(name, getattr(nodes, name))
     builder.add_edge(START, "prepare_intake")
@@ -49,9 +51,10 @@ def build_explorer_graph(service: ExplorerService):
     builder.add_edge("normalize_and_validate", "reconcile_input_adm")
     builder.add_edge("reconcile_input_adm", "apply_defaults_and_precedence")
     builder.add_conditional_edges("apply_defaults_and_precedence", route_completion, {
-        "ready": "persist_ready_snapshot", "clarification": "persist_clarification_snapshot"
+        "ready": "persist_ready_snapshot", "partial": "persist_partial_snapshot",
+        "clarification": "persist_clarification_snapshot"
     })
     builder.add_edge("mark_failure", "persist_failure_snapshot")
-    for node in ("persist_ready_snapshot", "persist_clarification_snapshot", "persist_failure_snapshot"):
+    for node in ("persist_ready_snapshot", "persist_partial_snapshot", "persist_clarification_snapshot", "persist_failure_snapshot"):
         builder.add_edge(node, END)
     return builder.compile()

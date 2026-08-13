@@ -368,7 +368,7 @@ def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:
 
     assert [item.entity_id for item in result] == ["kg:related"]
     assert "retrieval:relation" in result[0].tags
-    assert tool.requests[0].top_k == 3
+    assert tool.requests[0].top_k == 5
 
 
 def test_external_call_budget_uses_at_most_two_sources() -> None:

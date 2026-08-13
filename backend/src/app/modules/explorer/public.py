@@ -32,6 +32,10 @@ from app.modules.explorer.adapters import (
     WebsiteSourceExtractor,
     YtDlpMetadataSourceExtractor,
     YtDlpSocialSourceExtractor,
+    GeminiAudioTranscriber,
+    YouTubeTranscriptSourceExtractor,
+    YtDlpAudioClient,
+    YtDlpCaptionClient,
 )
 from app.modules.explorer.graph import build_explorer_graph as _compile_explorer_graph
 from app.modules.explorer.service import ExplorerService
@@ -41,10 +45,17 @@ from app.shared.llm import LlmClient
 def create_explorer_service(
     *,
     draft_provider: str = "rules",
+    source_draft_provider: str = "gemini",
     llm_client: LlmClient | None = None,
     image_llm_client: LlmClient | None = None,
     audio_llm_client: LlmClient | None = None,
     max_output_tokens: int = 4000,
+    source_chunk_characters: int = 20_000,
+    source_max_output_tokens: int = 8_000,
+    source_max_concurrency: int = 8,
+    minimum_synthesis_coverage: float = 0.8,
+    dedupe_provider: str = "gemini",
+    note_provider: str = "gemini",
     url_timeout_seconds: float = 30,
     ytdlp_cookie_file: str | None = None,
     frame_interval_seconds: float = 1.5,
@@ -52,6 +63,10 @@ def create_explorer_service(
     max_frames: int = 72,
     frame_max_concurrency: int = 5,
     audio_chunk_count: int = 3,
+    youtube_audio_chunk_seconds: int = 300,
+    youtube_audio_chunk_overlap_seconds: int = 5,
+    youtube_audio_max_concurrency: int = 8,
+    youtube_max_duration_seconds: int = 14_400,
     max_video_seconds: float = 180,
     max_media_mb: int = 120,
     database_url: str | None = None,
@@ -63,7 +78,13 @@ def create_explorer_service(
     gemini = None
     if llm_client is not None:
         gemini = GeminiExplorerDraftGenerator(
-            llm_client, max_output_tokens=max_output_tokens
+            llm_client,
+            max_output_tokens=max_output_tokens,
+            source_chunk_characters=source_chunk_characters,
+            source_max_output_tokens=source_max_output_tokens,
+            source_max_concurrency=source_max_concurrency,
+            dedupe_provider=dedupe_provider,
+            note_provider=note_provider,
         )
     if draft_provider == "gemini":
         if gemini is None:
@@ -73,15 +94,26 @@ def create_explorer_service(
         prompt_generator = rules
     else:
         raise ValueError(f"Unsupported Explorer draft provider: {draft_provider}")
+    if source_draft_provider == "gemini":
+        source_generator = gemini or rules
+    elif source_draft_provider == "rules":
+        source_generator = rules
+    else:
+        raise ValueError(
+            f"Unsupported Explorer source draft provider: {source_draft_provider}"
+        )
+    if dedupe_provider not in {"rules", "gemini"}:
+        raise ValueError(f"Unsupported Explorer dedupe provider: {dedupe_provider}")
+    if note_provider not in {"rules", "gemini"}:
+        raise ValueError(f"Unsupported Explorer note provider: {note_provider}")
     drafts = RoutedExplorerDraftGenerator(
         prompt_generator=prompt_generator,
-        source_generator=gemini or rules,
+        source_generator=source_generator,
     )
     metadata_client = PythonYtDlpClient(
         timeout_seconds=url_timeout_seconds,
         cookie_file=ytdlp_cookie_file,
     )
-    youtube = YtDlpMetadataSourceExtractor(metadata_client, platform="YouTube")
     website = WebsiteSourceExtractor(
         impersonated_fetcher=CurlCffiWebsiteFetcher(
             timeout_seconds=url_timeout_seconds
@@ -121,7 +153,26 @@ def create_explorer_service(
             media_client, analyzer, platform="Instagram"
         )
         image_extractor = GeminiImageSourceExtractor(analyzer)
+        youtube = YouTubeTranscriptSourceExtractor(
+            YtDlpCaptionClient(
+                timeout_seconds=url_timeout_seconds,
+                cookie_file=ytdlp_cookie_file,
+            ),
+            YtDlpAudioClient(
+                timeout_seconds=url_timeout_seconds,
+                cookie_file=ytdlp_cookie_file,
+                max_filesize_mb=max_media_mb,
+            ),
+            GeminiAudioTranscriber(
+                speech_client,
+                chunk_seconds=youtube_audio_chunk_seconds,
+                overlap_seconds=youtube_audio_chunk_overlap_seconds,
+                max_concurrency=youtube_audio_max_concurrency,
+                max_duration_seconds=youtube_max_duration_seconds,
+            ),
+        )
     else:
+        youtube = YtDlpMetadataSourceExtractor(metadata_client, platform="YouTube")
         tiktok = YtDlpMetadataSourceExtractor(metadata_client, platform="TikTok")
         instagram = YtDlpMetadataSourceExtractor(metadata_client, platform="Instagram")
         image_extractor = InlineImageSourceExtractor(rules)
@@ -152,6 +203,7 @@ def create_explorer_service(
         url_cache=url_cache,
         draft_cache=draft_cache,
         draft_cache_namespace=draft_cache_namespace,
+        minimum_synthesis_coverage=minimum_synthesis_coverage,
     )
 
 

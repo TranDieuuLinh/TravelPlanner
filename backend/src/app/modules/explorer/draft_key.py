@@ -6,6 +6,22 @@ from app.modules.explorer.models import SourceExtractionResult
 
 
 EXPLORER_DRAFT_CACHE_VERSION = "3"
+SOURCE_EXTRACTION_CACHE_VERSION = "1"
+
+
+def source_extraction_cache_key(
+    source: SourceExtractionResult, *, namespace: str
+) -> str:
+    value = json.dumps({
+        "version": SOURCE_EXTRACTION_CACHE_VERSION,
+        "namespace": namespace,
+        "sourceKind": source.source_kind,
+        "sourceRef": source.source_ref,
+        "artifacts": [artifact.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        ) for artifact in source.artifacts],
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def explorer_draft_cache_key(

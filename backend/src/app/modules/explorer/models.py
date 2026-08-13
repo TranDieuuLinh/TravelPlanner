@@ -70,6 +70,7 @@ SourceStatus = Literal[
     "failed_permanent",
 ]
 CacheStatus = Literal["hit", "miss", "bypassed"]
+CoverageStatus = Literal["complete", "partial", "unknown"]
 
 
 class SourceExtractionResult(InternalModel):
@@ -85,10 +86,24 @@ class SourceExtractionResult(InternalModel):
     short_avoids: list[str] = Field(default_factory=list)
     expected_place_count: int | None = Field(default=None, ge=0)
     extracted_place_count: int = Field(default=0, ge=0)
+    source_duration_seconds: float | None = Field(default=None, ge=0)
+    analyzed_duration_seconds: float | None = Field(default=None, ge=0)
+    coverage_ratio: float | None = Field(default=None, ge=0, le=1)
+    coverage_status: CoverageStatus = "unknown"
+    source_chunk_count: int = Field(default=0, ge=0)
+    processed_source_chunk_count: int = Field(default=0, ge=0)
+    synthesis_coverage_ratio: float | None = Field(default=None, ge=0, le=1)
     error: AgentError | None = None
     artifacts: list[SourceArtifact] = Field(default_factory=list)
     branch_failures: list[SourceBranchFailure] = Field(default_factory=list)
     cache_status: CacheStatus | None = None
+    platform: str | None = Field(default=None, max_length=40)
+    extractor_version: str | None = Field(default=None, max_length=80)
+    model_version: str | None = Field(default=None, max_length=120)
+    raw_mention_count: int = Field(default=0, ge=0)
+    filtered_mention_count: int = Field(default=0, ge=0)
+    deduplicated_place_count: int = Field(default=0, ge=0)
+    discarded_mentions: dict[str, int] = Field(default_factory=dict)
 
 
 class ExplorerDraft(InternalModel):

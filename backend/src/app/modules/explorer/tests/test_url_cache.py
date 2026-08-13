@@ -3,6 +3,7 @@ import asyncio
 from app.modules.explorer.adapters.url_cache import (
     InMemoryUrlSourceCache,
     _decode_artifacts,
+    _decode_coverage,
     canonicalize_source_url,
 )
 from app.modules.explorer.adapters.postgres import asyncpg_dsn
@@ -93,6 +94,25 @@ def test_legacy_v6_artifacts_are_converted_to_current_contract() -> None:
     assert [item.artifact_type for item in artifacts] == ["caption", "frame_ocr"]
     assert artifacts[0].language == "vi"
     assert artifacts[1].language is None
+
+
+def test_current_cache_context_restores_transcript_coverage() -> None:
+    coverage = _decode_coverage(
+        {
+            "sourceDurationSeconds": 5865,
+            "analyzedDurationSeconds": 5865,
+            "coverageRatio": 1.0,
+            "coverageStatus": "complete",
+        },
+        "8",
+    )
+
+    assert coverage == {
+        "sourceDurationSeconds": 5865,
+        "analyzedDurationSeconds": 5865,
+        "coverageRatio": 1.0,
+        "coverageStatus": "complete",
+    }
 
 
 def test_cache_hit_skips_second_url_extraction() -> None:

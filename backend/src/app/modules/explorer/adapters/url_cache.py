@@ -11,7 +11,7 @@ from app.modules.explorer.models import (
 from app.modules.explorer.adapters.postgres import asyncpg_dsn
 
 
-EXPLORER_URL_CACHE_VERSION = "7"
+EXPLORER_URL_CACHE_VERSION = "8"
 _LEGACY_CACHE_VERSIONS = {"6"}
 _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_KEYS = {"fbclid", "gclid", "igshid"}
@@ -119,6 +119,24 @@ def _decode_failures(context, version: str) -> list[SourceBranchFailure]:
     ]
 
 
+def _decode_coverage(context, version: str) -> dict:
+    if version != EXPLORER_URL_CACHE_VERSION:
+        return {}
+    data = _json_value(context)
+    if not isinstance(data, dict):
+        return {}
+    return {
+        key: data[key]
+        for key in (
+            "sourceDurationSeconds",
+            "analyzedDurationSeconds",
+            "coverageRatio",
+            "coverageStatus",
+        )
+        if key in data
+    }
+
+
 class InMemoryUrlSourceCache:
     def __init__(self) -> None:
         self._items: dict[str, SourceExtractionResult] = {}
@@ -190,6 +208,7 @@ class PostgresUrlSourceCache:
         if not artifacts:
             return None
         failures = _decode_failures(row["extracted_context"], version)
+        coverage = _decode_coverage(row["extracted_context"], version)
         return SourceExtractionResult(
             sourceIndex=source_index,
             sourceKind="url",
@@ -198,6 +217,7 @@ class PostgresUrlSourceCache:
             artifacts=artifacts,
             branchFailures=failures,
             cacheStatus="hit",
+            **coverage,
         )
 
     async def save(self, url: str, result: SourceExtractionResult) -> None:
@@ -211,6 +231,10 @@ class PostgresUrlSourceCache:
         context = {
             "_cacheVersion": int(EXPLORER_URL_CACHE_VERSION),
             "status": result.status,
+            "sourceDurationSeconds": result.source_duration_seconds,
+            "analyzedDurationSeconds": result.analyzed_duration_seconds,
+            "coverageRatio": result.coverage_ratio,
+            "coverageStatus": result.coverage_status,
             "branchFailures": [
                 failure.model_dump(mode="json", by_alias=True, exclude_none=True)
                 for failure in result.branch_failures

@@ -66,6 +66,9 @@ class ExplorerNodes:
     async def persist_clarification_snapshot(self, state: ExplorerState) -> dict:
         return await self._persist(state, "clarification")
 
+    async def persist_partial_snapshot(self, state: ExplorerState) -> dict:
+        return await self._persist(state, "partial")
+
     async def persist_failure_snapshot(self, state: ExplorerState) -> dict:
         return await self._persist(state, "failure")
 

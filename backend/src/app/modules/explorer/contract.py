@@ -50,6 +50,10 @@ class PlaceSource(ExplorerModel):
     source_time_hint: str | None = Field(default=None, max_length=80)
     address_hint: str | None = Field(default=None, max_length=300)
     observed_at: datetime | None = None
+    platform: str | None = Field(default=None, max_length=40)
+    extractor_version: str | None = Field(default=None, max_length=80)
+    model_version: str | None = Field(default=None, max_length=120)
+    cache_status: Literal["hit", "miss", "bypassed"] | None = None
 
 
 class ExplorerPlace(ExplorerModel):
@@ -136,7 +140,30 @@ class ExplorerInput(ExplorerModel):
         return values
 
 
-ExplorerStatus = Literal["ready", "clarification", "error"]
+ExplorerStatus = Literal["ready", "partial", "clarification", "error"]
+
+
+class SourceCompleteness(ExplorerModel):
+    source_index: int = Field(ge=0)
+    source_ref: str
+    coverage_status: Literal["complete", "partial", "unknown"]
+    coverage_ratio: float | None = Field(default=None, ge=0, le=1)
+    raw_mention_count: int = Field(default=0, ge=0)
+    filtered_mention_count: int = Field(default=0, ge=0)
+    deduplicated_place_count: int = Field(default=0, ge=0)
+    source_chunk_count: int = Field(default=0, ge=0)
+    processed_source_chunk_count: int = Field(default=0, ge=0)
+    synthesis_coverage_ratio: float | None = Field(default=None, ge=0, le=1)
+    discarded: dict[str, int] = Field(default_factory=dict)
+
+
+class ExplorerCompleteness(ExplorerModel):
+    sources: list[SourceCompleteness] = Field(default_factory=list)
+    raw_mention_count: int = Field(default=0, ge=0)
+    filtered_mention_count: int = Field(default=0, ge=0)
+    deduplicated_place_count: int = Field(default=0, ge=0)
+    discarded: dict[str, int] = Field(default_factory=dict)
+    complete: bool = True
 
 
 class ExplorerOutput(ExplorerModel):
@@ -153,4 +180,5 @@ class ExplorerOutput(ExplorerModel):
     short_avoids: list[str] = Field(default_factory=list)
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list)
+    completeness: ExplorerCompleteness | None = None
     error: AgentError | None = None

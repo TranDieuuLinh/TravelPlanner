@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-11.
+Cập nhật lần cuối: 2026-08-12.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -77,8 +77,10 @@ Tỷ lệ bốc pool theo buổi và sở thích được mô tả tại
   nhận diện exact/alias/lexical, áp ngưỡng chấp nhận, chống trùng kết quả
   provider, giữ provenance và làm giàu metadata. External fallback luôn bị tắt
   tại checkpoint này.
-- Adapter Knowledge Graph và kho metadata production chưa được nối. Checkpoint
-  2 hiện cung cấp port để adapter thật triển khai và được kiểm thử bằng fake.
+- Runtime PostgreSQL có `PostgresPlaceCatalog` đọc bốn bảng Knowledge Graph.
+  Candidate được tạo bằng exact/alias, `pg_trgm` similarity và quan hệ trực
+  tiếp, giới hạn top-K trước khi map metadata; external fallback vẫn tách qua
+  port của module. Đây là nguồn đọc, không sở hữu hay ghi dữ liệu Knowledge.
 - Semantic/vector chưa nằm trong contract thực tế của shared tool. Chỉ được bật
   sau khi provider trả component `semanticSimilarity` có nguồn rõ ràng.
 - Checkpoint 3 đã có item resolution qua mode `requirement`, special experience

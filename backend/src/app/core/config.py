@@ -43,7 +43,14 @@ class Settings(BaseSettings):
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
     explorer_draft_provider: Literal["rules", "gemini"] = "rules"
+    explorer_source_draft_provider: Literal["rules", "gemini"] = "gemini"
     explorer_llm_max_output_tokens: int = Field(default=4000, ge=256)
+    explorer_source_chunk_characters: int = Field(default=20_000, ge=2_000, le=60_000)
+    explorer_source_max_output_tokens: int = Field(default=8_000, ge=1_000)
+    explorer_source_max_concurrency: int = Field(default=8, ge=1, le=20)
+    explorer_minimum_synthesis_coverage: float = Field(default=0.8, gt=0, le=1)
+    explorer_dedupe_provider: Literal["rules", "gemini"] = "gemini"
+    explorer_note_provider: Literal["rules", "gemini"] = "gemini"
     explorer_url_timeout_seconds: float = Field(default=30.0, gt=0)
     explorer_url_cache_ttl_seconds: float = Field(default=604_800, gt=0)
     explorer_draft_cache_ttl_seconds: float = Field(default=604_800, gt=0)
@@ -53,6 +60,10 @@ class Settings(BaseSettings):
     explorer_max_frames: int = Field(default=72, ge=1, le=72)
     explorer_frame_max_concurrency: int = Field(default=5, ge=1, le=8)
     explorer_audio_chunk_count: int = Field(default=3, ge=1, le=8)
+    explorer_youtube_audio_chunk_seconds: int = Field(default=300, ge=30, le=900)
+    explorer_youtube_audio_chunk_overlap_seconds: int = Field(default=5, ge=0, le=30)
+    explorer_youtube_audio_max_concurrency: int = Field(default=8, ge=1, le=20)
+    explorer_youtube_max_duration_seconds: int = Field(default=14_400, ge=60)
     explorer_max_video_seconds: float = Field(default=180.0, gt=0)
     explorer_max_media_mb: int = Field(default=120, ge=1)
     information_finder_embedding_model: str = "gemini-embedding-001"
