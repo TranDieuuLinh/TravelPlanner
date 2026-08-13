@@ -15,6 +15,7 @@ from app.modules.information_finder.ports import (
     SearchProviderQuotaExceeded,
     SearchProviderTimeout,
 )
+from app.modules.information_finder.errors import EmbeddingProviderQuotaExceeded
 from app.modules.information_finder.service import (
     InformationFinderOptions,
     InformationFinderService,
@@ -43,6 +44,18 @@ class FakeChunker:
 
     async def chunk(self, source):
         return ["semantic chunk one", "semantic chunk two"]
+
+
+class QuotaEmbedding:
+    @property
+    def identity(self):
+        raise AssertionError("identity should not be read after quota failure")
+
+    async def embed_query(self, text):
+        raise EmbeddingProviderQuotaExceeded("quota")
+
+    async def embed_documents(self, texts):
+        raise AssertionError("document embeddings should be skipped")
 
 
 class StaticRepository:
@@ -130,6 +143,25 @@ def test_empty_local_calls_tavily_and_saves():
     output = asyncio.run(service(repository, search).find("museum"))
     assert search.calls == 1 and len(repository.saved) == 1
     assert len(output.sources) == 1
+
+
+def test_embedding_quota_falls_back_to_tavily_without_failing():
+    repository = StaticRepository()
+    finder = InformationFinderService(
+        repository=repository,
+        embeddings=QuotaEmbedding(),
+        answers=ExtractiveAnswerGenerator(),
+        search_provider=FakeSearch([web_result()]),
+        options=InformationFinderOptions(
+            minimum_local_sources=1,
+            provider_relevance_threshold=0.5,
+        ),
+    )
+
+    output = asyncio.run(finder.find("giờ mở cửa bảo tàng"))
+
+    assert len(output.sources) == 1
+    assert output.warnings == ["embedding_fallback:embedding_provider_quota_exceeded"]
 
 
 def test_topic_mismatch_forces_tavily_even_with_high_embedding_score():

@@ -73,6 +73,7 @@ services:
     environment:
       PYTHONPATH: /app/src
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      DATABASE_URL: postgresql://travelplanner:travelplanner@postgres:5432/travelplanner
       TAVILY_SEARCH_DEPTH: ${TAVILY_SEARCH_DEPTH:-basic}
       TAVILY_MAX_RESULTS: ${TAVILY_MAX_RESULTS:-5}
       TAVILY_TIMEOUT_SECONDS: ${TAVILY_TIMEOUT_SECONDS:-15}

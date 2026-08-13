@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -13,6 +14,7 @@ from app.modules.information_finder.contract import (
 from app.modules.information_finder.answering import validate_and_render_answer
 from app.modules.information_finder.errors import (
     AnswerProviderError,
+    EmbeddingProviderError,
     SourceChunkingError,
 )
 from app.modules.information_finder.freshness import FreshnessPolicy
@@ -79,14 +81,26 @@ class InformationFinderService:
 
     async def find(self, query: str) -> InformationFinderOutput:
         normalized_query = normalize_query(query)
-        query_embedding = await self.embeddings.embed_query(normalized_query)
-        identity = self.embeddings.identity
-        local = await self.repository.retrieve(
-            normalized_query,
-            query_embedding,
-            identity,
-            self.options.retrieval_limit,
-        )
+        warnings: list[str] = []
+        embedding_available = True
+        try:
+            query_embedding = await self.embeddings.embed_query(normalized_query)
+            identity = self.embeddings.identity
+            local = await self.repository.retrieve(
+                normalized_query,
+                query_embedding,
+                identity,
+                self.options.retrieval_limit,
+            )
+        except EmbeddingProviderError as exc:
+            # Web freshness queries must remain useful when the embedding
+            # provider is rate-limited. Tavily results can still be ranked by
+            # provider score and cited without pretending they have vectors.
+            embedding_available = False
+            query_embedding = None
+            identity = None
+            local = []
+            warnings.append(f"embedding_fallback:{exc.code}")
         now = datetime.now(timezone.utc)
         fresh_local = [
             source
@@ -103,7 +117,6 @@ class InformationFinderService:
             minimum_content_chars=self.options.minimum_content_chars,
             topic_overlap_threshold=self.options.topic_overlap_threshold,
         )
-        warnings: list[str] = []
         combined = list(fresh_local)
 
         if decision.force_refresh or not local_sufficient:
@@ -118,36 +131,54 @@ class InformationFinderService:
                 ):
                     try:
                         response = await self.search_provider.search(search_query)
-                        prepared = await self._prepare_sources(
-                            response.results,
-                            query_embedding=query_embedding,
-                            expires_at=now + decision.ttl,
-                        )
-                        saved = await self.repository.save_search(
-                            original_query=query,
-                            normalized_query=normalized_query,
-                            sources=prepared,
-                            identity=identity,
-                            provider_request_id=response.provider_request_id,
-                            search_parameters={
-                                "forceRefresh": decision.force_refresh,
-                                "attempt": attempt,
-                                "searchQuery": search_query,
-                                "resultCount": len(response.results),
-                            },
-                        )
-                        self._score_saved_sources(
-                            saved,
-                            prepared,
-                            query_embedding,
-                            normalized_query,
-                        )
+                        if embedding_available:
+                            try:
+                                prepared = await self._prepare_sources(
+                                    response.results,
+                                    query_embedding=query_embedding,
+                                    expires_at=now + decision.ttl,
+                                )
+                                saved = await self.repository.save_search(
+                                    original_query=query,
+                                    normalized_query=normalized_query,
+                                    sources=prepared,
+                                    identity=identity,
+                                    provider_request_id=response.provider_request_id,
+                                    search_parameters={
+                                        "forceRefresh": decision.force_refresh,
+                                        "attempt": attempt,
+                                        "searchQuery": search_query,
+                                        "resultCount": len(response.results),
+                                    },
+                                )
+                                self._score_saved_sources(
+                                    saved,
+                                    prepared,
+                                    query_embedding,
+                                    normalized_query,
+                                )
+                            except EmbeddingProviderError as exc:
+                                embedding_available = False
+                                query_embedding = None
+                                identity = None
+                                warnings.append(f"embedding_fallback:{exc.code}")
+                                saved = self._sources_without_embeddings(
+                                    response.results,
+                                    expires_at=now + decision.ttl,
+                                )
+                        else:
+                            saved = self._sources_without_embeddings(
+                                response.results,
+                                expires_at=now + decision.ttl,
+                            )
                         combined.extend(
                             source
                             for source in saved
-                            if source.semantic_score
-                            >= self.options.similarity_threshold
+                            if not embedding_available
+                            or source.semantic_score >= self.options.similarity_threshold
                         )
+                        if not embedding_available and len(combined) >= self.options.minimum_local_sources:
+                            break
                         if has_sufficient_local_sources(
                             combined,
                             query=normalized_query,
@@ -202,6 +233,49 @@ class InformationFinderService:
             sources=[self._citation(source) for source in cited_sources],
             warnings=warnings,
         )
+
+    @staticmethod
+    def _sources_without_embeddings(
+        results,
+        *,
+        expires_at: datetime,
+        minimum_content_chars: int = 80,
+        provider_relevance_threshold: float = 0.5,
+    ) -> list[RetrievedSource]:
+        """Keep usable Tavily results when vector generation is unavailable."""
+        sources: list[RetrievedSource] = []
+        seen_urls: set[str] = set()
+        for result in results:
+            try:
+                url = canonicalize_url(result.url)
+            except ValueError:
+                continue
+            if (
+                len(result.content.strip()) < minimum_content_chars
+                or (result.provider_score or 0.0) < provider_relevance_threshold
+                or url in seen_urls
+            ):
+                continue
+            seen_urls.add(url)
+            source_key = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+            sources.append(
+                RetrievedSource(
+                    source_id=f"tavily-{source_key}",
+                    snapshot_id=f"tavily-{source_key}",
+                    title=result.title,
+                    url=url,
+                    content=result.content,
+                    semantic_score=0.0,
+                    lexical_score=0.0,
+                    freshness_score=1.0,
+                    provider_score=result.provider_score,
+                    published_at=result.published_at,
+                    source_updated_at=result.source_updated_at,
+                    last_fetched_at=result.fetched_at,
+                    expires_at=expires_at,
+                )
+            )
+        return sources
 
     async def _prepare_sources(
         self,
