@@ -15,6 +15,7 @@ import {
   PlannerChatHeader,
   PlannerChatMessages,
 } from "@/features/planner/components/PlannerChatUI";
+import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 
 export function GlobalPlannerAssistant() {
   const pathname = usePathname();
@@ -65,6 +66,18 @@ export function GlobalPlannerAssistant() {
     const message = [prompt.trim(), urlInput.trim()].filter(Boolean).join("\n");
     router.push(message ? `/planner?prompt=${encodeURIComponent(message)}` : "/planner");
     setOpen(false);
+  }
+
+  function handlePromptPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const result = parseUrlOnlyInput(event.clipboardData.getData("text").trim());
+    if (!result.ok) return;
+    event.preventDefault();
+    setUrlInput((current) => {
+      const existing = parseUrlOnlyInput(current);
+      return Array.from(
+        new Set([...(existing.ok ? existing.urls : []), ...result.urls])
+      ).join("\n");
+    });
   }
 
   function beginMove(event: ReactPointerEvent<HTMLElement>) {
@@ -173,12 +186,23 @@ export function GlobalPlannerAssistant() {
             />
             <PlannerChatComposer
               onPromptChange={setPrompt}
+              onPromptPaste={handlePromptPaste}
               onSubmit={openPlanner}
-              onUrlChange={setUrlInput}
+              onRemoveUrl={(url) => {
+                setUrlInput((current) =>
+                  current
+                    .split(/\s+/)
+                    .filter((entry) => entry && entry !== url)
+                    .join("\n")
+                );
+              }}
               prompt={prompt}
               promptPlaceholder="Mô tả chuyến đi bạn mong muốn…"
               promptRef={inputRef}
-              urlInput={urlInput}
+              urls={(() => {
+                const result = parseUrlOnlyInput(urlInput);
+                return result.ok ? result.urls : [];
+              })()}
             />
           </div>
           <div

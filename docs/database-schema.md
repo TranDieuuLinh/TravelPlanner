@@ -1,17 +1,20 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-12.
+Cập nhật lần cuối: 2026-08-13.
 
 ## Phạm vi và trạng thái
 
 Tài liệu này được lấy trực tiếp từ database `travelplanner` trong container
 PostgreSQL `pgvector/pgvector:0.8.2-pg16` đang chạy qua Docker Compose.
 
-Database sau migration 003 có 47 table trong schema `public`, gồm 8 table knowledge được
+Database runtime hiện có 52 table trong schema `public`, gồm các bảng cache, planner,
+Knowledge Graph, profile, social và marketplace được
 khôi phục từ export ngày 2026-08-11 và 6 table cache của Information Finder.
 Bốn table tag legacy (`knowledge_tags`, `knowledge_tag_runs`,
 `knowledge_tag_scan_results`, `knowledge_entity_tag_assertions`) đã được xóa.
-Backend LangGraph mới trong `backend/src/app` không có SQLAlchemy model để đọc
+Các migration bổ sung `007_legacy_runtime_schema.sql` và
+`008_marketplace_social_schema.sql` mô tả các bảng runtime/legacy còn lại, theo
+đúng thứ tự dependency. Backend LangGraph mới trong `backend/src/app` không có SQLAlchemy model để đọc
 các table legacy. Information Finder có repository `asyncpg` và migration SQL
 riêng, chỉ sở hữu các bảng tiền tố `information_finder_`. Explorer đã nhận
 ownership bảng `source_documents` và `explorer_draft_cache` qua asyncpg adapter

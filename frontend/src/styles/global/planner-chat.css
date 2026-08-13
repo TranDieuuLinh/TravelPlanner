@@ -2040,6 +2040,137 @@
   padding: 0;
 }
 
+/* URLs are represented as compact attachments inside the shared composer. */
+.plannerEntryComposer {
+  position: relative;
+  z-index: 50;
+}
+.plannerChat {
+  overflow: visible;
+}
+.plannerEntryComposer .urlImportDock { display: none; }
+.plannerEntryComposer .composerBox { overflow: visible; }
+
+.urlChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+  overflow: visible;
+}
+
+.urlChip {
+  position: relative;
+  display: inline-flex;
+  max-width: min(240px, 100%);
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #cfe0da;
+  border-radius: 999px;
+  padding: 4px 5px 4px 9px;
+  background: #f2f8f5;
+  color: #315f58;
+  font-size: .62rem;
+  font-weight: 800;
+}
+
+.urlChipIcon {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: #315f58;
+}
+.urlChipIcon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.urlChipIcon--youtube { color: #e53935; }
+.urlChipIcon--instagram { color: #c13584; }
+.urlChipIcon .sourceProviderIconTikTok path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.15;
+}
+.urlChipIcon .sourceProviderIconTikTokCyan { stroke: #25f4ee; }
+.urlChipIcon .sourceProviderIconTikTokRed { stroke: #fe2c55; }
+.urlChipIcon .sourceProviderIconTikTokBlack { stroke: #111; }
+.urlChipTooltip {
+  position: absolute;
+  z-index: 9999;
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: block;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 48px));
+  border: 1px solid #d6e2de;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #173c35;
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.urlChipTooltip::before {
+  position: absolute;
+  top: auto;
+  bottom: -5px;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid #d6e2de;
+  border-bottom: 1px solid #d6e2de;
+  background: #173c35;
+  content: "";
+  transform: rotate(45deg);
+}
+.urlChip:hover .urlChipTooltip,
+.urlChip:focus-within .urlChipTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+.urlChipTooltip--portal {
+  position: fixed;
+  top: auto;
+  bottom: auto;
+  z-index: 2147483647;
+  opacity: 1;
+  pointer-events: none;
+  transform: translateY(-100%);
+}
+.urlChipTooltip--portal::before { display: none; }
+.urlChipRemove {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: #66817b;
+  font-size: 1rem;
+  line-height: 1;
+}
+.urlChipRemove:hover:not(:disabled),
+.urlChipRemove:focus-visible { background: #dcece6; color: #173c35; }
+.urlChipRemove:disabled { cursor: wait; opacity: .5; }
+
 .urlImportControlIcon {
   display: grid;
   width: 36px;

@@ -138,11 +138,6 @@ import {
   itineraryTimeWindowAriaLabel,
 } from "@/features/planner/lib/time-window";
 import {
-  sourceProviderKind,
-  type SourceProviderKind,
-} from "@/features/planner/lib/source-provider";
-
-import {
   categoryFromPlaceType,
   itineraryDisplayName,
   handleDayTabKeyDown,
@@ -550,10 +545,8 @@ function Planner() {
     initialPrompt
   );
   const [urlInput, setUrlInput] = useState("");
-  const [urlInputError, setUrlInputError] = useState("");
   const messageListRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const urlInputRef = useRef<HTMLTextAreaElement>(null);
   const guidedInputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -3998,7 +3991,6 @@ function Planner() {
     setLoading(false);
     setPrompt("");
     setUrlInput("");
-    setUrlInputError("");
     setExploreResult(null);
     setPlan(null);
     setSelectedMapPlaceKey(null);
@@ -4431,26 +4423,43 @@ function Planner() {
   }
 
   function handleUrlPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const pastedText = event.clipboardData.getData("text").trim();
-    if (!parseUrlOnlyInput(pastedText).ok) return;
+    const pastedText = event.clipboardData.getData("text");
+    const pastedUrls = extractMessageUrls(pastedText).filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    });
+    if (pastedUrls.length === 0) return;
 
     event.preventDefault();
+    const currentUrls = parseUrlOnlyInput(urlInput);
+    const nextUrls = Array.from(
+      new Set([
+        ...(currentUrls.ok ? currentUrls.urls : []),
+        ...pastedUrls,
+      ])
+    );
+    setUrlInput(nextUrls.join("\n"));
+
     const field = event.currentTarget;
     const selectionStart = field.selectionStart;
     const selectionEnd = field.selectionEnd;
-    const nextValue = `${urlInput.slice(
-      0,
-      selectionStart
-    )}${pastedText}\n${urlInput.slice(selectionEnd)}`;
-    const nextCaretPosition = selectionStart + pastedText.length + 1;
-
-    setUrlInput(nextValue);
-    if (urlInputError) setUrlInputError("");
+    const remainingText = pastedUrls.reduce(
+      (value, url) => value.replace(url, ""),
+      pastedText
+    ).trim();
+    const before = prompt.slice(0, selectionStart);
+    const after = prompt.slice(selectionEnd);
+    const pastedContent = remainingText
+      ? `${before && !/\s$/.test(before) ? " " : ""}${remainingText}${after && !/^\s/.test(after) ? " " : ""}`
+      : "";
+    setPrompt(`${before}${pastedContent}${after}`);
     window.requestAnimationFrame(() => {
-      urlInputRef.current?.setSelectionRange(
-        nextCaretPosition,
-        nextCaretPosition
-      );
+      const nextPosition = before.length + pastedContent.length;
+      composerTextareaRef.current?.setSelectionRange(nextPosition, nextPosition);
     });
   }
 
@@ -4460,11 +4469,10 @@ function Planner() {
 
     const result = parseUrlOnlyInput(urlInput);
     if (!result.ok) {
-      setUrlInputError(result.message);
+      setError(result.message);
       return null;
     }
 
-    setUrlInputError("");
     return [tripRequest, ...result.urls].filter(Boolean).join("\n");
   }
 
@@ -4733,12 +4741,19 @@ function Planner() {
                     disabled={loading}
                     onPromptChange={setPrompt}
                     onPromptKeyDown={handleComposerKeyDown}
+                    onPromptPaste={handleUrlPaste}
                     onSubmit={submitPlannerEntry}
-                    onUrlChange={(value) => {
-                      setUrlInput(value);
-                      if (urlInputError) setUrlInputError("");
+                    onRemoveUrl={(url) => {
+                      setUrlInput((current) =>
+                        current
+                          .split(/\s+/)
+                          .filter((entry) => {
+                            const parsed = parseUrlOnlyInput(entry);
+                            return !parsed.ok || parsed.urls[0] !== url;
+                          })
+                          .join("\n")
+                      );
                     }}
-                    onUrlPaste={handleUrlPaste}
                     prompt={prompt}
                     promptPlaceholder={
                       displayedPlan
@@ -4747,9 +4762,10 @@ function Planner() {
                     }
                     promptRef={composerTextareaRef}
                     queueingUrls={queueingUrls}
-                    urlError={urlInputError}
-                    urlInput={urlInput}
-                    urlRef={urlInputRef}
+                    urls={(() => {
+                      const result = parseUrlOnlyInput(urlInput);
+                      return result.ok ? result.urls : [];
+                    })()}
                   />
                 </div>
                 {!chatCollapsed ? (

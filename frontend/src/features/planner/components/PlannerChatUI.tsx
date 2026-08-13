@@ -2,13 +2,33 @@
 
 import {
   forwardRef,
+  useState,
   type ClipboardEventHandler,
   type FormEventHandler,
   type KeyboardEventHandler,
   type PointerEventHandler,
+  type PointerEvent as ReactPointerEvent,
   type Ref,
 } from "react";
+import { createPortal } from "react-dom";
 import { PenguinMascot } from "@/components/PenguinMascot";
+import { SourceProviderIcon } from "@/features/planner/lib/planner-formatters";
+import {
+  sourceProviderKind,
+  type SourceProviderKind,
+} from "@/features/planner/lib/source-provider";
+
+function sourceProviderKindForUrl(url: string): SourceProviderKind {
+  return sourceProviderKind(url, undefined) ?? "url";
+}
+
+function sourceProviderLabelForUrl(url: string): string {
+  const provider = sourceProviderKindForUrl(url);
+  if (provider === "youtube") return "YouTube";
+  if (provider === "tiktok") return "TikTok";
+  if (provider === "instagram") return "Instagram";
+  return "Website";
+}
 
 export type PlannerChatMessage = {
   id: number | string;
@@ -130,75 +150,86 @@ type PlannerChatComposerProps = {
   disabled?: boolean;
   onPromptChange: (value: string) => void;
   onPromptKeyDown?: KeyboardEventHandler<HTMLTextAreaElement>;
+  onPromptPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
   onSubmit: FormEventHandler<HTMLFormElement>;
-  onUrlChange: (value: string) => void;
-  onUrlPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
+  onRemoveUrl: (url: string) => void;
   prompt: string;
   promptPlaceholder: string;
   promptRef?: Ref<HTMLTextAreaElement>;
   queueingUrls?: boolean;
-  urlError?: string;
-  urlInput: string;
-  urlRef?: Ref<HTMLTextAreaElement>;
+  urls: string[];
 };
 
 export function PlannerChatComposer({
   disabled = false,
   onPromptChange,
   onPromptKeyDown,
+  onPromptPaste,
   onSubmit,
-  onUrlChange,
-  onUrlPaste,
+  onRemoveUrl,
   prompt,
   promptPlaceholder,
   promptRef,
   queueingUrls = false,
-  urlError = "",
-  urlInput,
-  urlRef,
+  urls,
 }: PlannerChatComposerProps) {
   const busy = disabled || queueingUrls;
+  const [hoveredUrl, setHoveredUrl] = useState<{
+    left: number;
+    top: number;
+    url: string;
+  } | null>(null);
+
+  function showUrlTooltip(
+    event: ReactPointerEvent<HTMLDivElement>,
+    url: string
+  ) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setHoveredUrl({
+      left: Math.min(bounds.left, window.innerWidth - 380),
+      top: bounds.top - 8,
+      url,
+    });
+  }
+
   return (
     <div className="plannerEntryComposer">
-      <div
-        aria-label="Nhập URL tham khảo"
-        className="urlImportDock"
-        role="group"
-      >
-        <div className={`urlImportControl ${urlError ? "has-error" : ""}`}>
-          <span className="urlImportControlIcon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" />
-              <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1" />
-            </svg>
-          </span>
-          <textarea
-            aria-describedby={urlError ? "url-import-error" : undefined}
-            aria-invalid={Boolean(urlError)}
-            aria-label="Dán các URL nguồn, mỗi URL một dòng"
-            disabled={busy}
-            inputMode="url"
-            onChange={(event) => onUrlChange(event.target.value)}
-            onPaste={onUrlPaste}
-            placeholder="Dán link TikTok, YouTube, Instagram,…"
-            ref={urlRef}
-            rows={Math.min(4, Math.max(1, urlInput.split("\n").length))}
-            value={urlInput}
-          />
-        </div>
-        {urlError ? (
-          <small className="urlImportError" id="url-import-error" role="alert">
-            {urlError}
-          </small>
-        ) : null}
-      </div>
       <form className="chatComposer" onSubmit={onSubmit}>
         <div className="composerBox">
+          {urls.length > 0 ? (
+            <div aria-label="URL tham khảo đã thêm" className="urlChipList" role="list">
+              {urls.map((url) => (
+                <div
+                  className="urlChip"
+                  key={url}
+                  onPointerEnter={(event) => showUrlTooltip(event, url)}
+                  onPointerLeave={() => setHoveredUrl(null)}
+                  role="listitem"
+                >
+                  <span
+                    aria-label={sourceProviderLabelForUrl(url)}
+                    className={`urlChipIcon urlChipIcon--${sourceProviderKindForUrl(url)}`}
+                    role="img"
+                  >
+                    <SourceProviderIcon provider={sourceProviderKindForUrl(url)} />
+                  </span>
+                  <button
+                    aria-label={`Xóa URL ${url}`}
+                    className="urlChipRemove"
+                    disabled={busy}
+                    onClick={() => onRemoveUrl(url)}
+                    type="button"
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <textarea
             aria-label="Tin nhắn lập lịch trình"
             disabled={disabled}
             onChange={(event) => onPromptChange(event.target.value)}
             onKeyDown={onPromptKeyDown}
+            onPaste={onPromptPaste}
             placeholder={promptPlaceholder}
             ref={promptRef}
             rows={2}
@@ -211,12 +242,12 @@ export function PlannerChatComposer({
                   ? "Đang xử lý yêu cầu"
                   : queueingUrls
                     ? "Đang thêm URL vào hàng chờ"
-                    : urlInput.trim()
+                    : urls.length > 0
                       ? "Gửi yêu cầu và URL"
                       : "Gửi yêu cầu"
               }
               className="sendButton"
-              disabled={busy || (!prompt.trim() && !urlInput.trim())}
+              disabled={busy || (!prompt.trim() && urls.length === 0)}
               type="submit"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -227,6 +258,18 @@ export function PlannerChatComposer({
           </div>
         </div>
       </form>
+      {hoveredUrl && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="urlChipTooltip urlChipTooltip--portal"
+              role="tooltip"
+              style={{ left: hoveredUrl.left, top: hoveredUrl.top }}
+            >
+              {hoveredUrl.url}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

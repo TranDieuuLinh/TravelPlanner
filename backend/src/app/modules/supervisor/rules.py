@@ -9,7 +9,7 @@ def normalize_message(message: str) -> str:
     without_marks = "".join(
         char for char in decomposed if unicodedata.category(char) != "Mn"
     )
-    return re.sub(r"\s+", " ", without_marks).strip()
+    return re.sub(r"\s+", " ", without_marks.replace("đ", "d")).strip()
 
 
 def structured_edit_rule(payload: SupervisorInput) -> SupervisorDecision | None:
@@ -17,7 +17,7 @@ def structured_edit_rule(payload: SupervisorInput) -> SupervisorDecision | None:
         return SupervisorDecision(
             route="plan_editor",
             confidence=1.0,
-            reason="Structured edit and itinerary are present.",
+            reason="Da co lich trinh va thao tac chinh sua co cau truc.",
         )
     return None
 
@@ -27,7 +27,7 @@ def source_import_rule(payload: SupervisorInput) -> SupervisorDecision | None:
         return SupervisorDecision(
             route="explorer",
             confidence=1.0,
-            reason="A URL or image requires Explorer source import.",
+            reason="URL hoac hinh anh can duoc Explorer phan tich.",
         )
     return None
 
@@ -41,12 +41,12 @@ def edit_clarification_rule(payload: SupervisorInput) -> SupervisorDecision | No
     return SupervisorDecision(
         route="finish",
         confidence=0.98,
-        reason="An edit request lacks required structured state.",
-        response="I need an existing itinerary and a structured edit operation to update a plan.",
+        reason="Yeu cau chinh sua chua co du trang thai co cau truc.",
+        response="Tôi cần lịch trình hiện có và thao tác chỉnh sửa có cấu trúc để cập nhật kế hoạch.",
         clarification_question=(
-            "Please provide the itinerary and structured edit operation before editing."
+            "Vui long cung cap lich trinh va thao tac chinh sua co cau truc truoc khi chinh sua."
         ),
-        warnings=["Plan edit was not executed."],
+        warnings=["Chua thuc hien chinh sua ke hoach."],
     )
 
 
@@ -64,6 +64,7 @@ def planning_rule(payload: SupervisorInput) -> SupervisorDecision | None:
             "chuyen di",
             "hanh trinh",
             "plan a trip",
+            "plan a three-day trip",
             "trip plan",
             "create an itinerary",
             "plan my trip",
@@ -86,7 +87,7 @@ def planning_rule(payload: SupervisorInput) -> SupervisorDecision | None:
     return SupervisorDecision(
         route="explorer",
         confidence=0.94,
-        reason="The message contains a clear trip-planning signal.",
+        reason="Tin nhan co tin hieu ro rang ve viec lap ke hoach chuyen di.",
     )
 
 
@@ -96,6 +97,14 @@ def information_rule(payload: SupervisorInput) -> SupervisorDecision | None:
         message,
         (
             "thong tin",
+            "lich su",
+            "lich sua",
+            "van hoa",
+            "am thuc",
+            "dan so",
+            "ngon ngu",
+            "y nghia",
+            "dac diem",
             "muon biet them",
             "gioi thieu ve",
             "thoi tiet",
@@ -130,12 +139,12 @@ def information_rule(payload: SupervisorInput) -> SupervisorDecision | None:
         return SupervisorDecision(
             route="information_finder",
             confidence=0.91,
-            reason="The message is a destination information follow-up.",
+            reason="Day la cau hoi noi tiep ve thong tin diem den.",
         )
     return SupervisorDecision(
         route="information_finder",
         confidence=0.93,
-        reason="The message contains a clear travel-information signal.",
+        reason="Tin nhan co tin hieu ro rang ve cau hoi kien thuc du lich.",
     )
 
 
@@ -146,7 +155,7 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
             route="finish",
             confidence=0.99,
             reason="The message is a greeting or thanks.",
-            response="Hello! I can help plan trips and find travel information.",
+            response="Xin chào! Tôi có thể điều hướng yêu cầu lập kế hoạch và tìm thông tin du lịch cho bạn.",
         )
     if _contains_any(
         message,
@@ -164,7 +173,7 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
             route="finish",
             confidence=0.97,
             reason="The request is outside travel-planning scope.",
-            response="I can help with travel planning and destination information.",
+            response="Tôi có thể giúp lập kế hoạch chuyến đi và tìm thông tin về điểm đến.",
         )
     return None
 
@@ -178,7 +187,7 @@ def contextual_follow_up_rule(payload: SupervisorInput) -> SupervisorDecision | 
     return SupervisorDecision(
         route="information_finder",
         confidence=0.9,
-        reason="Conversation context indicates a travel-information follow-up.",
+        reason="Ngu canh hoi thoai cho thay day la cau hoi noi tiep ve thong tin du lich.",
     )
 
 
@@ -186,10 +195,10 @@ def deterministic_decision(payload: SupervisorInput) -> SupervisorDecision | Non
     for rule in (
         structured_edit_rule,
         source_import_rule,
-        edit_clarification_rule,
         contextual_follow_up_rule,
         planning_rule,
         information_rule,
+        edit_clarification_rule,
         greeting_or_scope_rule,
     ):
         decision = rule(payload)
@@ -203,9 +212,16 @@ def fallback_decision(
 ) -> SupervisorDecision:
     warnings = [warning] if warning else []
     return SupervisorDecision(
-        route="explorer",
+        route="finish",
         confidence=0.35,
-        reason="Intent is ambiguous; trip-planning clarification is safest.",
+        reason="Y dinh chua ro; Supervisor can nguoi dung lam ro yeu cau.",
+        response=(
+            "Tôi chưa chắc đã hiểu đúng yêu cầu. Bạn muốn lập kế hoạch, "
+            "tìm thông tin du lịch hay chỉnh sửa lịch trình?"
+        ),
+        clarification_question=(
+            "Bạn có thể nói rõ mục tiêu hoặc nội dung cần tôi xử lý không?"
+        ),
         warnings=warnings,
     )
 
@@ -215,7 +231,6 @@ def _contains_edit_request(message: str) -> bool:
         message,
         (
             "xoa",
-            "them",
             " doi ",
             " sua ",
             "di chuyen",
@@ -227,7 +242,9 @@ def _contains_edit_request(message: str) -> bool:
             "update",
             "cap nhat",
         ),
-    )
+    ) or re.search(
+        r"\bthem\s+(?:diem|muc|hoat dong|ngay|mon|place|item|activity)", message
+    ) is not None
 
 
 def _has_duration_signal(message: str) -> bool:
@@ -237,7 +254,7 @@ def _has_duration_signal(message: str) -> bool:
 def _is_greeting_or_thanks(message: str) -> bool:
     return bool(
         re.fullmatch(
-            r"(?:xin chao|chao|hello|hi|hey|good morning|good afternoon|cam on|thank you|thanks)(?:[ ,.].*)?",
+            r"(?:xin chao|chao|hello|hi|hey|good morning|good afternoon|cam on|thank you|thanks|ban khoe khong|dao nay ban the nao|ban la ai|ban co the lam gi)(?:[ ,.?!].*)?",
             message,
         )
     )

@@ -28,7 +28,7 @@ def test_finish_route_completes_with_meaningful_response():
         create_root_graph(), {"request_id": "finish-1", "message": "Xin chào"}
     )
     assert result["decision"].route == "finish"
-    assert "travel" in result["response"].casefold()
+    assert "du lịch" in result["response"].casefold()
 
 
 def test_plan_editor_route_requires_and_uses_structured_state():

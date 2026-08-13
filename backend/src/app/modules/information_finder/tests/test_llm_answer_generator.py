@@ -90,6 +90,11 @@ def test_prompt_injection_stays_source_data_not_system_instruction():
     assert "không đáng tin cậy" in ANSWER_SYSTEM_PROMPT
 
 
+def test_answer_system_prompt_requires_vietnamese_for_every_query_language():
+    assert "Luôn trả lời hoàn toàn bằng tiếng Việt" in ANSWER_SYSTEM_PROMPT
+    assert "Trả lời cùng ngôn ngữ với câu hỏi" not in ANSWER_SYSTEM_PROMPT
+
+
 @pytest.mark.parametrize(
     ("response", "error"),
     [

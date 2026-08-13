@@ -26,8 +26,13 @@ class SupervisorService:
         self._confidence_threshold = confidence_threshold
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
+        # Các rule biên an toàn của Supervisor phải thắng dự đoán LLM:
+        # đặc biệt là câu hỏi kiến thức và yêu cầu chỉnh sửa thiếu trạng thái.
+        deterministic = deterministic_decision(payload)
+        if deterministic is not None:
+            return deterministic
         if self._classifier is None:
-            return deterministic_decision(payload) or fallback_decision(payload)
+            return fallback_decision(payload)
         try:
             result = await self._classifier.classify(payload)
             return self._accept_classifier_result(payload, result)
@@ -36,12 +41,6 @@ class SupervisorService:
                 raise SupervisorClassificationError(
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
-            deterministic = deterministic_decision(payload)
-            if deterministic is not None:
-                deterministic.warnings.append(
-                    "LLM intent classification failed; deterministic fallback used."
-                )
-                return deterministic
             return fallback_decision(
                 payload,
                 warning="LLM intent classification failed; deterministic fallback used.",
