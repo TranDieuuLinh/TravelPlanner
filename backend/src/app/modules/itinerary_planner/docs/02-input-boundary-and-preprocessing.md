@@ -1,9 +1,9 @@
 # Phase 2: Input boundary và preprocessing
 
 Trạng thái: đã triển khai Checkpoint A trong module `itinerary_planner`. Public
-contract và preprocessing đã sẵn sàng; root graph vẫn dùng compatibility
-scaffold cho đến checkpoint integration, nên chưa có Valhalla hoặc CP-SAT ở
-runtime.
+contract, preprocessing và node `prepare_problem` đã được nối vào graph của
+module. Planner cũ đã bị xóa; runtime chưa tạo itinerary cho đến khi Valhalla
+và CP-SAT được triển khai.
 
 ## Phạm vi
 
@@ -121,6 +121,10 @@ user_input/url không lập lịch được -> unscheduled candidate + reason
 special_experience/special_near lỗi -> discarded optional
 ```
 
+Budget hoặc candidate cost có thể `null` khi upstream thật sự không biết.
+Budget `null` nghĩa là phase solver không bật hard budget constraint; candidate
+cost `null` được phân loại bằng `missing_cost`, không được âm thầm coi là 0.
+
 Reason code nên ổn định:
 
 ```text
@@ -147,19 +151,21 @@ Timeline mỗi itinerary day:
 03:00 hôm sau = 1620
 ```
 
-Overnight interval:
+Ngày bình thường bị giới hạn tại `480..1380`. Chỉ place có tag nightlife/
+drinking trong allowlist mới được dùng phần mở rộng đến `1620`:
 
 ```text
 22:00-03:00: 1320-180 -> 1320-1620
 ```
 
 Quy tắc: nếu `endMinute <= startMinute`, cộng 1440 vào end. Sau normalize,
-clamp vào giới hạn itinerary `480..1620`. Interval rỗng bị loại.
+clamp tại `1380` cho candidate thường hoặc `1620` cho late-night candidate.
+Interval rỗng bị loại.
 
-Vì Planner chỉ lập lịch từ 08:00 đến 03:00 hôm sau, opening hours không biết
-(coi như mở 24 giờ) được thay bằng cửa sổ sử dụng `480..1620`, gắn cờ
-`unknown_opening=True` và warning. Việc này không được ghi ngược vào
-input.
+Opening hours không biết được coi là mở 24 giờ, nhưng cửa sổ Planner sử dụng là
+`480..1380` cho candidate thường và tối đa `480..1620` cho late-night
+candidate. Planner gắn cờ `unknown_opening=True` và warning; không ghi ngược
+vào input.
 
 ## Feasible-day preprocessing
 
@@ -189,10 +195,13 @@ opening hours overlap meal start window + meal duration
 Meal policy mặc định:
 
 ```text
-breakfast: start 08:00-08:30, duration 45, target 08:00
+breakfast: start 08:00-12:00, duration 45, target 08:00
 lunch:     start 11:45-13:15, duration 60, target 12:30
 dinner:    start 17:45-19:30, duration 60, target 18:30
 ```
+
+Breakfast chỉ dùng phần mở rộng đến 12:00 khi ngày trước kết thúc muộn. Ngày
+bình thường vẫn được kéo về gần 08:00 bằng `mealDeviationCost`.
 
 Preflight phải phát hiện nếu một ngày/meal không có food candidate nào
 khả thi, thay vì chờ solver trả `INFEASIBLE` không rõ lý do.
@@ -245,7 +254,7 @@ contract.py              public input/output Pydantic models
 preprocessing.py         validation nghiệp vụ và PreparedPlanningProblem
 time_windows.py          normalize/merge/intersect interval
 policies.py              meal windows và planning constants
-state.py                 graph state dùng public/prepared models
+state.py                 graph state chứa input/prepared/warnings/error
 nodes.py                 node mỏng, không chứa rule
 public.py                chỉ export public contract/factory
 tests/test_contract.py
@@ -258,7 +267,8 @@ Không import `app.modules.place_checker.*` trong các file trên.
 ## Acceptance criteria
 
 - JSON camelCase validate và dump round-trip ổn định.
-- Overnight `22:00-03:00` thành `1320-1620`.
+- Candidate thường kết thúc tối đa 23:00; late-night candidate có thể dùng
+  overnight `22:00-03:00` thành `1320-1620`.
 - `null` opening thành 24 giờ + warning; `[]` vẫn là closed.
 - Cost và budget không nhân với `people`.
 - Planner không search DB khi thiếu field.

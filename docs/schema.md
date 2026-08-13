@@ -85,6 +85,8 @@ không có `schemaVersion` và gồm:
 
 - `status`: `ready`, `clarification` hoặc `error`;
 - `intakeId`, `input_ADM`;
+- `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
+  ngày mai, nếu không có duration thì `days=3`;
 - `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
   `addressHint`; mỗi source có thể mang `platform`, `extractorVersion`,
   `modelVersion`, `cacheStatus` và các field provenance này được Place Checker
@@ -116,10 +118,13 @@ khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ả
 trong cùng request được chạy song song. YouTube ưu tiên full subtitle/automatic
 caption mà không tải video; nếu không có caption mới tải audio-only, chia chunk
 có timestamp và transcribe Gemini song song. Transcript dài được extract place
-theo từng chunk thay vì đưa vào một structured request duy nhất. Query `t=` hoặc
+theo từng chunk; mỗi chunk dùng một structured request trả đồng thời place, ADM
+và note thay vì ba request provider riêng. Query `t=` hoặc
 `start=` ưu tiên chunk gần timestamp nhưng không giới hạn phạm vi transcription;
 text chunk mặc định 20.000 ký tự với tối đa 8.000 output token để tránh tạo quá
-nhiều request khi transcript dài.
+nhiều request khi transcript dài. Mặc định tối đa ba chunk được xử lý song
+song và toàn bộ synthesis trong một Explorer service bị giới hạn sáu request
+Gemini đang chạy; chunk thành công được giữ khi chỉ chunk khác cần retry.
 TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
 MP4 có giới hạn; nếu thất bại mới dùng `yt-dlp` legacy. Instagram dùng `yt-dlp`
 theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
@@ -155,6 +160,25 @@ graph, node hoặc state nội bộ.
 `urlNotes`, `days`, `budget`, `people`, `shortPreferences` và `shortAvoids` từ
 Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
 
+Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
+`PlaceCheckerPlannerOutputBuilder` tạo compact `trip + places + food`; root
+validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
+Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
+`special_near`; food có `supportedMeals`.
+
+### FinalItineraryPlanner
+
+Planner preprocess payload compact, lấy một global Valhalla driving matrix,
+tạo sparse arcs và chạy OR-Tools CP-SAT ba pass. Sau solver, module chỉ lấy
+route detail cho selected arcs và có tối đa một affected-day repair nếu detail
+thực tế làm timeline sai.
+
+`ItineraryPlannerOutput` gồm ngày/stops/ordered route legs, cost và budget trên
+một người, solver passes/objective metadata, priority `unscheduled`, optional
+discard count, warnings và phase timings. `InvokeResponse.itinerary` vẫn là
+contract legacy phục vụ PlanEditor; output mới được trả riêng qua
+`plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+
 ## Tool và provider adapter
 
 Hiện chưa có standalone tool registry. Các tool/adapter đang có:
@@ -170,8 +194,10 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim và source ID |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
-| `EstimatedRoutingProvider.travel_minutes` | `itinerary_planner` | Hai giá trị `VerifiedPlace` | Số phút dạng `int` |
-| `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; xoay vòng key từ `GEMINI_API_KEY` |
+| `ValhallaAdapter.matrix` | `itinerary_planner` | Candidate coordinates + profile | Global asymmetric driving matrix |
+| `ValhallaAdapter.route` | `itinerary_planner` | Selected route legs | Duration, distance và encoded polyline |
+| `XanhSmTransportCostEstimator` | `itinerary_planner` | Distance/profile/people | Giá di chuyển và phụ phí đêm trên một người |
+| `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; dùng key pool chung, tối đa một request đang chạy trên mỗi key |
 | `UrlSourceRouter` | `explorer` | URL YouTube/TikTok/Instagram/website | `SourceExtractionResult` chứa artifact có provenance |
 | `PostgresUrlSourceCache` | `explorer` | canonical URL, TTL, extractor version | artifact URL chuẩn hóa từ `source_documents` |
 | `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh | OCR frame và STT chunk chạy song song |
@@ -239,8 +265,8 @@ Các schema dùng chung chính:
 
 - `InvokeRequest`: `thread_id`, `message`, `supplied_candidates`,
   `existing_itinerary`, `edit_operation`.
-- `InvokeResponse`: `request_id`, `route`, `response`, `itinerary`,
-  `clarification_question`, `warnings`, `sources`.
+- `InvokeResponse`: `request_id`, `route`, `response`, legacy `itinerary`,
+  `planner_output`, `clarification_question`, `warnings`, `sources`.
 
 ## Durable trip-chat API
 

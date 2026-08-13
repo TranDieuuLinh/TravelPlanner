@@ -39,10 +39,18 @@ Các trường hợp hiện được coi là hard:
 Direct-user place có hard violation thành `blocked`. Optional place có hard
 violation thành `rejected`.
 
-## Soft finding và planner constraint
+## Avoid policy
 
-- Avoid conflict là soft; optional nightlife bị reject theo policy riêng.
-- Direct-user nightlife vẫn giữ ở `conditional` cùng warning.
+Mọi avoid được so khớp với tên, category và tags qua cùng canonical taxonomy;
+ví dụ `alcohol` cũng khớp `cocktail`, không chỉ riêng `nightlife`.
+
+- Direct-user place là mandatory nên vẫn được giữ ở `conditional` cùng warning
+  để không âm thầm bỏ yêu cầu rõ ràng của người dùng.
+- URL place và mọi optional/system candidate có avoid conflict bị `rejected`.
+- Planner projection lọc lại optional conflict như một lớp phòng vệ; vì vậy
+  FinalItineraryPlanner không cần lọc `avoids` lần nữa.
+
+## Soft finding và planner constraint
 - Low budget gặp high/premium cost tạo soft budget finding, không tạo số tiền
   hard budget giả.
 - Unknown opening hours tạo `verify_opening_hours`, không bị hiểu là closed.
@@ -64,13 +72,14 @@ không được tự biến thành hard violation.
 ```text
 hard violation + mandatory -> blocked
 hard violation + optional  -> rejected
-optional nightlife avoid   -> rejected
+avoid conflict + mandatory -> conditional
+avoid conflict + optional  -> rejected
 soft finding/constraint    -> conditional
 không finding/constraint   -> planner_ready
 ```
 
 `blocked` và `rejected` không planner-eligible. Direct-user place không bao giờ
-bị reject chỉ vì ranking score hoặc soft avoid.
+bị reject chỉ vì ranking score hoặc avoid conflict.
 
 ## Giới hạn Checkpoint 3
 

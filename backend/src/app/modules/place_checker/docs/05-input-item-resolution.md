@@ -72,7 +72,8 @@ Shared tool sở hữu base score. PlaceChecker không tính lại base score m�
 xếp lại các option hợp lệ theo context:
 
 1. loại option có provider rejection;
-2. loại option xung đột trực tiếp với `short_avoids`;
+2. loại option xung đột với `short_avoids` theo canonical taxonomy dùng chung
+   (so trên name, category và tags; ví dụ `alcohol` khớp `cocktail`);
 3. nếu metadata đã biết, loại option không phù hợp children/infants;
 4. loại candidate vượt ngưỡng khoảng cách khi có mốc;
 5. với budget `low`, ưu tiên low/medium trước high/premium;

@@ -1,5 +1,12 @@
 # Phase 3: Valhalla matrix và sparse arcs
 
+Trạng thái: đã triển khai routing ports/models, Valhalla HTTP adapter, route
+detail adapter, in-memory bounded cache, coordinate deduplication, directed
+global matrix, safe travel values, time-feasibility pruning, sparse/forced/
+bridge arcs và virtual START/END. Graph đã có node `build_travel_matrix` qua
+dependency injection. Nếu thiếu matrix provider hoặc transport cost estimator,
+Planner trả lỗi có cấu trúc và không dùng estimated fallback.
+
 ## Mục tiêu
 
 Routing phase nhận `PreparedPlanningProblem`, lấy travel time/distance một
@@ -172,14 +179,35 @@ này có accommodation chỉ cần thay bằng matrix nodes thật.
 
 ## Transport cost
 
-Matrix cung cấp distance, không tự biết giá di chuyển. Tạo port:
+Matrix cung cấp distance, không tự biết giá di chuyển. Port trả riêng giá ban
+ngày và phụ phí ban đêm, đều theo một người:
 
 ```text
-TransportCostEstimator.estimate(distanceMeters, profile) -> costPerPerson
+TransportCostEstimator.estimate(distanceMeters, profile, people)
+-> (daytimeCostPerPerson, lateNightSurchargePerPerson)
 ```
 
-Policy giá phải được inject/configure. Production không được âm thầm coi
-transport cost là 0 nếu hard budget tuyên bố bao gồm transport.
+Implementation hiện tại là `XanhSmTransportCostEstimator`, dựa trên bảng giá
+Green SM Car công khai cho Hà Nội được kiểm tra ngày 2026-08-13:
+
+```text
+2 km đầu:                 30.500 VND/xe
+trên 2 đến 12 km:         14.700 VND/km
+trên 12 đến 25 km:        13.800 VND/km
+từ km 26:                 11.900 VND/km
+phụ phí 22:00-06:00:      20.000 VND/xe
+planning buffer:          15%
+capacity mặc định:        4 người/xe
+```
+
+Nguồn: [Green SM - bảng giá Hà Nội](https://www.greensm.com/vn-vi/news/cach-dat-xe-taxi-xanh-sm-nhanh-chong-tien-loi).
+Không tính khuyến mãi. Số xe là `ceil(people / 4)` và kết quả được chia lại
+cho `people` để budget vẫn là budget/người. Phase 3 giữ riêng phụ phí đêm vì
+chỉ Phase 4 mới biết arc được dùng vào giờ nào. Fare policy có version để cập
+nhật/regression test khi hãng đổi giá.
+
+Production không được âm thầm coi transport cost là 0 nếu hard budget bao gồm
+transport.
 
 ## Cache
 
@@ -203,6 +231,7 @@ routing_models.py                TravelMatrix, RouteDetail, SparseArc
 routing.py                       dedup, buffer, feasibility, sparse graph
 adapters/valhalla.py             HTTP adapter
 adapters/in_memory_matrix.py     deterministic tests
+adapters/transport_cost.py       policy giá theo distance được inject
 tests/test_routing_matrix.py
 tests/test_sparse_arcs.py
 tests/test_valhalla_adapter.py

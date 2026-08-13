@@ -150,12 +150,28 @@ def test_penalty_is_bounded() -> None:
         context,
         existing,
     )
-    result = batch.ranked[0]
+    result = batch.excluded[0]
 
     assert result.penalty_total <= 0.65
     assert result.final_score >= 0
+    assert result.eligible is False
+    assert "avoid_conflict" in result.exclusion_reasons
     assert "avoid_conflict" in result.penalties
     assert "geographic_outlier" in result.penalties
+
+
+def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
+    context = analysis_context()
+    context.avoids.append("alcohol")
+
+    batch = CandidateScoringService(now=NOW).rank(
+        retrieval(candidate("cocktail", tags=["item:Cocktail"])),
+        context,
+        empty_places(),
+    )
+
+    assert batch.ranked == []
+    assert batch.excluded[0].exclusion_reasons == ["avoid_conflict"]
 
 
 def test_keyword_fallback_receives_real_ranking_penalty() -> None:

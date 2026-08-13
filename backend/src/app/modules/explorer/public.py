@@ -1,3 +1,5 @@
+import asyncio
+
 from app.modules.explorer.contract import (
     ExplorerBudget,
     ExplorerImageInput,
@@ -52,7 +54,9 @@ def create_explorer_service(
     max_output_tokens: int = 4000,
     source_chunk_characters: int = 20_000,
     source_max_output_tokens: int = 8_000,
-    source_max_concurrency: int = 8,
+    source_max_concurrency: int = 3,
+    synthesis_max_concurrency: int = 6,
+    synthesis_limiter: asyncio.Semaphore | None = None,
     minimum_synthesis_coverage: float = 0.8,
     dedupe_provider: str = "gemini",
     note_provider: str = "gemini",
@@ -83,6 +87,8 @@ def create_explorer_service(
             source_chunk_characters=source_chunk_characters,
             source_max_output_tokens=source_max_output_tokens,
             source_max_concurrency=source_max_concurrency,
+            synthesis_max_concurrency=synthesis_max_concurrency,
+            synthesis_limiter=synthesis_limiter,
             dedupe_provider=dedupe_provider,
             note_provider=note_provider,
         )

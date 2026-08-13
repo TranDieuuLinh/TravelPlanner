@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 from app.modules.itinerary_planner.contract import TimeInterval
 from app.modules.itinerary_planner.policies import (
-    ITINERARY_END_MINUTE,
     ITINERARY_START_MINUTE,
+    STANDARD_DAY_END_MINUTE,
 )
 
 
@@ -20,22 +20,28 @@ class PlanningWindow:
         return self.end_minute - self.start_minute
 
 
-def normalize_interval(interval: TimeInterval) -> PlanningWindow | None:
+def normalize_interval(
+    interval: TimeInterval,
+    latest_end_minute: int = STANDARD_DAY_END_MINUTE,
+) -> PlanningWindow | None:
     end = interval.end_minute
     if end <= interval.start_minute:
         end += 1440
     start = max(interval.start_minute, ITINERARY_START_MINUTE)
-    end = min(end, ITINERARY_END_MINUTE)
+    end = min(end, latest_end_minute)
     if end <= start:
         return None
     return PlanningWindow(start, end)
 
 
-def normalize_and_merge(intervals: Iterable[TimeInterval]) -> tuple[PlanningWindow, ...]:
+def normalize_and_merge(
+    intervals: Iterable[TimeInterval],
+    latest_end_minute: int = STANDARD_DAY_END_MINUTE,
+) -> tuple[PlanningWindow, ...]:
     windows = sorted(
         window
         for interval in intervals
-        if (window := normalize_interval(interval)) is not None
+        if (window := normalize_interval(interval, latest_end_minute)) is not None
     )
     if not windows:
         return ()
@@ -53,8 +59,10 @@ def normalize_and_merge(intervals: Iterable[TimeInterval]) -> tuple[PlanningWind
     return tuple(merged)
 
 
-def full_itinerary_window() -> tuple[PlanningWindow, ...]:
-    return (PlanningWindow(ITINERARY_START_MINUTE, ITINERARY_END_MINUTE),)
+def full_itinerary_window(
+    latest_end_minute: int = STANDARD_DAY_END_MINUTE,
+) -> tuple[PlanningWindow, ...]:
+    return (PlanningWindow(ITINERARY_START_MINUTE, latest_end_minute),)
 
 
 def windows_fitting_duration(

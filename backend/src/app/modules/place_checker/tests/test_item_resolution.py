@@ -266,6 +266,22 @@ def test_soft_avoid_filters_item_venue_with_explicit_tag() -> None:
     assert result.selected is None
 
 
+def test_canonical_alcohol_avoid_filters_cocktail_item_venue() -> None:
+    service, _ = resolver(
+        [venue("cocktail_1", "Cocktail Bar", tags=["item:Cocktail"])]
+    )
+
+    result = asyncio.run(
+        service.resolve_all(
+            [item("cocktail", item_type="drink", action="drink")],
+            context(avoids=["alcohol"]),
+        )
+    ).items[0]
+
+    assert result.status == ItemResolutionStatus.unresolved
+    assert result.selected is None
+
+
 def test_metadata_reranks_low_cost_venue_for_low_budget() -> None:
     high_cost = venue("pho_high", "Premium Pho", tags=["pho"], confidence=0.99)
     low_cost = venue("pho_low", "Local Pho", tags=["pho"], confidence=0.90)

@@ -1,6 +1,6 @@
-import asyncio
-import time
-from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+import random
 from typing import Any
 
 import httpx
@@ -18,31 +18,7 @@ from app.shared.llm.errors import (
     LlmUnauthorizedError,
 )
 from app.shared.llm.ports import InlineMedia
-
-
-@dataclass
-class _KeyState:
-    value: str
-    blocked_until: float = 0.0
-
-
-def _parse_api_keys(api_key_value: str | None) -> list[str]:
-    if not api_key_value:
-        raise LlmConfigurationError(
-            "GEMINI_API_KEY must contain at least one comma-separated API key."
-        )
-    keys: list[str] = []
-    seen: set[str] = set()
-    for raw_key in api_key_value.split(","):
-        key = raw_key.strip()
-        if key and key not in seen:
-            keys.append(key)
-            seen.add(key)
-    if not keys:
-        raise LlmConfigurationError(
-            "GEMINI_API_KEY must contain at least one comma-separated API key."
-        )
-    return keys
+from app.shared.llm.key_pool import GeminiKeyLease, GeminiKeyPool
 
 
 class GeminiLlmClient:
@@ -61,6 +37,8 @@ class GeminiLlmClient:
         model: str = "gemini-2.5-flash",
         timeout_seconds: float = 30.0,
         key_cooldown_seconds: float = 60.0,
+        key_attempt_limit: int = 3,
+        key_pool: GeminiKeyPool | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         if not model.strip():
@@ -69,13 +47,17 @@ class GeminiLlmClient:
             raise LlmConfigurationError("LLM timeout must be greater than zero.")
         if key_cooldown_seconds < 0:
             raise LlmConfigurationError("LLM key cooldown cannot be negative.")
+        if key_attempt_limit < 1:
+            raise LlmConfigurationError("LLM key attempt limit must be at least one.")
 
-        self._keys = [_KeyState(value=key) for key in _parse_api_keys(api_key_value)]
+        self._key_pool = key_pool or GeminiKeyPool(
+            api_key_value,
+            default_cooldown_seconds=key_cooldown_seconds,
+        )
         self._model = model.removeprefix("models/").strip()
         self._timeout_seconds = timeout_seconds
         self._key_cooldown_seconds = key_cooldown_seconds
-        self._next_key_index = 0
-        self._key_lock = asyncio.Lock()
+        self._key_attempt_limit = key_attempt_limit
         self._http_client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(timeout_seconds)
         )
@@ -86,7 +68,11 @@ class GeminiLlmClient:
 
     @property
     def key_count(self) -> int:
-        return len(self._keys)
+        return self._key_pool.key_count
+
+    @property
+    def key_pool(self) -> GeminiKeyPool:
+        return self._key_pool
 
     async def generate(
         self,
@@ -146,35 +132,41 @@ class GeminiLlmClient:
     async def _send_payload(self, payload: dict[str, Any]) -> str:
         last_error: Exception | None = None
 
-        for _ in range(len(self._keys)):
-            key_index, api_key = await self._next_available_key()
+        attempt_limit = min(self._key_attempt_limit, self.key_count)
+        for _ in range(attempt_limit):
+            lease = await self._key_pool.acquire()
             try:
                 response = await self._http_client.post(
                     self._endpoint,
                     headers={
                         "content-type": "application/json",
-                        "x-goog-api-key": api_key,
+                        "x-goog-api-key": lease.value,
                     },
                     json=payload,
                 )
             except httpx.TimeoutException:
                 last_error = LlmTimeoutError("Gemini request timed out.")
-                await self._cool_down(key_index)
+                await self._release_with_default_cooldown(lease)
                 continue
             except httpx.TransportError:
                 last_error = LlmTransportError(
                     "Gemini request failed before a response was received."
                 )
-                await self._cool_down(key_index)
+                await self._release_with_default_cooldown(lease)
                 continue
+            except BaseException:
+                await self._key_pool.release(lease)
+                raise
 
             if response.status_code >= 400:
                 error = self._provider_error(response)
                 if not self._should_rotate(response.status_code):
+                    await self._key_pool.release(lease)
                     raise error
                 last_error = error
-                await self._cool_down(key_index)
+                await self._release_failed_key(lease, response)
                 continue
+            await self._key_pool.release(lease)
             return self._extract_text(response)
 
         if last_error is not None:
@@ -188,27 +180,50 @@ class GeminiLlmClient:
             f"models/{self._model}:generateContent"
         )
 
-    async def _next_available_key(self) -> tuple[int, str]:
-        async with self._key_lock:
-            now = time.monotonic()
-            for offset in range(len(self._keys)):
-                index = (self._next_key_index + offset) % len(self._keys)
-                state = self._keys[index]
-                if state.blocked_until <= now:
-                    self._next_key_index = (index + 1) % len(self._keys)
-                    return index, state.value
-            retry_after = min(
-                state.blocked_until - now
-                for state in self._keys
-                if state.blocked_until > now
-            )
-        raise LlmAllKeysUnavailable(max(0.0, retry_after))
+    async def _release_with_default_cooldown(self, lease: GeminiKeyLease) -> None:
+        await self._key_pool.release(
+            lease,
+            cooldown_seconds=self._with_jitter(self._key_cooldown_seconds),
+        )
 
-    async def _cool_down(self, key_index: int) -> None:
-        async with self._key_lock:
-            self._keys[key_index].blocked_until = (
-                time.monotonic() + self._key_cooldown_seconds
-            )
+    async def _release_failed_key(
+        self, lease: GeminiKeyLease, response: httpx.Response
+    ) -> None:
+        if response.status_code in {401, 403}:
+            await self._key_pool.release(lease, disable=True)
+            return
+        retry_after = self._retry_after_seconds(response)
+        cooldown = (
+            retry_after
+            if retry_after is not None
+            else self._key_cooldown_seconds
+        )
+        await self._key_pool.release(
+            lease,
+            cooldown_seconds=self._with_jitter(cooldown),
+        )
+
+    @staticmethod
+    def _with_jitter(seconds: float) -> float:
+        if seconds <= 0:
+            return 0
+        return seconds + random.uniform(0, min(1.0, seconds * 0.1))
+
+    @staticmethod
+    def _retry_after_seconds(response: httpx.Response) -> float | None:
+        value = response.headers.get("retry-after")
+        if not value:
+            return None
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            try:
+                parsed = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return max(0.0, (parsed - datetime.now(UTC)).total_seconds())
 
     @staticmethod
     def _build_payload(
@@ -249,7 +264,12 @@ class GeminiLlmClient:
         if response.status_code in {401, 403}:
             return LlmUnauthorizedError("Gemini API key was rejected.")
         if response.status_code == 429:
-            return LlmQuotaError("Gemini API key quota or rate limit was reached.")
+            return LlmQuotaError(
+                "Gemini API key quota or rate limit was reached.",
+                retry_after_seconds=(
+                    GeminiLlmClient._retry_after_seconds(response) or 0
+                ),
+            )
         if response.status_code >= 500:
             return LlmServerError("Gemini service returned a server error.")
         return LlmProviderError(

@@ -1,5 +1,11 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
+Trạng thái: đã triển khai route-detail enrichment cho selected arcs, fallback
+có warning khi thiếu geometry, một vòng affected-day repair, timeline
+validation, public `ItineraryPlannerOutput`, phase timings và root/API field
+`plannerOutput`. Valhalla detail chỉ được gọi sau solver; Planner không query DB
+và không sửa PlaceChecker.
+
 ## Runtime graph
 
 LangGraph node nên phản ánh các failure boundary, không chia theo từng hàm nhỏ:
@@ -32,8 +38,7 @@ trong service/adapter.
 ```text
 input
 prepared_problem
-travel_matrix
-sparse_arcs
+routing_problem (global matrix + candidate mapping + sparse arcs)
 optimization_result
 route_details
 output
@@ -116,6 +121,11 @@ Output mục tiêu:
 `unscheduled` chỉ chứa `user_input` và `url` không được xếp, với reason code
 và message. Optional không được chọn chỉ tính count/diagnostic nội bộ,
 không làm rác UI.
+
+Implementation còn trả `destination`, `timezone`, ngày thực tế, stop metadata,
+ordered route legs, breakdown từng ngày, solver passes,
+`objectivePolicyVersion` và `phaseTimingsMs`. API giữ legacy `itinerary` cho
+PlanEditor và trả plan mới qua field riêng `plannerOutput`.
 
 ## Failure policy
 
@@ -263,15 +273,19 @@ Mọi weight change cần regression test; không rải magic number trong const
 
 ### Checkpoint E: route detail + repair
 
-- Geometry selected arcs.
-- Affected-day repair.
-- Benchmark và golden evaluation.
+- Đã có geometry selected arcs và fallback warning theo leg.
+- Đã có affected-day repair tối đa một vòng, khóa ngày không ảnh hưởng và giữ
+  số lượng priority.
+- Đã có invariant tests; benchmark/golden evaluation quy mô 1/3/5/7 ngày vẫn
+  cần chạy với catalog production.
 
 ### Checkpoint F: integration
 
-- Root orchestration map public upstream JSON sang `ItineraryPlannerInput`.
-- Xóa compatibility conversion qua `VerifiedPlace` khi endpoint mới đã ổn định.
-- Chạy backend integration tests.
+- Root orchestration đã map public upstream JSON sang `ItineraryPlannerInput`
+  và trả `plannerOutput` từ Planner.
+- Compatibility conversion qua `VerifiedPlace` đã được xóa cùng planner cũ;
+  root không tạo itinerary giả trong thời gian các phase mới chưa hoàn tất.
+- Backend integration tests dùng fake provider, không gọi network.
 
 Checkpoint F có thể cần sửa tối thiểu ngoài module, nhưng không được đưa
 business rule vào orchestration và không sửa PlaceChecker.

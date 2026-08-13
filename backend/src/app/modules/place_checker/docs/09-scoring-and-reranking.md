@@ -28,9 +28,10 @@ Chuẩn hóa mỗi component về 0-1 và giữ lại component value để audi
 
 ## Điểm phạt
 
-Áp dụng penalty có giới hạn cho avoid conflict, high-cost mismatch, geographic
-outlier, duplicate experience, low verification và stale operational data.
-Hard violation được filter trước scoring.
+Áp dụng penalty có giới hạn cho high-cost mismatch, geographic outlier,
+duplicate experience, low verification và stale operational data. Optional
+candidate có avoid conflict được đánh dấu hard violation và loại trước ranking;
+avoid penalty chỉ còn là thông tin chẩn đoán, không thể giúp candidate quay lại.
 
 Độ liên quan theo Knowledge Graph được ưu tiên cao trong điểm tìm kiếm.
 Candidate có edge `Must_Visit`, `Special_Near`/`Near`, `Special_Experience`, `Offer_Item` hoặc
@@ -67,8 +68,8 @@ data snapshot.
 - `scoring.py` chấm mọi retrieved candidate và giữ đủ 10 component trong output
   để audit. Tổng trọng số đúng bằng 1.
 - Candidate bị loại trước ranking khi identity chưa verify, sai ADM, đã đóng
-  vĩnh viễn hoặc không phù hợp rõ ràng với children/infants của đoàn.
-- Penalty hiện có: avoid conflict, lệch low budget, geographic outlier trên
+  vĩnh viễn, xung đột avoid hoặc không phù hợp rõ ràng với children/infants.
+- Penalty chẩn đoán hiện có: avoid conflict, lệch low budget, geographic outlier trên
   20 km, trùng trải nghiệm hiện có, trust thấp và metadata quá 90 ngày.
 - Tổng penalty bị chặn ở 0,65; final score luôn nằm trong 0-1. Unknown metadata
   nhận điểm trung lập/thấp, không bị đổi thành free, open hoặc suitable.

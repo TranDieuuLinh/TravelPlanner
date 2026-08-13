@@ -32,7 +32,8 @@ TẦNG 2 — HARD CONSTRAINTS
 - ba bữa/ngày
 - mỗi candidate tối đa một lần
 - route bắt đầu/kết thúc hợp lệ
-- overnight đến tối đa 03:00
+- ngày thường kết thúc tối đa 23:00; nightlife/drinking có thể đến 03:00
+- tối thiểu 9 giờ nghỉ trước stop đầu của ngày tiếp theo
 
 TẦNG 3 — OBJECTIVE
 Cộng:

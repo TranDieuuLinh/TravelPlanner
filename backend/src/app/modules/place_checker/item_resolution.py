@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from app.modules.place_checker.avoid_policy import has_avoid_conflict
 from app.modules.place_checker.contract import (
     AdmResolutionStatus,
     InputItem,
@@ -199,7 +200,10 @@ class InputItemResolutionService:
             option
             for option in options
             if not option.rejection_reasons
-            and not self._avoid_conflicts(option, context.avoids)
+            and not has_avoid_conflict(
+                context.avoids,
+                [option.name, option.category or "", *option.tags],
+            )
             and not self._people_conflict(option, context)
             and not ItemProximityPolicy.too_far(
                 option,
@@ -350,18 +354,6 @@ class InputItemResolutionService:
             relationships=match.relationship_evidence,
         )
         return ItemProximityPolicy.with_distance(option, anchor)
-
-    @staticmethod
-    def _avoid_conflicts(
-        option: ItemPlaceOption,
-        avoids: list[str],
-    ) -> bool:
-        candidate_labels = {
-            normalize_text(value)
-            for value in [option.name, option.category or "", *option.tags]
-            if value
-        }
-        return any(normalize_text(avoid) in candidate_labels for avoid in avoids)
 
     @staticmethod
     def _people_conflict(

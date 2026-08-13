@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.modules.place_checker.contract import TripEvaluationContext
+from app.modules.place_checker.avoid_policy import matching_avoids
 from app.modules.place_checker.enums import (
     CostTier,
     EvaluationDimension,
@@ -73,7 +74,7 @@ class PlaceEvaluationService:
 
         labels = place_labels(place)
         preference_matches = matching_labels(context.preferences, labels)
-        avoid_conflicts = matching_labels(context.avoids, labels)
+        avoid_conflicts = matching_avoids(context.avoids, labels)
         self._evaluate_avoids(avoid_conflicts, findings)
         self._evaluate_budget(place, context, findings)
         self._add_planning_constraints(place, constraints)

@@ -103,10 +103,7 @@ def final_state(
             if place.mandatory
             else PlaceLifecycleState.rejected
         )
-    nightlife_conflict = any(
-        normalize_text(value) == "nightlife" for value in avoid_conflicts
-    )
-    if nightlife_conflict and not place.mandatory:
+    if avoid_conflicts and not place.mandatory:
         return PlaceLifecycleState.rejected
     if findings or constraints:
         return PlaceLifecycleState.conditional

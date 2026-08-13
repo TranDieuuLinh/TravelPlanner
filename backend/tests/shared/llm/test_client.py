@@ -5,10 +5,12 @@ import pytest
 
 from app.shared.llm import (
     GeminiLlmClient,
+    GeminiKeyPool,
     InlineMedia,
     LlmConfigurationError,
     LlmRefusalError,
     LlmResponseError,
+    LlmQuotaError,
     LlmUnauthorizedError,
 )
 
@@ -206,4 +208,63 @@ def test_client_sends_inline_media_and_rotates_concurrent_calls() -> None:
     assert set(used_keys) == {"api1", "api2", "api3", "api4"}
     inline = request_bodies[0]["contents"][0]["parts"][1]["inlineData"]
     assert inline == {"mimeType": "image/jpeg", "data": "YWJj"}
+    _run(client.aclose())
+
+
+def test_client_limits_one_in_flight_request_per_shared_key() -> None:
+    active = 0
+    peak = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return _response("ok")
+
+    pool = GeminiKeyPool("api1", per_key_max_in_flight=1)
+    transport = httpx.MockTransport(handler)
+    clients = [
+        GeminiLlmClient(
+            "api1",
+            key_pool=pool,
+            http_client=httpx.AsyncClient(transport=transport),
+        )
+        for _ in range(2)
+    ]
+
+    async def run_batch() -> None:
+        await asyncio.gather(*(client.generate("request") for client in clients))
+        await asyncio.gather(*(client.aclose() for client in clients))
+
+    _run(run_batch())
+
+    assert peak == 1
+
+
+def test_client_honors_retry_after_and_limits_keys_tried_per_request() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            headers={"retry-after": "2"},
+            json={"error": {"status": "RESOURCE_EXHAUSTED"}},
+        )
+
+    keys = ",".join(f"api{index}" for index in range(20))
+    client = GeminiLlmClient(
+        keys,
+        key_attempt_limit=3,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LlmQuotaError) as error:
+        _run(client.generate("rate limited"))
+
+    assert calls == 3
+    assert error.value.retry_after_seconds == 2
     _run(client.aclose())

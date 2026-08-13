@@ -51,6 +51,7 @@ class ExplorerNodes:
             intake_id=state["intake_id"], draft=state["normalized_draft"],
             input_adm=state.get("input_adm"), adm_conflict=state.get("adm_conflict", False),
             prompt_days=state.get("prompt_days"), coverage=state.get("coverage"),
+            prompt_start_date=state.get("prompt_start_date"),
             source_results=state.get("source_results"),
         )}
 

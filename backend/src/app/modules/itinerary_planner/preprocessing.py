@@ -13,7 +13,12 @@ from app.modules.itinerary_planner.contract import (
     PlannerFoodCandidate,
     PlannerTrip,
 )
-from app.modules.itinerary_planner.policies import MEAL_POLICIES
+from app.modules.itinerary_planner.policies import (
+    LATE_NIGHT_TAGS,
+    MEAL_POLICIES,
+    OVERNIGHT_END_MINUTE,
+    STANDARD_DAY_END_MINUTE,
+)
 from app.modules.itinerary_planner.time_windows import (
     PlanningWindow,
     feasible_start_window,
@@ -68,6 +73,7 @@ class PreparedPlanningProblem:
     related_by_place: Mapping[str, frozenset[str]]
     unknown_opening_ids: frozenset[str]
     unknown_opening_days: Mapping[str, frozenset[int]]
+    late_night_eligible_ids: frozenset[str]
     unscheduled_priority: tuple[CandidateExclusion, ...]
     discarded_optional: tuple[CandidateExclusion, ...]
     warnings: tuple[str, ...]
@@ -86,13 +92,18 @@ def normalize_tags(values: list[str]) -> list[str]:
 def _opening_windows(
     candidate: Candidate,
     day: int,
+    latest_end_minute: int,
 ) -> tuple[tuple[PlanningWindow, ...], bool]:
     if candidate.opening_hours is None:
-        return full_itinerary_window(), True
+        return full_itinerary_window(latest_end_minute), True
     intervals = candidate.opening_hours.get(str(day))
     if intervals is None:
-        return full_itinerary_window(), True
-    return normalize_and_merge(intervals), False
+        return full_itinerary_window(latest_end_minute), True
+    return normalize_and_merge(intervals, latest_end_minute), False
+
+
+def is_late_night_eligible(candidate: Candidate) -> bool:
+    return bool(set(normalize_tags(candidate.tags)) & LATE_NIGHT_TAGS)
 
 
 def _exclusion(
@@ -130,6 +141,12 @@ def _prepare_place(
     CandidateExclusion | None,
 ]:
     normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
+    if normalized.price.cost is None:
+        return normalized, {}, frozenset(), _exclusion(
+            normalized,
+            "missing_cost",
+            "Candidate has no usable per-person cost.",
+        )
     if normalized.price.currency != trip.budget.currency:
         return normalized, {}, frozenset(), _exclusion(
             normalized,
@@ -140,8 +157,13 @@ def _prepare_place(
     feasible: dict[int, tuple[PlanningWindow, ...]] = {}
     unknown_days: set[int] = set()
     had_open_window = False
+    latest_end = (
+        OVERNIGHT_END_MINUTE
+        if is_late_night_eligible(normalized)
+        else STANDARD_DAY_END_MINUTE
+    )
     for day in range(1, trip.days + 1):
-        opening, unknown = _opening_windows(normalized, day)
+        opening, unknown = _opening_windows(normalized, day, latest_end)
         unknown_days.update({day} if unknown else set())
         had_open_window = had_open_window or bool(opening)
         fitting = windows_fitting_duration(opening, normalized.duration_minutes)
@@ -172,6 +194,12 @@ def _prepare_food(
     CandidateExclusion | None,
 ]:
     normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
+    if normalized.price.cost is None:
+        return normalized, {}, {}, frozenset(), _exclusion(
+            normalized,
+            "missing_cost",
+            "Food has no usable per-person cost.",
+        )
     if normalized.price.currency != trip.budget.currency:
         return normalized, {}, {}, frozenset(), _exclusion(
             normalized,
@@ -183,7 +211,11 @@ def _prepare_food(
     eligibility: dict[tuple[int, MealType], tuple[PlanningWindow, ...]] = {}
     unknown_days: set[int] = set()
     for day in range(1, trip.days + 1):
-        opening, unknown = _opening_windows(normalized, day)
+        opening, unknown = _opening_windows(
+            normalized,
+            day,
+            STANDARD_DAY_END_MINUTE,
+        )
         unknown_days.update({day} if unknown else set())
         if opening:
             day_windows[day] = opening
@@ -263,6 +295,11 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
             unknown_days_by_id[normalized.place_id] = unknown_days
 
     candidates: list[Candidate] = [*valid_places, *valid_food]
+    late_night_eligible_ids = frozenset(
+        candidate.place_id
+        for candidate in valid_places
+        if is_late_night_eligible(candidate)
+    )
     candidate_by_id = {candidate.place_id: candidate for candidate in candidates}
     related_by_place: dict[str, frozenset[str]] = {}
     for candidate in candidates:
@@ -296,10 +333,17 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     if missing_meals:
         raise PlanningPreflightError(missing_meals)
 
-    preferred_windows = {
-        candidate.place_id: normalize_and_merge(candidate.preferred_time_windows)
-        for candidate in candidates
-    }
+    preferred_windows = {}
+    for candidate in candidates:
+        latest_end = (
+            OVERNIGHT_END_MINUTE
+            if candidate.place_id in late_night_eligible_ids
+            else STANDARD_DAY_END_MINUTE
+        )
+        preferred_windows[candidate.place_id] = normalize_and_merge(
+            candidate.preferred_time_windows,
+            latest_end,
+        )
     return PreparedPlanningProblem(
         trip=trip,
         valid_places=tuple(valid_places),
@@ -312,6 +356,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         related_by_place=MappingProxyType(related_by_place),
         unknown_opening_ids=frozenset(unknown_days_by_id),
         unknown_opening_days=MappingProxyType(unknown_days_by_id),
+        late_night_eligible_ids=late_night_eligible_ids,
         unscheduled_priority=tuple(unscheduled),
         discarded_optional=tuple(discarded),
         warnings=tuple(warnings),

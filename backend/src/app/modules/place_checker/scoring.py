@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.modules.place_checker.contract import TripEvaluationContext
+from app.modules.place_checker.avoid_policy import has_avoid_conflict
 from app.modules.place_checker.enums import (
     CostTier,
     IssueSeverity,
@@ -154,7 +155,12 @@ class CandidateScoringService:
             distance,
         )
         penalty_total = min(0.65, sum(penalties.values()))
-        exclusion_reasons = self._hard_violations(candidate, context, distance)
+        exclusion_reasons = self._hard_violations(
+            candidate,
+            context,
+            labels,
+            distance,
+        )
         final_score = max(0.0, min(1.0, base - penalty_total))
         return ScoredCandidate(
             candidate=candidate,
@@ -212,6 +218,7 @@ class CandidateScoringService:
     def _hard_violations(
         candidate: RetrievedCandidate,
         context: TripEvaluationContext,
+        labels: set[str],
         distance: float | None,
     ) -> list[str]:
         reasons: list[str] = []
@@ -219,6 +226,8 @@ class CandidateScoringService:
             reasons.append("identity_not_verified")
         if candidate.adm_id and candidate.adm_id != context.destination.adm_id:
             reasons.append("destination_mismatch")
+        if has_avoid_conflict(context.avoids, labels):
+            reasons.append("avoid_conflict")
         metadata = candidate.metadata
         if metadata and metadata.operational_status == OperationalStatus.permanently_closed:
             reasons.append("permanently_closed")
