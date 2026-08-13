@@ -160,7 +160,7 @@ def test_shared_lexical_similarity_handles_typo() -> None:
     assert result.match_options[0].components.lexical_score > 0.9
 
 
-def test_close_matches_require_review() -> None:
+def test_close_matches_from_user_are_kept_as_provisional() -> None:
     first = provider_candidate(
         "kg_1",
         address="Hoan Kiem, Hanoi",
@@ -180,9 +180,48 @@ def test_close_matches_require_review() -> None:
         )
     ).candidates[0]
 
+    assert result.status == IdentityResolutionStatus.provisional
+    assert result.selected_place is not None
+    assert result.score_margin == 0
+    assert result.resolution_reason == "provisional_branch_or_identity_ambiguous"
+
+
+def test_close_system_matches_still_require_review() -> None:
+    first = provider_candidate(
+        "kg_1",
+        coordinates=Coordinates(latitude=21.03, longitude=105.85),
+    )
+    second = provider_candidate(
+        "kg_2",
+        coordinates=Coordinates(latitude=21.07, longitude=105.82),
+    )
+    service, _ = service_with([first, second])
+
+    result = asyncio.run(
+        service.resolve_all(
+            [explorer_candidate("Ho Chi Minh Mausoleum", origin="system")],
+            hanoi_context(),
+        )
+    ).candidates[0]
+
     assert result.status == IdentityResolutionStatus.needs_review
     assert result.selected_place is None
-    assert result.score_margin == 0
+
+
+def test_lexical_containment_without_strong_evidence_is_not_provisional() -> None:
+    service, _ = service_with(
+        [provider_candidate(name="BBQ Independence Road Restaurant", aliases=[])]
+    )
+
+    result = asyncio.run(
+        service.resolve_all(
+            [explorer_candidate("Independence Road")],
+            hanoi_context(),
+        )
+    ).candidates[0]
+
+    assert result.status == IdentityResolutionStatus.unresolved
+    assert result.selected_place is None
 
 
 def test_wrong_adm_cannot_resolve() -> None:
@@ -223,6 +262,13 @@ def test_exact_name_with_conflicting_address_requires_review() -> None:
     assert result.status == IdentityResolutionStatus.needs_review
     assert result.selected_place is None
     assert "address_conflict" in result.match_options[0].identity_conflicts
+
+
+def test_compact_destination_spelling_is_not_an_address_conflict() -> None:
+    assert not EntityResolutionService._has_address_conflict(
+        "Hanoi",
+        "Thanh Niên, Tây Hồ, Hà Nội, Vietnam",
+    )
 
 
 def test_unresolved_adm_prevents_shared_tool_call() -> None:

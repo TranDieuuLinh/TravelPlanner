@@ -73,6 +73,7 @@ class TravelPace(StrEnum):
 
 class IdentityResolutionStatus(StrEnum):
     resolved = "resolved"
+    provisional = "provisional"
     needs_review = "needs_review"
     unresolved = "unresolved"
 

@@ -216,7 +216,9 @@ Google Maps/external live provider chưa được nối.
 Candidate contract của tool giữ relationship evidence chuẩn hóa ở dạng dữ liệu
 trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`/`Near`,
 `Special_Experience`, `Offer_Item` và `Has_Style`, duyệt ADM đệ quy và chuyển
-evidence có provenance sang scoring/output.
+evidence có provenance sang scoring/output. Identity acceptance mềm dành riêng
+cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
+không áp dụng cho system/retrieval candidate.
 
 Authentication, Marketplace, URL import chịu được mọi anti-bot, dữ liệu place
 live và routing live chưa nằm trong scaffold hiện tại. Checkpointer của root

@@ -17,6 +17,7 @@ from app.modules.place_checker.enums import (
     CostTier,
     OperationalStatus,
     RetrievalSourceKind,
+    SourceTier,
     VerificationStatus,
 )
 from app.modules.place_checker.evaluation import PlaceEvaluationService
@@ -337,7 +338,7 @@ def test_documented_output_sample_matches_runtime_contract() -> None:
     assert result.metadata.sample_data is True
 
 
-def test_planning_projection_rejects_provisional_checked_place() -> None:
+def test_planning_projection_keeps_provisional_direct_input() -> None:
     result = asyncio.run(
         pipeline().check(payload(), request_id="request-provisional")
     )
@@ -347,6 +348,26 @@ def test_planning_projection_rejects_provisional_checked_place() -> None:
             "verification": first.verification.model_copy(
                 update={"status": VerificationStatus.provisional}
             )
+        }
+    )
+
+    projection = PlaceCheckerPlanningProjector().project(result)
+
+    projected = next(place for place in projection.places if place.place_id == first.place_id)
+    assert projected.verification_status == VerificationStatus.provisional
+
+
+def test_planning_projection_rejects_provisional_system_suggestion() -> None:
+    result = asyncio.run(
+        pipeline().check(payload(), request_id="request-provisional-system")
+    )
+    first = result.checked_places[0]
+    result.checked_places[0] = first.model_copy(
+        update={
+            "source_tier": SourceTier.system_suggested,
+            "verification": first.verification.model_copy(
+                update={"status": VerificationStatus.provisional}
+            ),
         }
     )
 

@@ -50,7 +50,9 @@ thái, nguồn, confidence/priority và khoảng cách để phục vụ audit v
 
 Địa điểm lấy từ URL được biểu diễn bằng phần tử trong
 `places[].sourcePlaces[]` có `origin` là `url`. `urlNotes` có thể là `null` và
-được chuẩn hóa thành danh sách rỗng.
+được chuẩn hóa thành danh sách rỗng. Boundary giữ các provenance field của
+Explorer gồm `platform`, `extractorVersion`, `modelVersion` và `cacheStatus`;
+candidate không bị loại chỉ vì mang metadata nguồn này.
 
 Explorer truyền JSON camelCase. Pydantic chấp nhận camelCase này và chuyển sang
 snake_case trong Python; output JSON mẫu hiện dùng snake_case theo contract nội
@@ -94,8 +96,10 @@ Tỷ lệ bốc pool theo buổi và sở thích được mô tả tại
   overhead, coverage và multi-dimensional gap analysis.
 - Checkpoint 5 đã có targeted retrieval theo gap, adapter gọi
   `shared/tools/search_places`, xác minh KG/hai nguồn ngoài, chặn candidate
-  provisional khỏi Planner, promotion worker và outbox bộ nhớ dùng cho
-  development/test.
+  retrieval provisional khỏi Planner. Identity điểm trung bình từ URL/input
+  được giữ ở `provisional` khi có exact/alias, address hoặc semantic evidence
+  mạnh; nó đi tiếp dưới dạng conditional kèm constraint bắt buộc xác minh.
+  Promotion worker và outbox bộ nhớ dùng cho development/test.
 - Checkpoint 5 đã có scoring giải thích được theo 10 thành phần, penalty có
   giới hạn và deterministic diversity reranking theo category, experience type
   và cụm tọa độ 2 km.

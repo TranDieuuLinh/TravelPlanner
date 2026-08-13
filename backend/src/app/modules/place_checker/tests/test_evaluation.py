@@ -147,6 +147,21 @@ def test_complete_compatible_place_is_planner_ready() -> None:
     assert result.findings == []
 
 
+def test_provisional_input_is_conditional_and_planner_eligible() -> None:
+    result = PlaceEvaluationService(now=NOW).evaluate(
+        enriched_place(status=IdentityResolutionStatus.provisional),
+        context(),
+    )
+
+    assert result.state == PlaceLifecycleState.conditional
+    assert result.planner_eligible is True
+    assert any(finding.code == "identity_provisional" for finding in result.findings)
+    assert any(
+        constraint.code == "verify_provisional_identity"
+        for constraint in result.planner_constraints
+    )
+
+
 def test_optional_nightlife_is_rejected_by_soft_avoid() -> None:
     result = PlaceEvaluationService(now=NOW).evaluate(
         enriched_place(mandatory=False, tags=["nightlife"]),

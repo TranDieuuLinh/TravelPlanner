@@ -1,5 +1,9 @@
 from app.modules.place_checker.checked_output_contract import CheckedPlace
-from app.modules.place_checker.enums import PlaceLifecycleState, VerificationStatus
+from app.modules.place_checker.enums import (
+    PlaceLifecycleState,
+    SourceTier,
+    VerificationStatus,
+)
 from app.modules.place_checker.output_contract import (
     PlaceCheckerPlannerOutput,
     PlaceCheckerPlanningProjection,
@@ -31,10 +35,7 @@ class PlaceCheckerPlanningProjector:
                 continue
             if not evaluation.planner_eligible:
                 continue
-            if checked.verification.status not in {
-                VerificationStatus.verified_kg,
-                VerificationStatus.verified_external,
-            }:
+            if not self._verification_allowed(checked):
                 continue
             metadata = evaluation.place.metadata
             if not checked.place_id or not checked.canonical_name or metadata is None:
@@ -101,6 +102,18 @@ class PlaceCheckerPlanningProjector:
             warnings=checked.warnings,
         )
 
+    @staticmethod
+    def _verification_allowed(checked: CheckedPlace) -> bool:
+        if checked.verification.status in {
+            VerificationStatus.verified_kg,
+            VerificationStatus.verified_external,
+        }:
+            return True
+        return (
+            checked.verification.status == VerificationStatus.provisional
+            and checked.source_tier in {SourceTier.direct_user, SourceTier.url}
+        )
+
 
 class PlaceCheckerPlannerOutputBuilder:
     """Build the compact camelCase JSON contract consumed by the planner."""
@@ -157,8 +170,7 @@ class PlaceCheckerPlannerOutputBuilder:
         return bool(
             checked.canonical_name
             and checked.evaluation.planner_eligible
-            and checked.verification.status
-            in {VerificationStatus.verified_kg, VerificationStatus.verified_external}
+            and PlaceCheckerPlanningProjector._verification_allowed(checked)
         )
 
     @classmethod
@@ -241,6 +253,11 @@ class PlaceCheckerPlannerOutputBuilder:
 
     @staticmethod
     def _notes(checked: CheckedPlace) -> str | None:
+        prefix = (
+            "Cần xác minh đúng địa điểm/chi nhánh trước khi chốt lịch."
+            if checked.verification.status == VerificationStatus.provisional
+            else None
+        )
         direct = next(
             (
                 source.evidence
@@ -250,7 +267,7 @@ class PlaceCheckerPlannerOutputBuilder:
             None,
         )
         if direct:
-            return direct
+            return f"{prefix} {direct}" if prefix else direct
         nearest = min(
             (
                 relation
@@ -262,11 +279,12 @@ class PlaceCheckerPlannerOutputBuilder:
             default=None,
         )
         if nearest is None:
-            return None
-        return (
+            return prefix
+        note = (
             f"Cách {nearest.related_name or 'địa điểm liên quan'} "
             f"khoảng {nearest.distance_km:.2f} km theo Knowledge Graph."
         )
+        return f"{prefix} {note}" if prefix else note
 
     @classmethod
     def _preferred_windows(cls, checked: CheckedPlace) -> list[PlannerTimeWindow]:

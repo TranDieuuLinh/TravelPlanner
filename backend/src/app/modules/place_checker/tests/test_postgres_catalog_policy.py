@@ -1,3 +1,7 @@
+import asyncio
+import sys
+from types import SimpleNamespace
+
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
@@ -114,3 +118,29 @@ def test_special_near_score_decreases_with_distance() -> None:
     )
 
     assert near["score"] > far["score"]
+
+
+def test_concurrent_catalog_calls_create_only_one_pool(monkeypatch) -> None:
+    calls = 0
+    pool = object()
+
+    async def create_pool(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0)
+        return pool
+
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        SimpleNamespace(create_pool=create_pool),
+    )
+    catalog = PostgresPlaceCatalog("postgresql://example")
+
+    async def get_concurrently():
+        return await asyncio.gather(*(catalog._get_pool() for _ in range(20)))
+
+    results = asyncio.run(get_concurrently())
+
+    assert calls == 1
+    assert results == [pool] * 20

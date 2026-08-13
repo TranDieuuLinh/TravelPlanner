@@ -66,7 +66,7 @@ class PlaceEvaluationService:
         metadata = place.metadata
         compatible_destination = destination_compatible(place)
 
-        self._evaluate_identity(place, findings)
+        self._evaluate_identity(place, findings, constraints)
         self._evaluate_destination(compatible_destination, findings)
         self._evaluate_operational(place, findings, constraints)
         self._evaluate_people(place, context, findings, constraints)
@@ -128,8 +128,24 @@ class PlaceEvaluationService:
     def _evaluate_identity(
         place: EnrichedIdentityPlace,
         findings: list[EvaluationFinding],
+        constraints: list[PlannerConstraint],
     ) -> None:
-        if place.status != IdentityResolutionStatus.resolved or not place.place_id:
+        if place.status == IdentityResolutionStatus.provisional and place.place_id:
+            findings.append(
+                PlaceEvaluationService._finding(
+                    "identity_provisional",
+                    EvaluationDimension.identity,
+                    IssueSeverity.high,
+                    "Identity được giữ tạm thời từ input và chưa xác minh hoàn toàn.",
+                )
+            )
+            constraints.append(
+                PlannerConstraint(
+                    code="verify_provisional_identity",
+                    message="Xác minh đúng địa điểm/chi nhánh trước khi chốt lịch.",
+                )
+            )
+        elif place.status != IdentityResolutionStatus.resolved or not place.place_id:
             findings.append(
                 PlaceEvaluationService._finding(
                     "identity_not_resolved",

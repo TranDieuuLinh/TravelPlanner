@@ -164,7 +164,12 @@ class EvidenceEnrichmentService:
 
     @staticmethod
     def _status_priority(value: str) -> int:
-        return {"resolved": 0, "needs_review": 1, "unresolved": 2}[value]
+        return {
+            "resolved": 0,
+            "provisional": 1,
+            "needs_review": 2,
+            "unresolved": 3,
+        }[value]
 
     @staticmethod
     def _metadata_for(

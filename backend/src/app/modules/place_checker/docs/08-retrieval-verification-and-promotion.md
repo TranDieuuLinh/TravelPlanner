@@ -64,6 +64,10 @@ giải thành recommendation đã review.
 
 - Kết quả link được KG: `verified_kg`.
 - Một external source: `provisional`, chưa planner-eligible.
+- Identity provisional có nguồn URL/direct input là trường hợp riêng: phải có
+  canonical ID, tọa độ, đúng ADM, score/name score đạt ngưỡng và exact/alias,
+  address hoặc semantic evidence mạnh; được giữ cho Planner dưới trạng thái
+  conditional với constraint xác minh.
 - Hai source độc lập đồng thuận về name, region, category và coordinates:
   `verified_external`.
 - Source conflict đáng kể: `needs_review`.

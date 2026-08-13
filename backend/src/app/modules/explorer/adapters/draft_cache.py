@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from app.modules.explorer.adapters.postgres import asyncpg_dsn
@@ -30,17 +31,20 @@ class PostgresExplorerDraftCache:
         self.ttl_seconds = ttl_seconds
         self.command_timeout = command_timeout
         self._pool = None
+        self._pool_lock = asyncio.Lock()
 
     async def _get_pool(self):
         if self._pool is None:
-            import asyncpg  # type: ignore[import-untyped]
+            async with self._pool_lock:
+                if self._pool is None:
+                    import asyncpg  # type: ignore[import-untyped]
 
-            self._pool = await asyncpg.create_pool(
-                self.database_url,
-                command_timeout=self.command_timeout,
-                min_size=1,
-                max_size=10,
-            )
+                    self._pool = await asyncpg.create_pool(
+                        self.database_url,
+                        command_timeout=self.command_timeout,
+                        min_size=1,
+                        max_size=10,
+                    )
         return self._pool
 
     async def get(self, cache_key: str) -> ExplorerDraft | None:

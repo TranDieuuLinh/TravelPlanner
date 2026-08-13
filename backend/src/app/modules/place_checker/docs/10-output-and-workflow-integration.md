@@ -60,8 +60,9 @@ order, travel leg hoặc final itinerary field.
 ## Test và điều kiện hoàn thành
 
 Thêm contract snapshot và workflow integration test. Xác nhận provenance và
-constraint còn nguyên sau projection, provisional place bị loại và trách nhiệm
-hiện tại của FinalItineraryPlanner không thay đổi.
+constraint còn nguyên sau projection. Retrieval/system provisional bị loại;
+URL/direct-input identity provisional được giữ kèm `verification_status` và
+constraint xác minh. Trách nhiệm hiện tại của FinalItineraryPlanner không đổi.
 
 ## Hiện thực tại Checkpoint 6
 

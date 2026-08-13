@@ -149,6 +149,10 @@ def test_parses_locked_camel_case_explorer_contract() -> None:
                         "sourceTimeHint": None,
                         "addressHint": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
                         "observedAt": "2026-08-11T10:00:00Z",
+                        "platform": "tiktok",
+                        "extractorVersion": "explorer-source-v9",
+                        "modelVersion": "gemini-3.1-flash-lite",
+                        "cacheStatus": "hit",
                     }
                 ],
             }
@@ -190,6 +194,10 @@ def test_parses_locked_camel_case_explorer_contract() -> None:
     assert payload.input_adm == "Hanoi"
     assert payload.input_items[0].related_place_name == "Phở Gia Truyền Bát Đàn"
     assert payload.places[0].source_places[0].observed_at is not None
+    assert payload.places[0].source_places[0].platform == "tiktok"
+    assert payload.places[0].source_places[0].extractor_version == "explorer-source-v9"
+    assert payload.places[0].source_places[0].model_version == "gemini-3.1-flash-lite"
+    assert payload.places[0].source_places[0].cache_status == "hit"
     assert payload.url_notes[0].observed_at is not None
     assert payload.budget.target_amount == Decimal("6000000")
     assert serialized["inputADM"] == "Hanoi"

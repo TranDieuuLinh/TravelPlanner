@@ -26,7 +26,10 @@ def build_postgres_place_checker_pipeline(
     )
     return PlaceCheckerPipeline(
         context_builder=TripContextBuilder(catalog),
-        entity_resolution=EntityResolutionService(search_tool),
+        # Explorer and PlaceChecker share the cloud connection budget. A small
+        # bounded resolver pool prevents URL candidates from failing in bursts
+        # after Explorer has opened its source/cache pools.
+        entity_resolution=EntityResolutionService(search_tool, max_concurrency=4),
         evidence_enrichment=EvidenceEnrichmentService(catalog),
         item_resolution=InputItemResolutionService(
             search_tool,

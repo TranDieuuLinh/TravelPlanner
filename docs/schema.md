@@ -6,6 +6,12 @@ Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose publ
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
 trực tiếp.
 
+Place Checker phân biệt identity `provisional` có nguồn URL/direct input với
+retrieval provisional. Loại đầu chỉ được giữ khi có canonical ID, tọa độ, đúng
+ADM, đạt ngưỡng score và có exact/alias, address hoặc semantic evidence mạnh;
+output là `conditional` và có constraint xác minh trước khi chốt lịch.
+Retrieval/system provisional vẫn không planner-eligible.
+
 ## Ranh giới API
 
 | Endpoint | Input | Output |
@@ -75,7 +81,9 @@ không có `schemaVersion` và gồm:
 - `status`: `ready`, `clarification` hoặc `error`;
 - `intakeId`, `input_ADM`;
 - `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
-  `addressHint`; không có `sourceOrder`/`sourceDay`;
+  `addressHint`; mỗi source có thể mang `platform`, `extractorVersion`,
+  `modelVersion`, `cacheStatus` và các field provenance này được Place Checker
+  giữ nguyên; không có `sourceOrder`/`sourceDay`;
 - `inputItems`, chỉ lấy food, drink hoặc activity được nêu rõ trong raw prompt;
 - `urlNotes`, giữ chi tiết hữu ích có evidence từ URL/ảnh/OCR/STT/metadata,
   gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm

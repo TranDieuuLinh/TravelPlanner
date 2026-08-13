@@ -19,6 +19,7 @@ from app.modules.place_checker.resolution_contract import (
     ResolvedPlaceCandidate,
     SimilarityComponents,
 )
+from app.modules.place_checker.resolution_policy import select_provisional_option
 from app.shared.tools.search_places import (
     AdministrativeArea,
     PlaceSearchMatch,
@@ -193,6 +194,25 @@ class EntityResolutionService:
                 warnings=warnings,
             )
 
+        provisional = select_provisional_option(candidate, result, options)
+        if provisional is not None:
+            return ResolvedPlaceCandidate(
+                candidate_index=index,
+                candidate=candidate,
+                status=IdentityResolutionStatus.provisional,
+                selected_place=provisional.place,
+                match_options=options,
+                selected_score=provisional.score,
+                score_margin=margin,
+                resolution_method=provisional.method,
+                provider_attempts=result.provider_attempts,
+                resolution_reason=f"provisional_{result.resolution_reason}",
+                warnings=[
+                    *warnings,
+                    "Identity tạm thời được giữ từ input; cần xác minh trước khi chốt lịch.",
+                ],
+            )
+
         status = (
             IdentityResolutionStatus.needs_review
             if result.status == "needs_review"
@@ -307,8 +327,14 @@ class EntityResolutionService:
     ) -> bool:
         if not address_hint or not address:
             return False
-        hint_tokens = set(normalize_text(address_hint).split())
-        address_tokens = set(normalize_text(address).split())
+        normalized_hint = normalize_text(address_hint)
+        normalized_address = normalize_text(address)
+        compact_hint = normalized_hint.replace(" ", "")
+        compact_address = normalized_address.replace(" ", "")
+        if compact_hint in compact_address or compact_address in compact_hint:
+            return False
+        hint_tokens = set(normalized_hint.split())
+        address_tokens = set(normalized_address.split())
         return bool(
             text_similarity(address_hint, address) < 0.45
             and hint_tokens

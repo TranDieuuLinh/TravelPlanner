@@ -77,9 +77,14 @@ class ResolvedPlaceCandidate(ContractModel):
 
     @model_validator(mode="after")
     def resolved_candidate_has_identity(self) -> "ResolvedPlaceCandidate":
-        if self.status == IdentityResolutionStatus.resolved:
+        if self.status in {
+            IdentityResolutionStatus.resolved,
+            IdentityResolutionStatus.provisional,
+        }:
             if self.selected_place is None or self.selected_score is None:
-                raise ValueError("resolved candidate requires selected identity and score")
+                raise ValueError(
+                    "resolved or provisional candidate requires selected identity and score"
+                )
         return self
 
 

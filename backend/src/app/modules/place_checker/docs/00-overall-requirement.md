@@ -97,6 +97,9 @@ Direct-user candidate chỉ có thể kết thúc ở `planner_ready`, `conditio
 - Match với canonical entity trong KG là `verified_kg`.
 - Candidate từ một external source là `provisional`, mặc định không đủ điều kiện
   cho Planner.
+- Canonical candidate từ URL/direct input có score tối thiểu và đúng ADM nhưng
+  còn ambiguity được giữ là identity `provisional`; nó có thể đi vào Planner ở
+  trạng thái `conditional` với constraint xác minh identity/chi nhánh.
 - Hai external source độc lập đồng thuận về identity, destination, category và
   tọa độ có thể tạo `verified_external`.
 - Các match xung đột hoặc quá sát nhau tạo `needs_review`.

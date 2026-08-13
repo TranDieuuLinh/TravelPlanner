@@ -55,6 +55,10 @@ class SourcePlaceEvidence(ContractModel):
     source_time_hint: str | None = Field(default=None, max_length=120)
     address_hint: str | None = Field(default=None, max_length=500)
     observed_at: datetime | None = None
+    platform: str | None = Field(default=None, max_length=40)
+    extractor_version: str | None = Field(default=None, max_length=80)
+    model_version: str | None = Field(default=None, max_length=120)
+    cache_status: Literal["hit", "miss", "bypassed"] | None = None
 
 
 class PlaceCandidateInput(ContractModel):

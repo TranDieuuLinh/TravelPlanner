@@ -21,6 +21,7 @@ from app.modules.place_checker.enums import (
     ItemResolutionStatus,
     PlaceCheckerStatus,
     PlaceLifecycleState,
+    SourceTier,
     UnresolvedEntityType,
     VerificationStatus,
 )
@@ -63,11 +64,7 @@ class PlaceCheckerOutputAssembler:
             for place in checked
             if place.place_id
             and place.evaluation.planner_eligible
-            and place.verification.status
-            in {
-                VerificationStatus.verified_kg,
-                VerificationStatus.verified_external,
-            }
+            and self._planner_verification_allowed(place)
         ]
         unresolved = self._unresolved(
             context,
@@ -157,6 +154,10 @@ class PlaceCheckerOutputAssembler:
             (
                 VerificationStatus.verified_kg
                 if place.status == IdentityResolutionStatus.resolved
+                else VerificationStatus.provisional
+                if place.status == IdentityResolutionStatus.provisional
+                else VerificationStatus.needs_review
+                if place.status == IdentityResolutionStatus.needs_review
                 else VerificationStatus.unresolved
             ),
         )
@@ -302,7 +303,10 @@ class PlaceCheckerOutputAssembler:
                 )
             )
         for index, evaluation in enumerate(places.places):
-            if evaluation.place.status == IdentityResolutionStatus.resolved:
+            if evaluation.place.status in {
+                IdentityResolutionStatus.resolved,
+                IdentityResolutionStatus.provisional,
+            }:
                 continue
             result.append(
                 UnresolvedEntity(
@@ -334,3 +338,15 @@ class PlaceCheckerOutputAssembler:
             for issue in validation_issues
         )
         return result
+
+    @staticmethod
+    def _planner_verification_allowed(place: CheckedPlace) -> bool:
+        if place.verification.status in {
+            VerificationStatus.verified_kg,
+            VerificationStatus.verified_external,
+        }:
+            return True
+        return (
+            place.verification.status == VerificationStatus.provisional
+            and place.source_tier in {SourceTier.direct_user, SourceTier.url}
+        )

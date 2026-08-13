@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 import json
@@ -30,17 +31,20 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
         self.database_url = _asyncpg_url(database_url)
         self.command_timeout = command_timeout
         self._pool = None
+        self._pool_lock = asyncio.Lock()
 
     async def _get_pool(self):
         if self._pool is None:
-            import asyncpg
+            async with self._pool_lock:
+                if self._pool is None:
+                    import asyncpg
 
-            self._pool = await asyncpg.create_pool(
-                self.database_url,
-                min_size=1,
-                max_size=10,
-                command_timeout=self.command_timeout,
-            )
+                    self._pool = await asyncpg.create_pool(
+                        self.database_url,
+                        min_size=1,
+                        max_size=4,
+                        command_timeout=self.command_timeout,
+                    )
         return self._pool
 
     async def close(self) -> None:
