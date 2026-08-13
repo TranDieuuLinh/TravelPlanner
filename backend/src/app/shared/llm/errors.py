@@ -19,6 +19,10 @@ class LlmUnauthorizedError(LlmProviderError):
 class LlmQuotaError(LlmProviderError):
     code = "llm_quota_exceeded"
 
+    def __init__(self, message: str, *, retry_after_seconds: float = 0) -> None:
+        self.retry_after_seconds = max(0, retry_after_seconds)
+        super().__init__(message)
+
 
 class LlmServerError(LlmProviderError):
     code = "llm_server_error"

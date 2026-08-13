@@ -1,10 +1,17 @@
 # Phase 4: CP-SAT model và solving
 
+Trạng thái: đã triển khai OR-Tools CP-SAT với schedule variables, optional
+intervals, opening windows, `AddNoOverlap`, `AddCircuit`, travel precedence,
+ba bữa/ngày, budget/người gồm Xanh SM night surcharge, nghỉ liên ngày 9 giờ,
+ba pass lexicographic, integer utility và result/component extraction. Graph đã
+có node `optimize_itinerary`; route enrichment/final public output thuộc Phase
+5 nên chưa thực hiện ở đây.
+
 ## Mục tiêu
 
 CP-SAT nhận prepared candidates, sparse arcs và matrix, sau đó quyết định
-toàn bộ itinerary cùng lúc. OR-Tools chưa có trong dependency hiện tại;
-implementation phải thêm package `ortools` và pin range tương thích Python 3.11.
+toàn bộ itinerary cùng lúc. OR-Tools được pin `>=9.11,<10`, tương thích
+Python 3.11.
 
 Planner không chọn top place rồi chèn tuần tự. Solver tìm:
 
@@ -22,18 +29,17 @@ Tách model để mỗi file dưới 400 dòng:
 
 ```text
 optimizer/
+├── config.py
 ├── variables.py
-├── constraints.py
-├── meals.py
-├── routing.py
-├── diversity.py
+├── routing_constraints.py
 ├── objective.py
 ├── solver.py
 └── result.py
 ```
 
-`service.py` điều phối preprocessing -> matrix -> optimizer -> route detail;
-không chứa công thức CP-SAT chi tiết.
+LangGraph node gọi optimizer qua worker thread để việc solve CPU-bound không
+chặn event loop. `solver.py` điều phối ba pass; công thức CP-SAT chi tiết nằm
+trong các file optimizer chuyên trách.
 
 ## Biến quyết định
 
@@ -141,8 +147,19 @@ khi sản phẩm sau này có yêu cầu "càng rẻ càng tốt".
 
 ### Overnight
 
-Mọi start/end nằm trong `480..1620`. Activity kết thúc sau 23:00 vẫn hợp
-lệ nếu opening window cho phép, nhưng sẽ có fatigue cost.
+Candidate thường phải kết thúc trong `480..1380`. Chỉ ID nằm trong
+`late_night_eligible_ids` mới được kết thúc muộn hơn 23:00, tối đa `1620`, và
+vẫn phải nằm trong opening window.
+
+Giữa stop cuối ngày `d` và stop đầu ngày `d+1` phải có ít nhất 9 giờ nghỉ:
+
+```text
+firstStart[d+1] + 1440 - lastEnd[d] >= 540
+```
+
+Ví dụ kết thúc 03:00 (`1620`) thì ngày sau bắt đầu sớm nhất 12:00 (`720`).
+Breakfast window được phép trễ đến 12:00 trên recovery day; target 08:00 vẫn
+giữ ngày bình thường bắt đầu sớm.
 
 ## Lexicographic solving
 

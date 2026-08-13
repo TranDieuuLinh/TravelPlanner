@@ -27,6 +27,7 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     output = PlaceCheckerPlannerOutputBuilder().build(
         result,
         start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
     ).model_dump(by_alias=True)
 
     assert set(output) == {"trip", "places", "food"}
@@ -50,3 +51,47 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     food = output["food"][0]
     assert set(food) == {*set(place), "supportedMeals"}
     assert food["supportedMeals"] == ["lunch"]
+
+
+def test_compact_output_preserves_overnight_window() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-overnight"))
+    first = result.checked_places[0]
+    result.checked_places[0] = first.model_copy(
+        update={"opening": first.opening.model_copy(update={"hours": ["22:00-03:00"]})}
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    ).model_dump(by_alias=True)
+
+    place = next(item for item in output["places"] if item["placeId"] == first.place_id)
+    assert place["openingHours"]["1"] == [
+        {"startMinute": 1320, "endMinute": 180}
+    ]
+
+
+def test_compact_output_keeps_conflicting_user_input_but_drops_optional() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-avoids"))
+    mandatory = next(place for place in result.checked_places if place.mandatory)
+    optional = next(place for place in result.checked_places if not place.mandatory)
+    for checked in (mandatory, optional):
+        index = result.checked_places.index(checked)
+        result.checked_places[index] = checked.model_copy(
+            update={
+                "evaluation": checked.evaluation.model_copy(
+                    update={"avoid_conflicts": ["alcohol"]}
+                )
+            }
+        )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+    output_ids = {place.place_id for place in [*output.places, *output.food]}
+
+    assert mandatory.place_id in output_ids
+    assert optional.place_id not in output_ids

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 
 from app.modules.explorer.public import build_explorer_graph
 from app.modules.explorer.errors import ExplorerOperationError
@@ -15,6 +16,15 @@ def test_prompt_only_extracts_adm_and_prompt_days() -> None:
     assert output.status == "ready"
     assert output.input_adm == "Huế"
     assert output.days == 4
+    assert output.start_date == datetime.now().astimezone().date() + timedelta(days=1)
+    assert output.timezone == "Asia/Ho_Chi_Minh"
+
+
+def test_prompt_date_overrides_tomorrow_default() -> None:
+    output = invoke({"rawPrompt": "Đi Hà Nội ngày 20/08/2026 trong 5 ngày"})
+
+    assert output.start_date.isoformat() == "2026-08-20"
+    assert output.days == 5
 
 
 def test_group_budget_is_normalized_per_person_before_output() -> None:

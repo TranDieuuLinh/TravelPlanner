@@ -27,6 +27,11 @@ JSON từ Explorer dùng camelCase: `inputADM`, `addressHint`, `sourcePlaces`,
 snake_case. Contract vẫn nhận snake_case để các service nội bộ và dữ liệu cũ
 không bị hỏng.
 
+`SourcePlaceEvidence` cũng giữ metadata provenance của Explorer gồm `platform`,
+`extractorVersion`, `modelVersion` và `cacheStatus`. Các field tùy chọn này phải
+được nhận trước identity resolution; không được biến candidate hợp lệ thành
+validation issue chỉ vì metadata nguồn.
+
 ## Quy tắc kiểm tra dữ liệu
 
 - Trim `inputADM` và bắt buộc non-empty.

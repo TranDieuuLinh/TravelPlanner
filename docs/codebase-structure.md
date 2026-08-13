@@ -68,6 +68,16 @@ Module khác chỉ nên import thông qua `public.py`, không truy cập trực 
 state, node hoặc service nội bộ. Provider bên ngoài phải được đặt sau port và
 adapter.
 
+FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
+module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix và
+sparse arcs trên contract `trip + places + food`, sau đó chạy Phase 4 OR-Tools
+CP-SAT ba pass để giữ tối đa `user_input`, tiếp đến URL rồi tối ưu utility.
+Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator.
+Phase 5 lấy detail chỉ cho selected arcs, repair tối đa một vòng khi duration
+thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
+qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
+orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
+
 ## Ranh giới API hiện tại
 
 Backend hiện chỉ expose:
@@ -147,12 +157,23 @@ còn evidence dùng được; mỗi source chỉ retry tối đa một lần.
 
 Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
+Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
+ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định.
+
+Với rich PlaceChecker pipeline, root giữ `PlaceCheckerResult` cho diagnostic,
+đồng thời dùng compact builder tạo `trip + places + food` và validate bằng
+`ItineraryPlannerInput`. Payload nằm trong state `planner_input`; Planner runtime
+tiêu thụ payload qua preprocessing, routing matrix, CP-SAT, route enrichment và
+finalization.
 `places[].sourcePlaces` phân biệt nguồn `input` và `url`; `sourceTimeHint` và
 `addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
 riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký
-tự, gọi structured Gemini song song, giữ chunk thành công khi chunk khác lỗi,
-rồi consolidation nhỏ merge alias/dịch thuật và lọc mention không phải place.
+tự; mỗi chunk gọi một structured Gemini request trả đồng thời place, ADM và
+note. Mặc định ba chunk chạy song song, còn limiter dùng chung của Explorer giữ
+tối đa sáu synthesis request đang chạy. Chunk thành công được giữ
+khi chunk khác lỗi, rồi consolidation nhỏ merge alias/dịch thuật và lọc mention
+không phải place.
 Chunk structured-output lỗi lặp lại được chia đôi tối đa hai cấp; quota/cooldown
 được retry có chờ và coverage vẫn được báo nếu provider chưa xử lý đủ.
 Khi có source và Gemini key, structured Gemini synthesis lọc `urlNotes` chỉ giữ
@@ -198,8 +219,10 @@ từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải dur
 
 `shared/llm/` cung cấp port và Gemini REST adapter dùng chung, bao gồm tùy chọn
 URL Context tool cho module cần Gemini đọc URL public. `GEMINI_API_KEY`
-là một chuỗi chứa nhiều key phân tách bằng dấu phẩy; adapter xoay vòng key và
-cooldown key khi provider trả về lỗi có thể thử lại. Các agent hiện có chưa
+là một chuỗi chứa nhiều key phân tách bằng dấu phẩy. Text, OCR và audio client
+dùng chung key pool với tối đa một request đang chạy trên mỗi key; mỗi request
+chỉ thử tối đa ba key. Adapter vô hiệu hóa key bị từ chối, đọc `Retry-After`
+cho lỗi 429, thêm jitter và cooldown lỗi có thể thử lại. Các agent hiện có chưa
 được chuyển business behavior sang LLM ngoài Supervisor và Information Finder
 theo cấu hình của từng module.
 

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 import logging
 import re
 import unicodedata
@@ -6,11 +7,10 @@ from uuid import uuid4
 
 from app.modules.explorer.contract import (
     ExplorerBudget,
-    ExplorerCompleteness,
     ExplorerInput,
     ExplorerOutput,
-    SourceCompleteness,
 )
+from app.modules.explorer.completeness import build_completeness
 from app.modules.explorer.draft_key import explorer_draft_cache_key
 from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.models import BatchCoverage, ExplorerDraft, SourceExtractionResult
@@ -25,6 +25,11 @@ from app.modules.explorer.ports import (
 from app.modules.explorer.retry import run_with_one_retry
 from app.modules.explorer.source_warnings import source_warnings
 from app.modules.explorer.tools import normalize_budget_per_person
+from app.modules.explorer.trip_defaults import (
+    prompt_start_date,
+    timezone_for_destination,
+    tomorrow,
+)
 from app.shared.contracts.agent import AgentError
 
 
@@ -69,6 +74,7 @@ class ExplorerService:
             "intake_id": str(uuid4()),
             "payload": payload,
             "prompt_days": int(day_match.group(1)) if day_match else None,
+            "prompt_start_date": prompt_start_date(prompt),
         }
 
     async def prompt_draft(self, prompt: str) -> ExplorerDraft:
@@ -304,9 +310,16 @@ class ExplorerService:
         prompt_days: int | None,
         coverage: BatchCoverage | None,
         source_results: list[SourceExtractionResult] | None = None,
+        prompt_start_date: date | None = None,
     ) -> ExplorerOutput:
         warnings = source_warnings(coverage, source_results)
-        completeness = self._completeness(source_results, len(draft.places))
+        timezone = timezone_for_destination(input_adm)
+        start_date = prompt_start_date or tomorrow()
+        completeness = build_completeness(
+            source_results,
+            len(draft.places),
+            self.minimum_synthesis_coverage,
+        )
         budget = draft.budget
         if budget.source == "default":
             budget = ExplorerBudget(level="low", source="default")
@@ -320,6 +333,7 @@ class ExplorerService:
                 status="clarification", intakeId=intake_id, input_ADM=None,
                 places=draft.places or None, inputItems=draft.input_items or None,
                 urlNotes=draft.url_notes or None, days=prompt_days or 3,
+                startDate=start_date, timezone=timezone,
                 budget=budget, people=draft.people,
                 shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
                 clarificationQuestion=question, warnings=warnings,
@@ -332,47 +346,11 @@ class ExplorerService:
             status=status, intakeId=intake_id, input_ADM=input_adm,
             places=draft.places or None, inputItems=draft.input_items or None,
             urlNotes=draft.url_notes or None, days=prompt_days or 3,
+            startDate=start_date, timezone=timezone,
             budget=budget, people=draft.people,
             shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
             warnings=warnings,
             completeness=completeness,
-        )
-
-    def _completeness(
-        self, results: list[SourceExtractionResult] | None, deduplicated: int
-    ) -> ExplorerCompleteness | None:
-        if not results:
-            return None
-        discarded: dict[str, int] = {}
-        sources = []
-        complete = True
-        for result in results:
-            for key, count in result.discarded_mentions.items():
-                discarded[key] = discarded.get(key, 0) + count
-            synthesis = result.synthesis_coverage_ratio
-            complete = complete and result.status == "succeeded" and (
-                synthesis is None or synthesis >= self.minimum_synthesis_coverage
-            )
-            sources.append(SourceCompleteness(
-                sourceIndex=result.source_index,
-                sourceRef=result.source_ref,
-                coverageStatus=result.coverage_status,
-                coverageRatio=result.coverage_ratio,
-                rawMentionCount=result.raw_mention_count,
-                filteredMentionCount=result.filtered_mention_count,
-                deduplicatedPlaceCount=result.deduplicated_place_count,
-                sourceChunkCount=result.source_chunk_count,
-                processedSourceChunkCount=result.processed_source_chunk_count,
-                synthesisCoverageRatio=synthesis,
-                discarded=result.discarded_mentions,
-            ))
-        return ExplorerCompleteness(
-            sources=sources,
-            rawMentionCount=sum(item.raw_mention_count for item in results),
-            filteredMentionCount=sum(item.filtered_mention_count for item in results),
-            deduplicatedPlaceCount=deduplicated,
-            discarded=discarded,
-            complete=complete,
         )
 
     def failure(self, intake_id: str, error: AgentError) -> ExplorerOutput:

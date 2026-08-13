@@ -3,6 +3,7 @@
 # Then install the browser binary: python -m playwright install chromium
 
 -e .
+absl-py==2.5.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2
@@ -25,6 +26,7 @@ httpcore==1.0.9
 httptools==0.8.0
 httpx==0.28.1
 idna==3.18
+immutabledict==4.3.1
 iniconfig==2.3.0
 jsonpatch==1.33
 jsonpointer==3.1.1
@@ -42,10 +44,12 @@ markdown-it-py==4.2.0
 mdurl==0.1.2
 mutagen==1.48.1
 orjson==3.11.9
+ortools==9.15.6755
 ormsgpack==1.12.2
 packaging==26.3
 playwright==1.62.0
 pluggy==1.6.0
+protobuf==6.33.6
 pydantic==2.13.4
 pydantic-settings==2.15.0
 pydantic_core==2.46.4

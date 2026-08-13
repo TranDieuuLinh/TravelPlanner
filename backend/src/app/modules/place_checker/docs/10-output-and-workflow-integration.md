@@ -52,6 +52,11 @@ Chỉ `planner_ready` và `conditional` place được đưa vào planning proje
 Mandatory place bị blocked/unresolved vẫn hiển thị trong PlaceChecker output và
 tạo warning cho Planner/user.
 
+`avoids` được PlaceChecker tiêu thụ trước boundary này. Direct-user place xung
+đột vẫn được giữ dạng `conditional` để bảo toàn intent; URL và optional/system
+place xung đột bị loại. Compact planner output còn lọc phòng vệ một lần nữa, nên
+Planner không nhận `avoids` và không lặp business rule này.
+
 ## Các field đầu ra bị cấm
 
 PlaceChecker contract phải từ chối day allocation, selected time slot, route
@@ -104,6 +109,24 @@ Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 `supportedMeals` cho food. `priority` phân biệt `user_input`,
 `special_experience`, `special_near`; `relationships` chứa canonical place ID
 liên quan thay vì tên tag.
+
+`startDate` và `timezone` đến từ public `ExplorerOutput`; PlaceChecker không tự
+đoán lại ngày. Nếu prompt không có ngày, Explorer dùng ngày mai. Nếu prompt
+không có duration, Explorer dùng 3 ngày.
+
+Priority compact luôn thuộc đúng một trong bốn giá trị:
+
+```text
+direct_user -> user_input
+url         -> url
+Special_Near/Near -> special_near
+optional còn lại  -> special_experience
+```
+
+Root orchestration tạo compact output sau rich `PlaceCheckerResult` và validate
+ngay bằng public `ItineraryPlannerInput`. Runtime FinalItineraryPlanner vẫn dùng
+compatibility planner cho tới khi routing và CP-SAT hoàn tất; compact payload đã
+sẵn sàng trong root state dưới `planner_input`.
 
 `restaurant` và `drink_dessert` được đưa vào `food`; các loại còn lại nằm trong
 `places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,

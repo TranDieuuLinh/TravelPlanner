@@ -56,6 +56,10 @@ Explorer truyền JSON camelCase. Pydantic chấp nhận camelCase này và chuy
 snake_case trong Python; output JSON mẫu hiện dùng snake_case theo contract nội
 bộ của pipeline.
 
+Explorer public output còn mang `startDate` và `timezone`. Root orchestration
+dùng hai field này khi gọi `PlaceCheckerPlannerOutputBuilder`; PlaceChecker
+không tự suy đoán lại ngày bắt đầu.
+
 ## Thứ tự triển khai
 
 | Milestone | Task | Điểm kiểm tra |

@@ -1,23 +1,37 @@
 from app.modules.itinerary_planner.contract import (
-    CandidatePriority,
     ItineraryPlannerInput,
-    ItineraryPlannerOutput,
-    MealType,
-    PlannerCandidate,
-    PlannerFoodCandidate,
-    PlannerTrip,
+)
+from app.modules.itinerary_planner.output_contract import ItineraryPlannerOutput
+from app.modules.itinerary_planner.adapters import (
+    InMemoryMatrixCache,
+    ValhallaAdapter,
+    XanhSmTransportCostEstimator,
 )
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
-from app.modules.itinerary_planner.ports import RoutingProvider
+
+
+def build_valhalla_itinerary_planner_graph(
+    base_url: str,
+    *,
+    timeout_seconds: float = 15,
+    provider_version: str = "local",
+):
+    adapter = ValhallaAdapter(
+        base_url,
+        timeout_seconds=timeout_seconds,
+        provider_version=provider_version,
+    )
+    return build_itinerary_planner_graph(
+        adapter,
+        XanhSmTransportCostEstimator(),
+        InMemoryMatrixCache(),
+        adapter,
+        provider_namespace=f"valhalla:{provider_version}",
+    )
 
 __all__ = [
     "ItineraryPlannerInput",
     "ItineraryPlannerOutput",
-    "CandidatePriority",
-    "MealType",
-    "PlannerCandidate",
-    "PlannerFoodCandidate",
-    "PlannerTrip",
-    "RoutingProvider",
     "build_itinerary_planner_graph",
+    "build_valhalla_itinerary_planner_graph",
 ]

@@ -1,10 +1,15 @@
 from app.modules.place_checker.checked_output_contract import CheckedPlace
-from app.modules.place_checker.enums import PlaceLifecycleState, VerificationStatus
+from app.modules.place_checker.enums import (
+    PlaceLifecycleState,
+    SourceTier,
+    VerificationStatus,
+)
 from app.modules.place_checker.output_contract import (
     PlaceCheckerPlannerOutput,
     PlaceCheckerPlanningProjection,
     PlaceCheckerResult,
     PlannerBudget,
+    PlannerOutputFood,
     PlannerOutputPlace,
     PlannerOutputTrip,
     PlannerPlaceContext,
@@ -109,28 +114,38 @@ class PlaceCheckerPlannerOutputBuilder:
         self,
         result: PlaceCheckerResult,
         *,
-        start_date: str | None = None,
+        start_date: str,
+        timezone: str,
     ) -> PlaceCheckerPlannerOutput:
         places: list[PlannerOutputPlace] = []
-        food: list[PlannerOutputPlace] = []
+        food: list[PlannerOutputFood] = []
         for checked in result.checked_places:
             if not self._eligible(checked):
                 continue
-            compact = self._place(checked, result.trip_context.days)
-            (food if checked.category in {"restaurant", "drink_dessert"} else places).append(
-                compact
-            )
+            if checked.category in {"restaurant", "drink_dessert"}:
+                meals = self._supported_meals(checked)
+                if meals:
+                    food.append(
+                        self._food(checked, result.trip_context.days, meals)
+                    )
+            else:
+                places.append(self._place(checked, result.trip_context.days))
         seen = {place.place_id for place in [*places, *food] if place.place_id}
         for item in result.resolved_items:
-            if item.selected is None or item.selected.place_id in seen:
+            if (
+                item.selected is None
+                or item.selected.place_id in seen
+                or item.selected.coordinates is None
+                or item.selected.typical_duration_minutes is None
+            ):
                 continue
-            compact = self._item_place(item, result.trip_context.days)
-            target = (
-                food
-                if item.selected.category in {"restaurant", "drink_dessert"}
-                else places
-            )
-            target.append(compact)
+            if item.selected.category in {"restaurant", "drink_dessert"}:
+                meals = self._meals_for_hours(item.selected.opening_hours)
+                if not meals:
+                    continue
+                food.append(self._item_food(item, result.trip_context.days, meals))
+            else:
+                places.append(self._item_place(item, result.trip_context.days))
             seen.add(item.selected.place_id)
         budget = result.trip_context.budget
         return PlaceCheckerPlannerOutput(
@@ -141,6 +156,7 @@ class PlaceCheckerPlannerOutputBuilder:
                 ),
                 days=result.trip_context.days,
                 start_date=start_date,
+                timezone=timezone,
                 people=result.trip_context.people.total,
                 budget=PlannerBudget(
                     amount=budget.target_amount,
@@ -155,8 +171,12 @@ class PlaceCheckerPlannerOutputBuilder:
     @staticmethod
     def _eligible(checked: CheckedPlace) -> bool:
         return bool(
-            checked.canonical_name
+            checked.place_id
+            and checked.canonical_name
+            and checked.coordinates
+            and checked.duration.typical_minutes
             and checked.evaluation.planner_eligible
+            and (checked.mandatory or not checked.evaluation.avoid_conflicts)
             and checked.verification.status
             in {VerificationStatus.verified_kg, VerificationStatus.verified_external}
         )
@@ -178,7 +198,16 @@ class PlaceCheckerPlannerOutputBuilder:
             preferred_time_windows=cls._preferred_windows(checked),
             price=cls._price(checked),
             relationships=cls._related_place_ids(checked),
-            supported_meals=cls._supported_meals(checked),
+        )
+
+    @classmethod
+    def _food(
+        cls, checked: CheckedPlace, days: int, supported_meals: list[str]
+    ) -> PlannerOutputFood:
+        values = cls._place(checked, days).model_dump()
+        return PlannerOutputFood(
+            **values,
+            supported_meals=supported_meals,
         )
 
     @classmethod
@@ -191,7 +220,7 @@ class PlaceCheckerPlannerOutputBuilder:
         elif "Special_Experience" in relation_types:
             priority = "special_experience"
         else:
-            priority = "user_requirement"
+            priority = "special_experience"
         return PlannerOutputPlace(
             place_id=option.place_id,
             name=option.name,
@@ -217,7 +246,16 @@ class PlaceCheckerPlannerOutputBuilder:
                     and relation.related_entity_id
                 )
             ),
-            supported_meals=cls._meals_for_hours(option.opening_hours),
+        )
+
+    @classmethod
+    def _item_food(
+        cls, item, days: int, supported_meals: list[str]
+    ) -> PlannerOutputFood:
+        values = cls._item_place(item, days).model_dump()
+        return PlannerOutputFood(
+            **values,
+            supported_meals=supported_meals,
         )
 
     @staticmethod
@@ -231,13 +269,15 @@ class PlaceCheckerPlannerOutputBuilder:
         )
 
     @staticmethod
-    def _priority(checked: CheckedPlace) -> str | None:
-        if checked.mandatory:
+    def _priority(checked: CheckedPlace) -> str:
+        if checked.source_tier == SourceTier.direct_user or checked.mandatory:
             return "user_input"
+        if checked.source_tier == SourceTier.url:
+            return "url"
         types = {relation.relationship_type for relation in checked.relationship_evidence}
         if types & {"Special_Near", "Near"}:
             return "special_near"
-        return "special_experience" if "Special_Experience" in types else None
+        return "special_experience"
 
     @staticmethod
     def _notes(checked: CheckedPlace) -> str | None:
@@ -299,8 +339,10 @@ class PlaceCheckerPlannerOutputBuilder:
             except (TypeError, ValueError):
                 continue
             start_total = start_hour * 60 + start_minute
-            end_total = end_hour * 60 + end_minute or 1440
-            if start_total >= end_total:
+            end_total = end_hour * 60 + end_minute
+            if start_total == end_total:
+                end_total = 1440
+            if not (0 <= start_total <= 1439 and 0 <= end_total <= 1440):
                 continue
             window = PlannerTimeWindow(
                 start_minute=start_total,

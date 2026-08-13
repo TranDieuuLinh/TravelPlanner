@@ -17,10 +17,44 @@ def test_unknown_opening_is_full_planning_window_and_warned() -> None:
     prepared = prepare_planning_problem(parsed)
 
     assert prepared.feasible_windows[("unknown", 1)] == (
-        PlanningWindow(480, 1620),
+        PlanningWindow(480, 1380),
     )
     assert prepared.unknown_opening_days["unknown"] == frozenset({1})
     assert any("unknown" in warning for warning in prepared.warnings)
+
+
+def test_only_late_night_place_can_use_overnight_window() -> None:
+    nightlife = candidate(
+        "night_bar",
+        opening_hours={"1": [{"startMinute": 1320, "endMinute": 180}]},
+        duration_minutes=180,
+    )
+    nightlife["tags"] = ["bar", "drinking"]
+    parsed = ItineraryPlannerInput.model_validate(payload(places=[nightlife]))
+
+    prepared = prepare_planning_problem(parsed)
+
+    assert prepared.feasible_windows[("night_bar", 1)] == (
+        PlanningWindow(1320, 1620),
+    )
+    assert prepared.late_night_eligible_ids == frozenset({"night_bar"})
+
+
+def test_regular_place_is_clamped_at_2300() -> None:
+    regular = candidate(
+        "late_museum",
+        opening_hours={"1": [{"startMinute": 1320, "endMinute": 180}]},
+        duration_minutes=60,
+    )
+    regular["tags"] = ["museum", "culture"]
+    parsed = ItineraryPlannerInput.model_validate(payload(places=[regular]))
+
+    prepared = prepare_planning_problem(parsed)
+
+    assert prepared.feasible_windows[("late_museum", 1)] == (
+        PlanningWindow(1320, 1380),
+    )
+    assert not prepared.late_night_eligible_ids
 
 
 def test_empty_opening_list_is_closed_not_unknown() -> None:

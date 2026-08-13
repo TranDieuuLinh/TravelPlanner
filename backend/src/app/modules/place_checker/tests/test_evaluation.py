@@ -169,6 +169,28 @@ def test_direct_user_nightlife_is_kept_with_warning() -> None:
     assert any(finding.code == "avoid_nightlife" for finding in result.findings)
 
 
+def test_optional_url_alcohol_is_rejected_by_canonical_avoid() -> None:
+    result = PlaceEvaluationService(now=NOW).evaluate(
+        enriched_place(mandatory=False, tags=["item:Cocktail"]),
+        context(avoids=["alcohol"]),
+    )
+
+    assert result.state == PlaceLifecycleState.rejected
+    assert result.planner_eligible is False
+    assert result.avoid_conflicts == ["alcohol"]
+
+
+def test_direct_user_alcohol_is_kept_with_warning() -> None:
+    result = PlaceEvaluationService(now=NOW).evaluate(
+        enriched_place(tags=["cocktail"]),
+        context(avoids=["alcohol"]),
+    )
+
+    assert result.state == PlaceLifecycleState.conditional
+    assert result.planner_eligible is True
+    assert result.avoid_conflicts == ["alcohol"]
+
+
 def test_vietnamese_nightlife_and_drink_tags_match_english_avoids() -> None:
     result = PlaceEvaluationService(now=NOW).evaluate(
         enriched_place(

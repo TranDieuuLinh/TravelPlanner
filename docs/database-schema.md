@@ -38,6 +38,11 @@ migration 006 phục vụ prefilter; `SearchPlacesTool` vẫn sở hữu score v
 acceptance policy cuối. Adapter không ghi Knowledge Graph và external live
 provider chưa được nối.
 
+FinalItineraryPlanner Phase 5 không thêm table hoặc migration. Global matrix,
+CP-SAT result, selected route detail và `ItineraryPlannerOutput` chỉ tồn tại
+trong graph state/request hiện tại; việc lưu plan production vẫn phải đi qua
+trip-chat/revision ownership riêng, không ghi trực tiếp từ Planner.
+
 Explorer có ba loại snapshot logic: `ready`, `clarification` và `failure`.
 Thay đổi hiện tại dùng `InMemoryExplorerSnapshotRepository`, không tạo table
 hay migration và không ghi raw prompt/raw third-party payload. Trước production

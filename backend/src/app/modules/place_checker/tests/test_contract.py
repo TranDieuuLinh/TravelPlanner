@@ -67,6 +67,29 @@ def test_parses_current_explorer_payload() -> None:
     assert payload.input_items[0].name == "pho"
 
 
+def test_preserves_explorer_source_provenance_metadata() -> None:
+    raw = sample_payload()
+    source = raw["places"][0]["source_places"][0]
+    source.update(
+        {
+            "platform": "youtube",
+            "extractor_version": "youtube-transcript-v7",
+            "model_version": "gemini-2.5-flash",
+            "cache_status": "bypassed",
+        }
+    )
+
+    payload = PlaceCheckerInput.model_validate(raw)
+
+    assert payload.validation_issues == []
+    assert len(payload.places) == 1
+    evidence = payload.places[0].source_places[0]
+    assert evidence.platform == "youtube"
+    assert evidence.extractor_version == "youtube-transcript-v7"
+    assert evidence.model_version == "gemini-2.5-flash"
+    assert evidence.cache_status == "bypassed"
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [

@@ -8,9 +8,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
-from app.shared.contracts.itinerary import Itinerary
-
-
 class PlannerContractModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -44,7 +41,7 @@ class PlannerCoordinates(PlannerContractModel):
 
 
 class PlannerBudget(PlannerContractModel):
-    amount: int = Field(ge=0)
+    amount: float | None = Field(default=None, ge=0)
     currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("currency")
@@ -57,7 +54,7 @@ class PlannerBudget(PlannerContractModel):
 
 
 class PlannerPrice(PlannerContractModel):
-    cost: int = Field(ge=0)
+    cost: float | None = Field(default=None, ge=0)
     currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("currency")
@@ -151,7 +148,3 @@ class ItineraryPlannerInput(PlannerContractModel):
                         "openingHours keys must be canonical trip day numbers"
                     )
         return self
-
-
-class ItineraryPlannerOutput(PlannerContractModel):
-    itinerary: Itinerary

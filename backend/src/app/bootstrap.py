@@ -1,3 +1,4 @@
+import asyncio
 from functools import lru_cache
 
 from app.core.config import Settings, get_settings
@@ -32,11 +33,14 @@ from app.modules.information_finder.service import (
     InformationFinderOptions,
     InformationFinderService,
 )
+from app.modules.itinerary_planner.public import (
+    build_valhalla_itinerary_planner_graph,
+)
 from app.modules.place_checker.public import build_postgres_place_checker_pipeline
 from app.modules.supervisor.adapters import GeminiIntentClassifier
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
-from app.shared.llm import GeminiLlmClient, LlmClient
+from app.shared.llm import GeminiKeyPool, GeminiLlmClient, LlmClient
 
 
 def create_answer_generator(
@@ -140,6 +144,21 @@ def get_information_finder_service() -> InformationFinderService:
 
 
 @lru_cache
+def get_gemini_key_pool() -> GeminiKeyPool:
+    settings = get_settings()
+    return GeminiKeyPool(
+        settings.gemini_api_key,
+        default_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+        per_key_max_in_flight=1,
+    )
+
+
+@lru_cache
+def get_explorer_synthesis_limiter() -> asyncio.Semaphore:
+    return asyncio.Semaphore(get_settings().explorer_synthesis_max_concurrency)
+
+
+@lru_cache
 def get_llm_client() -> GeminiLlmClient:
     settings = get_settings()
     return GeminiLlmClient(
@@ -147,6 +166,7 @@ def get_llm_client() -> GeminiLlmClient:
         model=settings.gemini_model,
         timeout_seconds=settings.gemini_timeout_seconds,
         key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+        key_pool=get_gemini_key_pool(),
     )
 
 
@@ -176,14 +196,23 @@ def create_supervisor_service(
 def compose_explorer_service(
     settings: Settings,
     llm_client: LlmClient | None = None,
+    synthesis_limiter: asyncio.Semaphore | None = None,
 ) -> object:
     client = llm_client
+    key_pool = getattr(client, "key_pool", None)
+    if settings.gemini_api_key and key_pool is None:
+        key_pool = GeminiKeyPool(
+            settings.gemini_api_key,
+            default_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+            per_key_max_in_flight=1,
+        )
     if settings.gemini_api_key and client is None:
         client = GeminiLlmClient(
             settings.gemini_api_key,
             model=settings.gemini_model,
             timeout_seconds=settings.gemini_timeout_seconds,
             key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+            key_pool=key_pool,
         )
     image_client = None
     audio_client = None
@@ -191,6 +220,7 @@ def compose_explorer_service(
         common_options = {
             "timeout_seconds": settings.gemini_timeout_seconds,
             "key_cooldown_seconds": settings.gemini_key_cooldown_seconds,
+            "key_pool": key_pool,
         }
         image_client = GeminiLlmClient(
             settings.gemini_api_key,
@@ -212,6 +242,8 @@ def compose_explorer_service(
         source_chunk_characters=settings.explorer_source_chunk_characters,
         source_max_output_tokens=settings.explorer_source_max_output_tokens,
         source_max_concurrency=settings.explorer_source_max_concurrency,
+        synthesis_max_concurrency=settings.explorer_synthesis_max_concurrency,
+        synthesis_limiter=synthesis_limiter,
         minimum_synthesis_coverage=settings.explorer_minimum_synthesis_coverage,
         dedupe_provider=settings.explorer_dedupe_provider,
         note_provider=settings.explorer_note_provider,
@@ -236,7 +268,7 @@ def compose_explorer_service(
         url_cache_ttl_seconds=settings.explorer_url_cache_ttl_seconds,
         draft_cache_ttl_seconds=settings.explorer_draft_cache_ttl_seconds,
         draft_cache_namespace=(
-            f"v2:{settings.explorer_draft_provider}:"
+            f"v3:{settings.explorer_draft_provider}:"
             f"{settings.explorer_source_draft_provider}:{settings.gemini_model}:"
             f"c{settings.explorer_source_chunk_characters}:"
             f"o{settings.explorer_source_max_output_tokens}"
@@ -248,7 +280,11 @@ def compose_explorer_service(
 def get_explorer_graph():
     settings = get_settings()
     client = get_llm_client() if settings.gemini_api_key else None
-    return build_explorer_graph(compose_explorer_service(settings, client))
+    return build_explorer_graph(compose_explorer_service(
+        settings,
+        client,
+        get_explorer_synthesis_limiter(),
+    ))
 
 
 @lru_cache
@@ -265,10 +301,23 @@ def get_graph():
     return create_root_graph(
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
-        explorer_service=compose_explorer_service(settings, shared_llm_client),
+        explorer_service=compose_explorer_service(
+            settings,
+            shared_llm_client,
+            get_explorer_synthesis_limiter(),
+        ),
         place_checker_pipeline=(
             build_postgres_place_checker_pipeline(settings.database_url)
             if settings.database_url
+            else None
+        ),
+        itinerary_planner_graph=(
+            build_valhalla_itinerary_planner_graph(
+                settings.valhalla_base_url,
+                timeout_seconds=settings.valhalla_timeout_seconds,
+                provider_version=settings.valhalla_graph_version,
+            )
+            if settings.route_provider == "valhalla"
             else None
         ),
     )

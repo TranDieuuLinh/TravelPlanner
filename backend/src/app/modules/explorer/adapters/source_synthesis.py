@@ -39,18 +39,10 @@ class PlaceMention(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
 
 
-class PlaceMentionBatch(BaseModel):
-    mentions: list[PlaceMention] = Field(default_factory=list)
-
-
 class NoteItem(BaseModel):
     summary: str = Field(min_length=1, max_length=500)
     place_name: str | None = Field(default=None, max_length=200)
     artifact_index: int = Field(ge=0)
-
-
-class NoteBatch(BaseModel):
-    notes: list[NoteItem] = Field(default_factory=list)
 
 
 class AdmItem(BaseModel):
@@ -60,23 +52,25 @@ class AdmItem(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
 
 
-class AdmBatch(BaseModel):
+class SourceChunkExtraction(BaseModel):
+    mentions: list[PlaceMention] = Field(default_factory=list)
     destinations: list[AdmItem] = Field(default_factory=list)
+    notes: list[NoteItem] = Field(default_factory=list)
 
 
-PLACE_PROMPT = """Extract named place mentions only. Classify every mention as PLACE,
-DESTINATION, ADDRESS, ACTIVITY, REGION_OUTSIDE_SCOPE, or GENERIC_MENTION. PLACE means a
-specific visitable physical place compatible with targetADM. A restaurant brand without
-enough branch information may remain PLACE with address_hint. Do not invent venues.
-Return artifact_index so provenance can be reconstructed."""
-
-NOTE_PROMPT = """Extract only useful source-backed travel notes: access, timing, price,
-closure, caution, signature item, or distinctive activity. Do not extract trip budget,
-people, preferences, destinations, or generic praise. Return artifact_index."""
-
-ADM_PROMPT = """Extract only the intended trip province/city destination. Historical
-places mentioned in narration and comparisons are not destinations. Return no result
-when the source does not establish trip destination. Return artifact_index."""
+SOURCE_CHUNK_PROMPT = """Extract one structured result from the supplied source chunk.
+Classify every named-place mention as PLACE, DESTINATION, ADDRESS, ACTIVITY,
+REGION_OUTSIDE_SCOPE, or GENERIC_MENTION. PLACE means a specific visitable physical
+place compatible with targetADM. A restaurant brand without enough branch information
+may remain PLACE with address_hint. Do not invent venues.
+destinations contains only the intended trip province/city. Historical places mentioned
+in narration and comparisons are not destinations. Return no destination when evidence
+does not establish one.
+When extractNotes is true, notes contains only useful source-backed access, timing,
+price, closure, caution, signature-item, or distinctive-activity details. Exclude trip
+budget, people, preferences, destinations, and generic praise. When extractNotes is
+false, return an empty notes list. Every item must include artifact_index so provenance
+can be reconstructed."""
 
 
 def _schema(value):
@@ -91,16 +85,19 @@ class GeminiSourceChunkExtractor:
     def __init__(
         self, client: LlmClient, *, max_output_tokens: int = 8_000,
         extract_notes: bool = True,
+        request_limiter: asyncio.Semaphore | None = None,
     ) -> None:
         self.client = client
         self.max_output_tokens = max_output_tokens
         self.extract_notes = extract_notes
+        self.request_limiter = request_limiter or asyncio.Semaphore(4)
 
     async def extract(self, *, raw_prompt: str | None, source, artifacts: list) -> ExplorerDraft:
         payload = json.dumps({
             "targetADMFromRawPrompt": raw_prompt,
             "sourceKind": source.source_kind,
             "sourceRef": source.source_ref,
+            "extractNotes": self.extract_notes,
             "artifacts": [
                 {"index": index, **artifact.model_dump(
                     mode="json", by_alias=True, exclude_none=True
@@ -108,43 +105,44 @@ class GeminiSourceChunkExtractor:
                 for index, artifact in enumerate(artifacts)
             ],
         }, ensure_ascii=False)
-        jobs = [
-            self._call(payload, PLACE_PROMPT, PlaceMentionBatch),
-            self._call(payload, ADM_PROMPT, AdmBatch),
-        ]
-        if self.extract_notes:
-            jobs.append(self._call(payload, NOTE_PROMPT, NoteBatch))
-        results = await asyncio.gather(*jobs)
-        places, adm = results[:2]
-        notes = results[2] if self.extract_notes else NoteBatch()
-        source.raw_mention_count += len(places.mentions)
-        kept = sum(item.classification == "PLACE" for item in places.mentions)
+        result = await self._call(payload)
+        source.raw_mention_count += len(result.mentions)
+        kept = sum(item.classification == "PLACE" for item in result.mentions)
         source.filtered_mention_count += kept
-        for item in places.mentions:
+        for item in result.mentions:
             if item.classification != "PLACE":
                 key = item.classification.casefold()
                 source.discarded_mentions[key] = source.discarded_mentions.get(key, 0) + 1
         return ExplorerDraft(
-            inputAdm=adm.destinations[0].value if adm.destinations else None,
-            admCandidates=[self._adm(item, artifacts, source) for item in adm.destinations],
+            inputAdm=result.destinations[0].value if result.destinations else None,
+            admCandidates=[
+                self._adm(item, artifacts, source) for item in result.destinations
+            ],
             places=[
                 self._place(item, artifacts, source)
-                for item in places.mentions
+                for item in result.mentions
                 if item.classification == "PLACE"
             ],
-            urlNotes=[self._note(item, artifacts, source) for item in notes.notes],
+            urlNotes=[
+                self._note(item, artifacts, source)
+                for item in result.notes
+                if self.extract_notes
+            ],
         )
 
-    async def _call(self, payload: str, prompt: str, model_type):
+    async def _call(self, payload: str) -> SourceChunkExtraction:
         try:
-            raw = await self.client.generate(
-                payload,
-                system_prompt=prompt,
-                temperature=0,
-                max_output_tokens=self.max_output_tokens,
-                response_json_schema=_schema(model_type.model_json_schema()),
-            )
-            return model_type.model_validate(json.loads(raw))
+            async with self.request_limiter:
+                raw = await self.client.generate(
+                    payload,
+                    system_prompt=SOURCE_CHUNK_PROMPT,
+                    temperature=0,
+                    max_output_tokens=self.max_output_tokens,
+                    response_json_schema=_schema(
+                        SourceChunkExtraction.model_json_schema()
+                    ),
+                )
+            return SourceChunkExtraction.model_validate(json.loads(raw))
         except LlmAllKeysUnavailable as exc:
             raise ExplorerOperationError(
                 "SOURCE_KEYS_COOLING_DOWN", "Gemini source keys đang cooldown.",
@@ -153,7 +151,8 @@ class GeminiSourceChunkExtractor:
         except (LlmQuotaError, LlmServerError) as exc:
             raise ExplorerOperationError(
                 "SOURCE_PROVIDER_RATE_LIMITED", "Gemini source đang bị giới hạn.",
-                retryable=True, retry_after_seconds=60,
+                retryable=True,
+                retry_after_seconds=getattr(exc, "retry_after_seconds", 60) or 60,
             ) from exc
         except (LlmTimeoutError, LlmTransportError) as exc:
             raise ExplorerOperationError(

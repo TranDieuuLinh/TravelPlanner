@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.orchestration.root_graph import create_root_graph
 
 
-def test_planning_flow_runs_across_modules() -> None:
+def test_legacy_planning_flow_does_not_generate_a_fake_itinerary() -> None:
     graph = create_root_graph()
     thread_id = str(uuid4())
 
@@ -19,8 +19,8 @@ def test_planning_flow_runs_across_modules() -> None:
     )
 
     assert result["decision"].route == "explorer"
-    assert result["itinerary"].intent.destination == "Da Nang"
-    assert len(result["itinerary"].days) == 2
+    assert result.get("itinerary") is None
+    assert "new trip/places/food input contract" in result["response"]
 
 
 def test_planning_flow_returns_clarification() -> None:

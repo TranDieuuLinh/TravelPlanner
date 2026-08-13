@@ -59,7 +59,11 @@ This is a working architecture scaffold, not a production travel-data system.
   Snapshots remain process-local, and
   anti-bot responses may require `EXPLORER_YTDLP_COOKIE_FILE` or remain a
   partial source failure. Source synthesis uses Gemini when available so
-  `urlNotes` retain only useful evidence-backed details.
+  `urlNotes` retain only useful evidence-backed details. Each source chunk uses
+  one structured call for places, destination, and notes; three chunks run in
+  parallel by default under a six-request synthesis limiter. Text, OCR, and
+  audio clients share a key pool with one in-flight request per key and bounded
+  key rotation that honors provider `Retry-After` responses.
   URL extraction is cached in Explorer-owned PostgreSQL `source_documents` by
   canonical URL, extractor version, and a seven-day default TTL. The adapter
   reads legacy `old_one` version-6 artifacts and writes normalized version 7.
@@ -76,14 +80,20 @@ This is a working architecture scaffold, not a production travel-data system.
   process-local extractive fallback.
 - PlaceChecker uses `DevelopmentCatalog`, which creates deterministic placeholder
   suggestions. Placeholder places have `verified=false` and emit a warning.
-- ItineraryPlanner uses estimated routing, not live road-network data.
+- ItineraryPlanner preprocesses the compact PlaceChecker payload, builds a
+  global Valhalla driving matrix with Xanh SM fare estimates, then runs a
+  three-pass OR-Tools CP-SAT model. It enriches selected route legs, performs at
+  most one affected-day repair, and returns the new plan in `plannerOutput`.
+  Valhalla must be configured and available for production matrix routing;
+  missing route geometry after a valid matrix is surfaced as a warning.
 - The checkpointer is in memory and must be replaced by durable storage in
   production.
 - Root graph checkpoints retain up to six recent user messages as internal
   conversation context for follow-up routing. This context is a routing hint,
   not a durable chat-history or production memory system.
 - A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
-  It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
+  It reads one comma-separated `GEMINI_API_KEY` value, shares leases across
+  Explorer text/image/audio clients, and rotates a bounded number of keys when a
   request receives a quota, authorization, transport, or server error. Existing
   Supervisor classification can opt into the same client with
   `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; keep `rules` for offline development

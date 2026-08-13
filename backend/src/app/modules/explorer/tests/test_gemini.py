@@ -16,11 +16,12 @@ class ActivityNoteClient:
         self.user_prompt = user_prompt
         self.system_prompt = kwargs["system_prompt"]
         return json.dumps({
-            "urlNotes": [{
+            "mentions": [],
+            "destinations": [],
+            "notes": [{
                 "summary": "Explore cafés, shops, and the night market.",
-                "placeName": "Old Quarter",
-                "evidenceType": "frame_ocr",
-                "sourceUrl": "https://example.com/reel",
+                "place_name": "Old Quarter",
+                "artifact_index": 0,
             }]
         })
 
@@ -56,13 +57,14 @@ class ChunkedSourceClient:
             ]})
         self.extract_calls += 1
         name = "Hồ Gươm" if self.extract_calls == 1 else "Văn Miếu"
-        return json.dumps({"places": [{
+        return json.dumps({"mentions": [{
             "name": name,
+            "mention": name,
+            "classification": "PLACE",
+            "artifact_index": 0,
+            "evidence": name,
             "confidence": 0.9,
-            "sourcePlaces": [{
-                "origin": "url", "evidenceType": "web_text", "evidence": name
-            }],
-        }]})
+        }], "destinations": [], "notes": []})
 
 
 class CoolingThenSuccessfulClient:
@@ -73,12 +75,13 @@ class CoolingThenSuccessfulClient:
         self.calls += 1
         if self.calls == 1:
             raise LlmAllKeysUnavailable(0)
-        return json.dumps({"places": [{
+        return json.dumps({"mentions": [{
             "name": "Hồ Gươm",
-            "sourcePlaces": [{
-                "origin": "url", "evidenceType": "transcript", "evidence": "Hồ Gươm"
-            }],
-        }]})
+            "mention": "Hồ Gươm",
+            "classification": "PLACE",
+            "artifact_index": 0,
+            "evidence": "Hồ Gươm",
+        }], "destinations": [], "notes": []})
 
 
 class RejectsLargeChunkClient:
@@ -92,12 +95,48 @@ class RejectsLargeChunkClient:
 
             raise LlmResponseError("too large")
         name = "Hồ Gươm" if "a" * 100 in user_prompt else "Văn Miếu"
-        return json.dumps({"places": [{
+        return json.dumps({"mentions": [{
             "name": name,
-            "sourcePlaces": [{
-                "origin": "url", "evidenceType": "transcript", "evidence": name
+            "mention": name,
+            "classification": "PLACE",
+            "artifact_index": 0,
+            "evidence": name,
+        }], "destinations": [], "notes": []})
+
+
+class SelectiveRetryClient:
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {}
+
+    async def generate(self, user_prompt: str, **kwargs) -> str:
+        marker = "retry" if "retry" in user_prompt else "good"
+        self.calls[marker] = self.calls.get(marker, 0) + 1
+        if marker == "retry" and self.calls[marker] == 1:
+            raise LlmAllKeysUnavailable(0)
+        return json.dumps({
+            "mentions": [{
+                "name": marker,
+                "mention": marker,
+                "classification": "PLACE",
+                "artifact_index": 0,
+                "evidence": marker,
             }],
-        }]})
+            "destinations": [],
+            "notes": [],
+        })
+
+
+class ConcurrencyClient:
+    def __init__(self) -> None:
+        self.active = 0
+        self.peak = 0
+
+    async def generate(self, user_prompt: str, **kwargs) -> str:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        await asyncio.sleep(0.01)
+        self.active -= 1
+        return json.dumps({"mentions": [], "destinations": [], "notes": []})
 
 
 def test_prompt_requests_semantic_place_name_normalization_in_name_only() -> None:
@@ -137,8 +176,8 @@ def test_source_prompt_keeps_supported_activities_as_url_notes() -> None:
 
     assert draft.url_notes[0].place_name == "Old Quarter"
     assert "night market" in draft.url_notes[0].summary
-    assert "activities available there" in client.system_prompt
-    assert "urlNotesIncludeActivitiesAndFunFacts" in client.user_prompt
+    assert "distinctive-activity" in client.system_prompt
+    assert '"extractNotes": true' in client.user_prompt
 
 
 def test_long_source_is_extracted_per_chunk_then_consolidated() -> None:
@@ -277,3 +316,53 @@ def test_repeated_large_chunk_failure_falls_back_to_smaller_chunks() -> None:
 
     assert {place.name for place in draft.places} == {"Hồ Gươm", "Văn Miếu"}
     assert source.synthesis_coverage_ratio == 1
+
+
+def test_successful_chunk_is_not_repeated_when_another_chunk_retries() -> None:
+    client = SelectiveRetryClient()
+    generator = GeminiExplorerDraftGenerator(
+        client,
+        source_chunk_characters=5,
+        source_max_concurrency=2,
+        dedupe_provider="rules",
+    )  # type: ignore[arg-type]
+    source = SourceExtractionResult(
+        sourceIndex=0,
+        sourceKind="url",
+        sourceRef="https://example.com",
+        status="succeeded",
+        artifacts=[
+            SourceArtifact(artifactType="transcript", text="good"),
+            SourceArtifact(artifactType="transcript", text="retry"),
+        ],
+    )
+
+    asyncio.run(generator.from_sources(raw_prompt=None, sources=[source]))
+
+    assert client.calls == {"good": 1, "retry": 2}
+    assert source.processed_source_chunk_count == 2
+
+
+def test_synthesis_limiter_counts_actual_generate_calls() -> None:
+    client = ConcurrencyClient()
+    generator = GeminiExplorerDraftGenerator(
+        client,
+        source_chunk_characters=5,
+        source_max_concurrency=10,
+        synthesis_max_concurrency=2,
+        dedupe_provider="rules",
+    )  # type: ignore[arg-type]
+    source = SourceExtractionResult(
+        sourceIndex=0,
+        sourceKind="url",
+        sourceRef="https://example.com",
+        status="succeeded",
+        artifacts=[
+            SourceArtifact(artifactType="transcript", text=f"part{index}")
+            for index in range(6)
+        ],
+    )
+
+    asyncio.run(generator.from_sources(raw_prompt=None, sources=[source]))
+
+    assert client.peak == 2

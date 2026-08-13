@@ -50,11 +50,15 @@ class ContractModel(BaseModel):
 class SourcePlaceEvidence(ContractModel):
     origin: EvidenceOrigin
     evidence_type: str = Field(min_length=1, max_length=80)
-    source_url: str | None = Field(default=None, max_length=2000)
+    source_url: str | None = Field(default=None, max_length=2048)
     evidence: str = Field(min_length=1, max_length=4000)
     source_time_hint: str | None = Field(default=None, max_length=120)
     address_hint: str | None = Field(default=None, max_length=500)
     observed_at: datetime | None = None
+    platform: str | None = Field(default=None, max_length=40)
+    extractor_version: str | None = Field(default=None, max_length=80)
+    model_version: str | None = Field(default=None, max_length=120)
+    cache_status: Literal["hit", "miss", "bypassed"] | None = None
 
 
 class PlaceCandidateInput(ContractModel):

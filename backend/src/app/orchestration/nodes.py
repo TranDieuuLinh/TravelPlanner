@@ -3,16 +3,20 @@ from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
 )
-from app.modules.itinerary_planner.public import build_itinerary_planner_graph
+from app.modules.itinerary_planner.public import (
+    ItineraryPlannerInput,
+    ItineraryPlannerOutput,
+    build_itinerary_planner_graph,
+)
 from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
 from app.modules.place_checker.public import (
     PlaceCheckerInput,
     PlaceCheckerPipeline,
+    PlaceCheckerPlannerOutputBuilder,
     PlaceCheckerPlanningProjector,
     build_place_checker_graph,
     build_place_checker_pipeline_graph,
 )
-from app.shared.contracts.place import VerifiedPlace
 from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
@@ -27,6 +31,7 @@ class RootNodes:
         supervisor_service: SupervisorService | None = None,
         explorer_service=None,
         place_checker_pipeline: PlaceCheckerPipeline | None = None,
+        itinerary_planner_graph=None,
     ) -> None:
         self.supervisor = build_supervisor_graph(supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
@@ -39,7 +44,9 @@ class RootNodes:
             if place_checker_pipeline is not None
             else build_place_checker_graph()
         )
-        self.itinerary_planner = build_itinerary_planner_graph()
+        self.itinerary_planner = (
+            itinerary_planner_graph or build_itinerary_planner_graph()
+        )
         self.plan_editor = build_plan_editor_graph()
 
     async def run_supervisor(self, state: RootState) -> dict:
@@ -109,7 +116,7 @@ class RootNodes:
             payload = PlaceCheckerInput.model_validate(
                 {
                     "inputADM": explorer.input_adm,
-                    "places": explorer.places,
+                    "places": self._place_checker_places(explorer.places or []),
                     "inputItems": explorer.input_items,
                     "urlNotes": explorer.url_notes,
                     "days": explorer.days,
@@ -128,14 +135,20 @@ class RootNodes:
             )
             output = graph_result["result"]
             projection = PlaceCheckerPlanningProjector().project(output)
-            planner_places, compatibility_warnings = self._planner_places(projection)
+            compact = PlaceCheckerPlannerOutputBuilder().build(
+                output,
+                start_date=explorer.start_date.isoformat(),
+                timezone=explorer.timezone,
+            )
+            planner_input = ItineraryPlannerInput.model_validate(
+                compact.model_dump(mode="json", by_alias=True)
+            )
             update = {
                 "place_output": output,
-                "planner_places": planner_places,
+                "planner_input": planner_input,
                 "warnings": [
                     *state.get("warnings", []),
                     *projection.warnings,
-                    *compatibility_warnings,
                 ],
             }
             if output.status.value == "blocked":
@@ -169,57 +182,61 @@ class RootNodes:
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
 
-    async def run_itinerary_planner(self, state: RootState) -> dict:
-        planner_places = state.get("planner_places")
-        if planner_places is None:
-            planner_places = state["place_output"].places
-        result = await self.itinerary_planner.ainvoke(
-            {
-                "intent": state["intent"],
-                "places": planner_places,
-                "upstream_warnings": state.get("warnings", []),
-            }
-        )
-        itinerary = result["output"].itinerary
-        return {
-            "itinerary": itinerary,
-            "warnings": list(dict.fromkeys(itinerary.warnings)),
-            "response": (
-                f"Created a {len(itinerary.days)}-day itinerary for "
-                f"{itinerary.intent.destination}."
-            ),
-        }
-
     @staticmethod
-    def _planner_places(projection) -> tuple[list[VerifiedPlace], list[str]]:
-        places: list[VerifiedPlace] = []
-        warnings: list[str] = []
-        for place in projection.places:
-            duration = place.typical_duration_minutes
-            if duration is None:
-                duration = 90
-                warnings.append(
-                    f"{place.canonical_name}: Planner tạm dùng duration 90 phút."
-                )
-            cost = place.typical_cost
-            if cost is None:
-                cost = 0
-                warnings.append(
-                    f"{place.canonical_name}: Planner chưa có chi phí, tạm dùng 0."
-                )
-            places.append(
-                VerifiedPlace(
-                    place_id=place.place_id,
-                    name=place.canonical_name,
-                    coordinates=place.coordinates,
-                    source="place_checker",
-                    verified=True,
-                    estimated_visit_minutes=duration,
-                    estimated_cost=cost,
-                    tags=place.tags,
-                )
+    def _place_checker_places(places) -> list[dict]:
+        """Map only the public evidence fields supported by PlaceChecker."""
+        result = []
+        for place in places:
+            result.append(
+                {
+                    "name": place.name,
+                    "addressHint": place.address_hint,
+                    "confidence": place.confidence,
+                    "sourcePlaces": [
+                        source.model_dump(
+                            mode="json",
+                            by_alias=True,
+                            include={
+                                "origin",
+                                "evidence_type",
+                                "source_url",
+                                "evidence",
+                                "source_time_hint",
+                                "address_hint",
+                                "observed_at",
+                            },
+                        )
+                        for source in place.source_places
+                    ],
+                }
             )
-        return places, warnings
+        return result
+
+    async def run_itinerary_planner(self, state: RootState) -> dict:
+        planner_input = state.get("planner_input")
+        if planner_input is None:
+            warning = (
+                "FinalItineraryPlanner requires the new trip/places/food input "
+                "contract; no itinerary was generated."
+            )
+            return {
+                "warnings": [*state.get("warnings", []), warning],
+                "response": warning,
+            }
+
+        result = await self.itinerary_planner.ainvoke({"input": planner_input})
+        if error := result.get("error"):
+            return {
+                "warnings": [*state.get("warnings", []), error],
+                "response": f"Itinerary planning stopped: {error}",
+            }
+        return {
+            "warnings": list(
+                dict.fromkeys([*state.get("warnings", []), *result.get("warnings", [])])
+            ),
+            "planner_output": ItineraryPlannerOutput.model_validate(result["output"]),
+            "response": "Itinerary was optimized successfully.",
+        }
 
     async def run_plan_editor(self, state: RootState) -> dict:
         itinerary = state.get("existing_itinerary")

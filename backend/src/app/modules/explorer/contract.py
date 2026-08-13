@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -14,6 +14,10 @@ class ExplorerModel(BaseModel):
         populate_by_name=True,
         extra="forbid",
     )
+
+
+def _default_start_date() -> date:
+    return datetime.now().astimezone().date() + timedelta(days=1)
 
 
 class ExplorerImageInput(ExplorerModel):
@@ -174,6 +178,8 @@ class ExplorerOutput(ExplorerModel):
     input_items: list[RequestedItem] | None = None
     url_notes: list[SourceNote] | None = None
     days: int = Field(default=3, ge=1, le=30)
+    start_date: date = Field(default_factory=_default_start_date)
+    timezone: str = Field(default="Asia/Ho_Chi_Minh", min_length=1, max_length=100)
     budget: ExplorerBudget = Field(default_factory=ExplorerBudget)
     people: ExplorerPeople = Field(default_factory=ExplorerPeople)
     short_preferences: list[str] = Field(default_factory=list)

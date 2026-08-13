@@ -15,9 +15,11 @@ from app.shared.llm.errors import (
     LlmUnauthorizedError,
 )
 from app.shared.llm.ports import InlineMedia, LlmClient
+from app.shared.llm.key_pool import GeminiKeyPool
 
 __all__ = [
     "GeminiLlmClient",
+    "GeminiKeyPool",
     "LlmAllKeysUnavailable",
     "LlmClient",
     "InlineMedia",

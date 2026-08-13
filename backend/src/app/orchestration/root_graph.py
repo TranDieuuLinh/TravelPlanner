@@ -12,13 +12,14 @@ from app.shared.persistence import create_checkpointer
 
 def create_root_graph(
     *, checkpointer=None, information_finder_service=None, supervisor_service=None,
-    explorer_service=None, place_checker_pipeline=None,
+    explorer_service=None, place_checker_pipeline=None, itinerary_planner_graph=None,
 ):
     nodes = RootNodes(
         information_finder_service,
         supervisor_service,
         explorer_service,
         place_checker_pipeline,
+        itinerary_planner_graph,
     )
     builder = StateGraph(RootState)
 

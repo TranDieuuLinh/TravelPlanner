@@ -1,28 +1,48 @@
 import asyncio
 
+from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.public import build_itinerary_planner_graph
-from app.shared.contracts.place import Coordinates, VerifiedPlace
-from app.shared.contracts.trip import TripIntent
+from app.modules.itinerary_planner.tests.factories import candidate, food, payload
+from app.modules.itinerary_planner.tests.routing_fakes import (
+    FixedCostEstimator,
+    GeneratedMatrixProvider,
+)
 
 
-def test_allocates_places_across_requested_days() -> None:
-    graph = build_itinerary_planner_graph()
-    places = [
-        VerifiedPlace(
-            place_id=f"place-{index}",
-            name=f"Place {index}",
-            coordinates=Coordinates(latitude=16 + index / 100, longitude=108),
-            source="test",
-        )
-        for index in range(4)
-    ]
-
-    result = asyncio.run(
-        graph.ainvoke(
-            {"intent": TripIntent(destination="Đà Nẵng", days=2), "places": places}
+def test_graph_prepares_new_planner_input() -> None:
+    graph = build_itinerary_planner_graph(
+        GeneratedMatrixProvider(), FixedCostEstimator()
+    )
+    planner_input = ItineraryPlannerInput.model_validate(
+        payload(
+            places=[candidate("ho_guom", priority="user_input")],
+            foods=[
+                food("breakfast", supported_meals=["breakfast"]),
+                food("lunch", supported_meals=["lunch"]),
+                food("dinner", supported_meals=["dinner"]),
+            ],
         )
     )
 
-    itinerary = result["output"].itinerary
-    assert len(itinerary.days) == 2
-    assert [len(day.items) for day in itinerary.days] == [2, 2]
+    result = asyncio.run(graph.ainvoke({"input": planner_input}))
+
+    assert result.get("error") is None
+    assert result["prepared_problem"].candidate_by_id["ho_guom"].name == "Ho Guom"
+    assert result["routing_problem"].sparse_arcs
+    assert result["optimization_result"].user_input_count == 1
+    assert result["output"].destination == "Hanoi"
+    assert len(result["output"].days) == 1
+    assert len(result["output"].days[0].stops) == 4
+    assert result["output"].solver.objective_policy_version
+    assert result["output"].phase_timings_ms["total"] >= 0
+
+
+def test_graph_returns_preflight_error_without_three_meals() -> None:
+    graph = build_itinerary_planner_graph()
+    raw = payload()
+    raw["food"][0]["supportedMeals"] = ["lunch", "dinner"]
+
+    result = asyncio.run(graph.ainvoke({"input": raw}))
+
+    assert "breakfast" in result["error"]
+    assert "prepared_problem" not in result

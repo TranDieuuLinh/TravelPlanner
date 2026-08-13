@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -162,35 +162,39 @@ class PlannerBudget(ContractModel):
 
 class PlannerTimeWindow(ContractModel):
     start_minute: int = Field(ge=0, le=1439)
-    end_minute: int = Field(ge=1, le=1440)
+    end_minute: int = Field(ge=0, le=1440)
 
 
 class PlannerOutputPlace(ContractModel):
-    place_id: str | None = None
+    place_id: str
     name: str
-    coordinates: Coordinates | None = None
+    coordinates: Coordinates
     address: str | None = None
-    priority: str | None = None
+    priority: Literal[
+        "user_input", "url", "special_experience", "special_near"
+    ]
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
-    duration_minutes: int | None = Field(default=None, ge=1)
+    duration_minutes: int = Field(ge=1)
     opening_hours: dict[str, list[PlannerTimeWindow]] | None = None
     preferred_time_windows: list[PlannerTimeWindow] = Field(default_factory=list)
     price: PlannerPrice
     relationships: list[str] = Field(default_factory=list)
-    supported_meals: list[str] = Field(
-        default_factory=list,
-        exclude_if=lambda value: not value,
+
+
+class PlannerOutputFood(PlannerOutputPlace):
+    supported_meals: list[Literal["breakfast", "lunch", "dinner"]] = Field(
+        min_length=1
     )
 
 
 class PlannerOutputTrip(ContractModel):
     destination: str
     days: int = Field(ge=1)
-    start_date: str | None = None
-    timezone: str = "Asia/Ho_Chi_Minh"
+    start_date: str
+    timezone: str
     people: int = Field(ge=1)
     budget: PlannerBudget
     preferences: list[str] = Field(default_factory=list)
@@ -199,4 +203,4 @@ class PlannerOutputTrip(ContractModel):
 class PlaceCheckerPlannerOutput(ContractModel):
     trip: PlannerOutputTrip
     places: list[PlannerOutputPlace] = Field(default_factory=list)
-    food: list[PlannerOutputPlace] = Field(default_factory=list)
+    food: list[PlannerOutputFood] = Field(default_factory=list)
