@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 
@@ -29,9 +30,22 @@ class PostgresUserRepository:
                 import asyncpg  # type: ignore[import-untyped]
             except ImportError as exc:
                 raise RuntimeError("asyncpg is required for PostgreSQL auth") from exc
-            self._pool = await asyncpg.create_pool(
-                self.database_url, command_timeout=self.command_timeout, min_size=1, max_size=10
-            )
+            for attempt in range(5):
+                try:
+                    self._pool = await asyncpg.create_pool(
+                        self.database_url,
+                        command_timeout=self.command_timeout,
+                        min_size=1,
+                        max_size=10,
+                    )
+                    break
+                except OSError:
+                    # Compose may start the API just before Docker DNS/database
+                    # is ready. Retry transient connection and name-resolution
+                    # failures instead of turning the first request into 500.
+                    if attempt == 4:
+                        raise
+                    await asyncio.sleep(0.5 * (2**attempt))
         return self._pool
 
     async def by_email(self, email: str) -> UserRecord | None:
