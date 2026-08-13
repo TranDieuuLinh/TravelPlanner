@@ -131,6 +131,22 @@ def test_only_cited_sources_are_returned_and_duplicate_ids_keep_order():
     assert output.answer.endswith("[1][2]")
 
 
+def test_markdown_entity_reference_is_preserved_in_answer():
+    answer = Answer(
+        generated(
+            (
+                "## Hà Nội\n\nGhé [Lăng Bác](travel-entity://entity).",
+                ["s1"],
+            )
+        )
+    )
+    output = run(
+        make_service(Repository([source("s1")]), answer).find("Hà Nội")
+    )
+    assert output.answer.startswith("## Hà Nội")
+    assert "[Lăng Bác](travel-entity://entity)" in output.answer
+
+
 def test_unknown_source_id_falls_back_with_warning():
     answer = Answer(generated(("Fact", ["invented"])))
     output = run(
@@ -184,4 +200,4 @@ def test_cache_miss_calls_tavily_and_llm_once():
     answer = Answer(generated(("Fact", ["web-0"])))
     search = Search(content="hours " * 100)
     run(make_service(Repository(), answer, search=search).find("hours"))
-    assert search.calls == 1 and answer.calls == 1
+    assert search.calls == 3 and answer.calls == 1

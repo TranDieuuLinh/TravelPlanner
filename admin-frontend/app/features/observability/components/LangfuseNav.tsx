@@ -13,7 +13,7 @@ export function LangfuseNav({ activePage, pathPrefix }: Props) {
   const pathname = usePathname();
 
   return (
-    <nav className="langfuseNav" aria-label="Langfuse sections">
+    <nav className="langfuseNav" aria-label="Observability sections">
       {LANGFUSE_PAGES.map((page) => {
         const href = `${pathPrefix}/${page.id}`;
         const isActive = activePage === page.id;

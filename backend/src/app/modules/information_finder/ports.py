@@ -6,6 +6,7 @@ from app.modules.information_finder.contract import (
     PreparedSource,
     RetrievedSource,
     SearchResponse,
+    SearchQueryPlan,
     SearchResult,
 )
 
@@ -31,7 +32,9 @@ class SearchProvider(Protocol):
 
 
 class SearchQueryPlanner(Protocol):
-    async def generate(self, query: str) -> list[str]: ...
+    async def generate(
+        self, query: str, sources: list[RetrievedSource] | None = None
+    ) -> SearchQueryPlan: ...
 
 
 class SourceRepository(Protocol):

@@ -5848,3 +5848,156 @@
 .landingMapPinEnd { right: 16%; bottom: 19%; background: #e76d55; }
 .landingPreviewSourceCard, .landingPreviewPlanCard, .landingPreviewAssistant { position: absolute; z-index: 4; border: 1px solid rgba(43, 77, 70, .1); background: rgba(255,255,255,.95); box-shadow: 0 18px 40px rgba(28, 58, 54, .14); backdrop-filter: blur(14px); }
 .landingPreviewSourceCard { top: 42px; left: 0; display: grid; width: 235px; gap: 8px; border-radius: 17px; padding: 16px; }
+
+/* Shared Planner chat surface: one frame for loading and completed states. */
+.plannerChatSurface {
+  --planner-chat-width: min(410px, calc(100vw - 40px));
+  --planner-chat-height: min(610px, calc(100dvh - 104px));
+  --planner-chat-min-width: 340px;
+  --planner-chat-min-height: 360px;
+  --planner-chat-message-padding: 10px 20px 14px;
+  --planner-chat-avatar-size: 44px;
+  --planner-chat-bubble-size: .73rem;
+}
+
+@media (min-width: 901px) {
+  /* The shared surface follows the planner grid; it must not become the
+     separate floating/bubble chat when the planner state changes. */
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface {
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto;
+    grid-area: assistant;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface > .panelHeading,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface > .panelHeading {
+    display: flex;
+    min-height: 68px;
+    padding: 19px 20px 14px;
+    border-radius: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessages,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessages {
+    padding: var(--planner-chat-message-padding);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble {
+    font-size: var(--planner-chat-bubble-size);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble.assistant,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble.assistant {
+    max-width: calc(100% - 51px);
+    padding: 12px 14px;
+    font-size: var(--planner-chat-bubble-size);
+    line-height: 1.58;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar {
+    width: var(--planner-chat-avatar-size);
+    height: var(--planner-chat-avatar-size);
+    flex-basis: var(--planner-chat-avatar-size);
+    margin-left: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar .penguinMascot,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar .penguinMascot {
+    width: var(--planner-chat-avatar-size);
+    height: var(--planner-chat-avatar-size);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .plannerEntryComposer,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .plannerEntryComposer {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerChatSurface {
+    --planner-chat-message-padding: 28px 18px 18px;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface {
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto;
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 560px !important;
+    margin: 0 !important;
+    border: 0;
+    border-radius: 0;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface > .panelHeading,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface > .panelHeading {
+    display: flex;
+    min-height: 68px;
+    padding: 12px 14px;
+    border-radius: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessages,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessages {
+    padding: var(--planner-chat-message-padding);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble {
+    font-size: var(--planner-chat-bubble-size);
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble.assistant,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble.assistant {
+    max-width: calc(100% - 51px);
+    padding: 12px 14px;
+    font-size: var(--planner-chat-bubble-size);
+    line-height: 1.58;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar {
+    width: var(--planner-chat-avatar-size);
+    height: var(--planner-chat-avatar-size);
+    flex-basis: var(--planner-chat-avatar-size);
+    margin-left: 0;
+  }
+
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar .penguinMascot,
+  .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar .penguinMascot {
+    width: var(--planner-chat-avatar-size);
+    height: var(--planner-chat-avatar-size);
+  }
+}

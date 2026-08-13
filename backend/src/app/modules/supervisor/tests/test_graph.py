@@ -1,10 +1,17 @@
 import asyncio
 
-from app.modules.supervisor.public import build_supervisor_graph
+from app.modules.supervisor.contract import ClassifierResult
+from app.modules.supervisor.public import SupervisorService, build_supervisor_graph
+
+
+class FakeClassifier:
+    async def classify(self, payload):
+        route = "plan_editor" if payload.has_itinerary else "information_finder"
+        return ClassifierResult(route=route, confidence=0.9, reason="test")
 
 
 def test_routes_information_request() -> None:
-    graph = build_supervisor_graph()
+    graph = build_supervisor_graph(SupervisorService(FakeClassifier()))
 
     result = asyncio.run(
         graph.ainvoke({"message": "Thời tiết ở Hà Nội là gì?", "has_itinerary": False})
@@ -14,7 +21,7 @@ def test_routes_information_request() -> None:
 
 
 def test_routes_structured_edit() -> None:
-    graph = build_supervisor_graph()
+    graph = build_supervisor_graph(SupervisorService(FakeClassifier()))
 
     result = asyncio.run(
         graph.ainvoke(

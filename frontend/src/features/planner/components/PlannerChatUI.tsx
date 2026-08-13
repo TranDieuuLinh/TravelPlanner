@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import { SourceProviderIcon } from "@/features/planner/lib/planner-formatters";
+import { MarkdownMessage } from "@/features/planner/components/MarkdownMessage";
 import {
   sourceProviderKind,
   type SourceProviderKind,
@@ -139,7 +140,13 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
               <PenguinMascot size={44} variant="curious" />
             </span>
           ) : null}
-          <div className={`chatBubble ${message.role}`}>{message.text}</div>
+          <div className={`chatBubble ${message.role}`}>
+            {message.role === "assistant" ? (
+              <MarkdownMessage content={message.text} />
+            ) : (
+              message.text
+            )}
+          </div>
         </div>
       ))}
     </div>

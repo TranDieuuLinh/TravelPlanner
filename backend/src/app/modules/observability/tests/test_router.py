@@ -5,7 +5,7 @@ from app.modules.auth.adapters.in_memory import InMemoryUserRepository
 from app.modules.auth.service import AuthService
 
 
-def test_observability_requires_admin_and_reports_missing_configuration() -> None:
+def test_observability_requires_admin_and_reports_local_store() -> None:
     app = create_app()
     app.state.auth_service = AuthService(
         InMemoryUserRepository(),
@@ -22,4 +22,5 @@ def test_observability_requires_admin_and_reports_missing_configuration() -> Non
         status = http.get("/admin/observability/status")
 
     assert status.status_code == 200
-    assert status.json()["configured"] is False
+    assert status.json()["configured"] is True
+    assert status.json()["reachable"] is True

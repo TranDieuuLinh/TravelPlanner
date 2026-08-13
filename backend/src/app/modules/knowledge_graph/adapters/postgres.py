@@ -229,6 +229,61 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
         )
         return result
 
+    async def get_entity_preview(self, name: str) -> dict | None:
+        query = name.strip()
+        if not query:
+            return None
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            entity = await connection.fetchrow(
+                """SELECT id, canonical_name, entity_type
+                   FROM knowledge_entities
+                   WHERE canonical_name ILIKE $1
+                      OR normalized_name ILIKE $1
+                      OR id ILIKE $1
+                      OR EXISTS (
+                          SELECT 1 FROM knowledge_aliases alias
+                          WHERE alias.entity_id = knowledge_entities.id
+                            AND alias.alias ILIKE $1
+                      )
+                   ORDER BY
+                       CASE WHEN lower(canonical_name) = lower($2) THEN 0 ELSE 1 END,
+                       CASE WHEN lower(canonical_name) LIKE lower($3) THEN 0 ELSE 1 END,
+                       canonical_name
+                   LIMIT 1""",
+                f"%{query}%",
+                query,
+                f"%{query}%",
+            )
+            if not entity:
+                return None
+            properties = await connection.fetch(
+                """SELECT key, value
+                   FROM knowledge_properties
+                   WHERE entity_id = $1
+                     AND key = ANY($2::text[])
+                   ORDER BY id""",
+                entity["id"],
+                ["description", "story", "address", "tags", "phone", "url_google_map", "image"],
+            )
+            image = await connection.fetchval(
+                """SELECT image_url FROM knowledge_entity_images
+                   WHERE entity_id = $1
+                   ORDER BY id
+                   LIMIT 1""",
+                entity["id"],
+            )
+        details = {row["key"]: row["value"] for row in properties if row["value"]}
+        image_url = image or details.get("image")
+        return {
+            "id": entity["id"],
+            "name": entity["canonical_name"],
+            "entity_type": entity["entity_type"],
+            "description": details.get("description") or details.get("story"),
+            "image_url": image_url,
+            "details": details,
+        }
+
     async def create_entity(self, **payload) -> dict:
         pool = await self._get_pool()
         async with pool.acquire() as connection:

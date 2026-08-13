@@ -1,78 +1,56 @@
 import asyncio
+from uuid import uuid4
 
+from app.modules.observability.local_store import LocalObservabilityStore
 from app.modules.observability.service import ObservabilityService
 
 
-class FakeLangfuseClient:
-    configured = True
+def test_local_store_captures_redacted_tool_input_and_output(tmp_path) -> None:
+    store = LocalObservabilityStore(storage_path=tmp_path / "traces.json")
+    service = ObservabilityService(store)
+    callback = service.start_trace(request_id="request-1", metadata={"threadId": "thread-1"})
+    run_id = uuid4()
+    asyncio.run(callback.on_tool_start(
+        {"name": "search_places"},
+        {"query": "Hue", "api_key": "secret"},
+        run_id=run_id,
+    ))
+    asyncio.run(callback.on_tool_end({"places": ["Citadel"]}, run_id=run_id))
 
-    def __init__(self, payload: dict):
-        self.payload = payload
-        self.calls = []
-
-    async def get(self, resource, params):
-        self.calls.append((resource, params))
-        return self.payload
-
-    async def ingest(self, payload):
-        self.calls.append(("ingest", payload))
-
-
-def test_list_records_normalizes_langfuse_page() -> None:
-    client = FakeLangfuseClient(
-        {
-            "data": [{"id": "trace-1", "name": "planner"}],
-            "meta": {"page": 2, "limit": 25, "totalItems": 51, "totalPages": 3},
-        }
-    )
-
-    result = asyncio.run(
-        ObservabilityService(client, "http://localhost:3005").list_records(
-            "traces", page=2, limit=25
-        )
-    )
-
-    assert result.items[0]["id"] == "trace-1"
-    assert result.page == 2
-    assert result.total == 51
-    assert result.has_more is True
+    item = asyncio.run(service.list_records("observations", page=1, limit=25)).items[0]
+    assert "secret" not in item["inputPreview"]
+    assert item["outputPreview"]
+    assert item["status"] == "success"
 
 
-def test_status_reports_missing_keys_without_calling_provider() -> None:
-    client = FakeLangfuseClient({})
-    client.configured = False
+def test_service_completes_trace_and_reports_status(tmp_path) -> None:
+    store = LocalObservabilityStore(storage_path=tmp_path / "traces.json")
+    service = ObservabilityService(store)
+    service.start_trace(request_id="request-1", metadata={})
+    asyncio.run(service.record_agent_invoke(
+        request_id="request-1", route="explorer", success=False,
+        message_length=10, warning_count=1, source_count=2,
+        has_itinerary=False, error_code="TIMEOUT", duration_ms=123.4,
+        output={"response": "failed"},
+    ))
 
-    result = asyncio.run(ObservabilityService(client, "http://localhost:3005").status())
+    result = asyncio.run(service.status())
+    trace = asyncio.run(service.get_trace("request-1"))
+    assert result.trace_count == 1
+    assert result.error_count == 1
+    assert trace is not None
+    assert trace["durationMs"] == 123.4
+    assert trace["errorCode"] == "TIMEOUT"
+    assert '"response": "failed"' in trace["outputPreview"]
 
-    assert result.configured is False
-    assert result.reachable is False
-    assert client.calls == []
 
+def test_local_store_reloads_persisted_traces(tmp_path) -> None:
+    path = tmp_path / "observability" / "traces.json"
+    first = LocalObservabilityStore(storage_path=path)
+    first.start_trace("request-1", {"threadId": "thread-1"})
+    first.complete_trace("request-1", success=True, route="explorer")
 
-def test_record_agent_invoke_sends_safe_trace_metadata() -> None:
-    client = FakeLangfuseClient({})
-
-    asyncio.run(
-        ObservabilityService(client, "http://localhost:3005").record_agent_invoke(
-            request_id="request-1",
-            route="explorer",
-            success=True,
-            message_length=42,
-            warning_count=1,
-            source_count=2,
-            has_itinerary=True,
-        )
-    )
-
-    event = client.calls[0][1]["batch"][0]
-    assert event["type"] == "trace-create"
-    assert event["body"]["metadata"] == {
-        "requestId": "request-1",
-        "route": "explorer",
-        "success": True,
-        "messageLength": 42,
-        "warningCount": 1,
-        "sourceCount": 2,
-        "hasItinerary": True,
-        "errorCode": None,
-    }
+    second = LocalObservabilityStore(storage_path=path)
+    trace = second.trace("request-1")
+    assert trace is not None
+    assert trace["status"] == "success"

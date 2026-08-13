@@ -4,11 +4,6 @@ import pytest
 
 from app.modules.supervisor.contract import ClassifierResult, SupervisorInput
 from app.modules.supervisor.errors import SupervisorClassificationError
-from app.modules.supervisor.rules import (
-    information_rule,
-    planning_rule,
-    structured_edit_rule,
-)
 from app.modules.supervisor.service import SupervisorService
 
 
@@ -32,211 +27,89 @@ def decide(service: SupervisorService, message: str, **flags):
     return asyncio.run(service.decide(SupervisorInput(message=message, **flags)))
 
 
-def test_configured_classifier_handles_structured_edit():
+@pytest.mark.parametrize(
+    ("message", "route"),
+    [
+        ("Xin chào, bạn là ai vậy?", "finish"),
+        ("Tôi muốn biết thêm về Hà Nội", "information_finder"),
+        ("Lập kế hoạch Đà Nẵng 3 ngày", "explorer"),
+        ("Hoàn Kiếm Lake thì sao?", "information_finder"),
+    ],
+)
+def test_every_intent_is_delegated_to_the_llm(message, route):
     classifier = FakeClassifier(
-        ClassifierResult(route="plan_editor", confidence=1, reason="Structured edit")
+        ClassifierResult(
+            route=route,
+            confidence=0.95,
+            reason="LLM classified the user request",
+            response="Penguin xin chào!" if route == "finish" else None,
+        )
     )
     decision = decide(
         SupervisorService(classifier),
-        "Lập kế hoạch rồi thêm điểm đến",
-        has_itinerary=True,
-        has_edit_operation=True,
+        message,
+        conversation_context=["Tôi muốn biết thêm về Hà Nội."],
     )
-    assert decision.route == "plan_editor"
-    assert classifier.calls == 0
-
-
-def test_edit_operation_without_itinerary_never_routes_to_editor():
-    decision = decide(
-        SupervisorService(), "Cập nhật lịch trình", has_edit_operation=True
-    )
-    assert decision.route == "finish"
-    assert decision.clarification_question
-
-
-def test_existing_itinerary_with_information_question_routes_to_information():
-    decision = decide(
-        SupervisorService(), "Giờ mở cửa và giá vé bảo tàng?", has_itinerary=True
-    )
-    assert decision.route == "information_finder"
-
-
-def test_more_information_request_is_not_misclassified_as_plan_edit():
-    decision = decide(SupervisorService(), "Tôi muốn có thêm thông tin về Hà Nội")
-    assert decision.route == "information_finder"
-
-
-def test_adding_an_itinerary_item_remains_an_edit_request():
-    decision = decide(SupervisorService(), "Thêm điểm đến vào lịch trình")
-    assert decision.route == "finish"
-    assert decision.clarification_question
-
-
-@pytest.mark.parametrize(
-    "message",
-    ["Lập kế hoạch Đà Nẵng 3 ngày", "Plan a three-day trip to Kyoto"],
-)
-def test_planning_requests_route_to_explorer(message):
-    assert decide(SupervisorService(), message).route == "explorer"
-
-
-@pytest.mark.parametrize(
-    "message",
-    ["Giá vé và giờ mở cửa bảo tàng?", "What is the ticket price and opening hours?"],
-)
-def test_information_requests_route_to_information_finder(message):
-    assert decide(SupervisorService(), message).route == "information_finder"
-
-
-def test_greeting_has_meaningful_finish_response():
-    decision = decide(SupervisorService(), "Xin chào")
-    assert decision.route == "finish"
-    assert decision.response.startswith("Penguin xin chào!")
-
-
-@pytest.mark.parametrize("message", ["Bạn khỏe không?", "Bạn là ai?", "Cảm ơn bạn"])
-def test_social_questions_are_answered_by_supervisor(message):
-    decision = decide(SupervisorService(), message)
-    assert decision.route == "finish"
-    assert decision.response
-
-
-@pytest.mark.parametrize(
-    "message", ["Lịch sử Hội An là gì?", "Văn hóa ở Huế có gì đặc biệt?"]
-)
-def test_knowledge_questions_route_to_information_finder(message):
-    assert decide(SupervisorService(), message).route == "information_finder"
-
-
-def test_out_of_scope_request_finishes_honestly():
-    decision = decide(SupervisorService(), "Write a poem about databases")
-    assert decision.route == "finish"
-    assert "Penguin".casefold() in decision.response.casefold()
-
-
-def test_narrow_rules_avoid_common_substring_false_positives():
-    assert information_rule(SupervisorInput(message="The address is useful"))
-    assert planning_rule(
-        SupervisorInput(message="What should I do in Da Nang for 3 days")
-    )
-    assert structured_edit_rule(SupervisorInput(message="addendum")) is None
-    assert decide(SupervisorService(), "The addendum is ready").route == "finish"
-
-
-def test_multi_intent_uses_planning_action_after_structured_precedence():
-    decision = decide(SupervisorService(), "Lập kế hoạch Đà Nẵng và cho biết giá vé")
-    assert decision.route == "explorer"
-
-
-def test_valid_llm_result_is_parsed_and_used_for_ambiguous_message():
-    classifier = FakeClassifier(
-        ClassifierResult(
-            route="information_finder", confidence=0.9, reason="A focused fact request"
-        )
-    )
-    decision = decide(SupervisorService(classifier), "Can you help with this place?")
-    assert decision.route == "information_finder"
+    assert decision.route == route
     assert classifier.calls == 1
 
 
-def test_deterministic_information_rule_wins_over_configured_classifier():
-    classifier = FakeClassifier(
-        ClassifierResult(
-            route="information_finder",
-            confidence=0.95,
-            reason="Historical destination information",
-        )
-    )
-    decision = decide(
-        SupervisorService(classifier), "Cho tôi lịch sửa Hồ Chí Minh"
-    )
-    assert decision.route == "information_finder"
-    assert classifier.calls == 0
-
-
-def test_information_request_cannot_fall_back_to_explorer_after_llm_misclassification():
-    classifier = FakeClassifier(
-        ClassifierResult(route="plan_editor", confidence=0.99, reason="wrong route")
-    )
-    decision = decide(
-        SupervisorService(classifier), "Tôi muốn có thêm thông tin về Hà Nội"
-    )
-    assert decision.route == "information_finder"
-    assert classifier.calls == 0
-
-
-def test_contextual_follow_up_uses_conversation_context():
-    decision = decide(
-        SupervisorService(),
-        "Còn chỗ này thì sao?",
-        conversation_context=["Tôi muốn biết thêm về Hải Phòng."],
-    )
-    assert decision.route == "information_finder"
-
-
-def test_destination_follow_up_without_context_is_still_information():
-    assert decide(SupervisorService(), "Còn Hà Nội thì sao.").route == (
-        "information_finder"
-    )
-
-
-def test_llm_finish_response_uses_the_users_language():
-    classifier = FakeClassifier(
-        ClassifierResult(
-            route="finish",
-            confidence=0.9,
-            reason="Meta question",
-            response="Tôi là trợ lý lập kế hoạch du lịch của bạn.",
-        )
-    )
-    decision = decide(SupervisorService(classifier), "Bạn là ai vậy?")
-    assert decision.route == "finish"
-    assert decision.response
-
-
-def test_llm_failure_uses_safe_fallback_when_enabled():
-    decision = decide(
-        SupervisorService(FakeClassifier(error=TimeoutError())),
-        "Can you help with this place?",
-    )
-    assert decision.route == "finish"
-    assert decision.warnings
-    assert decision.clarification_question
-
-
-def test_llm_failure_is_explicit_when_fallback_disabled():
-    with pytest.raises(SupervisorClassificationError, match="fallback is disabled"):
-        decide(
-            SupervisorService(
-                FakeClassifier(error=TimeoutError()), fallback_enabled=False
-            ),
-            "Can you help with this place?",
-        )
-
-
-def test_low_confidence_llm_result_falls_back():
-    decision = decide(
-        SupervisorService(
-            FakeClassifier(
-                ClassifierResult(route="finish", confidence=0.2, reason="uncertain")
-            )
-        ),
-        "Can you help with this place?",
-    )
-    assert decision.route == "finish"
-    assert decision.warnings
-    assert decision.clarification_question
-
-
-def test_llm_plan_editor_result_is_rejected_without_both_preconditions():
+def test_plan_editor_requires_structured_state_after_llm_classification():
     decision = decide(
         SupervisorService(
             FakeClassifier(
                 ClassifierResult(route="plan_editor", confidence=0.99, reason="edit")
             )
         ),
-        "Can you help with this place?",
+        "Tôi muốn chỉnh sửa lịch trình",
     )
     assert decision.route == "finish"
-    assert "structured state" in decision.warnings[0]
+    assert decision.clarification_question
+
+
+def test_llm_finish_response_is_preserved():
+    response = "Xin chào, mình là Penguin."
+    decision = decide(
+        SupervisorService(
+            FakeClassifier(
+                ClassifierResult(
+                    route="finish", confidence=0.9, reason="greeting", response=response
+                )
+            )
+        ),
+        "Xin chào",
+    )
+    assert decision.response == response
+
+
+def test_llm_failure_asks_for_clarification_instead_of_explorer():
+    decision = decide(
+        SupervisorService(FakeClassifier(error=TimeoutError())),
+        "Một yêu cầu chưa rõ",
+    )
+    assert decision.route == "finish"
+    assert decision.clarification_question
+    assert decision.warnings
+
+
+def test_llm_failure_can_be_disabled():
+    with pytest.raises(SupervisorClassificationError, match="fallback is disabled"):
+        decide(
+            SupervisorService(
+                FakeClassifier(error=TimeoutError()), fallback_enabled=False
+            ),
+            "Một yêu cầu chưa rõ",
+        )
+
+
+def test_low_confidence_llm_result_asks_for_clarification():
+    decision = decide(
+        SupervisorService(
+            FakeClassifier(
+                ClassifierResult(route="explorer", confidence=0.2, reason="uncertain")
+            )
+        ),
+        "Một yêu cầu chưa rõ",
+    )
+    assert decision.route == "finish"
     assert decision.clarification_question

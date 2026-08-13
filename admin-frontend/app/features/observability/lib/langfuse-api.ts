@@ -14,7 +14,10 @@ export type LangfuseStatus = {
   configured: boolean;
   reachable: boolean;
   message: string;
-  projectCount: number | null;
+  traceCount: number;
+  observationCount: number;
+  errorCount: number;
+  retentionLimit: number;
 };
 
 export type LangfuseResource = "traces" | "observations" | "sessions";
@@ -30,5 +33,11 @@ export function getLangfuseRecords(
 ): Promise<LangfusePageResponse> {
   return apiRequest<LangfusePageResponse>(
     `/admin/observability/${resource}?page=${page}&limit=${limit}`
+  );
+}
+
+export function getTrace(traceId: string): Promise<LangfuseRecord> {
+  return apiRequest<LangfuseRecord>(
+    `/admin/observability/traces/${encodeURIComponent(traceId)}`
   );
 }

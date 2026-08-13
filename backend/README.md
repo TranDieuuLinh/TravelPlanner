@@ -39,9 +39,11 @@ modules/<module>/
 
 This is a working architecture scaffold, not a production travel-data system.
 
-- The supervisor uses deterministic high-signal rules first, with an optional
-  structured Gemini classifier for ambiguous requests and a truthful
-  deterministic fallback. The baseline model and routing policy are not
+- The supervisor delegates intent classification to the structured Gemini
+  classifier. It handles greetings, assistant-meta questions, and routing to
+  Explorer, InformationFinder, or PlanEditor through the same LLM decision.
+  Only provider failure, low confidence, or invalid structured edit state uses
+  a safe clarification response. The baseline model and routing policy are not
   production-evaluated.
 - Explorer now uses a two-route LangGraph intake flow. Prompt-only extraction
   and parallel URL/image source import converge on normalization, ADM
@@ -64,11 +66,11 @@ This is a working architecture scaffold, not a production travel-data system.
   canonical URL, extractor version, and a seven-day default TTL. The adapter
   reads legacy `old_one` version-6 artifacts and writes normalized version 7.
   `forceRefresh=true` bypasses a hit; cache failures do not block extraction.
-- The supervisor uses structured Gemini classification first when
-  `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`. The classifier also produces a short
-  same-language response for greeting, assistant-meta, and out-of-scope
-  `finish` requests. Deterministic rules remain the offline provider and runtime
-  fallback. The baseline model and routing policy are not production-evaluated.
+- The supervisor uses structured Gemini classification for every intent. The
+  classifier also produces a short same-language response for greeting,
+  assistant-meta, and out-of-scope `finish` requests. There is no keyword-based
+  Supervisor routing provider. The baseline model and routing policy are not
+  production-evaluated.
 - Explorer currently parses destination and duration from simple text input.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
@@ -79,16 +81,15 @@ This is a working architecture scaffold, not a production travel-data system.
 - ItineraryPlanner uses estimated routing, not live road-network data.
 - The checkpointer is in memory and must be replaced by durable storage in
   production.
-- Root graph checkpoints retain up to six recent user messages as internal
-  conversation context for follow-up routing. This context is a routing hint,
-  not a durable chat-history or production memory system.
+- Root graph checkpoints retain a bounded recent conversation context for the
+  Supervisor LLM. This context is not a durable chat-history or production
+  memory system.
 - A shared Gemini REST client is available through `app.bootstrap.get_llm_client`.
   It reads one comma-separated `GEMINI_API_KEY` value and rotates keys when a
-  request receives a quota, authorization, transport, or server error. Existing
-  Supervisor classification can opt into the same client with
-  `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; keep `rules` for offline development
-  and tests. Missing Gemini configuration fails during composition, while
-  runtime classifier failures use the configured safe fallback.
+  request receives a quota, authorization, transport, or server error. Supervisor
+  classification uses the same client. Missing Gemini configuration fails during
+  composition, while runtime classifier failures use the configured safe
+  clarification response.
 
 All external capabilities are behind module ports so real providers can be
 added without changing public graph contracts.

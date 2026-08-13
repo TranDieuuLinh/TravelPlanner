@@ -84,6 +84,17 @@ class EntityDetail(EntitySummary):
     relationship_has_more: bool
 
 
+class EntityPreview(KGModel):
+    """Safe, read-only metadata used by the chat entity preview."""
+
+    id: str
+    name: str
+    entity_type: str
+    description: str | None = None
+    image_url: str | None = None
+    details: dict[str, str] = Field(default_factory=dict)
+
+
 class EntityCreate(KGModel):
     entity_id: str = Field(min_length=1, max_length=200)
     canonical_name: str = Field(min_length=1, max_length=500)

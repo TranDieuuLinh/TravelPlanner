@@ -8,7 +8,7 @@ class ObservabilityModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class LangfusePage(ObservabilityModel):
+class ObservabilityPage(ObservabilityModel):
     items: list[dict[str, Any]] = Field(default_factory=list)
     page: int | None = None
     limit: int
@@ -16,8 +16,11 @@ class LangfusePage(ObservabilityModel):
     has_more: bool | None = None
 
 
-class LangfuseStatus(ObservabilityModel):
+class ObservabilityStatus(ObservabilityModel):
     configured: bool
     reachable: bool
     message: str
-    project_count: int | None = None
+    trace_count: int = 0
+    observation_count: int = 0
+    error_count: int = 0
+    retention_limit: int = 500

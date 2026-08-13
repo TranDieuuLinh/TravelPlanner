@@ -35,3 +35,30 @@
   stroke-linejoin: round;
   stroke-width: 1.8;
 }
+.markdownMessage { display: grid; gap: 8px; line-height: 1.6; }
+.markdownMessage > * { margin: 0; }
+.markdownMessage h1, .markdownMessage h2, .markdownMessage h3 { color: inherit; font-size: 1em; font-weight: 850; }
+.markdownMessage ul, .markdownMessage ol { display: grid; gap: 4px; margin: 0; padding-left: 20px; }
+.markdownMessage p { margin: 0; }
+.markdownMessage a { color: var(--brand-dark); text-decoration: underline; text-underline-offset: 3px; }
+.entityMention { display: inline; border: 0; border-bottom: 1px dashed currentColor; padding: 0; background: transparent; color: var(--brand-dark); cursor: pointer; font: inherit; }
+.entityHoverPortal { position: fixed; z-index: 500; width: min(320px, calc(100vw - 16px)); pointer-events: auto; }
+.entityHoverCard { display: grid; width: 100%; overflow: hidden; border: 1px solid rgba(54, 95, 90, .16); border-radius: 14px; padding: 0; background: white; color: var(--ink); box-shadow: 0 18px 45px rgba(23, 32, 51, .2); text-align: left; }
+.entityHoverCardLoading { padding: 14px; font-size: .72rem; }
+.entityHoverImage { display: block; width: 100%; height: 142px; object-fit: cover; }
+.entityHoverBody { display: grid; gap: 4px; padding: 12px 13px 4px; }
+.entityHoverBody strong { font-size: .82rem; }
+.entityHoverBody small { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: .68rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.entityHoverHint { padding: 6px 13px 11px; color: var(--brand); font-size: .6rem; font-weight: 800; }
+.entityDialogBackdrop { position: fixed; z-index: 600; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(23, 32, 51, .52); backdrop-filter: blur(8px); }
+.entityDialog { position: relative; width: min(520px, 100%); max-height: min(720px, calc(100vh - 36px)); overflow: auto; border-radius: 20px; background: white; box-shadow: 0 28px 80px rgba(23, 32, 51, .28); }
+.entityDialogClose { position: absolute; z-index: 1; top: 10px; right: 10px; display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .9); color: var(--ink); font-size: 1.4rem; }
+.entityDialogImage { display: block; width: 100%; max-height: 270px; object-fit: cover; }
+.entityDialogContent { display: grid; gap: 10px; padding: 22px; }
+.entityDialogContent > small { color: var(--brand); font-size: .62rem; font-weight: 850; text-transform: uppercase; }
+.entityDialogContent h3 { margin: 0; font-size: 1.5rem; }
+.entityDialogContent p { margin: 0; color: var(--muted); line-height: 1.6; }
+.entityDialogContent dl { display: grid; gap: 8px; margin: 4px 0 0; }
+.entityDialogContent dl > div { display: grid; grid-template-columns: 100px 1fr; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.entityDialogContent dt { color: var(--muted); font-size: .65rem; text-transform: capitalize; }
+.entityDialogContent dd { margin: 0; font-size: .72rem; line-height: 1.45; }

@@ -42,6 +42,16 @@ class FakeKnowledgeGraphService:
             "relationship_types": ["located_in", "special_experience"],
         }
 
+    async def entity_preview(self, _name: str) -> dict:
+        return {
+            "id": "restaurant_example",
+            "name": "Example Restaurant",
+            "entity_type": "Restaurant",
+            "description": "A sample place.",
+            "image_url": "https://example.test/image.jpg",
+            "details": {"address": "Hanoi"},
+        }
+
 
 def admin_client() -> tuple[TestClient, FakeKnowledgeGraphService]:
     app = create_app()
@@ -97,3 +107,13 @@ def test_entity_filter_options_are_read_from_service() -> None:
         "propertyKeys": ["description", "time_window"],
         "relationshipTypes": ["located_in", "special_experience"],
     }
+
+
+def test_authenticated_user_can_read_entity_preview() -> None:
+    http, _ = admin_client()
+    with http:
+        login(http)
+        response = http.get("/v1/knowledge-graph/entity-preview?name=Example%20Restaurant")
+
+    assert response.status_code == 200
+    assert response.json()["imageUrl"] == "https://example.test/image.jpg"

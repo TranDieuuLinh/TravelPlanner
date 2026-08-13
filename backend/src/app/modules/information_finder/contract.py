@@ -29,10 +29,11 @@ class InformationFinderOutput(PublicModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class SearchQueryPlan(BaseModel):
-    """Internal structured output used to formulate web-search queries."""
+class SearchQueryPlan(PublicModel):
+    """LLM decision about whether local sources need web search."""
 
-    queries: list[str] = Field(min_length=1, max_length=3)
+    should_search: bool = False
+    queries: list[str] = Field(default_factory=list, max_length=3)
 
 
 class AnswerClaim(BaseModel):

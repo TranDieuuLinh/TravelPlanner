@@ -32,6 +32,20 @@ def normalize_answer_text(text: str) -> str:
     return normalized.strip()
 
 
+def normalize_generated_answer_text(text: str) -> str:
+    """Keep safe Markdown structure in an LLM-generated claim."""
+    normalized = text.replace("\u00a0", " ")
+    normalized = re.sub(
+        r"\[(?:sá»­a|edit)\s*\|\s*(?:sá»­a mÃ£ nguá»“n|edit source)\]",
+        " ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"\[\d+\]", "", normalized)
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in normalized.splitlines()]
+    return "\n".join(lines).strip()
+
+
 def select_relevant_excerpt(
     content: str,
     query: str,

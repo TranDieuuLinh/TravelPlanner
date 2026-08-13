@@ -75,3 +75,24 @@ def test_same_thread_keeps_user_context_for_follow_up_routing() -> None:
 
     assert result["decision"].route == "information_finder"
     assert result.get("itinerary") is None
+
+
+def test_same_thread_routes_english_destination_follow_up_to_information() -> None:
+    graph = create_root_graph()
+    thread_id = str(uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
+
+    asyncio.run(
+        graph.ainvoke(
+            {"request_id": "context-info-1", "message": "Tôi muốn biết thêm về Hà Nội."},
+            config=config,
+        )
+    )
+    result = asyncio.run(
+        graph.ainvoke(
+            {"request_id": "context-info-2", "message": "Hoàn Kiếm Lake thì sao?"},
+            config=config,
+        )
+    )
+
+    assert result["decision"].route == "information_finder"

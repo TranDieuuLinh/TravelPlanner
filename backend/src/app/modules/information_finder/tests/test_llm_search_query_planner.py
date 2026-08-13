@@ -27,35 +27,42 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_planner_returns_structured_queries():
+def test_planner_returns_search_decision_and_queries():
     client = FakeLlmClient(
         json.dumps(
             {
+                "shouldSearch": True,
                 "queries": [
                     "Hà Nội du lịch lịch sử",
                     "Hà Nội điểm tham quan nổi bật",
-                    "Hà Nội văn hóa ẩm thực",
-                ]
+                ],
             }
         )
     )
 
-    queries = run(LlmSearchQueryPlanner(client).generate("Cho tôi biết về Hà Nộil"))
+    plan = run(LlmSearchQueryPlanner(client).generate("Cho tôi biết về Hà Nội"))
 
-    assert queries == [
-        "Hà Nội du lịch lịch sử",
-        "Hà Nội điểm tham quan nổi bật",
-        "Hà Nội văn hóa ẩm thực",
-    ]
-    assert "Hà Nộil" in client.calls[0][0]
+    assert plan.should_search is True
+    assert plan.queries == ["Hà Nội du lịch lịch sử", "Hà Nội điểm tham quan nổi bật"]
+    assert "Hà Nội" in client.calls[0][0]
+    assert "localSources" in client.calls[0][0]
     assert client.calls[0][1]["temperature"] == 0.0
+
+
+def test_planner_can_skip_search_when_local_sources_are_sufficient():
+    client = FakeLlmClient(json.dumps({"shouldSearch": False, "queries": []}))
+
+    plan = run(LlmSearchQueryPlanner(client).generate("Hà Nội"))
+
+    assert plan.should_search is False
+    assert plan.queries == []
 
 
 @pytest.mark.parametrize(
     "response,error",
     [
         ("not-json", None),
-        (json.dumps({"queries": []}), None),
+        (json.dumps({"shouldSearch": True, "queries": []}), None),
         (None, LlmResponseError),
     ],
 )

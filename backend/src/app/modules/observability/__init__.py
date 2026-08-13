@@ -1,1 +1,1 @@
-"""Admin observability backed by the Langfuse public API."""
+"""Bounded local observability for backend diagnostics."""

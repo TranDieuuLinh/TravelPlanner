@@ -4678,7 +4678,7 @@ function Planner() {
               <aside
                 aria-busy={awaitingInitialPlan}
                 aria-label="Trợ lý lập kế hoạch TravelPlanner"
-                className={`plannerChat panel ${
+                className={`plannerChat plannerChatSurface panel ${
                   chatCollapsed ? "is-collapsed" : ""
                 } ${
                   displayedPlan || awaitingInitialPlan

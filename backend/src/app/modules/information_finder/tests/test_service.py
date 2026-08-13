@@ -9,6 +9,7 @@ from app.modules.information_finder.adapters.development import (
 from app.modules.information_finder.errors import SearchQueryPlanningError
 from app.modules.information_finder.contract import (
     RetrievedSource,
+    SearchQueryPlan,
     SearchResponse,
     SearchResult,
 )
@@ -67,11 +68,20 @@ class FakeSearchQueryPlanner:
         self.error = error
         self.inputs = []
 
-    async def generate(self, query):
-        self.inputs.append(query)
+    async def generate(self, query, sources=None):
+        self.inputs.append((query, sources or []))
         if self.error:
             raise self.error("planning failed")
-        return self.queries_to_return
+        return SearchQueryPlan(should_search=True, queries=self.queries_to_return)
+
+
+class SkipSearchQueryPlanner:
+    def __init__(self):
+        self.inputs = []
+
+    async def generate(self, query, sources=None):
+        self.inputs.append((query, sources or []))
+        return SearchQueryPlan(should_search=False, queries=[])
 
 
 class StaticRepository:
@@ -154,10 +164,35 @@ def test_fresh_sufficient_local_skips_tavily():
     assert len(output.sources) == 1
 
 
+def test_llm_receives_top_five_and_can_skip_tavily():
+    planner = SkipSearchQueryPlanner()
+    search = FakeSearch()
+    local = [
+        source(
+            str(index),
+            f"https://source.test/{index}",
+            score=0.6 + (index * 0.05),
+        )
+        for index in range(6)
+    ]
+
+    asyncio.run(service(StaticRepository(local), search, planner=planner).find("museum"))
+
+    assert [item.source_id for item in planner.inputs[0][1]] == [
+        "5",
+        "4",
+        "3",
+        "2",
+        "1",
+    ]
+    assert search.calls == 0
+
+
 def test_empty_local_calls_tavily_and_saves():
     repository = StaticRepository()
     search = FakeSearch([web_result()])
-    output = asyncio.run(service(repository, search).find("museum"))
+    planner = FakeSearchQueryPlanner(["museum"])
+    output = asyncio.run(service(repository, search, planner=planner).find("museum"))
     assert search.calls == 1 and len(repository.saved) == 1
     assert len(output.sources) == 1
 
@@ -196,7 +231,8 @@ def test_empty_local_uses_llm_queries_before_tavily():
         ).find("Cho tôi biết về Hà Nộil")
     )
 
-    assert planner.inputs == ["Cho tôi biết về Hà Nộil"]
+    assert planner.inputs[0][0] == "Cho tôi biết về Hà Nộil"
+    assert len(planner.inputs[0][1]) <= 5
     assert search.queries[0] == "Hà Nội du lịch lịch sử"
     assert len(search.queries) <= 2
 
@@ -211,7 +247,7 @@ def test_search_query_planner_failure_uses_deterministic_queries():
     )
 
     assert search.queries[0] == "museum"
-    assert len(search.queries) == 1
+    assert len(search.queries) == 3
     assert "search_query_planner_fallback" in output.warnings
 
 
@@ -234,9 +270,12 @@ def test_topic_mismatch_forces_tavily_even_with_high_embedding_score():
         ]
     )
 
-    asyncio.run(service(repository, search).find("Thông tin về Hồ Chí Minh"))
+    planner = FakeSearchQueryPlanner(["Thông tin du lịch Thành phố Hồ Chí Minh"])
+    asyncio.run(
+        service(repository, search, planner=planner).find("Thông tin về Hồ Chí Minh")
+    )
 
-    assert search.calls == 3
+    assert search.calls == 1
 
 
 def test_new_destination_refreshes_tavily_after_hanoi_cache_is_populated():
@@ -277,7 +316,7 @@ def test_new_destination_refreshes_tavily_after_hanoi_cache_is_populated():
     asyncio.run(finder.find("Mô tả Hà Nội"))
     asyncio.run(finder.find("Mô tả Hải Phòng"))
 
-    assert search.calls == 6
+    assert search.calls == 3
 
 
 def test_insufficient_local_merges_local_and_tavily():
@@ -285,7 +324,7 @@ def test_insufficient_local_merges_local_and_tavily():
     output = asyncio.run(
         service(repository, FakeSearch([web_result()]), minimum=2).find("museum")
     )
-    assert {item.source_id for item in output.sources} == {"1", "web-0"}
+    assert {item.source_id for item in output.sources} == {"1"}
 
 
 def test_expired_source_refreshes_with_tavily():
@@ -295,7 +334,7 @@ def test_expired_source_refreshes_with_tavily():
             StaticRepository([source("1", "https://a.test/x", fresh=False)]), search
         ).find("museum")
     )
-    assert search.calls == 1
+    assert search.calls == 3
 
 
 def test_live_query_forces_refresh_even_with_good_local():
@@ -318,7 +357,7 @@ def test_url_and_content_deduplication():
         ]
     )
     asyncio.run(service(repository, search).find("museum"))
-    assert len(repository.saved) == 1
+    assert len(repository.saved) == 3
     assert repository.saved[0].canonical_url == "https://example.com/a"
     assert canonicalize_url("https://x.test/a/?gclid=1") == "https://x.test/a"
 
@@ -344,10 +383,11 @@ def test_semantic_chunker_output_is_embedded_and_prepared():
 def test_tavily_timeout_keeps_usable_local_source():
     search = FakeSearch(error=SearchProviderTimeout)
     repository = StaticRepository([source("1", "https://a.test/x", score=0.4)])
-    output = asyncio.run(service(repository, search).find("museum"))
-    assert output.sources == []
-    assert "semantic similarity threshold" in output.warnings[-1]
-    assert search.calls == 3
+    planner = FakeSearchQueryPlanner(["museum"])
+    output = asyncio.run(service(repository, search, planner=planner).find("museum"))
+    assert [item.source_id for item in output.sources] == ["1"]
+    assert "Web search unavailable" in output.warnings[-1]
+    assert search.calls == 1
     assert repository.failures == ["provider_timeout"]
 
 

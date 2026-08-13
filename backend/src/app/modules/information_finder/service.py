@@ -28,10 +28,7 @@ from app.modules.information_finder.ports import (
     SourceChunker,
     SourceRepository,
 )
-from app.modules.information_finder.ranking import (
-    has_sufficient_local_sources,
-    rank_sources,
-)
+from app.modules.information_finder.ranking import rank_sources
 from app.modules.information_finder.utils import (
     canonicalize_url,
     chunk_content,
@@ -106,37 +103,39 @@ class InformationFinderService:
             local = []
             warnings.append(f"embedding_fallback:{exc.code}")
         now = datetime.now(timezone.utc)
-        fresh_local = [
-            source
-            for source in local
-            if source.expires_at > now
-            and source.semantic_score >= self.options.similarity_threshold
-        ]
+        fresh_local = [source for source in local if source.expires_at > now]
         decision = self.freshness.for_query(normalized_query)
-        local_sufficient = has_sufficient_local_sources(
+        local_candidates = sorted(
             fresh_local,
-            query=normalized_query,
-            minimum_sources=self.options.minimum_local_sources,
-            similarity_threshold=self.options.similarity_threshold,
-            minimum_content_chars=self.options.minimum_content_chars,
-            topic_overlap_threshold=self.options.topic_overlap_threshold,
-        )
-        combined = list(fresh_local)
+            key=lambda source: source.semantic_score,
+            reverse=True,
+        )[: self.options.answer_source_limit]
+        combined = list(local_candidates)
+        should_search = decision.force_refresh
+        search_queries: list[str] = []
 
-        if decision.force_refresh or not local_sufficient:
+        if self.search_query_planner is not None:
+            try:
+                search_plan = await self.search_query_planner.generate(
+                    normalized_query,
+                    local_candidates,
+                )
+                should_search = should_search or search_plan.should_search
+                search_queries = search_plan.queries
+            except SearchQueryPlanningError:
+                warnings.append("search_query_planner_fallback")
+                should_search = should_search or not local_candidates
+        elif not local_candidates:
+            should_search = True
+
+        if should_search:
             if self.search_provider is None:
                 warnings.append(
                     "Web search is not configured; the answer may use incomplete local sources."
                 )
             else:
-                search_queries = self._search_queries(normalized_query)
-                if self.search_query_planner is not None:
-                    try:
-                        search_queries = await self.search_query_planner.generate(
-                            normalized_query
-                        )
-                    except SearchQueryPlanningError:
-                        warnings.append("search_query_planner_fallback")
+                if not search_queries:
+                    search_queries = self._search_queries(normalized_query)
                 failures: list[SearchProviderError] = []
                 max_search_attempts = max(
                     1, min(self.options.max_tavily_attempts, 3)
@@ -186,27 +185,13 @@ class InformationFinderService:
                                 response.results,
                                 expires_at=now + decision.ttl,
                             )
-                        combined.extend(
-                            source
-                            for source in saved
-                            if not embedding_available
-                            or source.semantic_score >= self.options.similarity_threshold
-                        )
-                        if not embedding_available and len(combined) >= self.options.minimum_local_sources:
-                            break
-                        if has_sufficient_local_sources(
-                            combined,
-                            query=normalized_query,
-                            minimum_sources=self.options.minimum_local_sources,
-                            similarity_threshold=self.options.similarity_threshold,
-                            minimum_content_chars=self.options.minimum_content_chars,
-                            topic_overlap_threshold=self.options.topic_overlap_threshold,
-                        ):
+                        combined.extend(source for source in saved)
+                        if len(rank_sources(combined)) >= self.options.answer_source_limit:
                             break
                     except SearchProviderError as exc:
                         failures.append(exc)
 
-                if failures and not combined:
+                if failures:
                     error = failures[-1]
                     warnings.append(
                         f"Web search unavailable ({error.code}); local sources were used."
@@ -228,7 +213,7 @@ class InformationFinderService:
                 answer="Chưa có nguồn phù hợp để trả lời câu hỏi này.",
                 warnings=[
                     *warnings,
-                    "No source met the semantic similarity threshold.",
+                    "No source was available after local retrieval and optional web search.",
                 ],
             )
         try:

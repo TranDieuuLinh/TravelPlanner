@@ -9,7 +9,7 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_INDEX_URL
 
 RUN python -m pip install --no-cache-dir \
     --index-url "${PIP_INDEX_URL}" \

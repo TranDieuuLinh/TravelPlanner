@@ -20,7 +20,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/observability",
     label: "Observability",
     icon: "⌁",
-    description: "Langfuse traces, sessions, playground"
+    description: "Local request traces, steps và lỗi"
   },
   {
     href: "/knowledge-graph",

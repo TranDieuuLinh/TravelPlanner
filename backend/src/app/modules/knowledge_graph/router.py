@@ -19,6 +19,7 @@ from app.modules.knowledge_graph.contract import (
     EntityDetail,
     EntityFilterOptions,
     EntityListPage,
+    EntityPreview,
     EntitySummary,
     EntityUpdate,
     KGSearchStats,
@@ -31,10 +32,12 @@ from app.modules.knowledge_graph.contract import (
 )
 from app.modules.knowledge_graph.ontology import ontology_payload
 from app.modules.knowledge_graph.security import require_admin, require_admin_write
+from app.modules.auth.public import AuthUser, require_current_user
 from app.modules.knowledge_graph.service import KnowledgeGraphError, KnowledgeGraphService
 
 
 router = APIRouter(prefix="/admin/knowledge-graph", tags=["admin-knowledge-graph"])
+public_router = APIRouter(prefix="/v1/knowledge-graph", tags=["knowledge-graph"])
 
 
 def get_service(request: Request) -> KnowledgeGraphService:
@@ -50,6 +53,18 @@ def get_service(request: Request) -> KnowledgeGraphService:
 
 def handle(error: KnowledgeGraphError) -> None:
     raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": error.message}) from None
+
+
+@public_router.get("/entity-preview", response_model=EntityPreview)
+async def entity_preview(
+    name: str = Query(..., min_length=1, max_length=200),
+    _: AuthUser = Depends(require_current_user),
+    service: KnowledgeGraphService = Depends(get_service),
+) -> EntityPreview:
+    try:
+        return EntityPreview.model_validate(await service.entity_preview(name))
+    except KnowledgeGraphError as error:
+        handle(error)
 
 
 @router.get("/stats", response_model=KGStats)

@@ -43,8 +43,13 @@ class RootNodes:
         self.plan_editor = build_plan_editor_graph()
 
     async def run_supervisor(self, state: RootState) -> dict:
+        previous_response = state.get("response")
+        previous_context = state.get("conversation_context", [])
+        context_items = [*previous_context]
+        if previous_response and previous_response not in context_items:
+            context_items.append(f"[Trợ lý] {previous_response}")
         conversation_context = [
-            *state.get("conversation_context", []),
+            *context_items,
             *([state["message"]] if state.get("message") else []),
         ][-6:]
         result = await self.supervisor.ainvoke(

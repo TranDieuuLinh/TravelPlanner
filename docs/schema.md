@@ -22,6 +22,11 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
 | `GET /me` | Session cookie | `AuthUser` |
 | `POST /auth/logout` | Session + CSRF cookie | `204 No Content` |
+| `GET /admin/observability/status` | Admin session | Local observability counters and retention limit |
+| `GET /admin/observability/traces` | Admin session + `page`, `limit` | Recent agent requests |
+| `GET /admin/observability/observations` | Admin session + `page`, `limit` | Recent chain, LLM and tool steps with bounded redacted tool input/output previews |
+| `GET /admin/observability/sessions` | Admin session + `page`, `limit` | Requests grouped by graph thread |
+| `GET /admin/observability/traces/{traceId}` | Admin session | One request with its captured steps |
 | `GET /admin/knowledge-graph/stats` | Admin session | Knowledge Graph counts |
 | `GET /admin/knowledge-graph/ontology` | Admin session | Node types, property keys, and relationship types from `trung-plans/plans-for-new-version/knowledge/schema.yml` |
 | `GET /admin/knowledge-graph/entities` | Admin session + filters | Paginated entities; `search`, `excludeNames`, and `missingProperties` support comma-separated keywords |
@@ -157,7 +162,7 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | Tool / adapter | Module | Input | Output |
 |---|---|---|---|
 | `TavilySearchProvider` | `information_finder` | query chuẩn hóa | kết quả tìm kiếm nội bộ có provenance |
-| `LlmSearchQueryPlanner` | `information_finder` | câu hỏi người dùng khi cache không đủ | tối đa 3 truy vấn Tavily có cấu trúc; lỗi thì dùng truy vấn deterministic |
+| `LlmSearchQueryPlanner` | `information_finder` | câu hỏi và top 5 nguồn local có điểm semantic cao nhất | quyết định `shouldSearch` và tối đa 3 truy vấn Tavily; chỉ search khi nguồn local thiếu dữ kiện; lỗi thì fallback có điều kiện |
 | `PostgresSourceRepository` | `information_finder` | query/vector hoặc prepared sources | nguồn cache hybrid |
 | `GeminiUrlSourceChunker` | `information_finder` | URL public từ Tavily | semantic chunks có fallback deterministic |
 | `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |

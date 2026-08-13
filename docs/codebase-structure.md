@@ -183,16 +183,19 @@ API key, development/test dùng fallback trung thực trong process.
 Answer generator của Information Finder có thể nhận `LlmClient` dùng chung qua
 dependency injection. Prompt, structured claim contract, source budget,
 citation validation và fallback policy vẫn thuộc module Information Finder;
-shared client chỉ sở hữu transport Gemini và key rotation. Khi cache không đủ,
-`LlmSearchQueryPlanner` dùng client này để tạo tối đa ba truy vấn Tavily; lỗi
-planner quay về bộ truy vấn deterministic của service.
+shared client chỉ sở hữu transport Gemini và key rotation. Service lấy năm nguồn
+local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`; LLM chỉ
+đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
+dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
+không có nguồn local hoặc cần refresh.
 
 Supervisor là intent classifier có provider cấu hình được. Khi provider là
 `gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;
 route `finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting, câu hỏi về
 trợ lý hoặc yêu cầu ngoài phạm vi. Rule deterministic chỉ là provider offline
-hoặc runtime fallback. `SUPERVISOR_CLASSIFIER_PROVIDER=rules` chạy offline; cấu
-hình `gemini` yêu cầu `GEMINI_API_KEY`. Routing baseline chưa
+hoặc runtime fallback. Supervisor hiện được cấu hình
+`SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; provider này yêu cầu `GEMINI_API_KEY`.
+Routing baseline chưa
 được production-evaluated. Root graph truyền tối đa sáu user message gần nhất
 từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải durable memory.
 

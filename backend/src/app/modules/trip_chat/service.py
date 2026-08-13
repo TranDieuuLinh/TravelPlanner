@@ -22,10 +22,19 @@ class TripChatService:
     async def get(self, user_id: int, chat_id: str) -> TripChat | None:
         return await self.repository.get_chat(user_id, chat_id)
 
-    async def send(self, user_id: int, chat_id: str, content: str) -> TripChat | None:
+    async def send(
+        self,
+        user_id: int,
+        chat_id: str,
+        content: str,
+        graph_config: dict[str, Any] | None = None,
+    ) -> TripChat | None:
         chat = await self.repository.get_chat(user_id, chat_id)
         if not chat:
             return None
+        config = {"configurable": {"thread_id": chat.thread_id}}
+        if graph_config:
+            config.update(graph_config)
         result = await self.graph.ainvoke(
             {
                 "request_id": chat_id,
@@ -34,7 +43,7 @@ class TripChatService:
                 "existing_itinerary": chat.current_itinerary,
                 "edit_operation": None,
             },
-            config={"configurable": {"thread_id": chat.thread_id}},
+            config=config,
         )
         information_output = result.get("information_output")
         decision = result.get("decision")

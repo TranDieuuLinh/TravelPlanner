@@ -154,18 +154,16 @@ def create_supervisor_service(
     settings: Settings,
     llm_client: LlmClient | None = None,
 ) -> SupervisorService:
-    classifier = None
-    if settings.supervisor_classifier_provider == "gemini":
-        classifier = GeminiIntentClassifier(
-            llm_client
-            or GeminiLlmClient(
-                settings.gemini_api_key,
-                model=settings.gemini_model,
-                timeout_seconds=settings.gemini_timeout_seconds,
-                key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
-            ),
-            max_output_tokens=settings.supervisor_llm_max_output_tokens,
-        )
+    classifier = GeminiIntentClassifier(
+        llm_client
+        or GeminiLlmClient(
+            settings.gemini_api_key,
+            model=settings.gemini_model,
+            timeout_seconds=settings.gemini_timeout_seconds,
+            key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+        ),
+        max_output_tokens=settings.supervisor_llm_max_output_tokens,
+    )
     return SupervisorService(
         classifier,
         fallback_enabled=settings.supervisor_llm_fallback_enabled,

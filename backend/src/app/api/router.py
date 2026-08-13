@@ -1,4 +1,5 @@
 from typing import Annotated
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -6,7 +7,10 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from app.api.dependencies import get_explorer_graph, get_graph
 from app.api.schemas import InvokeRequest, InvokeResponse
 from app.modules.auth.public import router as auth_router
-from app.modules.knowledge_graph.public import router as knowledge_graph_router
+from app.modules.knowledge_graph.public import (
+    public_router as knowledge_graph_public_router,
+    router as knowledge_graph_router,
+)
 from app.modules.observability.public import router as observability_router
 from app.modules.observability.service import ObservabilityService
 from app.modules.explorer.public import ExplorerInput, ExplorerOutput
@@ -17,6 +21,7 @@ from app.modules.trip_chat.public import router as trip_chat_router
 router = APIRouter()
 router.include_router(auth_router)
 router.include_router(knowledge_graph_router)
+router.include_router(knowledge_graph_public_router)
 router.include_router(observability_router)
 router.include_router(trip_chat_router)
 
@@ -74,6 +79,7 @@ async def invoke_agent(
     graph=Depends(get_graph),
 ) -> InvokeResponse:
     request_id = str(uuid4())
+    started_at = perf_counter()
     graph_input = {
         "request_id": request_id,
         "message": payload.message or "",
@@ -86,7 +92,11 @@ async def invoke_agent(
     observability: ObservabilityService = request.app.state.observability_service
     trace_callback = observability.start_trace(
         request_id=request_id,
-        metadata={"requestId": request_id, "threadId": payload.thread_id},
+        metadata={
+            "requestId": request_id,
+            "threadId": payload.thread_id,
+            "input": graph_input,
+        },
     )
     graph_config = {"configurable": {"thread_id": payload.thread_id}}
     if trace_callback is not None:
@@ -97,18 +107,23 @@ async def invoke_agent(
             config=graph_config,
         )
     except SupervisorClassificationError as exc:
-        if trace_callback is None:
-            await observability.record_agent_invoke(
-                request_id=request_id,
-                route=None,
-                success=False,
-                message_length=len(payload.message or ""),
-                warning_count=0,
-                source_count=0,
-                has_itinerary=payload.existing_itinerary is not None,
-                error_code="SUPERVISOR_UNAVAILABLE",
-            )
+        await observability.record_agent_invoke(
+            request_id=request_id, route=None, success=False,
+            message_length=len(payload.message or ""), warning_count=0,
+            source_count=0, has_itinerary=payload.existing_itinerary is not None,
+            error_code="SUPERVISOR_UNAVAILABLE",
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
         raise HTTPException(status_code=503, detail=str(exc)) from None
+    except Exception as exc:
+        await observability.record_agent_invoke(
+            request_id=request_id, route=None, success=False,
+            message_length=len(payload.message or ""), warning_count=0,
+            source_count=0, has_itinerary=payload.existing_itinerary is not None,
+            error_code=type(exc).__name__,
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        raise
     finally:
         if trace_callback is not None:
             await trace_callback.flush()
@@ -122,14 +137,18 @@ async def invoke_agent(
         warnings=result.get("warnings", []),
         sources=information_output.sources if information_output else [],
     )
-    if trace_callback is None:
-        await observability.record_agent_invoke(
-            request_id=request_id,
-            route=response.route,
-            success=True,
-            message_length=len(payload.message or ""),
-            warning_count=len(response.warnings),
-            source_count=len(response.sources),
-            has_itinerary=response.itinerary is not None,
-        )
+    await observability.record_agent_invoke(
+        request_id=request_id, route=response.route, success=True,
+        message_length=len(payload.message or ""),
+        warning_count=len(response.warnings), source_count=len(response.sources),
+        has_itinerary=response.itinerary is not None,
+        output={
+            "response": response.response,
+            "route": response.route,
+            "itinerary": response.itinerary,
+            "warnings": response.warnings,
+            "sources": response.sources,
+        },
+        duration_ms=round((perf_counter() - started_at) * 1000, 2),
+    )
     return response

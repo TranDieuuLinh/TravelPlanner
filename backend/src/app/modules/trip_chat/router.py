@@ -1,3 +1,6 @@
+from time import perf_counter
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.api.dependencies import get_graph
@@ -60,13 +63,69 @@ async def get_chat(
 async def send_message(
     chat_id: str,
     payload: SendTripChatMessageInput,
+    request: Request,
     user: AuthUser = Depends(require_current_user),
     service: TripChatService = Depends(_service),
 ):
-    chat = await service.send(user.id, chat_id, payload.content)
-    if not chat:
-        _not_found()
-    return TripChatMessageResponse(chat=chat, assistant_message=chat.messages[-1])
+    started_at = perf_counter()
+    request_id = str(uuid4())
+    observability = request.app.state.observability_service
+    trace_callback = observability.start_trace(
+        request_id=request_id,
+        metadata={
+            "requestId": request_id,
+            "threadId": chat_id,
+            "messageLength": len(payload.content),
+            "input": {"message": payload.content, "chatId": chat_id},
+        },
+    )
+    try:
+        chat = await service.send(
+            user.id,
+            chat_id,
+            payload.content,
+            graph_config={"callbacks": [trace_callback]},
+        )
+        if not chat:
+            _not_found()
+        assistant_message = chat.messages[-1]
+        await observability.record_agent_invoke(
+            request_id=request_id,
+            route=assistant_message.route,
+            success=True,
+            message_length=len(payload.content),
+            warning_count=len(assistant_message.warnings),
+            source_count=len(assistant_message.sources),
+            has_itinerary=chat.current_itinerary is not None,
+            output={
+                "content": assistant_message.content,
+                "route": assistant_message.route,
+                "clarificationQuestion": assistant_message.clarification_question,
+                "warnings": assistant_message.warnings,
+                "sources": assistant_message.sources,
+                "itinerary": chat.current_itinerary,
+            },
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        return TripChatMessageResponse(chat=chat, assistant_message=assistant_message)
+    except HTTPException:
+        await observability.record_agent_invoke(
+            request_id=request_id, route=None, success=False,
+            message_length=len(payload.content), warning_count=0,
+            source_count=0, has_itinerary=False, error_code="TRIP_CHAT_NOT_FOUND",
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        raise
+    except Exception as exc:
+        await observability.record_agent_invoke(
+            request_id=request_id, route=None, success=False,
+            message_length=len(payload.content), warning_count=0,
+            source_count=0, has_itinerary=False, error_code=type(exc).__name__,
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        raise
+    finally:
+        await trace_callback.flush()
 
 
 @router.delete("/{chat_id}", status_code=204)

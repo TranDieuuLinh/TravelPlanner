@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     gemini_image_ocr_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 30.0
     gemini_key_cooldown_seconds: float = 60.0
-    supervisor_classifier_provider: Literal["rules", "gemini"] = "rules"
+    supervisor_classifier_provider: Literal["gemini"] = "gemini"
     supervisor_llm_max_output_tokens: int = 256
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65

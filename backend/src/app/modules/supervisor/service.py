@@ -4,11 +4,8 @@ from app.modules.supervisor.contract import (
     SupervisorInput,
 )
 from app.modules.supervisor.errors import SupervisorClassificationError
+from app.modules.supervisor.fallback import build_fallback_decision
 from app.modules.supervisor.ports import IntentClassifier
-from app.modules.supervisor.rules import (
-    deterministic_decision,
-    fallback_decision,
-)
 
 
 class SupervisorService:
@@ -26,13 +23,10 @@ class SupervisorService:
         self._confidence_threshold = confidence_threshold
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
-        # Các rule biên an toàn của Supervisor phải thắng dự đoán LLM:
-        # đặc biệt là câu hỏi kiến thức và yêu cầu chỉnh sửa thiếu trạng thái.
-        deterministic = deterministic_decision(payload)
-        if deterministic is not None:
-            return deterministic
         if self._classifier is None:
-            return fallback_decision(payload)
+            return build_fallback_decision(
+                warning="Supervisor LLM chưa được cấu hình."
+            )
         try:
             result = await self._classifier.classify(payload)
             return self._accept_classifier_result(payload, result)
@@ -41,9 +35,8 @@ class SupervisorService:
                 raise SupervisorClassificationError(
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
-            return fallback_decision(
-                payload,
-                warning="LLM intent classification failed; deterministic fallback used.",
+            return build_fallback_decision(
+                warning="Không thể gọi Supervisor LLM; đã dùng câu hỏi làm rõ.",
             )
 
     def _accept_classifier_result(
@@ -54,8 +47,7 @@ class SupervisorService:
                 raise SupervisorClassificationError(
                     "Supervisor intent confidence is below the configured threshold."
                 )
-            return fallback_decision(
-                payload,
+            return build_fallback_decision(
                 warning="LLM intent confidence was below the configured threshold.",
             )
         if result.route == "plan_editor" and not (
@@ -65,8 +57,7 @@ class SupervisorService:
                 raise SupervisorClassificationError(
                     "Supervisor returned plan_editor without required structured state."
                 )
-            return fallback_decision(
-                payload,
+            return build_fallback_decision(
                 warning="LLM plan_editor result lacked required structured state.",
             )
         if result.route == "finish" and not result.response:

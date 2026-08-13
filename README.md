@@ -37,12 +37,12 @@ travelplanner/
 ├── admin-frontend/    # Admin/control Next.js application
 │   ├── app/
 │   │   ├── (dashboard)/
-│   │   │   ├── observability/        # Langfuse embed (traces, sessions, playground, datasets, evaluations)
+│   │   │   ├── observability/        # Local request/step diagnostics
 │   │   │   └── knowledge-graph/      # Self-built catalog (entity, alias, relationship)
 │   │   ├── features/
-│   │   │   ├── observability/        # Langfuse iframe module
+│   │   │   ├── observability/        # Lightweight observability UI
 │   │   │   └── knowledge-graph/      # Knowledge graph feature module
-│   │   ├── components/               # Cross-feature UI primitives + Langfuse embed shell
+│   │   ├── components/               # Cross-feature UI primitives + observability shell
 │   │   ├── api/admin-session/        # Session probe used by the dashboard layout
 │   │   ├── login/                    # TravelPlanner admin login
 │   │   ├── layout.tsx                # Root metadata + globals
@@ -79,17 +79,20 @@ With Docker Compose:
 
 ```bash
 cp backend/.env.example backend/.env
-docker compose up --build
+docker compose --env-file backend/.env up --build
 ```
 
-The Compose backend mounts `backend/src` directly into the container and runs
-Uvicorn with reload enabled for development. After changing Python source,
-the server reloads automatically; rebuild only when changing the Dockerfile,
-Python dependencies, base image, or system packages.
+The Compose backend mounts the entire `backend` working tree directly into the
+container and runs Uvicorn with reload enabled for development. After changing
+backend source or other files under `backend/`, the server sees the changes
+without rebuilding; rebuild when changing the Dockerfile, Python dependencies,
+base image, or system packages. This full-tree mount is for development only
+and should be replaced by an image-only deployment setup for production.
 
-Docker Compose loads backend environment variables from `backend/.env`; the
-backend uses the cloud PostgreSQL connection in `DATABASE_URL` without a local
-database service or URL override.
+Docker Compose loads all service environment variables from `backend/.env`.
+The `--env-file backend/.env` flag also makes Compose port interpolation use the
+same file. There are no service-level environment overrides; change values in
+that file and restart the affected service.
 
 Run the backend directly:
 
@@ -128,15 +131,12 @@ npm run build
 
 ## Admin frontend
 
-The admin frontend now embeds Langfuse (self-hosted at `http://localhost:3005`)
-for traces, sessions, playground, datasets and evaluations, and keeps a
-self-built Knowledge Graph for the entity/alias/relationship catalog.
-
-TravelPlanner admin session is still required to enter `/login`; Langfuse uses
-its own login screen inside the iframe (separate login). The admin can open
-any Langfuse view in a new browser tab via the `↗ Mở tab mới` button.
-
-To target a different Langfuse instance, set `NEXT_PUBLIC_LANGFUSE_URL`.
+The admin frontend provides a lightweight `/observability` console for local
+request traces, LangGraph steps, tool input/output previews, durations and
+errors. Records are kept in a bounded local JSON snapshot at
+`backend/logs/observability/` (up to 500 requests); this is development/admin
+diagnostics, not durable production monitoring. Tool previews are truncated and redact
+common secret fields such as API keys, tokens and passwords.
 
 ## Verification
 
