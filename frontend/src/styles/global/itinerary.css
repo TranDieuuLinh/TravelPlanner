@@ -5851,20 +5851,15 @@
 
 /* Shared Planner chat surface: one frame for loading and completed states. */
 .plannerChatSurface {
-  --planner-chat-width: min(410px, calc(100vw - 40px));
-  --planner-chat-height: min(610px, calc(100dvh - 104px));
-  --planner-chat-min-width: 340px;
-  --planner-chat-min-height: 360px;
   --planner-chat-message-padding: 10px 20px 14px;
   --planner-chat-avatar-size: 44px;
   --planner-chat-bubble-size: .73rem;
 }
 
 @media (min-width: 901px) {
-  /* The shared surface follows the planner grid; it must not become the
-     separate floating/bubble chat when the planner state changes. */
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface,
-  .plannerLayout:not(.is-new-chat) .plannerChatSurface {
+  /* Initial planning uses the entry grid. Completed plans keep the existing
+     workspace placement, while both states share the chat internals below. */
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
     position: relative !important;
     inset: auto !important;
     z-index: auto;
@@ -5937,8 +5932,7 @@
 }
 
 @media (max-width: 900px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface,
-  .plannerLayout:not(.is-new-chat) .plannerChatSurface {
+  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
     position: relative !important;
     inset: auto !important;
     z-index: auto;
