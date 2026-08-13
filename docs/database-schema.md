@@ -317,6 +317,9 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 ### `knowledge_relationships`
 
+Cập nhật lần cuối: 2026-08-13. Ontology runtime dùng `Special_Near`; `Must_Visit`
+đã được đổi tên và các cạnh `Near` đã bị loại bỏ.
+
 Ngày sửa đổi cuối cùng: 2026-08-11.
 
 | Cột | Kiểu | Nullable | Giải thích |

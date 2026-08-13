@@ -30,6 +30,10 @@ class SearchProvider(Protocol):
     async def search(self, query: str) -> SearchResponse: ...
 
 
+class SearchQueryPlanner(Protocol):
+    async def generate(self, query: str) -> list[str]: ...
+
+
 class SourceRepository(Protocol):
     async def retrieve(
         self,

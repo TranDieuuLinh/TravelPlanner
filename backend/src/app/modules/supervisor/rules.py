@@ -155,7 +155,10 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
             route="finish",
             confidence=0.99,
             reason="The message is a greeting or thanks.",
-            response="Xin chào! Tôi có thể điều hướng yêu cầu lập kế hoạch và tìm thông tin du lịch cho bạn.",
+            response=(
+                "Penguin xin chào! Bạn muốn Penguin giúp tìm thông tin về một "
+                "địa điểm, lên kế hoạch chuyến đi hay chỉnh sửa lịch trình?"
+            ),
         )
     if _contains_any(
         message,
@@ -173,7 +176,10 @@ def greeting_or_scope_rule(payload: SupervisorInput) -> SupervisorDecision | Non
             route="finish",
             confidence=0.97,
             reason="The request is outside travel-planning scope.",
-            response="Tôi có thể giúp lập kế hoạch chuyến đi và tìm thông tin về điểm đến.",
+            response=(
+                "Penguin có thể giúp bạn lên kế hoạch chuyến đi, tìm thông tin "
+                "địa điểm và chỉnh sửa lịch trình."
+            ),
         )
     return None
 
@@ -216,7 +222,7 @@ def fallback_decision(
         confidence=0.35,
         reason="Y dinh chua ro; Supervisor can nguoi dung lam ro yeu cau.",
         response=(
-            "Tôi chưa chắc đã hiểu đúng yêu cầu. Bạn muốn lập kế hoạch, "
+            "Penguin chưa chắc đã hiểu đúng yêu cầu. Bạn muốn lập kế hoạch, "
             "tìm thông tin du lịch hay chỉnh sửa lịch trình?"
         ),
         clarification_question=(

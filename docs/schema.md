@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-12.
+Cập nhật lần cuối: 2026-08-13.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -149,6 +149,7 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | Tool / adapter | Module | Input | Output |
 |---|---|---|---|
 | `TavilySearchProvider` | `information_finder` | query chuẩn hóa | kết quả tìm kiếm nội bộ có provenance |
+| `LlmSearchQueryPlanner` | `information_finder` | câu hỏi người dùng khi cache không đủ | tối đa 3 truy vấn Tavily có cấu trúc; lỗi thì dùng truy vấn deterministic |
 | `PostgresSourceRepository` | `information_finder` | query/vector hoặc prepared sources | nguồn cache hybrid |
 | `GeminiUrlSourceChunker` | `information_finder` | URL public từ Tavily | semantic chunks có fallback deterministic |
 | `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |
@@ -183,6 +184,7 @@ chưa được triển khai; PlaceChecker hiện vẫn dùng `DevelopmentCatalog
 Các provider interface bên ngoài hiện có:
 
 - `SearchProvider`
+- `SearchQueryPlanner`
 - `SourceRepository`
 - `EmbeddingProvider`
 - `AnswerGenerator`

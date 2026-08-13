@@ -91,7 +91,7 @@ def test_information_requests_route_to_information_finder(message):
 def test_greeting_has_meaningful_finish_response():
     decision = decide(SupervisorService(), "Xin chào")
     assert decision.route == "finish"
-    assert decision.response
+    assert decision.response.startswith("Penguin xin chào!")
 
 
 @pytest.mark.parametrize("message", ["Bạn khỏe không?", "Bạn là ai?", "Cảm ơn bạn"])
@@ -111,7 +111,7 @@ def test_knowledge_questions_route_to_information_finder(message):
 def test_out_of_scope_request_finishes_honestly():
     decision = decide(SupervisorService(), "Write a poem about databases")
     assert decision.route == "finish"
-    assert "điểm đến" in decision.response.casefold()
+    assert "Penguin".casefold() in decision.response.casefold()
 
 
 def test_narrow_rules_avoid_common_substring_false_positives():

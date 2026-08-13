@@ -35,7 +35,7 @@ WITH scoped AS (
     WHERE $5::text IS NOT NULL
       AND edge.from_entity_id = $5::text
       AND edge.relationship_type IN (
-          'Near', 'Must_Visit', 'Special_Experience', 'Offer_Item', 'Has_Style'
+          'Special_Near', 'Special_Experience', 'Offer_Item', 'Has_Style'
       )
     UNION ALL
     SELECT edge.from_entity_id, 0.0
@@ -44,7 +44,7 @@ WITH scoped AS (
     WHERE $5::text IS NOT NULL
       AND edge.to_entity_id = $5::text
       AND edge.relationship_type IN (
-          'Near', 'Must_Visit', 'Special_Experience', 'Offer_Item', 'Has_Style'
+          'Special_Near', 'Special_Experience', 'Offer_Item', 'Has_Style'
       )
 ), candidate_ids AS (
     SELECT id, max(preliminary_score) AS preliminary_score
@@ -60,8 +60,7 @@ SELECT e.id, e.canonical_name, e.entity_type, e.status,
        props.rating, props.review_count, props.updated_at,
        tags.values AS tags,
        CASE relation.kind
-           WHEN 'Must_Visit' THEN 0.95
-           WHEN 'Near' THEN 0.85
+           WHEN 'Special_Near' THEN 0.95
            WHEN 'Special_Experience' THEN 0.75
            WHEN 'Offer_Item' THEN 0.72
            WHEN 'Has_Style' THEN 0.55
@@ -116,11 +115,11 @@ LEFT JOIN LATERAL (
           OR (edge.from_entity_id = e.id AND edge.to_entity_id = $5::text)
       )
       AND edge.relationship_type IN (
-          'Must_Visit', 'Near', 'Special_Experience', 'Offer_Item', 'Has_Style'
+          'Special_Near', 'Special_Experience', 'Offer_Item', 'Has_Style'
       )
     ORDER BY CASE edge.relationship_type
-        WHEN 'Must_Visit' THEN 1 WHEN 'Near' THEN 2
-        WHEN 'Special_Experience' THEN 3 WHEN 'Offer_Item' THEN 4 ELSE 5 END
+        WHEN 'Special_Near' THEN 1
+        WHEN 'Special_Experience' THEN 2 WHEN 'Offer_Item' THEN 3 ELSE 4 END
     LIMIT 1
 ) relation ON true
 ORDER BY relationship_score DESC, match_score DESC,

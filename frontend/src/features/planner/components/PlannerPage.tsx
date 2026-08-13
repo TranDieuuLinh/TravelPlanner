@@ -366,7 +366,8 @@ function travelerAnswer(counts: TravelerCounts): string {
     .join(", ");
 }
 
-const NEW_CHAT_GREETING = "Dán link hoặc mô tả chuyến đi để mình plan du lịch.";
+const NEW_CHAT_GREETING =
+  "Penguin xin chào! Bạn muốn đi đâu, tìm hiểu thêm về một địa điểm hay bắt đầu lên lịch trình? Bạn có thể kể ý tưởng chuyến đi hoặc gửi một đường link cho Penguin nhé.";
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
 const URL_PATTERN_GLOBAL = /https?:\/\/[^\s<>"']+/gi;

@@ -6,6 +6,7 @@ from app.modules.information_finder.adapters.development import (
     HashingEmbeddingProvider,
     InMemorySourceRepository,
 )
+from app.modules.information_finder.errors import SearchQueryPlanningError
 from app.modules.information_finder.contract import (
     RetrievedSource,
     SearchResponse,
@@ -31,9 +32,11 @@ class FakeSearch:
         self.results = results or []
         self.error = error
         self.calls = 0
+        self.queries = []
 
     async def search(self, query):
         self.calls += 1
+        self.queries.append(query)
         if self.error:
             raise self.error("failure")
         return SearchResponse(results=self.results, provider_request_id="req-1")
@@ -56,6 +59,19 @@ class QuotaEmbedding:
 
     async def embed_documents(self, texts):
         raise AssertionError("document embeddings should be skipped")
+
+
+class FakeSearchQueryPlanner:
+    def __init__(self, queries=None, error=None):
+        self.queries_to_return = queries or ["Hà Nội du lịch tổng quan"]
+        self.error = error
+        self.inputs = []
+
+    async def generate(self, query):
+        self.inputs.append(query)
+        if self.error:
+            raise self.error("planning failed")
+        return self.queries_to_return
 
 
 class StaticRepository:
@@ -111,13 +127,14 @@ def web_result(
     )
 
 
-def service(repository, search=None, *, minimum=1, chunker=None):
+def service(repository, search=None, *, minimum=1, chunker=None, planner=None):
     return InformationFinderService(
         repository=repository,
         embeddings=HashingEmbeddingProvider(),
         answers=ExtractiveAnswerGenerator(),
         chunker=chunker,
         search_provider=search,
+        search_query_planner=planner,
         options=InformationFinderOptions(
             minimum_local_sources=minimum,
             similarity_threshold=0.5,
@@ -162,6 +179,40 @@ def test_embedding_quota_falls_back_to_tavily_without_failing():
 
     assert len(output.sources) == 1
     assert output.warnings == ["embedding_fallback:embedding_provider_quota_exceeded"]
+
+
+def test_empty_local_uses_llm_queries_before_tavily():
+    repository = StaticRepository()
+    search = FakeSearch([web_result()])
+    planner = FakeSearchQueryPlanner(
+        ["Hà Nội du lịch lịch sử", "Hà Nội điểm tham quan nổi bật"]
+    )
+
+    asyncio.run(
+        service(
+            repository,
+            search,
+            planner=planner,
+        ).find("Cho tôi biết về Hà Nộil")
+    )
+
+    assert planner.inputs == ["Cho tôi biết về Hà Nộil"]
+    assert search.queries[0] == "Hà Nội du lịch lịch sử"
+    assert len(search.queries) <= 2
+
+
+def test_search_query_planner_failure_uses_deterministic_queries():
+    repository = StaticRepository()
+    search = FakeSearch([web_result()])
+    planner = FakeSearchQueryPlanner(error=SearchQueryPlanningError)
+
+    output = asyncio.run(
+        service(repository, search, planner=planner).find("museum")
+    )
+
+    assert search.queries[0] == "museum"
+    assert len(search.queries) == 1
+    assert "search_query_planner_fallback" in output.warnings
 
 
 def test_topic_mismatch_forces_tavily_even_with_high_embedding_score():

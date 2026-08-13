@@ -15,6 +15,7 @@ from app.modules.information_finder.answering import validate_and_render_answer
 from app.modules.information_finder.errors import (
     AnswerProviderError,
     EmbeddingProviderError,
+    SearchQueryPlanningError,
     SourceChunkingError,
 )
 from app.modules.information_finder.freshness import FreshnessPolicy
@@ -23,6 +24,7 @@ from app.modules.information_finder.ports import (
     EmbeddingProvider,
     SearchProvider,
     SearchProviderError,
+    SearchQueryPlanner,
     SourceChunker,
     SourceRepository,
 )
@@ -67,6 +69,7 @@ class InformationFinderService:
         fallback_answers: AnswerGenerator | None = None,
         chunker: SourceChunker | None = None,
         search_provider: SearchProvider | None = None,
+        search_query_planner: SearchQueryPlanner | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
     ) -> None:
@@ -76,6 +79,7 @@ class InformationFinderService:
         self.fallback_answers = fallback_answers
         self.chunker = chunker
         self.search_provider = search_provider
+        self.search_query_planner = search_query_planner
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
 
@@ -125,9 +129,20 @@ class InformationFinderService:
                     "Web search is not configured; the answer may use incomplete local sources."
                 )
             else:
+                search_queries = self._search_queries(normalized_query)
+                if self.search_query_planner is not None:
+                    try:
+                        search_queries = await self.search_query_planner.generate(
+                            normalized_query
+                        )
+                    except SearchQueryPlanningError:
+                        warnings.append("search_query_planner_fallback")
                 failures: list[SearchProviderError] = []
+                max_search_attempts = max(
+                    1, min(self.options.max_tavily_attempts, 3)
+                )
                 for attempt, search_query in enumerate(
-                    self._search_queries(normalized_query), start=1
+                    search_queries[:max_search_attempts], start=1
                 ):
                     try:
                         response = await self.search_provider.search(search_query)

@@ -16,6 +16,9 @@ from app.modules.information_finder.adapters.gemini_url_chunker import (
 from app.modules.information_finder.adapters.llm_answer_generator import (
     StructuredLlmAnswerGenerator,
 )
+from app.modules.information_finder.adapters.llm_search_query_planner import (
+    LlmSearchQueryPlanner,
+)
 from app.modules.information_finder.adapters.postgres_source_repository import (
     PostgresSourceRepository,
 )
@@ -88,6 +91,11 @@ def get_information_finder_service() -> InformationFinderService:
             max_results=settings.tavily_max_results,
             timeout_seconds=settings.tavily_timeout_seconds,
         )
+    search_query_planner = (
+        LlmSearchQueryPlanner(get_llm_client())
+        if settings.gemini_api_key and search_provider is not None
+        else None
+    )
     blocked_domains = tuple(
         domain.strip().casefold()
         for domain in settings.information_finder_blocked_domains.split(",")
@@ -120,6 +128,7 @@ def get_information_finder_service() -> InformationFinderService:
         fallback_answers=fallback_answers,
         chunker=chunker,
         search_provider=search_provider,
+        search_query_planner=search_query_planner,
         options=InformationFinderOptions(
             minimum_local_sources=settings.information_finder_min_local_sources,
             similarity_threshold=settings.information_finder_similarity_threshold,

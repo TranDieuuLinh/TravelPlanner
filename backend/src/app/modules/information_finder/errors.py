@@ -44,3 +44,7 @@ class EmbeddingProviderInvalidOutput(EmbeddingProviderError):
 
 class SourceChunkingError(RuntimeError):
     code = "source_chunking_error"
+
+
+class SearchQueryPlanningError(RuntimeError):
+    code = "search_query_planning_error"

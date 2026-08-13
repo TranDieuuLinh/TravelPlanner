@@ -29,6 +29,12 @@ class InformationFinderOutput(PublicModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SearchQueryPlan(BaseModel):
+    """Internal structured output used to formulate web-search queries."""
+
+    queries: list[str] = Field(min_length=1, max_length=3)
+
+
 class AnswerClaim(BaseModel):
     text: str
     source_ids: list[str] = Field(min_length=1)

@@ -173,8 +173,9 @@ without a database. Sessions are opaque cookies; the raw token is never stored
 in the database.
 
 Information Finder hiện có service cache-first, các port `SearchProvider`,
-`SourceRepository`, `EmbeddingProvider`, `SourceChunker`, `AnswerGenerator`,
-adapter Tavily, Gemini URL Context chunker, Gemini embeddings và PostgreSQL/pgvector.
+`SearchQueryPlanner`, `SourceRepository`, `EmbeddingProvider`, `SourceChunker`,
+`AnswerGenerator`, adapter Tavily, LLM lập truy vấn tìm kiếm, Gemini URL Context
+chunker, Gemini embeddings và PostgreSQL/pgvector.
 Các bảng do module sở hữu có tiền tố
 `information_finder_`; module không dùng bảng legacy. Khi thiếu database hoặc
 API key, development/test dùng fallback trung thực trong process.
@@ -182,7 +183,9 @@ API key, development/test dùng fallback trung thực trong process.
 Answer generator của Information Finder có thể nhận `LlmClient` dùng chung qua
 dependency injection. Prompt, structured claim contract, source budget,
 citation validation và fallback policy vẫn thuộc module Information Finder;
-shared client chỉ sở hữu transport Gemini và key rotation.
+shared client chỉ sở hữu transport Gemini và key rotation. Khi cache không đủ,
+`LlmSearchQueryPlanner` dùng client này để tạo tối đa ba truy vấn Tavily; lỗi
+planner quay về bộ truy vấn deterministic của service.
 
 Supervisor là intent classifier có provider cấu hình được. Khi provider là
 `gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;
