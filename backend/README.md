@@ -151,7 +151,8 @@ ontology endpoints consumed by `admin-frontend`.
 Apply the migration manually for an existing PostgreSQL volume; Docker only
 applies init scripts when the volume is created.
 
-With Docker, a fresh `travelplanner_postgres_data_v2` volume runs the migration
+With Docker, `DATABASE_URL` is read from `backend/.env` when provided. A fresh
+`travelplanner_postgres_data_v2` volume runs the migration
 automatically because `docker-compose.yml` mounts it into PostgreSQL initdb.
 For an existing volume, run the idempotent migration from the mounted file:
 
