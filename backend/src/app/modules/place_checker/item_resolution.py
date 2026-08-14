@@ -16,11 +16,15 @@ from app.modules.place_checker.item_contract import (
     ResolvedInputItem,
     SpecialExperience,
 )
+from app.modules.place_checker.item_option_enrichment import apply_metadata
 from app.modules.place_checker.item_proximity import ItemProximityPolicy
-from app.modules.place_checker.ports import NamedPlaceSearchTool, PlaceMetadataRepository
+from app.modules.place_checker.ports import (
+    NamedPlaceSearchTool,
+    PlaceMetadataRepository,
+)
+from app.modules.place_checker.price_policy import has_usable_cost
 from app.modules.place_checker.resolution_contract import (
     EnrichedIdentityPlace,
-    PlaceMetadata,
 )
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import (
@@ -31,7 +35,6 @@ from app.shared.tools.search_places import (
 )
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.policy import PlaceSearchPolicy
-
 
 ITEM_TYPE_HINTS = {
     "food": "restaurant",
@@ -107,7 +110,7 @@ class InputItemResolutionService:
     ) -> ResolvedInputItem:
         related = ItemProximityPolicy.related_place(item, related_places)
         direct = ItemProximityPolicy.direct_option(item, related)
-        if direct is not None:
+        if direct is not None and self._has_usable_cost(direct):
             return self._direct_result(index, item, direct)
         anchor = ItemProximityPolicy.anchor(related, related_places)
         anchor_place_id = (
@@ -126,7 +129,7 @@ class InputItemResolutionService:
             result = await self.search_tool.search(
                 self._request(item, context, anchor, anchor_place_id)
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - provider boundary becomes unresolved
             return self._unresolved(
                 index,
                 item,
@@ -190,7 +193,7 @@ class InputItemResolutionService:
             options = await self._enrich_options(options)
         except PlaceCatalogUnavailableError:
             metadata_warning = "Place metadata catalog tạm thời không khả dụng."
-        except Exception:
+        except Exception:  # noqa: BLE001 - metadata failure keeps partial result
             metadata_warning = "Không thể làm giàu metadata cho item venues."
         options = [
             ItemProximityPolicy.with_distance(option, anchor)
@@ -200,6 +203,7 @@ class InputItemResolutionService:
             option
             for option in options
             if not option.rejection_reasons
+            and self._has_usable_cost(option)
             and not has_avoid_conflict(
                 context.avoids,
                 [option.name, option.category or "", *option.tags],
@@ -285,51 +289,9 @@ class InputItemResolutionService:
             [option.place_id for option in options]
         )
         return [
-            self._apply_metadata(option, metadata.get(option.place_id))
+            apply_metadata(option, metadata.get(option.place_id))
             for option in options
         ]
-
-    @staticmethod
-    def _apply_metadata(
-        option: ItemPlaceOption,
-        metadata: PlaceMetadata | None,
-    ) -> ItemPlaceOption:
-        if metadata is None:
-            return option
-        rejection_reasons = list(option.rejection_reasons)
-        if metadata.coordinates is not None:
-            rejection_reasons = [
-                reason
-                for reason in rejection_reasons
-                if reason != "coordinates_missing"
-            ]
-        return option.model_copy(
-            update={
-                "cost_tier": metadata.cost_tier,
-                "cost_currency": metadata.cost_currency,
-                "minimum_cost": metadata.minimum_cost,
-                "typical_cost": metadata.typical_cost,
-                "maximum_cost": metadata.maximum_cost,
-                "opening_hours": metadata.opening_hours,
-                "relationships": metadata.relationships,
-                "address": metadata.address or option.address,
-                "coordinates": metadata.coordinates or option.coordinates,
-                "category": metadata.category or option.category,
-                "tags": list(dict.fromkeys([*option.tags, *metadata.tags])),
-                "rating": metadata.rating if metadata.rating is not None else option.rating,
-                "review_count": (
-                    metadata.review_count
-                    if metadata.review_count is not None
-                    else option.review_count
-                ),
-                "children_suitable": metadata.children_suitable,
-                "infants_suitable": metadata.infants_suitable,
-                "minimum_duration_minutes": metadata.minimum_duration_minutes,
-                "typical_duration_minutes": metadata.typical_duration_minutes,
-                "maximum_duration_minutes": metadata.maximum_duration_minutes,
-                "rejection_reasons": rejection_reasons,
-            }
-        )
 
     @staticmethod
     def _option(
@@ -369,6 +331,15 @@ class InputItemResolutionService:
                 context.people.infants > 0
                 and option.infants_suitable is False
             )
+        )
+
+    @staticmethod
+    def _has_usable_cost(option: ItemPlaceOption) -> bool:
+        return has_usable_cost(
+            minimum=option.minimum_cost,
+            typical=option.typical_cost,
+            maximum=option.maximum_cost,
+            tier=option.cost_tier,
         )
 
     @staticmethod

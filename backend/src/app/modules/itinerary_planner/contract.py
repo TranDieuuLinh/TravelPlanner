@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from enum import StrEnum
-import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
+
 
 class PlannerContractModel(BaseModel):
     model_config = ConfigDict(
@@ -54,7 +55,7 @@ class PlannerBudget(PlannerContractModel):
 
 
 class PlannerPrice(PlannerContractModel):
-    cost: float | None = Field(default=None, ge=0)
+    cost: float = Field(ge=0)
     currency: str = Field(min_length=3, max_length=3)
 
     @field_validator("currency")
@@ -129,7 +130,7 @@ class ItineraryPlannerInput(PlannerContractModel):
     upstream_warnings: list[str] = Field(default_factory=list, max_length=500)
 
     @model_validator(mode="after")
-    def validate_candidate_identity_and_days(self) -> "ItineraryPlannerInput":
+    def validate_candidate_identity_and_days(self) -> ItineraryPlannerInput:
         candidates = [*self.places, *self.food]
         ids = [candidate.place_id for candidate in candidates]
         if len(ids) != len(set(ids)):

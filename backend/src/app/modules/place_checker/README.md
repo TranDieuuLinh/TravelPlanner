@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-14.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -19,9 +19,17 @@ Explorer
 PlaceChecker phân giải, xác minh, làm giàu và đánh giá candidate. Module không
 phân bổ ngày, chọn khung giờ chính xác, tối ưu thứ tự route hoặc tạo itinerary.
 PostgreSQL adapter đọc quan hệ Knowledge Graph theo ngữ nghĩa hiện hành:
-`Special_Near`/`Near` giữa các place, `Special_Experience` từ ADM tới place,
-`Offer_Item` và `Has_Style` từ place tới thuộc tính. Evidence quan hệ giữ trạng
+`Special_Near`/`Near` giữa các place, `Special_Experience` từ ADM tới place hoặc
+`FoodItem`, `Offer_Item` và `Has_Style` từ place tới thuộc tính. Evidence quan hệ giữ trạng
 thái, nguồn, confidence/priority và khoảng cách để phục vụ audit và scoring.
+
+Nhánh food đặc trưng đọc chuỗi `ADM -> Special_Experience -> FoodItem`, giao với
+`TravelPlace -> Special_Near -> Restaurant -> Offer_Item -> FoodItem`, rồi chọn
+một restaurant cho mỗi TravelPlace. Một candidate duy nhất vẫn hợp lệ; khi có
+nhiều quán, service dùng Bayesian weighted rating, độ tin cậy review, priority
+món, confidence của edge và khoảng cách. PostgreSQL adapter chỉ đọc quan hệ;
+module không sở hữu migration Knowledge Graph. Công thức Bayesian nằm trong
+`shared/tools/bayesian_rating.py` để FinalItineraryPlanner dùng cùng policy.
 
 ## Input từ Explorer
 

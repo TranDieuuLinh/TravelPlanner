@@ -30,6 +30,16 @@ def test_rejects_duplicate_ids_across_places_and_food() -> None:
         ItineraryPlannerInput.model_validate(raw)
 
 
+def test_candidate_price_cost_is_required() -> None:
+    place = candidate("missing_price")
+    del place["price"]["cost"]
+
+    with pytest.raises(ValidationError) as error:
+        ItineraryPlannerInput.model_validate(payload(places=[place]))
+
+    assert error.value.errors()[0]["loc"] == ("places", 0, "price", "cost")
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [("durationMinutes", 0), ("rating", 5.1), ("reviewCount", -1)],

@@ -1,8 +1,10 @@
 import asyncio
 
 from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.enums import CostTier
+from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
-from app.modules.place_checker.tests.test_pipeline_output import payload, pipeline
+from app.modules.place_checker.tests.test_pipeline_output import metadata, payload, pipeline
 
 
 def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> None:
@@ -53,6 +55,51 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     assert food["supportedMeals"] == ["lunch"]
 
 
+def test_compact_output_adds_selected_special_food_near_anchor() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-special-food"))
+    anchor = result.checked_places[0]
+    restaurant_metadata = metadata(
+        "restaurant:bun-cha",
+        category="restaurant",
+        cost_tier=CostTier.low,
+        latitude=21.032,
+    ).model_copy(
+        update={"rating": 4.7, "review_count": 2_500}
+    )
+    selection = SelectedFoodRestaurant(
+        anchor_place_id=anchor.place_id,
+        anchor_name=anchor.canonical_name,
+        food_item_id="food:bun-cha",
+        food_item_name="Bún chả",
+        restaurant_id="restaurant:bun-cha",
+        restaurant_name="Bún Chả Hương Liên",
+        distance_km=0.8,
+        rating=4.7,
+        review_count=2_500,
+        bayesian_rating=4.68,
+        pair_score=0.91,
+        selection_reason="sole_candidate_for_food",
+        metadata=restaurant_metadata,
+    )
+    result = result.model_copy(
+        update={"food_restaurant_selections": [selection]}
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+    selected = next(
+        food for food in output.food if food.place_id == "restaurant:bun-cha"
+    )
+
+    assert selected.priority == "special_near"
+    assert selected.relationships == [anchor.place_id]
+    assert "food-item:food:bun-cha" in selected.tags
+    assert "Bún chả" in selected.notes
+
+
 def test_compact_output_preserves_overnight_window() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-overnight"))
     first = result.checked_places[0]
@@ -95,3 +142,51 @@ def test_compact_output_keeps_conflicting_user_input_but_drops_optional() -> Non
 
     assert mandatory.place_id in output_ids
     assert optional.place_id not in output_ids
+
+
+def test_compact_output_drops_checked_place_without_price() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-no-price"))
+    first = result.checked_places[0]
+    result.checked_places[0] = first.model_copy(
+        update={
+            "cost": first.cost.model_copy(
+                update={
+                    "tier": "unknown",
+                    "currency": None,
+                    "minimum": None,
+                    "typical": None,
+                    "maximum": None,
+                    "known": False,
+                }
+            )
+        }
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert first.place_id not in {place.place_id for place in output.places}
+
+
+def test_compact_output_calculates_typical_cost_from_range() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-price-range"))
+    first = result.checked_places[0]
+    result.checked_places[0] = first.model_copy(
+        update={
+            "cost": first.cost.model_copy(
+                update={"minimum": 20_000, "typical": 999_999, "maximum": 80_000}
+            )
+        }
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+    place = next(item for item in output.places if item.place_id == first.place_id)
+
+    assert place.price.cost == 50_000

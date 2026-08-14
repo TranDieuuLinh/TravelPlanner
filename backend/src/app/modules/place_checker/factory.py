@@ -5,6 +5,7 @@ from app.modules.place_checker.adapters.search_places_gap_source import (
 from app.modules.place_checker.enums import RetrievalSourceKind
 from app.modules.place_checker.evaluation import PlaceEvaluationService
 from app.modules.place_checker.evidence import EvidenceEnrichmentService
+from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
 from app.modules.place_checker.item_resolution import InputItemResolutionService
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution import EntityResolutionService
@@ -44,4 +45,5 @@ def build_postgres_place_checker_pipeline(
             # unrelated KG entities planner-eligible and multiplied latency.
             expand_pool=False,
         ),
+        food_selection=FoodRestaurantSelectionService(catalog),
     )

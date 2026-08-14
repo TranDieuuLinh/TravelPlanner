@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-14.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -165,6 +165,21 @@ Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals`.
+Compact output chỉ chứa place/food có giá dùng được. `price.cost` là trung bình
+`price_min`/`price_max` khi có đủ khoảng, dùng giá trị duy nhất khi chỉ có một
+đầu mút, và bằng `0` cho tier `free`; giá thiếu không được gửi sang Planner.
+Vì vậy `ItineraryPlannerInput.places[].price.cost` và
+`ItineraryPlannerInput.food[].price.cost` là field bắt buộc, non-null và không âm.
+
+`PlaceCheckerResult.foodRestaurantSelections` giữ tối đa một cặp món/quán cho
+mỗi TravelPlace anchor. Selection được suy ra từ
+`ADM -> Special_Experience -> FoodItem`, `Restaurant -> Offer_Item -> FoodItem`
+và `TravelPlace -> Special_Near -> Restaurant`. Quán duy nhất vẫn được giữ;
+Bayesian rating và review reliability dùng để xếp nhiều quán. Compact food dùng
+`relationships` để liên kết ngược TravelPlace, không đưa FoodItem thành place.
+Bayesian prior/rating/review quality là capability dùng chung trong
+`shared/tools/bayesian_rating.py`; PlaceChecker dùng nó trong pair score, còn
+FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
 
 ### FinalItineraryPlanner
 
@@ -203,6 +218,7 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh | OCR frame và STT chunk chạy song song |
 | `WebsiteSourceExtractor` | `explorer` | URL website public | HTTP, curl-cffi Safari, Playwright, rồi Markdown trafilatura |
 | `SearchPlacesTool.search` | `shared/tools/search_places` | `PlaceSearchRequest` | `PlaceSearchResult` có status, selected, top matches, provider attempts và resolution reason |
+| Bayesian rating tool | `shared/tools/bayesian_rating.py` | rating, review count và candidate observations | prior, adjusted rating, reliability và quality chuẩn hóa |
 
 `SearchPlacesTool` hỗ trợ hai mode: `named_place` để xác minh identity được nêu
 tên và `requirement` để tìm venue phù hợp với món ăn, đồ uống hoặc hoạt động.

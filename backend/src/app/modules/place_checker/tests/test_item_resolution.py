@@ -29,7 +29,7 @@ from app.shared.tools.search_places import (
     SearchPlacesTool,
 )
 from app.shared.tools.search_places.adapters import InMemoryPlaceSearch
-
+from app.shared.tools.search_places.policy import PlaceSearchPolicy
 
 HANOI_ADM_ID = "adm1_vn_ha_noi"
 
@@ -127,7 +127,26 @@ def resolver(
     external: InMemoryPlaceSearch | None = None,
 ) -> tuple[InputItemResolutionService, InMemoryPlaceSearch]:
     kg = InMemoryPlaceSearch(candidates, provider_name="knowledge_graph")
-    return InputItemResolutionService(SearchPlacesTool(kg, external)), kg
+    metadata = FakeMetadataRepository(
+        {
+            candidate.entity_id: PlaceMetadata(
+                place_id=candidate.entity_id,
+                category=candidate.canonical_type,
+                coordinates=candidate.coordinates,
+                cost_tier=CostTier.low,
+                cost_currency="VND",
+                minimum_cost=30_000,
+                typical_cost=50_000,
+                maximum_cost=70_000,
+                typical_duration_minutes=60,
+            )
+            for candidate in candidates
+            if candidate.entity_id
+        }
+    )
+    return InputItemResolutionService(
+        SearchPlacesTool(kg, external), metadata_repository=metadata
+    ), kg
 
 
 def checked_place(
@@ -151,6 +170,11 @@ def checked_place(
             place_id=place_id,
             category=category,
             coordinates=Coordinates(latitude=latitude, longitude=longitude),
+            cost_tier=CostTier.low,
+            cost_currency="VND",
+            minimum_cost=30_000,
+            typical_cost=50_000,
+            maximum_cost=70_000,
         ),
     )
 
@@ -288,8 +312,14 @@ def test_metadata_reranks_low_cost_venue_for_low_budget() -> None:
     kg = InMemoryPlaceSearch([high_cost, low_cost], provider_name="knowledge_graph")
     metadata = FakeMetadataRepository(
         {
-            "pho_high": PlaceMetadata(place_id="pho_high", cost_tier=CostTier.premium),
-            "pho_low": PlaceMetadata(place_id="pho_low", cost_tier=CostTier.low),
+            "pho_high": PlaceMetadata(
+                place_id="pho_high",
+                cost_tier=CostTier.premium,
+                typical_cost=800_000,
+            ),
+            "pho_low": PlaceMetadata(
+                place_id="pho_low", cost_tier=CostTier.low, typical_cost=50_000
+            ),
         }
     )
     service = InputItemResolutionService(
@@ -302,6 +332,32 @@ def test_metadata_reranks_low_cost_venue_for_low_budget() -> None:
     assert result.selected.place_id == "pho_low"
     assert result.selected.cost_tier == CostTier.low
     assert result.selection_reason == "context_and_proximity_reranked_requirement_match"
+
+
+def test_item_resolution_skips_higher_scored_venue_without_price() -> None:
+    unknown = venue("pho_unknown", "Unknown Price Pho", tags=["pho"], confidence=0.99)
+    priced = venue("pho_priced", "Priced Pho", tags=["pho"], confidence=0.90)
+    kg = InMemoryPlaceSearch([unknown, priced], provider_name="knowledge_graph")
+    metadata = FakeMetadataRepository(
+        {
+            "pho_unknown": PlaceMetadata(place_id="pho_unknown"),
+            "pho_priced": PlaceMetadata(
+                place_id="pho_priced",
+                cost_tier=CostTier.low,
+                typical_cost=50_000,
+            ),
+        }
+    )
+    service = InputItemResolutionService(
+        SearchPlacesTool(kg),
+        metadata_repository=metadata,
+        policy=PlaceSearchPolicy(requirement_acceptance_score=0.5),
+    )
+
+    result = asyncio.run(service.resolve_all([item()], context())).items[0]
+
+    assert result.selected.place_id == "pho_priced"
+    assert result.selected.typical_cost == 50_000
 
 
 def test_related_food_place_is_reused_without_another_search() -> None:
@@ -383,6 +439,8 @@ def test_proximity_is_recomputed_from_metadata_repository_coordinates() -> None:
                 place_id="pho_db",
                 category="restaurant",
                 coordinates=Coordinates(latitude=21.031, longitude=105.84),
+                cost_tier=CostTier.low,
+                typical_cost=50_000,
             )
         }
     )
@@ -419,10 +477,14 @@ def test_metadata_filters_child_unsuitable_venue() -> None:
             "pho_adult": PlaceMetadata(
                 place_id="pho_adult",
                 children_suitable=False,
+                cost_tier=CostTier.low,
+                typical_cost=50_000,
             ),
             "pho_family": PlaceMetadata(
                 place_id="pho_family",
                 children_suitable=True,
+                cost_tier=CostTier.low,
+                typical_cost=50_000,
             ),
         }
     )

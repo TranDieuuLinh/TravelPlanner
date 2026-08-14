@@ -29,6 +29,66 @@ WITH RECURSIVE adm_descendants(id) AS (
      AND location.relationship_type = 'Located_In'
     WHERE entity.entity_type = ANY($3::text[])
       AND location.to_entity_id IN (SELECT id FROM adm_descendants)
+), generic_travel_ranked AS (
+    SELECT entity.id,
+           row_number() OVER (
+               PARTITION BY EXISTS (
+                   SELECT 1
+                   FROM knowledge_relationships special
+                   WHERE special.to_entity_id = entity.id
+                     AND special.from_entity_id IN (SELECT id FROM adm_scope)
+                     AND special.relationship_type = 'Special_Experience'
+               )
+               ORDER BY
+                   EXISTS (
+                       SELECT 1
+                       FROM knowledge_relationships offered
+                       JOIN knowledge_entities activity
+                         ON activity.id = offered.to_entity_id
+                        AND activity.entity_type = 'ActivityItem'
+                       WHERE offered.from_entity_id = entity.id
+                         AND offered.relationship_type = 'Offer_Item'
+                   ) DESC,
+                   (
+                       (props.latitude IS NOT NULL)::integer
+                       + (props.longitude IS NOT NULL)::integer
+                       + (
+                           props.time_duration IS NOT NULL
+                           OR EXISTS (
+                               SELECT 1
+                               FROM knowledge_relationships styled
+                               JOIN knowledge_properties style_property
+                                 ON style_property.entity_id = styled.to_entity_id
+                                AND style_property.key = 'time_duration'
+                               WHERE styled.from_entity_id = entity.id
+                                 AND styled.relationship_type = 'Has_Style'
+                           )
+                       )::integer
+                       + (
+                           props.price_min IS NOT NULL
+                           OR props.price_max IS NOT NULL
+                       )::integer
+                   ) DESC,
+                   NULLIF(props.rating, '')::double precision DESC NULLS LAST,
+                   NULLIF(props.review_count, '')::bigint DESC NULLS LAST,
+                   entity.id
+           ) AS discovery_rank
+    FROM scoped
+    JOIN knowledge_entities entity ON entity.id = scoped.id
+    LEFT JOIN LATERAL (
+        SELECT
+            max(property.value) FILTER (WHERE property.key = 'latitude') AS latitude,
+            max(property.value) FILTER (WHERE property.key = 'longitude') AS longitude,
+            max(property.value) FILTER (WHERE property.key = 'time_duration') AS time_duration,
+            max(property.value) FILTER (WHERE property.key = 'price_min') AS price_min,
+            max(property.value) FILTER (WHERE property.key = 'price_max') AS price_max,
+            max(property.value) FILTER (WHERE property.key = 'rating') AS rating,
+            max(property.value) FILTER (WHERE property.key = 'review_count') AS review_count
+        FROM knowledge_properties property
+        WHERE property.entity_id = entity.id
+    ) props ON true
+    WHERE $1 = 'travel place'
+      AND entity.entity_type = 'TravelPlace'
 ), lexical_hits AS (
     SELECT entity.id, similarity(entity.normalized_name, $1) AS preliminary_score
     FROM scoped
@@ -74,8 +134,13 @@ WITH RECURSIVE adm_descendants(id) AS (
     SELECT special.to_entity_id, 0.0
     FROM knowledge_relationships special
     JOIN scoped ON scoped.id = special.to_entity_id
-    WHERE special.from_entity_id IN (SELECT id FROM adm_scope)
+    WHERE $1 <> 'travel place'
+      AND special.from_entity_id IN (SELECT id FROM adm_scope)
       AND special.relationship_type = 'Special_Experience'
+    UNION ALL
+    SELECT ranked.id,
+           GREATEST(0.31, 0.90 - ranked.discovery_rank * 0.001)
+    FROM generic_travel_ranked ranked
     UNION ALL
     SELECT edge.to_entity_id, 0.0
     FROM knowledge_relationships edge

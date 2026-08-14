@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import log10
 
 from ortools.sat.python import cp_model
 
@@ -16,6 +15,10 @@ from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.policies import MEAL_POLICIES, STANDARD_DAY_END_MINUTE
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
+from app.shared.tools.bayesian_rating import (
+    bayesian_prior,
+    bayesian_review_quality,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,13 +83,22 @@ def _preference_value(problem, variables, weights):
 
 
 def _quality_value(problem, variables, weights):
+    prior = bayesian_prior(
+        (
+            (candidate.rating, candidate.review_count)
+            for candidate in problem.candidate_by_id.values()
+        )
+    )
     terms = []
     for candidate_id, candidate in problem.candidate_by_id.items():
         if candidate.rating is None:
             continue
-        reviews = candidate.review_count or 0
-        confidence = min(1.0, log10(reviews + 1) / 4)
-        score = round((candidate.rating / 5) * confidence * weights.quality_max)
+        quality = bayesian_review_quality(
+            rating=candidate.rating,
+            review_count=candidate.review_count,
+            prior=prior,
+        )
+        score = round(quality.quality * weights.quality_max)
         terms.append(variables.selected[candidate_id] * score)
     return sum(terms)
 

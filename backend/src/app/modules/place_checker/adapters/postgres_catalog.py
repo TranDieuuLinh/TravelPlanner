@@ -10,7 +10,11 @@ from app.modules.place_checker.contract import AdmResolution, AdmResolutionStatu
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
 )
+from app.modules.place_checker.adapters.postgres_food_query import (
+    SPECIAL_FOOD_RESTAURANT_SQL,
+)
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
+from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
@@ -127,23 +131,7 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             anchor_place_id,
             similarity_threshold,
         )
-        candidates = [self._candidate(row, input_adm) for row in rows]
-        if self._is_generic_travel_discovery(query):
-            candidates = [
-                candidate
-                for candidate in candidates
-                if candidate.canonical_type != "travel_place"
-                or self._has_tourism_experience(candidate.tags)
-                or any(
-                    relationship.get("relationshipType") == "Special_Experience"
-                    for relationship in candidate.relationship_evidence
-                )
-            ]
-            candidates = self._cap_tourism_experience_groups(
-                candidates,
-                per_group=max(2, min(12, limit // 3)),
-            )
-        return candidates
+        return [self._candidate(row, input_adm) for row in rows]
 
     async def get_many(self, place_ids: list[str]) -> dict[str, PlaceMetadata]:
         if not place_ids:
@@ -261,6 +249,41 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             )
             for row in entity_rows
         }
+
+    async def find_food_restaurants(
+        self,
+        *,
+        adm_id: str,
+        anchor_place_ids: list[str],
+    ) -> list[FoodRestaurantCandidate]:
+        if not anchor_place_ids:
+            return []
+        pool = await self._get_pool()
+        rows = await pool.fetch(
+            SPECIAL_FOOD_RESTAURANT_SQL,
+            adm_id,
+            list(dict.fromkeys(anchor_place_ids)),
+        )
+        metadata = await self.get_many(
+            list(dict.fromkeys(row["restaurant_id"] for row in rows))
+        )
+        return [
+            FoodRestaurantCandidate(
+                anchor_place_id=row["anchor_place_id"],
+                food_item_id=row["food_item_id"],
+                food_item_name=row["food_item_name"],
+                food_priority=float(row["food_priority"]),
+                food_confidence=float(row["food_confidence"]),
+                restaurant_id=row["restaurant_id"],
+                restaurant_name=row["restaurant_name"],
+                offer_confidence=float(row["offer_confidence"]),
+                distance_km=row["distance_km"],
+                threshold_km=row["threshold_km"],
+                metadata=metadata[row["restaurant_id"]],
+            )
+            for row in rows
+            if row["restaurant_id"] in metadata
+        ]
 
     @staticmethod
     def _metadata_relationship(row, *, style_properties=None):

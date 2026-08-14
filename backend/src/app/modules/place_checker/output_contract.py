@@ -3,12 +3,12 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from app.modules.place_checker.analysis_contract import TripAggregateAnalysis
 from app.modules.place_checker.analysis_contract import (
     BudgetAnalysis,
     CapacityAnalysis,
     CoverageAnalysis,
     GapAnalysis,
+    TripAggregateAnalysis,
 )
 from app.modules.place_checker.checked_output_contract import (
     CheckedPlace,
@@ -18,7 +18,6 @@ from app.modules.place_checker.contract import (
     ContractModel,
     SourcePlaceEvidence,
     TripEvaluationContext,
-    UrlNote,
 )
 from app.modules.place_checker.enums import (
     CostTier,
@@ -30,9 +29,12 @@ from app.modules.place_checker.enums import (
     VerificationStatus,
 )
 from app.modules.place_checker.evaluation_contract import PlannerConstraint
+from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
 from app.modules.place_checker.item_contract import ResolvedInputItem, SpecialExperience
 from app.modules.place_checker.retrieval_contract import RetrievalBatch
-from app.modules.place_checker.scoring_contract import CandidateRankingBatch, ScoredCandidate
+from app.modules.place_checker.scoring_contract import (
+    CandidateRankingBatch,
+)
 from app.shared.contracts.place import Coordinates
 
 
@@ -51,6 +53,7 @@ class ToolCallSummary(ContractModel):
     retrieval_search: int = Field(default=0, ge=0)
     external_search: int = Field(default=0, ge=0)
     metadata_repository: int = Field(default=0, ge=0)
+    food_selection: int = Field(default=0, ge=0)
 
 
 class PlaceCheckerExecutionMetadata(ContractModel):
@@ -77,6 +80,9 @@ class PlaceCheckerResult(ContractModel):
     planner_eligible_place_ids: list[str] = Field(default_factory=list)
     resolved_items: list[ResolvedInputItem] = Field(default_factory=list)
     special_experiences: list[SpecialExperience] = Field(default_factory=list)
+    food_restaurant_selections: list[SelectedFoodRestaurant] = Field(
+        default_factory=list
+    )
     budget_analysis: BudgetAnalysis
     capacity_analysis: CapacityAnalysis
     coverage_analysis: CoverageAnalysis
@@ -151,7 +157,7 @@ class PlaceCheckerPlanningProjection(ContractModel):
 
 
 class PlannerPrice(ContractModel):
-    cost: float | None = Field(default=None, ge=0)
+    cost: float = Field(ge=0)
     currency: str = "VND"
 
 

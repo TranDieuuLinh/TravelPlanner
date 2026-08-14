@@ -2,6 +2,7 @@ from typing import Protocol
 
 from app.modules.place_checker.contract import AdmResolution
 from app.modules.place_checker.enums import RetrievalSourceKind
+from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.retrieval_contract import (
     PromotionEvent,
@@ -24,6 +25,15 @@ class NamedPlaceSearchTool(Protocol):
 
 class PlaceMetadataRepository(Protocol):
     async def get_many(self, place_ids: list[str]) -> dict[str, PlaceMetadata]: ...
+
+
+class SpecialFoodRestaurantSource(Protocol):
+    async def find_food_restaurants(
+        self,
+        *,
+        adm_id: str,
+        anchor_place_ids: list[str],
+    ) -> list[FoodRestaurantCandidate]: ...
 
 
 class GapCandidateSource(Protocol):

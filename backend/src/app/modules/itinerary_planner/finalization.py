@@ -19,7 +19,6 @@ from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.route_enrichment import RouteEnrichmentResult
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 
-
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
 LATE_NIGHT_START_MINUTE = 22 * 60
 
@@ -50,7 +49,7 @@ def finalize_itinerary(
                 address=candidate.address,
                 notes=candidate.notes,
                 tags=candidate.tags,
-                cost_per_person=ceil(candidate.price.cost or 0),
+                cost_per_person=ceil(candidate.price.cost),
             )
         )
 

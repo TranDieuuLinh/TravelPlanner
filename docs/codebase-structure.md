@@ -165,6 +165,8 @@ Với rich PlaceChecker pipeline, root giữ `PlaceCheckerResult` cho diagnostic
 `ItineraryPlannerInput`. Payload nằm trong state `planner_input`; Planner runtime
 tiêu thụ payload qua preprocessing, routing matrix, CP-SAT, route enrichment và
 finalization.
+Compact builder chỉ chuyển place/food có giá dùng được; `typical_cost` được lấy
+từ trung bình khoảng min/max, một đầu mút có sẵn, hoặc `0` cho tier `free`.
 `places[].sourcePlaces` phân biệt nguồn `input` và `url`; `sourceTimeHint` và
 `addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
@@ -239,14 +241,27 @@ review và chỉ fallback sang external provider khi Knowledge Graph miss hoặc
 mọi match đều yếu. PlaceChecker runtime dùng `PostgresPlaceCatalog` khi có
 `DATABASE_URL`: candidate generation được scope ADM/type, dùng top-K và toán tử
 GIN `pg_trgm` trên canonical name, alias và relationship target trước khi tool
-áp score cuối. Retrieval chỉ chạy cho gap phân tích thực, không tự mở fixed
-reserve pool. Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
+áp score cuối. Generic `travel place` discovery xen kẽ candidate
+`Special_Experience` với các `TravelPlace` khác nằm trong đúng ADM; nhóm ngoài
+special ưu tiên place có `Offer_Item -> ActivityItem`, metadata đầy đủ,
+rating/review tốt. `Has_Style` không được dùng làm taxonomy/quota; nó chỉ cung
+cấp fallback `time_duration` và `time_windows` khi place thiếu timing trực tiếp.
+Retrieval chỉ chạy cho gap phân tích thực, không tự mở fixed reserve pool.
+Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
 Google Maps/external live provider chưa được nối.
+`shared/tools/bayesian_rating.py` cung cấp prior, adjusted rating, review
+reliability và quality 0..1 dùng chung cho PlaceChecker và
+FinalItineraryPlanner; module vẫn tự sở hữu cách đưa quality vào business score.
 Candidate contract của tool giữ relationship evidence chuẩn hóa ở dạng dữ liệu
 trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`/`Near`,
 `Special_Experience`, `Offer_Item` và `Has_Style`, duyệt ADM đệ quy và chuyển
 evidence có provenance sang scoring/output. Timing mặc định của `Has_Style`
 được đọc từ properties của node Style đích; timing riêng của place được ưu tiên.
+Nhánh food selection riêng duyệt
+`ADM -> Special_Experience -> FoodItem <- Offer_Item <- Restaurant <- Special_Near <- TravelPlace`.
+Nó giữ tối đa một selection cho mỗi TravelPlace, chấp nhận quán duy nhất và dùng
+Bayesian/review reliability để phân xử khi có nhiều quán. Query thuộc adapter,
+thuật toán chọn thuộc service/tool của module.
 Identity acceptance mềm dành riêng
 cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
 không áp dụng cho system/retrieval candidate.

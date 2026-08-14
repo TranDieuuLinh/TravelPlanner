@@ -232,11 +232,17 @@ tận dụng.
 ```text
 specialExperienceValue = coefficient * selected[i]
 preferenceValue = matched preferences / total preferences * coefficient
-placeQualityValue = rating quality có review confidence * selected[i]
+placeQualityValue = Bayesian review quality * selected[i]
 unknownOpeningCost = small coefficient * selected[i]
 ```
 
 Nếu không có preferences, preference value bằng 0; không gán neutral bonus.
+Bayesian prior được tính trên candidate pool của planning problem: mean là trung
+bình rating có dữ liệu, prior weight là median review count nhưng không thấp hơn
+20. Adjusted rating dùng weighted mean; quality 0..1 còn nhân review reliability
+với floor 0,70 để candidate ít review không bị loại nhưng không vượt candidate
+có rating gần tương đương và lượng review đáng tin. Implementation dùng chung
+với PlaceChecker tại `shared/tools/bayesian_rating.py`.
 
 ### Time fit
 

@@ -28,7 +28,10 @@ from app.modules.place_checker.retrieval_contract import (
     RetrievedCandidate,
     TargetedRetrievalQuery,
 )
-from app.modules.place_checker.pool_policy import per_gap_pool_target
+from app.modules.place_checker.pool_policy import (
+    per_gap_pool_target,
+    pool_target_for_days,
+)
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
 
@@ -516,6 +519,8 @@ class TargetedRetrievalService:
         query_limit = limit or per_gap_pool_target(context.days, 1)
         if gap.gap_type == GapType.food_coverage:
             query_limit = max(query_limit, min(60, context.days * 3))
+        elif category == "travel_place" and query_text == "travel place":
+            query_limit = max(query_limit, pool_target_for_days(context.days))
         return TargetedRetrievalQuery(
             gap_id=gap.gap_id,
             gap_type=gap.gap_type,

@@ -9,6 +9,8 @@ from app.modules.place_checker.evaluation import PlaceEvaluationService
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.evidence import EvidenceEnrichmentService
 from app.modules.place_checker.item_resolution import InputItemResolutionService
+from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
+from app.modules.place_checker.food_selection_contract import FoodSelectionAnchor
 from app.modules.place_checker.output import PlaceCheckerOutputAssembler
 from app.modules.place_checker.output_contract import (
     PlaceCheckerExecutionMetadata,
@@ -36,6 +38,7 @@ class PlaceCheckerPipeline:
         targeted_retrieval: TargetedRetrievalService | None = None,
         scoring: CandidateScoringService | None = None,
         metrics: PlaceCheckerMetricsSink | None = None,
+        food_selection: FoodRestaurantSelectionService | None = None,
     ) -> None:
         self.context_builder = context_builder
         self.entity_resolution = entity_resolution
@@ -46,6 +49,7 @@ class PlaceCheckerPipeline:
         self.targeted_retrieval = targeted_retrieval
         self.scoring = scoring or CandidateScoringService()
         self.metrics = metrics
+        self.food_selection = food_selection
         self.output = PlaceCheckerOutputAssembler()
         self.retrieval_projection = RetrievalCandidateProjector()
 
@@ -113,6 +117,33 @@ class PlaceCheckerPipeline:
             analysis = self.aggregate_analysis.analyze(evaluated, items, context)
             phase["retrieval_and_ranking"] = self._elapsed(retrieval_started)
 
+        food_selection = None
+        food_anchors = [
+            FoodSelectionAnchor(
+                place_id=evaluation.place.place_id,
+                name=(
+                    evaluation.place.canonical_name
+                    or evaluation.place.original_names[0]
+                ),
+            )
+            for evaluation in evaluated.places
+            if evaluation.planner_eligible
+            and evaluation.place.place_id
+            and evaluation.place.metadata
+            and evaluation.place.metadata.category == "travel_place"
+        ]
+        if (
+            self.food_selection is not None
+            and context.destination.status == AdmResolutionStatus.resolved
+            and food_anchors
+        ):
+            food_started = perf_counter()
+            food_selection = await self.food_selection.select(
+                context,
+                food_anchors,
+            )
+            phase["food_selection"] = self._elapsed(food_started)
+
         attempts = [
             attempt
             for gap in (retrieval.gaps if retrieval else [])
@@ -133,6 +164,7 @@ class PlaceCheckerPipeline:
                     attempt.source_kind.value == "external" for attempt in attempts
                 ),
                 metadata_repository=int(bool(payload.places)),
+                food_selection=int(food_selection is not None),
             ),
             partial=bool(
                 payload.validation_issues
@@ -140,6 +172,7 @@ class PlaceCheckerPipeline:
                 or items.warnings
                 or enriched.warnings
                 or (retrieval and retrieval.warnings)
+                or (food_selection and food_selection.warnings)
             ),
         )
         result = self.output.assemble(
@@ -154,6 +187,7 @@ class PlaceCheckerPipeline:
             verification_by_place_id=verification_by_id,
             ranking_by_place_id=ranking_by_id,
             extra_warnings=[*identities.warnings, *enriched.warnings],
+            food_selection=food_selection,
         )
         await self._record_metrics(result)
         return result

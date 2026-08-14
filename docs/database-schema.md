@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-14.
 
 ## Phạm vi và trạng thái
 
@@ -354,7 +354,19 @@ Runtime relationship semantics observed on 2026-08-13:
   properties take precedence; relationship properties remain a compatible
   per-attachment override of the Style defaults. Multiple attached Style nodes
   contribute all distinct time windows; the largest Style duration is used as
-  the place-level fallback duration.
+  the place-level fallback duration. Style không được dùng để phân loại hoặc
+  chia quota generic TravelPlace retrieval.
+
+Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
+`TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
+non-special. Trong nhóm non-special, `Offer_Item -> ActivityItem`, metadata
+đầy đủ và rating/review chỉ là tín hiệu xếp hạng; chúng không thay đổi ontology.
+
+PlaceChecker code ngày 2026-08-14 đã chuẩn bị read path mới yêu cầu
+`Special_Experience`: ADM → `FoodItem`, kết hợp với
+`TravelPlace -> Special_Near -> Restaurant -> Offer_Item -> FoodItem`. Đây là
+consumer contract đang chờ dữ liệu Knowledge Graph được cập nhật và xác minh;
+repository này không thêm migration hay tuyên bố cloud data đã backfill xong.
 
 ### `knowledge_entity_images`
 

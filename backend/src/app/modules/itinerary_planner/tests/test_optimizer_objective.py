@@ -37,3 +37,18 @@ def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
     )
     assert late.end_minute == 1620
     assert first_day_two + 1440 - late.end_minute >= 540
+
+
+def test_bayesian_quality_prefers_reliable_reviews_over_sparse_five_star() -> None:
+    reliable = candidate("reliable", priority="user_input")
+    reliable.update({"rating": 4.8, "reviewCount": 2_000})
+    sparse = candidate("sparse", priority="user_input")
+    sparse.update({"rating": 5.0, "reviewCount": 1})
+
+    reliable_result, _, _ = solve_payload(base_payload(places=[reliable]))
+    sparse_result, _, _ = solve_payload(base_payload(places=[sparse]))
+
+    assert (
+        reliable_result.objective_components["placeQualityValue"]
+        > sparse_result.objective_components["placeQualityValue"]
+    )

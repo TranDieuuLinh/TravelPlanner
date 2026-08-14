@@ -100,10 +100,15 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
 - Candidate đã link KG được làm giàu qua `PlaceMetadataRepository` trước scoring
   để lấy duration, cost, opening và suitability nếu repository có dữ liệu.
   Repository lỗi hoặc thiếu field chỉ tạo warning/unknown, không bịa giá trị.
-- Số candidate dự phòng tăng theo độ dài chuyến đi: mục tiêu `15 địa điểm/ngày`,
-  tối thiểu 20 và tối đa 120 cho toàn bộ pool. Mỗi gap
+- Số candidate dự phòng tăng theo độ dài chuyến đi: mục tiêu `8 địa điểm/ngày`,
+  tối thiểu 10 và tối đa 60 cho toàn bộ pool. Generic TravelPlace query dùng
+  target toàn chuyến, nên chuyến một ngày vẫn chỉ có target 10. Mỗi gap
   được cấp một phần giới hạn phù hợp. Đây là pool để Planner lựa chọn, không
   phải số địa điểm bắt buộc phải xếp vào lịch.
+- Generic `travel place` discovery xen kẽ `Special_Experience` và các
+  `TravelPlace` khác trong đúng ADM. Non-special ưu tiên cạnh
+  `Offer_Item -> ActivityItem`, sau đó metadata và rating/review. `Has_Style`
+  chỉ fallback timing, không tạo category hoặc quota.
 - Đồng thuận external yêu cầu hai provider khác nhau cùng khớp tên, ADM,
   category và tọa độ trong 0,5 km. Cùng tên/ADM nhưng khác category hoặc vị trí
   tạo `needs_review`.

@@ -81,10 +81,10 @@ constraint xác minh. Trách nhiệm hiện tại của FinalItineraryPlanner kh
 - `ExplorerInputProjector` chuyển contract Explorer legacy hiện tại sang input
   canonical. Explorer mới có thể truyền thẳng `PlaceCheckerInput`.
 - `PlaceCheckerPlanningProjector` chỉ đưa `planner_ready/conditional` đã verify,
-  có canonical ID, tọa độ và provenance xuống projection. Mandatory blocked vẫn
+  có canonical ID, tọa độ, provenance và giá dùng được xuống projection. Mandatory blocked vẫn
   nằm trong output và danh sách blocked riêng.
-- Projection giữ cost/duration nullable và cost tier `unknown`; không chuyển
-  unknown thành 0. Resolved item và special experience được giữ riêng.
+- Projection không chuyển cost `unknown` thành 0. Resolved item và special
+  experience được giữ riêng trong rich diagnostic output.
 - `build_place_checker_pipeline_graph` cho phép orchestration bật pipeline V1
   bằng dependency đã cấu hình mà không đưa business rule vào root graph.
 
@@ -133,13 +133,22 @@ sẵn sàng trong root state dưới `planner_input`.
 `places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,
 giờ mở cửa, quan hệ và `price`.
 
-Giá `price.cost` được tính theo thứ tự:
+Food được chọn từ nhánh món đặc trưng có `priority=special_near`, tag
+`food-item:<id>`/`food:<name>` và `relationships` chứa TravelPlace anchor.
+Rich result giữ FoodItem, Bayesian rating, distance và selection reason để
+audit. Nếu restaurant đã có trong food pool, compact builder chỉ gộp anchor và
+tag thay vì tạo place ID trùng; candidate thiếu giá, tọa độ hoặc duration vẫn
+không vượt qua boundary Planner.
+
+PlaceChecker loại mọi place/food không tính được giá trước boundary sang
+FinalItineraryPlanner. Giá `price.cost` được tính theo thứ tự:
 
 ```text
 minimum và maximum đều có -> (minimum + maximum) / 2
 chỉ có typical -> typical
+chỉ có minimum hoặc maximum -> giá trị đang có
 địa điểm free -> 0
-không có dữ liệu -> null
+không có dữ liệu -> loại, không gửi sang Planner
 ```
 
 Output chỉ phát `price.cost` và `price.currency` đúng contract JSON của Planner;
