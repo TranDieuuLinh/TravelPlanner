@@ -91,6 +91,7 @@ def candidate(
         place_id=key if status == VerificationStatus.verified_kg else None,
         adm_id="adm1_vn_ha_noi",
         category=category,
+        pool_category=pool_category,
         experience_type=experience_type,
         coordinates=coordinates,
         tags=tags or [category],
@@ -359,8 +360,8 @@ def test_default_reserve_grows_with_trip_days() -> None:
         empty_places(),
     )
 
-    assert result.reserve_limit_per_gap == 20
-    assert result.pool_target == 60
+    assert result.reserve_limit_per_gap == 60
+    assert result.pool_target == 96
     assert len(result.ranked) == 8
 
 
@@ -404,7 +405,7 @@ def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
         retrieval(
             *[
                 candidate(
-                    f"{group}-{index}",
+                    f"{index}-{group}",
                     pool_category=group,
                     category="travel_place",
                 )
@@ -414,11 +415,13 @@ def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
         ),
         analysis_context().model_copy(update={"days": 1}),
         empty_places(),
+        reserve_limit_per_gap=20,
+        max_total_candidates=12,
     )
 
     selected_groups = {
         item.candidate.pool_category
         for item in result.ranked
     }
-    assert len(result.ranked) == 20
+    assert len(result.ranked) == 12
     assert selected_groups == set(groups)

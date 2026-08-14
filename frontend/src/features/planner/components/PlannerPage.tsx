@@ -35,14 +35,11 @@ import {
   calculateDayDirections,
   confirmTripChatCandidateResolution,
   createTripChat,
-  createPlanFromExplorer,
   deleteAllTripChats,
   deleteUrlImportJob,
   deleteTripChat,
   enqueueTripChatUrls,
-  enrichPlanRoutes,
   enrichTripChatRoutes,
-  exploreFullIntake,
   getTripChat,
   listTripChats,
   listUrlImportJobs,
@@ -68,6 +65,7 @@ import {
   type UrlImportJob,
   type TravelPlan,
 } from "@/features/planner/api/plans";
+import { invokeAgentPlan } from "@/features/planner/api/agent";
 import { useConversationTurn } from "@/features/planner/hooks/useConversationTurn";
 import {
   enqueueGuestUrlJobs,
@@ -3930,29 +3928,13 @@ function Planner() {
         }
         throw new Error("Không thể cập nhật chat.");
       }
-      const nextExploreResult = await exploreFullIntake({
-        rawRequest: text,
-        images: [],
+      const generation = await invokeAgentPlan({
+        threadId: `guest-${crypto.randomUUID()}`,
+        message: text,
       });
-      setExploreResult(nextExploreResult);
+      setExploreResult(null);
       setWorkflowStage("planning");
-      const generation = await createPlanFromExplorer({
-        context: nextExploreResult.explorer,
-        intakeId: nextExploreResult.intakeId,
-        userId: nextExploreResult.userId,
-        allowFinderGapFill: nextExploreResult.allowFinderGapFill,
-        allowReplaceSourcePlaces: nextExploreResult.allowReplaceSourcePlaces,
-      });
       setPlan(generation.plan);
-      if (generation.plan.routeEnrichmentStatus === "pending") {
-        void enrichPlanRoutes(generation.plan.id)
-          .then((enriched) => {
-            if (activeRequestIdRef.current === requestId) setPlan(enriched);
-          })
-          .catch(() => {
-            // The coarse plan remains usable; a later refresh can retry.
-          });
-      }
       setInitialPlanningActive(false);
       setWorkflowStage("ready");
       setSelectedMapPlaceKey(null);
@@ -3961,9 +3943,7 @@ function Planner() {
         {
           id: Date.now() + 1,
           role: "assistant",
-          text: nextExploreResult.allowFinderGapFill
-            ? `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Planner và Finder đã tạo lịch trình và có thể bổ sung địa điểm phù hợp.`
-            : `Explorer đã hiểu yêu cầu cho ${nextExploreResult.explorer.tripIntent.destination}. Finder không thể bổ sung activity còn thiếu vào lịch trình này.`,
+          text: generation.response.response,
         },
       ]);
     } catch (caught) {

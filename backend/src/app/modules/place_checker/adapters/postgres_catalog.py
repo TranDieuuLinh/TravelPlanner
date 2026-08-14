@@ -154,16 +154,15 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             SELECT relation.*, owner.entity_id,
                    related.id AS related_entity_id,
                    related.canonical_name AS related_name,
+                   related.entity_type AS related_entity_type,
                    owner.direction, owner.scope
             FROM knowledge_relationships relation
             JOIN LATERAL (
                 SELECT relation.from_entity_id AS entity_id,
-                       CASE WHEN relation.relationship_type IN (
-                           'Special_Near', 'Near', 'Must_Visit'
-                       ) THEN 'place_to_place' ELSE 'place_to_attribute' END AS direction,
-                       CASE WHEN relation.relationship_type IN (
-                           'Special_Near', 'Near', 'Must_Visit'
-                       ) THEN 'anchor' ELSE 'place' END AS scope
+                       CASE WHEN relation.relationship_type = 'Special_Near'
+                            THEN 'place_to_place' ELSE 'place_to_attribute' END AS direction,
+                       CASE WHEN relation.relationship_type = 'Special_Near'
+                            THEN 'anchor' ELSE 'place' END AS scope
                 WHERE relation.from_entity_id = ANY($1::text[])
                 UNION ALL
                 SELECT relation.to_entity_id,
@@ -173,15 +172,14 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                             THEN 'destination' ELSE 'anchor' END
                 WHERE relation.to_entity_id = ANY($1::text[])
                   AND relation.relationship_type IN (
-                      'Special_Experience', 'Special_Near', 'Near', 'Must_Visit'
+                      'Special_Experience', 'Special_Near'
                   )
             ) owner ON true
             JOIN knowledge_entities related ON related.id = CASE
                 WHEN owner.entity_id = relation.from_entity_id
                 THEN relation.to_entity_id ELSE relation.from_entity_id END
             WHERE relation.relationship_type IN (
-                'Special_Experience', 'Special_Near', 'Near', 'Must_Visit',
-                'Offer_Item', 'Has_Style'
+                'Special_Experience', 'Special_Near', 'Offer_Item', 'Has_Style'
             )
             """,
             place_ids,
@@ -193,7 +191,16 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 if row["relationship_type"] == "Has_Style"
             )
         )
-        style_property_rows = (
+        activity_ids = list(
+            dict.fromkeys(
+                row["to_entity_id"]
+                for row in relationship_rows
+                if row["relationship_type"] == "Offer_Item"
+                and row["related_entity_type"] == "ActivityItem"
+            )
+        )
+        related_property_ids = list(dict.fromkeys([*style_ids, *activity_ids]))
+        related_property_rows = (
             await pool.fetch(
                 """
                 SELECT entity_id, key, value
@@ -201,9 +208,9 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 WHERE entity_id = ANY($1::text[])
                   AND key IN ('time_duration', 'time_windows')
                 """,
-                style_ids,
+                related_property_ids,
             )
-            if style_ids
+            if related_property_ids
             else []
         )
         properties: dict[str, dict[str, Any]] = defaultdict(dict)
@@ -215,15 +222,15 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 fetched_at[row["entity_id"]] = row["updated_at"]
         tags: dict[str, list[str]] = defaultdict(list)
         relationships = defaultdict(list)
-        style_properties: dict[str, dict[str, Any]] = defaultdict(dict)
-        for row in style_property_rows:
-            style_properties[row["entity_id"]][row["key"]] = row["value"]
+        related_properties: dict[str, dict[str, Any]] = defaultdict(dict)
+        for row in related_property_rows:
+            related_properties[row["entity_id"]][row["key"]] = row["value"]
         for row in relationship_rows:
             relationship = self._relationships(
                 [
                     self._metadata_relationship(
                         row,
-                        style_properties=style_properties.get(row["to_entity_id"]),
+                        target_properties=related_properties.get(row["to_entity_id"]),
                     )
                 ]
             )[0]
@@ -234,7 +241,7 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 tags[row["entity_id"]].append(f"item:{row['related_name']}")
             elif row["relationship_type"] == "Has_Style":
                 tags[row["entity_id"]].append(f"style:{row['related_name']}")
-            elif row["relationship_type"] in {"Special_Near", "Near", "Must_Visit"}:
+            elif row["relationship_type"] == "Special_Near":
                 tags[row["entity_id"]].append(
                     f"relation:{row['relationship_type'].casefold()}"
                 )
@@ -274,6 +281,10 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 food_item_name=row["food_item_name"],
                 food_priority=float(row["food_priority"]),
                 food_confidence=float(row["food_confidence"]),
+                offered_food_item_id=row["offered_food_item_id"],
+                offered_food_item_name=row["offered_food_item_name"],
+                food_match_type=row["food_match_type"],
+                food_match_confidence=float(row["food_match_confidence"]),
                 restaurant_id=row["restaurant_id"],
                 restaurant_name=row["restaurant_name"],
                 offer_confidence=float(row["offer_confidence"]),
@@ -286,7 +297,10 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
         ]
 
     @staticmethod
-    def _metadata_relationship(row, *, style_properties=None):
+    def _metadata_relationship(
+        row, *, target_properties=None, style_properties=None
+    ):
+        target_properties = target_properties or style_properties
         raw = row["recommendations"]
         try:
             recommendations = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -305,17 +319,15 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
         if relationship_type == "Special_Near":
             ratio = distance / threshold if distance is not None and threshold else 1
             score = max(0.65, 0.95 - 0.30 * ratio)
-        elif relationship_type == "Near":
-            score = 0.85
-        elif relationship_type == "Must_Visit":
-            score = 0.95
         elif relationship_type == "Special_Experience":
             score = 0.55 if payload.get("status") == "pending" else 0.78
         elif relationship_type == "Offer_Item":
             score = max(confidences, default=0.45 if payload.get("status") == "pending" else 0.72)
         else:
             score = min(0.75, 0.45 + float(payload.get("priority", 40)) / 400)
-        relationship_properties = dict(style_properties or {})
+        relationship_properties = dict(target_properties or {})
+        if relationship_type == "Offer_Item":
+            relationship_properties["entityType"] = row.get("related_entity_type")
         relationship_properties.update(payload.get("properties") or {})
         return {
             "relationshipType": relationship_type,

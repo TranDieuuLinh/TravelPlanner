@@ -17,6 +17,13 @@ class FoodRestaurantCandidate(ContractModel):
     food_item_name: str = Field(min_length=1, max_length=200)
     food_priority: float = Field(default=0.5, ge=0, le=1)
     food_confidence: float = Field(default=0.7, ge=0, le=1)
+    offered_food_item_id: str = Field(min_length=1, max_length=200)
+    offered_food_item_name: str = Field(min_length=1, max_length=200)
+    food_match_type: Literal[
+        "direct_id",
+        "offer_item_fallback",
+    ]
+    food_match_confidence: float = Field(ge=0, le=1)
     restaurant_id: str = Field(min_length=1, max_length=200)
     restaurant_name: str = Field(min_length=1, max_length=200)
     offer_confidence: float = Field(default=0.7, ge=0, le=1)
@@ -30,6 +37,13 @@ class SelectedFoodRestaurant(ContractModel):
     anchor_name: str = Field(min_length=1, max_length=200)
     food_item_id: str = Field(min_length=1, max_length=200)
     food_item_name: str = Field(min_length=1, max_length=200)
+    offered_food_item_id: str = Field(min_length=1, max_length=200)
+    offered_food_item_name: str = Field(min_length=1, max_length=200)
+    food_match_type: Literal[
+        "direct_id",
+        "offer_item_fallback",
+    ]
+    food_match_confidence: float = Field(ge=0, le=1)
     restaurant_id: str = Field(min_length=1, max_length=200)
     restaurant_name: str = Field(min_length=1, max_length=200)
     distance_km: float | None = Field(default=None, ge=0)

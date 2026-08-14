@@ -21,7 +21,7 @@ from app.shared.tools.bayesian_rating import (
 
 
 class FoodRestaurantSelectionService:
-    """Select one destination-special food venue for every travel-place anchor."""
+    """Select a special-food venue, falling back to an offered dish per anchor."""
 
     def __init__(
         self,
@@ -49,7 +49,7 @@ class FoodRestaurantSelectionService:
             return FoodSelectionBatch(
                 unmatched_anchor_place_ids=[anchor.place_id for anchor in anchors],
                 warnings=[
-                    "Không thể lấy quán ăn đặc trưng gần các điểm tham quan."
+                    "Không thể lấy quán ăn phù hợp gần các điểm tham quan."
                 ],
             )
 
@@ -99,6 +99,10 @@ class FoodRestaurantSelectionService:
                     anchor_name=anchor.name,
                     food_item_id=selected.food_item_id,
                     food_item_name=selected.food_item_name,
+                    offered_food_item_id=selected.offered_food_item_id,
+                    offered_food_item_name=selected.offered_food_item_name,
+                    food_match_type=selected.food_match_type,
+                    food_match_confidence=selected.food_match_confidence,
                     restaurant_id=selected.restaurant_id,
                     restaurant_name=selected.restaurant_name,
                     distance_km=selected.distance_km,
@@ -113,7 +117,7 @@ class FoodRestaurantSelectionService:
             used_restaurants.add(selected.restaurant_id)
         warnings = (
             [
-                f"Không tìm thấy quán đặc trưng gần {len(unmatched)} "
+                f"Không tìm thấy quán phù hợp gần {len(unmatched)} "
                 "điểm tham quan."
             ]
             if unmatched
@@ -192,10 +196,11 @@ class FoodRestaurantSelectionService:
         ).quality
         proximity = self._proximity(candidate)
         value = (
-            0.40 * candidate.food_priority
+            0.35 * candidate.food_priority
             + 0.10 * candidate.food_confidence
             + 0.10 * candidate.offer_confidence
-            + 0.30 * quality
+            + 0.10 * candidate.food_match_confidence
+            + 0.25 * quality
             + 0.10 * proximity
         )
         return round(min(1.0, max(0.0, value)), 6)

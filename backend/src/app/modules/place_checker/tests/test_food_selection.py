@@ -30,13 +30,20 @@ def candidate(
     reviews: int | None = 100,
     priority: float = 0.9,
     distance: float = 0.5,
+    match_type: str = "direct_id",
+    match_confidence: float = 1.0,
 ) -> FoodRestaurantCandidate:
+    food_name = "Phở" if food == "food:pho" else "Bún chả"
     return FoodRestaurantCandidate(
         anchor_place_id=anchor,
         food_item_id=food,
-        food_item_name="Phở" if food == "food:pho" else "Bún chả",
+        food_item_name=food_name,
         food_priority=priority,
         food_confidence=0.9,
+        offered_food_item_id=food,
+        offered_food_item_name=food_name,
+        food_match_type=match_type,
+        food_match_confidence=match_confidence,
         restaurant_id=restaurant,
         restaurant_name=f"Restaurant {restaurant}",
         offer_confidence=0.95,
@@ -97,6 +104,8 @@ def test_one_restaurant_is_selected_for_each_anchor() -> None:
         item.selection_reason == "sole_candidate_for_food"
         for item in result.selections
     )
+    assert all(item.food_match_type == "direct_id" for item in result.selections)
+    assert all(item.food_match_confidence == 1 for item in result.selections)
 
 
 def test_reliable_restaurant_beats_five_star_candidate_with_one_review() -> None:
@@ -151,3 +160,49 @@ def test_restaurant_reuse_is_only_a_fallback_when_no_unused_option_exists() -> N
         "restaurant:shared",
         "restaurant:other",
     ]
+
+
+def test_special_exact_id_match_beats_offer_item_fallback() -> None:
+    source = FakeFoodSource(
+        [
+            candidate(
+                "place:lake",
+                "restaurant:fallback",
+                priority=0.35,
+                match_type="offer_item_fallback",
+            ),
+            candidate("place:lake", "restaurant:direct"),
+        ]
+    )
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert result.selections[0].restaurant_id == "restaurant:direct"
+    assert result.selections[0].food_match_type == "direct_id"
+
+
+def test_offer_item_fallback_is_preserved_in_selection_provenance() -> None:
+    source = FakeFoodSource(
+        [
+            candidate(
+                "place:lake",
+                "restaurant:fallback",
+                match_type="offer_item_fallback",
+            )
+        ]
+    )
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert result.selections[0].food_match_type == "offer_item_fallback"
+    assert result.selections[0].offered_food_item_id == "food:pho"

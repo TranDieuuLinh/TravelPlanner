@@ -25,6 +25,21 @@ class CandidatePriority(StrEnum):
     special_near = "special_near"
 
 
+class CandidateSourceKind(StrEnum):
+    special_experience = "special_experience"
+    offer_item = "offer_item"
+    both = "both"
+    generic = "generic"
+
+
+class CandidateTimeSource(StrEnum):
+    place = "place"
+    activity_item = "activity_item"
+    has_style = "has_style"
+    source_hint = "source_hint"
+    unknown = "unknown"
+
+
 class MealType(StrEnum):
     breakfast = "breakfast"
     lunch = "lunch"
@@ -105,6 +120,9 @@ class PlannerCandidate(PlannerContractModel):
         default_factory=list,
         max_length=20,
     )
+    source_kind: CandidateSourceKind = CandidateSourceKind.generic
+    offered_activity_ids: list[str] = Field(default_factory=list, max_length=100)
+    time_source: CandidateTimeSource = CandidateTimeSource.unknown
     price: PlannerPrice
     relationships: list[str] = Field(default_factory=list, max_length=100)
 

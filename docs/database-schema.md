@@ -157,7 +157,16 @@ agent planner. The current runtime owns the isolated tables below instead.
 ### `agent_trip_chats`
 
 Stores the authenticated user's chat id, LangGraph `thread_id`, revision and
-latest itinerary JSON. Created by `backend/migrations/003_trip_chat.sql`.
+two independent latest-plan snapshots. `current_itinerary` is the legacy
+PlanEditor JSON created by `backend/migrations/003_trip_chat.sql`;
+`current_planner_output` is the FinalItineraryPlanner JSON added by
+`backend/migrations/009_trip_chat_planner_output.sql`. A chat update uses the
+new non-null output and otherwise preserves the previous snapshot.
+
+| Cột | Kiểu | Nullable | Giải thích |
+|---|---|---|---|
+| `current_itinerary` | jsonb | Có | Snapshot legacy dành cho PlanEditor. |
+| `current_planner_output` | jsonb | Có | Output mới gồm `days[].stops` và `days[].legs`. |
 
 ### `agent_trip_chat_messages`
 
@@ -345,8 +354,9 @@ Runtime relationship semantics observed on 2026-08-13:
 - `Located_In`: place/ADM child → ADM parent;
 - `Special_Experience`: ADM → `TravelPlace`, recommendations object may carry
   `status` and `match_type`;
-- `Special_Near`: `TravelPlace` ↔ `TravelPlace`, stored bidirectionally, with
-  `distance_km`, `threshold_km` and optional derivation rule;
+- `Special_Near`: quan hệ gần giữa các place, gồm `TravelPlace` ↔ `TravelPlace`
+  và `TravelPlace` ↔ `Restaurant`, với `distance_km`, `threshold_km` và optional
+  derivation rule. PlaceChecker xử lý được cả hai hướng của cạnh;
 - `Offer_Item`: place → item; recommendations may be an evidence array or an
   object containing status/priority;
 - `Has_Style`: place → style. Runtime reads default `time_windows` and
@@ -361,12 +371,20 @@ Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
 non-special. Trong nhóm non-special, `Offer_Item -> ActivityItem`, metadata
 đầy đủ và rating/review chỉ là tín hiệu xếp hạng; chúng không thay đổi ontology.
+Read path đưa `entityType` và `time_windows` của target `ActivityItem` vào
+relationship evidence để PlaceChecker phân biệt Offer Item activity và timing;
+không thêm cột, table hoặc ghi ngược dữ liệu Knowledge Graph.
 
-PlaceChecker code ngày 2026-08-14 đã chuẩn bị read path mới yêu cầu
-`Special_Experience`: ADM → `FoodItem`, kết hợp với
-`TravelPlace -> Special_Near -> Restaurant -> Offer_Item -> FoodItem`. Đây là
-consumer contract đang chờ dữ liệu Knowledge Graph được cập nhật và xác minh;
-repository này không thêm migration hay tuyên bố cloud data đã backfill xong.
+PlaceChecker code ngày 2026-08-14 đã chuẩn bị primary read path yêu cầu cùng
+FoodItem ID trên hai cạnh `Special_Experience`: ADM → `FoodItem` và Restaurant
+→ `FoodItem`, với Restaurant được nối tới TravelPlace bằng `Special_Near`.
+Read path không nối FoodItem bằng tên. Đây là consumer contract đang chờ dữ
+liệu Knowledge Graph được cập nhật và xác minh; tại lần kiểm tra 2026-08-14,
+cloud data chưa có cạnh Restaurant → `Special_Experience` → FoodItem.
+Theo từng TravelPlace, nếu không có primary exact-ID pair, read path lấy trực
+tiếp FoodItem từ `Restaurant -> Offer_Item` và đánh dấu
+`offer_item_fallback`; nó không thay đổi hay hợp nhất các record
+`knowledge_entities` và không diễn giải fallback thành món đặc trưng.
 
 ### `knowledge_entity_images`
 

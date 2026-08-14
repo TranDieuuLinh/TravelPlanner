@@ -42,10 +42,13 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     assert set(place) == {
         "placeId", "name", "coordinates", "address", "priority", "notes", "tags",
         "rating", "reviewCount", "durationMinutes", "openingHours",
-        "preferredTimeWindows", "price", "relationships",
+        "preferredTimeWindows", "sourceKind", "offeredActivityIds",
+        "timeSource", "price", "relationships",
     }
     assert place["priority"] == "user_input"
     assert place["relationships"] == ["kg:night-market"]
+    assert place["sourceKind"] == "generic"
+    assert place["offeredActivityIds"] == []
     assert place["openingHours"]["1"] == [
         {"startMinute": 540, "endMinute": 1020}
     ]
@@ -71,6 +74,10 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
         anchor_name=anchor.canonical_name,
         food_item_id="food:bun-cha",
         food_item_name="Bún chả",
+        offered_food_item_id="food:bun-cha",
+        offered_food_item_name="Bún chả",
+        food_match_type="direct_id",
+        food_match_confidence=1,
         restaurant_id="restaurant:bun-cha",
         restaurant_name="Bún Chả Hương Liên",
         distance_km=0.8,
@@ -98,6 +105,30 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     assert selected.relationships == [anchor.place_id]
     assert "food-item:food:bun-cha" in selected.tags
     assert "Bún chả" in selected.notes
+
+
+def test_food_pool_cap_prefers_required_then_paired_candidates() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-food-cap"))
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+    sample = output.food[0]
+    foods = [
+        sample.model_copy(update={"place_id": f"food:{index}"})
+        for index in range(14)
+    ]
+
+    limited = PlaceCheckerPlannerOutputBuilder._limit_food_pool(
+        foods,
+        limit=12,
+        required_ids={"food:13"},
+        paired_ids={"food:12"},
+    )
+
+    assert len(limited) == 12
+    assert {food.place_id for food in limited} >= {"food:12", "food:13"}
 
 
 def test_compact_output_preserves_overnight_window() -> None:

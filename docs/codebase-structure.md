@@ -77,6 +77,10 @@ Phase 5 lấy detail chỉ cho selected arcs, repair tối đa một vòng khi d
 thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
+TripChat lưu hai snapshot độc lập: `currentItinerary` cho PlanEditor legacy và
+`currentPlannerOutput` cho frontend hiển thị output mới. Frontend map
+`days[].stops` thành item và `days[].legs` thành transport leg; guest planner
+cũng gọi trực tiếp `POST /v1/agent/invoke` thay vì adapter plan legacy.
 
 ## Ranh giới API hiện tại
 
@@ -84,6 +88,7 @@ Backend hiện chỉ expose:
 
 - `GET /health`
 - `POST /v1/agent/invoke`
+- `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
 
 Endpoint agent nhận thread id, prompt tùy chọn, tối đa 20 URL, tối đa 20 ảnh,
 `forceRefresh` tùy chọn,
@@ -246,22 +251,37 @@ GIN `pg_trgm` trên canonical name, alias và relationship target trước khi t
 special ưu tiên place có `Offer_Item -> ActivityItem`, metadata đầy đủ,
 rating/review tốt. `Has_Style` không được dùng làm taxonomy/quota; nó chỉ cung
 cấp fallback `time_duration` và `time_windows` khi place thiếu timing trực tiếp.
-Retrieval chỉ chạy cho gap phân tích thực, không tự mở fixed reserve pool.
+Compact PlaceChecker-to-Planner contract giữ `sourceKind`, ActivityItem IDs và
+timing source. Planner phân period theo giờ stop thực tế, áp largest-remainder
+70/30 cho morning và 60/40 cho evening bằng soft source-mix penalty, đồng thời
+trả target/actual/fallback audit. Bayesian review quality tiếp tục xếp hạng độ
+nổi tiếng trong objective sau các hard feasibility constraints.
+Retrieval ngoài gap phân tích còn mở hai core pool có quota độc lập theo chuyến:
+`12 TravelPlace/ngày` và `12 Restaurant/ngày`, tối đa 60 mỗi loại. Core query
+over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt quota sau
+dedupe và quality gate. Restaurant được compact builder đưa vào `food`, không
+trộn thành activity place.
 Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
 Google Maps/external live provider chưa được nối.
 `shared/tools/bayesian_rating.py` cung cấp prior, adjusted rating, review
 reliability và quality 0..1 dùng chung cho PlaceChecker và
 FinalItineraryPlanner; module vẫn tự sở hữu cách đưa quality vào business score.
 Candidate contract của tool giữ relationship evidence chuẩn hóa ở dạng dữ liệu
-trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`/`Near`,
+trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`,
 `Special_Experience`, `Offer_Item` và `Has_Style`, duyệt ADM đệ quy và chuyển
-evidence có provenance sang scoring/output. Timing mặc định của `Has_Style`
-được đọc từ properties của node Style đích; timing riêng của place được ưu tiên.
-Nhánh food selection riêng duyệt
-`ADM -> Special_Experience -> FoodItem <- Offer_Item <- Restaurant <- Special_Near <- TravelPlace`.
+evidence có provenance sang scoring/output. Adapter không còn đọc `Near` legacy
+hoặc `Must_Visit`. Timing mặc định của `Has_Style` được đọc từ properties của
+node Style đích; timing riêng của place được ưu tiên.
+Nhánh food selection riêng duyệt primary
+`ADM -> Special_Experience -> FoodItem <- Special_Experience <- Restaurant <- Special_Near <- TravelPlace`.
 Nó giữ tối đa một selection cho mỗi TravelPlace, chấp nhận quán duy nhất và dùng
 Bayesian/review reliability để phân xử khi có nhiều quán. Query thuộc adapter,
 thuật toán chọn thuộc service/tool của module.
+Primary query chỉ nối bằng FoodItem ID chính xác, không dùng tên. Rich selection
+giữ FoodItem, match type và confidence. Khi một anchor không có primary pair,
+query dùng FoodItem trực tiếp từ `Restaurant -> Offer_Item` với match type
+`offer_item_fallback`; fallback không ghi ngược, merge Knowledge Graph hoặc giả
+làm món đặc trưng.
 Identity acceptance mềm dành riêng
 cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
 không áp dụng cho system/retrieval candidate.

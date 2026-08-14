@@ -163,8 +163,15 @@ Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact `trip + places + food`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
+Retrieval/ranking duy trì hai quota candidate độc lập theo duration:
+`12 TravelPlace/ngày` và `12 Restaurant/ngày`, tối đa 60 mỗi loại; vì vậy ba
+ngày có target tổng 72 trước khi Planner chọn lịch khả thi.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals`.
+Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` hoặc
+`generic`), `offeredActivityIds` và `timeSource`. `Offer_Item` chỉ được tính là
+nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
+qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể.
 Compact output chỉ chứa place/food có giá dùng được. `price.cost` là trung bình
 `price_min`/`price_max` khi có đủ khoảng, dùng giá trị duy nhất khi chỉ có một
 đầu mút, và bằng `0` cho tier `free`; giá thiếu không được gửi sang Planner.
@@ -172,11 +179,16 @@ Vì vậy `ItineraryPlannerInput.places[].price.cost` và
 `ItineraryPlannerInput.food[].price.cost` là field bắt buộc, non-null và không âm.
 
 `PlaceCheckerResult.foodRestaurantSelections` giữ tối đa một cặp món/quán cho
-mỗi TravelPlace anchor. Selection được suy ra từ
-`ADM -> Special_Experience -> FoodItem`, `Restaurant -> Offer_Item -> FoodItem`
-và `TravelPlace -> Special_Near -> Restaurant`. Quán duy nhất vẫn được giữ;
+mỗi TravelPlace anchor. Primary selection dùng giao FoodItem ID chính xác giữa
+`ADM -> Special_Experience -> FoodItem` và
+`Restaurant -> Special_Experience -> FoodItem`, với restaurant được nối từ
+TravelPlace bằng `Special_Near`. Quán duy nhất vẫn được giữ;
 Bayesian rating và review reliability dùng để xếp nhiều quán. Compact food dùng
 `relationships` để liên kết ngược TravelPlace, không đưa FoodItem thành place.
+Adapter không nối FoodItem bằng tên. Nếu một TravelPlace không có primary
+exact-ID pair, adapter lấy FoodItem trực tiếp từ `Restaurant -> Offer_Item` cho
+anchor đó và gắn match type `offer_item_fallback`; fallback không merge hoặc
+sửa entity trong Knowledge Graph và không được gọi là món đặc trưng.
 Bayesian prior/rating/review quality là capability dùng chung trong
 `shared/tools/bayesian_rating.py`; PlaceChecker dùng nó trong pair score, còn
 FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
@@ -190,7 +202,9 @@ thực tế làm timeline sai.
 
 `ItineraryPlannerOutput` gồm ngày/stops/ordered route legs, cost và budget trên
 một người, solver passes/objective metadata, priority `unscheduled`, optional
-discard count, warnings và phase timings. `InvokeResponse.itinerary` vẫn là
+discard count, warnings, phase timings và `sourceMix` audit target/actual cho
+morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, còn
+opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
 
@@ -279,7 +293,7 @@ Các schema dùng chung chính:
 
 ## Schema request và response của API
 
-- `InvokeRequest`: `thread_id`, `message`, `supplied_candidates`,
+- `InvokeRequest`: `thread_id`, `message`, `urls`, `images`, `force_refresh`,
   `existing_itinerary`, `edit_operation`.
 - `InvokeResponse`: `request_id`, `route`, `response`, legacy `itinerary`,
   `planner_output`, `clarification_question`, `warnings`, `sources`.
@@ -291,12 +305,18 @@ Các schema dùng chung chính:
 The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Default `time_duration` and `time_windows` are read from the target Style node; direct place timing overrides those defaults. Relationship properties remain a compatible per-attachment override. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
 
 Relationship contract accepts `recommendations` as either an object or an
-array of evidence objects, matching the runtime Knowledge Graph. Ontology also
-exposes `Special_Near`; PlaceChecker keeps compatibility with legacy `Near`.
+array of evidence objects, matching the runtime Knowledge Graph. PlaceChecker
+chỉ đọc quan hệ khoảng cách `Special_Near`; `Near` legacy và `Must_Visit` không
+còn tham gia retrieval, evidence hoặc planning projection.
 
 The current frontend planner uses the authenticated `/v1/trip-chats` contract.
 Each chat owns a LangGraph thread identifier and persists user/assistant
-messages plus the latest itinerary snapshot in PostgreSQL.
+messages plus two independent snapshots in PostgreSQL: `currentItinerary` for
+the PlanEditor legacy contract and `currentPlannerOutput` for the new planner
+contract. A response without a new snapshot preserves the previous value.
+Frontend mapping prefers `currentPlannerOutput.days[].stops/legs` and falls back
+to legacy `currentItinerary.days[].items` only for old chats. Guest planning
+calls `/v1/agent/invoke` directly and uses the same new-output mapper.
 
 `SourceReference` expose `sourceId`, `title`, `url`, `updatedAt`, `dateKind`,
 `reviewStatus` và `publishedAt` tùy chọn. `dateKind` phân biệt ngày website tự

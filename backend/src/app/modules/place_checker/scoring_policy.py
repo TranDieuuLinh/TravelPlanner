@@ -32,6 +32,8 @@ def hard_violations(
         tier=metadata.cost_tier,
     ):
         reasons.append("missing_cost")
+    if metadata is None or metadata.typical_duration_minutes is None:
+        reasons.append("missing_duration")
     if metadata and metadata.operational_status == OperationalStatus.permanently_closed:
         reasons.append("permanently_closed")
     if metadata and context.people.children and metadata.children_suitable is False:

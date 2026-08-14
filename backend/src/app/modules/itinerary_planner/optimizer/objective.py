@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
 
-from app.modules.itinerary_planner.contract import CandidatePriority
+from app.modules.itinerary_planner.contract import CandidateSourceKind
 from app.modules.itinerary_planner.optimizer.config import (
     LIGHT_TAGS,
     MEDIUM_TAGS,
@@ -12,6 +12,7 @@ from app.modules.itinerary_planner.optimizer.config import (
     ObjectiveWeights,
 )
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
+from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
 from app.modules.itinerary_planner.policies import MEAL_POLICIES, STANDARD_DAY_END_MINUTE
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
@@ -53,6 +54,9 @@ def build_objective(
         "mealDeviationCost": _meal_deviation(model, variables, weights),
         "fatigueCost": _fatigue(model, problem, variables, weights),
         "dayImbalanceCost": _day_imbalance(model, problem, variables, weights),
+        "sourceMixDeviationCost": build_source_mix_cost(
+            model, problem, variables, weights.source_mix_deviation
+        ),
         "unknownOpeningCost": sum(
             variables.selected[candidate_id] * weights.unknown_opening
             for candidate_id in problem.unknown_opening_ids
@@ -67,7 +71,8 @@ def _special_value(problem, variables, weights):
     return sum(
         variables.selected[candidate_id] * weights.special_experience
         for candidate_id, candidate in problem.candidate_by_id.items()
-        if candidate.priority == CandidatePriority.special_experience
+        if candidate.source_kind
+        in {CandidateSourceKind.special_experience, CandidateSourceKind.both}
     )
 
 

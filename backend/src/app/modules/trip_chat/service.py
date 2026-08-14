@@ -4,8 +4,12 @@ from app.modules.trip_chat.contract import TripChat
 from app.modules.trip_chat.ports import TripChatRepository
 
 
-def _dump(value: Any) -> Any:
-    return value.model_dump(mode="json") if hasattr(value, "model_dump") else value
+def _dump(value: Any, *, by_alias: bool = False) -> Any:
+    return (
+        value.model_dump(mode="json", by_alias=by_alias)
+        if hasattr(value, "model_dump")
+        else value
+    )
 
 
 class TripChatService:
@@ -63,4 +67,5 @@ class TripChatService:
             content,
             assistant,
             _dump(result.get("itinerary")),
+            _dump(result.get("planner_output"), by_alias=True),
         )

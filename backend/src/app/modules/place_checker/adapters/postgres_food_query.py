@@ -44,7 +44,7 @@ WITH special_foods AS (
           ELSE near_edge.from_entity_id
       END
      AND restaurant.entity_type = 'Restaurant'
-), pairs AS (
+), special_pairs AS (
     SELECT nearby.anchor_place_id,
            nearby.restaurant_id,
            nearby.restaurant_name,
@@ -54,6 +54,43 @@ WITH special_foods AS (
            food.food_item_name,
            food.food_priority,
            food.food_confidence,
+           food.food_item_id AS offered_food_item_id,
+           food.food_item_name AS offered_food_item_name,
+           'direct_id'::text AS food_match_type,
+           1.0::double precision AS food_match_confidence,
+           COALESCE(
+               CASE jsonb_typeof(restaurant_special.recommendations::jsonb)
+                   WHEN 'array' THEN (
+                       SELECT max(NULLIF(evidence->>'confidence', '')::double precision)
+                       FROM jsonb_array_elements(
+                           restaurant_special.recommendations::jsonb
+                       ) AS evidence
+                   )
+                   WHEN 'object' THEN NULLIF(
+                       restaurant_special.recommendations::jsonb->>'confidence', ''
+                   )::double precision
+               END,
+               0.70
+           ) AS offer_confidence
+    FROM nearby_restaurants nearby
+    JOIN knowledge_relationships restaurant_special
+      ON restaurant_special.from_entity_id = nearby.restaurant_id
+     AND restaurant_special.relationship_type = 'Special_Experience'
+    JOIN special_foods food
+      ON food.food_item_id = restaurant_special.to_entity_id
+    WHERE nearby.edge_rank = 1
+      AND COALESCE(
+          restaurant_special.recommendations::jsonb->>'status',
+          'verified'
+      ) <> 'rejected'
+), restaurant_offers AS (
+    SELECT nearby.anchor_place_id,
+           nearby.restaurant_id,
+           nearby.restaurant_name,
+           nearby.distance_km,
+           nearby.threshold_km,
+           food.id AS offered_food_item_id,
+           food.canonical_name AS offered_food_item_name,
            COALESCE(
                CASE jsonb_typeof(offer.recommendations::jsonb)
                    WHEN 'array' THEN (
@@ -72,9 +109,36 @@ WITH special_foods AS (
     JOIN knowledge_relationships offer
       ON offer.from_entity_id = nearby.restaurant_id
      AND offer.relationship_type = 'Offer_Item'
-    JOIN special_foods food ON food.food_item_id = offer.to_entity_id
+    JOIN knowledge_entities food
+      ON food.id = offer.to_entity_id
+     AND food.entity_type = 'FoodItem'
     WHERE nearby.edge_rank = 1
       AND COALESCE(offer.recommendations::jsonb->>'status', 'verified') <> 'rejected'
+), fallback_pairs AS (
+    SELECT offered.anchor_place_id,
+           offered.restaurant_id,
+           offered.restaurant_name,
+           offered.distance_km,
+           offered.threshold_km,
+           offered.offered_food_item_id AS food_item_id,
+           offered.offered_food_item_name AS food_item_name,
+           0.35::double precision AS food_priority,
+           offered.offer_confidence AS food_confidence,
+           offered.offered_food_item_id,
+           offered.offered_food_item_name,
+           'offer_item_fallback'::text AS food_match_type,
+           1.0::double precision AS food_match_confidence,
+           offered.offer_confidence
+    FROM restaurant_offers offered
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM special_pairs special
+        WHERE special.anchor_place_id = offered.anchor_place_id
+    )
+), pairs AS (
+    SELECT * FROM special_pairs
+    UNION ALL
+    SELECT * FROM fallback_pairs
 )
 SELECT pairs.anchor_place_id,
        pairs.restaurant_id,
@@ -83,6 +147,11 @@ SELECT pairs.anchor_place_id,
        pairs.threshold_km,
        pairs.food_item_id,
        pairs.food_item_name,
+       pairs.offered_food_item_id,
+       pairs.offered_food_item_name,
+       pairs.food_match_type,
+       LEAST(1.0, GREATEST(0.0, pairs.food_match_confidence))
+           AS food_match_confidence,
        LEAST(1.0, GREATEST(
            0.0,
            CASE WHEN pairs.food_priority <= 1.0

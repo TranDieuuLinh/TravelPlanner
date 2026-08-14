@@ -1,4 +1,8 @@
 import { apiFetch } from "@/shared/api/client";
+import {
+  plannerOutputToTravelPlan,
+  type ItineraryPlannerOutput,
+} from "@/features/planner/lib/planner-output";
 
 export type OpeningHourEntry = {
   dayOfWeek?: number | null;
@@ -512,11 +516,6 @@ export type PlanTimingReport = {
   warningCount: number;
 };
 
-export type PlanGenerationResult = {
-  plan: TravelPlan;
-  timingReport?: PlanTimingReport | null;
-};
-
 export type TripChatMessage = {
   id: string;
   role: "assistant" | "user";
@@ -559,6 +558,7 @@ type CurrentTripChat = {
   revision: number;
   hasItinerary: boolean;
   currentItinerary?: Record<string, any> | null;
+  currentPlannerOutput?: ItineraryPlannerOutput | null;
   createdAt: string;
   updatedAt: string;
   messages?: Array<{
@@ -614,7 +614,9 @@ function formatMinute(value: unknown): string {
 }
 
 function mapCurrentTripChat(chat: CurrentTripChat): TripChat {
-  const plan = currentItineraryToPlan(chat.currentItinerary);
+  const plan = plannerOutputToTravelPlan(chat.currentPlannerOutput, {
+    id: `agent-${chat.id}`,
+  }) ?? currentItineraryToPlan(chat.currentItinerary);
   return {
     id: chat.id,
     title: chat.title,
@@ -766,28 +768,6 @@ export function isSupervisorEnabled(): boolean {
   return readRuntimeSupervisorFlag();
 }
 
-export async function exploreFullIntake(input: {
-  rawRequest: string;
-  urls?: string[];
-  images?: File[];
-  forceRefresh?: boolean;
-}, signal?: AbortSignal): Promise<ExploreResponse> {
-  const form = new FormData();
-  form.append("rawRequest", input.rawRequest);
-  form.append("forceRefresh", String(input.forceRefresh ?? false));
-  for (const url of input.urls ?? []) {
-    form.append("urls", url);
-  }
-  for (const image of input.images ?? []) {
-    form.append("images", image);
-  }
-  return apiFetch<ExploreResponse>("/plans/explore/full/intake", {
-    method: "POST",
-    body: form,
-    signal
-  });
-}
-
 export async function enrichTripChatRoutes(input: {
   chatId: string;
   expectedRevision: number;
@@ -795,12 +775,6 @@ export async function enrichTripChatRoutes(input: {
   return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/routes/enrich`, {
     method: "POST",
     body: JSON.stringify({ expectedRevision: input.expectedRevision })
-  });
-}
-
-export async function enrichPlanRoutes(planId: string): Promise<TravelPlan> {
-  return apiFetch<TravelPlan>(`/plans/${planId}/routes/enrich`, {
-    method: "POST"
   });
 }
 
@@ -820,62 +794,6 @@ export async function calculateDayDirections(
     method: "POST",
     body: JSON.stringify(input)
   });
-}
-
-export async function createPlanFromExplorer(input: {
-  context: ExplorerContext;
-  intakeId?: string | null;
-  userId?: string | null;
-  selectedPlaces?: ExplorePlace[];
-  allowFinderGapFill?: boolean;
-  allowReplaceSourcePlaces?: boolean;
-  signal?: AbortSignal;
-}): Promise<PlanGenerationResult> {
-  const selectedPlaces = input.selectedPlaces ?? [];
-
-  const response = await apiFetch<PlanGenerationResult | TravelPlan>(
-    "/plans/main/from-explorer",
-    {
-    method: "POST",
-    signal: input.signal,
-    body: JSON.stringify({
-      tripIntent: input.context.tripIntent,
-      intakeId: input.intakeId ?? null,
-      userId: input.userId ?? null,
-      allowFinderGapFill: input.allowFinderGapFill ?? true,
-      allowReplaceSourcePlaces: input.allowReplaceSourcePlaces ?? false,
-      candidateReviews: input.context.candidateReviews ?? [],
-      selectedPlaces: selectedPlaces.map((place) => ({
-        name: place.name,
-        placeId: place.placeId ?? null,
-        address: place.address ?? null,
-        priority: place.priority ?? 1,
-        mustVisit: place.preferenceLevel === "must_visit",
-        preferenceLevel: place.preferenceLevel ?? "preferred",
-        latitude: place.latitude ?? null,
-        longitude: place.longitude ?? null,
-        ontologyType: place.ontologyType ?? null,
-        tags: [place.category, ...(place.attributes ?? [])],
-        sourceRefs: place.sourceUrl ? [place.sourceUrl] : [],
-        notes: place.notes ?? null,
-        noteSources: place.noteSources ?? [],
-        imageUrls: place.imageUrls ?? [],
-        rating: place.rating ?? null,
-        reviewCount: place.reviewCount ?? null
-      })),
-      preferenceProfile: input.context.preferenceSnapshot.effectiveProfile
-    })
-    }
-  );
-
-  if ("plan" in response) {
-    return response;
-  }
-
-  return {
-    plan: response,
-    timingReport: null
-  };
 }
 
 export async function createTripChat(title?: string): Promise<TripChat> {

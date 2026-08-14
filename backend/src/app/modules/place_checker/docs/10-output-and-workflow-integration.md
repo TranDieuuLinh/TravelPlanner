@@ -120,7 +120,7 @@ Priority compact luôn thuộc đúng một trong bốn giá trị:
 ```text
 direct_user -> user_input
 url         -> url
-Special_Near/Near -> special_near
+Special_Near -> special_near
 optional còn lại  -> special_experience
 ```
 
@@ -139,6 +139,14 @@ Rich result giữ FoodItem, Bayesian rating, distance và selection reason để
 audit. Nếu restaurant đã có trong food pool, compact builder chỉ gộp anchor và
 tag thay vì tạo place ID trùng; candidate thiếu giá, tọa độ hoặc duration vẫn
 không vượt qua boundary Planner.
+
+Food pairing ưu tiên giao nhau theo đúng FoodItem ID giữa
+`ADM -> Special_Experience -> FoodItem` và
+`Restaurant -> Special_Experience -> FoodItem`; adapter không nối theo tên.
+Kết quả primary có `foodMatchType=direct_id`. Nếu một anchor không có primary
+pair, adapter lấy FoodItem trực tiếp từ `Restaurant -> Offer_Item` và đặt
+`foodMatchType=offer_item_fallback`. Fallback không được diễn giải thành món
+đặc trưng và không merge entity hoặc tự ghi lại cạnh KG.
 
 PlaceChecker loại mọi place/food không tính được giá trước boundary sang
 FinalItineraryPlanner. Giá `price.cost` được tính theo thứ tự:

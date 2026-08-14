@@ -89,6 +89,21 @@ WITH RECURSIVE adm_descendants(id) AS (
     ) props ON true
     WHERE $1 = 'travel place'
       AND entity.entity_type = 'TravelPlace'
+      AND props.latitude IS NOT NULL
+      AND props.longitude IS NOT NULL
+      AND (props.price_min IS NOT NULL OR props.price_max IS NOT NULL)
+      AND (
+          props.time_duration IS NOT NULL
+          OR EXISTS (
+              SELECT 1
+              FROM knowledge_relationships styled
+              JOIN knowledge_properties style_property
+                ON style_property.entity_id = styled.to_entity_id
+               AND style_property.key = 'time_duration'
+              WHERE styled.from_entity_id = entity.id
+                AND styled.relationship_type = 'Has_Style'
+          )
+      )
 ), lexical_hits AS (
     SELECT entity.id, similarity(entity.normalized_name, $1) AS preliminary_score
     FROM scoped
@@ -147,14 +162,14 @@ WITH RECURSIVE adm_descendants(id) AS (
     JOIN scoped ON scoped.id = edge.to_entity_id
     WHERE $5::text IS NOT NULL
       AND edge.from_entity_id = $5::text
-      AND edge.relationship_type IN ('Special_Near', 'Near', 'Must_Visit')
+      AND edge.relationship_type = 'Special_Near'
     UNION ALL
     SELECT edge.from_entity_id, 0.0
     FROM knowledge_relationships edge
     JOIN scoped ON scoped.id = edge.from_entity_id
     WHERE $5::text IS NOT NULL
       AND edge.to_entity_id = $5::text
-      AND edge.relationship_type IN ('Special_Near', 'Near', 'Must_Visit')
+      AND edge.relationship_type = 'Special_Near'
 ), candidate_ids AS (
     SELECT id, max(preliminary_score) AS preliminary_score
     FROM lexical_hits
@@ -220,24 +235,19 @@ LEFT JOIN LATERAL (
     SELECT kind, score
     FROM (
         SELECT edge.relationship_type AS kind,
-               CASE edge.relationship_type
-                   WHEN 'Must_Visit' THEN 0.95
-                   WHEN 'Near' THEN 0.85
-                   WHEN 'Special_Near' THEN GREATEST(
-                       0.65,
-                       0.95 - 0.30 * COALESCE(
-                           (edge.recommendations::jsonb->>'distance_km')::double precision
-                           / NULLIF((edge.recommendations::jsonb->>'threshold_km')::double precision, 0),
-                           1
-                       )
+               GREATEST(
+                   0.65,
+                   0.95 - 0.30 * COALESCE(
+                       (edge.recommendations::jsonb->>'distance_km')::double precision
+                       / NULLIF((edge.recommendations::jsonb->>'threshold_km')::double precision, 0),
+                       1
                    )
-                   ELSE 0
-               END AS score
+               ) AS score
         FROM knowledge_relationships edge
         WHERE $5::text IS NOT NULL
           AND ((edge.from_entity_id = $5 AND edge.to_entity_id = entity.id)
             OR (edge.from_entity_id = entity.id AND edge.to_entity_id = $5))
-          AND edge.relationship_type IN ('Special_Near', 'Near', 'Must_Visit')
+          AND edge.relationship_type = 'Special_Near'
         UNION ALL
         SELECT special.relationship_type,
                CASE WHEN special.recommendations::jsonb->>'status' = 'pending'
@@ -325,9 +335,12 @@ LEFT JOIN LATERAL (
                NULL::double precision AS distance_km,
                NULL::double precision AS threshold_km,
                relation.source, relation.source_note,
-               CASE WHEN relation.relationship_type = 'Has_Style'
-                    THEN COALESCE(relation.recommendations::jsonb->'properties', '{}'::jsonb)
-                    ELSE '{}'::jsonb END AS properties,
+               CASE relation.relationship_type
+                   WHEN 'Has_Style' THEN COALESCE(relation.recommendations::jsonb->'properties', '{}'::jsonb)
+                   WHEN 'Offer_Item' THEN jsonb_strip_nulls(jsonb_build_object(
+                       'entityType', target.entity_type,
+                       'time_windows', (SELECT value FROM knowledge_properties WHERE entity_id = target.id AND key = 'time_windows' LIMIT 1)))
+                   ELSE '{}'::jsonb END AS properties,
                CASE relation.relationship_type
                    WHEN 'Offer_Item' THEN COALESCE(
                        CASE jsonb_typeof(relation.recommendations::jsonb)
@@ -371,12 +384,9 @@ LEFT JOIN LATERAL (
                (relation.recommendations::jsonb->>'distance_km')::double precision,
                (relation.recommendations::jsonb->>'threshold_km')::double precision,
                relation.source, relation.source_note, '{}'::jsonb,
-               CASE relation.relationship_type
-                   WHEN 'Must_Visit' THEN 0.95 WHEN 'Near' THEN 0.85
-                   ELSE GREATEST(0.65, 0.95 - 0.30 * COALESCE(
-                       (relation.recommendations::jsonb->>'distance_km')::double precision
-                       / NULLIF((relation.recommendations::jsonb->>'threshold_km')::double precision, 0), 1))
-               END
+               GREATEST(0.65, 0.95 - 0.30 * COALESCE(
+                   (relation.recommendations::jsonb->>'distance_km')::double precision
+                   / NULLIF((relation.recommendations::jsonb->>'threshold_km')::double precision, 0), 1))
         FROM knowledge_relationships relation
         JOIN knowledge_entities related ON related.id = CASE
             WHEN relation.from_entity_id = entity.id THEN relation.to_entity_id
@@ -384,7 +394,7 @@ LEFT JOIN LATERAL (
         WHERE $5::text IS NOT NULL
           AND ((relation.from_entity_id = $5 AND relation.to_entity_id = entity.id)
             OR (relation.from_entity_id = entity.id AND relation.to_entity_id = $5))
-          AND relation.relationship_type IN ('Special_Near', 'Near', 'Must_Visit')
+          AND relation.relationship_type = 'Special_Near'
     ) edge
 ) relations ON true
 ORDER BY relationship_score DESC, match_score DESC,

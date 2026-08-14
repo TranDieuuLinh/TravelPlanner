@@ -13,6 +13,12 @@ from app.modules.place_checker.output_contract import (
 from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
 from app.modules.place_checker.food_planning_output import SelectedFoodPlanningProjector
+from app.modules.place_checker.planner_candidate_metadata import (
+    preferred_time_values,
+    source_metadata,
+    time_source,
+)
+from app.modules.place_checker.pool_policy import pool_target_for_days
 
 __all__ = ["PlaceCheckerPlannerOutputBuilder", "PlaceCheckerPlanningProjector"]
 
@@ -100,6 +106,31 @@ class PlaceCheckerPlannerOutputBuilder:
             if pairing is not None and pairing.place_id not in seen:
                 food.append(pairing)
                 seen.add(pairing.place_id)
+        required_food_ids = {
+            checked.place_id
+            for checked in result.checked_places
+            if checked.place_id
+            and checked.category in {"restaurant", "drink_dessert"}
+            and (
+                checked.mandatory
+                or checked.source_tier in {SourceTier.direct_user, SourceTier.url}
+            )
+        }
+        required_food_ids.update(
+            item.selected.place_id
+            for item in result.resolved_items
+            if item.selected is not None
+        )
+        paired_food_ids = {
+            selection.restaurant_id
+            for selection in result.food_restaurant_selections
+        }
+        food = self._limit_food_pool(
+            food,
+            limit=pool_target_for_days(result.trip_context.days),
+            required_ids=required_food_ids,
+            paired_ids=paired_food_ids,
+        )
         budget = result.trip_context.budget
         return PlaceCheckerPlannerOutput(
             trip=PlannerOutputTrip(
@@ -122,6 +153,29 @@ class PlaceCheckerPlannerOutputBuilder:
         )
 
     @staticmethod
+    def _limit_food_pool(
+        food: list[PlannerOutputFood],
+        *,
+        limit: int,
+        required_ids: set[str],
+        paired_ids: set[str],
+    ) -> list[PlannerOutputFood]:
+        if len(food) <= limit:
+            return food
+        indexed = list(enumerate(food))
+        indexed.sort(
+            key=lambda entry: (
+                0
+                if entry[1].place_id in required_ids
+                else 1
+                if entry[1].place_id in paired_ids
+                else 2,
+                entry[0],
+            )
+        )
+        return [candidate for _, candidate in indexed[:limit]]
+
+    @staticmethod
     def _eligible(checked: CheckedPlace) -> bool:
         return bool(
             checked.place_id
@@ -142,6 +196,9 @@ class PlaceCheckerPlannerOutputBuilder:
 
     @classmethod
     def _place(cls, checked: CheckedPlace, days: int) -> PlannerOutputPlace:
+        source_kind, offered_activity_ids = source_metadata(
+            checked.relationship_evidence
+        )
         return PlannerOutputPlace(
             place_id=checked.place_id,
             name=checked.canonical_name or "",
@@ -155,6 +212,13 @@ class PlaceCheckerPlannerOutputBuilder:
             duration_minutes=checked.duration.typical_minutes,
             opening_hours=cls._opening_hours(checked.opening.hours, days),
             preferred_time_windows=cls._preferred_windows(checked),
+            source_kind=source_kind,
+            offered_activity_ids=offered_activity_ids,
+            time_source=time_source(
+                direct_values=checked.time_preferences,
+                opening_hours=checked.opening.hours,
+                relationships=checked.relationship_evidence,
+            ),
             price=cls._price(checked),
             relationships=cls._related_place_ids(checked),
         )
@@ -174,12 +238,16 @@ class PlaceCheckerPlannerOutputBuilder:
         option = item.selected
         relations = option.relationships
         relation_types = {relation.relationship_type for relation in relations}
-        if relation_types & {"Special_Near", "Near"}:
+        if "Special_Near" in relation_types:
             priority = "special_near"
         elif "Special_Experience" in relation_types:
             priority = "special_experience"
         else:
             priority = "special_experience"
+        source_kind, offered_activity_ids = source_metadata(relations)
+        preferred_values, _ = preferred_time_values(
+            direct_values=[], relationships=relations
+        )
         return PlannerOutputPlace(
             place_id=option.place_id,
             name=option.name,
@@ -192,7 +260,14 @@ class PlaceCheckerPlannerOutputBuilder:
             review_count=option.review_count,
             duration_minutes=option.typical_duration_minutes,
             opening_hours=cls._opening_hours(option.opening_hours, days),
-            preferred_time_windows=[],
+            preferred_time_windows=cls._windows(preferred_values),
+            source_kind=source_kind,
+            offered_activity_ids=offered_activity_ids,
+            time_source=time_source(
+                direct_values=[],
+                opening_hours=option.opening_hours,
+                relationships=relations,
+            ),
             price=PlannerPrice(
                 cost=typical_cost(
                     minimum=option.minimum_cost,
@@ -239,7 +314,7 @@ class PlaceCheckerPlannerOutputBuilder:
         if checked.source_tier == SourceTier.url:
             return "url"
         types = {relation.relationship_type for relation in checked.relationship_evidence}
-        if types & {"Special_Near", "Near"}:
+        if "Special_Near" in types:
             return "special_near"
         return "special_experience"
 
@@ -264,7 +339,7 @@ class PlaceCheckerPlannerOutputBuilder:
             (
                 relation
                 for relation in checked.relationship_evidence
-                if relation.relationship_type in {"Special_Near", "Near"}
+                if relation.relationship_type == "Special_Near"
                 and relation.distance_km is not None
             ),
             key=lambda relation: relation.distance_km,
@@ -280,13 +355,10 @@ class PlaceCheckerPlannerOutputBuilder:
 
     @classmethod
     def _preferred_windows(cls, checked: CheckedPlace) -> list[PlannerTimeWindow]:
-        values = list(checked.time_preferences)
-        for relation in checked.relationship_evidence:
-            if relation.relationship_type != "Has_Style":
-                continue
-            for item in relation.properties.get("time_windows", []):
-                if isinstance(item, dict) and item.get("start") and item.get("end"):
-                    values.append(f"{item['start']}-{item['end']}")
+        values, _ = preferred_time_values(
+            direct_values=checked.time_preferences,
+            relationships=checked.relationship_evidence,
+        )
         return cls._windows(values)
 
     @classmethod

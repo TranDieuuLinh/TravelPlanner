@@ -10,7 +10,14 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-PlaceSelector/Final Planner áp tỷ lệ khi đã biết số slot sáng/tối. Không xóa
+Pool có hai quota độc lập: mỗi ngày 12 `TravelPlace` và 12 `Restaurant`.
+Restaurant đi vào compact `food`, không bị trộn thành activity place. Đây là
+candidate reserve; FinalItineraryPlanner vẫn chỉ xếp số stop khả thi theo thời
+gian, bữa ăn và route.
+Khi food selection bổ sung quán ghép với TravelPlace, compact builder ưu tiên
+quán user-requested rồi quán đã ghép và vẫn chặn tổng Restaurant theo quota.
+
+FinalItineraryPlanner áp tỷ lệ khi đã biết số slot sáng/tối. Không xóa
 candidate khỏi PlaceChecker chỉ vì chưa được bốc vào một slot.
 
 ## Thứ tự điều kiện
@@ -87,5 +94,16 @@ PlaceChecker.
 - `checkedPlaces[].cost`: soft budget;
 - `checkedPlaces[].verification` và `evaluation`: quality gate.
 
-PlaceSelector cần trả thêm audit metadata: quota mong muốn/thực tế, fallback,
-seed khám phá, cluster đã chọn và lý do loại candidate.
+Compact planner contract hiện mang `sourceKind`, `offeredActivityIds` và
+`timeSource`. `sourceKind=both` được solver gán đúng một nhóm trong từng buổi,
+không đếm hai lần. Timing ưu tiên source hint trực tiếp, sau đó
+`ActivityItem.time_windows`, rồi `Has_Style.time_windows`; opening hours của
+place vẫn là hard feasibility boundary.
+
+FinalItineraryPlanner đã áp quota source-mix theo thời điểm stop thực sự được
+xếp: morning khi kết thúc không muộn hơn 12:00, evening khi bắt đầu từ 18:00.
+Quota dùng largest-remainder và penalty mềm được clamp theo availability; thiếu
+nhóm nào không bị phạt và được bù bằng nhóm còn lại trong cùng buổi. Output
+`sourceMix` vẫn giữ policy target chưa clamp, actual,
+`quotaFallback` và reason. Seed khám phá, geographic cluster audit và policy
+80/20 vẫn là phần chưa triển khai.

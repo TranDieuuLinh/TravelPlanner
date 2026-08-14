@@ -13,6 +13,8 @@ from app.modules.itinerary_planner.output_contract import (
     ItineraryStop,
     SolverMetadata,
     SolverPassMetadata,
+    SourceMixAudit,
+    SourceMixCounts,
     UnscheduledPriority,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
@@ -144,6 +146,24 @@ def finalize_itinerary(
             ],
             planning_time_ms=solver_time,
         ),
+        source_mix=[
+            SourceMixAudit(
+                period=item.period,
+                target=SourceMixCounts(
+                    special=item.target_special,
+                    offer=item.target_offer,
+                ),
+                actual=SourceMixCounts(
+                    special=item.actual_special,
+                    offer=item.actual_offer,
+                ),
+                quota_fallback=item.fallback_used,
+                fallback_reason=(
+                    "source_mix_quota_fallback" if item.fallback_used else None
+                ),
+            )
+            for item in optimization.source_mix
+        ],
         unscheduled=unscheduled,
         discarded_optional_count=(
             len(problem.discarded_optional) + len(optional_ids - selected)

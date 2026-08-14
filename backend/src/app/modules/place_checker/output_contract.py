@@ -186,6 +186,13 @@ class PlannerOutputPlace(ContractModel):
     duration_minutes: int = Field(ge=1)
     opening_hours: dict[str, list[PlannerTimeWindow]] | None = None
     preferred_time_windows: list[PlannerTimeWindow] = Field(default_factory=list)
+    source_kind: Literal[
+        "special_experience", "offer_item", "both", "generic"
+    ] = "generic"
+    offered_activity_ids: list[str] = Field(default_factory=list)
+    time_source: Literal[
+        "place", "activity_item", "has_style", "source_hint", "unknown"
+    ] = "unknown"
     price: PlannerPrice
     relationships: list[str] = Field(default_factory=list)
 

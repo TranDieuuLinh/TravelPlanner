@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_graph
+from app.api.dependencies import get_explorer_graph, get_graph
 from app.main import create_app
 from app.modules.information_finder.contract import (
     InformationFinderOutput,
@@ -12,6 +12,7 @@ from app.modules.supervisor.public import (
     SupervisorClassificationError,
     SupervisorDecision,
 )
+from app.modules.itinerary_planner.public import ItineraryPlannerOutput
 
 
 class FakeGraph:
@@ -102,6 +103,52 @@ def test_invoke_returns_finish_fields_in_camel_case():
     assert payload["clarificationQuestion"] == "What would you like to plan?"
     assert payload["warnings"] == ["No travel subgraph was needed."]
     assert "clarification_question" not in payload
+
+
+def test_invoke_returns_planner_output_in_camel_case():
+    class PlannerGraph:
+        async def ainvoke(self, graph_input, config):
+            return {
+                "decision": SupervisorDecision(
+                    route="explorer", reason="test", confidence=1.0
+                ),
+                "response": "Đã tạo lịch trình.",
+                "planner_output": ItineraryPlannerOutput.model_validate(
+                    {
+                        "destination": "Hà Nội",
+                        "timezone": "Asia/Ho_Chi_Minh",
+                        "days": [],
+                        "totalCostPerPerson": 0,
+                        "currency": "VND",
+                        "solver": {
+                            "status": "OPTIMAL",
+                            "optimalityProven": True,
+                            "objectiveValue": 0,
+                            "objectivePolicyVersion": "test-v1",
+                            "objectiveComponents": {},
+                            "passes": [],
+                            "planningTimeMs": 1,
+                        },
+                        "unscheduled": [],
+                        "discardedOptionalCount": 0,
+                        "warnings": [],
+                        "phaseTimingsMs": {"total": 1},
+                    }
+                ),
+            }
+
+    app = create_app()
+    app.dependency_overrides[get_graph] = lambda: PlannerGraph()
+    response = TestClient(app).post(
+        "/v1/agent/invoke",
+        json={"threadId": "thread-planner", "message": "Đi Hà Nội"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["itinerary"] is None
+    assert payload["plannerOutput"]["destination"] == "Hà Nội"
+    assert "planner_output" not in payload
 
 
 def test_invoke_maps_disabled_supervisor_fallback_to_safe_service_error():
