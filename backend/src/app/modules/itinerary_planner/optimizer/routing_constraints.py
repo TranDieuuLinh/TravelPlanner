@@ -163,6 +163,10 @@ def _add_budget(
     variables: PlannerVariables,
 ) -> None:
     terms = []
+    if problem.accommodation_cost_per_person_per_day:
+        terms.append(
+            problem.accommodation_cost_per_person_per_day * problem.trip.days
+        )
     for candidate_id, candidate in problem.candidate_by_id.items():
         terms.append(variables.selected[candidate_id] * ceil(candidate.price.cost))
     sparse_by_pair = {

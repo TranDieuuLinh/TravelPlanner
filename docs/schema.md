@@ -161,11 +161,14 @@ graph, node hoặc state nội bộ.
 Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
 
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
-`PlaceCheckerPlannerOutputBuilder` tạo compact `trip + places + food`; root
+`PlaceCheckerPlannerOutputBuilder` tạo compact
+`trip + places + food + accommodation`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
 Retrieval/ranking duy trì hai quota candidate độc lập theo duration:
 `12 TravelPlace/ngày` và `12 Restaurant/ngày`, tối đa 60 mỗi loại; vì vậy ba
-ngày có target tổng 72 trước khi Planner chọn lịch khả thi.
+ngày có target 72 stop candidates trước khi Planner chọn lịch khả thi. Một pool
+Accommodation riêng chỉ giữ một khách sạn có giá dương: low chọn gần P25,
+medium gần P50 và high gần P80 của candidate đã xác minh trong thành phố.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals`.
 Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` hoặc
@@ -177,6 +180,8 @@ Compact output chỉ chứa place/food có giá dùng được. `price.cost` là
 đầu mút, và bằng `0` cho tier `free`; giá thiếu không được gửi sang Planner.
 Vì vậy `ItineraryPlannerInput.places[].price.cost` và
 `ItineraryPlannerInput.food[].price.cost` là field bắt buộc, non-null và không âm.
+Accommodation không phải activity stop và không cần duration; giá của nó được
+truyền riêng bằng `pricePerNight`.
 
 `PlaceCheckerResult.foodRestaurantSelections` giữ tối đa một cặp món/quán cho
 mỗi TravelPlace anchor. Primary selection dùng giao FoodItem ID chính xác giữa
@@ -200,13 +205,18 @@ tạo sparse arcs và chạy OR-Tools CP-SAT ba pass. Sau solver, module chỉ l
 route detail cho selected arcs và có tối đa một affected-day repair nếu detail
 thực tế làm timeline sai.
 
-`ItineraryPlannerOutput` gồm ngày/stops/ordered route legs, cost và budget trên
-một người, solver passes/objective metadata, priority `unscheduled`, optional
+`ItineraryPlannerOutput` gồm accommodation đã chọn, ngày/stops/ordered route
+legs, cost và budget trên
+một người, cùng `costBreakdown` mỗi ngày tách accommodation, food,
+localTransport, activities và misc. Solver passes/objective metadata, priority `unscheduled`, optional
 discard count, warnings, phase timings và `sourceMix` audit target/actual cho
 morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, còn
 opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+Root chỉ công bố `plannerOutput` thành công khi output chứa đúng toàn bộ số ngày
+được yêu cầu và mỗi ngày có ít nhất một stop. Output thiếu ngày hoặc ngày rỗng
+được trả thành planning failure và không thay thế snapshot TripChat trước đó.
 
 ## Tool và provider adapter
 
@@ -226,7 +236,8 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
 | `ValhallaAdapter.matrix` | `itinerary_planner` | Candidate coordinates + profile | Global asymmetric driving matrix; fallback Haversine khi provider unavailable |
 | `ValhallaAdapter.route` | `itinerary_planner` | Selected route legs | Duration, distance và encoded polyline; fallback polyline điểm đầu/cuối khi provider unavailable |
-| `XanhSmTransportCostEstimator` | `itinerary_planner` | Distance/profile/people | Giá di chuyển và phụ phí đêm trên một người |
+| `XanhSmTransportCostEstimator` | `shared/tools` (dùng bởi `itinerary_planner`) | Distance/profile/people | Giá di chuyển, phụ phí đêm và fare metadata trên một người |
+| `DailyCostCalculator` | `shared/tools` (dùng bởi `itinerary_planner`) | Accommodation/food/local transport/activities/misc | Breakdown và tổng chi phí/người/ngày trong một currency |
 | `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; dùng key pool chung, tối đa một request đang chạy trên mỗi key |
 | `UrlSourceRouter` | `explorer` | URL YouTube/TikTok/Instagram/website | `SourceExtractionResult` chứa artifact có provenance |
 | `PostgresUrlSourceCache` | `explorer` | canonical URL, TTL, extractor version | artifact URL chuẩn hóa từ `source_documents` |

@@ -141,10 +141,20 @@ class PlannerFoodCandidate(PlannerCandidate):
         return list(dict.fromkeys(values))
 
 
+class PlannerAccommodation(PlannerContractModel):
+    place_id: str = Field(min_length=1, max_length=300)
+    name: str = Field(min_length=1, max_length=300)
+    address: str | None = Field(default=None, max_length=1000)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
+    price_per_night: PlannerPrice
+
+
 class ItineraryPlannerInput(PlannerContractModel):
     trip: PlannerTrip
     places: list[PlannerCandidate] = Field(default_factory=list, max_length=500)
     food: list[PlannerFoodCandidate] = Field(default_factory=list, max_length=500)
+    accommodation: PlannerAccommodation | None = None
     upstream_warnings: list[str] = Field(default_factory=list, max_length=500)
 
     @model_validator(mode="after")

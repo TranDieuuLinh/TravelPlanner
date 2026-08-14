@@ -62,9 +62,54 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     assert len(provider.calls) == len(result["optimization_result"].selected_arcs)
     assert all(leg.geometry_available for leg in output.days[0].legs)
     assert sum(day.cost_per_person for day in output.days) == output.total_cost_per_person
+    breakdown = output.days[0].cost_breakdown
+    assert breakdown.total == output.days[0].cost_per_person
+    assert breakdown.food == sum(
+        stop.cost_per_person for stop in output.days[0].stops if stop.kind == "food"
+    )
+    assert breakdown.activities == sum(
+        stop.cost_per_person for stop in output.days[0].stops if stop.kind == "place"
+    )
+    assert breakdown.local_transport > 0
+    assert breakdown.accommodation == 0
+    assert breakdown.misc == 0
     assert output.unscheduled == []
     assert output.discarded_optional_count == 0
     assert [item.period for item in output.source_mix] == ["morning", "evening"]
+
+
+def test_phase5_adds_selected_accommodation_to_daily_and_total_cost() -> None:
+    raw = payload(
+        places=[candidate("lake", priority="user_input")],
+        foods=[
+            food("breakfast", supported_meals=["breakfast"]),
+            food("lunch", supported_meals=["lunch"]),
+            food("dinner", supported_meals=["dinner"]),
+        ],
+    )
+    raw["accommodation"] = {
+        "placeId": "hotel:priced",
+        "name": "Priced Hotel",
+        "address": "Hanoi",
+        "rating": 4.5,
+        "reviewCount": 100,
+        "pricePerNight": {"cost": 600_000, "currency": "VND"},
+    }
+    graph = build_itinerary_planner_graph(
+        GeneratedMatrixProvider(),
+        XanhSmTransportCostEstimator(),
+        solver_config=FAST_CONFIG,
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": raw}))
+
+    output = result["output"]
+    assert output.accommodation is not None
+    assert output.accommodation.place_id == "hotel:priced"
+    assert output.days[0].cost_breakdown.accommodation == 300_000
+    assert output.total_cost_per_person == sum(
+        day.cost_breakdown.total for day in output.days
+    )
 
 
 def test_phase5_keeps_valid_plan_when_route_geometry_provider_is_missing() -> None:

@@ -8,6 +8,7 @@ from app.modules.itinerary_planner.contract import CandidatePriority
 from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.output_contract import (
     ItineraryDay,
+    DailyCostBreakdown,
     ItineraryPlannerOutput,
     ItineraryRouteLeg,
     ItineraryStop,
@@ -20,6 +21,7 @@ from app.modules.itinerary_planner.output_contract import (
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.route_enrichment import RouteEnrichmentResult
 from app.modules.itinerary_planner.routing_models import RoutingProblem
+from app.shared.tools.daily_cost import DailyCostCalculator
 
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
 LATE_NIGHT_START_MINUTE = 22 * 60
@@ -76,10 +78,22 @@ def finalize_itinerary(
         day_stops = sorted(stops_by_day[day], key=lambda item: (item.start_minute, item.place_id))
         activity_minutes = sum(stop.duration_minutes for stop in day_stops)
         travel_minutes = sum(leg.duration_minutes for leg in raw_legs_by_day[day])
-        candidate_cost = sum(stop.cost_per_person for stop in day_stops)
+        food_cost = sum(
+            stop.cost_per_person for stop in day_stops if stop.kind == "food"
+        )
+        activity_cost = sum(
+            stop.cost_per_person for stop in day_stops if stop.kind == "place"
+        )
         transport_cost = sum(
             _transport_cost(routing, leg.origin_id, leg.destination_id, day_stops)
             for leg in raw_legs_by_day[day]
+        )
+        daily_cost = DailyCostCalculator.estimate(
+            accommodation=problem.accommodation_cost_per_person_per_day,
+            food=food_cost,
+            local_transport=transport_cost,
+            activities=activity_cost,
+            currency=problem.trip.budget.currency,
         )
         days.append(
             ItineraryDay(
@@ -89,7 +103,16 @@ def finalize_itinerary(
                 legs=legs_by_day[day],
                 activity_minutes=activity_minutes,
                 travel_minutes=travel_minutes,
-                cost_per_person=candidate_cost + transport_cost,
+                cost_per_person=daily_cost.total,
+                cost_breakdown=DailyCostBreakdown(
+                    accommodation=daily_cost.accommodation,
+                    food=daily_cost.food,
+                    local_transport=daily_cost.local_transport,
+                    activities=daily_cost.activities,
+                    misc=daily_cost.misc,
+                    total=daily_cost.total,
+                    currency=daily_cost.currency,
+                ),
             )
         )
 
@@ -124,6 +147,7 @@ def finalize_itinerary(
     return ItineraryPlannerOutput(
         destination=problem.trip.destination,
         timezone=problem.trip.timezone,
+        accommodation=problem.accommodation,
         days=days,
         total_cost_per_person=optimization.total_cost_per_person,
         budget_per_person=problem.trip.budget.amount,

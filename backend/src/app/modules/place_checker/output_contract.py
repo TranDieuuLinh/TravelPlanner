@@ -203,6 +203,15 @@ class PlannerOutputFood(PlannerOutputPlace):
     )
 
 
+class PlannerOutputAccommodation(ContractModel):
+    place_id: str
+    name: str
+    address: str | None = None
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
+    price_per_night: PlannerPrice
+
+
 class PlannerOutputTrip(ContractModel):
     destination: str
     days: int = Field(ge=1)
@@ -217,3 +226,4 @@ class PlaceCheckerPlannerOutput(ContractModel):
     trip: PlannerOutputTrip
     places: list[PlannerOutputPlace] = Field(default_factory=list)
     food: list[PlannerOutputFood] = Field(default_factory=list)
+    accommodation: PlannerOutputAccommodation | None = None

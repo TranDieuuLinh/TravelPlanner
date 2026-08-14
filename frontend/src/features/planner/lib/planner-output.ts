@@ -33,6 +33,14 @@ export type PlannerOutputLeg = {
 export type ItineraryPlannerOutput = {
   destination: string;
   timezone: string;
+  accommodation?: {
+    placeId: string;
+    name: string;
+    address?: string | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+    pricePerNight: { cost: number; currency: string };
+  } | null;
   days: Array<{
     day: number;
     date: string;
@@ -41,6 +49,15 @@ export type ItineraryPlannerOutput = {
     activityMinutes: number;
     travelMinutes: number;
     costPerPerson: number;
+    costBreakdown: {
+      accommodation: number;
+      food: number;
+      localTransport: number;
+      activities: number;
+      misc: number;
+      total: number;
+      currency: string;
+    };
   }>;
   totalCostPerPerson: number;
   budgetPerPerson?: number | null;
@@ -99,7 +116,11 @@ export function plannerOutputToTravelPlan(
   output: ItineraryPlannerOutput | null | undefined,
   options: { id?: string } = {},
 ): TravelPlan | null {
-  if (!output) return null;
+  if (
+    !output
+    || output.days.length === 0
+    || output.days.some((day) => day.stops.length === 0)
+  ) return null;
 
   const days = output.days.map((day) => {
     const itemIdByPlace = new Map<string, string>();
@@ -150,6 +171,15 @@ export function plannerOutputToTravelPlan(
     destination: output.destination,
     kind: "main",
     days,
+    accommodation: output.accommodation
+      ? {
+          placeId: output.accommodation.placeId,
+          name: output.accommodation.name,
+          address: output.accommodation.address,
+          pricePerNight: output.accommodation.pricePerNight.cost,
+          currency: output.accommodation.pricePerNight.currency,
+        }
+      : null,
     warnings: output.warnings,
     unscheduledPlaces: output.unscheduled.map((item) => ({
       placeId: item.placeId,

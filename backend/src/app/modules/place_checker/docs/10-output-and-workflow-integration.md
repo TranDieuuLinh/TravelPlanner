@@ -162,3 +162,7 @@ không có dữ liệu -> loại, không gửi sang Planner
 Output chỉ phát `price.cost` và `price.currency` đúng contract JSON của Planner;
 `minimum`/`maximum` vẫn được giữ trong rich output nội bộ để phục vụ phân tích
 ngân sách. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.
+
+Accommodation dùng boundary riêng, không đi vào `places` như activity. Chỉ bản
+ghi đã xác minh và có `typical_cost > 0` được chọn. Budget low/medium/high chọn
+lần lượt candidate gần P25/P50/P80 và truyền `pricePerNight` sang Planner.

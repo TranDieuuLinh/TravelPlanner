@@ -32,7 +32,7 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
         timezone="Asia/Ho_Chi_Minh",
     ).model_dump(by_alias=True)
 
-    assert set(output) == {"trip", "places", "food"}
+    assert set(output) == {"trip", "places", "food", "accommodation"}
     assert output["trip"]["timezone"] == "Asia/Ho_Chi_Minh"
     assert output["trip"]["startDate"] == "2026-08-20"
     assert set(output["trip"]) == {
@@ -221,3 +221,50 @@ def test_compact_output_calculates_typical_cost_from_range() -> None:
     place = next(item for item in output.places if item.place_id == first.place_id)
 
     assert place.price.cost == 50_000
+
+
+def test_compact_output_selects_positive_priced_accommodation_at_budget_percentile() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-hotel"))
+    sample = result.checked_places[0]
+    accommodations = []
+    for index, price in enumerate((100_000, 200_000, 300_000, 400_000, 500_000)):
+        accommodations.append(
+            sample.model_copy(
+                update={
+                    "place_id": f"hotel:{index}",
+                    "canonical_name": f"Hotel {index}",
+                    "category": "accommodation",
+                    "cost": sample.cost.model_copy(
+                        update={
+                            "currency": "VND",
+                            "minimum": price,
+                            "typical": price,
+                            "maximum": price,
+                            "known": True,
+                        }
+                    ),
+                }
+            )
+        )
+    zero_price = accommodations[0].model_copy(
+        update={
+            "place_id": "hotel:free",
+            "cost": accommodations[0].cost.model_copy(
+                update={"minimum": 0, "typical": 0, "maximum": 0}
+            ),
+        }
+    )
+    result = result.model_copy(
+        update={"checked_places": [*result.checked_places, zero_price, *accommodations]}
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert output.accommodation is not None
+    assert output.accommodation.place_id == "hotel:1"
+    assert output.accommodation.price_per_night.cost == 200_000
+    assert all(place.place_id != "hotel:1" for place in output.places)

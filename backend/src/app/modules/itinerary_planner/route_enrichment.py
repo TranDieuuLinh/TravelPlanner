@@ -6,7 +6,6 @@ from math import ceil
 
 from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.ports import RouteDetailProvider
-from app.modules.itinerary_planner.ports import TransportCostEstimator
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import (
     RouteDetail,
@@ -17,6 +16,7 @@ from app.modules.itinerary_planner.routing_models import (
     STRAIGHT_LINE_PROVIDER,
     STRAIGHT_LINE_WARNING,
 )
+from app.shared.tools.transport_cost import TransportCostEstimator
 
 
 @dataclass(frozen=True, slots=True)

@@ -235,11 +235,35 @@ class RootNodes:
                 "warnings": [*state.get("warnings", []), error],
                 "response": f"Itinerary planning stopped: {error}",
             }
+        output = ItineraryPlannerOutput.model_validate(result["output"])
+        expected_days = set(range(1, planner_input.trip.days + 1))
+        scheduled_days = {day.day for day in output.days if day.stops}
+        if (
+            len(output.days) != planner_input.trip.days
+            or scheduled_days != expected_days
+        ):
+            warning = (
+                "FinalItineraryPlanner returned an incomplete schedule; "
+                "every requested day must contain at least one stop."
+            )
+            return {
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            *state.get("warnings", []),
+                            *result.get("warnings", []),
+                            *output.warnings,
+                            warning,
+                        ]
+                    )
+                ),
+                "response": f"Itinerary planning stopped: {warning}",
+            }
         return {
             "warnings": list(
                 dict.fromkeys([*state.get("warnings", []), *result.get("warnings", [])])
             ),
-            "planner_output": ItineraryPlannerOutput.model_validate(result["output"]),
+            "planner_output": output,
             "response": "Itinerary was optimized successfully.",
         }
 

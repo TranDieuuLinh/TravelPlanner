@@ -26,17 +26,6 @@ class RouteDetailProvider(Protocol):
     ) -> tuple[RouteDetail, ...]: ...
 
 
-class TransportCostEstimator(Protocol):
-    def estimate(
-        self,
-        distance_meters: int,
-        profile: str,
-        people: int,
-    ) -> tuple[int, int]:
-        """Return (daytime cost, late-night surcharge), both per person."""
-        ...
-
-
 class MatrixCache(Protocol):
     async def get(self, key: str) -> TravelMatrix | None: ...
 
