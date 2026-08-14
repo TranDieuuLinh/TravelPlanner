@@ -74,6 +74,18 @@ def test_source_flow_preserves_explicit_prompt_preferences() -> None:
     assert output.short_preferences == ["culture", "coffee", "local_experience"]
 
 
+def test_general_preferences_do_not_become_input_items() -> None:
+    output = invoke({
+        "rawPrompt": (
+            "Du lịch Hà Nội 2 ngày, thích văn hóa và ẩm thực, "
+            "buổi tối đi dạo"
+        )
+    })
+
+    assert output.input_items is None
+    assert output.short_preferences == ["culture", "local_food", "walking"]
+
+
 def test_named_venue_keeps_only_proper_name_and_links_prompt_item() -> None:
     output = invoke({
         "rawPrompt": (

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil
 from types import MappingProxyType
 
@@ -10,8 +10,8 @@ from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     ItineraryPlannerInput,
     MealType,
-    PlannerCandidate,
     PlannerAccommodation,
+    PlannerCandidate,
     PlannerFoodCandidate,
     PlannerTrip,
 )
@@ -64,7 +64,8 @@ MealSlot = tuple[str, int, MealType]
 @dataclass(frozen=True, slots=True)
 class PreparedPlanningProblem:
     trip: PlannerTrip
-    accommodation: PlannerAccommodation | None
+    accommodations: tuple[PlannerAccommodation, ...]
+    accommodation_by_id: Mapping[str, PlannerAccommodation]
     valid_places: tuple[PlannerCandidate, ...]
     valid_food: tuple[PlannerFoodCandidate, ...]
     candidate_by_id: Mapping[str, Candidate]
@@ -79,7 +80,10 @@ class PreparedPlanningProblem:
     unscheduled_priority: tuple[CandidateExclusion, ...]
     discarded_optional: tuple[CandidateExclusion, ...]
     warnings: tuple[str, ...]
-    accommodation_cost_per_person_per_day: int = 0
+    accommodation_nights: int = 0
+    accommodation_cost_per_person_by_id: Mapping[str, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
 
 def normalize_tag(value: str) -> str:
@@ -247,19 +251,28 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     feasible_windows: dict[CandidateDay, tuple[PlanningWindow, ...]] = {}
     meal_eligibility: dict[MealSlot, tuple[PlanningWindow, ...]] = {}
     unknown_days_by_id: dict[str, frozenset[int]] = {}
-    unscheduled: list[CandidateExclusion] = []
+    unscheduled = [
+        CandidateExclusion(
+            place_id=item.place_id,
+            name=item.name,
+            priority=item.priority,
+            reason_code=item.reason_code,
+            message=item.message,
+        )
+        for item in payload.excluded_candidates
+    ]
     discarded: list[CandidateExclusion] = []
     warnings = list(payload.upstream_warnings)
-    accommodation_cost = 0
-    if payload.accommodation is not None:
-        # Until room count is part of the intake contract, use the conventional
-        # two-travelers-per-room estimate and expose a per-person daily cost.
-        inferred_rooms = max(1, ceil(trip.people / 2))
-        accommodation_cost = ceil(
-            payload.accommodation.price_per_night.cost
-            * inferred_rooms
-            / trip.people
+    accommodation_nights = max(0, trip.days - 1)
+    accommodations = tuple(payload.accommodations) if accommodation_nights else ()
+    accommodation_by_id = {item.place_id: item for item in accommodations}
+    inferred_rooms = max(1, ceil(trip.people / 2))
+    accommodation_cost_by_id = {
+        item.place_id: ceil(
+            item.price_per_night.cost * inferred_rooms / trip.people
         )
+        for item in accommodations
+    }
 
     for candidate in payload.places:
         normalized, windows, unknown_days, exclusion = _prepare_place(candidate, trip)
@@ -347,7 +360,8 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         )
     return PreparedPlanningProblem(
         trip=trip,
-        accommodation=payload.accommodation,
+        accommodations=accommodations,
+        accommodation_by_id=MappingProxyType(accommodation_by_id),
         valid_places=tuple(valid_places),
         valid_food=tuple(valid_food),
         candidate_by_id=MappingProxyType(candidate_by_id),
@@ -362,5 +376,8 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         unscheduled_priority=tuple(unscheduled),
         discarded_optional=tuple(discarded),
         warnings=tuple(warnings),
-        accommodation_cost_per_person_per_day=accommodation_cost,
+        accommodation_nights=accommodation_nights,
+        accommodation_cost_per_person_by_id=MappingProxyType(
+            accommodation_cost_by_id
+        ),
     )

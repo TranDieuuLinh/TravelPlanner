@@ -61,9 +61,15 @@ PlannerTrip(...)
 PlannerPrice(cost, currency)
 PlannerCandidate(...)
 PlannerFoodCandidate(..., supportedMeals)
-PlannerAccommodation(..., pricePerNight)
-ItineraryPlannerInput(trip, places, food, accommodation, upstreamWarnings)
+PlannerAccommodation(..., coordinates, pricePerNight)
+UpstreamCandidateExclusion(..., reasonCode, message)
+ItineraryPlannerInput(trip, places, food, accommodations, excludedCandidates, upstreamWarnings)
 ```
+
+`PlannerBudget` còn nhận `source`, `dailyEstimate` và `profileVersion`.
+`explicit`/legacy `unspecified` amount là hard cap. Amount có
+`source=estimated_daily_cost` là approximate soft target; optimizer phạt phần
+vượt theo block 10.000 VND nhưng không làm lịch vô nghiệm chỉ vì estimate thấp.
 
 Enum bắt buộc:
 
@@ -77,9 +83,10 @@ chứa ID thuộc tập này. Nếu tương lai có nhiều activity khác nhau 
 cùng physical place thì mới bổ sung `candidateId`; không thêm sớm khi chưa
 có use case thật.
 
-Accommodation là lựa chọn lưu trú riêng, không nằm trong tập stop và không cần
-opening/duration. Khi intake chưa có `rooms`, preprocessing suy ra
-`ceil(people / 2)` phòng và quy đổi `pricePerNight` thành chi phí/người/ngày.
+Accommodation là pool tối đa ba lựa chọn lưu trú riêng, không nằm trong tập
+activity stop và không cần opening/duration. Planner chọn một nơi dựa trên giá
+và chặng đi/về lịch. Khi intake chưa có `rooms`, preprocessing suy ra
+`ceil(people / 2)` phòng; số đêm là `max(days - 1, 0)`.
 
 ## Ý nghĩa opening hours
 
@@ -200,13 +207,14 @@ opening hours overlap meal start window + meal duration
 Meal policy mặc định:
 
 ```text
-breakfast: start 08:00-12:00, duration 45, target 08:00
+breakfast: start 08:00-10:00, duration 45, target 08:00
 lunch:     start 11:45-13:15, duration 60, target 12:30
 dinner:    start 17:45-19:30, duration 60, target 18:30
 ```
 
-Breakfast chỉ dùng phần mở rộng đến 12:00 khi ngày trước kết thúc muộn. Ngày
-bình thường vẫn được kéo về gần 08:00 bằng `mealDeviationCost`.
+Khoảng cách tối thiểu theo giờ bắt đầu là 180 phút từ breakfast đến lunch và
+300 phút từ lunch đến dinner. `mealDeviationCost` tiếp tục kéo từng bữa về gần
+giờ mục tiêu trong miền khả thi.
 
 Preflight phải phát hiện nếu một ngày/meal không có food candidate nào
 khả thi, thay vì chờ solver trả `INFEASIBLE` không rõ lý do.

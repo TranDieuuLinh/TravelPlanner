@@ -1,40 +1,51 @@
-from app.modules.place_checker.checked_output_contract import CheckedPlace
 from app.modules.place_checker.accommodation_planning_output import (
-    select_accommodation,
+    select_accommodations,
 )
+from app.modules.place_checker.checked_output_contract import CheckedPlace
 from app.modules.place_checker.enums import SourceTier, VerificationStatus
+from app.modules.place_checker.food_planning_output import (
+    SelectedFoodPlanningProjector,
+    limit_food_pool,
+)
 from app.modules.place_checker.output_contract import (
     PlaceCheckerPlannerOutput,
+    PlannerExcludedCandidate,
     PlaceCheckerResult,
-    PlannerBudget,
     PlannerOutputFood,
     PlannerOutputPlace,
     PlannerOutputTrip,
     PlannerPrice,
     PlannerTimeWindow,
 )
-from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
-from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
-from app.modules.place_checker.food_planning_output import (
-    SelectedFoodPlanningProjector,
-    limit_food_pool,
-)
-from app.modules.place_checker.planning_time_windows import (
-    meals_for_hours,
-    parse_planner_windows,
-)
+from app.modules.place_checker.planner_budget import build_planner_budget
+from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_candidate_metadata import (
     preferred_time_values,
     source_metadata,
     time_source,
 )
+from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
+from app.modules.place_checker.planning_time_windows import (
+    meals_for_hours,
+    parse_planner_windows,
+)
 from app.modules.place_checker.pool_policy import pool_target_for_days
+from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
+from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
 
 __all__ = ["PlaceCheckerPlannerOutputBuilder", "PlaceCheckerPlanningProjector"]
 
 
 class PlaceCheckerPlannerOutputBuilder:
     """Build the compact camelCase JSON contract consumed by the planner."""
+
+    def __init__(
+        self,
+        daily_budget_estimator: DestinationDailyBudgetEstimator | None = None,
+    ) -> None:
+        self.daily_budget_estimator = (
+            daily_budget_estimator or DestinationDailyBudgetEstimator()
+        )
 
     def build(
         self,
@@ -45,24 +56,27 @@ class PlaceCheckerPlannerOutputBuilder:
     ) -> PlaceCheckerPlannerOutput:
         places: list[PlannerOutputPlace] = []
         food: list[PlannerOutputFood] = []
+        excluded_candidates: list[PlannerExcludedCandidate] = []
         for checked in result.checked_places:
             if checked.category == "accommodation":
                 continue
             if not self._eligible(checked):
+                if checked.mandatory or checked.source_tier in {
+                    SourceTier.direct_user,
+                    SourceTier.url,
+                }:
+                    excluded_candidates.append(build_excluded_candidate(checked))
                 continue
             if checked.category in {"restaurant", "drink_dessert"}:
                 meals = meals_for_hours(checked.opening.hours)
                 if meals:
-                    food.append(
-                        self._food(checked, result.trip_context.days, meals)
-                    )
+                    food.append(self._food(checked, result.trip_context.days, meals))
             else:
                 places.append(self._place(checked, result.trip_context.days))
         seen = {place.place_id for place in [*places, *food] if place.place_id}
         for item in result.resolved_items:
             if (
                 item.selected is None
-                or item.selected.place_id in seen
                 or item.selected.coordinates is None
                 or item.selected.typical_duration_minutes is None
                 or not has_usable_cost(
@@ -72,6 +86,10 @@ class PlaceCheckerPlannerOutputBuilder:
                     tier=item.selected.cost_tier,
                 )
             ):
+                continue
+            if item.selected.place_id in seen:
+                places = self._promote_user_input(places, item.selected.place_id)
+                food = self._promote_user_input(food, item.selected.place_id)
                 continue
             if item.selected.category in {"restaurant", "drink_dessert"}:
                 meals = meals_for_hours(item.selected.opening_hours)
@@ -134,8 +152,7 @@ class PlaceCheckerPlannerOutputBuilder:
             if item.selected is not None
         )
         paired_food_ids = {
-            selection.restaurant_id
-            for selection in result.food_restaurant_selections
+            selection.restaurant_id for selection in result.food_restaurant_selections
         }
         food = limit_food_pool(
             food,
@@ -143,7 +160,6 @@ class PlaceCheckerPlannerOutputBuilder:
             required_ids=required_food_ids,
             paired_ids=paired_food_ids,
         )
-        budget = result.trip_context.budget
         return PlaceCheckerPlannerOutput(
             trip=PlannerOutputTrip(
                 destination=(
@@ -154,18 +170,25 @@ class PlaceCheckerPlannerOutputBuilder:
                 start_date=start_date,
                 timezone=timezone,
                 people=result.trip_context.people.total,
-                budget=PlannerBudget(
-                    amount=budget.target_amount,
-                    currency=budget.currency or "VND",
-                ),
+                budget=build_planner_budget(result, self.daily_budget_estimator),
                 preferences=result.trip_context.preferences,
             ),
             places=places,
             food=food,
-            accommodation=select_accommodation(result),
+            accommodations=select_accommodations(result),
+            excluded_candidates=excluded_candidates,
         )
 
     _limit_food_pool = staticmethod(limit_food_pool)
+
+    @staticmethod
+    def _promote_user_input(candidates: list, place_id: str) -> list:
+        return [
+            candidate.model_copy(update={"priority": "user_input"})
+            if candidate.place_id == place_id
+            else candidate
+            for candidate in candidates
+        ]
 
     @staticmethod
     def _eligible(checked: CheckedPlace) -> bool:
@@ -199,6 +222,7 @@ class PlaceCheckerPlannerOutputBuilder:
             priority=cls._priority(checked),
             notes=cls._notes(checked),
             tags=checked.tags,
+            image_urls=checked.image_urls,
             rating=checked.rating,
             review_count=checked.review_count,
             duration_minutes=checked.duration.typical_minutes,
@@ -229,13 +253,6 @@ class PlaceCheckerPlannerOutputBuilder:
     def _item_place(cls, item, days: int) -> PlannerOutputPlace:
         option = item.selected
         relations = option.relationships
-        relation_types = {relation.relationship_type for relation in relations}
-        if "Special_Near" in relation_types:
-            priority = "special_near"
-        elif "Special_Experience" in relation_types:
-            priority = "special_experience"
-        else:
-            priority = "special_experience"
         source_kind, offered_activity_ids = source_metadata(relations)
         preferred_values, _ = preferred_time_values(
             direct_values=[], relationships=relations
@@ -245,9 +262,10 @@ class PlaceCheckerPlannerOutputBuilder:
             name=option.name,
             coordinates=option.coordinates,
             address=option.address,
-            priority=priority,
+            priority="user_input",
             notes=item.evidence,
             tags=option.tags,
+            image_urls=option.image_urls,
             rating=option.rating,
             review_count=option.review_count,
             duration_minutes=option.typical_duration_minutes,
@@ -305,7 +323,9 @@ class PlaceCheckerPlannerOutputBuilder:
             return "user_input"
         if checked.source_tier == SourceTier.url:
             return "url"
-        types = {relation.relationship_type for relation in checked.relationship_evidence}
+        types = {
+            relation.relationship_type for relation in checked.relationship_evidence
+        }
         if "Special_Near" in types:
             return "special_near"
         return "special_experience"

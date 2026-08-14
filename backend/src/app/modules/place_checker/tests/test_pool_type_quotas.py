@@ -7,7 +7,7 @@ from app.modules.place_checker.tests.test_scoring_reranking import (
 )
 
 
-def test_three_days_keep_thirty_six_candidates_of_each_type() -> None:
+def test_three_days_keep_twenty_four_candidates_of_each_type() -> None:
     travel = [
         candidate(f"travel-{index}", category="travel_place")
         for index in range(40)
@@ -24,9 +24,9 @@ def test_three_days_keep_thirty_six_candidates_of_each_type() -> None:
     )
 
     categories = [item.candidate.category for item in result.ranked]
-    assert result.pool_target == 73
-    assert categories.count("travel_place") == 36
-    assert categories.count("restaurant") == 36
+    assert result.pool_target == 53
+    assert categories.count("travel_place") == 24
+    assert categories.count("restaurant") == 24
 
 
 def test_existing_places_reduce_only_their_own_type_quota() -> None:
@@ -76,3 +76,29 @@ def test_candidate_without_duration_cannot_fill_a_planner_pool_slot() -> None:
 
     assert result.ranked == []
     assert result.excluded[0].exclusion_reasons == ["missing_duration"]
+
+
+def test_accommodation_pool_keeps_five_candidates_for_percentile_selection() -> None:
+    accommodations = [
+        candidate(f"hotel-{index}", category="accommodation")
+        for index in range(10)
+    ]
+    accommodations = [
+        item.model_copy(
+            update={
+                "metadata": item.metadata.model_copy(
+                    update={"typical_duration_minutes": None}
+                )
+            }
+        )
+        for item in accommodations
+    ]
+
+    result = CandidateScoringService().rank(
+        retrieval(*accommodations),
+        analysis_context(days=3),
+        empty_places(),
+    )
+
+    assert len(result.ranked) == 5
+    assert all(item.candidate.category == "accommodation" for item in result.ranked)

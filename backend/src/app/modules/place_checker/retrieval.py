@@ -374,7 +374,12 @@ class TargetedRetrievalService:
     ) -> RetrievedCandidate:
         representative = max(evidence, key=lambda item: item.confidence)
         linked_entity = next((item.entity_id for item in evidence if item.entity_id), None)
-        has_kg_link = linked_entity is not None
+        has_verified_kg_link = any(
+            item.entity_id is not None
+            and item.source_kind == RetrievalSourceKind.knowledge_graph
+            and item.is_verified
+            for item in evidence
+        )
         external_providers = {
             item.provider
             for item in evidence
@@ -383,7 +388,7 @@ class TargetedRetrievalService:
         adm_matches = all(item.adm_id in {None, query.adm_id} for item in evidence)
         if not adm_matches:
             status = VerificationStatus.needs_review
-        elif has_kg_link:
+        elif has_verified_kg_link:
             status = VerificationStatus.verified_kg
         elif len(external_providers) >= 2:
             status = VerificationStatus.verified_external

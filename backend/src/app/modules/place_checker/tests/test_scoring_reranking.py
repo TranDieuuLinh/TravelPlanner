@@ -361,7 +361,7 @@ def test_default_reserve_grows_with_trip_days() -> None:
     )
 
     assert result.reserve_limit_per_gap == 60
-    assert result.pool_target == 97
+    assert result.pool_target == 69
     assert len(result.ranked) == 8
 
 

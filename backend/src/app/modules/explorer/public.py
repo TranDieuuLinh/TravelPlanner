@@ -17,6 +17,7 @@ from app.modules.explorer.adapters import (
     GeminiExplorerDraftGenerator,
     GeminiImageSourceExtractor,
     GeminiMediaAnalyzer,
+    InMemoryImageOcrCache,
     InMemoryExplorerDraftCache,
     InMemoryExplorerSnapshotRepository,
     InMemoryUrlSourceCache,
@@ -54,7 +55,7 @@ def create_explorer_service(
     max_output_tokens: int = 4000,
     source_chunk_characters: int = 20_000,
     source_max_output_tokens: int = 8_000,
-    source_max_concurrency: int = 3,
+    source_max_concurrency: int = 5,
     synthesis_max_concurrency: int = 6,
     synthesis_limiter: asyncio.Semaphore | None = None,
     minimum_synthesis_coverage: float = 0.8,
@@ -62,11 +63,12 @@ def create_explorer_service(
     note_provider: str = "gemini",
     url_timeout_seconds: float = 30,
     ytdlp_cookie_file: str | None = None,
-    frame_interval_seconds: float = 1.5,
+    frame_interval_seconds: float = 3,
     frame_batch_size: int = 10,
-    max_frames: int = 72,
+    max_frames: int = 48,
     frame_max_concurrency: int = 5,
     audio_chunk_count: int = 3,
+    audio_chunk_seconds: float = 60,
     youtube_audio_chunk_seconds: int = 300,
     youtube_audio_chunk_overlap_seconds: int = 5,
     youtube_audio_max_concurrency: int = 8,
@@ -137,6 +139,7 @@ def create_explorer_service(
             max_frames=max_frames,
             frame_max_concurrency=frame_max_concurrency,
             audio_chunk_count=audio_chunk_count,
+            audio_chunk_seconds=audio_chunk_seconds,
             max_video_seconds=max_video_seconds,
         )
         media_client = PythonYtDlpMediaClient(
@@ -158,7 +161,10 @@ def create_explorer_service(
         instagram = YtDlpSocialSourceExtractor(
             media_client, analyzer, platform="Instagram"
         )
-        image_extractor = GeminiImageSourceExtractor(analyzer)
+        image_extractor = GeminiImageSourceExtractor(
+            analyzer,
+            cache=InMemoryImageOcrCache(),
+        )
         youtube = YouTubeTranscriptSourceExtractor(
             YtDlpCaptionClient(
                 timeout_seconds=url_timeout_seconds,

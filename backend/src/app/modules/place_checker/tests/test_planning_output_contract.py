@@ -1,10 +1,14 @@
 import asyncio
 
-from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.enums import CostTier
 from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
+from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
-from app.modules.place_checker.tests.test_pipeline_output import metadata, payload, pipeline
+from app.modules.place_checker.tests.test_pipeline_output import (
+    metadata,
+    payload,
+    pipeline,
+)
 
 
 def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> None:
@@ -23,38 +27,73 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
         score=0.926,
     )
     result.checked_places[0] = first.model_copy(
-        update={"relationship_evidence": [relation]}
+        update={
+            "relationship_evidence": [relation],
+            "image_urls": ["https://example.test/place.jpg"],
+        }
     )
 
-    output = PlaceCheckerPlannerOutputBuilder().build(
-        result,
-        start_date="2026-08-20",
-        timezone="Asia/Ho_Chi_Minh",
-    ).model_dump(by_alias=True)
+    output = (
+        PlaceCheckerPlannerOutputBuilder()
+        .build(
+            result,
+            start_date="2026-08-20",
+            timezone="Asia/Ho_Chi_Minh",
+        )
+        .model_dump(by_alias=True)
+    )
 
-    assert set(output) == {"trip", "places", "food", "accommodation"}
+    assert set(output) == {
+        "trip",
+        "places",
+        "food",
+        "accommodations",
+        "excludedCandidates",
+    }
     assert output["trip"]["timezone"] == "Asia/Ho_Chi_Minh"
     assert output["trip"]["startDate"] == "2026-08-20"
+    assert output["trip"]["preferences"] == ["nature"]
     assert set(output["trip"]) == {
-        "destination", "days", "startDate", "timezone", "people", "budget", "preferences"
+        "destination",
+        "days",
+        "startDate",
+        "timezone",
+        "people",
+        "budget",
+        "preferences",
     }
     place = next(item for item in output["places"] if item["placeId"] == first.place_id)
+    assert place["imageUrls"] == ["https://example.test/place.jpg"]
     assert set(place) == {
-        "placeId", "name", "coordinates", "address", "priority", "notes", "tags",
-        "rating", "reviewCount", "durationMinutes", "openingHours",
-        "preferredTimeWindows", "sourceKind", "offeredActivityIds",
-        "timeSource", "price", "relationships",
+        "placeId",
+        "name",
+        "coordinates",
+        "address",
+        "priority",
+        "notes",
+        "tags",
+        "imageUrls",
+        "rating",
+        "reviewCount",
+        "durationMinutes",
+        "openingHours",
+        "preferredTimeWindows",
+        "sourceKind",
+        "offeredActivityIds",
+        "timeSource",
+        "price",
+        "relationships",
     }
     assert place["priority"] == "user_input"
     assert place["relationships"] == ["kg:night-market"]
     assert place["sourceKind"] == "generic"
     assert place["offeredActivityIds"] == []
-    assert place["openingHours"]["1"] == [
-        {"startMinute": 540, "endMinute": 1020}
-    ]
+    assert place["openingHours"]["1"] == [{"startMinute": 540, "endMinute": 1020}]
     assert set(place["price"]) == {"cost", "currency"}
     food = output["food"][0]
     assert set(food) == {*set(place), "supportedMeals"}
+    assert food["placeId"] == "kg:pho"
+    assert food["priority"] == "user_input"
     assert food["supportedMeals"] == ["lunch"]
 
 
@@ -66,9 +105,7 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
         category="restaurant",
         cost_tier=CostTier.low,
         latitude=21.032,
-    ).model_copy(
-        update={"rating": 4.7, "review_count": 2_500}
-    )
+    ).model_copy(update={"rating": 4.7, "review_count": 2_500})
     selection = SelectedFoodRestaurant(
         anchor_place_id=anchor.place_id,
         anchor_name=anchor.canonical_name,
@@ -88,9 +125,7 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
         selection_reason="sole_candidate_for_food",
         metadata=restaurant_metadata,
     )
-    result = result.model_copy(
-        update={"food_restaurant_selections": [selection]}
-    )
+    result = result.model_copy(update={"food_restaurant_selections": [selection]})
 
     output = PlaceCheckerPlannerOutputBuilder().build(
         result,
@@ -107,6 +142,28 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     assert "Bún chả" in selected.notes
 
 
+def test_resolved_item_promotes_duplicate_pool_candidate_to_user_input() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-item-overlap"))
+    optional = next(place for place in result.checked_places if not place.mandatory)
+    resolved = result.resolved_items[0]
+    result.resolved_items[0] = resolved.model_copy(
+        update={
+            "selected": resolved.selected.model_copy(
+                update={"place_id": optional.place_id}
+            )
+        }
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result, start_date="2026-08-20", timezone="Asia/Ho_Chi_Minh"
+    )
+    promoted = next(
+        place for place in output.places if place.place_id == optional.place_id
+    )
+
+    assert promoted.priority == "user_input"
+
+
 def test_food_pool_cap_prefers_required_then_paired_candidates() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-food-cap"))
     output = PlaceCheckerPlannerOutputBuilder().build(
@@ -116,8 +173,7 @@ def test_food_pool_cap_prefers_required_then_paired_candidates() -> None:
     )
     sample = output.food[0]
     foods = [
-        sample.model_copy(update={"place_id": f"food:{index}"})
-        for index in range(14)
+        sample.model_copy(update={"place_id": f"food:{index}"}) for index in range(14)
     ]
 
     limited = PlaceCheckerPlannerOutputBuilder._limit_food_pool(
@@ -138,16 +194,18 @@ def test_compact_output_preserves_overnight_window() -> None:
         update={"opening": first.opening.model_copy(update={"hours": ["22:00-03:00"]})}
     )
 
-    output = PlaceCheckerPlannerOutputBuilder().build(
-        result,
-        start_date="2026-08-20",
-        timezone="Asia/Ho_Chi_Minh",
-    ).model_dump(by_alias=True)
+    output = (
+        PlaceCheckerPlannerOutputBuilder()
+        .build(
+            result,
+            start_date="2026-08-20",
+            timezone="Asia/Ho_Chi_Minh",
+        )
+        .model_dump(by_alias=True)
+    )
 
     place = next(item for item in output["places"] if item["placeId"] == first.place_id)
-    assert place["openingHours"]["1"] == [
-        {"startMinute": 1320, "endMinute": 180}
-    ]
+    assert place["openingHours"]["1"] == [{"startMinute": 1320, "endMinute": 180}]
 
 
 def test_compact_output_keeps_conflicting_user_input_but_drops_optional() -> None:
@@ -200,6 +258,9 @@ def test_compact_output_drops_checked_place_without_price() -> None:
     )
 
     assert first.place_id not in {place.place_id for place in output.places}
+    assert [
+        (item.place_id, item.reason_code) for item in output.excluded_candidates
+    ] == [(first.place_id, "missing_cost")]
 
 
 def test_compact_output_calculates_typical_cost_from_range() -> None:
@@ -223,7 +284,9 @@ def test_compact_output_calculates_typical_cost_from_range() -> None:
     assert place.price.cost == 50_000
 
 
-def test_compact_output_selects_positive_priced_accommodation_at_budget_percentile() -> None:
+def test_compact_output_selects_three_priced_accommodations_around_budget_percentile() -> (
+    None
+):
     result = asyncio.run(pipeline().check(payload(), request_id="request-hotel"))
     sample = result.checked_places[0]
     accommodations = []
@@ -264,7 +327,62 @@ def test_compact_output_selects_positive_priced_accommodation_at_budget_percenti
         timezone="Asia/Ho_Chi_Minh",
     )
 
-    assert output.accommodation is not None
-    assert output.accommodation.place_id == "hotel:1"
-    assert output.accommodation.price_per_night.cost == 200_000
-    assert all(place.place_id != "hotel:1" for place in output.places)
+    assert [item.place_id for item in output.accommodations] == [
+        "hotel:1",
+        "hotel:0",
+        "hotel:2",
+    ]
+    assert output.accommodations[0].price_per_night.cost == 200_000
+    assert output.accommodations[0].coordinates == accommodations[1].coordinates
+    assert all(
+        item.place_id not in {place.place_id for place in output.places}
+        for item in output.accommodations
+    )
+
+
+def test_compact_output_estimates_hanoi_trip_budget_when_amount_is_missing() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-budget-tier"))
+    context = result.trip_context.model_copy(
+        update={
+            "days": 3,
+            "people": result.trip_context.people.model_copy(update={"adults": 2}),
+        }
+    )
+    result = result.model_copy(update={"trip_context": context})
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert output.trip.budget.amount == 1_923_284
+    assert output.trip.budget.source == "estimated_daily_cost"
+    assert output.trip.budget.daily_estimate is not None
+    assert output.trip.budget.daily_estimate.total == 750_852
+    assert output.trip.budget.daily_estimate.local_transport == 171_580
+
+
+def test_compact_output_preserves_explicit_per_person_budget() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-budget-exact"))
+    context = result.trip_context.model_copy(
+        update={
+            "budget": result.trip_context.budget.model_copy(
+                update={
+                    "target_amount": 2_000_000,
+                    "basis": "per_person",
+                }
+            )
+        }
+    )
+    result = result.model_copy(update={"trip_context": context})
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert output.trip.budget.amount == 2_000_000
+    assert output.trip.budget.source == "explicit"
+    assert output.trip.budget.daily_estimate is None

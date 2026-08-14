@@ -1,5 +1,8 @@
 from app.modules.place_checker.enums import RetrievalSourceKind
-from app.modules.place_checker.errors import CandidateSourceError, CandidateSourceTimeout
+from app.modules.place_checker.errors import (
+    CandidateSourceError,
+    CandidateSourceTimeout,
+)
 from app.modules.place_checker.ports import NamedPlaceSearchTool
 from app.modules.place_checker.retrieval_contract import (
     RetrievalEvidence,
@@ -47,6 +50,11 @@ class SearchPlacesGapSource:
                     top_k=min(60, max(5, query.limit)),
                     allow_external_fallback=(
                         self.source_kind == RetrievalSourceKind.external
+                    ),
+                    provider_scope=(
+                        "external"
+                        if self.source_kind == RetrievalSourceKind.external
+                        else "knowledge_graph"
                     ),
                 )
             )
@@ -128,6 +136,7 @@ class SearchPlacesGapSource:
                 relationship_score=match.relationship_score,
                 relationships=match.relationship_evidence,
                 fetched_at=match.fetched_at,
+                is_verified=match.verification_status == "verified",
             )
             for match in selected_matches
         ]

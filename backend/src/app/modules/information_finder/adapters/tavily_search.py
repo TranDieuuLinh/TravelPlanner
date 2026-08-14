@@ -9,6 +9,7 @@ from app.modules.information_finder.ports import (
     SearchProviderTimeout,
     SearchProviderUnauthorized,
 )
+from app.shared.observability import traced_call
 
 
 class TavilySearchProvider:
@@ -35,6 +36,23 @@ class TavilySearchProvider:
         self.timeout_seconds = timeout_seconds
 
     async def search(self, query: str) -> SearchResponse:
+        return await traced_call(
+            "tavily.search",
+            lambda: self._search(query),
+            kind="tool",
+            input_summary={
+                "queryChars": len(query),
+                "searchDepth": self.search_depth,
+                "maxResults": self.max_results,
+            },
+            output_summary=lambda value: {
+                "resultCount": len(value.results),
+                "providerRequestId": value.provider_request_id,
+            },
+            metadata={"provider": "tavily"},
+        )
+
+    async def _search(self, query: str) -> SearchResponse:
         try:
             payload = await asyncio.wait_for(
                 self.client.search(

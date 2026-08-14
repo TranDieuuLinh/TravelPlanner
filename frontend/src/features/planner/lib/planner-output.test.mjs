@@ -44,6 +44,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           durationMinutes: 60,
           coordinates: { latitude: 21.0285, longitude: 105.8542 },
           tags: ["culture"],
+          imageUrls: ["https://example.test/ho-guom.jpg"],
           costPerPerson: 0,
         },
         {
@@ -93,6 +94,9 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   assert.equal(plan.days[0].items.length, 2);
   assert.equal(plan.days[0].items[1].timelineCategory, "food");
   assert.equal(plan.days[0].items[1].ontologyType, "Restaurant");
+  assert.deepEqual(plan.days[0].items[0].imageUrls, [
+    "https://example.test/ho-guom.jpg",
+  ]);
   assert.equal(plan.days[0].transportLegs[0].fromPlace, "Hồ Hoàn Kiếm");
   assert.equal(plan.days[0].transportLegs[0].verified, true);
   assert.deepEqual(plan.days[0].transportLegs[0].geometryCoordinates[0], [21.0285, 105.8542]);

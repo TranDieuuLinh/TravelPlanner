@@ -87,7 +87,14 @@ class ImageSourceExtractor(Protocol):
         *,
         source_index: int,
         raw_prompt: str | None,
+        force_refresh: bool = False,
     ) -> SourceExtractionResult: ...
+
+
+class ImageOcrCache(Protocol):
+    async def get(self, cache_key: str) -> str | None: ...
+
+    async def save(self, cache_key: str, text: str) -> None: ...
 
 
 class ExplorerSnapshotRepository(Protocol):

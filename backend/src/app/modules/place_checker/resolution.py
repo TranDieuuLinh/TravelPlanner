@@ -180,6 +180,26 @@ class EntityResolutionService:
                         "Identity có dữ liệu mâu thuẫn, cần kiểm tra thủ công.",
                     ],
                 )
+            if (
+                result.selected is not None
+                and result.selected.verification_status != "verified"
+            ):
+                return ResolvedPlaceCandidate(
+                    candidate_index=index,
+                    candidate=candidate,
+                    status=IdentityResolutionStatus.provisional,
+                    selected_place=selected_option.place,
+                    match_options=options,
+                    selected_score=selected_option.score,
+                    score_margin=margin,
+                    resolution_method=selected_option.method,
+                    provider_attempts=result.provider_attempts,
+                    resolution_reason="external_draft_requires_admin_review",
+                    warnings=[
+                        *warnings,
+                        "Địa điểm từ Google Maps đã lưu dạng draft và cần admin duyệt.",
+                    ],
+                )
             return ResolvedPlaceCandidate(
                 candidate_index=index,
                 candidate=candidate,

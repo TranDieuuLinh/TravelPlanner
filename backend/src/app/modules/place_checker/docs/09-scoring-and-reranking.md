@@ -102,9 +102,9 @@ data snapshot.
 - `reranking.py` chọn greedy theo cách xác định. Sau mỗi lựa chọn, candidate còn
   lại bị phạt nếu lặp category, experience type hoặc nằm trong bán kính 2 km
   của candidate đã chọn.
-- Reranking giữ quota độc lập `12 TravelPlace/ngày` và
-  `12 Restaurant/ngày`, tối đa 60 cho từng loại. Chuyến ba ngày vì vậy trả tối
-  đa 36 candidate đủ điều kiện cho mỗi loại. Có thể truyền
+- Reranking giữ quota độc lập `8 TravelPlace/ngày` và
+  `8 Restaurant/ngày`, tối thiểu 12 và tối đa 60 cho từng loại. Chuyến ba ngày
+  vì vậy trả tối đa 24 candidate đủ điều kiện cho mỗi loại. Có thể truyền
   `reserve_limit_per_gap` để override trong test hoặc flow đặc biệt. Candidate
   trùng `candidate_key` giữa nhiều kết quả chỉ giữ bản có điểm tốt nhất.
 

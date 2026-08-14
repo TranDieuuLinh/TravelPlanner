@@ -4,9 +4,9 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class SolverConfig:
     num_search_workers: int = 1
-    pass1_timeout_seconds: float = 5
-    pass2_timeout_seconds: float = 5
-    pass3_timeout_seconds: float = 15
+    pass1_timeout_seconds: float = 30
+    pass2_timeout_seconds: float = 30
+    pass3_timeout_seconds: float = 30
     random_seed: int = 42
     log_search_progress: bool = False
 
@@ -24,6 +24,8 @@ class ObjectiveWeights:
     diversity_light: int = 30
     food_diversity: int = 100
     travel_minute: int = 3
+    accommodation_long_transfer: int = 5_000
+    accommodation_price_10k: int = 1
     waiting_minute: int = 2
     meal_deviation_minute: int = 2
     late_minute: int = 4
@@ -32,12 +34,29 @@ class ObjectiveWeights:
     day_imbalance_minute: int = 1
     unknown_opening: int = 5
     source_mix_deviation: int = 2_000
+    budget_overage_10k: int = 5
 
 
 STRONG_TAGS = frozenset(
-    {"museum", "shopping", "nightlife", "spa", "sightseeing", "hands_on"}
+    {
+        "museum", "shopping", "nightlife", "spa", "sightseeing", "hands_on",
+        "tâm_linh", "mua_sắm", "nghỉ_dưỡng", "thư_giãn", "rượu_bia",
+        "drunk", "18", "quân_sự", "thể_thao",
+    }
 )
 MEDIUM_TAGS = frozenset(
-    {"indoor", "outdoor", "walking", "performance", "photography"}
+    {
+        "indoor", "outdoor", "walking", "performance", "photography",
+        "kiến_trúc", "chụp_ảnh", "núi", "biển", "di_tích", "gia_đình",
+        "sang_trọng", "sinh_thái", "cảnh_quan", "kiến_thức",
+    }
 )
-LIGHT_TAGS = frozenset({"culture", "history", "nature", "local_experience"})
+LIGHT_TAGS = frozenset(
+    {
+        "culture", "history", "nature", "local_experience", "văn_hóa",
+        "lịch_sử", "thiên_nhiên", "địa_phương", "ẩm_thực", "đồ_uống",
+        "phong_cách_việt", "phong_cách_thái", "phong_cách_nhật",
+        "phong_cách_hàn", "phong_cách_trung_hoa", "phong_cách_phương_tây",
+        "giá_rẻ",
+    }
+)

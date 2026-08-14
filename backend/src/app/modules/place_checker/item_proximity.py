@@ -80,9 +80,7 @@ class ItemProximityPolicy:
             return None
         item_type = normalize_text(item.item_type)
         category = normalize_text(related.metadata.category)
-        compatible = (
-            item_type in FOOD_TYPES and category in FOOD_CATEGORIES
-        ) or (
+        compatible = (item_type in FOOD_TYPES and category in FOOD_CATEGORIES) or (
             item_type in ACTIVITY_TYPES and category not in FOOD_CATEGORIES
         )
         if not compatible or related.metadata.coordinates is None:
@@ -96,6 +94,7 @@ class ItemProximityPolicy:
             address=metadata.address,
             coordinates=metadata.coordinates,
             tags=metadata.tags,
+            image_urls=metadata.image_urls,
             cost_tier=metadata.cost_tier,
             cost_currency=metadata.cost_currency,
             minimum_cost=metadata.minimum_cost,
@@ -150,8 +149,7 @@ class ItemProximityPolicy:
             if value
         }
         preference_matches = sum(
-            normalize_text(preference) in labels
-            for preference in context.preferences
+            normalize_text(preference) in labels for preference in context.preferences
         )
         rating_rank = -(option.rating or 0.0)
         review_rank = -(option.review_count or 0)

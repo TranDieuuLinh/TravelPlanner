@@ -1,9 +1,11 @@
 import pytest
 
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
-from app.modules.itinerary_planner.tests.factories import candidate
+from app.modules.itinerary_planner.routing_models import MatrixCell, TravelMatrix
+from app.modules.itinerary_planner.tests.factories import candidate, payload
 from app.modules.itinerary_planner.tests.optimizer_fixtures import (
     base_payload,
+    meal_candidates,
     solve_payload,
 )
 
@@ -19,7 +21,7 @@ def test_schedule_satisfies_meals_opening_route_and_per_person_budget() -> None:
     raw = base_payload(places=[museum])
     raw["trip"]["budget"]["amount"] = 1_000_000
 
-    result, prepared, routing = solve_payload(raw)
+    result, _, routing = solve_payload(raw)
 
     assert result.user_input_count == 1
     assert {stop.meal_type.value for stop in result.scheduled_stops if stop.meal_type} == {
@@ -27,6 +29,14 @@ def test_schedule_satisfies_meals_opening_route_and_per_person_budget() -> None:
         "lunch",
         "dinner",
     }
+    meals = {
+        stop.meal_type.value: stop
+        for stop in result.scheduled_stops
+        if stop.meal_type
+    }
+    assert meals["breakfast"].start_minute <= 600
+    assert meals["lunch"].start_minute - meals["breakfast"].start_minute >= 180
+    assert meals["dinner"].start_minute - meals["lunch"].start_minute >= 300
     museum_stop = next(stop for stop in result.scheduled_stops if stop.place_id == "museum")
     assert 540 <= museum_stop.start_minute
     assert museum_stop.end_minute <= 720
@@ -40,6 +50,30 @@ def test_schedule_satisfies_meals_opening_route_and_per_person_budget() -> None:
             stops[(arc.origin_id, arc.day)].end_minute
             + travel[(arc.origin_id, arc.destination_id)].safe_minutes
         )
+
+
+def test_meals_are_separated_by_activity_and_route_wait_is_bounded() -> None:
+    result, prepared, routing = solve_payload(base_payload())
+    food_ids = {food.place_id for food in prepared.valid_food}
+    stops = {(stop.place_id, stop.day): stop for stop in result.scheduled_stops}
+
+    for arc in result.selected_arcs:
+        assert not (arc.origin_id in food_ids and arc.destination_id in food_ids)
+        wait = (
+            stops[(arc.destination_id, arc.day)].start_minute
+            - stops[(arc.origin_id, arc.day)].end_minute
+            - routing.travel_by_candidate_pair[
+                (arc.origin_id, arc.destination_id)
+            ].safe_minutes
+        )
+        assert 0 <= wait <= 15
+
+
+def test_schedule_is_infeasible_without_activity_between_meals() -> None:
+    raw = payload(foods=meal_candidates())
+
+    with pytest.raises(OptimizationError, match="INFEASIBLE"):
+        solve_payload(raw)
 
 
 def test_lexicographic_passes_lock_user_then_url_count() -> None:
@@ -76,6 +110,29 @@ def test_budget_can_make_full_schedule_infeasible() -> None:
         solve_payload(raw)
 
 
+def test_estimated_budget_is_a_soft_target() -> None:
+    raw = base_payload()
+    raw["trip"]["budget"] = {
+        "amount": 1,
+        "currency": "VND",
+        "source": "estimated_daily_cost",
+        "dailyEstimate": {
+            "accommodation": 0,
+            "food": 1,
+            "localTransport": 0,
+            "activities": 0,
+            "total": 1,
+        },
+        "profileVersion": "test-v1",
+    }
+    for meal in raw["food"]:
+        meal["price"]["cost"] = 100_000
+
+    result, _, _ = solve_payload(raw)
+
+    assert result.total_cost_per_person > raw["trip"]["budget"]["amount"]
+
+
 def test_route_is_one_chain_without_candidate_subtour() -> None:
     places = [candidate(f"place_{index}", priority="user_input") for index in range(2)]
     result, _, _ = solve_payload(base_payload(places=places))
@@ -97,10 +154,87 @@ def test_candidate_prices_are_per_person_and_not_multiplied_by_people() -> None:
     raw = base_payload()
     raw["trip"]["people"] = 3
     shared_coordinates = {"latitude": 21.02, "longitude": 105.84}
+    for item in [*raw["places"], *raw["food"]]:
+        item["coordinates"] = shared_coordinates
     for meal in raw["food"]:
-        meal["coordinates"] = shared_coordinates
         meal["price"]["cost"] = 100
 
     result, _, _ = solve_payload(raw)
 
     assert result.total_cost_per_person == 300
+
+
+class CoordinateDistanceMatrixProvider:
+    async def matrix(self, locations, profile):
+        rows = []
+        for origin in locations:
+            row = []
+            for destination in locations:
+                distance = round(
+                    abs(origin.longitude - destination.longitude) * 100_000
+                )
+                row.append(
+                    MatrixCell(
+                        duration_seconds=distance / 500,
+                        distance_meters=distance,
+                        reachable=True,
+                    )
+                )
+            rows.append(tuple(row))
+        return TravelMatrix(
+            node_ids=tuple(item.node_id for item in locations),
+            cells=tuple(rows),
+            profile=profile,
+            provider="coordinate-test",
+            provider_version="v1",
+        )
+
+
+def test_selects_accommodation_by_night_cost_and_route_distance() -> None:
+    raw = base_payload(days=2)
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:near",
+            "name": "Near Hotel",
+            "coordinates": {"latitude": 21.02, "longitude": 105.84},
+            "pricePerNight": {"cost": 600_000, "currency": "VND"},
+        },
+        {
+            "placeId": "hotel:far",
+            "name": "Far Hotel",
+            "coordinates": {"latitude": 21.02, "longitude": 106.44},
+            "pricePerNight": {"cost": 100_000, "currency": "VND"},
+        },
+    ]
+
+    result, prepared, _ = solve_payload(
+        raw,
+        matrix_provider=CoordinateDistanceMatrixProvider(),
+    )
+
+    assert prepared.accommodation_nights == 1
+    assert result.selected_accommodation_id == "hotel:near"
+    assert len(result.accommodation_transfers) == 2
+
+
+def test_selects_lower_priced_accommodation_when_route_cost_is_equal() -> None:
+    raw = base_payload(days=2)
+    coordinates = {"latitude": 21.02, "longitude": 105.84}
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:expensive",
+            "name": "Expensive Hotel",
+            "coordinates": coordinates,
+            "pricePerNight": {"cost": 900_000, "currency": "VND"},
+        },
+        {
+            "placeId": "hotel:budget",
+            "name": "Budget Hotel",
+            "coordinates": coordinates,
+            "pricePerNight": {"cost": 300_000, "currency": "VND"},
+        },
+    ]
+
+    result, _, _ = solve_payload(raw)
+
+    assert result.selected_accommodation_id == "hotel:budget"

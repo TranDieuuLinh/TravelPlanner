@@ -29,6 +29,7 @@ class EnrichedRouteLeg:
     encoded_polyline: str | None
     provider: str
     geometry_available: bool
+    accommodation_transfer_direction: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,8 +76,30 @@ async def enrich_selected_routes(
     selected_arcs = tuple(
         arc for arc in optimization.selected_arcs if days is None or arc.day in days
     )
+    selected_transfers = tuple(
+        transfer
+        for transfer in optimization.accommodation_transfers
+        if days is None or transfer.day in days
+    )
+    route_legs = [
+        (arc.origin_id, arc.destination_id, arc.day, None)
+        for arc in selected_arcs
+    ]
+    route_legs.extend(
+        (
+            transfer.accommodation_id
+            if transfer.direction == "start"
+            else transfer.candidate_id,
+            transfer.candidate_id
+            if transfer.direction == "start"
+            else transfer.accommodation_id,
+            transfer.day,
+            transfer.direction,
+        )
+        for transfer in selected_transfers
+    )
     details = await asyncio.gather(
-        *(fetch(arc.origin_id, arc.destination_id) for arc in selected_arcs)
+        *(fetch(origin_id, destination_id) for origin_id, destination_id, _, _ in route_legs)
     )
     stop_by_key = {(stop.place_id, stop.day): stop for stop in optimization.scheduled_stops}
     legs: list[EnrichedRouteLeg] = []
@@ -84,12 +107,13 @@ async def enrich_selected_routes(
     actual_minutes: dict[tuple[str, str], int] = {}
     actual_distances: dict[tuple[str, str], int] = {}
     warnings: list[str] = []
-    for arc, detail in zip(selected_arcs, details, strict=True):
-        pair = (arc.origin_id, arc.destination_id)
+    for route_leg, detail in zip(route_legs, details, strict=True):
+        origin_id, destination_id, day, transfer_direction = route_leg
+        pair = (origin_id, destination_id)
         matrix_travel = routing.travel_by_candidate_pair[pair]
         if detail is None:
             warnings.append(
-                f"Route geometry unavailable for {arc.origin_id} -> {arc.destination_id}; "
+                f"Route geometry unavailable for {origin_id} -> {destination_id}; "
                 "matrix safe duration was retained."
             )
             duration = matrix_travel.safe_minutes
@@ -103,24 +127,31 @@ async def enrich_selected_routes(
             polyline = detail.encoded_polyline
             actual_minutes[pair] = duration
             actual_distances[pair] = distance
-            destination = stop_by_key[(arc.destination_id, arc.day)]
-            origin = stop_by_key[(arc.origin_id, arc.day)]
-            exceeds_safe = duration > matrix_travel.safe_minutes + repair_tolerance_minutes
-            breaks_timeline = destination.start_minute < origin.end_minute + duration
-            if exceeds_safe and breaks_timeline:
-                repair_days.add(arc.day)
+            if transfer_direction is None:
+                destination = stop_by_key[(destination_id, day)]
+                origin = stop_by_key[(origin_id, day)]
+                exceeds_safe = (
+                    duration
+                    > matrix_travel.safe_minutes + repair_tolerance_minutes
+                )
+                breaks_timeline = destination.start_minute < origin.end_minute + duration
+                if exceeds_safe and breaks_timeline:
+                    repair_days.add(day)
+            elif duration > matrix_travel.safe_minutes:
+                repair_days.add(day)
             if detail.provider == STRAIGHT_LINE_PROVIDER:
                 warnings.append(STRAIGHT_LINE_WARNING)
         legs.append(
             EnrichedRouteLeg(
-                arc.origin_id,
-                arc.destination_id,
-                arc.day,
+                origin_id,
+                destination_id,
+                day,
                 duration,
                 distance,
                 polyline,
                 provider_name,
                 polyline is not None,
+                transfer_direction,
             )
         )
     return RouteEnrichmentResult(
@@ -171,6 +202,8 @@ def invalid_timeline_days(
     stops = {(stop.place_id, stop.day): stop for stop in optimization.scheduled_stops}
     invalid = set()
     for leg in enrichment.legs:
+        if leg.accommodation_transfer_direction is not None:
+            continue
         origin = stops[(leg.origin_id, leg.day)]
         destination = stops[(leg.destination_id, leg.day)]
         if destination.start_minute < origin.end_minute + leg.duration_minutes:

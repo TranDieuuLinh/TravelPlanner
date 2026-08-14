@@ -312,7 +312,14 @@ class InputItemResolutionService:
             rating=match.rating,
             review_count=match.review_count,
             score=match.score,
-            rejection_reasons=match.rejection_reasons,
+            rejection_reasons=[
+                *match.rejection_reasons,
+                *(
+                    ["admin_review_required"]
+                    if match.verification_status != "verified"
+                    else []
+                ),
+            ],
             relationships=match.relationship_evidence,
         )
         return ItemProximityPolicy.with_distance(option, anchor)

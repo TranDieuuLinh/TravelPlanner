@@ -40,8 +40,11 @@ invent an address, branch, qualifier, or place that the evidence does not suppor
 mention could refer to multiple places, preserve the original mention as places[].name.
 Return the normalized value only in places[].name; do not add explanation, original-name,
 normalization-confidence, normalization-reason, or clarification fields.
-Only raw-prompt food, drink, and activity requests may enter input_items. Link them to a
-named venue with related_place_name. Source-derived requests belong in url_notes.
+Only concrete raw-prompt food, drink, and activity requests that can be resolved may
+enter input_items. General tastes, themes, and styles such as liking culture, cuisine,
+walking, or nightlife belong in short_preferences, never input_items. Link a concrete
+request to a named venue with related_place_name. Source-derived requests belong in
+url_notes.
 Never infer trip days or people from source evidence. A price for one ticket, meal, or
 item is not a whole-trip budget. For a raw-prompt whole-trip amount, set budget.basis to
 per_person only when the user explicitly says per person; otherwise use group_total.

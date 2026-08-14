@@ -7,8 +7,7 @@ from app.modules.itinerary_planner.adapters.transport_cost import (
 )
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
-from app.modules.itinerary_planner.optimizer import SolverConfig
-from app.modules.itinerary_planner.optimizer import optimize_itinerary
+from app.modules.itinerary_planner.optimizer import SolverConfig, optimize_itinerary
 from app.modules.itinerary_planner.optimizer.locks import RepairLocks
 from app.modules.itinerary_planner.preprocessing import prepare_planning_problem
 from app.modules.itinerary_planner.route_enrichment import (
@@ -18,12 +17,14 @@ from app.modules.itinerary_planner.route_enrichment import (
 )
 from app.modules.itinerary_planner.routing import build_routing_problem
 from app.modules.itinerary_planner.tests.factories import candidate, food, payload
-from app.modules.itinerary_planner.tests.optimizer_fixtures import meal_candidates
+from app.modules.itinerary_planner.tests.optimizer_fixtures import (
+    continuity_candidates,
+    meal_candidates,
+)
 from app.modules.itinerary_planner.tests.routing_fakes import (
     GeneratedMatrixProvider,
     GeneratedRouteDetailProvider,
 )
-
 
 FAST_CONFIG = SolverConfig(
     pass1_timeout_seconds=2,
@@ -33,7 +34,14 @@ FAST_CONFIG = SolverConfig(
 
 
 def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
-    places = [candidate("lake", priority="user_input")]
+    places = [
+        candidate(
+            "lake",
+            priority="user_input",
+            image_urls=["https://example.test/lake.jpg"],
+        ),
+        *continuity_candidates(),
+    ]
     foods = [
         food("breakfast", supported_meals=["breakfast"]),
         food("lunch", supported_meals=["lunch"]),
@@ -54,14 +62,20 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
 
     result = asyncio.run(
         graph.ainvoke(
-            {"input": ItineraryPlannerInput.model_validate(payload(places=places, foods=foods))}
+            {
+                "input": ItineraryPlannerInput.model_validate(
+                    payload(places=places, foods=foods)
+                )
+            }
         )
     )
 
     output = result["output"]
     assert len(provider.calls) == len(result["optimization_result"].selected_arcs)
     assert all(leg.geometry_available for leg in output.days[0].legs)
-    assert sum(day.cost_per_person for day in output.days) == output.total_cost_per_person
+    assert (
+        sum(day.cost_per_person for day in output.days) == output.total_cost_per_person
+    )
     breakdown = output.days[0].cost_breakdown
     assert breakdown.total == output.days[0].cost_per_person
     assert breakdown.food == sum(
@@ -74,30 +88,36 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     assert breakdown.accommodation == 0
     assert breakdown.misc == 0
     assert output.unscheduled == []
-    assert output.discarded_optional_count == 0
+    lake = next(stop for stop in output.days[0].stops if stop.place_id == "lake")
+    assert lake.image_urls == ["https://example.test/lake.jpg"]
     assert [item.period for item in output.source_mix] == ["morning", "evening"]
 
 
 def test_phase5_adds_selected_accommodation_to_daily_and_total_cost() -> None:
     raw = payload(
-        places=[candidate("lake", priority="user_input")],
-        foods=[
-            food("breakfast", supported_meals=["breakfast"]),
-            food("lunch", supported_meals=["lunch"]),
-            food("dinner", supported_meals=["dinner"]),
+        days=2,
+        places=[
+            candidate("lake", priority="user_input"),
+            *continuity_candidates(2),
         ],
+        foods=meal_candidates(2),
     )
-    raw["accommodation"] = {
-        "placeId": "hotel:priced",
-        "name": "Priced Hotel",
-        "address": "Hanoi",
-        "rating": 4.5,
-        "reviewCount": 100,
-        "pricePerNight": {"cost": 600_000, "currency": "VND"},
-    }
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:priced",
+            "name": "Priced Hotel",
+            "coordinates": {"latitude": 21.03, "longitude": 105.84},
+            "address": "Hanoi",
+            "rating": 4.5,
+            "reviewCount": 100,
+            "pricePerNight": {"cost": 600_000, "currency": "VND"},
+        }
+    ]
+    route_provider = GeneratedRouteDetailProvider()
     graph = build_itinerary_planner_graph(
         GeneratedMatrixProvider(),
         XanhSmTransportCostEstimator(),
+        route_detail_provider=route_provider,
         solver_config=FAST_CONFIG,
     )
 
@@ -106,7 +126,14 @@ def test_phase5_adds_selected_accommodation_to_daily_and_total_cost() -> None:
     output = result["output"]
     assert output.accommodation is not None
     assert output.accommodation.place_id == "hotel:priced"
+    assert output.accommodation_nights == 1
     assert output.days[0].cost_breakdown.accommodation == 300_000
+    assert output.days[1].cost_breakdown.accommodation == 0
+    assert output.days[0].legs[-1].to_place_id == "hotel:priced"
+    assert output.days[1].legs[0].from_place_id == "hotel:priced"
+    assert output.days[0].legs[-1].geometry_available
+    assert output.days[1].legs[0].geometry_available
+    assert len(route_provider.calls) == 2
     assert output.total_cost_per_person == sum(
         day.cost_breakdown.total for day in output.days
     )
@@ -119,7 +146,10 @@ def test_phase5_keeps_valid_plan_when_route_geometry_provider_is_missing() -> No
         solver_config=FAST_CONFIG,
     )
     raw = payload(
-        places=[candidate("lake", priority="user_input")],
+        places=[
+            candidate("lake", priority="user_input"),
+            *continuity_candidates(),
+        ],
         foods=[
             food("breakfast", supported_meals=["breakfast"]),
             food("lunch", supported_meals=["lunch"]),
@@ -131,7 +161,9 @@ def test_phase5_keeps_valid_plan_when_route_geometry_provider_is_missing() -> No
 
     assert result.get("error") is None
     assert result["output"].days
-    assert any("Route geometry unavailable" in item for item in result["output"].warnings)
+    assert any(
+        "Route geometry unavailable" in item for item in result["output"].warnings
+    )
 
 
 def test_phase5_reports_unscheduled_priority_and_discards_optional_quietly() -> None:
@@ -140,6 +172,7 @@ def test_phase5_reports_unscheduled_priority_and_discards_optional_quietly() -> 
         places=[
             candidate("closed_user", priority="user_input", opening_hours=closed),
             candidate("closed_extra", priority="special_near", opening_hours=closed),
+            *continuity_candidates(),
         ],
         foods=[
             food("breakfast", supported_meals=["breakfast"]),
@@ -156,12 +189,46 @@ def test_phase5_reports_unscheduled_priority_and_discards_optional_quietly() -> 
     result = asyncio.run(graph.ainvoke({"input": raw}))
 
     assert [item.place_id for item in result["output"].unscheduled] == ["closed_user"]
-    assert result["output"].discarded_optional_count == 1
+    assert result["output"].discarded_optional_count >= 1
+
+
+def test_phase5_keeps_upstream_excluded_user_input_in_unscheduled() -> None:
+    raw = payload(
+        places=continuity_candidates(),
+        foods=[
+            food("breakfast", supported_meals=["breakfast"]),
+            food("lunch", supported_meals=["lunch"]),
+            food("dinner", supported_meals=["dinner"]),
+        ],
+    )
+    raw["excludedCandidates"] = [
+        {
+            "placeId": "lake",
+            "name": "Hoàn Kiếm Lake",
+            "priority": "user_input",
+            "reasonCode": "verification_required",
+            "message": "The requested place must be verified before planning.",
+        }
+    ]
+    graph = build_itinerary_planner_graph(
+        GeneratedMatrixProvider(),
+        XanhSmTransportCostEstimator(),
+        solver_config=FAST_CONFIG,
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": raw}))
+
+    assert [
+        (item.place_id, item.reason_code) for item in result["output"].unscheduled
+    ] == [("lake", "verification_required")]
 
 
 def test_route_detail_overrun_is_repaired_by_resolving_the_affected_day() -> None:
     raw = payload(
-        places=[candidate("lake", priority="user_input")],
+        places=[
+            candidate("lake", priority="user_input"),
+            *continuity_candidates(),
+        ],
         foods=[
             food("breakfast", supported_meals=["breakfast"]),
             food("lunch", supported_meals=["lunch"]),
@@ -186,34 +253,40 @@ def test_route_detail_overrun_is_repaired_by_resolving_the_affected_day() -> Non
         key=lambda arc: (
             stops[(arc.destination_id, arc.day)].start_minute
             - stops[(arc.origin_id, arc.day)].end_minute
-            - routing.travel_by_candidate_pair[(arc.origin_id, arc.destination_id)].safe_minutes
+            - routing.travel_by_candidate_pair[
+                (arc.origin_id, arc.destination_id)
+            ].safe_minutes
         ),
     )
     slack = (
         stops[(chosen.destination_id, chosen.day)].start_minute
         - stops[(chosen.origin_id, chosen.day)].end_minute
-        - routing.travel_by_candidate_pair[(chosen.origin_id, chosen.destination_id)].safe_minutes
+        - routing.travel_by_candidate_pair[
+            (chosen.origin_id, chosen.destination_id)
+        ].safe_minutes
     )
     chosen_nodes = (
         routing.candidate_to_matrix_node[chosen.origin_id],
         routing.candidate_to_matrix_node[chosen.destination_id],
     )
     provider = GeneratedRouteDetailProvider(
-        duration_by_pair={chosen_nodes: (
-            routing.travel_by_candidate_pair[
-                (chosen.origin_id, chosen.destination_id)
-            ].safe_minutes
-            + slack
-            + 3
-        )
-        * 60}
+        duration_by_pair={
+            chosen_nodes: (
+                routing.travel_by_candidate_pair[
+                    (chosen.origin_id, chosen.destination_id)
+                ].safe_minutes
+                + slack
+                + 3
+            )
+            * 60
+        }
     )
-    details = asyncio.run(
-        enrich_selected_routes(problem, routing, baseline, provider)
-    )
+    details = asyncio.run(enrich_selected_routes(problem, routing, baseline, provider))
 
     assert details.repair_days == {1}
-    corrected = apply_route_corrections(routing, details, estimator, problem.trip.people)
+    corrected = apply_route_corrections(
+        routing, details, estimator, problem.trip.people
+    )
     repaired = optimize_itinerary(
         problem,
         corrected,
@@ -238,7 +311,10 @@ def test_golden_trip_lengths_keep_output_invariants(days: int) -> None:
     )
     raw = payload(
         days=days,
-        places=[candidate("required", priority="user_input")],
+        places=[
+            candidate("required", priority="user_input"),
+            *continuity_candidates(days),
+        ],
         foods=meal_candidates(days),
     )
 

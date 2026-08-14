@@ -9,6 +9,7 @@ from app.modules.information_finder.contract import (
     RetrievedSource,
 )
 from app.modules.information_finder.freshness import FreshnessPolicy
+from app.shared.observability import traced_call
 
 
 def _vector_literal(values: list[float]) -> str:
@@ -40,6 +41,29 @@ class PostgresSourceRepository:
         return self._pool
 
     async def retrieve(
+        self,
+        query: str,
+        query_embedding: list[float],
+        identity: EmbeddingIdentity,
+        limit: int,
+    ) -> list[RetrievedSource]:
+        return await traced_call(
+            "information_finder.postgres.retrieve",
+            lambda: self._retrieve(query, query_embedding, identity, limit),
+            kind="database",
+            input_summary={
+                "queryChars": len(query),
+                "embeddingDimensions": len(query_embedding),
+                "limit": limit,
+            },
+            output_summary=lambda value: {
+                "sourceCount": len(value),
+                "cacheHit": bool(value),
+            },
+            metadata={"module": "information_finder", "provider": "postgres"},
+        )
+
+    async def _retrieve(
         self,
         query: str,
         query_embedding: list[float],
@@ -86,6 +110,32 @@ class PostgresSourceRepository:
         return [self._to_source(row) for row in rows]
 
     async def save_search(
+        self,
+        *,
+        original_query: str,
+        normalized_query: str,
+        sources: list[PreparedSource],
+        identity: EmbeddingIdentity,
+        provider_request_id: str | None,
+        search_parameters: dict,
+    ) -> list[RetrievedSource]:
+        return await traced_call(
+            "information_finder.postgres.save_search",
+            lambda: self._save_search(
+                original_query=original_query,
+                normalized_query=normalized_query,
+                sources=sources,
+                identity=identity,
+                provider_request_id=provider_request_id,
+                search_parameters=search_parameters,
+            ),
+            kind="database",
+            input_summary={"sourceCount": len(sources)},
+            output_summary=lambda value: {"savedSourceCount": len(value)},
+            metadata={"module": "information_finder", "provider": "postgres"},
+        )
+
+    async def _save_search(
         self,
         *,
         original_query: str,

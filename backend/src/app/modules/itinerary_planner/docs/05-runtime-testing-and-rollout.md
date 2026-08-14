@@ -1,8 +1,8 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
-Trạng thái: đã triển khai route-detail enrichment cho selected arcs, fallback
-có warning khi thiếu geometry, fallback đường chim bay khi Valhalla không sẵn
-sàng, một vòng affected-day repair, timeline validation, public
+Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
+accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
+chim bay khi Valhalla không sẵn sàng, một vòng affected-day repair, timeline validation, public
 `ItineraryPlannerOutput`, phase timings và root/API field `plannerOutput`.
 Valhalla detail chỉ được gọi sau solver; Planner không query DB và không sửa
 PlaceChecker.
@@ -25,7 +25,7 @@ Trách nhiệm:
 prepare_problem       validate/normalize/preflight
 build_travel_matrix   provider call, cache, sparse graph
 optimize_itinerary    CP-SAT ba pass
-enrich_selected_routes route detail cho selected arcs
+enrich_selected_routes route detail cho selected arcs và accommodation transfers
 finalize_output       sort timeline, totals, warnings, unscheduled
 ```
 
@@ -52,7 +52,7 @@ Chỉ `input` bắt buộc khi invoke. Các field còn lại được từng nod
 
 ## Route detail sau solver
 
-Sau pass 3, lấy ordered selected arcs:
+Sau pass 3, lấy ordered selected arcs cùng các accommodation transfer đã chọn:
 
 ```text
 A -> B
@@ -60,9 +60,10 @@ B -> C
 C -> D
 ```
 
-Chỉ gọi Valhalla route detail cho ba leg này. Driving legs không phụ thuộc
-departure time có thể gọi song song với concurrency limit. Không gọi geometry
-cho virtual legs.
+Chỉ gọi Valhalla route detail cho các leg này. Driving legs không phụ thuộc
+departure time có thể gọi song song trong cùng batch với concurrency limit.
+Không gọi geometry cho virtual legs. Accommodation transfer thiếu shape phải
+trả warning cụ thể, không chỉ đặt `geometryAvailable=false`.
 
 Output leg nên giữ:
 
@@ -275,7 +276,8 @@ Mọi weight change cần regression test; không rải magic number trong const
 
 ### Checkpoint E: route detail + repair
 
-- Đã có geometry selected arcs và fallback warning theo leg.
+- Đã có geometry selected arcs và accommodation transfers, kèm fallback warning
+  cụ thể theo leg.
 - Đã có affected-day repair tối đa một vòng, khóa ngày không ảnh hưởng và giữ
   số lượng priority.
 - Đã có invariant tests; benchmark/golden evaluation quy mô 1/3/5/7 ngày vẫn

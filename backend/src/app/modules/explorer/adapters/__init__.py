@@ -17,6 +17,7 @@ from app.modules.explorer.adapters.gemini import (
     RoutedExplorerDraftGenerator,
 )
 from app.modules.explorer.adapters.image_source import GeminiImageSourceExtractor
+from app.modules.explorer.adapters.image_cache import InMemoryImageOcrCache
 from app.modules.explorer.adapters.media_analysis import GeminiMediaAnalyzer
 from app.modules.explorer.adapters.tiktok_html import (
     FallbackUrlMediaClient,
@@ -46,6 +47,7 @@ __all__ = [
     "GeminiExplorerDraftGenerator",
     "CurlCffiWebsiteFetcher",
     "GeminiImageSourceExtractor",
+    "InMemoryImageOcrCache",
     "GeminiMediaAnalyzer",
     "InMemoryExplorerSnapshotRepository",
     "InMemoryExplorerDraftCache",

@@ -41,9 +41,15 @@ async def list_resource(
     service: Annotated[ObservabilityService, Depends(get_service)],
     page: int = Query(1, ge=1, le=10000),
     limit: int = Query(25, ge=1, le=100),
+    trace_id: str | None = Query(None, alias="traceId"),
 ) -> ObservabilityPage:
     try:
-        return await service.list_records(resource, page=page, limit=limit)
+        return await service.list_records(
+            resource,
+            page=page,
+            limit=limit,
+            trace_id=trace_id,
+        )
     except ObservabilityError as error:
         handle(error)
 

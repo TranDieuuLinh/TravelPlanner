@@ -16,6 +16,7 @@ class ItemPlaceOption(ContractModel):
     address: str | None = Field(default=None, max_length=500)
     coordinates: Coordinates | None = None
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     cost_tier: CostTier = CostTier.unknown

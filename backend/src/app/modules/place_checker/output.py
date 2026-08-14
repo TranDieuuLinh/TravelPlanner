@@ -35,7 +35,10 @@ from app.modules.place_checker.output_contract import (
     UnresolvedEntity,
 )
 from app.modules.place_checker.retrieval_contract import RetrievalBatch
-from app.modules.place_checker.scoring_contract import CandidateRankingBatch, ScoredCandidate
+from app.modules.place_checker.scoring_contract import (
+    CandidateRankingBatch,
+    ScoredCandidate,
+)
 
 
 class PlaceCheckerOutputAssembler:
@@ -98,7 +101,10 @@ class PlaceCheckerOutputAssembler:
             and evaluation.state == PlaceLifecycleState.blocked
             for evaluation in places.places
         )
-        if context.destination.status != AdmResolutionStatus.resolved or blocked_mandatory:
+        if (
+            context.destination.status != AdmResolutionStatus.resolved
+            or blocked_mandatory
+        ):
             status = PlaceCheckerStatus.blocked
         elif metadata.partial:
             status = PlaceCheckerStatus.partial
@@ -175,7 +181,9 @@ class PlaceCheckerOutputAssembler:
                 if source.source_time_hint
             )
         )
-        known_duration = bool(metadata and metadata.typical_duration_minutes is not None)
+        known_duration = bool(
+            metadata and metadata.typical_duration_minutes is not None
+        )
         known_cost = bool(
             metadata
             and (
@@ -209,6 +217,7 @@ class PlaceCheckerOutputAssembler:
             category=metadata.category if metadata else None,
             pool_category=scored.candidate.pool_category if scored else None,
             tags=metadata.tags if metadata else [],
+            image_urls=metadata.image_urls if metadata else [],
             rating=metadata.rating if metadata else None,
             review_count=metadata.review_count if metadata else None,
             duration=CheckedDuration(
@@ -276,12 +285,16 @@ class PlaceCheckerOutputAssembler:
                 else max(
                     (relationship.score for relationship in metadata.relationships),
                     default=0,
-                ) if metadata else 0
+                )
+                if metadata
+                else 0
             ),
             relationship_evidence=(
                 scored.candidate.relationships
                 if scored
-                else metadata.relationships if metadata else []
+                else metadata.relationships
+                if metadata
+                else []
             ),
             provenance=CheckedProvenance(
                 source_places=place.source_places,

@@ -10,8 +10,8 @@ from app.modules.place_checker.enums import (
     RetrievalSourceKind,
     VerificationStatus,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
+from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.shared.contracts.place import Coordinates
 
 
@@ -49,6 +49,7 @@ class RetrievalEvidence(ContractModel):
     relationship_score: float = Field(default=0, ge=0, le=1)
     relationships: list[PlaceRelationshipEvidence] = Field(default_factory=list)
     fetched_at: datetime | None = None
+    is_verified: bool = True
     metadata: PlaceMetadata | None = None
 
 

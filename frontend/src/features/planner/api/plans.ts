@@ -224,7 +224,20 @@ export type TravelPlan = {
     address?: string | null;
     pricePerNight: number;
     currency: string;
+    nights: number;
   } | null;
+  budget?: {
+    amountPerPerson: number | null;
+    currency: string;
+    source: "explicit" | "estimated_daily_cost" | "unspecified";
+    dailyEstimate?: {
+      accommodation: number;
+      food: number;
+      localTransport: number;
+      activities: number;
+      total: number;
+    } | null;
+  };
   planningAssumptions?: string[];
   warnings?: string[];
   unscheduledPlaces?: UnscheduledPlace[];

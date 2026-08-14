@@ -37,12 +37,16 @@ from app.modules.information_finder.service import (
 from app.modules.itinerary_planner.public import (
     build_valhalla_itinerary_planner_graph,
 )
-from app.modules.knowledge_graph.public import build_knowledge_graph_service
+from app.modules.knowledge_graph.public import (
+    build_draft_place_store,
+    build_knowledge_graph_service,
+)
 from app.modules.place_checker.public import build_postgres_place_checker_pipeline
 from app.modules.supervisor.adapters import GeminiIntentClassifier
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
 from app.shared.llm import GeminiKeyPool, GeminiLlmClient, LlmClient
+from app.shared.tools.search_places.adapters import GoogleMapsPlaywrightSearch
 
 
 def create_answer_generator(
@@ -261,6 +265,7 @@ def compose_explorer_service(
         max_frames=settings.explorer_max_frames,
         frame_max_concurrency=settings.explorer_frame_max_concurrency,
         audio_chunk_count=settings.explorer_audio_chunk_count,
+        audio_chunk_seconds=settings.explorer_audio_chunk_seconds,
         youtube_audio_chunk_seconds=settings.explorer_youtube_audio_chunk_seconds,
         youtube_audio_chunk_overlap_seconds=(
             settings.explorer_youtube_audio_chunk_overlap_seconds
@@ -305,6 +310,14 @@ def get_graph():
         or bool(settings.gemini_api_key)
     ):
         shared_llm_client = get_llm_client()
+    external_place_search = None
+    if settings.database_url and settings.google_maps_scraper_enabled:
+        external_place_search = GoogleMapsPlaywrightSearch(
+            build_draft_place_store(settings.database_url),
+            timeout_seconds=settings.google_maps_scraper_timeout_seconds,
+            max_alias_queries=settings.google_maps_scraper_max_alias_queries,
+            max_concurrency=settings.google_maps_scraper_max_concurrency,
+        )
     return create_root_graph(
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
@@ -314,7 +327,10 @@ def get_graph():
             get_explorer_synthesis_limiter(),
         ),
         place_checker_pipeline=(
-            build_postgres_place_checker_pipeline(settings.database_url)
+            build_postgres_place_checker_pipeline(
+                settings.database_url,
+                external_place_search=external_place_search,
+            )
             if settings.database_url
             else None
         ),
@@ -323,6 +339,7 @@ def get_graph():
                 settings.valhalla_base_url,
                 timeout_seconds=settings.valhalla_timeout_seconds,
                 provider_version=settings.valhalla_graph_version,
+                log_search_progress=settings.itinerary_log_search_progress,
             )
             if settings.route_provider == "valhalla"
             else None

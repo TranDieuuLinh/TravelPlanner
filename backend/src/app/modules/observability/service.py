@@ -24,8 +24,17 @@ class ObservabilityService:
     async def status(self) -> ObservabilityStatus:
         return ObservabilityStatus(**self.store.status())
 
-    async def list_records(self, resource: str, *, page: int, limit: int) -> ObservabilityPage:
-        return ObservabilityPage(**self.store.page(resource, page, limit))
+    async def list_records(
+        self,
+        resource: str,
+        *,
+        page: int,
+        limit: int,
+        trace_id: str | None = None,
+    ) -> ObservabilityPage:
+        return ObservabilityPage(
+            **self.store.page(resource, page, limit, trace_id=trace_id)
+        )
 
     async def get_trace(self, trace_id: str) -> dict[str, Any] | None:
         return self.store.trace(trace_id)

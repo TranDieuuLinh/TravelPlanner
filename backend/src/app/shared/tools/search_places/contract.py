@@ -36,6 +36,8 @@ class AdministrativeArea(ToolModel):
 
 
 SearchMode = Literal["named_place", "requirement"]
+ProviderScope = Literal["all", "knowledge_graph", "external"]
+PlaceVerificationStatus = Literal["verified", "not_verified"]
 SearchStatus = Literal[
     "resolved",
     "needs_review",
@@ -59,6 +61,7 @@ class PlaceSearchRequest(ToolModel):
     next_place: Coordinates | None = None
     top_k: int = Field(default=5, ge=1, le=60)
     allow_external_fallback: bool = True
+    provider_scope: ProviderScope = "all"
 
     @field_validator("query")
     @classmethod
@@ -97,6 +100,9 @@ class PlaceProviderCandidate(ToolModel):
     relationship_evidence: list[dict[str, object]] = Field(default_factory=list)
     data_confidence: float = Field(default=0.5, ge=0, le=1)
     fetched_at: datetime | None = None
+    verification_status: PlaceVerificationStatus = "verified"
+    source_url: str | None = Field(default=None, max_length=2048)
+    provider_metadata: dict[str, object] = Field(default_factory=dict)
 
     @property
     def stable_id(self) -> str | None:
@@ -120,6 +126,8 @@ class PlaceSearchMatch(ToolModel):
     score_components: dict[str, float] = Field(default_factory=dict)
     rejection_reasons: list[str] = Field(default_factory=list)
     fetched_at: datetime | None = None
+    verification_status: PlaceVerificationStatus = "verified"
+    source_url: str | None = None
 
 
 class ProviderAttempt(ToolModel):

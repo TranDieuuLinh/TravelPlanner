@@ -17,7 +17,7 @@ class LocalTraceCallback(AsyncCallbackHandler):
         self._observations: dict[UUID, str] = {}
 
     async def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs):
-        self._start("chain", serialized, run_id, parent_run_id, kwargs, inputs)
+        self._start(_trace_kind("chain", kwargs), serialized, run_id, parent_run_id, kwargs, inputs)
 
     async def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id=None, **kwargs):
         self._start("llm", serialized, run_id, parent_run_id, kwargs, prompts)
@@ -67,3 +67,12 @@ def _run_name(kind: str, serialized: Any, kwargs: dict[str, Any]) -> str:
         if isinstance(identifier, list) and identifier:
             return str(identifier[-1])
     return kind
+
+
+def _trace_kind(default: str, kwargs: dict[str, Any]) -> str:
+    for tag in kwargs.get("tags") or []:
+        if isinstance(tag, str) and tag.startswith("trace_kind:"):
+            value = tag.removeprefix("trace_kind:").strip()
+            if value:
+                return value
+    return default

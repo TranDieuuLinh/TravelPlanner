@@ -40,3 +40,12 @@ class ExternalPlaceSearch(Protocol):
         limit: int,
         anchor_place_id: str | None = None,
     ) -> list[PlaceProviderCandidate]: ...
+
+
+class ExternalPlaceDraftStore(Protocol):
+    async def upsert_draft(
+        self,
+        candidate: PlaceProviderCandidate,
+        *,
+        input_adm: AdministrativeArea,
+    ) -> PlaceProviderCandidate: ...

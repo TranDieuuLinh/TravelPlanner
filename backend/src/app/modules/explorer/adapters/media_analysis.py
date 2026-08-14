@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
@@ -154,11 +155,12 @@ class GeminiMediaAnalyzer:
         client: LlmClient,
         *,
         audio_client: LlmClient | None = None,
-        frame_interval_seconds: float = 1.5,
+        frame_interval_seconds: float = 3,
         frame_batch_size: int = 10,
-        max_frames: int = 72,
+        max_frames: int = 48,
         frame_max_concurrency: int = 5,
         audio_chunk_count: int = 3,
+        audio_chunk_seconds: float = 60,
         max_video_seconds: float = 180,
     ) -> None:
         self.vision_client = client
@@ -168,6 +170,7 @@ class GeminiMediaAnalyzer:
         self.max_frames = max_frames
         self.frame_max_concurrency = frame_max_concurrency
         self.audio_chunk_count = audio_chunk_count
+        self.audio_chunk_seconds = audio_chunk_seconds
         self.max_video_seconds = max_video_seconds
         self.ffmpeg = FfmpegMediaProcessor()
 
@@ -282,9 +285,13 @@ class GeminiMediaAnalyzer:
     async def _analyze_audio(
         self, media_path: str, output_dir: str, source_url: str, duration: float
     ) -> list[SourceArtifact]:
+        chunk_count = min(
+            self.audio_chunk_count,
+            max(1, math.ceil(duration / self.audio_chunk_seconds)),
+        )
         chunks = await self.ffmpeg.extract_audio_chunks(
             media_path, output_dir,
-            duration_seconds=duration, chunk_count=self.audio_chunk_count,
+            duration_seconds=duration, chunk_count=chunk_count,
         )
         results = await asyncio.gather(*(
             self._stt_chunk(path, index) for index, (path, _) in enumerate(chunks)

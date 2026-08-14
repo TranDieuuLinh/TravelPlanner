@@ -16,7 +16,7 @@ dependencies = [
   "langgraph>=1.2,<2",
   "langgraph-checkpoint-postgres>=2,<4",
   "ortools>=9.11,<10",
-  "playwright>=1.55,<2",
+  "playwright==1.62.0",
   "pydantic>=2.9,<3",
   "pydantic-settings>=2.5,<3",
   "tavily-python>=0.7,<1",
