@@ -209,6 +209,10 @@ local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`
 đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
 dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
 không có nguồn local hoặc cần refresh.
+Answer generator chỉ trả về danh sách `entityNames`; `KnowledgeGraphEntityResolver`
+tra từng tên qua public Knowledge Graph contract và backend tự gắn
+`travel-entity://entity` sau khi node tồn tại. Entity không resolve được không bị
+gắn link giả.
 
 Supervisor là intent classifier có provider cấu hình được. Khi provider là
 `gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;

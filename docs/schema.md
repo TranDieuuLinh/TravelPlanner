@@ -191,7 +191,8 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiUrlSourceChunker` | `information_finder` | URL public từ Tavily | semantic chunks có fallback deterministic |
 | `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |
 | `ExtractiveAnswerGenerator` | `information_finder` | query và nguồn | câu trả lời fallback có citation |
-| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim và source ID |
+| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim, source ID và `entityNames` |
+| `KnowledgeGraphEntityResolver` | `information_finder` | `entityNames` do answer generator đề xuất | chỉ xác nhận tên có node rồi mới gắn `travel-entity://entity` |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
 | `ValhallaAdapter.matrix` | `itinerary_planner` | Candidate coordinates + profile | Global asymmetric driving matrix |

@@ -21,6 +21,19 @@ def test_normalize_answer_text_removes_scraper_markers_and_collapses_whitespace(
     )
 
 
+def test_normalize_answer_text_removes_travel_agency_contact_promotions():
+    text = (
+        "Công ty du lịch BestPrice Số điện thoại hỗ trợ phone 1900 2605 "
+        "Tổng đài: 024 73072605 Lăng Bác nằm tại Quảng trường Ba Đình."
+    )
+
+    normalized = normalize_answer_text(text)
+
+    assert normalized == "Lăng Bác nằm tại Quảng trường Ba Đình."
+    assert "BestPrice" not in normalized
+    assert "1900 2605" not in normalized
+
+
 def test_relevant_excerpt_skips_navigation_prefix():
     excerpt = select_relevant_excerpt(
         NOISY_SOURCE,

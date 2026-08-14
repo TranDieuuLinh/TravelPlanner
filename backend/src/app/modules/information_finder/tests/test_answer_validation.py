@@ -17,6 +17,7 @@ from app.modules.information_finder.contract import (
 from app.modules.information_finder.errors import (
     AnswerProviderTimeout,
 )
+from app.modules.information_finder.entity_linking import EntityResolver, ResolvedEntity
 from app.modules.information_finder.service import (
     InformationFinderOptions,
     InformationFinderService,
@@ -98,13 +99,22 @@ class Answer:
         return self.generated
 
 
-def make_service(repository, answer, *, search=None, fallback=None, enabled=True):
+def make_service(
+    repository,
+    answer,
+    *,
+    search=None,
+    fallback=None,
+    enabled=True,
+    entity_resolver=None,
+):
     return InformationFinderService(
         repository=repository,
         embeddings=HashingEmbeddingProvider(),
         answers=answer,
         fallback_answers=fallback,
         search_provider=search,
+        entity_resolver=entity_resolver,
         options=InformationFinderOptions(
             minimum_local_sources=1,
             similarity_threshold=0.5,
@@ -114,9 +124,10 @@ def make_service(repository, answer, *, search=None, fallback=None, enabled=True
     )
 
 
-def generated(*claims):
+def generated(*claims, entity_names=None):
     return GeneratedAnswer(
-        claims=[AnswerClaim(text=text, source_ids=ids) for text, ids in claims]
+        claims=[AnswerClaim(text=text, source_ids=ids) for text, ids in claims],
+        entity_names=entity_names or [],
     )
 
 
@@ -131,17 +142,28 @@ def test_only_cited_sources_are_returned_and_duplicate_ids_keep_order():
     assert output.answer.endswith("[1][2]")
 
 
-def test_markdown_entity_reference_is_preserved_in_answer():
+def test_verified_entity_name_is_linked_after_knowledge_graph_lookup():
+    class Resolver(EntityResolver):
+        async def resolve(self, name):
+            if name == "Lăng Bác":
+                return ResolvedEntity(name=name, entity_id="lang-bac")
+            return None
+
     answer = Answer(
         generated(
             (
-                "## Hà Nội\n\nGhé [Lăng Bác](travel-entity://entity).",
+                "## Hà Nội\n\nGhé Lăng Bác.",
                 ["s1"],
-            )
+            ),
+            entity_names=["Lăng Bác"],
         )
     )
     output = run(
-        make_service(Repository([source("s1")]), answer).find("Hà Nội")
+        make_service(
+            Repository([source("s1")]),
+            answer,
+            entity_resolver=Resolver(),
+        ).find("Hà Nội")
     )
     assert output.answer.startswith("## Hà Nội")
     assert "[Lăng Bác](travel-entity://entity)" in output.answer

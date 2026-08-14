@@ -11,13 +11,13 @@ from app.modules.information_finder.contract import (
     RetrievedSource,
     SourceReference,
 )
-from app.modules.information_finder.answering import validate_and_render_answer
+from app.modules.information_finder.answering import generate_and_render_answer
 from app.modules.information_finder.errors import (
-    AnswerProviderError,
     EmbeddingProviderError,
     SearchQueryPlanningError,
     SourceChunkingError,
 )
+from app.modules.information_finder.entity_linking import EntityResolver
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
@@ -67,6 +67,7 @@ class InformationFinderService:
         chunker: SourceChunker | None = None,
         search_provider: SearchProvider | None = None,
         search_query_planner: SearchQueryPlanner | None = None,
+        entity_resolver: EntityResolver | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
     ) -> None:
@@ -77,6 +78,7 @@ class InformationFinderService:
         self.chunker = chunker
         self.search_provider = search_provider
         self.search_query_planner = search_query_planner
+        self.entity_resolver = entity_resolver
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
 
@@ -216,18 +218,15 @@ class InformationFinderService:
                     "No source was available after local retrieval and optional web search.",
                 ],
             )
-        try:
-            generated = await self.answers.generate(normalized_query, ranked)
-            answer, cited_sources = validate_and_render_answer(generated, ranked)
-        except AnswerProviderError as exc:
-            if (
-                not self.options.answer_fallback_enabled
-                or self.fallback_answers is None
-            ):
-                raise
-            fallback = await self.fallback_answers.generate(normalized_query, ranked)
-            answer, cited_sources = validate_and_render_answer(fallback, ranked)
-            warnings.append(f"answer_extractive_fallback:{exc.code}")
+        answer, cited_sources, answer_warnings = await generate_and_render_answer(
+            normalized_query,
+            ranked,
+            answers=self.answers,
+            fallback_answers=self.fallback_answers,
+            fallback_enabled=self.options.answer_fallback_enabled,
+            entity_resolver=self.entity_resolver,
+        )
+        warnings.extend(answer_warnings)
         return InformationFinderOutput(
             answer=answer,
             sources=[self._citation(source) for source in cited_sources],

@@ -24,6 +24,7 @@ from app.modules.information_finder.adapters.postgres_source_repository import (
     PostgresSourceRepository,
 )
 from app.modules.information_finder.adapters.tavily_search import TavilySearchProvider
+from app.modules.information_finder.entity_linking import KnowledgeGraphEntityResolver
 from app.modules.information_finder.ports import (
     AnswerGenerator,
     EmbeddingProvider,
@@ -36,6 +37,7 @@ from app.modules.information_finder.service import (
 from app.modules.itinerary_planner.public import (
     build_valhalla_itinerary_planner_graph,
 )
+from app.modules.knowledge_graph.public import build_knowledge_graph_service
 from app.modules.place_checker.public import build_postgres_place_checker_pipeline
 from app.modules.supervisor.adapters import GeminiIntentClassifier
 from app.modules.supervisor.public import SupervisorService
@@ -100,6 +102,12 @@ def get_information_finder_service() -> InformationFinderService:
         if settings.gemini_api_key and search_provider is not None
         else None
     )
+    knowledge_graph = build_knowledge_graph_service(settings)
+    entity_resolver = (
+        KnowledgeGraphEntityResolver(knowledge_graph.entity_preview)
+        if knowledge_graph is not None
+        else None
+    )
     blocked_domains = tuple(
         domain.strip().casefold()
         for domain in settings.information_finder_blocked_domains.split(",")
@@ -133,6 +141,7 @@ def get_information_finder_service() -> InformationFinderService:
         chunker=chunker,
         search_provider=search_provider,
         search_query_planner=search_query_planner,
+        entity_resolver=entity_resolver,
         options=InformationFinderOptions(
             minimum_local_sources=settings.information_finder_min_local_sources,
             similarity_threshold=settings.information_finder_similarity_threshold,

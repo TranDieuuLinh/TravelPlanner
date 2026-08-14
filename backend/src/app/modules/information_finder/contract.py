@@ -49,8 +49,15 @@ class AnswerClaim(BaseModel):
 
 
 class GeneratedAnswer(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     claims: list[AnswerClaim] = Field(min_length=1)
     caveat: str | None = None
+    entity_names: list[str] = Field(
+        default_factory=list,
+        max_length=30,
+        alias="entityNames",
+    )
 
 
 class EmbeddingIdentity(BaseModel):

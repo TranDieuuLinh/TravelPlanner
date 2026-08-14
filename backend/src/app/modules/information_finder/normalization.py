@@ -15,11 +15,27 @@ _NAVIGATION_MARKERS = (
     "theo dòng sự kiện",
 )
 _SEGMENT_BREAK = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+_PROMOTIONAL_PHONE = re.compile(
+    r"(?<!\d)(?:1900|0\d{2,3})(?:[\s().-]*\d){4,10}(?!\d)"
+)
+_PROMOTIONAL_LABEL = re.compile(
+    r"\b(?:số\s+điện\s+thoại(?:\s+hỗ\s+trợ)?|phone|tổng\s+đài|hotline|"
+    r"liên\s+hệ|đặt\s+tour|book\s+tour|tư\s+vấn)\b\s*:?-?",
+    flags=re.IGNORECASE,
+)
+_PROMOTIONAL_BRAND = re.compile(
+    r"\b(?:công\s+ty\s+(?:du\s+lịch|lữ\s+hành)|bestprice)\b",
+    flags=re.IGNORECASE,
+)
+_PROMOTIONAL_LOCATION_LABEL = re.compile(
+    r"\b(?:hà\s+nội|hồ\s+chí\s+minh|tp\.?\s*hcm)\s*:\s*",
+    flags=re.IGNORECASE,
+)
 
 
 def normalize_answer_text(text: str) -> str:
     """Normalize extracted/generated text without changing its factual content."""
-    normalized = text.replace("\u00a0", " ")
+    normalized = _remove_promotional_fragments(text).replace("\u00a0", " ")
     normalized = re.sub(
         r"\[(?:sửa|edit)\s*\|\s*(?:sửa mã nguồn|edit source)\]",
         " ",
@@ -34,7 +50,13 @@ def normalize_answer_text(text: str) -> str:
 
 def normalize_generated_answer_text(text: str) -> str:
     """Keep safe Markdown structure in an LLM-generated claim."""
-    normalized = text.replace("\u00a0", " ")
+    normalized = _remove_promotional_fragments(text).replace("\u00a0", " ")
+    normalized = re.sub(
+        r"\[([^\]]+)\]\(travel-entity://entity\)",
+        r"\1",
+        normalized,
+        flags=re.IGNORECASE,
+    )
     normalized = re.sub(
         r"\[(?:sá»­a|edit)\s*\|\s*(?:sá»­a mÃ£ nguá»“n|edit source)\]",
         " ",
@@ -110,11 +132,20 @@ def _segments(text: str) -> list[str]:
 
 
 def _normalize_for_selection(text: str) -> str:
-    normalized = text.replace("\u00a0", " ")
+    normalized = _remove_promotional_fragments(text).replace("\u00a0", " ")
     normalized = re.sub(r"\[\d+\]", "", normalized)
     normalized = re.sub(r"[ \t]+", " ", normalized)
     normalized = re.sub(r"\n\s*", "\n", normalized)
     return normalized.strip()
+
+
+def _remove_promotional_fragments(text: str) -> str:
+    """Remove contact and advertising fragments from scraped travel content."""
+    cleaned = _PROMOTIONAL_PHONE.sub(" ", text)
+    cleaned = _PROMOTIONAL_LABEL.sub(" ", cleaned)
+    cleaned = _PROMOTIONAL_BRAND.sub(" ", cleaned)
+    cleaned = _PROMOTIONAL_LOCATION_LABEL.sub(" ", cleaned)
+    return cleaned
 
 
 def _score_segment(
