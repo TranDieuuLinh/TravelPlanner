@@ -13,7 +13,7 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v1"
+    policy_version: str = "itinerary-utility-v2-source-mix"
     special_experience: int = 800
     preference_max: int = 600
     quality_max: int = 300
@@ -31,6 +31,7 @@ class ObjectiveWeights:
     excess_active_minute: int = 1
     day_imbalance_minute: int = 1
     unknown_opening: int = 5
+    source_mix_deviation: int = 2_000
 
 
 STRONG_TAGS = frozenset(

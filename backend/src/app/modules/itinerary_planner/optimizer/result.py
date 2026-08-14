@@ -36,6 +36,22 @@ class SolverPassResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceMixPeriodResult:
+    period: str
+    target_special: int
+    target_offer: int
+    actual_special: int
+    actual_offer: int
+
+    @property
+    def fallback_used(self) -> bool:
+        return (
+            self.actual_special != self.target_special
+            or self.actual_offer != self.target_offer
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationResult:
     status: str
     optimality_proven: bool
@@ -49,6 +65,7 @@ class OptimizationResult:
     objective_components: dict[str, int]
     objective_policy_version: str
     passes: tuple[SolverPassResult, ...]
+    source_mix: tuple[SourceMixPeriodResult, ...]
 
 
 def extract_result(
@@ -108,6 +125,10 @@ def extract_result(
         name: solver.Value(expression)
         for name, expression in objective.components.items()
     }
+    source_mix = tuple(
+        _source_mix_period(solver, variables, period, target_special_tenths)
+        for period, target_special_tenths in (("morning", 7), ("evening", 6))
+    )
     return OptimizationResult(
         status=passes[-1].status,
         optimality_proven=all(item.optimality_proven for item in passes),
@@ -129,4 +150,32 @@ def extract_result(
         objective_components=components,
         objective_policy_version=objective_policy_version,
         passes=passes,
+        source_mix=source_mix,
+    )
+
+
+def _source_mix_period(
+    solver: cp_model.CpSolver,
+    variables: PlannerVariables,
+    period: str,
+    target_special_tenths: int,
+) -> SourceMixPeriodResult:
+    actual_special = sum(
+        solver.Value(value)
+        for key, value in variables.source_special.items()
+        if key[2] == period
+    )
+    actual_offer = sum(
+        solver.Value(value)
+        for key, value in variables.source_offer.items()
+        if key[2] == period
+    )
+    total = actual_special + actual_offer
+    target_special = (total * target_special_tenths + 5) // 10
+    return SourceMixPeriodResult(
+        period=period,
+        target_special=target_special,
+        target_offer=total - target_special,
+        actual_special=actual_special,
+        actual_offer=actual_offer,
     )

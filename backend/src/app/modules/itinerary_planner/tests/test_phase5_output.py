@@ -64,6 +64,7 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     assert sum(day.cost_per_person for day in output.days) == output.total_cost_per_person
     assert output.unscheduled == []
     assert output.discarded_optional_count == 0
+    assert [item.period for item in output.source_mix] == ["morning", "evening"]
 
 
 def test_phase5_keeps_valid_plan_when_route_geometry_provider_is_missing() -> None:

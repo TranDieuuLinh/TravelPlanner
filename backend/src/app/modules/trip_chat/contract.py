@@ -40,6 +40,7 @@ class TripChatSummary(TripChatModel):
 class TripChat(TripChatSummary):
     thread_id: str
     current_itinerary: dict[str, Any] | None = None
+    current_planner_output: dict[str, Any] | None = None
     messages: list[TripChatMessage] = Field(default_factory=list)
 
 

@@ -35,6 +35,7 @@ from app.modules.place_checker.ports import (
     PlaceResolver,
     PromotionCatalog,
     PromotionOutbox,
+    SpecialFoodRestaurantSource,
 )
 from app.modules.place_checker.planning_output import (
     PlaceCheckerPlannerOutputBuilder,
@@ -71,6 +72,14 @@ from app.modules.place_checker.scoring import CandidateScoringService
 from app.modules.place_checker.scoring_contract import CandidateRankingBatch
 from app.modules.place_checker.service import TripContextBuilder
 from app.modules.place_checker.factory import build_postgres_place_checker_pipeline
+from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
+from app.modules.place_checker.food_selection_contract import (
+    FoodRestaurantCandidate,
+    FoodSelectionAnchor,
+    FoodSelectionBatch,
+    SelectedFoodRestaurant,
+)
+from app.shared.tools.bayesian_rating import bayesian_rating
 
 __all__ = [
     "AdmResolution",
@@ -91,6 +100,10 @@ __all__ = [
     "InputItemResolutionService",
     "ItemResolutionBatch",
     "GapAnalysis",
+    "FoodRestaurantCandidate",
+    "FoodRestaurantSelectionService",
+    "FoodSelectionAnchor",
+    "FoodSelectionBatch",
     "GapCandidateSource",
     "NamedPlaceSearchTool",
     "PlaceCheckerInput",
@@ -115,6 +128,8 @@ __all__ = [
     "PromotionWorker",
     "ResolvedPlaceCandidate",
     "ResolvedInputItem",
+    "SelectedFoodRestaurant",
+    "SpecialFoodRestaurantSource",
     "RetrievalBatch",
     "RetrievedCandidate",
     "TargetedRetrievalService",
@@ -126,4 +141,5 @@ __all__ = [
     "build_place_checker_graph",
     "build_place_checker_pipeline_graph",
     "build_postgres_place_checker_pipeline",
+    "bayesian_rating",
 ]

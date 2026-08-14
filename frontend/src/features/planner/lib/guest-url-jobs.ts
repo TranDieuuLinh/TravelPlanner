@@ -1,15 +1,16 @@
 "use client";
 
 import {
-  createPlanFromExplorer,
-  enrichPlanRoutes,
-  exploreFullIntake,
   type ExploreResponse,
   type ExplorerTimingReport,
   type PlanTimingReport,
   type TravelPlan,
   type UrlImportJob
 } from "@/features/planner/api/plans";
+import {
+  fileToAgentImage,
+  invokeAgentPlan,
+} from "@/features/planner/api/agent";
 
 export const GUEST_URL_JOBS_EVENT = "travelplanner:guest-url-jobs-update";
 export const GUEST_URL_JOB_RESULT_EVENT = "travelplanner:guest-url-job-result";
@@ -17,7 +18,7 @@ export const GUEST_URL_JOB_RESULT_EVENT = "travelplanner:guest-url-job-result";
 export type GuestUrlJobPhase = "queued" | "exploring" | "planning" | "complete";
 
 export type GuestUrlJobResult = {
-  explore: ExploreResponse;
+  explore: ExploreResponse | null;
   plan: TravelPlan;
   plannerTiming: PlanTimingReport | null;
 };
@@ -81,35 +82,29 @@ async function processQueue(): Promise<void> {
         errorMessage: null
       });
       try {
-        const explore = await exploreFullIntake({
-          rawRequest: next.requestContent,
+        const images = await Promise.all(next.contextImages.map(fileToAgentImage));
+        const generation = await invokeAgentPlan({
+          threadId: next.id,
+          message: next.requestContent,
           urls: next.contextUrls,
-          images: next.contextImages,
-          forceRefresh: next.forceRefresh
-        }, controller.signal);
+          images,
+          forceRefresh: next.forceRefresh,
+          signal: controller.signal,
+        });
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;
         replace(next.id, {
           phase: "planning",
-          explorerTiming: explore.timingReport ?? null
+          explorerTiming: null,
         });
-        const generation = await createPlanFromExplorer({
-          context: explore.explorer,
-          intakeId: explore.intakeId,
-          userId: explore.userId,
-          allowFinderGapFill: explore.allowFinderGapFill,
-          allowReplaceSourcePlaces: explore.allowReplaceSourcePlaces,
-          signal: controller.signal
-        });
-        if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;
         const result: GuestUrlJobResult = {
-          explore,
+          explore: null,
           plan: generation.plan,
-          plannerTiming: generation.timingReport ?? null
+          plannerTiming: null,
         };
         const completed = replace(next.id, {
           status: "succeeded",
           phase: "complete",
-          plannerTiming: generation.timingReport ?? null,
+          plannerTiming: null,
           result,
           finishedAt: new Date().toISOString()
         });
@@ -117,22 +112,6 @@ async function processQueue(): Promise<void> {
           window.dispatchEvent(new CustomEvent(GUEST_URL_JOB_RESULT_EVENT, {
             detail: completed
           }));
-        }
-        if (generation.plan.routeEnrichmentStatus === "pending") {
-          void enrichPlanRoutes(generation.plan.id)
-            .then((enrichedPlan) => {
-              const enriched = replace(next.id, {
-                result: { ...result, plan: enrichedPlan }
-              });
-              if (enriched && typeof window !== "undefined") {
-                window.dispatchEvent(new CustomEvent(GUEST_URL_JOB_RESULT_EVENT, {
-                  detail: enriched
-                }));
-              }
-            })
-            .catch(() => {
-              // Keep the already delivered coarse plan available for retry.
-            });
         }
       } catch (caught) {
         if (controller.signal.aborted || !jobs.some((job) => job.id === next.id)) continue;

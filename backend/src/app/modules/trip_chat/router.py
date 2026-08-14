@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.api.dependencies import get_graph
 from app.modules.auth.public import AuthUser, require_current_user
-from app.modules.trip_chat.adapters.postgres import PostgresTripChatRepository
 from app.modules.trip_chat.contract import (
     CreateTripChatInput,
     SendTripChatMessageInput,
@@ -96,7 +95,10 @@ async def send_message(
             message_length=len(payload.content),
             warning_count=len(assistant_message.warnings),
             source_count=len(assistant_message.sources),
-            has_itinerary=chat.current_itinerary is not None,
+            has_itinerary=(
+                chat.current_itinerary is not None
+                or chat.current_planner_output is not None
+            ),
             output={
                 "content": assistant_message.content,
                 "route": assistant_message.route,
@@ -104,6 +106,7 @@ async def send_message(
                 "warnings": assistant_message.warnings,
                 "sources": assistant_message.sources,
                 "itinerary": chat.current_itinerary,
+                "plannerOutput": chat.current_planner_output,
             },
             duration_ms=round((perf_counter() - started_at) * 1000, 2),
         )

@@ -16,14 +16,13 @@ from app.modules.place_checker.retrieval_contract import (
     RetrievedCandidate,
     TargetedRetrievalQuery,
 )
-from app.modules.place_checker.scoring import CandidateScoringService, WEIGHTS
+from app.modules.place_checker.scoring import WEIGHTS, CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import (
     analysis_context,
     evaluated_place,
     place_batch,
 )
 from app.shared.contracts.place import Coordinates
-
 
 NOW = datetime(2026, 8, 11, tzinfo=UTC)
 
@@ -41,8 +40,19 @@ def candidate(
     operational_status: OperationalStatus = OperationalStatus.active,
     fetched_at: datetime = NOW,
     pool_category: str | None = None,
+    with_cost: bool = True,
 ) -> RetrievedCandidate:
     coordinates = coordinates or Coordinates(latitude=21.03, longitude=105.84)
+    typical_cost = {
+        CostTier.free: 0,
+        CostTier.low: 50_000,
+        CostTier.medium: 200_000,
+        CostTier.high: 500_000,
+        CostTier.premium: 800_000,
+        CostTier.unknown: None,
+    }[cost_tier]
+    if not with_cost:
+        typical_cost = None
     metadata = PlaceMetadata(
         place_id=key,
         coordinates=coordinates,
@@ -51,6 +61,8 @@ def candidate(
         tags=tags or [category],
         typical_duration_minutes=90,
         cost_tier=cost_tier,
+        cost_currency="VND" if typical_cost is not None else None,
+        typical_cost=typical_cost,
         opening_hours=["09:00-17:00"],
         operational_status=operational_status,
         children_suitable=True,
@@ -79,6 +91,7 @@ def candidate(
         place_id=key if status == VerificationStatus.verified_kg else None,
         adm_id="adm1_vn_ha_noi",
         category=category,
+        pool_category=pool_category,
         experience_type=experience_type,
         coordinates=coordinates,
         tags=tags or [category],
@@ -215,6 +228,17 @@ def test_provisional_candidate_is_excluded() -> None:
     assert "low_verification" in result.excluded[0].penalties
 
 
+def test_candidate_without_usable_cost_is_excluded() -> None:
+    result = CandidateScoringService(now=NOW).rank(
+        retrieval(candidate("unknown-price", with_cost=False)),
+        analysis_context(),
+        empty_places(),
+    )
+
+    assert result.ranked == []
+    assert result.excluded[0].exclusion_reasons == ["missing_cost"]
+
+
 def test_permanently_closed_candidate_is_filtered_before_ranking() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(
@@ -336,8 +360,8 @@ def test_default_reserve_grows_with_trip_days() -> None:
         empty_places(),
     )
 
-    assert result.reserve_limit_per_gap == 20
-    assert result.pool_target == 60
+    assert result.reserve_limit_per_gap == 60
+    assert result.pool_target == 96
     assert len(result.ranked) == 8
 
 
@@ -381,7 +405,7 @@ def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
         retrieval(
             *[
                 candidate(
-                    f"{group}-{index}",
+                    f"{index}-{group}",
                     pool_category=group,
                     category="travel_place",
                 )
@@ -391,11 +415,13 @@ def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
         ),
         analysis_context().model_copy(update={"days": 1}),
         empty_places(),
+        reserve_limit_per_gap=20,
+        max_total_candidates=12,
     )
 
     selected_groups = {
         item.candidate.pool_category
         for item in result.ranked
     }
-    assert len(result.ranked) == 20
+    assert len(result.ranked) == 12
     assert selected_groups == set(groups)

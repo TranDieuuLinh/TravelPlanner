@@ -75,6 +75,19 @@ class SolverMetadata(PlannerContractModel):
     planning_time_ms: int = Field(ge=0)
 
 
+class SourceMixCounts(PlannerContractModel):
+    special: int = Field(ge=0)
+    offer: int = Field(ge=0)
+
+
+class SourceMixAudit(PlannerContractModel):
+    period: Literal["morning", "evening"]
+    target: SourceMixCounts
+    actual: SourceMixCounts
+    quota_fallback: bool
+    fallback_reason: str | None = None
+
+
 class ItineraryPlannerOutput(PlannerContractModel):
     destination: str
     timezone: str
@@ -83,6 +96,7 @@ class ItineraryPlannerOutput(PlannerContractModel):
     budget_per_person: float | None = Field(default=None, ge=0)
     currency: str
     solver: SolverMetadata
+    source_mix: list[SourceMixAudit] = Field(default_factory=list)
     unscheduled: list[UnscheduledPriority]
     discarded_optional_count: int = Field(ge=0)
     warnings: list[str]

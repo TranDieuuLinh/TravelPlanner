@@ -6,7 +6,6 @@ from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
 
-
 FOOD_TYPES = {"food", "meal", "drink", "coffee"}
 FOOD_CATEGORIES = {
     "food",
@@ -98,6 +97,10 @@ class ItemProximityPolicy:
             coordinates=metadata.coordinates,
             tags=metadata.tags,
             cost_tier=metadata.cost_tier,
+            cost_currency=metadata.cost_currency,
+            minimum_cost=metadata.minimum_cost,
+            typical_cost=metadata.typical_cost,
+            maximum_cost=metadata.maximum_cost,
             children_suitable=metadata.children_suitable,
             infants_suitable=metadata.infants_suitable,
             minimum_duration_minutes=metadata.minimum_duration_minutes,

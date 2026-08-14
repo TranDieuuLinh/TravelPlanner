@@ -28,7 +28,11 @@ from app.modules.place_checker.retrieval_contract import (
     RetrievedCandidate,
     TargetedRetrievalQuery,
 )
-from app.modules.place_checker.pool_policy import per_gap_pool_target
+from app.modules.place_checker.pool_policy import (
+    per_gap_pool_target,
+    pool_query_limit_for_days,
+    pool_target_for_days,
+)
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
 
@@ -81,6 +85,29 @@ POOL_QUERY_SPECS = {
     "pool:local_activity_alternatives": (GapType.experience_coverage, "local activity authentic experience", "travel place"),
 }
 
+CORE_POOL_QUERY_SPECS = {
+    "pool:travel_place_candidates": (
+        GapType.experience_coverage,
+        "travel place",
+        "travel place",
+    ),
+    "pool:restaurant_candidates": (
+        GapType.food_coverage,
+        "restaurant",
+        "restaurant",
+    ),
+    "pool:travel_place_reserve": (
+        GapType.experience_coverage,
+        "culture museum heritage",
+        "travel place",
+    ),
+    "pool:restaurant_reserve": (
+        GapType.food_coverage,
+        "ăn sáng",
+        "restaurant",
+    ),
+}
+
 POOL_RELATION_TERMS = {
     "pool:culture_alternatives": ["văn hóa", "tham quan", "heritage", "museum"],
     "pool:nature_alternatives": ["ngoài trời", "đi dạo", "cắm trại", "nature", "garden", "lake"],
@@ -106,6 +133,7 @@ class TargetedRetrievalService:
         promotion_outbox: PromotionOutbox | None = None,
         verified_target_per_gap: int = 5,
         expand_pool: bool = False,
+        ensure_core_pools: bool = False,
     ) -> None:
         self.knowledge_graph = knowledge_graph
         self.internal_sources = internal_sources or []
@@ -114,6 +142,7 @@ class TargetedRetrievalService:
         self.promotion_outbox = promotion_outbox
         self.verified_target_per_gap = verified_target_per_gap
         self.expand_pool = expand_pool
+        self.ensure_core_pools = ensure_core_pools
 
     async def retrieve(
         self,
@@ -131,9 +160,11 @@ class TargetedRetrievalService:
         # The final planner still needs enough restaurants, drinks and activities
         # to choose from day by day. Different intents prevent one broad query
         # from returning the same small group of places repeatedly.
-        for gap_id, (gap_type, intent, category) in (
-            POOL_QUERY_SPECS.items() if self.expand_pool else []
-        ):
+        pool_specs = {
+            **(CORE_POOL_QUERY_SPECS if self.ensure_core_pools else {}),
+            **(POOL_QUERY_SPECS if self.expand_pool else {}),
+        }
+        for gap_id, (gap_type, intent, category) in pool_specs.items():
             if gap_id in existing_gap_ids:
                 continue
             retrieval_gaps.append(
@@ -507,15 +538,22 @@ class TargetedRetrievalService:
             people_tags.append("children_suitable")
         if context.people.infants:
             people_tags.append("infants_suitable")
-        pool_spec = POOL_QUERY_SPECS.get(gap.gap_id)
+        pool_spec = {
+            **CORE_POOL_QUERY_SPECS,
+            **POOL_QUERY_SPECS,
+        }.get(gap.gap_id)
         query_text = pool_spec[1] if pool_spec else intent
         if gap.gap_id == "pool:food_alternatives" and item_names:
             query_text = f"{', '.join(item_names)} restaurant"
         elif gap.gap_id == "pool:drink_alternatives" and item_names:
             query_text = f"{', '.join(item_names)} cafe"
         query_limit = limit or per_gap_pool_target(context.days, 1)
-        if gap.gap_type == GapType.food_coverage:
+        if gap.gap_id in CORE_POOL_QUERY_SPECS:
+            query_limit = pool_query_limit_for_days(context.days)
+        elif gap.gap_type == GapType.food_coverage:
             query_limit = max(query_limit, min(60, context.days * 3))
+        elif category == "travel_place" and query_text == "travel place":
+            query_limit = max(query_limit, pool_target_for_days(context.days))
         return TargetedRetrievalQuery(
             gap_id=gap.gap_id,
             gap_type=gap.gap_type,
@@ -526,8 +564,11 @@ class TargetedRetrievalService:
             adm_id=destination.adm_id,
             adm_name=destination.canonical_name,
             country_code=destination.country_code,
-            category_hint=POOL_QUERY_SPECS.get(gap.gap_id, (None, None, category))[2]
-            if gap.gap_id in POOL_QUERY_SPECS
+            category_hint={**CORE_POOL_QUERY_SPECS, **POOL_QUERY_SPECS}.get(
+                gap.gap_id,
+                (None, None, category),
+            )[2]
+            if gap.gap_id in {*CORE_POOL_QUERY_SPECS, *POOL_QUERY_SPECS}
             else category,
             budget_level=context.budget.level,
             people_tags=people_tags,

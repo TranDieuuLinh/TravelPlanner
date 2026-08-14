@@ -25,19 +25,16 @@ constraint liên quan. Keyword không phải nguồn ưu tiên; chỉ được d
 phần thiếu sau khi đã lấy ứng viên có quan hệ.
 
 Mỗi truy vấn pool nhận thêm `anchor_place_ids` của các địa điểm người dùng nhập
-trực tiếp. Knowledge Graph dùng edge `Special_Near` (và alias legacy `Near`)
-cùng `Must_Visit` để ưu tiên candidate
+trực tiếp. Knowledge Graph chỉ dùng edge `Special_Near` để ưu tiên candidate
 quanh điểm neo. Nếu điểm neo không có cạnh đủ trực tiếp, truy vấn mở rộng qua
-ADM chứa điểm neo để đọc `Must_Visit` và `Special_Experience` của khu vực.
-Candidate được gắn nhãn như `relation:near`, `relation:must_visit`,
-`relation:area_special_experience` hoặc `retrieval:keyword_fallback` để
-downstream giải thích được lý do chọn.
+ADM chứa điểm neo để đọc `Special_Experience` của khu vực. Candidate được gắn
+nhãn như `relation:special_near`, `relation:area_special_experience` hoặc
+`retrieval:keyword_fallback` để downstream giải thích được lý do chọn.
 
 Thứ tự ưu tiên quan hệ là:
 
 ```text
-Must_Visit trực tiếp
--> Special_Near/Near trực tiếp
+Special_Near trực tiếp
 -> Special_Experience từ ADM trong destination
 -> Offer_Item/Has_Style của place
 -> cùng cụm địa lý
@@ -90,9 +87,10 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
 
 - `retrieval_contract.py` định nghĩa query theo gap, evidence đã chuẩn hóa,
   candidate có trust state, provider attempt và promotion event.
-- `retrieval.py` chỉ search các gap có thể giải quyết bằng candidate mới. Gap
-  identity, data quality và destination mismatch được giữ lại để xác minh/làm
-  giàu, không tự thay bằng place khác.
+- `retrieval.py` search các gap có thể giải quyết bằng candidate mới và luôn
+  mở hai core pool có giới hạn cho `TravelPlace` và `Restaurant`. Gap identity,
+  data quality và destination mismatch được giữ lại để xác minh/làm giàu,
+  không tự thay bằng place khác.
 - Thứ tự gọi là Knowledge Graph, internal source, sau đó tối đa hai external
   source. Đủ số candidate đã verify thì dừng và không gọi tầng sau.
 - Candidate từ `SearchPlacesGapSource` luôn được scope bằng canonical ADM và gọi
@@ -100,10 +98,15 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
 - Candidate đã link KG được làm giàu qua `PlaceMetadataRepository` trước scoring
   để lấy duration, cost, opening và suitability nếu repository có dữ liệu.
   Repository lỗi hoặc thiếu field chỉ tạo warning/unknown, không bịa giá trị.
-- Số candidate dự phòng tăng theo độ dài chuyến đi: mục tiêu `15 địa điểm/ngày`,
-  tối thiểu 20 và tối đa 120 cho toàn bộ pool. Mỗi gap
-  được cấp một phần giới hạn phù hợp. Đây là pool để Planner lựa chọn, không
-  phải số địa điểm bắt buộc phải xếp vào lịch.
+- Hai quota độc lập cùng tăng theo độ dài chuyến đi: `12 TravelPlace/ngày` và
+  `12 Restaurant/ngày`, mỗi loại tối thiểu 12 và tối đa 60. Chuyến ba ngày có
+  target `36 + 36 = 72`. Core query over-fetch tối đa 60 mỗi loại để bù
+  candidate bị loại do metadata; scoring mới chốt quota. Đây là pool để Planner
+  lựa chọn, không phải số stop bắt buộc phải xếp vào lịch.
+- Generic `travel place` discovery xen kẽ `Special_Experience` và các
+  `TravelPlace` khác trong đúng ADM. Non-special ưu tiên cạnh
+  `Offer_Item -> ActivityItem`, sau đó metadata và rating/review. `Has_Style`
+  chỉ fallback timing, không tạo category hoặc quota.
 - Đồng thuận external yêu cầu hai provider khác nhau cùng khớp tên, ADM,
   category và tọa độ trong 0,5 km. Cùng tên/ADM nhưng khác category hoặc vị trí
   tạo `needs_review`.

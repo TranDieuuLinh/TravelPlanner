@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import log10
 
 from ortools.sat.python import cp_model
 
-from app.modules.itinerary_planner.contract import CandidatePriority
+from app.modules.itinerary_planner.contract import CandidateSourceKind
 from app.modules.itinerary_planner.optimizer.config import (
     LIGHT_TAGS,
     MEDIUM_TAGS,
@@ -13,9 +12,14 @@ from app.modules.itinerary_planner.optimizer.config import (
     ObjectiveWeights,
 )
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
+from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
 from app.modules.itinerary_planner.policies import MEAL_POLICIES, STANDARD_DAY_END_MINUTE
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
+from app.shared.tools.bayesian_rating import (
+    bayesian_prior,
+    bayesian_review_quality,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +54,9 @@ def build_objective(
         "mealDeviationCost": _meal_deviation(model, variables, weights),
         "fatigueCost": _fatigue(model, problem, variables, weights),
         "dayImbalanceCost": _day_imbalance(model, problem, variables, weights),
+        "sourceMixDeviationCost": build_source_mix_cost(
+            model, problem, variables, weights.source_mix_deviation
+        ),
         "unknownOpeningCost": sum(
             variables.selected[candidate_id] * weights.unknown_opening
             for candidate_id in problem.unknown_opening_ids
@@ -64,7 +71,8 @@ def _special_value(problem, variables, weights):
     return sum(
         variables.selected[candidate_id] * weights.special_experience
         for candidate_id, candidate in problem.candidate_by_id.items()
-        if candidate.priority == CandidatePriority.special_experience
+        if candidate.source_kind
+        in {CandidateSourceKind.special_experience, CandidateSourceKind.both}
     )
 
 
@@ -80,13 +88,22 @@ def _preference_value(problem, variables, weights):
 
 
 def _quality_value(problem, variables, weights):
+    prior = bayesian_prior(
+        (
+            (candidate.rating, candidate.review_count)
+            for candidate in problem.candidate_by_id.values()
+        )
+    )
     terms = []
     for candidate_id, candidate in problem.candidate_by_id.items():
         if candidate.rating is None:
             continue
-        reviews = candidate.review_count or 0
-        confidence = min(1.0, log10(reviews + 1) / 4)
-        score = round((candidate.rating / 5) * confidence * weights.quality_max)
+        quality = bayesian_review_quality(
+            rating=candidate.rating,
+            review_count=candidate.review_count,
+            prior=prior,
+        )
+        score = round(quality.quality * weights.quality_max)
         terms.append(variables.selected[candidate_id] * score)
     return sum(terms)
 

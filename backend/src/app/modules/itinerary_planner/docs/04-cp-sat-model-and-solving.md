@@ -131,6 +131,21 @@ sum(meal[f,d,m] for all d,m) <= 1
 Meal start phải nằm trong flexible start window và toàn bộ interval phải nằm
 trong opening hours của food.
 
+### Source mix sáng/tối
+
+Activity kết thúc không muộn hơn 12:00 được tính vào morning; activity bắt đầu
+từ 18:00 được tính vào evening. Afternoon không tham gia quota. Trong mỗi buổi,
+solver đặt target Special Experience bằng largest-remainder: 70% morning và
+60% evening; phần còn lại là Offer Item. Candidate `both` có hai choice literal
+với tổng bằng period literal nên chỉ được đếm một lần.
+
+Độ lệch actual/target khả thi là soft `sourceMixDeviationCost`; target dùng
+trong objective được clamp theo số candidate từng nguồn có thể vừa buổi đó để
+thiếu dữ liệu không bị phạt và Offer có thể bù Special. Output vẫn giữ tỷ lệ
+policy chưa clamp bên cạnh actual và cờ fallback để audit phần thiếu. Opening
+hours vẫn là hard constraint; source mix không được kéo candidate sang buổi mà
+place không hoạt động.
+
 ### Budget một người
 
 ```text
@@ -232,11 +247,17 @@ tận dụng.
 ```text
 specialExperienceValue = coefficient * selected[i]
 preferenceValue = matched preferences / total preferences * coefficient
-placeQualityValue = rating quality có review confidence * selected[i]
+placeQualityValue = Bayesian review quality * selected[i]
 unknownOpeningCost = small coefficient * selected[i]
 ```
 
 Nếu không có preferences, preference value bằng 0; không gán neutral bonus.
+Bayesian prior được tính trên candidate pool của planning problem: mean là trung
+bình rating có dữ liệu, prior weight là median review count nhưng không thấp hơn
+20. Adjusted rating dùng weighted mean; quality 0..1 còn nhân review reliability
+với floor 0,70 để candidate ít review không bị loại nhưng không vượt candidate
+có rating gần tương đương và lượng review đáng tin. Implementation dùng chung
+với PlaceChecker tại `shared/tools/bayesian_rating.py`.
 
 ### Time fit
 

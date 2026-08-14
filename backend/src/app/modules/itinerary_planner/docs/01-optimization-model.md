@@ -54,6 +54,8 @@ Trừ:
 - fatigueCost
 - dayImbalanceCost
 - unknownOpeningCost rất nhỏ
+- sourceMixDeviationCost cho mục tiêu sáng 70/30 và tối 60/40 giữa
+  Special Experience/Offer Item
 
 Kết quả:
 selected[i] = có chọn candidate i không
@@ -62,6 +64,8 @@ start[i,d] = phút bắt đầu
 end[i,d] = phút kết thúc
 arc[i,j,d] = ngày d có đi trực tiếp từ i sang j không
 meal[f,d,m] = có chọn food f cho meal m của ngày d không
+sourcePeriod[i,d,p] = stop i thuộc morning/evening theo giờ xếp thực tế
+sourceSpecial/sourceOffer = vai trò source của stop trong buổi, `both` chọn một
 
 Ví dụ:
 selected[van_mieu] = 1

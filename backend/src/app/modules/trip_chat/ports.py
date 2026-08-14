@@ -17,6 +17,7 @@ class TripChatRepository(Protocol):
         user_content: str,
         assistant: dict[str, Any],
         itinerary: dict[str, Any] | None,
+        planner_output: dict[str, Any] | None,
     ) -> TripChat | None: ...
 
     async def delete_chat(self, user_id: int, chat_id: str) -> bool: ...

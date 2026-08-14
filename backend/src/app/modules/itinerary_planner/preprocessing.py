@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
 
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
@@ -26,7 +26,6 @@ from app.modules.itinerary_planner.time_windows import (
     normalize_and_merge,
     windows_fitting_duration,
 )
-
 
 PRIORITY_CANDIDATES = {CandidatePriority.user_input, CandidatePriority.url}
 
@@ -141,12 +140,6 @@ def _prepare_place(
     CandidateExclusion | None,
 ]:
     normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
-    if normalized.price.cost is None:
-        return normalized, {}, frozenset(), _exclusion(
-            normalized,
-            "missing_cost",
-            "Candidate has no usable per-person cost.",
-        )
     if normalized.price.currency != trip.budget.currency:
         return normalized, {}, frozenset(), _exclusion(
             normalized,
@@ -194,10 +187,7 @@ def _prepare_food(
     CandidateExclusion | None,
 ]:
     normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
-    if (
-        normalized.price.cost is not None
-        and normalized.price.currency != trip.budget.currency
-    ):
+    if normalized.price.currency != trip.budget.currency:
         return normalized, {}, {}, frozenset(), _exclusion(
             normalized,
             "currency_mismatch",
@@ -278,11 +268,6 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
             _store_exclusion(exclusion, unscheduled, discarded)
             continue
         valid_food.append(normalized)
-        if normalized.price.cost is None:
-            warnings.append(
-                f"Food price is unknown for {normalized.place_id}; retained for "
-                "meal planning and excluded from the budget total."
-            )
         feasible_days[normalized.place_id] = frozenset(windows)
         feasible_windows.update(
             {(normalized.place_id, day): value for day, value in windows.items()}

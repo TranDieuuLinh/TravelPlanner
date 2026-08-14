@@ -7,46 +7,22 @@ from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
 )
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
+from app.modules.place_checker.adapters.postgres_food_query import (
+    SPECIAL_FOOD_RESTAURANT_SQL,
+)
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
-from app.shared.tools.search_places import PlaceProviderCandidate
 
 
-def _candidate(identity: str, experience: str) -> PlaceProviderCandidate:
-    return PlaceProviderCandidate(
-        provider="knowledge_graph",
-        entityId=identity,
-        name=identity,
-        canonicalType="travel_place",
-        tags=["travel place", f"experience:{experience}"],
-    )
-
-
-def test_generic_travel_pool_caps_repeated_experience_groups() -> None:
-    candidates = [
-        _candidate("camp-1", "Cắm trại"),
-        _candidate("camp-2", "Cắm trại"),
-        _candidate("camp-3", "Cắm trại"),
-        _candidate("museum", "Tham quan địa danh"),
-        _candidate("temple", "Tham quan văn hóa và tín ngưỡng"),
-    ]
-
-    selected = PostgresPlaceCatalog._cap_tourism_experience_groups(candidates)
-
-    assert [candidate.entity_id for candidate in selected] == [
-        "camp-1",
-        "camp-2",
-        "museum",
-        "temple",
-    ]
-
-
-def test_generic_travel_pool_rejects_non_tourism_service_tags() -> None:
-    assert PostgresPlaceCatalog._has_tourism_experience(
-        ["experience:Tham quan địa danh"]
-    )
-    assert not PostgresPlaceCatalog._has_tourism_experience(
-        ["experience:Thư giãn và chăm sóc sức khỏe"]
-    )
+def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap() -> None:
+    assert "generic_travel_ranked" in PLACE_SEARCH_SQL
+    assert "ranked.discovery_rank" in PLACE_SEARCH_SQL
+    assert "$1 = 'travel place'" in PLACE_SEARCH_SQL
+    assert "$1 <> 'travel place'" in PLACE_SEARCH_SQL
+    assert "style_property.key = 'time_duration'" in PLACE_SEARCH_SQL
+    assert "props.price_min IS NOT NULL OR props.price_max IS NOT NULL" in PLACE_SEARCH_SQL
+    assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
+    assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
+    assert "key = 'time_windows'" in PLACE_SEARCH_SQL
 
 
 def test_postgres_search_uses_trigram_prefilter_and_bounded_top_k() -> None:
@@ -59,12 +35,41 @@ def test_postgres_search_uses_trigram_prefilter_and_bounded_top_k() -> None:
 def test_postgres_search_supports_cloud_relationship_shape() -> None:
     assert "WITH RECURSIVE adm_descendants" in PLACE_SEARCH_SQL
     assert "adm_ancestors" in PLACE_SEARCH_SQL
-    assert "'Special_Near', 'Near', 'Must_Visit'" in PLACE_SEARCH_SQL
+    assert "relationship_type = 'Special_Near'" in PLACE_SEARCH_SQL
+    assert "'Near'" not in PLACE_SEARCH_SQL
+    assert "'Must_Visit'" not in PLACE_SEARCH_SQL
     assert "special.to_entity_id" in PLACE_SEARCH_SQL
     assert "special.from_entity_id IN (SELECT id FROM adm_scope)" in PLACE_SEARCH_SQL
     assert "relationship_evidence" in PLACE_SEARCH_SQL
     assert "PARTITION BY relation.to_entity_id" in PLACE_SEARCH_SQL
     assert "'style_breakfast', 'style_lunch', 'style_dinner'" in PLACE_SEARCH_SQL
+
+
+def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
+    assert "special.from_entity_id = $1" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "special.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "food.entity_type = 'FoodItem'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "near_edge.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "restaurant_special.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "food.food_item_id = restaurant_special.to_entity_id" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "restaurant.entity_type = 'Restaurant'" in SPECIAL_FOOD_RESTAURANT_SQL
+
+
+def test_special_food_query_does_not_match_food_by_name() -> None:
+    assert "normalized_name" not in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "similarity(" not in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "food_item_tokens" not in SPECIAL_FOOD_RESTAURANT_SQL
+
+
+def test_special_food_query_uses_offered_item_only_for_unmatched_anchor() -> None:
+    assert "), special_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "), fallback_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "'offer_item_fallback'::text AS food_match_type" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "FROM special_pairs special" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "special.anchor_place_id = offered.anchor_place_id" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "SELECT * FROM special_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "UNION ALL\n    SELECT * FROM fallback_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
 
 
 def test_style_time_properties_only_fill_missing_place_metadata() -> None:
@@ -128,6 +133,34 @@ def test_style_node_properties_are_projected_onto_has_style_evidence() -> None:
 
     assert metadata.typical_duration_minutes == 45
     assert metadata.opening_hours == ["11:00-13:00"]
+
+
+def test_activity_node_timing_is_projected_onto_offer_evidence() -> None:
+    row = {
+        "relationship_type": "Offer_Item",
+        "direction": "place_to_attribute",
+        "scope": "place",
+        "from_entity_id": "place:1",
+        "to_entity_id": "activity:walk",
+        "related_entity_id": "activity:walk",
+        "related_name": "Đi bộ",
+        "related_entity_type": "ActivityItem",
+        "recommendations": '{"confidence":0.9}',
+        "source": "manual",
+        "source_note": None,
+    }
+
+    evidence = PostgresPlaceCatalog._metadata_relationship(
+        row,
+        target_properties={
+            "time_windows": '[{"start":"08:00","end":"11:00"}]'
+        },
+    )
+
+    assert evidence["properties"] == {
+        "entityType": "ActivityItem",
+        "time_windows": '[{"start":"08:00","end":"11:00"}]',
+    }
 
 
 def test_has_style_edge_properties_override_style_node_defaults() -> None:

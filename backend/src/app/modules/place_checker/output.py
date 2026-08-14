@@ -27,6 +27,7 @@ from app.modules.place_checker.enums import (
 )
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.item_contract import ItemResolutionBatch
+from app.modules.place_checker.food_selection_contract import FoodSelectionBatch
 from app.modules.place_checker.output_contract import (
     CheckedPlace,
     PlaceCheckerExecutionMetadata,
@@ -52,6 +53,7 @@ class PlaceCheckerOutputAssembler:
         verification_by_place_id: dict[str, VerificationStatus] | None = None,
         ranking_by_place_id: dict[str, ScoredCandidate] | None = None,
         extra_warnings: list[str] | None = None,
+        food_selection: FoodSelectionBatch | None = None,
     ) -> PlaceCheckerResult:
         verification = verification_by_place_id or {}
         ranking_map = ranking_by_place_id or {}
@@ -86,6 +88,7 @@ class PlaceCheckerOutputAssembler:
                     *items.warnings,
                     *(retrieval.warnings if retrieval else []),
                     *(extra_warnings or []),
+                    *(food_selection.warnings if food_selection else []),
                     *(warning for place in checked for warning in place.warnings),
                 ]
             )
@@ -115,6 +118,9 @@ class PlaceCheckerOutputAssembler:
             planner_eligible_place_ids=list(dict.fromkeys(eligible_ids)),
             resolved_items=items.items,
             special_experiences=specials,
+            food_restaurant_selections=(
+                food_selection.selections if food_selection else []
+            ),
             budget_analysis=analysis.budget,
             capacity_analysis=analysis.capacity,
             coverage_analysis=analysis.coverage,

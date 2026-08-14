@@ -142,11 +142,14 @@ async def invoke_agent(
         request_id=request_id, route=response.route, success=True,
         message_length=len(payload.message or ""),
         warning_count=len(response.warnings), source_count=len(response.sources),
-        has_itinerary=response.itinerary is not None,
+        has_itinerary=(
+            response.itinerary is not None or response.planner_output is not None
+        ),
         output={
             "response": response.response,
             "route": response.route,
             "itinerary": response.itinerary,
+            "plannerOutput": response.planner_output,
             "warnings": response.warnings,
             "sources": response.sources,
         },

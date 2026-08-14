@@ -44,7 +44,7 @@ class SearchPlacesGapSource:
                     search_mode="requirement",
                     place_type_hint=query.category_hint,
                     anchor_place_id=anchor_id,
-                    top_k=min(20, max(5, query.limit)),
+                    top_k=min(60, max(5, query.limit)),
                     allow_external_fallback=(
                         self.source_kind == RetrievalSourceKind.external
                     ),

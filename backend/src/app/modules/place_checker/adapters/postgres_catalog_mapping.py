@@ -1,6 +1,5 @@
 import json
 import re
-from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
@@ -25,72 +24,12 @@ CANONICAL_TYPE = {
     "TravelPlace": "travel_place", "Restaurant": "restaurant",
     "DrinkDessert": "drink_dessert", "Accommodation": "accommodation",
 }
-TOURISM_EXPERIENCE_MARKERS = {
-    "cam trai", "cuoi ngua", "di bo", "di dao", "ghe chua",
-    "mua do luu niem", "ngam ", "qua cau", "tham ", "tham gia hoi cho",
-    "tham quan", "trai nghiem van hoa", "vui choi danh cho tre em",
-    "xem bieu dien nghe thuat",
-}
-
-
 class PostgresCatalogMappingMixin:
     @staticmethod
     def _types_for_hint(place_type_hint: str | None) -> set[str]:
         if not place_type_hint:
             return PLACE_TYPES
         return TYPE_BY_HINT.get(normalize_text(place_type_hint), PLACE_TYPES)
-
-    @staticmethod
-    def _is_generic_travel_discovery(query: str) -> bool:
-        return "travel place" in normalize_text(query)
-
-    @staticmethod
-    def _has_tourism_experience(tags: list[str]) -> bool:
-        experiences = [
-            normalize_text(tag.split(":", 1)[1])
-            for tag in tags if tag.startswith("experience:")
-        ]
-        return any(
-            marker in experience
-            for experience in experiences for marker in TOURISM_EXPERIENCE_MARKERS
-        )
-
-    @classmethod
-    def _cap_tourism_experience_groups(
-        cls, candidates: list[PlaceProviderCandidate], *, per_group: int = 2,
-    ) -> list[PlaceProviderCandidate]:
-        counts: dict[str, int] = defaultdict(int)
-        selected = []
-        for candidate in candidates:
-            bucket = cls._tourism_experience_bucket(candidate.tags)
-            if bucket is None or counts[bucket] >= per_group:
-                continue
-            counts[bucket] += 1
-            selected.append(candidate)
-        return selected
-
-    @staticmethod
-    def _tourism_experience_bucket(tags: list[str]) -> str | None:
-        values = [
-            normalize_text(tag.split(":", 1)[1])
-            for tag in tags if tag.startswith("experience:")
-        ]
-        if "special experience" in values:
-            return "area_special"
-        groups = (
-            ("camping", ("cam trai",)), ("culture", ("van hoa", "tin nguong", "ghe chua")),
-            ("landmark", ("dia danh", "ngam ", "qua cau")),
-            ("outdoor_walk", ("di dao", "di bo")),
-            ("family", ("vui choi danh cho tre em",)),
-            ("performance", ("xem bieu dien",)), ("event", ("hoi cho",)),
-            ("souvenir", ("do luu niem",)), ("horse_riding", ("cuoi ngua",)),
-        )
-        for group, markers in groups:
-            if any(marker in value for marker in markers for value in values):
-                return group
-        return "other_tourism" if any(
-            marker in value for value in values for marker in TOURISM_EXPERIENCE_MARKERS
-        ) else None
 
     @staticmethod
     def _candidate(row, input_adm: AdministrativeArea) -> PlaceProviderCandidate:

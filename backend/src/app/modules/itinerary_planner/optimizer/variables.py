@@ -11,6 +11,7 @@ from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 
 CandidateDay = tuple[str, int]
 MealKey = tuple[str, int, MealType]
+SourceMixKey = tuple[str, int, str]
 
 
 @dataclass(slots=True)
@@ -33,6 +34,9 @@ class PlannerVariables:
     waiting: dict[tuple[str, str, int], cp_model.IntVar] = field(
         default_factory=dict
     )
+    source_period: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
+    source_special: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
+    source_offer: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
     first_start: dict[int, cp_model.IntVar] = field(default_factory=dict)
     last_end: dict[int, cp_model.IntVar] = field(default_factory=dict)
     total_cost: cp_model.IntVar | None = None

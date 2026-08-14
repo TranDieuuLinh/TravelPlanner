@@ -121,18 +121,16 @@ user_input/url không lập lịch được -> unscheduled candidate + reason
 special_experience/special_near lỗi -> discarded optional
 ```
 
-Budget hoặc candidate cost có thể `null` khi upstream thật sự không biết.
-Budget `null` nghĩa là phase solver không bật hard budget constraint. Place
-cost `null` được phân loại bằng `missing_cost`. Riêng food cost `null` vẫn được
-giữ để bảo toàn meal coverage, tạo warning và không đóng góp vào budget total;
-điều này biểu thị chi phí chưa biết, không phải quán miễn phí.
+Whole-trip budget có thể `null`; khi đó phase solver không bật hard budget
+constraint. Candidate `price.cost` bắt buộc là số không âm vì PlaceChecker đã
+loại place/food thiếu giá và tính `typical_cost` trước boundary. Giá `null` bị
+từ chối ngay khi validate `ItineraryPlannerInput`, không đi vào preprocessing.
 
 Reason code nên ổn định:
 
 ```text
 missing_coordinates
 missing_duration
-missing_cost
 invalid_opening_interval
 closed_for_entire_trip
 duration_exceeds_every_opening_window

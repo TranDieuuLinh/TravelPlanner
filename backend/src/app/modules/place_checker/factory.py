@@ -5,6 +5,7 @@ from app.modules.place_checker.adapters.search_places_gap_source import (
 from app.modules.place_checker.enums import RetrievalSourceKind
 from app.modules.place_checker.evaluation import PlaceEvaluationService
 from app.modules.place_checker.evidence import EvidenceEnrichmentService
+from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
 from app.modules.place_checker.item_resolution import InputItemResolutionService
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution import EntityResolutionService
@@ -40,8 +41,11 @@ def build_postgres_place_checker_pipeline(
             gap_source,
             metadata_repository=catalog,
             verified_target_per_gap=5,
-            # Retrieve only for analysis gaps. A broad fixed reserve pool made
-            # unrelated KG entities planner-eligible and multiplied latency.
+            # Keep broad thematic expansion off; core entity-type pools have
+            # their own bounded queries below.
             expand_pool=False,
+            # Keep independent TravelPlace and Restaurant pools for Planner.
+            ensure_core_pools=True,
         ),
+        food_selection=FoodRestaurantSelectionService(catalog),
     )

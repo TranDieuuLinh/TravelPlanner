@@ -21,6 +21,9 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert dumped["trip"]["startDate"] == "2026-08-20"
     assert dumped["places"][0]["durationMinutes"] == 60
     assert "openingHours" in dumped["places"][0]
+    assert dumped["places"][0]["sourceKind"] == "generic"
+    assert dumped["places"][0]["offeredActivityIds"] == []
+    assert dumped["places"][0]["timeSource"] == "unknown"
 
 
 def test_rejects_duplicate_ids_across_places_and_food() -> None:
@@ -28,6 +31,16 @@ def test_rejects_duplicate_ids_across_places_and_food() -> None:
 
     with pytest.raises(ValidationError, match="placeId must be unique"):
         ItineraryPlannerInput.model_validate(raw)
+
+
+def test_candidate_price_cost_is_required() -> None:
+    place = candidate("missing_price")
+    del place["price"]["cost"]
+
+    with pytest.raises(ValidationError) as error:
+        ItineraryPlannerInput.model_validate(payload(places=[place]))
+
+    assert error.value.errors()[0]["loc"] == ("places", 0, "price", "cost")
 
 
 @pytest.mark.parametrize(

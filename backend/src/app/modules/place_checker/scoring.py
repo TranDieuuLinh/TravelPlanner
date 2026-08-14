@@ -3,30 +3,32 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.modules.place_checker.contract import TripEvaluationContext
-from app.modules.place_checker.avoid_policy import has_avoid_conflict
 from app.modules.place_checker.enums import (
     CostTier,
-    IssueSeverity,
-    OperationalStatus,
     VerificationStatus,
 )
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
-from app.modules.place_checker.retrieval_contract import RetrievalBatch, RetrievedCandidate
-from app.modules.place_checker.reranking import CandidateDiversityReranker
 from app.modules.place_checker.pool_policy import (
-    per_gap_pool_target,
+    combined_pool_target_for_days,
+    pool_query_limit_for_days,
     pool_target_for_days,
+)
+from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
+from app.modules.place_checker.reranking import CandidateDiversityReranker
+from app.modules.place_checker.retrieval_contract import (
+    RetrievalBatch,
+    RetrievedCandidate,
 )
 from app.modules.place_checker.scoring_contract import (
     CandidateRankingBatch,
     CandidateScoreComponents,
     ScoredCandidate,
 )
+from app.modules.place_checker.scoring_policy import SEVERITY_VALUE, hard_violations
+from app.modules.place_checker.taxonomy import canonical_label, canonical_labels
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
-from app.modules.place_checker.taxonomy import canonical_label, canonical_labels
-
 
 WEIGHTS = {
     "intent_match": 0.18,
@@ -41,14 +43,6 @@ WEIGHTS = {
     "data_confidence": 0.05,
 }
 
-SEVERITY_VALUE = {
-    IssueSeverity.critical: 1.0,
-    IssueSeverity.high: 0.85,
-    IssueSeverity.medium: 0.65,
-    IssueSeverity.low: 0.45,
-}
-
-
 class CandidateScoringService:
     def __init__(self, *, now: datetime | None = None) -> None:
         self.now = now or datetime.now(UTC)
@@ -62,15 +56,11 @@ class CandidateScoringService:
         reserve_limit_per_gap: int | None = None,
         max_total_candidates: int | None = None,
     ) -> CandidateRankingBatch:
-        pool_target = max_total_candidates or pool_target_for_days(context.days)
+        pool_target = max_total_candidates or combined_pool_target_for_days(
+            context.days
+        )
         if reserve_limit_per_gap is None:
-            candidate_gap_count = sum(
-                bool(gap.candidates) for gap in retrieval.gaps
-            )
-            reserve_limit_per_gap = min(
-                20,
-                per_gap_pool_target(context.days, candidate_gap_count),
-            )
+            reserve_limit_per_gap = pool_query_limit_for_days(context.days)
         candidates = [
             candidate
             for gap in retrieval.gaps
@@ -93,15 +83,22 @@ class CandidateScoringService:
             [item for item in scored if item.eligible],
             reserve_limit_per_gap=reserve_limit_per_gap,
         )
-        existing_count = sum(
-            1
-            for item in existing_places.places
-            if item.place.place_id and item.planner_eligible
-        )
-        ranked = self._balance_pool_categories(
-            ranked,
-            max(0, pool_target - existing_count),
-        )
+        if max_total_candidates is not None:
+            existing_count = sum(
+                1
+                for item in existing_places.places
+                if item.place.place_id and item.planner_eligible
+            )
+            ranked = CandidatePoolBalancer.balance_categories(
+                ranked,
+                max(0, pool_target - existing_count),
+            )
+        else:
+            ranked = CandidatePoolBalancer.select_entity_type_quotas(
+                ranked,
+                existing_places,
+                target_per_type=pool_target_for_days(context.days),
+            )
         excluded = sorted(
             (item for item in scored if not item.eligible),
             key=lambda item: (-item.final_score, item.candidate.candidate_key),
@@ -155,12 +152,7 @@ class CandidateScoringService:
             distance,
         )
         penalty_total = min(0.65, sum(penalties.values()))
-        exclusion_reasons = self._hard_violations(
-            candidate,
-            context,
-            labels,
-            distance,
-        )
+        exclusion_reasons = hard_violations(candidate, context, labels)
         final_score = max(0.0, min(1.0, base - penalty_total))
         return ScoredCandidate(
             candidate=candidate,
@@ -213,29 +205,6 @@ class CandidateScoringService:
         if fetched_at is not None and fetched_at < self.now - timedelta(days=90):
             penalties["stale_data"] = 0.08
         return penalties
-
-    @staticmethod
-    def _hard_violations(
-        candidate: RetrievedCandidate,
-        context: TripEvaluationContext,
-        labels: set[str],
-        distance: float | None,
-    ) -> list[str]:
-        reasons: list[str] = []
-        if not candidate.planner_eligible:
-            reasons.append("identity_not_verified")
-        if candidate.adm_id and candidate.adm_id != context.destination.adm_id:
-            reasons.append("destination_mismatch")
-        if has_avoid_conflict(context.avoids, labels):
-            reasons.append("avoid_conflict")
-        metadata = candidate.metadata
-        if metadata and metadata.operational_status == OperationalStatus.permanently_closed:
-            reasons.append("permanently_closed")
-        if metadata and context.people.children and metadata.children_suitable is False:
-            reasons.append("children_unsuitable")
-        if metadata and context.people.infants and metadata.infants_suitable is False:
-            reasons.append("infants_unsuitable")
-        return reasons
 
     @classmethod
     def _intent_match(
@@ -365,48 +334,6 @@ class CandidateScoringService:
             ]
             if value
         }
-
-    @staticmethod
-    def _balance_pool_categories(
-        ranked: list[ScoredCandidate],
-        limit: int,
-    ) -> list[ScoredCandidate]:
-        """Reserve slots for each discovery group before filling by score.
-
-        The search layer can return many places with the same catalog type
-        (often ``travel_place``). ``pool_category`` records the intentional
-        discovery group, so the final pool remains diverse even when the
-        provider's raw category is generic.
-        """
-        if limit <= 0 or len(ranked) <= limit:
-            return [item.model_copy(update={"rank": index}) for index, item in enumerate(ranked, 1)]
-
-        groups: dict[str, list[ScoredCandidate]] = {}
-        for item in ranked:
-            key = (
-                item.candidate.pool_category
-                or item.candidate.category
-                or "unknown"
-            )
-            groups.setdefault(key, []).append(item)
-        ordered_groups = sorted(groups)
-        selected: list[ScoredCandidate] = []
-        index = 0
-        while len(selected) < limit and ordered_groups:
-            key = ordered_groups[index % len(ordered_groups)]
-            group = groups[key]
-            if group:
-                selected.append(group.pop(0))
-            else:
-                ordered_groups.remove(key)
-                if not ordered_groups:
-                    break
-                index -= 1
-            index += 1
-        return [
-            item.model_copy(update={"rank": position})
-            for position, item in enumerate(selected, 1)
-        ]
 
     @staticmethod
     def _matches_any(values: list[str], labels: set[str]) -> bool:

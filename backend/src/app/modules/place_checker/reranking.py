@@ -111,14 +111,15 @@ class CandidateDiversityReranker:
         scored: list[ScoredCandidate],
         limit: int,
     ) -> list[ScoredCandidate]:
-        groups: dict[str, list[ScoredCandidate]] = {}
+        groups: dict[tuple[str, str], list[ScoredCandidate]] = {}
         for item in scored:
-            groups.setdefault(item.candidate.gap_id, []).append(item)
+            category = normalize_text(item.candidate.category) or "unknown"
+            groups.setdefault((item.candidate.gap_id, category), []).append(item)
         return [
             item
-            for gap_id in sorted(groups)
+            for group_key in sorted(groups)
             for item in sorted(
-                groups[gap_id],
+                groups[group_key],
                 key=lambda value: (-value.final_score, value.candidate.candidate_key),
             )[:limit]
         ]

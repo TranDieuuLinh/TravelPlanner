@@ -12,7 +12,6 @@ from app.modules.itinerary_planner.policies import (
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem, SafeTravel
 
-
 LATE_NIGHT_START_MINUTE = 22 * 60
 MAX_MONEY = 10**15
 
@@ -165,12 +164,12 @@ def _add_budget(
 ) -> None:
     terms = []
     for candidate_id, candidate in problem.candidate_by_id.items():
-        terms.append(variables.selected[candidate_id] * ceil(candidate.price.cost or 0))
+        terms.append(variables.selected[candidate_id] * ceil(candidate.price.cost))
     sparse_by_pair = {
         (arc.origin_id, arc.destination_id): arc for arc in routing.sparse_arcs
     }
     for key, arc_var in variables.arc.items():
-        origin_id, destination_id, day = key
+        origin_id, destination_id, _day = key
         if origin_id.startswith("__") or destination_id.startswith("__"):
             continue
         travel = sparse_by_pair[(origin_id, destination_id)].travel

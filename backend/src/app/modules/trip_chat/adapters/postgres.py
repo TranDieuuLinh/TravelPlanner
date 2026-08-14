@@ -53,6 +53,7 @@ class PostgresTripChatRepository:
         async with pool.acquire() as connection:
             rows = await connection.fetch(
                 """SELECT id, title, revision, current_itinerary,
+                          current_planner_output,
                           created_at, updated_at
                    FROM agent_trip_chats WHERE user_id=$1 ORDER BY updated_at DESC""",
                 user_id,
@@ -79,6 +80,7 @@ class PostgresTripChatRepository:
             **self._summary_values(chat),
             thread_id=chat["thread_id"],
             current_itinerary=_json(chat["current_itinerary"]),
+            current_planner_output=_json(chat["current_planner_output"]),
             messages=[self._message(row) for row in messages],
         )
 
@@ -89,6 +91,7 @@ class PostgresTripChatRepository:
         user_content: str,
         assistant: dict[str, Any],
         itinerary: dict[str, Any] | None,
+        planner_output: dict[str, Any] | None,
     ) -> TripChat | None:
         pool = await self._get_pool()
         now = datetime.now(timezone.utc)
@@ -127,9 +130,14 @@ class PostgresTripChatRepository:
                 )
                 await connection.execute(
                     """UPDATE agent_trip_chats SET revision=revision+1,
-                       current_itinerary=$1::jsonb, updated_at=$2
-                       WHERE id=$3 AND user_id=$4""",
+                       current_itinerary=COALESCE($1::jsonb, current_itinerary),
+                       current_planner_output=COALESCE(
+                           $2::jsonb, current_planner_output
+                       ),
+                       updated_at=$3
+                       WHERE id=$4 AND user_id=$5""",
                     json.dumps(itinerary) if itinerary is not None else None,
+                    json.dumps(planner_output) if planner_output is not None else None,
                     now,
                     chat_id,
                     user_id,
@@ -157,7 +165,10 @@ class PostgresTripChatRepository:
             "id": row["id"],
             "title": row["title"],
             "revision": row["revision"],
-            "has_itinerary": row["current_itinerary"] is not None,
+            "has_itinerary": (
+                row["current_itinerary"] is not None
+                or row["current_planner_output"] is not None
+            ),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
