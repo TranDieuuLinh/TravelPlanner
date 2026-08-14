@@ -27,6 +27,7 @@ class MemoryBaseModel(BaseModel):
 FactType = Literal[
     "destination",
     "duration",
+    "travelers",
     "place_candidate",
     "travel_style",
     "budget_tier",
@@ -52,6 +53,9 @@ class FactProvenance(MemoryBaseModel):
     )
     extracted_by: str = Field(min_length=1, max_length=80, description="Extractor service name")
     confidence: float = Field(ge=0.0, le=1.0, description="Extraction confidence score in [0.0, 1.0]")
+    source_url: str | None = Field(
+        default=None, max_length=500, description="Optional source URL if extracted from web link"
+    )
 
     @property
     def source_text(self) -> str:
@@ -104,6 +108,7 @@ ReferenceType = Literal[
     "anaphora",  # "chỗ đó", "nó"
     "deictic",  # "các điểm bên trên"
     "implicit_context",  # "lịch trình vừa rồi"
+    "plan_ref",  # "lịch trình vừa rồi"
 ]
 
 

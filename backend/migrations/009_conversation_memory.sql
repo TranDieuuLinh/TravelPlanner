@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS agent_conversation_memory (
     avoids jsonb NOT NULL DEFAULT '[]'::jsonb,
     mentioned_places jsonb NOT NULL DEFAULT '[]'::jsonb,
     selected_places jsonb NOT NULL DEFAULT '[]'::jsonb,
+    active_references jsonb NOT NULL DEFAULT '[]'::jsonb,
     current_plan_ref text,
     pending_goal text,
     last_route varchar(64),
@@ -27,6 +28,9 @@ CREATE TABLE IF NOT EXISTS agent_conversation_memory (
 -- Upgrade columns on existing agent_conversation_memory
 ALTER TABLE agent_conversation_memory
     ADD COLUMN IF NOT EXISTS travelers integer CHECK (travelers IS NULL OR (travelers >= 1 AND travelers <= 50));
+
+ALTER TABLE agent_conversation_memory
+    ADD COLUMN IF NOT EXISTS active_references jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 DO $$
 BEGIN
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS agent_conversation_memory_facts (
     source_turn integer NOT NULL DEFAULT 0 CHECK (source_turn >= 0),
     source_excerpt varchar(200) NOT NULL,
     source_message_id text,
+    source_url varchar(500),
     extracted_by varchar(80) NOT NULL,
     observed_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz,
@@ -66,6 +71,9 @@ CREATE TABLE IF NOT EXISTS agent_conversation_memory_facts (
 -- Upgrade facts table columns if upgrading existing table
 ALTER TABLE agent_conversation_memory_facts
     ADD COLUMN IF NOT EXISTS normalized_value text NOT NULL DEFAULT '';
+
+ALTER TABLE agent_conversation_memory_facts
+    ADD COLUMN IF NOT EXISTS source_url varchar(500);
 
 -- Canonicalize every legacy value, even when normalized_value is already populated.
 -- Runtime and migration must use the same representation before deduplication.

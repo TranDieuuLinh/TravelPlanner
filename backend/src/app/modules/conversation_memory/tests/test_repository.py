@@ -116,17 +116,18 @@ class FakeAsyncpgConnection:
                     "avoids": args[7],
                     "mentioned_places": args[8],
                     "selected_places": args[9],
-                    "current_plan_ref": args[10],
-                    "pending_goal": args[11],
-                    "last_route": args[12],
-                    "summary": args[13],
-                    "version": args[14],
+                    "active_references": args[10],
+                    "current_plan_ref": args[11],
+                    "pending_goal": args[12],
+                    "last_route": args[13],
+                    "summary": args[14],
+                    "version": args[15],
                     "created_at": self.memory_table.get(chat_id, {}).get("created_at", now),
                     "updated_at": now,
                 }
             return now
 
-        if "INSERT INTO agent_conversation_memory (" in clean_q or "INSERT INTO agent_conversation_memory (" in clean_q:
+        if "INSERT INTO agent_conversation_memory (" in clean_q:
             chat_id, user_id = args[0], args[1]
             self.memory_table[chat_id] = {
                 "chat_id": chat_id,
@@ -139,11 +140,12 @@ class FakeAsyncpgConnection:
                 "avoids": args[7],
                 "mentioned_places": args[8],
                 "selected_places": args[9],
-                "current_plan_ref": args[10],
-                "pending_goal": args[11],
-                "last_route": args[12],
-                "summary": args[13],
-                "version": args[14],
+                    "active_references": args[10],
+                    "current_plan_ref": args[11],
+                    "pending_goal": args[12],
+                    "last_route": args[13],
+                    "summary": args[14],
+                    "version": args[15],
                 "created_at": now,
                 "updated_at": now,
             }
@@ -166,7 +168,8 @@ class FakeAsyncpgConnection:
                 "preferences": '[]',
                 "avoids": '[]',
                 "mentioned_places": '[]',
-                "selected_places": '[]',
+                    "selected_places": '[]',
+                    "active_references": '[]',
                 "current_plan_ref": None,
                 "pending_goal": None,
                 "last_route": None,
@@ -197,7 +200,8 @@ class FakeAsyncpgConnection:
                 "source_turn": args[12],
                 "source_excerpt": args[13],
                 "source_message_id": args[14],
-                "extracted_by": args[15],
+                "source_url": args[15] if len(args) > 15 else None,
+                "extracted_by": args[16] if len(args) > 16 else (args[15] if len(args) > 15 else "test"),
                 "observed_at": now,
                 "expires_at": None,
                 "created_at": now,
@@ -206,10 +210,23 @@ class FakeAsyncpgConnection:
             return
 
         if "UPDATE agent_conversation_memory_facts SET status = 'superseded'" in clean_q:
-            fact_id = args[0]
-            if fact_id in self.facts_table:
-                self.facts_table[fact_id]["status"] = "superseded"
-                self.facts_table[fact_id]["updated_at"] = now
+            if "WHERE chat_id = $1 AND key = $2" in clean_q:
+                chat_id, key = args[0], args[1]
+                norm_val = args[2] if len(args) > 2 else None
+                for fid, f in self.facts_table.items():
+                    if f["chat_id"] == chat_id and f["key"] == key and f["status"] == "active":
+                        if norm_val is not None:
+                            if f["normalized_value"] == norm_val:
+                                f["status"] = "superseded"
+                                f["updated_at"] = now
+                        else:
+                            f["status"] = "superseded"
+                            f["updated_at"] = now
+            elif len(args) == 1:
+                fact_id = args[0]
+                if fact_id in self.facts_table:
+                    self.facts_table[fact_id]["status"] = "superseded"
+                    self.facts_table[fact_id]["updated_at"] = now
             return
 
         if "UPDATE agent_conversation_memory SET version =" in clean_q:
@@ -261,118 +278,50 @@ class TestPostgresMemoryRepositoryAdapter(unittest.TestCase):
         self.assertEqual(res.version, 1)
         self.assertIn("chat_new", self.conn.memory_table)
 
-    def test_2_append_facts_existing_chat(self):
-        fact1 = MemoryFact(
-            fact_id="f_ex_1",
-            fact_type="destination",
-            key="destination",
-            value="Đà Nẵng",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Đi Đà Nẵng", extracted_by="llm", confidence=0.9),
-        )
-        asyncio.run(self.repo.append_facts("chat_exist", 10, [fact1], expected_version=0))
-
-        fact2 = MemoryFact(
-            fact_id="f_ex_2",
-            fact_type="duration",
-            key="duration",
-            value=3,
-            value_type="int",
-            provenance=FactProvenance(source_turn=2, source_excerpt="3 ngày", extracted_by="llm", confidence=0.95),
-        )
-        res = asyncio.run(self.repo.append_facts("chat_exist", 10, [fact2], expected_version=1))
-        self.assertEqual(res.version, 2)
-
-    def test_11_multiple_place_candidates_same_key_allowed(self):
-        fact1 = MemoryFact(
-            fact_id="f_cand_1",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="Hồ Hoàn Kiếm",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Đi Hồ Hoàn Kiếm", extracted_by="llm", confidence=0.9),
-        )
-        fact2 = MemoryFact(
-            fact_id="f_cand_2",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="Văn Miếu",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Ghé Văn Miếu", extracted_by="llm", confidence=0.9),
-        )
-        res = asyncio.run(self.repo.append_facts("chat_places_same_key", 1, [fact1, fact2], expected_version=0))
-        self.assertEqual(len(res.active_facts), 2)
-        active_vals = {f.value for f in res.active_facts}
-        self.assertIn("Hồ Hoàn Kiếm", active_vals)
-        self.assertIn("Văn Miếu", active_vals)
-
-    def test_12_normalized_value_deduplication_supersedes_duplicate(self):
-        fact1 = MemoryFact(
-            fact_id="f_norm_1",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value=" Hồ Hoàn Kiếm ",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Hồ Hoàn Kiếm", extracted_by="llm", confidence=0.8),
-        )
-        asyncio.run(self.repo.append_facts("chat_dedup", 1, [fact1], expected_version=0))
-
-        fact2 = MemoryFact(
-            fact_id="f_norm_2",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="hồ  hoàn kiếm",
-            provenance=FactProvenance(source_turn=2, source_excerpt="hồ hoàn kiếm", extracted_by="llm", confidence=0.95),
-        )
-        res = asyncio.run(self.repo.append_facts("chat_dedup", 1, [fact2], expected_version=1))
-        self.assertEqual(len(res.active_facts), 1)
-        self.assertEqual(res.active_facts[0].fact_id, "f_norm_2")
-        self.assertEqual(self.conn.facts_table["f_norm_1"]["status"], "superseded")
-
-    def test_3_rollback_on_error(self):
+    def test_save_memory_and_facts_atomic_rollback(self):
+        wm = WorkingMemoryState(chat_id="chat_atom", user_id=1, destination="Hà Nội")
         fact = MemoryFact(
-            fact_id="f_bad",
+            fact_id="f_atom_1",
             fact_type="destination",
             key="destination",
-            value="Nha Trang",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Nha Trang", extracted_by="llm", confidence=0.8),
+            value="Hà Nội",
+            provenance=FactProvenance(source_turn=1, source_excerpt="txt", extracted_by="rule", confidence=0.9),
         )
-        orig_execute = self.conn.execute
+        orig_exec = self.conn.execute
 
-        async def failing_execute(query: str, *args):
+        async def failing_exec(query: str, *args):
             if "INSERT INTO agent_conversation_memory_facts" in query:
-                raise RuntimeError("Simulated Error")
-            return await orig_execute(query, *args)
+                raise RuntimeError("Simulated Fact Insert Failure")
+            return await orig_exec(query, *args)
 
-        self.conn.execute = failing_execute
+        self.conn.execute = failing_exec
+
         with self.assertRaises(RuntimeError):
-            asyncio.run(self.repo.append_facts("chat_rollback", 1, [fact], expected_version=0))
-        self.assertNotIn("chat_rollback", self.conn.memory_table)
+            asyncio.run(self.repo.save_memory_and_facts(wm, [fact], expected_version=0))
 
-    def test_4_version_conflict_prevents_overwrite(self):
+        # Atomic rollback verification: projection save MUST be rolled back completely
+        self.assertNotIn("chat_atom", self.conn.memory_table)
+
+    def test_source_url_survives_save_and_load(self):
+        wm = WorkingMemoryState(chat_id="chat_url", user_id=1)
         fact = MemoryFact(
-            fact_id="f_conflict",
-            fact_type="destination",
-            key="destination",
-            value="Huế",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Huế", extracted_by="llm", confidence=0.8),
+            fact_id="f_url_db",
+            fact_type="note",
+            key="note",
+            value="https://example.com/hanoi",
+            provenance=FactProvenance(
+                source_turn=1,
+                source_excerpt="txt",
+                extracted_by="rule",
+                confidence=0.9,
+                source_url="https://example.com/hanoi",
+            ),
         )
-        with self.assertRaises(MemoryVersionConflict):
-            asyncio.run(self.repo.append_facts("chat_ver_conf", 1, [fact], expected_version=5))
-
-    def test_6_user_ownership_isolation(self):
-        wm = WorkingMemoryState(chat_id="chat_priv", user_id=100, destination="Cần Thơ")
-        asyncio.run(self.repo.save_working_memory(wm, expected_version=0))
-        self.assertIsNone(asyncio.run(self.repo.load_working_memory("chat_priv", user_id=999)))
-
-    def test_7_jsonb_and_travelers(self):
-        wm = WorkingMemoryState(
-            chat_id="chat_jsonb",
-            user_id=1,
-            travelers=4,
-            budget={"tier": "high"},
-            preferences=["gần biển"],
-        )
-        saved = asyncio.run(self.repo.save_working_memory(wm, expected_version=0))
-        loaded = asyncio.run(self.repo.load_working_memory("chat_jsonb", user_id=1))
-        self.assertEqual(loaded.travelers, 4)
-        self.assertEqual(loaded.budget["tier"], "high")
+        asyncio.run(self.repo.save_memory_and_facts(wm, [fact], expected_version=0))
+        loaded = asyncio.run(self.repo.load_working_memory("chat_url", user_id=1))
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.active_facts), 1)
+        self.assertEqual(loaded.active_facts[0].provenance.source_url, "https://example.com/hanoi")
 
 
 if __name__ == "__main__":

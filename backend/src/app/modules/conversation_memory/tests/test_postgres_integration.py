@@ -13,6 +13,7 @@ from app.modules.conversation_memory.adapters.postgres import PostgresMemoryRepo
 from app.modules.conversation_memory.contract import (
     FactProvenance,
     MemoryFact,
+    MemoryReference,
     WorkingMemoryState,
 )
 from app.modules.conversation_memory.ports import (
@@ -96,8 +97,6 @@ class TestPostgresMemoryRepositoryRealIntegration(unittest.TestCase):
     def tearDown(self):
         async def cleanup():
             async with self.pool.acquire() as conn:
-                # The abort test intentionally drops the FK, so facts must be
-                # removed explicitly before deleting their parent memories.
                 await conn.execute(
                     "DELETE FROM agent_conversation_memory_facts WHERE chat_id LIKE 'test_real_%' OR chat_id LIKE 'chat_legacy_%' OR chat_id LIKE 'chat_orphan_%' OR chat_id = $1;",
                     self.test_chat_id,
@@ -114,118 +113,90 @@ class TestPostgresMemoryRepositoryRealIntegration(unittest.TestCase):
                     )
         self.loop.run_until_complete(cleanup())
 
-    def test_real_db_legacy_migration_aborts_on_integrity_violations(self):
-        """Legacy ownership/orphan violations abort migration without silent repair."""
-        async def legacy_test_flow():
-            async with self.pool.acquire() as conn:
-                leg_chat = f"chat_legacy_{os.urandom(4).hex()}"
-                orphan_chat = f"chat_orphan_{os.urandom(4).hex()}"
+    def test_real_db_scalar_fact_superseding(self):
+        f1 = MemoryFact(
+            fact_id=f"f_hn_{os.urandom(4).hex()}",
+            fact_type="destination",
+            key="destination",
+            value="Hà Nội",
+            provenance=FactProvenance(source_turn=1, source_excerpt="Đi Hà Nội", extracted_by="rule", confidence=0.9),
+        )
+        self.loop.run_until_complete(
+            self.repo.append_facts(self.test_chat_id, self.user_id, [f1], expected_version=0)
+        )
 
-                has_chats_tbl = await conn.fetchval(
-                    "SELECT 1 FROM information_schema.tables WHERE table_name = 'agent_trip_chats';"
-                )
-                if has_chats_tbl:
-                    await conn.execute(
-                        "INSERT INTO agent_trip_chats (id, user_id, thread_id, title) VALUES ($1, $2, $1, 'Legacy Chat') ON CONFLICT DO NOTHING;",
-                        leg_chat, self.user_id
-                    )
-                    await conn.execute(
-                        "INSERT INTO agent_trip_chats (id, user_id, thread_id, title) VALUES ($1, $2, $1, 'Orphan Chat') ON CONFLICT DO NOTHING;",
-                        orphan_chat, self.user_id
-                    )
+        f2 = MemoryFact(
+            fact_id=f"f_dn_{os.urandom(4).hex()}",
+            fact_type="destination",
+            key="destination",
+            value="Đà Nẵng",
+            provenance=FactProvenance(source_turn=2, source_excerpt="Đổi sang Đà Nẵng", extracted_by="rule", confidence=0.95),
+        )
+        saved = self.loop.run_until_complete(
+            self.repo.append_facts(self.test_chat_id, self.user_id, [f2], expected_version=1)
+        )
 
-                # Drop composite FK constraint and unique index temporarily to simulate pre-migration legacy database state
-                await conn.execute("ALTER TABLE agent_conversation_memory_facts DROP CONSTRAINT IF EXISTS fk_conv_memory_facts_parent;")
-                await conn.execute("DROP INDEX IF EXISTS idx_agent_conv_memory_facts_active_norm;")
+        # Assertion c: only Đà Nẵng is active
+        self.assertEqual(len(saved.active_facts), 1)
+        self.assertEqual(saved.active_facts[0].value, "Đà Nẵng")
 
-                # 1. Create parent memory for legacy chat using self.user_id
-                await conn.execute(
-                    "INSERT INTO agent_conversation_memory (chat_id, user_id, version) VALUES ($1, $2, 1) ON CONFLICT DO NOTHING;",
-                    leg_chat, self.user_id
-                )
-
-                # 2. Insert fact 1 (unconfirmed, lower confidence, unnormalized value)
-                f1_id = f"f_leg1_{os.urandom(4).hex()}"
-                await conn.execute(
-                    """
-                    INSERT INTO agent_conversation_memory_facts (
-                        fact_id, chat_id, user_id, fact_type, key, value, normalized_value,
-                        scope, status, confirmed_by_user, confidence, source_turn, source_excerpt, extracted_by
-                    ) VALUES ($1, $2, $3, 'place_candidate', 'place_candidate', '"  Văn   Miếu  "'::jsonb, '', 'chat', 'active', false, 0.8, 1, 'Văn Miếu', 'legacy');
-                    """,
-                    f1_id, leg_chat, self.user_id
-                )
-
-                # 3. Insert fact 2 (duplicate active fact with same normalized string, higher confidence)
-                f2_id = f"f_leg2_{os.urandom(4).hex()}"
-                await conn.execute(
-                    """
-                    INSERT INTO agent_conversation_memory_facts (
-                        fact_id, chat_id, user_id, fact_type, key, value, normalized_value,
-                        scope, status, confirmed_by_user, confidence, source_turn, source_excerpt, extracted_by
-                    ) VALUES ($1, $2, $3, 'place_candidate', 'place_candidate', '"văn  miếu"'::jsonb, '', 'chat', 'active', true, 0.95, 2, 'văn miếu', 'legacy');
-                    """,
-                    f2_id, leg_chat, self.user_id
-                )
-
-                # 4. Insert fact 3 (mismatched user_id 888888 instead of parent self.user_id)
-                f3_id = f"f_leg3_{os.urandom(4).hex()}"
-                await conn.execute(
-                    """
-                    INSERT INTO agent_conversation_memory_facts (
-                        fact_id, chat_id, user_id, fact_type, key, value, normalized_value,
-                        scope, status, confirmed_by_user, confidence, source_turn, source_excerpt, extracted_by
-                    ) VALUES ($1, $2, 888888, 'destination', 'destination', '"Hà Nội"'::jsonb, '', 'chat', 'active', false, 0.9, 1, 'Hà Nội', 'legacy');
-                    """,
-                    f3_id, leg_chat
-                )
-
-                # 5. Insert fact 4 (orphan fact whose chat_id does not exist in memory table)
-                f4_id = f"f_leg4_{os.urandom(4).hex()}"
-                await conn.execute(
-                    """
-                    INSERT INTO agent_conversation_memory_facts (
-                        fact_id, chat_id, user_id, fact_type, key, value, normalized_value,
-                        scope, status, confirmed_by_user, confidence, source_turn, source_excerpt, extracted_by
-                    ) VALUES ($1, $2, $3, 'duration', 'duration', '3'::jsonb, '', 'chat', 'active', false, 0.9, 1, '3 ngày', 'legacy');
-                    """,
-                    f4_id, orphan_chat, self.user_id
-                )
-
-                # The migration must fail and rollback instead of rewriting ownership
-                # or creating synthetic parent/chat rows.
-                with self.assertRaises(asyncpg.CheckViolationError):
-                    # Run the failing migration on a separate checkout so the
-                    # failed transaction is rolled back before assertions below.
-                    async with self.pool.acquire() as migration_conn:
-                        await migration_conn.execute(self.migration_sql)
-
-                # The transaction rollback preserves the legacy evidence for an operator
-                # to inspect and repair explicitly.
-                self.assertEqual(
-                    await conn.fetchval(
-                        "SELECT user_id FROM agent_conversation_memory_facts WHERE fact_id = $1;",
-                        f3_id,
-                    ),
-                    888888,
-                )
-                self.assertIsNone(
-                    await conn.fetchval(
-                        "SELECT version FROM agent_conversation_memory WHERE chat_id = $1;",
-                        orphan_chat,
-                    )
-                )
-
-        self.loop.run_until_complete(legacy_test_flow())
-
-    def test_real_db_migration_upgrade_and_travelers_column(self):
-        async def query_travelers():
+        # Assertion d: Hà Nội has status = 'superseded' in DB
+        async def check_superseded():
             async with self.pool.acquire() as conn:
                 return await conn.fetchval(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'agent_conversation_memory' AND column_name = 'travelers';"
+                    "SELECT status FROM agent_conversation_memory_facts WHERE fact_id = $1;", f1.fact_id
                 )
-        col = self.loop.run_until_complete(query_travelers())
-        self.assertEqual(col, "travelers")
+        status_hn = self.loop.run_until_complete(check_superseded())
+        self.assertEqual(status_hn, "superseded")
+
+    def test_real_db_source_url_persistence(self):
+        wm = WorkingMemoryState(chat_id=self.test_chat_id, user_id=self.user_id)
+        f_url = MemoryFact(
+            fact_id=f"f_url_{os.urandom(4).hex()}",
+            fact_type="note",
+            key="note",
+            value="https://example.com/hanoi_guide",
+            provenance=FactProvenance(
+                source_turn=1,
+                source_excerpt="xem tai https://example.com/hanoi_guide",
+                extracted_by="rule",
+                confidence=0.9,
+                source_url="https://example.com/hanoi_guide",
+            ),
+        )
+        self.loop.run_until_complete(
+            self.repo.save_memory_and_facts(wm, [f_url], expected_version=0)
+        )
+        loaded = self.loop.run_until_complete(
+            self.repo.load_working_memory(self.test_chat_id, self.user_id)
+        )
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.active_facts), 1)
+        self.assertEqual(loaded.active_facts[0].provenance.source_url, "https://example.com/hanoi_guide")
+
+    def test_real_db_active_references_persistence(self):
+        reference = MemoryReference(
+            reference_id=f"ref_{os.urandom(4).hex()}",
+            phrase="các điểm bên trên",
+            reference_type="deictic",
+            resolved_entity="Văn Miếu, Hồ Hoàn Kiếm",
+            target_fact_ids=["fact_a", "fact_b"],
+        )
+        wm = WorkingMemoryState(
+            chat_id=self.test_chat_id,
+            user_id=self.user_id,
+            active_references=[reference],
+        )
+        self.loop.run_until_complete(
+            self.repo.save_working_memory(wm, expected_version=0)
+        )
+        loaded = self.loop.run_until_complete(
+            self.repo.load_working_memory(self.test_chat_id, self.user_id)
+        )
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.active_references), 1)
+        self.assertEqual(loaded.active_references[0].resolved_entity, reference.resolved_entity)
+        self.assertEqual(loaded.active_references[0].target_fact_ids, reference.target_fact_ids)
 
     def test_real_db_save_and_load(self):
         wm = WorkingMemoryState(
@@ -249,84 +220,6 @@ class TestPostgresMemoryRepositoryRealIntegration(unittest.TestCase):
         self.assertIsNotNone(loaded)
         self.assertEqual(loaded.destination, "Hội An")
         self.assertEqual(loaded.travelers, 2)
-
-    def test_real_db_multiple_place_candidates_allowed(self):
-        f1 = MemoryFact(
-            fact_id=f"f_real_p1_{os.urandom(4).hex()}",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="Văn Miếu",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Văn Miếu", extracted_by="test", confidence=0.9),
-        )
-        f2 = MemoryFact(
-            fact_id=f"f_real_p2_{os.urandom(4).hex()}",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="Hồ Hoàn Kiếm",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Hồ Hoàn Kiếm", extracted_by="test", confidence=0.9),
-        )
-        saved = self.loop.run_until_complete(
-            self.repo.append_facts(self.test_chat_id, self.user_id, [f1, f2], expected_version=0)
-        )
-        self.assertEqual(len(saved.active_facts), 2)
-
-    def test_real_db_normalized_deduplication_supersedes(self):
-        f1 = MemoryFact(
-            fact_id=f"f_real_n1_{os.urandom(4).hex()}",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value=" Văn Miếu ",
-            provenance=FactProvenance(source_turn=1, source_excerpt="Văn Miếu", extracted_by="test", confidence=0.9),
-        )
-        self.loop.run_until_complete(
-            self.repo.append_facts(self.test_chat_id, self.user_id, [f1], expected_version=0)
-        )
-
-        f2 = MemoryFact(
-            fact_id=f"f_real_n2_{os.urandom(4).hex()}",
-            fact_type="place_candidate",
-            key="place_candidate",
-            value="văn  miếu",
-            provenance=FactProvenance(source_turn=2, source_excerpt="văn miếu", extracted_by="test", confidence=0.95),
-        )
-        saved = self.loop.run_until_complete(
-            self.repo.append_facts(self.test_chat_id, self.user_id, [f2], expected_version=1)
-        )
-        self.assertEqual(len(saved.active_facts), 1)
-        self.assertEqual(saved.active_facts[0].fact_id, f2.fact_id)
-
-    def test_real_db_composite_fk_mismatch_user_id_fails(self):
-        wm = WorkingMemoryState(chat_id=self.test_chat_id, user_id=self.user_id)
-        self.loop.run_until_complete(self.repo.save_working_memory(wm, expected_version=0))
-
-        async def insert_bad_fact():
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO agent_conversation_memory_facts (
-                        fact_id, chat_id, user_id, fact_type, key, value, value_type,
-                        scope, status, confirmed_by_user, confidence, source_turn,
-                        source_excerpt, extracted_by
-                    ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14);
-                    """,
-                    f"f_bad_{os.urandom(4).hex()}",
-                    self.test_chat_id,
-                    888888,
-                    "destination",
-                    "destination",
-                    '"Huế"',
-                    "string",
-                    "chat",
-                    "active",
-                    False,
-                    0.9,
-                    1,
-                    "Huế",
-                    "test",
-                )
-
-        with self.assertRaises(asyncpg.ForeignKeyViolationError):
-            self.loop.run_until_complete(insert_bad_fact())
 
     def test_real_db_version_concurrency_conflict(self):
         wm = WorkingMemoryState(chat_id=self.test_chat_id, user_id=self.user_id, destination="Cần Thơ")

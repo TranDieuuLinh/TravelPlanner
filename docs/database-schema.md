@@ -189,6 +189,7 @@ Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` s�
 | `avoids` | jsonb | Không | Danh sách điểm/yếu tố cần tránh. |
 | `mentioned_places` | jsonb | Không | Các địa điểm đã được nhắc tới. |
 | `selected_places` | jsonb | Không | Các địa điểm user đã chọn/xác nhận. |
+| `active_references` | jsonb | Không | Các tham chiếu ngôn ngữ đã resolve hoặc đang chờ làm rõ. |
 | `current_plan_ref` | text | Có | Mã tham chiếu tới plan hiện tại. |
 | `pending_goal` | text | Có | Ý định/mục tiêu chưa hoàn thành. |
 | `last_route` | varchar | Có | Route của supervisor/agent gần nhất. |
@@ -218,6 +219,7 @@ Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` s�
 | `source_turn` | integer | Không | Lượt hội thoại trích xuất. |
 | `source_excerpt` | varchar(200) | Không | Đoạn trích dẫn ngắn (tối đa 200 ký tự). |
 | `source_message_id` | text | Có | Mã message trong transcript. |
+| `source_url` | varchar(500) | Có | URL nguồn chứa dữ liệu trích xuất. |
 | `extracted_by` | varchar | Không | Tên dịch vụ trích xuất. |
 | `observed_at` | timestamptz | Không | Thời điểm quan sát. |
 | `expires_at` | timestamptz | Có | Thời điểm hết hạn. |

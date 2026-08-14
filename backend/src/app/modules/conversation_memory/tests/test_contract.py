@@ -22,6 +22,7 @@ class TestConversationMemoryContract(unittest.TestCase):
             source_message_id="msg_001",
             extracted_by="explorer_v1",
             confidence=0.95,
+            source_url="https://example.com/hanoi",
         )
         fact = MemoryFact(
             fact_id="fact_001",
@@ -45,10 +46,31 @@ class TestConversationMemoryContract(unittest.TestCase):
         self.assertEqual(dumped["provenance"]["sourceTurn"], 1)
         self.assertEqual(dumped["provenance"]["sourceExcerpt"], "Hà Nội có gì chơi?")
         self.assertEqual(dumped["provenance"]["sourceMessageId"], "msg_001")
+        self.assertEqual(dumped["provenance"]["sourceUrl"], "https://example.com/hanoi")
 
         deserialized = MemoryFact.model_validate(dumped)
         self.assertEqual(deserialized.fact_id, "fact_001")
         self.assertEqual(deserialized.provenance.source_turn, 1)
+
+    def test_fact_type_travelers_supported(self):
+        fact = MemoryFact(
+            fact_id="fact_trv",
+            fact_type="travelers",
+            key="travelers",
+            value=4,
+            value_type="number",
+            provenance=FactProvenance(source_turn=1, source_excerpt="4 người", extracted_by="rule", confidence=0.9),
+        )
+        self.assertEqual(fact.fact_type, "travelers")
+
+    def test_reference_type_plan_ref_supported(self):
+        ref = MemoryReference(
+            reference_id="ref_plan",
+            phrase="lịch trình vừa rồi",
+            reference_type="plan_ref",
+            resolved_entity="plan_001",
+        )
+        self.assertEqual(ref.reference_type, "plan_ref")
 
     def test_normalization_whitespace_casing_equivalence(self):
         n1 = normalize_fact_value("Văn Miếu")
@@ -72,7 +94,6 @@ class TestConversationMemoryContract(unittest.TestCase):
             normalized_value="  VĂN   MIẾU  ",
             provenance=FactProvenance(source_turn=1, source_excerpt="txt", extracted_by="e", confidence=0.8),
         )
-        # computed_normalized_value MUST STILL call normalize_fact_value on manual input
         self.assertEqual(fact.computed_normalized_value, "văn miếu")
 
     def test_source_excerpt_max_length_raises(self):

@@ -70,7 +70,7 @@ Module khác chỉ nên import thông qua `public.py`, không truy cập trực 
 state, node hoặc service nội bộ. Provider bên ngoài phải được đặt sau port và
 adapter.
 
-Module `conversation_memory` đã hoàn thành Phase 01. Module sở hữu public contract (`contract.py`), interface `MemoryRepository` (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, và `ConversationMemoryService` (`service.py`) xử lý load/save/append_facts theo merge policy với optimistic concurrency control (`version`).
+Module `conversation_memory` đã hoàn thành Phase 01 & Phase 02. Module sở hữu public contract (`contract.py`), interfaces (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, rule-based extractor (`extractor.py`), reference resolver (`resolver.py`), merge policy evaluator (`merge_policy.py`) và `ConversationMemoryService` (`service.py`) cung cấp `extract_facts`, `resolve_references`, `merge_extracted_facts` và `process_message`.
 
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của

@@ -7,6 +7,7 @@ import asyncpg
 from app.modules.conversation_memory.contract import (
     FactProvenance,
     MemoryFact,
+    MemoryReference,
     WorkingMemoryState,
 )
 from app.modules.conversation_memory.ports import (
@@ -55,6 +56,29 @@ class PostgresMemoryRepository(MemoryRepository):
                     conn, chat_id, user_id, facts, expected_version=expected_version
                 )
 
+    async def save_memory_and_facts(
+        self,
+        memory: WorkingMemoryState,
+        facts: Sequence[MemoryFact],
+        expected_version: int | None = None,
+    ) -> WorkingMemoryState:
+        """Atomic persistence method: updates working memory state projection and facts in a single transaction."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                saved_memory = await self._save_working_memory_conn(
+                    conn, memory, expected_version=expected_version
+                )
+                if facts:
+                    await self._insert_facts_and_supersede_conn(
+                        conn, memory.chat_id, memory.user_id, facts
+                    )
+                loaded = await self._load_working_memory_conn(conn, memory.chat_id, memory.user_id)
+                if loaded is None:
+                    raise MemoryPersistenceError(
+                        f"Failed to load memory after saving memory and facts for chat '{memory.chat_id}'."
+                    )
+                return loaded
+
     # -------------------------------------------------------------------------
     # Internal helpers taking an active connection (preventing nested checkout)
     # -------------------------------------------------------------------------
@@ -70,7 +94,7 @@ class PostgresMemoryRepository(MemoryRepository):
         query = f"""
         SELECT
             chat_id, user_id, destination, duration_days, travelers, budget,
-            preferences, avoids, mentioned_places, selected_places,
+            preferences, avoids, mentioned_places, selected_places, active_references,
             current_plan_ref, pending_goal, last_route, summary,
             version, updated_at
         FROM agent_conversation_memory
@@ -84,7 +108,7 @@ class PostgresMemoryRepository(MemoryRepository):
         SELECT
             fact_id, fact_type, key, value, normalized_value, value_type, scope, status,
             confirmed_by_user, confidence, source_turn, source_excerpt,
-            source_message_id, extracted_by, observed_at, expires_at, created_at
+            source_message_id, source_url, extracted_by, observed_at, expires_at, created_at
         FROM agent_conversation_memory_facts
         WHERE chat_id = $1 AND user_id = $2 AND status = 'active'
         ORDER BY created_at ASC;
@@ -104,6 +128,11 @@ class PostgresMemoryRepository(MemoryRepository):
             avoids=json.loads(row["avoids"]) if row["avoids"] else [],
             mentioned_places=json.loads(row["mentioned_places"]) if row["mentioned_places"] else [],
             selected_places=json.loads(row["selected_places"]) if row["selected_places"] else [],
+            active_references=[
+                # JSONB may contain either camelCase or snake_case keys.
+                MemoryReference.model_validate(item)
+                for item in (json.loads(row["active_references"]) if row["active_references"] else [])
+            ],
             current_plan_ref=row["current_plan_ref"],
             pending_goal=row["pending_goal"],
             last_route=row["last_route"],
@@ -147,11 +176,12 @@ class PostgresMemoryRepository(MemoryRepository):
                 avoids = $8::jsonb,
                 mentioned_places = $9::jsonb,
                 selected_places = $10::jsonb,
-                current_plan_ref = $11,
-                pending_goal = $12,
-                last_route = $13,
-                summary = $14,
-                version = $15,
+                active_references = $11::jsonb,
+                current_plan_ref = $12,
+                pending_goal = $13,
+                last_route = $14,
+                summary = $15,
+                version = $16,
                 updated_at = now()
             WHERE chat_id = $1 AND user_id = $2
             RETURNING updated_at;
@@ -168,6 +198,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 json.dumps(memory.avoids),
                 json.dumps(memory.mentioned_places),
                 json.dumps(memory.selected_places),
+                json.dumps([ref.model_dump(mode="json", by_alias=True) for ref in memory.active_references]),
                 memory.current_plan_ref,
                 memory.pending_goal,
                 memory.last_route,
@@ -183,9 +214,9 @@ class PostgresMemoryRepository(MemoryRepository):
             insert_query = """
             INSERT INTO agent_conversation_memory (
                 chat_id, user_id, destination, duration_days, travelers, budget,
-                preferences, avoids, mentioned_places, selected_places,
+                preferences, avoids, mentioned_places, selected_places, active_references,
                 current_plan_ref, pending_goal, last_route, summary, version
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15)
+            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16)
             RETURNING updated_at;
             """
             updated_at = await conn.fetchval(
@@ -200,6 +231,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 json.dumps(memory.avoids),
                 json.dumps(memory.mentioned_places),
                 json.dumps(memory.selected_places),
+                json.dumps([ref.model_dump(mode="json", by_alias=True) for ref in memory.active_references]),
                 memory.current_plan_ref,
                 memory.pending_goal,
                 memory.last_route,
@@ -213,6 +245,66 @@ class PostgresMemoryRepository(MemoryRepository):
                 "last_updated_at": updated_at,
             }
         )
+
+    async def _insert_facts_and_supersede_conn(
+        self,
+        conn: asyncpg.Connection,
+        chat_id: str,
+        user_id: int,
+        facts: Sequence[MemoryFact],
+    ) -> None:
+        for fact in facts:
+            norm_val = fact.computed_normalized_value
+            if fact.key == "place_candidate":
+                # For place_candidate, only supersede if normalized_value matches
+                await conn.execute(
+                    """
+                    UPDATE agent_conversation_memory_facts
+                    SET status = 'superseded', updated_at = now()
+                    WHERE chat_id = $1 AND key = $2 AND normalized_value = $3 AND status = 'active';
+                    """,
+                    chat_id,
+                    fact.key,
+                    norm_val,
+                )
+            else:
+                # For scalar facts (destination, duration, travelers, budget_tier), supersede all previous active facts for this key
+                await conn.execute(
+                    """
+                    UPDATE agent_conversation_memory_facts
+                    SET status = 'superseded', updated_at = now()
+                    WHERE chat_id = $1 AND key = $2 AND status = 'active';
+                    """,
+                    chat_id,
+                    fact.key,
+                )
+
+            await conn.execute(
+                """
+                INSERT INTO agent_conversation_memory_facts (
+                    fact_id, chat_id, user_id, fact_type, key, value, normalized_value, value_type,
+                    scope, status, confirmed_by_user, confidence, source_turn,
+                    source_excerpt, source_message_id, source_url, extracted_by
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
+                """,
+                fact.fact_id,
+                chat_id,
+                user_id,
+                fact.fact_type,
+                fact.key,
+                json.dumps(fact.value),
+                norm_val,
+                fact.value_type,
+                fact.scope,
+                fact.status,
+                fact.confirmed_by_user,
+                fact.provenance.confidence,
+                fact.provenance.source_turn,
+                fact.provenance.source_excerpt,
+                fact.provenance.source_message_id,
+                fact.provenance.source_url,
+                fact.provenance.extracted_by,
+            )
 
     async def _append_facts_conn(
         self,
@@ -242,70 +334,18 @@ class PostgresMemoryRepository(MemoryRepository):
                 raise MemoryVersionConflict(
                     f"Version conflict for new chat '{chat_id}': expected {check_ver}, found 0."
                 )
-            # Create parent memory row first so composite FK (chat_id, user_id) in agent_conversation_memory_facts passes
             insert_parent_query = """
             INSERT INTO agent_conversation_memory (
                 chat_id, user_id, destination, duration_days, travelers, budget,
-                preferences, avoids, mentioned_places, selected_places,
+                preferences, avoids, mentioned_places, selected_places, active_references,
                 current_plan_ref, pending_goal, last_route, summary, version
-            ) VALUES ($1, $2, NULL, NULL, NULL, 'null'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, NULL, NULL, NULL, NULL, 0);
+            ) VALUES ($1, $2, NULL, NULL, NULL, 'null'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, NULL, NULL, NULL, NULL, 0);
             """
             await conn.execute(insert_parent_query, chat_id, user_id)
             target_ver = 0
 
-        # Insert facts into agent_conversation_memory_facts
-        for fact in facts:
-            norm_val = fact.computed_normalized_value
-            existing_facts = await conn.fetch(
-                """
-                SELECT fact_id, confirmed_by_user, confidence, value
-                FROM agent_conversation_memory_facts
-                WHERE chat_id = $1 AND key = $2 AND normalized_value = $3 AND status = 'active';
-                """,
-                chat_id,
-                fact.key,
-                norm_val,
-            )
-            should_skip_insert = False
-            for ex in existing_facts:
-                if ex["confirmed_by_user"] and not fact.confirmed_by_user:
-                    should_skip_insert = True
-                    break
-                await conn.execute(
-                    "UPDATE agent_conversation_memory_facts SET status = 'superseded', updated_at = now() WHERE fact_id = $1;",
-                    ex["fact_id"],
-                )
+        await self._insert_facts_and_supersede_conn(conn, chat_id, user_id, facts)
 
-            if should_skip_insert:
-                continue
-
-            await conn.execute(
-                """
-                INSERT INTO agent_conversation_memory_facts (
-                    fact_id, chat_id, user_id, fact_type, key, value, normalized_value, value_type,
-                    scope, status, confirmed_by_user, confidence, source_turn,
-                    source_excerpt, source_message_id, extracted_by
-                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
-                """,
-                fact.fact_id,
-                chat_id,
-                user_id,
-                fact.fact_type,
-                fact.key,
-                json.dumps(fact.value),
-                norm_val,
-                fact.value_type,
-                fact.scope,
-                fact.status,
-                fact.confirmed_by_user,
-                fact.provenance.confidence,
-                fact.provenance.source_turn,
-                fact.provenance.source_excerpt,
-                fact.provenance.source_message_id,
-                fact.provenance.extracted_by,
-            )
-
-        # Update parent memory version atomically in the same transaction
         next_ver = target_ver + 1
         await conn.execute(
             "UPDATE agent_conversation_memory SET version = $3, updated_at = now() WHERE chat_id = $1 AND user_id = $2;",
@@ -336,6 +376,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 source_turn=row["source_turn"],
                 source_excerpt=row["source_excerpt"],
                 source_message_id=row["source_message_id"],
+                source_url=row["source_url"] if "source_url" in row else None,
                 extracted_by=row["extracted_by"],
                 confidence=row["confidence"],
             ),
