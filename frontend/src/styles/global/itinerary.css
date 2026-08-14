@@ -4559,129 +4559,7 @@
   .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 1; grid-row: 3; }
 }
 
-/* During initial planning, the explorer crew owns the left stage and the
-   conversation stays available in the compact floating assistant. */
-@media (min-width: 901px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan {
-    position: relative;
-    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
-    grid-template-rows: 68px minmax(0, 1fr);
-  }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
-    position: fixed;
-    z-index: 1900;
-    left: var(--floating-chat-x, auto);
-    top: var(--floating-chat-y, auto);
-    right: var(--floating-chat-right, clamp(20px, 2.5vw, 42px));
-    bottom: var(--floating-chat-bottom, clamp(20px, 3vh, 34px));
-    width: var(--floating-chat-width, min(390px, calc(56vw - 40px)));
-    height: var(--floating-chat-height, min(510px, calc(100dvh - 118px)));
-    min-width: 340px;
-    min-height: 360px;
-    overflow: hidden;
-    border: 1px solid rgba(49, 95, 88, .14);
-    border-radius: 24px;
-    background: rgba(255, 255, 255, .98);
-    box-shadow: 0 24px 64px rgba(37, 75, 69, .2);
-    backdrop-filter: blur(18px);
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat > .panelHeading {
-    display: flex;
-    min-height: 68px;
-    border-radius: 24px 24px 0 0;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatMoveHandle {
-    display: grid;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatResizeHandles {
-    display: block;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
-    display: grid;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
-    width: 116px;
-    min-width: 116px;
-    height: 116px;
-    min-height: 116px;
-    overflow: visible;
-    border-radius: 50%;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed > .panelHeading {
-    width: 116px;
-    height: 116px;
-    min-height: 116px;
-    border-radius: 50%;
-  }
-}
-
-@media (max-width: 900px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan {
-    grid-template-rows: auto minmax(360px, 48dvh) auto auto;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
-    grid-column: 1;
-    grid-row: 2;
-    min-height: 360px;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
-    grid-column: 1;
-    grid-row: 3;
-    width: calc(100% - 28px);
-    height: min(480px, calc(100dvh - 160px));
-    min-height: 400px;
-    margin: 14px;
-    border: 1px solid rgba(49, 95, 88, .14);
-    border-radius: 22px;
-    box-shadow: 0 18px 42px rgba(37, 75, 69, .14);
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat > .panelHeading {
-    display: flex;
-    border-radius: 22px 22px 0 0;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
-    display: none;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
-    grid-column: 1;
-    grid-row: 4;
-  }
-}
 
 /* Keep the TravelPlanner assistant visually continuous and keep source import available
    after a plan has been created. This final override intentionally follows all
@@ -4837,89 +4715,47 @@
   border-radius: 30px;
 }
 
-/* The loading chat is a compact floating panel, so keep the combined URL and
-   prompt surface close to its edges instead of inheriting the page-wide inset. */
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer {
-  margin-inline: 14px;
-}
-
 /* Keep the generous composer only on the untouched new-chat screen. */
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportDock {
   padding: 5px 8px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControlIcon,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControlIcon {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControlIcon {
   width: 38px;
   height: 38px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl textarea {
   max-height: 62px;
   padding-block: 6px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .urlImportControl button {
   width: 40px;
   height: 40px;
   border-radius: 15px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerBox textarea {
   min-height: 62px;
   padding-top: 10px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .composerToolbar {
   min-height: 44px;
   padding-bottom: 5px;
 }
 
-.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .sendButton,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat:not(.is-collapsed) .plannerEntryComposer .sendButton {
+.plannerLayout:not(.is-new-chat) .plannerChat:not(.is-collapsed) .plannerEntryComposer .sendButton {
   width: 40px;
   min-width: 40px;
   height: 40px;
 }
 
-/* The illustrated loading canvas belongs only to initial trip setup. Keep it
-   on the left while inspiration remains available on the right. */
-@media (min-width: 901px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan {
-    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
-    grid-template-rows: 68px minmax(0, 1fr);
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerPlanningCanvas {
-    grid-column: 1;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
-    display: block;
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
-    left: var(--floating-chat-x, clamp(24px, 3vw, 42px));
-    right: auto;
-    bottom: var(--floating-chat-bottom, clamp(24px, 3vh, 36px));
-  }
-}
-
 /* A collapsed Planner is only the white circular launcher: its surrounding
    chat panel and heading must not leave a tinted square behind it. */
 .plannerChat.is-collapsed,
-.plannerLayout .plannerChat.is-collapsed,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed[style] {
+.plannerLayout .plannerChat.is-collapsed {
   overflow: visible;
   border: 0;
   background: transparent;
@@ -4927,8 +4763,7 @@
   backdrop-filter: none;
 }
 
-.plannerChat.is-collapsed > .panelHeading,
-.plannerLayout.is-new-chat.is-awaiting-plan .plannerChat.is-collapsed > .panelHeading {
+.plannerChat.is-collapsed > .panelHeading {
   display: grid;
   place-items: center;
   border: 0;
@@ -5654,73 +5489,7 @@
   }
 }
 
-/* One durable loading treatment: keep the Planner chat in place and let the
-   single inline mascot represent preparation, exploration, and planning. */
-@media (min-width: 901px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan {
-    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
-    grid-template-rows: 68px minmax(0, 1fr);
-  }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
-    position: relative;
-    inset: auto;
-    grid-column: 1;
-    grid-row: 2;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 560px;
-    border: 0;
-    border-bottom: 1px solid #e8eae9;
-    border-radius: 0;
-    box-shadow: none;
-    backdrop-filter: none;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatMoveHandle,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatResizeHandles,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatToggle {
-    display: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan {
-    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerEntryTopbar {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat,
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChat[style] {
-    grid-column: 1;
-    grid-row: 2;
-    width: calc(100% - 28px);
-    height: 100%;
-    min-height: 560px;
-    margin: 14px;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerDiscovery {
-    grid-column: 1;
-    grid-row: 3;
-  }
-}
 
 .backgroundTurnSummary {
   display: flex;
@@ -5857,26 +5626,7 @@
 }
 
 @media (min-width: 901px) {
-  /* Initial planning uses the entry grid. Completed plans keep the existing
-     workspace placement, while both states share the chat internals below. */
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
-    position: relative !important;
-    inset: auto !important;
-    z-index: auto;
-    grid-area: assistant;
-    width: 100% !important;
-    height: 100% !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    background: rgba(255, 255, 255, .98);
-    box-shadow: none;
-    backdrop-filter: none;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface > .panelHeading,
+  .plannerChatSurface > .panelHeading,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface > .panelHeading {
     display: flex;
     min-height: 68px;
@@ -5884,17 +5634,17 @@
     border-radius: 0;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessages,
+  .plannerChatSurface .chatMessages,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessages {
     padding: var(--planner-chat-message-padding);
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble,
+  .plannerChatSurface .chatBubble,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble {
     font-size: var(--planner-chat-bubble-size);
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble.assistant,
+  .plannerChatSurface .chatBubble.assistant,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble.assistant {
     max-width: calc(100% - 51px);
     padding: 12px 14px;
@@ -5902,7 +5652,7 @@
     line-height: 1.58;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar,
+  .plannerChatSurface .chatMessageAvatar,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar {
     width: var(--planner-chat-avatar-size);
     height: var(--planner-chat-avatar-size);
@@ -5910,13 +5660,13 @@
     margin-left: 0;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar .penguinMascot,
+  .plannerChatSurface .chatMessageAvatar .penguinMascot,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar .penguinMascot {
     width: var(--planner-chat-avatar-size);
     height: var(--planner-chat-avatar-size);
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .plannerEntryComposer,
+  .plannerChatSurface .plannerEntryComposer,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .plannerEntryComposer {
     margin: 0;
     border: 0;
@@ -5929,33 +5679,8 @@
   .plannerChatSurface {
     --planner-chat-message-padding: 28px 18px 18px;
   }
-}
 
-@media (max-width: 900px) {
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
-    position: relative !important;
-    inset: auto !important;
-    z-index: auto;
-    grid-column: 1 / -1 !important;
-    grid-row: auto !important;
-    width: 100% !important;
-    height: 100% !important;
-    min-width: 0 !important;
-    min-height: 560px !important;
-    margin: 0 !important;
-    border: 0;
-    border-radius: 0;
-    background: rgba(255, 255, 255, .98);
-    box-shadow: none;
-    backdrop-filter: none;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface {
-    grid-column: 1 !important;
-    grid-row: 2 !important;
-  }
-
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface > .panelHeading,
+  .plannerChatSurface > .panelHeading,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface > .panelHeading {
     display: flex;
     min-height: 68px;
@@ -5963,17 +5688,17 @@
     border-radius: 0;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessages,
+  .plannerChatSurface .chatMessages,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessages {
     padding: var(--planner-chat-message-padding);
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble,
+  .plannerChatSurface .chatBubble,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble {
     font-size: var(--planner-chat-bubble-size);
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatBubble.assistant,
+  .plannerChatSurface .chatBubble.assistant,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatBubble.assistant {
     max-width: calc(100% - 51px);
     padding: 12px 14px;
@@ -5981,7 +5706,7 @@
     line-height: 1.58;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar,
+  .plannerChatSurface .chatMessageAvatar,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar {
     width: var(--planner-chat-avatar-size);
     height: var(--planner-chat-avatar-size);
@@ -5989,7 +5714,7 @@
     margin-left: 0;
   }
 
-  .plannerLayout.is-new-chat.is-awaiting-plan .plannerChatSurface .chatMessageAvatar .penguinMascot,
+  .plannerChatSurface .chatMessageAvatar .penguinMascot,
   .plannerLayout:not(.is-new-chat) .plannerChatSurface .chatMessageAvatar .penguinMascot {
     width: var(--planner-chat-avatar-size);
     height: var(--planner-chat-avatar-size);

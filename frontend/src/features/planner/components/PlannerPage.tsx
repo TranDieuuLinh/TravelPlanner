@@ -112,6 +112,12 @@ import {
   resolvePlannerEntryChatId,
   shouldApplyBackgroundChatResult,
 } from "@/features/planner/lib/planner-chat-navigation";
+import {
+  getDOMFloatingChatRect,
+  getPlannerChatClasses,
+  getPlannerLayoutClasses,
+  preserveFloatingChatRect,
+} from "@/features/planner/lib/planner-chat-layout";
 import { dragAutoScrollVelocity } from "@/features/planner/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
@@ -1114,15 +1120,18 @@ function Planner() {
   }, [plan]);
 
   useEffect(() => {
-    if (!plan || chatCollapsed) return;
+    if (!plan || chatCollapsed || window.innerWidth <= 900) return;
     setFloatingChatRect((current) => {
-      if (!current) return null;
+      const domRect = currentFloatingChatRect();
+      if (!current) {
+        return domRect;
+      }
       const looksCollapsed =
         current.width <= FLOATING_CHAT_COLLAPSED_SIZE + 4 &&
         current.height <= FLOATING_CHAT_COLLAPSED_SIZE + 4;
-      return looksCollapsed ? null : clampFloatingChatRect(current, false);
+      return looksCollapsed ? domRect : clampFloatingChatRect(current, false);
     });
-  }, [chatCollapsed, clampFloatingChatRect, plan]);
+  }, [chatCollapsed, clampFloatingChatRect, currentFloatingChatRect, plan]);
 
   useEffect(() => {
     const wasCollapsed = previousChatCollapsedRef.current;
@@ -4485,6 +4494,15 @@ function Planner() {
       return;
     }
 
+    if (typeof window !== "undefined" && window.innerWidth > 900) {
+      const currentRect = currentFloatingChatRect();
+      if (currentRect) {
+        setFloatingChatRect((existing) =>
+          preserveFloatingChatRect(existing, currentRect, true)
+        );
+      }
+    }
+
     submittingEntryRef.current = true;
     setPrompt("");
     setUrlInput("");
@@ -4631,11 +4649,11 @@ function Planner() {
             <div className="routeLoading">Đang tải cuộc trò chuyện…</div>
           ) : (
             <section
-              className={`plannerLayout ${
-                !displayedPlan ? "is-new-chat" : ""
-              } ${backgroundPlanning || loading ? "is-planning" : ""} ${
-                awaitingInitialPlan ? "is-awaiting-plan" : ""
-              }`}
+              className={getPlannerLayoutClasses({
+                isNewChat: !displayedPlan,
+                isPlanning: backgroundPlanning || loading,
+                isProcessing: awaitingInitialPlan,
+              })}
               ref={plannerLayoutRef}
               style={
                 {
@@ -4678,13 +4696,11 @@ function Planner() {
               <aside
                 aria-busy={awaitingInitialPlan}
                 aria-label="Trợ lý lập kế hoạch TravelPlanner"
-                className={`plannerChat plannerChatSurface panel ${
-                  chatCollapsed ? "is-collapsed" : ""
-                } ${
-                  displayedPlan || awaitingInitialPlan
-                    ? "plannerChat--compact"
-                    : ""
-                }`}
+                className={getPlannerChatClasses({
+                  isCollapsed: chatCollapsed,
+                  isCompact: Boolean(displayedPlan),
+                  isProcessing: awaitingInitialPlan,
+                })}
                 ref={plannerChatRef}
                 style={
                   floatingChatRect
