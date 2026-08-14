@@ -522,13 +522,19 @@
   object-fit: contain;
 }
 
+.plannerChat,
+.plannerChatSurface {
+  --planner-chat-bubble-size: 0.8125rem;
+  --planner-chat-line-height: 1.55;
+}
+
 .plannerChat .chatBubble {
   min-width: 0;
   max-width: 91%;
   border: 1px solid transparent;
   padding: 12px 14px;
-  font-size: .73rem;
-  line-height: 1.58;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+  line-height: var(--planner-chat-line-height, 1.55);
   overflow-wrap: anywhere;
   box-shadow: 0 5px 14px rgba(54, 95, 90, .045);
   word-break: break-word;
@@ -539,6 +545,7 @@
   border-color: #e4e7f0;
   background: #f6f7fb;
   color: #365f5a;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
 }
 
 .plannerChat .processingMessage {
@@ -555,25 +562,26 @@
 
 .plannerChat .processingMessageTitle strong {
   color: #365f5a;
-  font-size: .71rem;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
 }
 
 .plannerChat .processingMessageTitle .processingElapsed {
   margin-left: auto;
   color: #365f5a;
-  font-size: .62rem;
+  font-size: .68rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .plannerChat .processingMessage > span {
   color: #365f5a;
-  line-height: 1.45;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+  line-height: var(--planner-chat-line-height, 1.55);
 }
 
 .plannerChat .processingMessage > small {
   color: #172033;
-  font-size: .61rem;
+  font-size: .68rem;
   font-weight: 700;
 }
 
@@ -581,6 +589,7 @@
   max-width: 91%;
   background: linear-gradient(145deg, #365f5a, #365f5a);
   box-shadow: 0 8px 18px rgba(54, 95, 90, .13);
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
 }
 
 .plannerChat .promptSuggestions {
@@ -1487,7 +1496,7 @@
 .plannerLayout.is-new-chat .plannerChat > .panelHeading { display: none; }
 .plannerLayout.is-new-chat .plannerChatContent { height: 100%; background: #fff; }
 .plannerLayout.is-new-chat .chatMessages { padding: clamp(28px, 6vh, 72px) clamp(24px, 6vw, 76px) 22px; }
-.plannerLayout.is-new-chat .chatBubble { font-size: .82rem; }
+.plannerLayout.is-new-chat .chatBubble { font-size: var(--planner-chat-bubble-size, 0.8125rem); }
 .plannerLayout.is-new-chat .chatBubble.assistant { border: 0; background: #f2f4f3; box-shadow: none; }
 .plannerLayout.is-new-chat .chatBubble.user { background: #17211f; }
 .plannerLayout.is-new-chat .chatMessageAvatar {

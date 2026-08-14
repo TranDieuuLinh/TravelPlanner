@@ -5622,7 +5622,7 @@
 .plannerChatSurface {
   --planner-chat-message-padding: 10px 20px 14px;
   --planner-chat-avatar-size: 44px;
-  --planner-chat-bubble-size: .73rem;
+  --planner-chat-bubble-size: 0.8125rem;
 }
 
 @media (min-width: 901px) {
@@ -5649,7 +5649,7 @@
     max-width: calc(100% - 51px);
     padding: 12px 14px;
     font-size: var(--planner-chat-bubble-size);
-    line-height: 1.58;
+    line-height: var(--planner-chat-line-height, 1.55);
   }
 
   .plannerChatSurface .chatMessageAvatar,
@@ -5703,7 +5703,7 @@
     max-width: calc(100% - 51px);
     padding: 12px 14px;
     font-size: var(--planner-chat-bubble-size);
-    line-height: 1.58;
+    line-height: var(--planner-chat-line-height, 1.55);
   }
 
   .plannerChatSurface .chatMessageAvatar,

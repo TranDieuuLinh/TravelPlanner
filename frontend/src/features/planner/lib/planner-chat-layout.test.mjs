@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -33,6 +35,41 @@ function mockDOMElement({ left, top, width, height }) {
   };
 }
 
+test("Real CSS Inspection: --planner-chat-bubble-size is scoped strictly to .plannerChat, .plannerChatSurface", () => {
+  const cssPath = path.resolve(process.cwd(), "src/styles/global/planner-chat.css");
+  const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+  // Verify --planner-chat-bubble-size is NOT placed inside :root
+  const rootBlockMatch = cssContent.match(/:root\s*\{[^}]*--planner-chat-bubble-size[^}]*\}/);
+  assert.equal(rootBlockMatch, null, "CSS variable --planner-chat-bubble-size must NOT be placed on :root!");
+
+  // Verify --planner-chat-bubble-size IS scoped inside .plannerChat, .plannerChatSurface
+  const scopedBlockMatch = cssContent.includes(".plannerChat,\n.plannerChatSurface") ||
+                           cssContent.includes(".plannerChat, .plannerChatSurface");
+  assert.ok(scopedBlockMatch, "CSS variable --planner-chat-bubble-size must be scoped to .plannerChat, .plannerChatSurface!");
+
+  // Verify .plannerLayout.is-new-chat .chatBubble does NOT override font-size to .82rem
+  assert.equal(cssContent.includes(".plannerLayout.is-new-chat .chatBubble { font-size: .82rem; }"), false);
+});
+
+test("Real CSS Inspection: line-height is 1.55 across both planner-chat.css and itinerary.css", () => {
+  const plannerCss = fs.readFileSync(path.resolve(process.cwd(), "src/styles/global/planner-chat.css"), "utf-8");
+  const itineraryCss = fs.readFileSync(path.resolve(process.cwd(), "src/styles/global/itinerary.css"), "utf-8");
+
+  assert.ok(plannerCss.includes("--planner-chat-line-height: 1.55"));
+  assert.equal(itineraryCss.includes("line-height: 1.58;"), false, "itinerary.css must not use 1.58 line-height!");
+});
+
+test("Real CSS Inspection: explore.css and landing.css retain independent feature typography without global leakage", () => {
+  const exploreCss = fs.readFileSync(path.resolve(process.cwd(), "src/styles/global/explore.css"), "utf-8");
+  const landingCss = fs.readFileSync(path.resolve(process.cwd(), "src/styles/global/landing.css"), "utf-8");
+
+  assert.equal(exploreCss.includes("--planner-chat-bubble-size"), false, "explore.css must not leak Planner Chat variables!");
+  assert.equal(landingCss.includes("--planner-chat-bubble-size"), false, "landing.css must not leak Planner Chat variables!");
+  assert.ok(exploreCss.includes("font-size: .74rem"));
+  assert.ok(landingCss.includes("font-size: .76rem"));
+});
+
 test("DOM Integration Test: BoundingClientRect stability across 3 states (Before -> Loading -> After result)", () => {
   const initialBounds = { left: 100, top: 120, width: 410, height: 600 };
   const mockChatElement = mockDOMElement(initialBounds);
@@ -43,7 +80,6 @@ test("DOM Integration Test: BoundingClientRect stability across 3 states (Before
   const stateBefore = preserveFloatingChatRect(null, rectBefore, false);
 
   // Stage 2: During loading (isProcessing = true)
-  // Lock rect when request starts
   const domDuringLoading = mockDOMElement({ left: 100.5, top: 120.2, width: 410, height: 600 });
   const rectLoadingDOM = getDOMFloatingChatRect(domDuringLoading);
   const stateLoading = preserveFloatingChatRect(stateBefore, rectLoadingDOM, true);
@@ -70,7 +106,6 @@ test("Dragged Chat: Preserves custom left/top position before, during, and after
   const mockElement = mockDOMElement(customDraggedBounds);
 
   const rectBefore = getDOMFloatingChatRect(mockElement);
-  // User custom position is locked
   const stateLoading = preserveFloatingChatRect(rectBefore, { left: 250, top: 300, width: 400, height: 600 }, true);
 
   assert.equal(stateLoading.x, 42);
@@ -111,9 +146,7 @@ test("Mobile Layout: getDOMFloatingChatRect handles null / zero size bounds grac
 
 test("Error / Cancelled Request: Chat rect remains locked at stored coordinates when request fails", () => {
   const storedRect = { x: 80, y: 110, width: 400, height: 580 };
-  // Request begins
   const stateLoading = preserveFloatingChatRect(storedRect, { x: 200, y: 200, width: 300, height: 300 }, true);
-  // Request fails with error
   const stateError = preserveFloatingChatRect(stateLoading, { x: 200, y: 200, width: 300, height: 300 }, false);
 
   assert.deepEqual(stateError, storedRect);
