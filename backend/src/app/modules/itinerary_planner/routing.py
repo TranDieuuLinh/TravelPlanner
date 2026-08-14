@@ -24,6 +24,8 @@ from app.modules.itinerary_planner.routing_models import (
     RoutingPhaseError,
     RoutingProblem,
     SafeTravel,
+    STRAIGHT_LINE_PROVIDER,
+    STRAIGHT_LINE_WARNING,
     SparseArc,
     TravelMatrix,
 )
@@ -352,7 +354,7 @@ async def build_routing_problem(
             provider_version=matrix.provider_version,
             cache_key=cache_key,
         )
-        if cache is not None:
+        if cache is not None and matrix.provider != STRAIGHT_LINE_PROVIDER:
             await cache.put(cache_key, matrix)
     expected_nodes = tuple(location.node_id for location in locations)
     _validate_matrix(matrix, expected_nodes, profile)
@@ -362,6 +364,8 @@ async def build_routing_problem(
     sparse_arcs, warnings = build_sparse_arcs(
         problem, travel, neighbor_limit=neighbor_limit
     )
+    if matrix.provider == STRAIGHT_LINE_PROVIDER:
+        warnings = (STRAIGHT_LINE_WARNING, *warnings)
     return RoutingProblem(
         locations=locations,
         candidate_to_matrix_node=candidate_to_node,

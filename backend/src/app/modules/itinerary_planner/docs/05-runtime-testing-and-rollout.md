@@ -1,10 +1,11 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs, fallback
-có warning khi thiếu geometry, một vòng affected-day repair, timeline
-validation, public `ItineraryPlannerOutput`, phase timings và root/API field
-`plannerOutput`. Valhalla detail chỉ được gọi sau solver; Planner không query DB
-và không sửa PlaceChecker.
+có warning khi thiếu geometry, fallback đường chim bay khi Valhalla không sẵn
+sàng, một vòng affected-day repair, timeline validation, public
+`ItineraryPlannerOutput`, phase timings và root/API field `plannerOutput`.
+Valhalla detail chỉ được gọi sau solver; Planner không query DB và không sửa
+PlaceChecker.
 
 ## Runtime graph
 
@@ -132,7 +133,7 @@ PlanEditor và trả plan mới qua field riêng `plannerOutput`.
 ```text
 invalid contract         -> validation error, không gọi routing
 thiếu meal coverage     -> structured planning error trước matrix
-Valhalla unavailable     -> provider error; không giả travel production
+Valhalla unavailable     -> straight-line fallback có warning; không giả road travel production
 matrix partial           -> loại unreachable arcs, fail nếu priority bị cô lập
 CP-SAT INFEASIBLE        -> diagnostics theo budget/opening/meal/connectivity
 CP-SAT UNKNOWN           -> timeout error nếu chưa có incumbent
@@ -140,8 +141,9 @@ CP-SAT FEASIBLE          -> trả plan + optimalityProven=false
 route detail partial     -> giữ plan nếu timeline còn hợp lệ, warning leg thiếu geometry
 ```
 
-Không fallback sang planner scaffold estimated-routing trong production mà không gắn
-rõ mode/warning.
+Fallback hiện tại dùng khoảng cách Haversine, tốc độ profile cố định và polyline
+chỉ gồm điểm đầu/cuối. Đây là ước tính để planner tiếp tục chạy, không phải
+quãng đường hoặc thời gian theo đường thật; output luôn có warning.
 
 ## Performance budget
 

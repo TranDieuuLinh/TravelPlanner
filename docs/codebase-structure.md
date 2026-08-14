@@ -69,10 +69,12 @@ state, node hoặc service nội bộ. Provider bên ngoài phải được đ�
 adapter.
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
-module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix và
+module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
+fallback đường chim bay khi Valhalla unavailable, và
 sparse arcs trên contract `trip + places + food`, sau đó chạy Phase 4 OR-Tools
 CP-SAT ba pass để giữ tối đa `user_input`, tiếp đến URL rồi tối ưu utility.
-Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator.
+Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator;
+fallback đường chim bay được gắn tại provider boundary và luôn phát warning.
 Phase 5 lấy detail chỉ cho selected arcs, repair tối đa một vòng khi duration
 thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
@@ -209,8 +211,9 @@ local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`
 đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
 dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
 không có nguồn local hoặc cần refresh.
-Answer generator chỉ trả về danh sách `entityNames`; `KnowledgeGraphEntityResolver`
-tra từng tên qua public Knowledge Graph contract và backend tự gắn
+Answer generator trả về `entityCandidates` gồm tên hiển thị và các tên tra cứu,
+bao gồm alias hoặc tên tiếng Anh khi có căn cứ. `KnowledgeGraphEntityResolver`
+thử từng tên qua public Knowledge Graph contract và backend tự gắn
 `travel-entity://entity` sau khi node tồn tại. Entity không resolve được không bị
 gắn link giả.
 

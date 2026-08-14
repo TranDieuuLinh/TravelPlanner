@@ -14,6 +14,8 @@ from app.modules.itinerary_planner.routing_models import (
     RoutingPhaseError,
     RoutingProblem,
     SafeTravel,
+    STRAIGHT_LINE_PROVIDER,
+    STRAIGHT_LINE_WARNING,
 )
 
 
@@ -107,6 +109,8 @@ async def enrich_selected_routes(
             breaks_timeline = destination.start_minute < origin.end_minute + duration
             if exceeds_safe and breaks_timeline:
                 repair_days.add(arc.day)
+            if detail.provider == STRAIGHT_LINE_PROVIDER:
+                warnings.append(STRAIGHT_LINE_WARNING)
         legs.append(
             EnrichedRouteLeg(
                 arc.origin_id,

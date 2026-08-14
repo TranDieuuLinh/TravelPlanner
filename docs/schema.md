@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-14.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -191,12 +191,12 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiUrlSourceChunker` | `information_finder` | URL public từ Tavily | semantic chunks có fallback deterministic |
 | `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |
 | `ExtractiveAnswerGenerator` | `information_finder` | query và nguồn | câu trả lời fallback có citation |
-| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim, source ID và `entityNames` |
-| `KnowledgeGraphEntityResolver` | `information_finder` | `entityNames` do answer generator đề xuất | chỉ xác nhận tên có node rồi mới gắn `travel-entity://entity` |
+| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim, source ID và `entityCandidates` |
+| `KnowledgeGraphEntityResolver` | `information_finder` | `entityCandidates` gồm tên hiển thị và aliases | thử từng tên để xác nhận node rồi mới gắn `travel-entity://entity` |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |
-| `ValhallaAdapter.matrix` | `itinerary_planner` | Candidate coordinates + profile | Global asymmetric driving matrix |
-| `ValhallaAdapter.route` | `itinerary_planner` | Selected route legs | Duration, distance và encoded polyline |
+| `ValhallaAdapter.matrix` | `itinerary_planner` | Candidate coordinates + profile | Global asymmetric driving matrix; fallback Haversine khi provider unavailable |
+| `ValhallaAdapter.route` | `itinerary_planner` | Selected route legs | Duration, distance và encoded polyline; fallback polyline điểm đầu/cuối khi provider unavailable |
 | `XanhSmTransportCostEstimator` | `itinerary_planner` | Distance/profile/people | Giá di chuyển và phụ phí đêm trên một người |
 | `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; dùng key pool chung, tối đa một request đang chạy trên mỗi key |
 | `UrlSourceRouter` | `explorer` | URL YouTube/TikTok/Instagram/website | `SourceExtractionResult` chứa artifact có provenance |
@@ -289,8 +289,10 @@ công bố cập nhật với ngày hệ thống lấy nguồn. Nguồn Tavily m
 `reviewStatus=pending`; chưa có admin review UI.
 
 Internal `GeneratedAnswer` gồm danh sách `AnswerClaim(text, source_ids)` và
-`caveat` tùy chọn. Backend từ chối source ID ngoài context, deduplicate ID theo
-thứ tự, render marker `[1]` và chỉ ánh xạ metadata cho nguồn thực sự được cite.
+`caveat` tùy chọn. JSON schema gửi cho LLM dùng camelCase (`sourceIds`,
+`entityNames`, `entityCandidates`); Pydantic ánh xạ về tên Python tương ứng.
+Backend từ chối source ID ngoài context, deduplicate ID theo thứ tự, render
+marker `[1]` và chỉ ánh xạ metadata cho nguồn thực sự được cite.
 
 Information Finder đã có repository nguồn riêng. Authentication, durable graph
 checkpointer, tool import URL, tìm place live, routing live và agent Marketplace

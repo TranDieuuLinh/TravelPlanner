@@ -36,7 +36,7 @@ class SearchQueryPlan(PublicModel):
     queries: list[str] = Field(default_factory=list, max_length=3)
 
 
-class AnswerClaim(BaseModel):
+class AnswerClaim(PublicModel):
     text: str
     source_ids: list[str] = Field(min_length=1)
 
@@ -48,16 +48,16 @@ class AnswerClaim(BaseModel):
         return value
 
 
-class GeneratedAnswer(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+class EntityCandidate(PublicModel):
+    display_name: str = Field(max_length=200)
+    lookup_names: list[str] = Field(max_length=8)
 
+
+class GeneratedAnswer(PublicModel):
     claims: list[AnswerClaim] = Field(min_length=1)
     caveat: str | None = None
-    entity_names: list[str] = Field(
-        default_factory=list,
-        max_length=30,
-        alias="entityNames",
-    )
+    entity_names: list[str] = Field(default_factory=list, max_length=30)
+    entity_candidates: list[EntityCandidate] = Field(default_factory=list, max_length=30)
 
 
 class EmbeddingIdentity(BaseModel):

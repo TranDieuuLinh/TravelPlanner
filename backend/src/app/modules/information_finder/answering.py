@@ -70,5 +70,6 @@ async def generate_and_render_answer(
         answer,
         generated.entity_names,
         entity_resolver,
+        generated.entity_candidates,
     )
     return answer, cited_sources, warnings

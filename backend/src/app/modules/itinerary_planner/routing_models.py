@@ -14,6 +14,13 @@ class RoutingErrorCode(StrEnum):
     unreachable_priority = "unreachable_priority"
 
 
+STRAIGHT_LINE_PROVIDER = "straight_line_fallback"
+STRAIGHT_LINE_WARNING = (
+    "Valhalla unavailable; straight-line routing fallback is approximate and "
+    "does not represent road distance."
+)
+
+
 class RoutingPhaseError(RuntimeError):
     def __init__(self, code: RoutingErrorCode, message: str) -> None:
         self.code = code

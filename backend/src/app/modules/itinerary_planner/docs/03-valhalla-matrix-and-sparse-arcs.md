@@ -1,11 +1,11 @@
 # Phase 3: Valhalla matrix và sparse arcs
 
 Trạng thái: đã triển khai routing ports/models, Valhalla HTTP adapter, route
-detail adapter, in-memory bounded cache, coordinate deduplication, directed
-global matrix, safe travel values, time-feasibility pruning, sparse/forced/
-bridge arcs và virtual START/END. Graph đã có node `build_travel_matrix` qua
-dependency injection. Nếu thiếu matrix provider hoặc transport cost estimator,
-Planner trả lỗi có cấu trúc và không dùng estimated fallback.
+detail adapter, straight-line fallback, in-memory bounded cache, coordinate
+deduplication, directed global matrix, safe travel values, time-feasibility
+pruning, sparse/forced/bridge arcs và virtual START/END. Graph đã có node
+`build_travel_matrix` qua dependency injection. Nếu Valhalla không sẵn sàng,
+Planner dùng fallback đường chim bay có warning rõ ràng.
 
 ## Mục tiêu
 
@@ -30,11 +30,12 @@ RoutingMatrixProvider.matrix(locations, profile) -> TravelMatrix
 RouteDetailProvider.route(legs, profile) -> RouteDetails
 ```
 
-`ports.py` chỉ định nghĩa interface và model trung lập. Adapter Valhalla nằm
-trong:
+`ports.py` chỉ định nghĩa interface và model trung lập. Adapter Valhalla và
+fallback đường chim bay nằm trong:
 
 ```text
 adapters/valhalla.py
+adapters/straight_line.py
 ```
 
 Node/service không gọi HTTP Valhalla trực tiếp. Dùng `httpx.AsyncClient`,
@@ -55,6 +56,10 @@ matrix_provider_error
 matrix_invalid_response
 unreachable_pair
 ```
+
+Fallback đường chim bay dùng khoảng cách Haversine, tốc độ profile cố định và
+polyline6 chỉ gồm điểm đầu/cuối. Đây là ước tính để planner tiếp tục chạy,
+không phải quãng đường hoặc thời gian theo đường thật; output luôn có warning.
 
 ## Deduplicate physical nodes
 

@@ -4,6 +4,13 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.modules.information_finder.contract import EntityCandidate
+
+
+_MARKDOWN_LINK = re.compile(
+    r"(?<!!)\[([^\]]+)\]\([^\s)]+(?:\s+[^)]*)?\)",
+)
+
 
 @dataclass(frozen=True)
 class ResolvedEntity:
@@ -44,23 +51,34 @@ async def link_verified_entities(
     text: str,
     entity_names: list[str],
     resolver: EntityResolver | None,
+    entity_candidates: list[EntityCandidate] | None = None,
 ) -> str:
     """Link only names confirmed by the Knowledge Graph resolver."""
     if resolver is None:
         return text
 
+    linked_labels = [match.group(1).strip() for match in _MARKDOWN_LINK.finditer(text)]
+    candidates: list[tuple[str, list[str]]] = [
+        (candidate.display_name, candidate.lookup_names)
+        for candidate in (entity_candidates or [])
+    ]
+    candidates.extend((name, [name]) for name in entity_names)
+    candidates.extend((label, [label]) for label in linked_labels)
     resolved_names: list[str] = []
     seen: set[str] = set()
-    for name in entity_names:
-        candidate = " ".join(name.split())
-        folded = candidate.casefold()
-        if not candidate or folded in seen:
+    for display_name, lookup_names in candidates:
+        display = " ".join(display_name.split())
+        folded = display.casefold()
+        if not display or folded in seen:
             continue
         seen.add(folded)
-        if await resolver.resolve(candidate) is not None:
-            resolved_names.append(candidate)
+        for lookup_name in [display, *lookup_names]:
+            lookup = " ".join(lookup_name.split())
+            if lookup and await resolver.resolve(lookup) is not None:
+                resolved_names.append(display)
+                break
 
-    linked = text
+    linked = _MARKDOWN_LINK.sub(lambda match: match.group(1), text)
     for name in sorted(resolved_names, key=len, reverse=True):
         pattern = re.compile(
             rf"(?<![\w])({re.escape(name)})(?![\w])",

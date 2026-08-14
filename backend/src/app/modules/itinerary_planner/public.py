@@ -3,7 +3,9 @@ from app.modules.itinerary_planner.contract import (
 )
 from app.modules.itinerary_planner.output_contract import ItineraryPlannerOutput
 from app.modules.itinerary_planner.adapters import (
+    FallbackRoutingAdapter,
     InMemoryMatrixCache,
+    StraightLineRoutingAdapter,
     ValhallaAdapter,
     XanhSmTransportCostEstimator,
 )
@@ -16,11 +18,12 @@ def build_valhalla_itinerary_planner_graph(
     timeout_seconds: float = 15,
     provider_version: str = "local",
 ):
-    adapter = ValhallaAdapter(
+    valhalla = ValhallaAdapter(
         base_url,
         timeout_seconds=timeout_seconds,
         provider_version=provider_version,
     )
+    adapter = FallbackRoutingAdapter(valhalla, StraightLineRoutingAdapter())
     return build_itinerary_planner_graph(
         adapter,
         XanhSmTransportCostEstimator(),
