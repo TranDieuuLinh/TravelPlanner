@@ -13,6 +13,7 @@ from app.modules.trip_chat.contract import (
     TripChatSummary,
 )
 from app.modules.trip_chat.service import TripChatService
+from app.modules.conversation_memory.public import UserPreferenceMemory
 
 
 router = APIRouter(prefix="/v1/trip-chats", tags=["trip-chat"])
@@ -49,6 +50,29 @@ async def create_chat(
     service: TripChatService = Depends(_service),
 ):
     return await service.create(user.id, payload.title)
+
+
+@router.get("/memory/preferences", response_model=UserPreferenceMemory)
+async def get_user_preferences(
+    request: Request,
+    user: AuthUser = Depends(require_current_user),
+):
+    memory_service = getattr(request.app.state, "conversation_memory_service", None)
+    if memory_service is None:
+        raise HTTPException(status_code=503, detail="Conversation memory is unavailable.")
+    return await memory_service.load_user_preferences(user.id)
+
+
+@router.delete("/memory/preferences", status_code=204)
+async def delete_user_preferences(
+    request: Request,
+    user: AuthUser = Depends(require_current_user),
+):
+    memory_service = getattr(request.app.state, "conversation_memory_service", None)
+    if memory_service is None:
+        raise HTTPException(status_code=503, detail="Conversation memory is unavailable.")
+    await memory_service.delete_user_preferences(user.id)
+    return Response(status_code=204)
 
 
 @router.get("/{chat_id}", response_model=TripChat)

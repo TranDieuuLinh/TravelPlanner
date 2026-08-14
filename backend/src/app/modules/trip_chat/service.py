@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 from typing import Any
 
 from app.modules.conversation_memory.public import (
@@ -11,6 +13,8 @@ from app.modules.conversation_memory.public import (
 )
 from app.modules.trip_chat.contract import TripChat
 from app.modules.trip_chat.ports import TripChatRepository
+
+logger = logging.getLogger(__name__)
 
 
 def _dump(value: Any, *, by_alias: bool = False) -> Any:
@@ -56,6 +60,11 @@ class TripChatService:
         max_retries = 3
         memory_warning = None
         result = None
+        memory_version_before = None
+        memory_version_after = None
+        memory_facts_added = 0
+        memory_reference_count = 0
+        started_at = perf_counter()
 
         for attempt in range(max_retries):
             working_memory = None
@@ -66,8 +75,29 @@ class TripChatService:
             if self.memory_service is not None:
                 try:
                     loaded_memory = await self.memory_service.load_context(chat_id, user_id)
+                    memory_version_before = loaded_memory.version
                     bootstrap_facts = []
                     initial_memory = loaded_memory
+                    load_preferences = getattr(self.memory_service, "load_user_preferences", None)
+                    user_preferences = (
+                        await load_preferences(user_id)
+                        if load_preferences is not None
+                        else None
+                    )
+                    if user_preferences and (
+                        user_preferences.preferences or user_preferences.budget_tier
+                    ):
+                        initial_memory = initial_memory.model_copy(
+                            update={
+                                "preferences": list(
+                                    dict.fromkeys(
+                                        [*initial_memory.preferences, *user_preferences.preferences]
+                                    )
+                                ),
+                                "budget": initial_memory.budget
+                                or user_preferences.budget_tier,
+                            }
+                        )
                     if loaded_memory.version == 0 and not loaded_memory.destination:
                         bootstrap_facts = self._get_bootstrap_facts(chat)
                         if bootstrap_facts:
@@ -88,7 +118,18 @@ class TripChatService:
                         turn=turn,
                         initial_memory=initial_memory,
                     )
+                    rolling_summary = self.memory_service.build_summary(
+                        working_memory,
+                        [*recent_messages, content],
+                        source_turn_start=max(1, len(chat.messages) // 2 - len(recent_messages) // 2 + 1),
+                    )
+                    if rolling_summary is not None:
+                        working_memory = working_memory.model_copy(
+                            update={"summary": rolling_summary.text}
+                        )
                     valid_facts = list(bootstrap_facts) + list(user_facts)
+                    memory_facts_added = len(valid_facts)
+                    memory_reference_count = len(references)
                     conversation_summary = working_memory.summary
                 except Exception as exc:
                     memory_warning = "Memory service error; falling back to transcript-only."
@@ -120,6 +161,7 @@ class TripChatService:
                         facts=valid_facts,
                         expected_version=working_memory.version,
                     )
+                    memory_version_after = working_memory.version + 1
                     break  # Success
                 except MemoryVersionConflict as version_exc:
                     if attempt < max_retries - 1:
@@ -150,6 +192,21 @@ class TripChatService:
                 )
             ],
         }
+
+        logger.info(
+            "trip_chat_memory_metrics",
+            extra={
+                "chat_id": chat_id,
+                "memory_version_before": memory_version_before,
+                "memory_version_after": memory_version_after,
+                "facts_added": memory_facts_added,
+                "reference_count": memory_reference_count,
+                "route": getattr(decision, "route", None),
+                "source_count": len(assistant["sources"]),
+                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                "fallback_code": "memory_error" if memory_warning else None,
+            },
+        )
 
         return await self.repository.append_exchange(
             user_id,

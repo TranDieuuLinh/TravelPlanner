@@ -25,6 +25,7 @@ from app.modules.conversation_memory.ports import (
 )
 from app.modules.conversation_memory.service import ConversationMemoryService
 from app.modules.conversation_memory.resolver import RuleBasedReferenceResolver
+from app.modules.conversation_memory.summary import RollingSummaryBuilder
 import asyncio
 import logging
 import asyncpg
@@ -64,6 +65,14 @@ class LazyPostgresMemoryRepository:
     async def append_facts(self, chat_id, user_id, facts, expected_version=None):
         repo = await self._get_repo()
         return await repo.append_facts(chat_id, user_id, facts, expected_version)
+
+    async def load_user_preferences(self, user_id):
+        repo = await self._get_repo()
+        return await repo.load_user_preferences(user_id)
+
+    async def delete_user_preferences(self, user_id):
+        repo = await self._get_repo()
+        return await repo.delete_user_preferences(user_id)
 
     async def close(self):
         if self.pool:
@@ -109,6 +118,7 @@ __all__ = [
     "RootStateMemoryMapping",
     "RuleBasedFactExtractor",
     "RuleBasedReferenceResolver",
+    "RollingSummaryBuilder",
     "UserPreferenceMemory",
     "WorkingMemoryState",
     "build_conversation_memory_service",

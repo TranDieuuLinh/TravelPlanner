@@ -6,6 +6,7 @@ from app.modules.conversation_memory.contract import (
     MemoryFact,
     MemoryReference,
     WorkingMemoryState,
+    UserPreferenceMemory,
 )
 
 
@@ -89,4 +90,10 @@ class MemoryRepository(Protocol):
         facts: Sequence[MemoryFact],
         expected_version: int | None = None,
     ) -> WorkingMemoryState:
+        ...
+
+    async def load_user_preferences(self, user_id: int) -> UserPreferenceMemory:
+        ...
+
+    async def delete_user_preferences(self, user_id: int) -> int:
         ...

@@ -16,9 +16,12 @@ Cập nhật lần cuối: 2026-08-14
 
 Ghi metadata không nhạy cảm: `chat_id`, memory version trước/sau, facts added/updated/stale, reference count, route, source count, duration và fallback code. Không log raw prompt, third-party payload hoặc secret.
 
+TripChat đã ghi structured log `trip_chat_memory_metrics` với các trường trên.
+Prompt-injection-like transcript được chặn ở extractor trước khi tạo fact.
+
 ## Rollout
 
-1. Feature flag `conversation_memory_enabled=false`.
+1. Feature flag `conversation_memory_enabled=false` để rollback về transcript-only.
 2. Shadow extraction: tạo facts nhưng chưa route theo facts.
 3. So sánh route/clarification với baseline.
 4. Bật read-only memory cho internal test.
@@ -33,3 +36,10 @@ Ghi metadata không nhạy cảm: `chat_id`, memory version trước/sau, facts 
 - `docs/schema.md`, `docs/database-schema.md` và migration docs được cập nhật.
 - Backend file không vượt 400 dòng nếu có thể tách.
 - Có báo cáo latency/token trước và sau memory.
+
+## Trạng thái triển khai
+
+- Unit, contract, repository, root graph, agent integration và security tests đã
+  được bổ sung/chạy trong backend.
+- Latency/token production chưa được đánh giá trên traffic thật; chỉ có số liệu
+  test cục bộ. Không coi kết quả hiện tại là SLO production.

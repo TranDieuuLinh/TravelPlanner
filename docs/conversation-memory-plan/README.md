@@ -8,11 +8,11 @@ Xây dựng lớp memory bền vững cho hội thoại lập kế hoạch du l�
 
 ## Hiện trạng
 
-- `agent_trip_chat_messages` lưu transcript để hiển thị nhưng chưa tạo facts có cấu trúc.
-- Root graph chỉ có `conversation_context` ngắn và checkpointer `InMemorySaver`.
-- `run_explorer()` chủ yếu nhận message hiện tại; Explorer không nhận destination/places từ lượt trước.
+- `agent_trip_chat_messages` vẫn là transcript gốc; Conversation Memory tạo projection facts có provenance.
+- Root graph hỗ trợ PostgreSQL checkpointer khi dependency/configuration đã bật, với fallback InMemory rõ ràng cho development.
+- Explorer, Information Finder, Place Checker và Planner đã nhận projection memory compact.
 - Place Checker xác minh địa điểm nhưng không nên sở hữu memory.
-- Chưa có memory theo `chat_id`, preference theo `user_id`, provenance hoặc confidence.
+- Working memory theo `chat_id` và preference theo `user_id` đã có contract, repository và API đọc/xóa.
 
 ## Nguyên tắc
 
@@ -34,6 +34,6 @@ Xây dựng lớp memory bền vững cho hội thoại lập kế hoạch du l�
 | 03 | Tích hợp Trip Chat và Root Graph |
 | 04 | Tích hợp Explorer, Place Checker, Planner |
 | 05 | Durable checkpoint, summary và user preference |
-| 06 | Integration, load, rollout và audit |
+| 06 | Integration, load, rollout và audit — đã triển khai test/flag/observability; production load chưa đánh giá |
 
 Mỗi phase phải pass test của phase trước; không gộp toàn bộ vào một PR lớn.

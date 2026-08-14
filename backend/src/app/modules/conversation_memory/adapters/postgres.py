@@ -10,6 +10,9 @@ from app.modules.conversation_memory.contract import (
     MemoryReference,
     WorkingMemoryState,
 )
+from app.modules.conversation_memory.adapters.user_preferences import (
+    PostgresUserPreferenceMixin,
+)
 from app.modules.conversation_memory.ports import (
     MemoryNotFound,
     MemoryPersistenceError,
@@ -18,7 +21,7 @@ from app.modules.conversation_memory.ports import (
 )
 
 
-class PostgresMemoryRepository(MemoryRepository):
+class PostgresMemoryRepository(PostgresUserPreferenceMixin, MemoryRepository):
     """PostgreSQL repository using asyncpg for agent_conversation_memory storage."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:

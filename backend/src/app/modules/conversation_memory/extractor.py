@@ -85,6 +85,21 @@ class RuleBasedFactExtractor:
         no_accent_msg = remove_accents(clean_msg)
         excerpt = clean_msg[:200]
 
+        # Transcript text may contain quoted prompt-injection instructions. It
+        # is not a travel preference or a user confirmation, so do not project
+        # facts from instruction-like content.
+        if any(
+            marker in no_accent_msg
+            for marker in (
+                "ignore previous instructions",
+                "ignore all previous",
+                "system prompt",
+                "jailbreak",
+                "bo qua huong dan truoc",
+            )
+        ):
+            return []
+
         # 0. URL Extraction
         url_match = re.search(r"https?://[^\s]+", clean_msg)
         source_url_val = url_match.group(0) if url_match else None

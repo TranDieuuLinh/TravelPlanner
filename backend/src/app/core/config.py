@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     backend_cors_origins: str = "http://localhost:3000,http://localhost:3001"
     database_url: str | None = None
+    conversation_memory_enabled: bool = True
     auth_dev_seed_users: str = (
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"

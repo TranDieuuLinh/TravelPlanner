@@ -35,7 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.knowledge_graph_service = build_knowledge_graph_service(settings)
     application.state.observability_service = build_observability_service(settings)
     application.state.trip_chat_repository = build_trip_chat_repository(settings)
-    application.state.conversation_memory_service = build_conversation_memory_service(settings)
+    application.state.conversation_memory_service = (
+        build_conversation_memory_service(settings)
+        if settings.conversation_memory_enabled
+        else None
+    )
     origins = [
         origin.strip()
         for origin in settings.backend_cors_origins.split(",")

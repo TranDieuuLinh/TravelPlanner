@@ -98,7 +98,7 @@ Ngày sửa đổi cuối cùng: 2026-08-10 (metadata được đọc từ datab
 
 ### `audit_events`
 
-Ngày sửa đổi cuối cùng: 2026-08-10.
+Ngày sửa đổi cuối cùng: 2026-08-14.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -225,6 +225,11 @@ Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` s�
 | `expires_at` | timestamptz | Có | Thời điểm hết hạn. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Thời điểm cập nhật gần nhất. |
+
+Phase 05 thêm migration `010_phase05_memory_durable.sql`: index truy vấn
+user-scoped preference, hàm retention có chủ đích cho fact đã `superseded` hoặc
+`rejected`, và để `AsyncPostgresSaver.setup()` tạo/upgrade các bảng checkpoint
+của LangGraph.
 
 
 Ngày sửa đổi cuối cùng: 2026-08-10.

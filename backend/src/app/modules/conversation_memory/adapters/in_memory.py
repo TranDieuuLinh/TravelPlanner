@@ -4,6 +4,7 @@ from typing import Sequence
 
 from app.modules.conversation_memory.contract import (
     MemoryFact,
+    UserPreferenceMemory,
     WorkingMemoryState,
 )
 from app.modules.conversation_memory.ports import MemoryVersionConflict
@@ -106,3 +107,36 @@ class InMemoryMemoryRepository:
             }
         )
         return await self.save_working_memory(projection, expected_version=expected_version)
+
+    async def load_user_preferences(self, user_id: int) -> UserPreferenceMemory:
+        facts = [
+            fact for values in self._facts.values() for fact in values
+            if fact.scope == "user" and fact.status == "active"
+            and fact.confirmed_by_user
+        ]
+        preferences = [str(fact.value) for fact in facts if fact.fact_type == "travel_style"]
+        dietary = [str(fact.value) for fact in facts if fact.key == "dietary_restriction"]
+        budget = next(
+            (str(fact.value) for fact in facts if fact.fact_type == "budget_tier"),
+            None,
+        )
+        return UserPreferenceMemory(
+            user_id=user_id,
+            preferences=list(dict.fromkeys(preferences)),
+            dietary_restrictions=list(dict.fromkeys(dietary)),
+            budget_tier=budget,
+            confidence=min((fact.provenance.confidence for fact in facts), default=1.0),
+        )
+
+    async def delete_user_preferences(self, user_id: int) -> int:
+        deleted = 0
+        for chat_id, values in list(self._facts.items()):
+            updated = []
+            for fact in values:
+                if fact.scope == "user" and fact.status == "active":
+                    updated.append(fact.model_copy(update={"status": "rejected"}))
+                    deleted += 1
+                else:
+                    updated.append(fact)
+            self._facts[chat_id] = updated
+        return deleted

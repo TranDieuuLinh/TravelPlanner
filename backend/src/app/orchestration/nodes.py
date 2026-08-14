@@ -22,6 +22,7 @@ from app.modules.supervisor.public import (
     build_supervisor_graph,
 )
 from app.orchestration.root_state import RootState
+from app.orchestration.memory_projection import information_query, memory_field, merge_memory_places
 
 
 class RootNodes:
@@ -154,26 +155,28 @@ class RootNodes:
             dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
             places = getattr(memory, "mentioned_places", None) or (memory.get("mentioned_places") or memory.get("mentionedPlaces") if isinstance(memory, dict) else None)
 
-            if dest and not output.input_adm:
+            if dest:
                 output.input_adm = dest
-            if dur and not output.days:
+            if dur:
                 output.days = dur
-            if places and not output.places:
-                from app.modules.explorer.contract import ExplorerPlace, PlaceSource
-                output.places = [
-                    ExplorerPlace(
-                        name=p,
-                        confidence=0.9,
-                        source_places=[
-                            PlaceSource(
-                                origin="input",
-                                evidence_type="raw_prompt",
-                                evidence=f"Memory place: {p}",
-                            )
-                        ],
-                    )
-                    for p in places
-                ]
+            if memory:
+                output.places = merge_memory_places(output.places or [], memory)
+            travelers = memory_field(memory, "travelers")
+            if travelers:
+                output.people = output.people.model_copy(
+                    update={"adults": travelers, "children": 0, "infants": 0}
+                )
+            preferences = memory_field(memory, "preferences", []) or []
+            avoids = memory_field(memory, "avoids", []) or []
+            if preferences:
+                output.short_preferences = list(
+                    dict.fromkeys([*output.short_preferences, *preferences])
+                )
+            if avoids:
+                output.short_avoids = list(dict.fromkeys([*output.short_avoids, *avoids]))
+            budget = memory_field(memory, "budget")
+            if isinstance(budget, str) and budget in {"low", "medium", "high"}:
+                output.budget = output.budget.model_copy(update={"level": budget})
 
             if output.status == "clarification" and output.input_adm:
                 output.status = "ready"
@@ -196,7 +199,9 @@ class RootNodes:
         return update
 
     async def run_information_finder(self, state: RootState) -> dict:
-        result = await self.information_finder.ainvoke({"query": state["message"]})
+        result = await self.information_finder.ainvoke(
+            {"query": information_query(state)}
+        )
         output = result["output"]
         return {
             "information_output": output,
@@ -210,7 +215,11 @@ class RootNodes:
             payload = PlaceCheckerInput.model_validate(
                 {
                     "inputADM": explorer.input_adm,
-                    "places": self._place_checker_places(explorer.places or []),
+                    "places": self._place_checker_places(
+                        merge_memory_places(
+                            explorer.places or [], state.get("conversation_memory")
+                        )
+                    ),
                     "inputItems": explorer.input_items,
                     "urlNotes": explorer.url_notes,
                     "days": explorer.days,
@@ -260,7 +269,10 @@ class RootNodes:
         result = await self.place_checker.ainvoke(
             {
                 "input_adm": state["explorer_output"].input_adm,
-                "places": state["explorer_output"].places,
+                "places": merge_memory_places(
+                    state["explorer_output"].places or [],
+                    state.get("conversation_memory"),
+                ),
                 "input_items": state["explorer_output"].input_items,
                 "url_notes": state["explorer_output"].url_notes,
                 "days": state["explorer_output"].days,

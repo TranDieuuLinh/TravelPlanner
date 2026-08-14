@@ -1,3 +1,5 @@
+import logging
+
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -20,7 +22,22 @@ _ALLOWED_MSGPACK_TYPES = [
 ]
 
 
-def create_checkpointer() -> InMemorySaver:
-    """Development checkpointer; replace this provider for production storage."""
+def create_checkpointer(database_url: str | None = None):
+    """Create a durable saver when configured, otherwise use development memory."""
     serializer = JsonPlusSerializer(allowed_msgpack_modules=_ALLOWED_MSGPACK_TYPES)
+    if database_url:
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: F401
+        except ImportError:
+            logging.warning(
+                "Postgres checkpointer dependency is unavailable; using InMemorySaver."
+            )
+            return InMemorySaver(serde=serializer)
+        from app.shared.persistence.postgres_checkpointer import (
+            LazyAsyncPostgresCheckpointer,
+        )
+
+        logging.info("Using lazy PostgreSQL LangGraph checkpointer.")
+        return LazyAsyncPostgresCheckpointer(database_url, serde=serializer)
+    logging.warning("Using InMemorySaver; LangGraph state is not durable.")
     return InMemorySaver(serde=serializer)

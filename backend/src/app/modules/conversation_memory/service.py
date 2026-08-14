@@ -6,6 +6,7 @@ from app.modules.conversation_memory.contract import (
     MemoryFact,
     MemoryReference,
     WorkingMemoryState,
+    UserPreferenceMemory,
 )
 from app.modules.conversation_memory.extractor import RuleBasedFactExtractor
 from app.modules.conversation_memory.merge_policy import MergePolicyEvaluator
@@ -15,6 +16,7 @@ from app.modules.conversation_memory.ports import (
     ReferenceResolver,
 )
 from app.modules.conversation_memory.resolver import RuleBasedReferenceResolver
+from app.modules.conversation_memory.summary import RollingSummaryBuilder
 
 
 class ConversationMemoryService:
@@ -30,6 +32,7 @@ class ConversationMemoryService:
         self.extractor = extractor or RuleBasedFactExtractor()
         self.resolver = resolver or RuleBasedReferenceResolver()
         self.merge_policy = MergePolicyEvaluator()
+        self.summary_builder = RollingSummaryBuilder()
 
     async def initialize_empty_memory(
         self,
@@ -178,4 +181,38 @@ class ConversationMemoryService:
             memory=memory,
             facts=facts,
             expected_version=expected_version,
+        )
+
+    async def load_user_preferences(self, user_id: int) -> UserPreferenceMemory:
+        """Read only explicitly confirmed, user-scoped facts."""
+        return await self.repository.load_user_preferences(user_id)
+
+    async def remember_user_facts(
+        self,
+        chat_id: str,
+        user_id: int,
+        facts: Sequence[MemoryFact],
+    ) -> WorkingMemoryState:
+        """Persist an explicit user preference; inferred chat facts are rejected."""
+        explicit = [
+            fact.model_copy(update={"scope": "user"})
+            for fact in facts
+            if fact.confirmed_by_user and fact.status == "active"
+        ]
+        if not explicit:
+            return await self.load_context(chat_id, user_id)
+        return await self.append_facts(chat_id, user_id, explicit)
+
+    async def delete_user_preferences(self, user_id: int) -> int:
+        return await self.repository.delete_user_preferences(user_id)
+
+    def build_summary(
+        self,
+        memory: WorkingMemoryState,
+        messages: list[str],
+        *,
+        source_turn_start: int,
+    ):
+        return self.summary_builder.build(
+            memory, messages, source_turn_start=source_turn_start
         )

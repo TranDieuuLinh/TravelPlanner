@@ -12,7 +12,7 @@ External JSON uses camelCase; Python internal code uses snake_case.
 
 from datetime import datetime
 from typing import Any, Literal
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -125,7 +125,18 @@ class MemorySummary(MemoryBaseModel):
     text: str = Field(min_length=1, max_length=3000)
     turns_covered: int = Field(ge=1)
     key_facts_summary: list[str] = Field(default_factory=list)
+    source_turn_start: int = Field(default=1, ge=1)
+    source_turn_end: int = Field(default=1, ge=1)
+    version: int = Field(default=1, ge=1)
+    provider: str = Field(default="rule_based", min_length=1, max_length=80)
+    model: str = Field(default="rolling-v1", min_length=1, max_length=120)
     created_at: datetime | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def source_range_is_ordered(self) -> "MemorySummary":
+        if self.source_turn_end < self.source_turn_start:
+            raise ValueError("summary source range must be ordered")
+        return self
 
 
 class WorkingMemoryState(MemoryBaseModel):

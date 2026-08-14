@@ -70,7 +70,7 @@ Module khác chỉ nên import thông qua `public.py`, không truy cập trực 
 state, node hoặc service nội bộ. Provider bên ngoài phải được đặt sau port và
 adapter.
 
-Module `conversation_memory` đã hoàn thành Phase 01 & Phase 02. Module sở hữu public contract (`contract.py`), interfaces (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, rule-based extractor (`extractor.py`), reference resolver (`resolver.py`), merge policy evaluator (`merge_policy.py`) và `ConversationMemoryService` (`service.py`) cung cấp `extract_facts`, `resolve_references`, `merge_extracted_facts` và `process_message`.
+Module `conversation_memory` đã hoàn thành Phase 01–06. Module sở hữu public contract (`contract.py`), interfaces (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, user-preference APIs, bounded rolling summary (`summary.py`), rule-based extractor (`extractor.py`), reference resolver (`resolver.py`), merge policy evaluator (`merge_policy.py`) và `ConversationMemoryService` (`service.py`). Root graph dùng lazy PostgreSQL checkpointer ở `shared/persistence/postgres_checkpointer.py` khi dependency/configuration đã sẵn sàng; development vẫn có fallback InMemory rõ ràng. Trip Chat phát structured memory metrics và có feature flag rollback.
 
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của

@@ -327,4 +327,5 @@ def get_graph():
             if settings.route_provider == "valhalla"
             else None
         ),
+        database_url=settings.database_url,
     )
