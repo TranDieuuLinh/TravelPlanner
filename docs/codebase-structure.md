@@ -39,6 +39,7 @@ backend/
 │       ├── itinerary_planner/
 │       ├── plan_editor/
 │       ├── auth/
+│       ├── conversation_memory/
 │       └── knowledge_graph/
 └── tests/
 ```
@@ -68,6 +69,9 @@ modules/<module>/
 Module khác chỉ nên import thông qua `public.py`, không truy cập trực tiếp
 state, node hoặc service nội bộ. Provider bên ngoài phải được đặt sau port và
 adapter.
+
+Module `conversation_memory` đã hoàn thành Phase 01. Module sở hữu public contract (`contract.py`), interface `MemoryRepository` (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, và `ConversationMemoryService` (`service.py`) xử lý load/save/append_facts theo merge policy với optimistic concurrency control (`version`).
+
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
 module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,

@@ -44,6 +44,7 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
 | `plan_editor` | `PlanEditorInput` | `PlanEditorOutput` |
+| `conversation_memory` | `WorkingMemoryState` | `WorkingMemoryState`, `MemoryFact`, `MemoryReference`, `UserPreferenceMemory`, `RootStateMemoryMapping` |
 
 ## Các agent hiện có
 
@@ -341,6 +342,4 @@ Internal `GeneratedAnswer` gồm danh sách `AnswerClaim(text, source_ids)` và
 Backend từ chối source ID ngoài context, deduplicate ID theo thứ tự, render
 marker `[1]` và chỉ ánh xạ metadata cho nguồn thực sự được cite.
 
-Information Finder đã có repository nguồn riêng. Authentication, durable graph
-checkpointer, tool import URL, tìm place live, routing live và agent Marketplace
-chưa được triển khai.
+Information Finder đã có repository nguồn riêng. Module `conversation_memory` đã hoàn thành Phase 01 (Lưu trữ bền vững và Contract baseline), bổ sung `MemoryRepository` port (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), database migration `009_conversation_memory.sql` (idempotent, hỗ trợ bổ sung cột `travelers` và constraint cho schema cũ), optimistic concurrency control (`version`), effective_expected_version resolution trong service, deduplication facts theo `chat_id + key + normalized_value` (dễ dàng lưu nhiều place_candidate cho cùng key), và `ConversationMemoryService` với load/save/append_facts merge policy. Dữ liệu memory persistence hỗ trợ lưu làm việc theo `chat_id` và `user_id`. Context resolution, LLM fact extraction, rolling summary, durable LangGraph checkpointer và tích hợp vào Root Graph runtime được giữ cho Phase 02–05.

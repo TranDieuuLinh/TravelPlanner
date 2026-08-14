@@ -57,7 +57,12 @@ def create_root_graph(
     builder.add_edge("plan_editor", "finish")
     builder.add_edge("finish", END)
 
-    return builder.compile(checkpointer=checkpointer or create_checkpointer())
+    compile_checkpointer = (
+        create_checkpointer()
+        if checkpointer is None
+        else (None if checkpointer is False else checkpointer)
+    )
+    return builder.compile(checkpointer=compile_checkpointer)
 
 
 graph = create_root_graph()

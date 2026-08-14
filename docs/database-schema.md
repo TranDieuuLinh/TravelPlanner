@@ -173,6 +173,58 @@ new non-null output and otherwise preserves the previous snapshot.
 Stores ordered user/assistant messages, route metadata, warnings and sources.
 Rows cascade with their owning `agent_trip_chats` record.
 
+### `agent_conversation_memory`
+
+Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu working memory state theo `chat_id` và `user_id` với optimistic concurrency control (`version`).
+
+| Cột | Kiểu | Nullable | Giải thích |
+|---|---|---|---|
+| `chat_id` | text | Không | Khóa chính, mã cuộc trò chuyện. |
+| `user_id` | integer | Không | Mã user sở hữu cuộc trò chuyện. |
+| `destination` | text | Có | Điểm đến chính. |
+| `duration_days` | integer | Có | Số ngày du lịch. |
+| `travelers` | integer | Có | Số lượng khách du lịch (1..50). |
+| `budget` | jsonb | Không | Cấu trúc hoặc mức ngân sách. |
+| `preferences` | jsonb | Không | Danh sách sở thích. |
+| `avoids` | jsonb | Không | Danh sách điểm/yếu tố cần tránh. |
+| `mentioned_places` | jsonb | Không | Các địa điểm đã được nhắc tới. |
+| `selected_places` | jsonb | Không | Các địa điểm user đã chọn/xác nhận. |
+| `current_plan_ref` | text | Có | Mã tham chiếu tới plan hiện tại. |
+| `pending_goal` | text | Có | Ý định/mục tiêu chưa hoàn thành. |
+| `last_route` | varchar | Có | Route của supervisor/agent gần nhất. |
+| `summary` | text | Có | Tóm tắt rolling ngữ cảnh hội thoại. |
+| `version` | integer | Không | Optimistic concurrency version (>= 0). |
+| `created_at` | timestamptz | Không | Thời điểm tạo. |
+| `updated_at` | timestamptz | Không | Thời điểm cập nhật gần nhất. |
+
+### `agent_conversation_memory_facts`
+
+Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu thông tin chi tiết từng memory fact với provenance và trạng thái audit (`active`, `superseded`, `expired`, `rejected`).
+
+| Cột | Kiểu | Nullable | Giải thích |
+|---|---|---|---|
+| `fact_id` | text | Không | Khóa chính fact. |
+| `chat_id` | text | Không | FK tới `agent_conversation_memory`. |
+| `user_id` | integer | Không | Mã user sở hữu. |
+| `fact_type` | varchar | Không | Loại fact (`destination`, `duration`, ...). |
+| `key` | varchar | Không | Tên khóa dữ liệu. |
+| `value` | jsonb | Không | Giá trị fact dạng JSON. |
+| `normalized_value` | text | Không | Chuỗi giá trị chuẩn hóa (trim, lowercase, collapse whitespace) cho deduplication. |
+| `value_type` | varchar | Không | Kiểu dữ liệu (`string`, `int`, `list`, ...). |
+| `scope` | varchar | Không | Phạm vi fact (`chat`, `user`). |
+| `status` | varchar | Không | Trạng thái (`active`, `superseded`, ...). |
+| `confirmed_by_user` | boolean | Không | Đã được user xác nhận trực tiếp hay chưa. |
+| `confidence` | float8 | Không | Độ tin cậy trích xuất [0.0, 1.0]. |
+| `source_turn` | integer | Không | Lượt hội thoại trích xuất. |
+| `source_excerpt` | varchar(200) | Không | Đoạn trích dẫn ngắn (tối đa 200 ký tự). |
+| `source_message_id` | text | Có | Mã message trong transcript. |
+| `extracted_by` | varchar | Không | Tên dịch vụ trích xuất. |
+| `observed_at` | timestamptz | Không | Thời điểm quan sát. |
+| `expires_at` | timestamptz | Có | Thời điểm hết hạn. |
+| `created_at` | timestamptz | Không | Thời điểm tạo. |
+| `updated_at` | timestamptz | Không | Thời điểm cập nhật gần nhất. |
+
+
 Ngày sửa đổi cuối cùng: 2026-08-10.
 
 | Cột | Kiểu | Nullable | Giải thích |
