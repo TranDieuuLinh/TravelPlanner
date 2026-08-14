@@ -131,6 +131,22 @@ sum(meal[f,d,m] for all d,m) <= 1
 Meal start phải nằm trong flexible start window và toàn bộ interval phải nằm
 trong opening hours của food.
 
+Breakfast bị chặn cứng tại 10:00. Trong cùng ngày, lunch phải bắt đầu ít nhất
+180 phút sau breakfast và dinner ít nhất 300 phút sau lunch.
+
+Route cấm food-to-food arc, nên mỗi ngày phải có activity giữa breakfast/lunch
+và lunch/dinner. Mỗi selected arc còn có `waiting <= 15` ngoài safe-travel
+buffer; pool/opening window không đủ thì trả `INFEASIBLE` thay vì ngày chỉ có meal.
+
+### Accommodation
+
+Với chuyến nhiều ngày, solver chọn đúng một candidate trong pool tối đa ba
+accommodation. Chi phí phòng dùng `days - 1` đêm. Ngày `1..days-1` kết thúc ở
+accommodation và ngày `2..days` bắt đầu từ đó; các transfer này tham gia travel
+time và transport cost. Transfer trên 50 km nhận relocation penalty mạnh để
+ưu tiên accommodation gần cụm lịch hơn, nhưng không làm toàn bài toán vô nghiệm
+khi mọi lựa chọn đều xa.
+
 ### Source mix sáng/tối
 
 Activity kết thúc không muộn hơn 12:00 được tính vào morning; activity bắt đầu
@@ -154,7 +170,7 @@ totalCostPerPerson =
   + sum(selectedMeal * foodCost)
   + sum(selectedArc * transportCostPerPerson)
 
-totalCostPerPerson <= trip.budget.amount
+totalCostPerPerson <= trip.budget.amount  # explicit budget only
 ```
 
 Không nhân với `trip.people`. Price không bị trừ thêm trong objective trừ
@@ -232,6 +248,8 @@ planUtility =
   - activityDiversityCost
   - foodDiversityCost
   - travelTimeCost
+  - accommodationRelocationCost
+  - accommodationPriceCost
   - idleWaitingCost
   - mealDeviationCost
   - fatigueCost
@@ -305,8 +323,8 @@ waiting = start[j,d] - end[i,d] - safeTravel[i,j]
 mealDeviation = abs(mealStart[d,m] - targetStart[m])
 ```
 
-Waiting chỉ active khi arc được chọn. Cho một free-rest threshold nhỏ, ví dụ
-15 phút, để solver không nhồi lịch quá kín.
+Waiting chỉ active khi arc được chọn, bị chặn cứng tối đa 15 phút; objective vẫn
+giữ component waiting để audit.
 
 ### Fatigue và day balance
 
@@ -328,14 +346,17 @@ Config phải inject, không hard-code trong model builder:
 
 ```text
 num_search_workers
-pass1_timeout_seconds
-pass2_timeout_seconds
-pass3_timeout_seconds
+pass1_timeout_seconds = 30
+pass2_timeout_seconds = 30
+pass3_timeout_seconds = 30
 random_seed
 log_search_progress
 ```
 
 Dùng solution pass trước làm hint cho pass sau; hint không thay constraint lock.
+Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `true`, và
+truyền thành `SolverConfig(log_search_progress=True)` để OR-Tools phát progress
+log. Unit test có thể inject config `false` để giữ output gọn.
 
 Status:
 
@@ -371,8 +392,8 @@ number không thể audit.
 ## Acceptance criteria
 
 - Solver không vi phạm duration/opening/travel/budget/meal constraints.
-- User input count không giảm sau pass 1; URL count không giảm sau pass 2.
-- Cost tính cho một người, không nhân `people`.
+- Không có food-to-food arc; waiting giữa hai stop liên tiếp không vượt 15 phút.
+- User/URL count không giảm sau pass tương ứng; cost tính per-person.
 - Special-near không có selection bonus riêng.
 - Relationship một chiều không bị chấm hai lần.
 - Tags lặp tạo convex penalty; raw style không xuất trong model.

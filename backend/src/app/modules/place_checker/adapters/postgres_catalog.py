@@ -138,7 +138,8 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             return {}
         pool = await self._get_pool()
         entity_rows = await pool.fetch(
-            "SELECT id, entity_type FROM knowledge_entities WHERE id = ANY($1::text[])",
+            """SELECT id, entity_type FROM knowledge_entities
+               WHERE id = ANY($1::text[]) AND status <> 'rejected'""",
             place_ids,
         )
         property_rows = await pool.fetch(

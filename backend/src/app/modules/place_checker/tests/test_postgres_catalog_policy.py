@@ -6,20 +6,24 @@ from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCat
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
 )
-from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
 )
+from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 
 
-def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap() -> None:
+def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap() -> (
+    None
+):
     assert "generic_travel_ranked" in PLACE_SEARCH_SQL
     assert "ranked.discovery_rank" in PLACE_SEARCH_SQL
     assert "$1 = 'travel place'" in PLACE_SEARCH_SQL
     assert "$1 <> 'travel place'" in PLACE_SEARCH_SQL
     assert "style_property.key = 'time_duration'" in PLACE_SEARCH_SQL
-    assert "props.price_min IS NOT NULL OR props.price_max IS NOT NULL" in PLACE_SEARCH_SQL
+    assert (
+        "props.price_min IS NOT NULL OR props.price_max IS NOT NULL" in PLACE_SEARCH_SQL
+    )
     assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
     assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
     assert "key = 'time_windows'" in PLACE_SEARCH_SQL
@@ -47,11 +51,20 @@ def test_postgres_search_supports_cloud_relationship_shape() -> None:
 
 def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
     assert "special.from_entity_id = $1" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "special.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert (
+        "special.relationship_type = 'Special_Experience'"
+        in SPECIAL_FOOD_RESTAURANT_SQL
+    )
     assert "food.entity_type = 'FoodItem'" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "near_edge.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "restaurant_special.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "food.food_item_id = restaurant_special.to_entity_id" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert (
+        "restaurant_special.relationship_type = 'Special_Experience'"
+        in SPECIAL_FOOD_RESTAURANT_SQL
+    )
+    assert (
+        "food.food_item_id = restaurant_special.to_entity_id"
+        in SPECIAL_FOOD_RESTAURANT_SQL
+    )
     assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "restaurant.entity_type = 'Restaurant'" in SPECIAL_FOOD_RESTAURANT_SQL
 
@@ -65,9 +78,14 @@ def test_special_food_query_does_not_match_food_by_name() -> None:
 def test_special_food_query_uses_offered_item_only_for_unmatched_anchor() -> None:
     assert "), special_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "), fallback_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "'offer_item_fallback'::text AS food_match_type" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert (
+        "'offer_item_fallback'::text AS food_match_type" in SPECIAL_FOOD_RESTAURANT_SQL
+    )
     assert "FROM special_pairs special" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "special.anchor_place_id = offered.anchor_place_id" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert (
+        "special.anchor_place_id = offered.anchor_place_id"
+        in SPECIAL_FOOD_RESTAURANT_SQL
+    )
     assert "SELECT * FROM special_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "UNION ALL\n    SELECT * FROM fallback_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
 
@@ -103,6 +121,44 @@ def test_style_time_properties_only_fill_missing_place_metadata() -> None:
     assert fallback.opening_hours == ["18:00-23:59"]
     assert direct.typical_duration_minutes == 45
     assert direct.opening_hours == ["09:00-10:00"]
+
+
+def test_metadata_includes_all_property_and_relationship_tags() -> None:
+    metadata = PostgresCatalogMappingMixin._metadata(
+        "place:tagged",
+        "TravelPlace",
+        {"tags": '["Tâm linh", "kiến trúc", "Văn hóa"]'},
+        ["style:Tham quan", "item:Đi dạo"],
+        None,
+    )
+
+    assert metadata.tags == [
+        "travel place",
+        "Tâm linh",
+        "kiến trúc",
+        "Văn hóa",
+        "style:Tham quan",
+        "item:Đi dạo",
+    ]
+
+
+def test_metadata_reads_image_urls_from_knowledge_properties() -> None:
+    metadata = PostgresCatalogMappingMixin._metadata(
+        "place:photo",
+        "TravelPlace",
+        {
+            "image": "https://example.test/primary.jpg",
+            "images": '["https://example.test/secondary.jpg", {"url": "https://example.test/third.jpg"}]',
+        },
+        [],
+        None,
+    )
+
+    assert metadata.image_urls == [
+        "https://example.test/secondary.jpg",
+        "https://example.test/third.jpg",
+        "https://example.test/primary.jpg",
+    ]
 
 
 def test_style_node_properties_are_projected_onto_has_style_evidence() -> None:
@@ -152,9 +208,7 @@ def test_activity_node_timing_is_projected_onto_offer_evidence() -> None:
 
     evidence = PostgresPlaceCatalog._metadata_relationship(
         row,
-        target_properties={
-            "time_windows": '[{"start":"08:00","end":"11:00"}]'
-        },
+        target_properties={"time_windows": '[{"start":"08:00","end":"11:00"}]'},
     )
 
     assert evidence["properties"] == {

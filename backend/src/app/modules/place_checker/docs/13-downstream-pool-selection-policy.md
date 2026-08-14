@@ -10,7 +10,8 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-Pool có hai quota độc lập: mỗi ngày 12 `TravelPlace` và 12 `Restaurant`.
+Pool có hai quota độc lập: mỗi ngày 8 `TravelPlace` và 8 `Restaurant`, với tối
+thiểu 12 và tối đa 60 candidate cho từng loại.
 Restaurant đi vào compact `food`, không bị trộn thành activity place. Đây là
 candidate reserve; FinalItineraryPlanner vẫn chỉ xếp số stop khả thi theo thời
 gian, bữa ăn và route.

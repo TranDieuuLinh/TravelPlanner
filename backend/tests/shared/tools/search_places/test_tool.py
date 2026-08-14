@@ -368,3 +368,34 @@ def test_contract_serializes_external_fields_as_camel_case() -> None:
     assert payload["sourceTimeHint"] == "morning"
     assert payload["topK"] == 3
     assert "input_adm" not in payload
+
+
+def test_external_scope_skips_knowledge_graph_and_preserves_review_status() -> None:
+    kg = InMemoryPlaceSearch(
+        [_candidate("Museum", "kg-museum")],
+        provider_name="knowledge_graph",
+    )
+    external_candidate = _candidate(
+        "Museum",
+        "google-museum",
+        provider="google_maps",
+    ).model_copy(update={"verification_status": "not_verified"})
+    external = InMemoryPlaceSearch(
+        [external_candidate],
+        provider_name="google_maps_playwright",
+    )
+
+    result = _run(
+        SearchPlacesTool(kg, external).search(
+            PlaceSearchRequest(
+                query="Museum",
+                inputAdm=HANOI,
+                providerScope="external",
+            )
+        )
+    )
+
+    assert kg.calls == []
+    assert len(external.calls) == 1
+    assert result.selected is not None
+    assert result.selected.verification_status == "not_verified"

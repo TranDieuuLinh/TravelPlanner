@@ -12,18 +12,30 @@ from app.modules.place_checker.resolution import EntityResolutionService
 from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.service import TripContextBuilder
 from app.shared.tools.search_places import SearchPlacesTool
+from app.shared.tools.search_places.ports import ExternalPlaceSearch
 
 
 def build_postgres_place_checker_pipeline(
     database_url: str,
+    *,
+    external_place_search: ExternalPlaceSearch | None = None,
 ) -> PlaceCheckerPipeline:
     """Compose the rich PlaceChecker pipeline over the production KG schema."""
     catalog = PostgresPlaceCatalog(database_url)
-    search_tool = SearchPlacesTool(catalog)
+    search_tool = SearchPlacesTool(catalog, external_place_search)
     gap_source = SearchPlacesGapSource(
         search_tool,
         provider_name=catalog.provider_name,
         source_kind=RetrievalSourceKind.knowledge_graph,
+    )
+    external_gap_source = (
+        SearchPlacesGapSource(
+            search_tool,
+            provider_name=external_place_search.provider_name,
+            source_kind=RetrievalSourceKind.external,
+        )
+        if external_place_search is not None
+        else None
     )
     return PlaceCheckerPipeline(
         context_builder=TripContextBuilder(catalog),
@@ -39,6 +51,9 @@ def build_postgres_place_checker_pipeline(
         evaluation=PlaceEvaluationService(),
         targeted_retrieval=TargetedRetrievalService(
             gap_source,
+            external_sources=(
+                [external_gap_source] if external_gap_source is not None else []
+            ),
             metadata_repository=catalog,
             verified_target_per_gap=5,
             # Keep broad thematic expansion off; core entity-type pools have

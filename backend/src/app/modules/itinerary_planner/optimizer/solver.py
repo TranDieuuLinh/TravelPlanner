@@ -68,7 +68,11 @@ def optimize_itinerary(
 
     model.Maximize(sum(user_vars))
     pass1_solver, pass1 = _solve(
-        model, "user_input", selected_config.pass1_timeout_seconds, selected_config
+        model,
+        "user_input",
+        selected_config.pass1_timeout_seconds,
+        selected_config,
+        sum(user_vars),
     )
     passes.append(pass1)
     best_user_count = sum(pass1_solver.Value(variable) for variable in user_vars)
@@ -77,7 +81,11 @@ def optimize_itinerary(
 
     model.Maximize(sum(url_vars))
     pass2_solver, pass2 = _solve(
-        model, "url", selected_config.pass2_timeout_seconds, selected_config
+        model,
+        "url",
+        selected_config.pass2_timeout_seconds,
+        selected_config,
+        sum(url_vars),
     )
     passes.append(pass2)
     best_url_count = sum(pass2_solver.Value(variable) for variable in url_vars)
@@ -86,7 +94,11 @@ def optimize_itinerary(
 
     model.Maximize(objective.utility)
     final_solver, pass3 = _solve(
-        model, "utility", selected_config.pass3_timeout_seconds, selected_config
+        model,
+        "utility",
+        selected_config.pass3_timeout_seconds,
+        selected_config,
+        objective.utility,
     )
     passes.append(pass3)
     return extract_result(
@@ -104,6 +116,7 @@ def _solve(
     name: str,
     timeout_seconds: float,
     config: SolverConfig,
+    reported_objective: cp_model.LinearExpr,
 ) -> tuple[cp_model.CpSolver, SolverPassResult]:
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = timeout_seconds
@@ -119,7 +132,7 @@ def _solve(
     return solver, SolverPassResult(
         name=name,
         status=status,
-        objective_value=round(solver.ObjectiveValue()),
+        objective_value=solver.Value(reported_objective),
         wall_time_ms=elapsed_ms,
         optimality_proven=status_code == cp_model.OPTIMAL,
     )

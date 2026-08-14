@@ -13,6 +13,8 @@ from app.modules.supervisor.public import (
     SupervisorDecision,
 )
 from app.modules.itinerary_planner.public import ItineraryPlannerOutput
+from app.modules.observability.local_store import LocalObservabilityStore
+from app.modules.observability.service import ObservabilityService
 
 
 class FakeGraph:
@@ -170,13 +172,14 @@ def test_invoke_maps_disabled_supervisor_fallback_to_safe_service_error():
     )
 
 
-def test_explorer_invoke_returns_full_explorer_contract():
+def test_explorer_invoke_returns_full_explorer_contract(tmp_path):
     class ExplorerGraph:
-        async def ainvoke(self, graph_input):
+        async def ainvoke(self, graph_input, config):
             from app.modules.explorer.public import ExplorerOutput
 
             assert graph_input["payload"].raw_prompt == "Lập kế hoạch ở Huế"
             assert graph_input["payload"].force_refresh is True
+            assert config["callbacks"]
             return {
                 "output": ExplorerOutput(
                     status="ready",
@@ -186,6 +189,9 @@ def test_explorer_invoke_returns_full_explorer_contract():
             }
 
     app = create_app()
+    app.state.observability_service = ObservabilityService(
+        LocalObservabilityStore(storage_path=tmp_path / "traces.json")
+    )
     app.dependency_overrides[get_explorer_graph] = lambda: ExplorerGraph()
     response = TestClient(app).post(
         "/v1/explorer/invoke",
@@ -198,3 +204,7 @@ def test_explorer_invoke_returns_full_explorer_contract():
     assert payload["input_ADM"] == "Huế"
     assert payload["days"] == 3
     assert "schemaVersion" not in payload
+    traces = app.state.observability_service.store.page("traces", 1, 25)["items"]
+    assert len(traces) == 1
+    assert traces[0]["entryPoint"] == "explorer.invoke"
+    assert "Lập kế hoạch" not in traces[0]["inputPreview"]

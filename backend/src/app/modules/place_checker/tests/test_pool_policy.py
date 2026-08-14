@@ -17,30 +17,30 @@ from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 
 
-def test_pool_target_is_twelve_places_per_day_with_bounds() -> None:
+def test_pool_target_is_eight_places_per_day_with_bounds() -> None:
     assert pool_target_for_days(1) == 12
-    assert pool_target_for_days(4) == 48
-    assert pool_target_for_days(5) == 60
-    assert pool_target_for_days(7) == 60
+    assert pool_target_for_days(4) == 32
+    assert pool_target_for_days(5) == 40
+    assert pool_target_for_days(7) == 56
     assert pool_target_for_days(10) == 60
 
 
 def test_combined_pool_has_independent_travel_and_restaurant_targets() -> None:
-    assert combined_pool_target_for_days(1) == 25
-    assert combined_pool_target_for_days(3) == 73
-    assert combined_pool_target_for_days(5) == 121
+    assert combined_pool_target_for_days(1) == 29
+    assert combined_pool_target_for_days(3) == 53
+    assert combined_pool_target_for_days(5) == 85
     assert pool_query_limit_for_days(1) == 24
-    assert pool_query_limit_for_days(3) == 60
+    assert pool_query_limit_for_days(3) == 48
 
 
 def test_pool_target_is_shared_across_discovery_gaps() -> None:
-    assert per_gap_pool_target(4, 4) == 12
+    assert per_gap_pool_target(4, 4) == 8
     assert per_gap_pool_target(4, 2) == 12
     assert per_gap_pool_target(4, 1) == 12
-    assert per_gap_pool_target(7, 8) == 8
+    assert per_gap_pool_target(7, 8) == 7
 
 
-def test_generic_travel_query_uses_twelve_places_per_trip_day() -> None:
+def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
     gap = AnalysisGap(
         gap_id="gap:experience_coverage",
         gap_type=GapType.experience_coverage,
@@ -57,7 +57,7 @@ def test_generic_travel_query_uses_twelve_places_per_trip_day() -> None:
     )
 
     assert one_day.limit == 12
-    assert three_days.limit == 36
+    assert three_days.limit == 24
 
 
 class RecordingSource:
@@ -93,4 +93,4 @@ def test_core_pool_retrieval_always_queries_both_entity_types() -> None:
     assert queries["pool:restaurant_candidates"].category_hint == "restaurant"
     assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
     assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
-    assert all(query.limit == 60 for query in queries.values())
+    assert all(query.limit == 48 for query in queries.values())

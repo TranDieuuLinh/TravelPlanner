@@ -27,6 +27,14 @@ class SelectedRouteArc:
 
 
 @dataclass(frozen=True, slots=True)
+class SelectedAccommodationTransfer:
+    accommodation_id: str
+    candidate_id: str
+    day: int
+    direction: str
+
+
+@dataclass(frozen=True, slots=True)
 class SolverPassResult:
     name: str
     status: str
@@ -58,6 +66,8 @@ class OptimizationResult:
     selected_ids: tuple[str, ...]
     scheduled_stops: tuple[ScheduledStop, ...]
     selected_arcs: tuple[SelectedRouteArc, ...]
+    selected_accommodation_id: str | None
+    accommodation_transfers: tuple[SelectedAccommodationTransfer, ...]
     total_cost_per_person: int
     user_input_count: int
     url_count: int
@@ -121,6 +131,19 @@ def extract_result(
             if current == f"__end__:{day}":
                 break
     arcs = tuple(ordered_arcs)
+    selected_accommodation_id = next(
+        (
+            accommodation_id
+            for accommodation_id, variable in variables.accommodation_selected.items()
+            if solver.Value(variable)
+        ),
+        None,
+    )
+    accommodation_transfers = tuple(
+        SelectedAccommodationTransfer(*key)
+        for key, variable in sorted(variables.accommodation_transfer.items())
+        if solver.Value(variable)
+    )
     components = {
         name: solver.Value(expression)
         for name, expression in objective.components.items()
@@ -135,6 +158,8 @@ def extract_result(
         selected_ids=selected_ids,
         scheduled_stops=stops,
         selected_arcs=arcs,
+        selected_accommodation_id=selected_accommodation_id,
+        accommodation_transfers=accommodation_transfers,
         total_cost_per_person=solver.Value(variables.total_cost),
         user_input_count=sum(
             solver.Value(variables.selected[candidate.place_id])

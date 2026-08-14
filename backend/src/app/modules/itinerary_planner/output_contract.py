@@ -11,6 +11,7 @@ from app.modules.itinerary_planner.contract import (
     PlannerAccommodation,
     PlannerContractModel,
     PlannerCoordinates,
+    PlannerDailyBudgetEstimate,
 )
 
 
@@ -27,6 +28,7 @@ class ItineraryStop(PlannerContractModel):
     address: str | None = None
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     cost_per_person: int = Field(ge=0)
 
 
@@ -50,7 +52,7 @@ class DailyCostBreakdown(PlannerContractModel):
     currency: str
 
     @model_validator(mode="after")
-    def total_matches_components(self) -> "DailyCostBreakdown":
+    def total_matches_components(self) -> DailyCostBreakdown:
         expected = (
             self.accommodation
             + self.food
@@ -74,7 +76,7 @@ class ItineraryDay(PlannerContractModel):
     cost_breakdown: DailyCostBreakdown
 
     @model_validator(mode="after")
-    def cost_matches_breakdown(self) -> "ItineraryDay":
+    def cost_matches_breakdown(self) -> ItineraryDay:
         if self.cost_per_person != self.cost_breakdown.total:
             raise ValueError("cost_per_person must equal cost_breakdown.total")
         return self
@@ -123,9 +125,15 @@ class ItineraryPlannerOutput(PlannerContractModel):
     destination: str
     timezone: str
     accommodation: PlannerAccommodation | None = None
+    accommodation_nights: int = Field(default=0, ge=0, le=29)
     days: list[ItineraryDay]
     total_cost_per_person: int = Field(ge=0)
     budget_per_person: float | None = Field(default=None, ge=0)
+    budget_source: Literal["explicit", "estimated_daily_cost", "unspecified"] = (
+        "unspecified"
+    )
+    daily_budget_estimate: PlannerDailyBudgetEstimate | None = None
+    budget_profile_version: str | None = None
     currency: str
     solver: SolverMetadata
     source_mix: list[SourceMixAudit] = Field(default_factory=list)

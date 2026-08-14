@@ -53,8 +53,11 @@ class GeminiPlaceConsolidator:
     async def consolidate(self, places: list, input_adm: str | None) -> list:
         if len(places) < 2:
             return places
+        places = self._dedupe_exact(places)
+        if len(places) < 2:
+            return places
         if self.provider == "rules":
-            return self._dedupe_exact(places)
+            return places
         payload = {
             "inputADM": input_adm,
             "places": [

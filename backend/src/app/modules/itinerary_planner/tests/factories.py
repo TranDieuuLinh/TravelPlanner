@@ -8,6 +8,7 @@ def candidate(
     opening_hours: Any = None,
     duration_minutes: int = 60,
     relationships: list[str] | None = None,
+    image_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "placeId": place_id,
@@ -17,6 +18,7 @@ def candidate(
         "priority": priority,
         "notes": None,
         "tags": [" Local Experience ", "local-experience", "CULTURE"],
+        "imageUrls": image_urls or [],
         "rating": 4.7,
         "reviewCount": 100,
         "durationMinutes": duration_minutes,

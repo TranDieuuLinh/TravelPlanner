@@ -7,8 +7,8 @@ from math import ceil
 from app.modules.itinerary_planner.contract import CandidatePriority
 from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.output_contract import (
-    ItineraryDay,
     DailyCostBreakdown,
+    ItineraryDay,
     ItineraryPlannerOutput,
     ItineraryRouteLeg,
     ItineraryStop,
@@ -17,6 +17,9 @@ from app.modules.itinerary_planner.output_contract import (
     SourceMixAudit,
     SourceMixCounts,
     UnscheduledPriority,
+)
+from app.modules.itinerary_planner.policies import (
+    ACCOMMODATION_RELOCATION_DISTANCE_METERS,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.route_enrichment import RouteEnrichmentResult
@@ -35,7 +38,28 @@ def finalize_itinerary(
     warnings: list[str],
     phase_timings_ms: dict[str, int],
 ) -> ItineraryPlannerOutput:
+    if (
+        problem.trip.budget.source == "estimated_daily_cost"
+        and problem.trip.budget.amount is not None
+        and optimization.total_cost_per_person > problem.trip.budget.amount
+    ):
+        warnings.append(
+            "Actual itinerary cost exceeds the approximate budget estimate; "
+            "the estimate is a soft planning target."
+        )
     food_ids = {food.place_id for food in problem.valid_food}
+    selected_accommodation = (
+        problem.accommodation_by_id.get(optimization.selected_accommodation_id)
+        if optimization.selected_accommodation_id
+        else None
+    )
+    accommodation_cost = (
+        problem.accommodation_cost_per_person_by_id.get(
+            optimization.selected_accommodation_id, 0
+        )
+        if optimization.selected_accommodation_id
+        else 0
+    )
     stops_by_day: dict[int, list[ItineraryStop]] = defaultdict(list)
     for stop in optimization.scheduled_stops:
         candidate = problem.candidate_by_id[stop.place_id]
@@ -53,6 +77,7 @@ def finalize_itinerary(
                 address=candidate.address,
                 notes=candidate.notes,
                 tags=candidate.tags,
+                image_urls=candidate.image_urls,
                 cost_per_person=ceil(candidate.price.cost),
             )
         )
@@ -60,6 +85,8 @@ def finalize_itinerary(
     legs_by_day: dict[int, list[ItineraryRouteLeg]] = defaultdict(list)
     raw_legs_by_day = defaultdict(list)
     for leg in enrichment.legs:
+        if leg.accommodation_transfer_direction is not None:
+            continue
         raw_legs_by_day[leg.day].append(leg)
         legs_by_day[leg.day].append(
             ItineraryRouteLeg(
@@ -72,24 +99,93 @@ def finalize_itinerary(
                 geometry_available=leg.geometry_available,
             )
         )
+    accommodation_transport_by_day: dict[int, int] = defaultdict(int)
+    accommodation_minutes_by_day: dict[int, int] = defaultdict(int)
+    enriched_accommodation_legs = {
+        (leg.origin_id, leg.destination_id, leg.day): leg
+        for leg in enrichment.legs
+        if leg.accommodation_transfer_direction is not None
+    }
+    for transfer in optimization.accommodation_transfers:
+        pair = (
+            (transfer.accommodation_id, transfer.candidate_id)
+            if transfer.direction == "start"
+            else (transfer.candidate_id, transfer.accommodation_id)
+        )
+        travel = routing.travel_by_candidate_pair[pair]
+        accommodation_transport_by_day[transfer.day] += travel.transport_cost_per_person
+        if transfer.direction == "end":
+            origin = next(
+                stop
+                for stop in optimization.scheduled_stops
+                if stop.place_id == transfer.candidate_id and stop.day == transfer.day
+            )
+            if origin.end_minute >= LATE_NIGHT_START_MINUTE:
+                accommodation_transport_by_day[transfer.day] += (
+                    travel.late_night_surcharge_per_person
+                )
+        enriched_leg = enriched_accommodation_legs.get((*pair, transfer.day))
+        duration_minutes = (
+            enriched_leg.duration_minutes if enriched_leg else travel.safe_minutes
+        )
+        distance_meters = (
+            enriched_leg.distance_meters if enriched_leg else travel.distance_meters
+        )
+        accommodation_minutes_by_day[transfer.day] += duration_minutes
+        accommodation_leg = ItineraryRouteLeg(
+            from_place_id=pair[0],
+            to_place_id=pair[1],
+            duration_minutes=duration_minutes,
+            distance_meters=distance_meters,
+            encoded_polyline=(enriched_leg.encoded_polyline if enriched_leg else None),
+            provider=(
+                enriched_leg.provider if enriched_leg else routing.matrix.provider
+            ),
+            geometry_available=bool(enriched_leg and enriched_leg.geometry_available),
+        )
+        if not accommodation_leg.geometry_available:
+            warnings.append(
+                "Route geometry unavailable for accommodation transfer "
+                f"{pair[0]} -> {pair[1]} on day {transfer.day}."
+            )
+        if transfer.direction == "start":
+            legs_by_day[transfer.day].insert(0, accommodation_leg)
+        else:
+            legs_by_day[transfer.day].append(accommodation_leg)
+        if travel.distance_meters > ACCOMMODATION_RELOCATION_DISTANCE_METERS:
+            warnings.append(
+                "Selected accommodation requires a transfer over 50 km on "
+                f"day {transfer.day}; no closer candidate produced a better "
+                "feasible itinerary."
+            )
 
     days = []
     for day in range(1, problem.trip.days + 1):
-        day_stops = sorted(stops_by_day[day], key=lambda item: (item.start_minute, item.place_id))
+        day_stops = sorted(
+            stops_by_day[day], key=lambda item: (item.start_minute, item.place_id)
+        )
         activity_minutes = sum(stop.duration_minutes for stop in day_stops)
-        travel_minutes = sum(leg.duration_minutes for leg in raw_legs_by_day[day])
+        travel_minutes = (
+            sum(leg.duration_minutes for leg in raw_legs_by_day[day])
+            + accommodation_minutes_by_day[day]
+        )
         food_cost = sum(
             stop.cost_per_person for stop in day_stops if stop.kind == "food"
         )
         activity_cost = sum(
             stop.cost_per_person for stop in day_stops if stop.kind == "place"
         )
-        transport_cost = sum(
-            _transport_cost(routing, leg.origin_id, leg.destination_id, day_stops)
-            for leg in raw_legs_by_day[day]
+        transport_cost = (
+            sum(
+                _transport_cost(routing, leg.origin_id, leg.destination_id, day_stops)
+                for leg in raw_legs_by_day[day]
+            )
+            + accommodation_transport_by_day[day]
         )
         daily_cost = DailyCostCalculator.estimate(
-            accommodation=problem.accommodation_cost_per_person_per_day,
+            accommodation=(
+                accommodation_cost if day <= problem.accommodation_nights else 0
+            ),
             food=food_cost,
             local_transport=transport_cost,
             activities=activity_cost,
@@ -147,10 +243,16 @@ def finalize_itinerary(
     return ItineraryPlannerOutput(
         destination=problem.trip.destination,
         timezone=problem.trip.timezone,
-        accommodation=problem.accommodation,
+        accommodation=selected_accommodation,
+        accommodation_nights=problem.accommodation_nights
+        if selected_accommodation
+        else 0,
         days=days,
         total_cost_per_person=optimization.total_cost_per_person,
         budget_per_person=problem.trip.budget.amount,
+        budget_source=problem.trip.budget.source,
+        daily_budget_estimate=problem.trip.budget.daily_estimate,
+        budget_profile_version=problem.trip.budget.profile_version,
         currency=problem.trip.budget.currency,
         solver=SolverMetadata(
             status=optimization.status,

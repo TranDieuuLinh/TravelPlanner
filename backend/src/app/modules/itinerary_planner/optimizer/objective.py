@@ -11,9 +11,13 @@ from app.modules.itinerary_planner.optimizer.config import (
     STRONG_TAGS,
     ObjectiveWeights,
 )
-from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
-from app.modules.itinerary_planner.policies import MEAL_POLICIES, STANDARD_DAY_END_MINUTE
+from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
+from app.modules.itinerary_planner.policies import (
+    ACCOMMODATION_RELOCATION_DISTANCE_METERS,
+    MEAL_POLICIES,
+    STANDARD_DAY_END_MINUTE,
+)
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 from app.shared.tools.bayesian_rating import (
@@ -50,12 +54,23 @@ def build_objective(
         ),
         "foodDiversityCost": _food_diversity(model, problem, variables, weights),
         "travelTimeCost": _travel_cost(routing, variables, weights),
+        "accommodationRelocationCost": _accommodation_relocation_cost(
+            routing, variables, weights
+        ),
+        "accommodationPriceCost": _accommodation_price_cost(
+            problem, variables, weights
+        ),
         "idleWaitingCost": _waiting_cost(model, variables, weights),
         "mealDeviationCost": _meal_deviation(model, variables, weights),
         "fatigueCost": _fatigue(model, problem, variables, weights),
         "dayImbalanceCost": _day_imbalance(model, problem, variables, weights),
         "sourceMixDeviationCost": build_source_mix_cost(
             model, problem, variables, weights.source_mix_deviation
+        ),
+        "budgetOverageCost": (
+            variables.budget_overage_units * weights.budget_overage_10k
+            if variables.budget_overage_units is not None
+            else 0
         ),
         "unknownOpeningCost": sum(
             variables.selected[candidate_id] * weights.unknown_opening
@@ -89,10 +104,8 @@ def _preference_value(problem, variables, weights):
 
 def _quality_value(problem, variables, weights):
     prior = bayesian_prior(
-        (
-            (candidate.rating, candidate.review_count)
-            for candidate in problem.candidate_by_id.values()
-        )
+        (candidate.rating, candidate.review_count)
+        for candidate in problem.candidate_by_id.values()
     )
     terms = []
     for candidate_id, candidate in problem.candidate_by_id.items():
@@ -207,13 +220,63 @@ def _convex_repeat(model, literals, coefficient, name):
 
 
 def _travel_cost(routing, variables, weights):
-    travel_by_pair = {
+    sparse_travel_by_pair = {
         (arc.origin_id, arc.destination_id): arc.travel for arc in routing.sparse_arcs
     }
-    return sum(
-        arc * travel_by_pair[(origin, destination)].safe_minutes * weights.travel_minute
+    scheduled = sum(
+        arc
+        * sparse_travel_by_pair[(origin, destination)].safe_minutes
+        * weights.travel_minute
         for (origin, destination, day), arc in variables.arc.items()
         if not origin.startswith("__") and not destination.startswith("__")
+    )
+    travel_by_pair = routing.travel_by_candidate_pair
+    accommodation = sum(
+        transfer
+        * travel_by_pair[
+            (accommodation_id, candidate_id)
+            if direction == "start"
+            else (candidate_id, accommodation_id)
+        ].safe_minutes
+        * weights.travel_minute
+        for (
+            accommodation_id,
+            candidate_id,
+            _day,
+            direction,
+        ), transfer in variables.accommodation_transfer.items()
+    )
+    return scheduled + accommodation
+
+
+def _accommodation_relocation_cost(routing, variables, weights):
+    travel_by_pair = routing.travel_by_candidate_pair
+    return sum(
+        transfer * weights.accommodation_long_transfer
+        for (
+            accommodation_id,
+            candidate_id,
+            _day,
+            direction,
+        ), transfer in variables.accommodation_transfer.items()
+        if travel_by_pair[
+            (accommodation_id, candidate_id)
+            if direction == "start"
+            else (candidate_id, accommodation_id)
+        ].distance_meters > ACCOMMODATION_RELOCATION_DISTANCE_METERS
+    )
+
+
+def _accommodation_price_cost(problem, variables, weights):
+    return sum(
+        selected
+        * (
+            problem.accommodation_cost_per_person_by_id[accommodation_id]
+            * problem.accommodation_nights
+            // 10_000
+        )
+        * weights.accommodation_price_10k
+        for accommodation_id, selected in variables.accommodation_selected.items()
     )
 
 

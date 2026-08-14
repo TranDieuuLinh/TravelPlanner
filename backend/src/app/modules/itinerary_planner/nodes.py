@@ -28,6 +28,7 @@ from app.modules.itinerary_planner.route_enrichment import (
 )
 from app.modules.itinerary_planner.routing import build_routing_problem
 from app.shared.tools.transport_cost import TransportCostEstimator
+from app.shared.observability import traced_call
 from app.modules.itinerary_planner.routing_models import RoutingPhaseError
 from app.modules.itinerary_planner.state import ItineraryPlannerState
 
@@ -92,14 +93,33 @@ def create_optimize_itinerary_node(
             return {}
         started = monotonic()
         try:
-            result = await asyncio.to_thread(
-                partial(
-                    optimize_itinerary,
-                    state["prepared_problem"],
-                    state["routing_problem"],
-                    config=config,
-                    weights=weights,
-                )
+            problem = state["prepared_problem"]
+            routing = state["routing_problem"]
+            result = await traced_call(
+                "optimizer.solve",
+                lambda: asyncio.to_thread(
+                    partial(
+                        optimize_itinerary,
+                        problem,
+                        routing,
+                        config=config,
+                        weights=weights,
+                    )
+                ),
+                kind="tool",
+                input_summary={
+                    "days": problem.trip.days,
+                    "candidateCount": len(problem.candidate_by_id),
+                    "arcCount": len(routing.sparse_arcs),
+                    "logSearchProgress": config.log_search_progress,
+                },
+                output_summary=lambda value: {
+                    "status": value.status,
+                    "selectedCount": len(value.selected_ids),
+                    "passCount": len(value.passes),
+                    "optimalityProven": value.optimality_proven,
+                },
+                metadata={"provider": "ortools", "solver": "cp_sat"},
             )
         except OptimizationError as exc:
             return {

@@ -160,6 +160,26 @@ def test_one_external_source_is_provisional_and_not_eligible() -> None:
     assert result.promotion_event_ids == []
 
 
+def test_unverified_draft_kg_entity_remains_provisional() -> None:
+    draft = evidence(entity_id="kg:draft").model_copy(
+        update={
+            "source_kind": RetrievalSourceKind.knowledge_graph,
+            "is_verified": False,
+        }
+    )
+    service = TargetedRetrievalService(
+        FakeSource("knowledge_graph", RetrievalSourceKind.knowledge_graph, [draft]),
+        verified_target_per_gap=1,
+    )
+
+    result = asyncio.run(service.retrieve(gap(), analysis_context()))
+    candidate = result.gaps[0].candidates[0]
+
+    assert candidate.place_id == "kg:draft"
+    assert candidate.verification_status == VerificationStatus.provisional
+    assert candidate.planner_eligible is False
+
+
 def test_two_independent_sources_verify_and_queue_once() -> None:
     outbox = InMemoryPromotionOutbox()
     service = TargetedRetrievalService(
@@ -317,6 +337,53 @@ def test_search_places_adapter_scopes_requirement_to_adm() -> None:
     assert result.gaps[0].candidates[0].relationship_score == 1.0
     assert result.gaps[0].candidates[0].metadata.cost_tier == CostTier.low
     assert result.gaps[0].candidates[0].metadata.typical_duration_minutes == 60
+
+
+def test_external_search_places_adapter_requests_external_scope_and_keeps_draft() -> None:
+    tool = FakeSearchTool(
+        PlaceSearchResult(
+            status="resolved",
+            query="museum",
+            normalized_query="museum",
+            search_mode="requirement",
+            top_matches=[
+                PlaceSearchMatch(
+                    place_id="google_maps:draft",
+                    provider="google_maps_playwright",
+                    provider_id="google-1",
+                    name="Museum",
+                    canonical_type="travel_place",
+                    coordinates=Coordinates(latitude=21.03, longitude=105.84),
+                    score=0.9,
+                    score_components={"nameSimilarity": 1.0},
+                    verification_status="not_verified",
+                )
+            ],
+            resolution_reason="external_requirement_match",
+        )
+    )
+    source = SearchPlacesGapSource(
+        tool,
+        provider_name="google_maps_playwright",
+        source_kind=RetrievalSourceKind.external,
+    )
+    query = TargetedRetrievalQuery(
+        gap_id="gap:museum",
+        gap_type=GapType.experience_coverage,
+        severity=IssueSeverity.high,
+        query_text="museum",
+        adm_id="adm1_vn_ha_noi",
+        adm_name="Hà Nội",
+        country_code="VN",
+        category_hint="travel_place",
+        budget_level="medium",
+    )
+
+    result = asyncio.run(source.search(query))
+
+    assert tool.requests[0].provider_scope == "external"
+    assert result[0].entity_id is None
+    assert result[0].is_verified is False
 
 
 def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:

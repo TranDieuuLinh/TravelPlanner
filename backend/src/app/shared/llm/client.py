@@ -19,6 +19,7 @@ from app.shared.llm.errors import (
 )
 from app.shared.llm.ports import InlineMedia
 from app.shared.llm.key_pool import GeminiKeyLease, GeminiKeyPool
+from app.shared.observability import traced_call
 
 
 class GeminiLlmClient:
@@ -94,7 +95,20 @@ class GeminiLlmClient:
             response_json_schema=response_json_schema,
             tools=tools,
         )
-        return await self._send_payload(payload)
+        return await traced_call(
+            "gemini.generate",
+            lambda: self._send_payload(payload),
+            kind="llm",
+            input_summary={
+                "model": self._model,
+                "promptChars": len(user_prompt),
+                "hasSystemPrompt": bool(system_prompt),
+                "structuredOutput": response_json_schema is not None,
+                "toolCount": len(tools or []),
+            },
+            output_summary=lambda value: {"responseChars": len(value)},
+            metadata={"provider": "gemini", "model": self._model},
+        )
 
     async def generate_media(
         self,
@@ -127,7 +141,20 @@ class GeminiLlmClient:
             tools=None,
             parts=parts,
         )
-        return await self._send_payload(payload)
+        return await traced_call(
+            "gemini.generate_media",
+            lambda: self._send_payload(payload),
+            kind="llm",
+            input_summary={
+                "model": self._model,
+                "promptChars": len(user_prompt),
+                "mediaCount": len(media),
+                "mediaTypes": sorted({item.mime_type for item in media}),
+                "structuredOutput": response_json_schema is not None,
+            },
+            output_summary=lambda value: {"responseChars": len(value)},
+            metadata={"provider": "gemini", "model": self._model},
+        )
 
     async def _send_payload(self, payload: dict[str, Any]) -> str:
         last_error: Exception | None = None

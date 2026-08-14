@@ -23,8 +23,8 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `GET /me` | Session cookie | `AuthUser` |
 | `POST /auth/logout` | Session + CSRF cookie | `204 No Content` |
 | `GET /admin/observability/status` | Admin session | Local observability counters and retention limit |
-| `GET /admin/observability/traces` | Admin session + `page`, `limit` | Recent agent requests |
-| `GET /admin/observability/observations` | Admin session + `page`, `limit` | Recent chain, LLM and tool steps with bounded redacted tool input/output previews |
+| `GET /admin/observability/traces` | Admin session + `page`, `limit` | Recent agent requests; each summary includes `observationCount` and `entryPoint` |
+| `GET /admin/observability/observations` | Admin session + `page`, `limit`, optional `traceId` | Recent chain, LLM, tool and database spans with bounded redacted summaries; `traceId` isolates one request |
 | `GET /admin/observability/sessions` | Admin session + `page`, `limit` | Requests grouped by graph thread |
 | `GET /admin/observability/traces/{traceId}` | Admin session | One request with its captured steps |
 | `GET /admin/knowledge-graph/stats` | Admin session | Knowledge Graph counts |
@@ -65,6 +65,20 @@ supervisor
 └── explorer -> place_checker -> itinerary_planner
 ```
 
+## Observability contract
+
+Mỗi lần gọi `POST /v1/agent/invoke`, gửi Trip Chat message hoặc gọi trực tiếp
+`POST /v1/explorer/invoke` tạo một trace UUID riêng. `threadId` chỉ nhóm nhiều
+trace thuộc cùng hội thoại; nó không phải trace identity. Mỗi observation có
+`traceId` và `parentId` để admin UI dựng cây root graph, module, node và
+provider/tool span.
+
+Các capability không phải LangChain Runnable được bọc tại provider boundary.
+Hiện local trace ghi span tóm tắt cho shared Gemini, Tavily, Information Finder
+PostgreSQL cache, shared place search, Valhalla và OR-Tools CP-SAT. Input/output chỉ chứa số
+lượng, trạng thái, model/provider và metadata an toàn; API key, raw provider
+payload và toàn bộ prompt không được đưa vào span.
+
 Khi provider là `gemini`, Supervisor dùng structured LLM classification trước
 cho mọi message; deterministic rules chỉ được dùng khi chọn provider `rules`
 hoặc làm runtime fallback. Route `plan_editor` chỉ hợp lệ khi request có cả
@@ -91,7 +105,9 @@ không có `schemaVersion` và gồm:
   `addressHint`; mỗi source có thể mang `platform`, `extractorVersion`,
   `modelVersion`, `cacheStatus` và các field provenance này được Place Checker
   giữ nguyên; không có `sourceOrder`/`sourceDay`;
-- `inputItems`, chỉ lấy food, drink hoặc activity được nêu rõ trong raw prompt;
+- `inputItems`, chỉ lấy food, drink hoặc activity cụ thể, có thể resolve được và
+  được nêu rõ trong raw prompt; sở thích/chủ đề chung được đưa vào
+  `shortPreferences`;
 - `urlNotes`, giữ chi tiết hữu ích có evidence từ URL/ảnh/OCR/STT/metadata,
   gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm
   đặc trưng và fun fact; loại lời quảng cáo chung chung;
@@ -122,7 +138,7 @@ theo từng chunk; mỗi chunk dùng một structured request trả đồng th�
 và note thay vì ba request provider riêng. Query `t=` hoặc
 `start=` ưu tiên chunk gần timestamp nhưng không giới hạn phạm vi transcription;
 text chunk mặc định 20.000 ký tự với tối đa 8.000 output token để tránh tạo quá
-nhiều request khi transcript dài. Mặc định tối đa ba chunk được xử lý song
+nhiều request khi transcript dài. Mặc định tối đa năm chunk được xử lý song
 song và toàn bộ synthesis trong một Explorer service bị giới hạn sáu request
 Gemini đang chạy; chunk thành công được giữ khi chỉ chunk khác cần retry.
 TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
@@ -130,8 +146,10 @@ MP4 có giới hạn; nếu thất bại mới dùng `yt-dlp` legacy. Instagram 
 theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
 stream video/audio thực sự tồn tại; website dùng
 HTTP, `curl-cffi` Safari, rồi fallback Playwright Chromium trước khi qua
-trafilatura. Frame OCR bị
-giới hạn 72 frame và 10 ảnh mỗi Gemini batch. `SourceExtractionResult` nội bộ
+trafilatura. Frame OCR lấy mẫu mỗi 3 giây, bị giới hạn 48 frame và 10 ảnh mỗi
+Gemini batch; audio social chia động theo đoạn khoảng 60 giây, tối đa ba chunk.
+OCR ảnh base64 được cache in-memory theo SHA-256 và `forceRefresh=true` buộc đọc
+lại. `SourceExtractionResult` nội bộ
 giữ lỗi riêng của nhánh `frame_ocr`/`stt`; source partial vẫn giữ artifact thành
 công và đưa code nhánh lỗi vào `warnings`. Một source lỗi hoàn toàn cũng được
 ghi trong `warnings`; batch vẫn đi tiếp nếu còn ít nhất một source dùng được.
@@ -162,26 +180,41 @@ Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
 
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact
-`trip + places + food + accommodation`; root
+`trip + places + food + accommodations + excludedCandidates`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
 Retrieval/ranking duy trì hai quota candidate độc lập theo duration:
-`12 TravelPlace/ngày` và `12 Restaurant/ngày`, tối đa 60 mỗi loại; vì vậy ba
-ngày có target 72 stop candidates trước khi Planner chọn lịch khả thi. Một pool
-Accommodation riêng chỉ giữ một khách sạn có giá dương: low chọn gần P25,
-medium gần P50 và high gần P80 của candidate đã xác minh trong thành phố.
+`8 TravelPlace/ngày` và `8 Restaurant/ngày`, tối thiểu 12 và tối đa 60 mỗi loại;
+vì vậy ba ngày có target 48 stop candidates trước khi Planner chọn lịch khả thi. Một pool
+Accommodation riêng giữ tối đa 5 khách sạn có giá dương: low gần P25, medium
+gần P50 và high gần P80 của candidate đã xác minh trong thành phố; compact
+output phát tối đa ba phương án quanh mốc ngân sách để Planner chọn theo giá và
+vị trí.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals`.
+Địa điểm/quán được resolve từ `inputItems` mang priority `user_input`; quan hệ
+Special Experience/Offer Item vẫn được giữ riêng trong source metadata và tags.
 Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` hoặc
 `generic`), `offeredActivityIds` và `timeSource`. `Offer_Item` chỉ được tính là
 nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
 qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể.
-Compact output chỉ chứa place/food có giá dùng được. `price.cost` là trung bình
+Compact output chỉ chứa place/food có giá dùng được; user input bị loại được giữ
+trong `excludedCandidates` để Planner trả `unscheduled` cùng reason. `price.cost` là trung bình
 `price_min`/`price_max` khi có đủ khoảng, dùng giá trị duy nhất khi chỉ có một
 đầu mút, và bằng `0` cho tier `free`; giá thiếu không được gửi sang Planner.
 Vì vậy `ItineraryPlannerInput.places[].price.cost` và
 `ItineraryPlannerInput.food[].price.cost` là field bắt buộc, non-null và không âm.
-Accommodation không phải activity stop và không cần duration; giá của nó được
-truyền riêng bằng `pricePerNight`.
+Accommodation không phải activity stop và không cần duration; mỗi phương án có
+tọa độ và `pricePerNight`.
+
+Budget boundary ưu tiên số tiền người dùng nhập. Explorer chuẩn hóa
+`group_total` thành `per_person`; PlaceChecker giữ nguyên amount này và đánh dấu
+`source=explicit`. Khi không có amount và destination là Hà Nội, shared daily
+budget profile tạo `dailyEstimate = accommodation + food + localTransport +
+activities`, sau đó tính activity/food/transport theo ngày nhưng accommodation
+theo `max(days - 1, 0)` đêm và gắn `source=estimated_daily_cost`. Profile dùng
+positive-price KG percentiles
+P25/P50/P80 quan sát ngày 2026-08-14, ba bữa/ngày, 2/3/4 activities và
+4/5/6 chặng 5 km tương ứng low/medium/high.
 
 `PlaceCheckerResult.foodRestaurantSelections` giữ tối đa một cặp món/quán cho
 mỗi TravelPlace anchor. Primary selection dùng giao FoodItem ID chính xác giữa
@@ -202,10 +235,15 @@ FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
 
 Planner preprocess payload compact, lấy một global Valhalla driving matrix,
 tạo sparse arcs và chạy OR-Tools CP-SAT ba pass. Sau solver, module chỉ lấy
-route detail cho selected arcs và có tối đa một affected-day repair nếu detail
+route detail cho selected arcs cùng accommodation transfers và có tối đa một affected-day repair nếu detail
 thực tế làm timeline sai.
+Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
+hard constraint cấm food-to-food arc. Waiting giữa hai stop liên tiếp bị giới
+hạn tối đa 15 phút ngoài `safeTravel` đã gồm routing buffer; khi pool/opening
+window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
+ngày chỉ có ba bữa ăn.
 
-`ItineraryPlannerOutput` gồm accommodation đã chọn, ngày/stops/ordered route
+`ItineraryPlannerOutput` gồm accommodation đã chọn, số đêm, ngày/stops/ordered route
 legs, cost và budget trên
 một người, cùng `costBreakdown` mỗi ngày tách accommodation, food,
 localTransport, activities và misc. Solver passes/objective metadata, priority `unscheduled`, optional
@@ -214,6 +252,8 @@ morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, cò
 opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+Budget `explicit` vẫn là hard cap; `estimated_daily_cost` là soft target và có
+`budgetOverageCost`, nên plan khả thi có thể vượt estimate và phải phát warning.
 Root chỉ công bố `plannerOutput` thành công khi output chứa đúng toàn bộ số ngày
 được yêu cầu và mỗi ngày có ít nhất một stop. Output thiếu ngày hoặc ngày rỗng
 được trả thành planning failure và không thay thế snapshot TripChat trước đó.
@@ -244,6 +284,7 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh | OCR frame và STT chunk chạy song song |
 | `WebsiteSourceExtractor` | `explorer` | URL website public | HTTP, curl-cffi Safari, Playwright, rồi Markdown trafilatura |
 | `SearchPlacesTool.search` | `shared/tools/search_places` | `PlaceSearchRequest` | `PlaceSearchResult` có status, selected, top matches, provider attempts và resolution reason |
+| `GoogleMapsPlaywrightSearch.search` | `shared/tools/search_places` | Query, canonical ADM, type hint và limit | Candidate Google Maps chuẩn hóa, lưu `pending` với provenance trước khi trả |
 | Bayesian rating tool | `shared/tools/bayesian_rating.py` | rating, review count và candidate observations | prior, adjusted rating, reliability và quality chuẩn hóa |
 
 `SearchPlacesTool` hỗ trợ hai mode: `named_place` để xác minh identity được nêu
@@ -258,9 +299,15 @@ Contract dùng chung của tool gồm `AdministrativeArea`, `PlaceSearchRequest`
 `PlaceProviderCandidate`, `PlaceSearchMatch`, `ProviderAttempt` và
 `PlaceSearchResult`. Result phân biệt `resolved`, `needs_review`, `unresolved`
 và `provider_error`; lỗi provider retryable không bị diễn giải thành no-match.
-Package hiện chỉ có `InMemoryPlaceSearch` cho test/development và adapter này
-không tự tạo place placeholder. PostgreSQL KG và Playwright production adapter
-chưa được triển khai; PlaceChecker hiện vẫn dùng `DevelopmentCatalog`.
+
+`PlaceSearchRequest.providerScope` cho phép retrieval gọi riêng Knowledge Graph
+hoặc external provider. Candidate/match có `verificationStatus`; chỉ entity
+Google Maps mang note `verification=not_verified` mới bị chiếu thành
+`not_verified`, thay vì coi toàn bộ dữ liệu legacy có `status=draft` là chưa
+đáng tin. Google provider không tự tạo `Special_Experience`, `Offer_Item` hoặc
+`Has_Style`; nó chỉ tạo `Located_In` pending tới ADM đã resolve. Package vẫn có
+`InMemoryPlaceSearch` cho test/development; runtime có database dùng PostgreSQL
+KG cùng Playwright external fallback.
 
 Các provider interface bên ngoài hiện có:
 
@@ -328,7 +375,10 @@ the PlanEditor legacy contract and `currentPlannerOutput` for the new planner
 contract. A response without a new snapshot preserves the previous value.
 Frontend mapping prefers `currentPlannerOutput.days[].stops/legs` and falls back
 to legacy `currentItinerary.days[].items` only for old chats. Guest planning
-calls `/v1/agent/invoke` directly and uses the same new-output mapper.
+calls `/v1/agent/invoke` directly and uses the same new-output mapper. Mỗi stop
+có `imageUrls`; Place Checker chuẩn hóa giá trị từ các property `image`,
+`imageUrl`, `image_url`, `images` hoặc `imageUrls` của Knowledge Graph trước khi
+truyền qua planner.
 
 `SourceReference` expose `sourceId`, `title`, `url`, `updatedAt`, `dateKind`,
 `reviewStatus` và `publishedAt` tùy chọn. `dateKind` phân biệt ngày website tự

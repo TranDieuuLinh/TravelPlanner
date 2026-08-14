@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     explorer_llm_max_output_tokens: int = Field(default=4000, ge=256)
     explorer_source_chunk_characters: int = Field(default=20_000, ge=2_000, le=60_000)
     explorer_source_max_output_tokens: int = Field(default=8_000, ge=1_000)
-    explorer_source_max_concurrency: int = Field(default=3, ge=1, le=20)
+    explorer_source_max_concurrency: int = Field(default=5, ge=1, le=20)
     explorer_synthesis_max_concurrency: int = Field(default=6, ge=1, le=20)
     explorer_minimum_synthesis_coverage: float = Field(default=0.8, gt=0, le=1)
     explorer_dedupe_provider: Literal["rules", "gemini"] = "gemini"
@@ -56,11 +56,12 @@ class Settings(BaseSettings):
     explorer_url_cache_ttl_seconds: float = Field(default=604_800, gt=0)
     explorer_draft_cache_ttl_seconds: float = Field(default=604_800, gt=0)
     explorer_ytdlp_cookie_file: str | None = None
-    explorer_frame_interval_seconds: float = Field(default=1.5, gt=0)
+    explorer_frame_interval_seconds: float = Field(default=3.0, gt=0)
     explorer_frame_batch_size: int = Field(default=10, ge=1, le=10)
-    explorer_max_frames: int = Field(default=72, ge=1, le=72)
+    explorer_max_frames: int = Field(default=48, ge=1, le=72)
     explorer_frame_max_concurrency: int = Field(default=5, ge=1, le=8)
     explorer_audio_chunk_count: int = Field(default=3, ge=1, le=8)
+    explorer_audio_chunk_seconds: float = Field(default=60.0, gt=0)
     explorer_youtube_audio_chunk_seconds: int = Field(default=300, ge=30, le=900)
     explorer_youtube_audio_chunk_overlap_seconds: int = Field(default=5, ge=0, le=30)
     explorer_youtube_audio_max_concurrency: int = Field(default=8, ge=1, le=20)
@@ -84,10 +85,15 @@ class Settings(BaseSettings):
     information_finder_llm_max_chars_per_source: int = 4000
     information_finder_llm_max_total_source_chars: int = 12000
     information_finder_llm_fallback_enabled: bool = True
+    google_maps_scraper_enabled: bool = True
+    google_maps_scraper_timeout_seconds: float = Field(default=90.0, gt=0)
+    google_maps_scraper_max_alias_queries: int = Field(default=2, ge=0, le=5)
+    google_maps_scraper_max_concurrency: int = Field(default=3, ge=1, le=5)
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
     valhalla_timeout_seconds: float = Field(default=15.0, gt=0)
     valhalla_graph_version: str = "local"
+    itinerary_log_search_progress: bool = True
 
 
 @lru_cache

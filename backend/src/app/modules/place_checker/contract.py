@@ -20,11 +20,8 @@ from app.modules.place_checker.enums import (
     BudgetMode,
     EvidenceOrigin,
     IssueSeverity,
-    PlaceCheckerStatus,
-    PlaceLifecycleState,
     SourceTier,
     TravelPace,
-    VerificationStatus,
 )
 from app.shared.contracts.place import Coordinates, PlaceCandidate, VerifiedPlace
 from app.shared.contracts.trip import TripIntent

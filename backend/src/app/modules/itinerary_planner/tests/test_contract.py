@@ -26,6 +26,30 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert dumped["places"][0]["timeSource"] == "unknown"
 
 
+def test_accepts_estimated_budget_metadata_from_place_checker() -> None:
+    raw = payload()
+    raw["trip"]["budget"] = {
+        "amount": 2_252_556,
+        "currency": "VND",
+        "source": "estimated_daily_cost",
+        "dailyEstimate": {
+            "accommodation": 329_272,
+            "food": 150_000,
+            "localTransport": 171_580,
+            "activities": 100_000,
+            "total": 750_852,
+        },
+        "profileVersion": "hanoi-test-v1",
+    }
+
+    parsed = ItineraryPlannerInput.model_validate(raw)
+
+    assert parsed.trip.budget.amount == 2_252_556
+    assert parsed.trip.budget.source == "estimated_daily_cost"
+    assert parsed.trip.budget.daily_estimate is not None
+    assert parsed.trip.budget.daily_estimate.total == 750_852
+
+
 def test_rejects_duplicate_ids_across_places_and_food() -> None:
     raw = payload(places=[candidate("duplicate")], foods=[food("duplicate")])
 

@@ -50,26 +50,30 @@ This is a working architecture scaffold, not a production travel-data system.
   reconciliation, defaults, and separate ready/clarification/failure snapshot
   paths. With Gemini configured, raw images use OCR; TikTok/Instagram media use
   yt-dlp with curl-cffi Chrome impersonation, an Android Chrome fallback, and a
-  small muxed MP4 preference. Analysis uses 1.5-second frame sampling capped at
-  72 frames and 10 images per parallel Gemini batch, plus three parallel STT
-  chunks. OCR uses
+  small muxed MP4 preference. Analysis uses 3-second frame sampling capped at
+  48 frames and 10 images per parallel Gemini batch. Social audio uses dynamic
+  60-second chunks capped at three, so short clips no longer always create
+  three STT requests. OCR uses
   `GEMINI_IMAGE_OCR_MODEL`, while STT uses `GEMINI_AUDIO_MODEL`; a failed media
   branch is logged and reported without discarding successful evidence from the
-  other branch. YouTube is metadata-only. Generic websites use `httpx` plus
-  `trafilatura`, trying Safari-impersonated `curl-cffi` and then a bounded
+  other branch. YouTube prefers captions and falls back to chunked audio
+  transcription. Generic websites use `trafilatura`, trying
+  Safari-impersonated `curl-cffi` and then a bounded
   Playwright Chromium fallback after HTTP block.
   Snapshots remain process-local, and
   anti-bot responses may require `EXPLORER_YTDLP_COOKIE_FILE` or remain a
   partial source failure. Source synthesis uses Gemini when available so
   `urlNotes` retain only useful evidence-backed details. Each source chunk uses
-  one structured call for places, destination, and notes; three chunks run in
+  one structured call for places, destination, and notes; five chunks run in
   parallel by default under a six-request synthesis limiter. Text, OCR, and
   audio clients share a key pool with one in-flight request per key and bounded
   key rotation that honors provider `Retry-After` responses.
   URL extraction is cached in Explorer-owned PostgreSQL `source_documents` by
   canonical URL, extractor version, and a seven-day default TTL. The adapter
-  reads legacy `old_one` version-6 artifacts and writes normalized version 7.
-  `forceRefresh=true` bypasses a hit; cache failures do not block extraction.
+  reads legacy `old_one` version-6 artifacts and writes normalized version 8.
+  Raw-image OCR is memoized in a bounded process-local LRU by a SHA-256 digest;
+  `forceRefresh=true` bypasses URL, draft, and image OCR cache hits. Cache
+  failures do not block extraction.
 - The supervisor uses structured Gemini classification for every intent. The
   classifier also produces a short same-language response for greeting,
   assistant-meta, and out-of-scope `finish` requests. There is no keyword-based
@@ -80,8 +84,11 @@ This is a working architecture scaffold, not a production travel-data system.
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful
   process-local extractive fallback.
-- PlaceChecker uses `DevelopmentCatalog`, which creates deterministic placeholder
-  suggestions. Placeholder places have `verified=false` and emit a warning.
+- PlaceChecker uses PostgreSQL Knowledge Graph when `DATABASE_URL` is set.
+  `GOOGLE_MAPS_SCRAPER_ENABLED=true` enables a bounded Playwright fallback for
+  missing gap candidates; it stores results as admin-reviewable `pending` entities
+  and never presents them as verified. Without the database, the compatibility
+  graph uses deterministic `DevelopmentCatalog` placeholders.
 - ItineraryPlanner preprocesses the compact PlaceChecker payload, builds a
   global Valhalla driving matrix with Xanh SM fare estimates, then runs a
   three-pass OR-Tools CP-SAT model. It enriches selected route legs, performs at

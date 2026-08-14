@@ -279,6 +279,8 @@ class RuleBasedExplorerDraftGenerator:
             ("yen tinh", "quiet_places"),
             ("chup anh", "photography"),
             ("van hoa", "culture"),
+            ("am thuc", "local_food"),
+            ("di dao", "walking"),
             ("ca phe", "coffee"),
             ("dia phuong", "local_experience"),
         ):
@@ -306,6 +308,7 @@ class InlineImageSourceExtractor:
         *,
         source_index: int,
         raw_prompt: str | None,
+        force_refresh: bool = False,
     ) -> SourceExtractionResult:
         if not image.ocr_text:
             raise ExplorerOperationError(

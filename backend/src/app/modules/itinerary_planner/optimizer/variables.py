@@ -5,9 +5,12 @@ from dataclasses import dataclass, field
 from ortools.sat.python import cp_model
 
 from app.modules.itinerary_planner.contract import MealType, PlannerFoodCandidate
-from app.modules.itinerary_planner.policies import MEAL_POLICIES, OVERNIGHT_END_MINUTE
+from app.modules.itinerary_planner.policies import (
+    MEAL_POLICIES,
+    MINIMUM_MEAL_START_GAPS,
+    OVERNIGHT_END_MINUTE,
+)
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
-
 
 CandidateDay = tuple[str, int]
 MealKey = tuple[str, int, MealType]
@@ -37,9 +40,17 @@ class PlannerVariables:
     source_period: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
     source_special: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
     source_offer: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
+    accommodation_selected: dict[str, cp_model.IntVar] = field(default_factory=dict)
+    accommodation_transfer: dict[tuple[str, str, int, str], cp_model.IntVar] = field(
+        default_factory=dict
+    )
+    accommodation_night_transfer: dict[
+        tuple[str, str, int, str], cp_model.IntVar
+    ] = field(default_factory=dict)
     first_start: dict[int, cp_model.IntVar] = field(default_factory=dict)
     last_end: dict[int, cp_model.IntVar] = field(default_factory=dict)
     total_cost: cp_model.IntVar | None = None
+    budget_overage_units: cp_model.IntVar | None = None
     all_decision_vars: list[cp_model.IntVar] = field(default_factory=list)
 
     def remember(self, variable: cp_model.IntVar) -> cp_model.IntVar:
@@ -54,6 +65,12 @@ def create_schedule_variables(
     variables = PlannerVariables(
         intervals_by_day={day: [] for day in range(1, problem.trip.days + 1)}
     )
+    for accommodation in problem.accommodations:
+        variables.accommodation_selected[accommodation.place_id] = variables.remember(
+            model.NewBoolVar(f"accommodation:{accommodation.place_id}")
+        )
+    if variables.accommodation_selected:
+        model.Add(sum(variables.accommodation_selected.values()) == 1)
     food_ids = {food.place_id for food in problem.valid_food}
     for candidate_id in sorted(problem.candidate_by_id):
         selected = variables.remember(model.NewBoolVar(f"selected:{candidate_id}"))
@@ -109,6 +126,11 @@ def create_schedule_variables(
                     model.Add(
                         meal_start == variables.start[(food_id, day)]
                     ).OnlyEnforceIf(choice)
+        for (earlier, later), minimum_gap in MINIMUM_MEAL_START_GAPS.items():
+            model.Add(
+                variables.meal_start[(day, later)]
+                >= variables.meal_start[(day, earlier)] + minimum_gap
+            )
     return variables
 
 

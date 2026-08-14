@@ -9,6 +9,7 @@ from app.modules.itinerary_planner.adapters import (
     ValhallaAdapter,
 )
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
+from app.modules.itinerary_planner.optimizer import SolverConfig
 from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
 
 
@@ -17,6 +18,7 @@ def build_valhalla_itinerary_planner_graph(
     *,
     timeout_seconds: float = 15,
     provider_version: str = "local",
+    log_search_progress: bool = False,
 ):
     valhalla = ValhallaAdapter(
         base_url,
@@ -30,6 +32,7 @@ def build_valhalla_itinerary_planner_graph(
         InMemoryMatrixCache(),
         adapter,
         provider_namespace=f"valhalla:{provider_version}",
+        solver_config=SolverConfig(log_search_progress=log_search_progress),
     )
 
 __all__ = [

@@ -101,7 +101,8 @@ FinalItineraryPlanner trong checkpoint này.
 {
   "trip": {},
   "places": [],
-  "food": []
+  "food": [],
+  "excludedCandidates": []
 }
 ```
 
@@ -110,6 +111,8 @@ Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 `supportedMeals` cho food. `priority` phân biệt `user_input`,
 `special_experience`, `special_near`; `relationships` chứa canonical place ID
 liên quan thay vì tên tag.
+User input hoặc URL candidate không đủ điều kiện planner không bị mất âm thầm;
+builder đưa chúng vào `excludedCandidates` với `reasonCode` và message.
 
 `startDate` và `timezone` đến từ public `ExplorerOutput`; PlaceChecker không tự
 đoán lại ngày. Nếu prompt không có ngày, Explorer dùng ngày mai. Nếu prompt
@@ -119,6 +122,7 @@ Priority compact luôn thuộc đúng một trong bốn giá trị:
 
 ```text
 direct_user -> user_input
+resolved inputItem -> user_input
 url         -> url
 Special_Near -> special_near
 optional còn lại  -> special_experience
@@ -164,5 +168,16 @@ Output chỉ phát `price.cost` và `price.currency` đúng contract JSON của 
 ngân sách. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.
 
 Accommodation dùng boundary riêng, không đi vào `places` như activity. Chỉ bản
-ghi đã xác minh và có `typical_cost > 0` được chọn. Budget low/medium/high chọn
-lần lượt candidate gần P25/P50/P80 và truyền `pricePerNight` sang Planner.
+ghi đã xác minh và có `typical_cost > 0` được chọn. Ranking giữ tối đa năm lựa
+chọn; budget low/medium/high xác định mốc P25/P50/P80 rồi compact output truyền
+tối đa ba candidate quanh mốc đó, kèm `coordinates` và `pricePerNight`, để
+Planner quyết định theo cả ngân sách lẫn route.
+
+## Budget truyền sang Planner
+
+- Có `targetAmount`: giữ số tiền đã được Explorer chuẩn hóa theo người; direct
+  PlaceChecker payload còn `group_total` được chia đúng một lần.
+- Không có `targetAmount`, destination Hà Nội: dùng shared daily budget profile,
+  nhân daily total với số ngày và phát `source=estimated_daily_cost`,
+  `dailyEstimate` cùng `profileVersion`.
+- Destination chưa có profile: giữ `amount=null`, không mượn giá Hà Nội.

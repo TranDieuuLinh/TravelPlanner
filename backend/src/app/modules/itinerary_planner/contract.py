@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import date
 from enum import StrEnum
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -56,9 +57,29 @@ class PlannerCoordinates(PlannerContractModel):
     longitude: float = Field(ge=-180, le=180)
 
 
+class PlannerDailyBudgetEstimate(PlannerContractModel):
+    accommodation: int = Field(ge=0)
+    food: int = Field(ge=0)
+    local_transport: int = Field(ge=0)
+    activities: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def total_matches_components(self) -> PlannerDailyBudgetEstimate:
+        expected = (
+            self.accommodation + self.food + self.local_transport + self.activities
+        )
+        if self.total != expected:
+            raise ValueError("daily budget total must equal its components")
+        return self
+
+
 class PlannerBudget(PlannerContractModel):
     amount: float | None = Field(default=None, ge=0)
     currency: str = Field(min_length=3, max_length=3)
+    source: Literal["explicit", "estimated_daily_cost", "unspecified"] = "unspecified"
+    daily_estimate: PlannerDailyBudgetEstimate | None = None
+    profile_version: str | None = None
 
     @field_validator("currency")
     @classmethod
@@ -67,6 +88,20 @@ class PlannerBudget(PlannerContractModel):
         if not re.fullmatch(r"[A-Z]{3}", normalized):
             raise ValueError("currency must be a three-letter code")
         return normalized
+
+    @model_validator(mode="after")
+    def source_fields_are_consistent(self) -> PlannerBudget:
+        if self.source == "explicit" and self.amount is None:
+            raise ValueError("explicit budget requires amount")
+        if self.source == "estimated_daily_cost" and (
+            self.amount is None
+            or self.daily_estimate is None
+            or not self.profile_version
+        ):
+            raise ValueError(
+                "estimated budget requires amount, daily estimate, and version"
+            )
+        return self
 
 
 class PlannerPrice(PlannerContractModel):
@@ -112,6 +147,7 @@ class PlannerCandidate(PlannerContractModel):
     priority: CandidatePriority
     notes: str | None = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list, max_length=100)
+    image_urls: list[str] = Field(default_factory=list, max_length=20)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     duration_minutes: int = Field(gt=0, le=1440)
@@ -144,17 +180,33 @@ class PlannerFoodCandidate(PlannerCandidate):
 class PlannerAccommodation(PlannerContractModel):
     place_id: str = Field(min_length=1, max_length=300)
     name: str = Field(min_length=1, max_length=300)
+    coordinates: PlannerCoordinates
     address: str | None = Field(default=None, max_length=1000)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     price_per_night: PlannerPrice
 
 
+class UpstreamCandidateExclusion(PlannerContractModel):
+    place_id: str = Field(min_length=1, max_length=300)
+    name: str = Field(min_length=1, max_length=300)
+    priority: CandidatePriority
+    reason_code: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=1000)
+
+
 class ItineraryPlannerInput(PlannerContractModel):
     trip: PlannerTrip
     places: list[PlannerCandidate] = Field(default_factory=list, max_length=500)
     food: list[PlannerFoodCandidate] = Field(default_factory=list, max_length=500)
-    accommodation: PlannerAccommodation | None = None
+    accommodations: list[PlannerAccommodation] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    excluded_candidates: list[UpstreamCandidateExclusion] = Field(
+        default_factory=list,
+        max_length=500,
+    )
     upstream_warnings: list[str] = Field(default_factory=list, max_length=500)
 
     @model_validator(mode="after")
@@ -171,9 +223,16 @@ class ItineraryPlannerInput(PlannerContractModel):
                 try:
                     day = int(raw_day)
                 except ValueError as exc:
-                    raise ValueError("openingHours keys must be trip day numbers") from exc
+                    raise ValueError(
+                        "openingHours keys must be trip day numbers"
+                    ) from exc
                 if str(day) != raw_day or not 1 <= day <= self.trip.days:
                     raise ValueError(
                         "openingHours keys must be canonical trip day numbers"
                     )
+        accommodation_ids = [item.place_id for item in self.accommodations]
+        if len(accommodation_ids) != len(set(accommodation_ids)):
+            raise ValueError("accommodation placeId must be unique")
+        if set(ids) & set(accommodation_ids):
+            raise ValueError("accommodation placeId must not overlap stop candidates")
         return self

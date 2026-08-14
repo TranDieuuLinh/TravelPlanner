@@ -242,6 +242,10 @@
 .localPayloadCard .localPreview summary { max-width: none; }
 .localClickableRow { cursor: pointer; }
 .localClickableRow:hover { background: rgba(184, 241, 91, 0.07); }
+.localTraceLink, .localBackLink { color: #b8f15b; font-family: var(--mono); text-decoration: none; }
+.localTraceLink { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.localTraceLink:hover, .localBackLink:hover { text-decoration: underline; }
+.localBackLink { display: inline-block; margin-top: 8px; font-size: 0.75rem; }
 .localTraceDetail { display: flex; flex-direction: column; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.025); }
 .localTraceDetail > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .localTraceDetail h3 { margin: 0; font-family: var(--mono); font-size: 0.85rem; overflow-wrap: anywhere; }
@@ -249,13 +253,25 @@
 .localDetailGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .localDetailGrid span { padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 0.7rem; }
 .localDetailGrid strong { display: block; color: var(--text); font-family: var(--mono); font-size: 0.72rem; margin-top: 5px; overflow-wrap: anywhere; }
+.localTimelineHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.localTimelineHeader h3 { margin: 0; font-size: 0.95rem; }
+.localTimelineHeader > span { color: var(--muted); font-size: 0.75rem; }
 .localTimeline { display: grid; gap: 8px; }
-.localTimelineItem { display: grid; gap: 8px; padding: 12px; border-left: 2px solid rgba(184, 241, 91, 0.5); background: rgba(255, 255, 255, 0.025); }
-.localTimelineHeading { display: flex; justify-content: space-between; gap: 10px; }
+.localObservationBranch { min-width: 0; }
+.localObservationChildren { display: grid; gap: 8px; margin: 8px 0 0 16px; padding-left: 12px; border-left: 1px solid var(--line); }
+.localTimelineItem { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-left: 3px solid rgba(184, 241, 91, 0.5); border-radius: 8px; background: rgba(255, 255, 255, 0.025); }
+.localTimelineKind-llm { border-left-color: #9ea7ff; }
+.localTimelineKind-tool { border-left-color: #ffd27d; }
+.localTimelineKind-database { border-left-color: #73d5ff; }
+.localTimelineHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; }
+.localTimelineHeading::-webkit-details-marker { display: none; }
+.localTimelineHeading > span { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .localTimelineHeading b { color: var(--text); font-size: 0.8rem; }
-.localTimelineHeading span { color: var(--muted); font-size: 0.7rem; }
+.localTimelineHeading small { color: var(--muted); font-size: 0.68rem; }
 .localTimelineItem label { display: grid; gap: 4px; color: var(--muted); font-size: 0.7rem; }
 .localTimelineItem code { color: #ff9b9b; }
+.localObservationError { color: var(--muted); font-size: 0.72rem; }
+.localObservationError code { margin-left: 6px; color: #ff9b9b; }
 @media (max-width: 700px) { .localDetailGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .localTimelineHeading { flex-direction: column; } }
 
 @media (max-width: 900px) {

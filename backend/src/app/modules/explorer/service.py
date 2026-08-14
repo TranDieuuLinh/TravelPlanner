@@ -13,6 +13,7 @@ from app.modules.explorer.contract import (
 from app.modules.explorer.completeness import build_completeness
 from app.modules.explorer.draft_key import explorer_draft_cache_key
 from app.modules.explorer.errors import ExplorerOperationError
+from app.modules.explorer.intake_policy import normalize_intake_items
 from app.modules.explorer.models import BatchCoverage, ExplorerDraft, SourceExtractionResult
 from app.modules.explorer.ports import (
     ExplorerDraftCache,
@@ -95,7 +96,8 @@ class ExplorerService:
             jobs.append(self._safe_source(
                 "image", index, image.file_name,
                 lambda image=image, index=index: self.image_extractor.extract(
-                    image, source_index=index, raw_prompt=payload.raw_prompt
+                    image, source_index=index, raw_prompt=payload.raw_prompt,
+                    force_refresh=payload.force_refresh,
                 ),
             ))
         return list(await asyncio.gather(*jobs))
@@ -241,20 +243,13 @@ class ExplorerService:
                 normalized = place.model_copy(update={"name": name})
                 by_name[key] = normalized
                 places.append(normalized)
-        # inputItems are allowed only when their evidence is present in raw prompt.
-        prompt_key = self._key(raw_prompt or "")
-        items = []
-        item_keys = set()
-        for item in draft.input_items:
-            key = (self._key(item.name), item.action, self._key(item.related_place_name or ""))
-            if self._key(item.evidence) not in prompt_key or key in item_keys:
-                continue
-            item_keys.add(key)
-            items.append(item)
+        items, preferences = normalize_intake_items(
+            draft.input_items, draft.short_preferences, raw_prompt, normalize=self._key
+        )
         return draft.model_copy(update={
             "places": places,
             "input_items": items,
-            "short_preferences": list(dict.fromkeys(draft.short_preferences)),
+            "short_preferences": preferences,
             "short_avoids": list(dict.fromkeys(draft.short_avoids)),
         })
 

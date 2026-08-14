@@ -77,6 +77,7 @@ class SelectedFoodPlanningProjector:
                     ]
                 )
             ),
+            image_urls=metadata.image_urls,
             rating=metadata.rating,
             review_count=metadata.review_count,
             duration_minutes=metadata.typical_duration_minutes,
@@ -112,7 +113,9 @@ class SelectedFoodPlanningProjector:
         return [
             meal
             for meal, minute in (("breakfast", 480), ("lunch", 720), ("dinner", 1140))
-            if any(window.start_minute <= minute <= window.end_minute for window in windows)
+            if any(
+                window.start_minute <= minute <= window.end_minute for window in windows
+            )
         ]
 
     @staticmethod

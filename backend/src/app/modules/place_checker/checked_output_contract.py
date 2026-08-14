@@ -100,6 +100,7 @@ class CheckedPlace(ContractModel):
     category: str | None = None
     pool_category: str | None = None
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     duration: CheckedDuration

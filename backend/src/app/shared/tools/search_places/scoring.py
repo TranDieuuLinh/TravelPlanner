@@ -186,6 +186,8 @@ def score_candidate(
         },
         rejectionReasons=rejection_reasons,
         fetchedAt=candidate.fetched_at,
+        verificationStatus=candidate.verification_status,
+        sourceUrl=candidate.source_url,
     )
 
 

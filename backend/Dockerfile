@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
 
 WORKDIR /app
 
@@ -16,8 +16,6 @@ RUN python -m pip install --no-cache-dir \
     --retries 10 \
     --timeout 120 \
     "."
-
-RUN playwright install --with-deps chromium
 
 ENV PYTHONPATH=/app/src
 EXPOSE 8000

@@ -1,4 +1,5 @@
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
+from app.modules.place_checker.pool_policy import ACCOMMODATION_POOL_TARGET
 from app.modules.place_checker.scoring_contract import ScoredCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
@@ -30,7 +31,11 @@ class CandidatePoolBalancer:
                 for item in ranked
                 if cls._entity_type(item.candidate.category) == entity_type
             ]
-            target = 1 if entity_type == "accommodation" else target_per_type
+            target = (
+                ACCOMMODATION_POOL_TARGET
+                if entity_type == "accommodation"
+                else target_per_type
+            )
             limit = max(0, target - existing[entity_type])
             selected_keys.update(
                 item.candidate.candidate_key

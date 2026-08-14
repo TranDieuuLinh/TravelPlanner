@@ -16,6 +16,8 @@ from app.modules.itinerary_planner.ports import (
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import (
+    STRAIGHT_LINE_PROVIDER,
+    STRAIGHT_LINE_WARNING,
     CandidatePair,
     MatrixCell,
     MatrixLocation,
@@ -23,13 +25,11 @@ from app.modules.itinerary_planner.routing_models import (
     RoutingPhaseError,
     RoutingProblem,
     SafeTravel,
-    STRAIGHT_LINE_PROVIDER,
-    STRAIGHT_LINE_WARNING,
     SparseArc,
     TravelMatrix,
 )
+from app.modules.itinerary_planner.sparse_arc_policy import meal_access_pairs
 from app.shared.tools.transport_cost import TransportCostEstimator
-
 
 DEFAULT_NEIGHBOR_LIMIT = 12
 ROUTING_PROFILE = "auto"
@@ -42,7 +42,10 @@ def deduplicate_locations(
     *,
     coordinate_precision: int = 6,
 ) -> tuple[tuple[MatrixLocation, ...], dict[str, str], dict[str, tuple[str, ...]]]:
-    candidates = sorted(problem.candidate_by_id.values(), key=lambda item: item.place_id)
+    candidates = sorted(
+        [*problem.candidate_by_id.values(), *problem.accommodations],
+        key=lambda item: item.place_id,
+    )
     by_coordinate: dict[str, list[str]] = defaultdict(list)
     coordinates: dict[str, tuple[float, float]] = {}
     for candidate in candidates:
@@ -159,7 +162,9 @@ def _all_candidate_travel(
     profile: str,
 ) -> dict[CandidatePair, SafeTravel]:
     result: dict[CandidatePair, SafeTravel] = {}
-    ids = sorted(problem.candidate_by_id)
+    ids = sorted(
+        [*problem.candidate_by_id, *problem.accommodation_by_id]
+    )
     for origin_id in ids:
         for destination_id in ids:
             if origin_id == destination_id:
@@ -221,6 +226,8 @@ def build_sparse_arcs(
 ) -> tuple[tuple[SparseArc, ...], tuple[str, ...]]:
     feasible: dict[CandidatePair, frozenset[int]] = {}
     for pair, values in travel.items():
+        if pair[0] not in problem.candidate_by_id or pair[1] not in problem.candidate_by_id:
+            continue
         days = feasible_arc_days(problem, *pair, values.safe_minutes)
         if days:
             feasible[pair] = days
@@ -244,20 +251,15 @@ def build_sparse_arcs(
 
     food_ids = {candidate.place_id for candidate in problem.valid_food}
     activity_ids = ids - food_ids
-    for origin_ids, destination_ids in (
-        (activity_ids, food_ids),
-        (food_ids, activity_ids),
+    for pair in meal_access_pairs(
+        feasible,
+        travel,
+        problem.feasible_days,
+        food_ids,
+        activity_ids,
     ):
-        for origin_id in origin_ids:
-            options = [
-                pair
-                for pair in feasible
-                if pair[0] == origin_id and pair[1] in destination_ids
-            ]
-            if options:
-                pair = min(options, key=lambda item: (travel[item].safe_minutes, item))
-                selected.add(pair)
-                reasons[pair].add("meal_access")
+        selected.add(pair)
+        reasons[pair].add("meal_access")
 
     for candidate_id, candidate in problem.candidate_by_id.items():
         if candidate.priority not in PRIORITY_VALUES:

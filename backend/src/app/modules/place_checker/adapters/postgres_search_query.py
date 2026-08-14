@@ -28,6 +28,7 @@ WITH RECURSIVE adm_descendants(id) AS (
       ON location.from_entity_id = entity.id
      AND location.relationship_type = 'Located_In'
     WHERE entity.entity_type = ANY($3::text[])
+      AND entity.status <> 'rejected'
       AND location.to_entity_id IN (SELECT id FROM adm_descendants)
 ), generic_travel_ranked AS (
     SELECT entity.id,
@@ -179,6 +180,15 @@ WITH RECURSIVE adm_descendants(id) AS (
     LIMIT $4
 )
 SELECT entity.id, entity.canonical_name, entity.entity_type, entity.status,
+       (
+           entity.status <> 'verified'
+           AND EXISTS (
+               SELECT 1 FROM knowledge_properties review_property
+               WHERE review_property.entity_id = entity.id
+                 AND review_property.note LIKE
+                     'provider=google_maps_playwright;verification=not_verified%'
+           )
+       ) AS requires_admin_review,
        aliases.values AS aliases,
        props.address, props.latitude, props.longitude,
        props.rating, props.review_count, props.updated_at,

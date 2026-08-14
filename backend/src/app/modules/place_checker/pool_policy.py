@@ -5,9 +5,9 @@ import math
 
 MIN_POOL_TARGET = 12
 MAX_POOL_TARGET = 60
-POOL_CANDIDATES_PER_TYPE_PER_DAY = 12
+POOL_CANDIDATES_PER_TYPE_PER_DAY = 8
 POOL_ENTITY_TYPE_COUNT = 2
-ACCOMMODATION_POOL_TARGET = 1
+ACCOMMODATION_POOL_TARGET = 5
 
 
 def pool_target_for_days(days: int) -> int:
@@ -19,7 +19,7 @@ def pool_target_for_days(days: int) -> int:
 
 
 def combined_pool_target_for_days(days: int) -> int:
-    """Return both stop pools plus one priced accommodation candidate."""
+    """Return both stop pools plus a small accommodation selection pool."""
     return (
         pool_target_for_days(days) * POOL_ENTITY_TYPE_COUNT
         + ACCOMMODATION_POOL_TARGET

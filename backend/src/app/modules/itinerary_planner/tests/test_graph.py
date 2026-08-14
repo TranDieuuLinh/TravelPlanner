@@ -7,6 +7,9 @@ from app.modules.itinerary_planner.tests.routing_fakes import (
     FixedCostEstimator,
     GeneratedMatrixProvider,
 )
+from app.modules.itinerary_planner.tests.optimizer_fixtures import (
+    continuity_candidates,
+)
 
 
 def test_graph_prepares_new_planner_input() -> None:
@@ -15,7 +18,10 @@ def test_graph_prepares_new_planner_input() -> None:
     )
     planner_input = ItineraryPlannerInput.model_validate(
         payload(
-            places=[candidate("ho_guom", priority="user_input")],
+            places=[
+                candidate("ho_guom", priority="user_input"),
+                *continuity_candidates(),
+            ],
             foods=[
                 food("breakfast", supported_meals=["breakfast"]),
                 food("lunch", supported_meals=["lunch"]),
@@ -32,7 +38,7 @@ def test_graph_prepares_new_planner_input() -> None:
     assert result["optimization_result"].user_input_count == 1
     assert result["output"].destination == "Hanoi"
     assert len(result["output"].days) == 1
-    assert len(result["output"].days[0].stops) == 4
+    assert len(result["output"].days[0].stops) >= 6
     assert result["output"].solver.objective_policy_version
     assert result["output"].phase_timings_ms["total"] >= 0
 

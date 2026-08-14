@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from app.shared.observability import traced_call
+
 from app.modules.itinerary_planner.routing_models import (
     MatrixCell,
     MatrixLocation,
@@ -31,6 +33,27 @@ class ValhallaAdapter:
         self.provider_version = provider_version
 
     async def matrix(
+        self,
+        locations: tuple[MatrixLocation, ...],
+        profile: str,
+    ) -> TravelMatrix:
+        return await traced_call(
+            "valhalla.matrix",
+            lambda: self._matrix(locations, profile),
+            kind="tool",
+            input_summary={
+                "locationCount": len(locations),
+                "profile": profile,
+            },
+            output_summary=lambda value: {
+                "nodeCount": len(value.node_ids),
+                "provider": value.provider,
+                "providerVersion": value.provider_version,
+            },
+            metadata={"provider": "valhalla"},
+        )
+
+    async def _matrix(
         self,
         locations: tuple[MatrixLocation, ...],
         profile: str,
@@ -76,6 +99,23 @@ class ValhallaAdapter:
     ) -> tuple[RouteDetail, ...]:
         if not legs:
             return ()
+        return await traced_call(
+            "valhalla.route",
+            lambda: self._route(legs, profile),
+            kind="tool",
+            input_summary={"legCount": len(legs), "profile": profile},
+            output_summary=lambda value: {
+                "routeCount": len(value),
+                "provider": "valhalla",
+            },
+            metadata={"provider": "valhalla"},
+        )
+
+    async def _route(
+        self,
+        legs: tuple[RouteLegRequest, ...],
+        profile: str,
+    ) -> tuple[RouteDetail, ...]:
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=self.timeout_seconds)
 

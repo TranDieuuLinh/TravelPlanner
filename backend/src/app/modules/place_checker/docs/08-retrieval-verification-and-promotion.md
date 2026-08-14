@@ -98,9 +98,9 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
 - Candidate đã link KG được làm giàu qua `PlaceMetadataRepository` trước scoring
   để lấy duration, cost, opening và suitability nếu repository có dữ liệu.
   Repository lỗi hoặc thiếu field chỉ tạo warning/unknown, không bịa giá trị.
-- Hai quota độc lập cùng tăng theo độ dài chuyến đi: `12 TravelPlace/ngày` và
-  `12 Restaurant/ngày`, mỗi loại tối thiểu 12 và tối đa 60. Chuyến ba ngày có
-  target `36 + 36 = 72`. Core query over-fetch tối đa 60 mỗi loại để bù
+- Hai quota độc lập cùng tăng theo độ dài chuyến đi: `8 TravelPlace/ngày` và
+  `8 Restaurant/ngày`, mỗi loại tối thiểu 12 và tối đa 60. Chuyến ba ngày có
+  target `24 + 24 = 48`. Core query over-fetch tối đa 60 mỗi loại để bù
   candidate bị loại do metadata; scoring mới chốt quota. Đây là pool để Planner
   lựa chọn, không phải số stop bắt buộc phải xếp vào lịch.
 - Generic `travel place` discovery xen kẽ `Special_Experience` và các
@@ -111,12 +111,18 @@ failure. Hoàn thành khi không provisional place nào lọt vào planner eligi
   category và tọa độ trong 0,5 km. Cùng tên/ADM nhưng khác category hoặc vị trí
   tạo `needs_review`.
 - Một external source giữ trạng thái `provisional` và `planner_eligible=false`.
-  Candidate có KG entity ID là `verified_kg`; hai external source đồng thuận là
+  Candidate KG legacy hoặc entity đã được admin duyệt là `verified_kg`. Entity
+  Google Maps `pending` có property note `verification=not_verified` vẫn
+  là provisional dù đã có KG ID; hai external source đồng thuận mới là
   `verified_external`.
+- Google Maps Playwright là external fallback thực tế. Nó upsert candidate vào
+  `knowledge_entities` dưới dạng `pending`, ghi provenance/fetch time trên từng
+  property và chỉ tạo `Located_In` pending; không suy diễn `Special_Experience`,
+  `Offer_Item` hoặc `Has_Style`.
 - `PromotionWorker` kiểm tra duplicate lần cuối trước khi promote. Event ID được
   tạo ổn định theo candidate nên queue lặp lại không tạo event mới.
 
-Checkpoint này chỉ có `InMemoryPromotionOutbox` cho development và unit test.
-Chưa có migration hoặc durable worker runtime vì ownership của database đích
-chưa được khóa. Lỗi queue/worker chỉ tạo warning hoặc trạng thái failed, không
-đổi candidate đã verify thành lỗi planning.
+Checkpoint này vẫn chỉ có `InMemoryPromotionOutbox` cho development và unit
+test. Direct Google draft persistence không thay thế promotion đã verify; chưa
+có durable promotion worker. Lỗi queue/worker chỉ tạo warning hoặc trạng thái
+failed, không đổi candidate đã verify thành lỗi planning.

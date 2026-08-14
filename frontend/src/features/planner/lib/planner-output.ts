@@ -17,6 +17,7 @@ export type PlannerOutputStop = {
   address?: string | null;
   notes?: string | null;
   tags?: string[];
+  imageUrls?: string[];
   costPerPerson: number;
 };
 
@@ -36,11 +37,13 @@ export type ItineraryPlannerOutput = {
   accommodation?: {
     placeId: string;
     name: string;
+    coordinates: { latitude: number; longitude: number };
     address?: string | null;
     rating?: number | null;
     reviewCount?: number | null;
     pricePerNight: { cost: number; currency: string };
   } | null;
+  accommodationNights?: number;
   days: Array<{
     day: number;
     date: string;
@@ -61,6 +64,15 @@ export type ItineraryPlannerOutput = {
   }>;
   totalCostPerPerson: number;
   budgetPerPerson?: number | null;
+  budgetSource?: "explicit" | "estimated_daily_cost" | "unspecified";
+  dailyBudgetEstimate?: {
+    accommodation: number;
+    food: number;
+    localTransport: number;
+    activities: number;
+    total: number;
+  } | null;
+  budgetProfileVersion?: string | null;
   currency: string;
   solver: Record<string, unknown>;
   sourceMix?: Array<Record<string, unknown>>;
@@ -141,6 +153,7 @@ export function plannerOutputToTravelPlan(
         source: "itinerary_planner",
         sourceRefs: [],
         tags: stop.tags ?? [],
+        imageUrls: stop.imageUrls ?? [],
         notes: stop.notes ?? null,
         latitude: stop.coordinates.latitude,
         longitude: stop.coordinates.longitude,
@@ -178,8 +191,15 @@ export function plannerOutputToTravelPlan(
           address: output.accommodation.address,
           pricePerNight: output.accommodation.pricePerNight.cost,
           currency: output.accommodation.pricePerNight.currency,
+          nights: output.accommodationNights ?? 0,
         }
       : null,
+    budget: {
+      amountPerPerson: output.budgetPerPerson ?? null,
+      currency: output.currency,
+      source: output.budgetSource ?? "unspecified",
+      dailyEstimate: output.dailyBudgetEstimate ?? null,
+    },
     warnings: output.warnings,
     unscheduledPlaces: output.unscheduled.map((item) => ({
       placeId: item.placeId,

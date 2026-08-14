@@ -100,6 +100,7 @@ class PlaceMetadata(ContractModel):
     category: str | None = Field(default=None, max_length=120)
     pool_category: str | None = Field(default=None, max_length=120)
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     minimum_duration_minutes: int | None = Field(default=None, ge=1, le=1440)

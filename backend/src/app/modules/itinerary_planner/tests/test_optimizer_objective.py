@@ -15,6 +15,56 @@ def test_relationship_is_counted_once_and_repeated_tags_are_penalized() -> None:
     assert result.objective_components["relationshipValue"] == 250
     assert result.objective_components["activityDiversityCost"] > 0
     assert "specialNearBonus" not in result.objective_components
+    assert result.passes[-1].objective_value == result.objective_value
+    positive = {
+        "specialExperienceValue",
+        "preferenceValue",
+        "placeQualityValue",
+        "timeFitValue",
+        "relationshipValue",
+    }
+    component_total = sum(
+        value if name in positive else -value
+        for name, value in result.objective_components.items()
+    )
+    assert component_total == result.objective_value
+
+
+def test_vietnamese_knowledge_graph_tags_drive_diversity_penalty() -> None:
+    first = candidate("temple_a", priority="user_input")
+    second = candidate("temple_b", priority="user_input")
+    first["tags"] = second["tags"] = ["Tâm linh", "Văn hóa", "kiến trúc"]
+
+    result, prepared, _ = solve_payload(base_payload(places=[first, second]))
+
+    assert prepared.candidate_by_id["temple_a"].tags == [
+        "tâm_linh", "văn_hóa", "kiến_trúc"
+    ]
+    assert result.objective_components["activityDiversityCost"] > 0
+
+
+def test_preference_selects_matching_candidate_when_only_one_can_fit() -> None:
+    preferred = candidate(
+        "preferred",
+        opening_hours={"1": [{"startMinute": 600, "endMinute": 660}]},
+    )
+    alternative = candidate(
+        "alternative",
+        opening_hours={"1": [{"startMinute": 600, "endMinute": 660}]},
+    )
+    preferred["tags"] = ["culture"]
+    alternative["tags"] = ["shopping"]
+    raw = base_payload(places=[preferred, alternative])
+    raw["trip"]["preferences"] = ["culture"]
+    for meal in raw["food"]:
+        meal["tags"] = ["meal"]
+
+    result, _, _ = solve_payload(raw)
+
+    selected = {stop.place_id for stop in result.scheduled_stops}
+    assert "preferred" in selected
+    assert "alternative" not in selected
+    assert result.objective_components["preferenceValue"] == 600
 
 
 def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
@@ -22,7 +72,7 @@ def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
         "late_show",
         priority="user_input",
         opening_hours={
-            "1": [{"startMinute": 1439, "endMinute": 180}],
+            "1": [{"startMinute": 1319, "endMinute": 60}],
             "2": [],
         },
         duration_minutes=181,
@@ -35,7 +85,7 @@ def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
     first_day_two = min(
         stop.start_minute for stop in result.scheduled_stops if stop.day == 2
     )
-    assert late.end_minute == 1620
+    assert late.end_minute == 1500
     assert first_day_two + 1440 - late.end_minute >= 540
 
 

@@ -1,5 +1,6 @@
 import time
 
+from app.shared.observability import traced_call
 from app.shared.tools.search_places.contract import (
     PlaceProviderCandidate,
     PlaceSearchMatch,
@@ -7,6 +8,7 @@ from app.shared.tools.search_places.contract import (
     PlaceSearchResult,
     ProviderAttempt,
 )
+from app.shared.tools.search_places.external_search import search_external_only
 from app.shared.tools.search_places.normalization import lookup_names, normalize_text
 from app.shared.tools.search_places.policy import PlaceSearchPolicy
 from app.shared.tools.search_places.ports import (
@@ -40,8 +42,37 @@ class SearchPlacesTool:
         return await self.search(request)
 
     async def search(self, request: PlaceSearchRequest) -> PlaceSearchResult:
+        return await traced_call(
+            "places.search",
+            lambda: self._search(request),
+            kind="tool",
+            input_summary={
+                "queryChars": len(request.query),
+                "alternateNameCount": len(request.alternate_names),
+                "providerScope": request.provider_scope,
+                "allowExternalFallback": request.allow_external_fallback,
+            },
+            output_summary=lambda value: {
+                "status": value.status,
+                "matchCount": len(value.top_matches),
+                "attempts": [
+                    {
+                        "provider": attempt.provider,
+                        "status": attempt.outcome,
+                        "candidateCount": attempt.candidate_count,
+                        "errorCode": attempt.error_code,
+                    }
+                    for attempt in value.provider_attempts
+                ],
+            },
+            metadata={"capability": "place_search"},
+        )
+
+    async def _search(self, request: PlaceSearchRequest) -> PlaceSearchResult:
         names = lookup_names(request.query, request.alternate_names)
         attempts: list[ProviderAttempt] = []
+        if request.provider_scope == "external":
+            return await search_external_only(self, request, names, attempts)
         kg_candidates, kg_failed = await self._call_provider(
             self.knowledge_graph,
             request,
@@ -62,7 +93,11 @@ class SearchPlacesTool:
                     reason=reason,
                 )
 
-        if not request.allow_external_fallback or self.external is None:
+        if (
+            request.provider_scope == "knowledge_graph"
+            or not request.allow_external_fallback
+            or self.external is None
+        ):
             reason = (
                 "external_fallback_disabled"
                 if not request.allow_external_fallback

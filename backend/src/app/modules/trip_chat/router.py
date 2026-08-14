@@ -74,8 +74,9 @@ async def send_message(
         metadata={
             "requestId": request_id,
             "threadId": chat_id,
+            "entryPoint": "trip_chat.message",
             "messageLength": len(payload.content),
-            "input": {"message": payload.content, "chatId": chat_id},
+            "input": {"messageChars": len(payload.content), "chatId": chat_id},
         },
     )
     try:

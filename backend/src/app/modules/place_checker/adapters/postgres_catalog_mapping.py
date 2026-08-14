@@ -4,26 +4,35 @@ from datetime import datetime
 from typing import Any
 
 from app.modules.place_checker.enums import CostTier, OperationalStatus
-from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
+from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
-
 PLACE_TYPES = {"TravelPlace", "Restaurant", "DrinkDessert", "Accommodation"}
 TYPE_BY_HINT = {
-    "travel place": {"TravelPlace"}, "attraction": {"TravelPlace"},
-    "experience": {"TravelPlace"}, "restaurant": {"Restaurant"},
-    "food": {"Restaurant"}, "food venue": {"Restaurant"},
-    "cafe": {"DrinkDessert"}, "coffee": {"DrinkDessert"},
-    "drink": {"DrinkDessert"}, "drink dessert": {"DrinkDessert"},
-    "hotel": {"Accommodation"}, "accommodation": {"Accommodation"},
+    "travel place": {"TravelPlace"},
+    "attraction": {"TravelPlace"},
+    "experience": {"TravelPlace"},
+    "restaurant": {"Restaurant"},
+    "food": {"Restaurant"},
+    "food venue": {"Restaurant"},
+    "cafe": {"DrinkDessert"},
+    "coffee": {"DrinkDessert"},
+    "drink": {"DrinkDessert"},
+    "drink dessert": {"DrinkDessert"},
+    "hotel": {"Accommodation"},
+    "accommodation": {"Accommodation"},
 }
 CANONICAL_TYPE = {
-    "TravelPlace": "travel_place", "Restaurant": "restaurant",
-    "DrinkDessert": "drink_dessert", "Accommodation": "accommodation",
+    "TravelPlace": "travel_place",
+    "Restaurant": "restaurant",
+    "DrinkDessert": "drink_dessert",
+    "Accommodation": "accommodation",
 }
+
+
 class PostgresCatalogMappingMixin:
     @staticmethod
     def _types_for_hint(place_type_hint: str | None) -> set[str]:
@@ -33,7 +42,9 @@ class PostgresCatalogMappingMixin:
 
     @staticmethod
     def _candidate(row, input_adm: AdministrativeArea) -> PlaceProviderCandidate:
-        category = CANONICAL_TYPE.get(row["entity_type"], normalize_text(row["entity_type"]))
+        category = CANONICAL_TYPE.get(
+            row["entity_type"], normalize_text(row["entity_type"])
+        )
         rating = PostgresCatalogMappingMixin._number(row["rating"])
         confidence = 0.75 if rating is None else min(0.98, 0.65 + rating / 20)
         raw_tags = list(row["tags"] or [])
@@ -43,23 +54,39 @@ class PostgresCatalogMappingMixin:
         if row["anchor_relation"]:
             raw_tags.append(row["anchor_relation"])
         return PlaceProviderCandidate(
-            provider="knowledge_graph", entity_id=row["id"], name=row["canonical_name"],
-            aliases=list(row["aliases"] or []), address=row["address"],
-            coordinates=PostgresCatalogMappingMixin._coordinates(row["latitude"], row["longitude"]),
-            adm_ids=[input_adm.adm_id], adm_names=[input_adm.name],
-            canonical_type=category, tags=list(dict.fromkeys([category.replace("_", " "), *raw_tags])),
-            rating=rating, review_count=PostgresCatalogMappingMixin._integer(row["review_count"]),
+            provider="knowledge_graph",
+            entity_id=row["id"],
+            name=row["canonical_name"],
+            aliases=list(row["aliases"] or []),
+            address=row["address"],
+            coordinates=PostgresCatalogMappingMixin._coordinates(
+                row["latitude"], row["longitude"]
+            ),
+            adm_ids=[input_adm.adm_id],
+            adm_names=[input_adm.name],
+            canonical_type=category,
+            tags=list(dict.fromkeys([category.replace("_", " "), *raw_tags])),
+            rating=rating,
+            review_count=PostgresCatalogMappingMixin._integer(row["review_count"]),
             relationship_score=float(row["relationship_score"] or 0),
             relationship_evidence=[
                 relationship.model_dump(by_alias=True) for relationship in relationships
             ],
-            data_confidence=confidence, fetched_at=row["updated_at"],
+            data_confidence=confidence,
+            fetched_at=row["updated_at"],
+            verification_status=(
+                "not_verified" if row["requires_admin_review"] else "verified"
+            ),
         )
 
     @classmethod
     def _metadata(
-        cls, place_id: str, entity_type: str, values: dict[str, Any],
-        tags: list[str], fetched_at: datetime | None,
+        cls,
+        place_id: str,
+        entity_type: str,
+        values: dict[str, Any],
+        tags: list[str],
+        fetched_at: datetime | None,
         relationships: list[PlaceRelationshipEvidence] | None = None,
     ) -> PlaceMetadata:
         relationships = relationships or []
@@ -81,24 +108,102 @@ class PostgresCatalogMappingMixin:
         maximum_cost = cls._number(values.get("price_max"))
         duration = cls._duration(values.get("time_duration"))
         category = CANONICAL_TYPE.get(entity_type, normalize_text(entity_type))
-        child_tag = any("vui chơi dành cho trẻ em" in tag.casefold() for tag in tags)
+        all_tags = list(
+            dict.fromkeys(
+                [
+                    category.replace("_", " "),
+                    *cls._property_tags(values.get("tags")),
+                    *tags,
+                ]
+            )
+        )
+        child_tag = any(
+            "vui chơi dành cho trẻ em" in tag.casefold() for tag in all_tags
+        )
         return PlaceMetadata(
-            place_id=place_id, coordinates=cls._coordinates(values.get("latitude"), values.get("longitude")),
-            address=values.get("address"), category=category,
-            tags=list(dict.fromkeys([category.replace("_", " "), *tags])),
-            rating=cls._number(values.get("rating")), review_count=cls._integer(values.get("review_count")),
+            place_id=place_id,
+            coordinates=cls._coordinates(
+                values.get("latitude"), values.get("longitude")
+            ),
+            address=values.get("address"),
+            category=category,
+            tags=all_tags,
+            image_urls=cls._image_urls(values),
+            rating=cls._number(values.get("rating")),
+            review_count=cls._integer(values.get("review_count")),
             minimum_duration_minutes=max(15, duration - 30) if duration else None,
             typical_duration_minutes=duration,
             maximum_duration_minutes=min(1440, duration + 30) if duration else None,
             cost_tier=cls._cost_tier(maximum_cost),
-            cost_currency="VND" if minimum_cost is not None or maximum_cost is not None else None,
-            minimum_cost=minimum_cost, typical_cost=cls._typical_cost(minimum_cost, maximum_cost),
-            maximum_cost=maximum_cost, opening_hours=cls._opening_hours(values),
+            cost_currency="VND"
+            if minimum_cost is not None or maximum_cost is not None
+            else None,
+            minimum_cost=minimum_cost,
+            typical_cost=cls._typical_cost(minimum_cost, maximum_cost),
+            maximum_cost=maximum_cost,
+            opening_hours=cls._opening_hours(values),
             operational_status=OperationalStatus.unknown,
-            children_suitable=True if child_tag else None, infants_suitable=None,
-            source="knowledge_graph_postgres", fetched_at=fetched_at,
+            children_suitable=True if child_tag else None,
+            infants_suitable=None,
+            source="knowledge_graph_postgres",
+            fetched_at=fetched_at,
             relationships=relationships,
         )
+
+    @staticmethod
+    def _image_urls(values: dict[str, Any]) -> list[str]:
+        """Normalize the supported Knowledge Graph image properties."""
+        raw_values = [
+            values.get(key)
+            for key in (
+                "image_urls",
+                "imageUrls",
+                "images",
+                "image_url",
+                "imageUrl",
+                "image",
+            )
+            if values.get(key) not in (None, "")
+        ]
+        urls: list[str] = []
+        pending = list(raw_values)
+        while pending:
+            value = pending.pop(0)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    continue
+                try:
+                    parsed = json.loads(stripped)
+                except (TypeError, ValueError):
+                    parsed = stripped
+                if parsed != stripped:
+                    pending.insert(0, parsed)
+                elif stripped.startswith(("https://", "http://")):
+                    urls.append(stripped)
+            elif isinstance(value, list):
+                pending[:0] = value
+            elif isinstance(value, dict):
+                pending[:0] = [
+                    value.get(key)
+                    for key in ("url", "image_url", "imageUrl", "src")
+                    if value.get(key)
+                ]
+        return list(dict.fromkeys(urls))
+
+    @staticmethod
+    def _property_tags(value: Any) -> list[str]:
+        if value in (None, ""):
+            return []
+        parsed = value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (TypeError, ValueError):
+                parsed = re.split(r"[,;]", value)
+        if not isinstance(parsed, list):
+            parsed = [parsed]
+        return list(dict.fromkeys(tag for item in parsed if (tag := str(item).strip())))
 
     @staticmethod
     def _relationships(value: Any) -> list[PlaceRelationshipEvidence]:
@@ -141,7 +246,9 @@ class PostgresCatalogMappingMixin:
                     )
                 except (TypeError, ValueError):
                     parsed_windows = []
-                for window in parsed_windows if isinstance(parsed_windows, list) else []:
+                for window in (
+                    parsed_windows if isinstance(parsed_windows, list) else []
+                ):
                     if isinstance(window, dict) and window not in style_windows:
                         style_windows.append(window)
             if duration := cls._duration(properties.get("time_duration")):

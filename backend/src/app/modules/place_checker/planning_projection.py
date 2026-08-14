@@ -28,7 +28,9 @@ class PlaceCheckerPlanningProjector:
                 if checked.place_id:
                     blocked.append(checked.place_id)
                 continue
-            if not evaluation.planner_eligible or not self._verification_allowed(checked):
+            if not evaluation.planner_eligible or not self._verification_allowed(
+                checked
+            ):
                 continue
             metadata = evaluation.place.metadata
             if not checked.place_id or not checked.canonical_name or metadata is None:
@@ -76,6 +78,7 @@ class PlaceCheckerPlanningProjector:
             category=metadata.category,
             pool_category=checked.pool_category,
             tags=metadata.tags,
+            image_urls=metadata.image_urls,
             rating=checked.rating,
             review_count=checked.review_count,
             distance_from_anchor_km=checked.distance_from_anchor_km,

@@ -39,7 +39,8 @@ backend/
 │       ├── itinerary_planner/
 │       ├── plan_editor/
 │       ├── auth/
-│       └── knowledge_graph/
+│       ├── knowledge_graph/
+│       └── observability/
 └── tests/
 ```
 
@@ -72,21 +73,34 @@ adapter.
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
 module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
 fallback đường chim bay khi Valhalla unavailable, và
-sparse arcs trên contract `trip + places + food + accommodation`, sau đó chạy Phase 4 OR-Tools
+sparse arcs trên contract `trip + places + food + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
 CP-SAT ba pass để giữ tối đa `user_input`, tiếp đến URL rồi tối ưu utility.
+Runtime composition đặt `ITINERARY_LOG_SEARCH_PROGRESS=true` để OR-Tools phát
+search progress; test graph vẫn có thể truyền `SolverConfig` tắt log để tránh
+output nhiễu.
 Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator;
 fallback đường chim bay được gắn tại provider boundary và luôn phát warning.
 Fare estimator thuộc `shared/tools/transport_cost.py` để city-cost estimation
 và Planner dùng cùng một policy/version thay vì sở hữu hai bảng giá.
-Phase 5 lấy detail chỉ cho selected arcs, repair tối đa một vòng khi duration
+`shared/tools/daily_budget.py` giữ profile chi phí theo destination và dùng lại
+fare estimator. Hiện mới có profile Hà Nội; destination khác không được âm thầm
+dùng giá Hà Nội.
+Phase 5 lấy detail cho selected arcs và accommodation transfers, repair tối đa một vòng khi duration
 thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
 Mỗi itinerary day có `costBreakdown` gồm accommodation, food, localTransport,
 activities, misc và total trên một người. Planner điền giá stop, route và
-Accommodation có giá do PlaceChecker chọn; misc giữ 0 khi chưa có dữ liệu thật.
+Accommodation được Planner chọn từ tối đa ba phương án có giá và tọa độ do
+PlaceChecker gửi; misc giữ 0 khi chưa có dữ liệu thật.
 Khi intake chưa có số phòng, accommodation tạm suy ra một phòng cho mỗi hai
-khách rồi chia lại thành giá/người/ngày.
+khách rồi chia lại thành giá/người/đêm; tổng số đêm là `days - 1`. Ngày còn
+thuê phòng kết thúc ở accommodation và ngày tiếp theo bắt đầu tại đó. Transfer
+trên 50 km bị phạt để ưu tiên đổi sang phương án gần hơn; transfer thiếu route
+shape được giữ bằng matrix duration và phát warning rõ ràng.
+Nếu Explorer không có số tiền cụ thể, PlaceChecker truyền tổng estimate/người
+cho cả chuyến cùng daily breakdown và profile version. Số người dùng nhập luôn
+được ưu tiên; estimate là soft target trong Planner.
 TripChat lưu hai snapshot độc lập: `currentItinerary` cho PlanEditor legacy và
 `currentPlannerOutput` cho frontend hiển thị output mới. Frontend map
 `days[].stops` thành item và `days[].legs` thành transport leg; guest planner
@@ -130,15 +144,15 @@ tiên `curl-cffi` Safari đọc JSON
 với giới hạn dung lượng; nếu HTML không có media mới fallback sang `yt-dlp`
 theo thứ tự legacy standard, Chrome và Chrome 131/Android 14. Instagram vẫn
 dùng chuỗi `yt-dlp` legacy. Không cần chuyển cookie từ frontend. OCR
-lấy một frame mỗi 1,5 giây, giới hạn 72 frame và tối đa 10 ảnh trong mỗi batch
-Gemini, còn audio chia ba chunk STT song song. Hai nhánh OCR/STT chạy đồng thời;
+lấy một frame mỗi 3 giây, giới hạn 48 frame và tối đa 10 ảnh trong mỗi batch
+Gemini. Audio social dùng chunk động dài khoảng 60 giây và không vượt quá ba
+chunk, nên clip ngắn chỉ tạo một STT request. Hai nhánh OCR/STT chạy đồng thời;
 ffprobe bỏ qua OCR hoặc STT khi media không có video hoặc audio stream tương ứng.
 Lỗi từng nhánh được giữ trong kết
 quả source partial, ghi log theo code và đưa vào warning mà không làm mất
-evidence của nhánh còn lại. Website dùng `httpx` và `trafilatura` để lấy
-Markdown trước; HTTP block hoặc redirect quá giới hạn sẽ thử `curl-cffi` giả
-lập Safari, sau đó mới fallback Playwright Chromium rồi tiếp tục qua
-`trafilatura`. Nếu browser vẫn bị anti-bot
+evidence của nhánh còn lại. Website dùng `curl-cffi` giả lập Safari để tải
+HTML, fallback Playwright Chromium khi bị chặn hoặc nội dung rỗng, rồi dùng
+`trafilatura` tạo Markdown. Nếu browser vẫn bị anti-bot
 chặn, source thất bại cục bộ mà không làm hỏng source khác. TikTok/Instagram có thể yêu cầu cookie
 Netscape qua `EXPLORER_YTDLP_COOKIE_FILE`.
 
@@ -151,6 +165,9 @@ version 8 cùng metadata coverage transcript; không lưu raw
 third-party payload. `forceRefresh=true` bỏ qua cache lookup và cập nhật record
 sau extraction. Lỗi đọc/ghi cache chỉ được log và không chặn extractor. Khi
 không có `DATABASE_URL`, development/test dùng cache in-memory theo process.
+OCR ảnh base64 còn có LRU cache in-memory giới hạn 256 entry theo SHA-256 của
+MIME type và bytes ảnh; cache không lưu raw ảnh và `forceRefresh=true` buộc OCR
+lại.
 Sau source extraction, Explorer cache `ExplorerDraft` đã tổng hợp trong bảng
 `explorer_draft_cache`, keyed bằng prompt, evidence chuẩn hóa, namespace/model
 và policy version. `EXPLORER_DRAFT_CACHE_TTL_SECONDS` mặc định 7 ngày;
@@ -191,10 +208,11 @@ từ trung bình khoảng min/max, một đầu mút có sẵn, hoặc `0` cho t
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
 riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký
 tự; mỗi chunk gọi một structured Gemini request trả đồng thời place, ADM và
-note. Mặc định ba chunk chạy song song, còn limiter dùng chung của Explorer giữ
+note. Mặc định năm chunk chạy song song, còn limiter dùng chung của Explorer giữ
 tối đa sáu synthesis request đang chạy. Chunk thành công được giữ
-khi chunk khác lỗi, rồi consolidation nhỏ merge alias/dịch thuật và lọc mention
-không phải place.
+khi chunk khác lỗi. Consolidation exact chạy deterministic trước; Gemini chỉ
+được gọi khi còn ít nhất hai place khác tên để merge alias/dịch thuật và lọc
+mention không phải place.
 Chunk structured-output lỗi lặp lại được chia đôi tối đa hai cấp; quota/cooldown
 được retry có chờ và coverage vẫn được báo nếu provider chưa xử lý đủ.
 Khi có source và Gemini key, structured Gemini synthesis lọc `urlNotes` chỉ giữ
@@ -271,17 +289,28 @@ special ưu tiên place có `Offer_Item -> ActivityItem`, metadata đầy đủ,
 rating/review tốt. `Has_Style` không được dùng làm taxonomy/quota; nó chỉ cung
 cấp fallback `time_duration` và `time_windows` khi place thiếu timing trực tiếp.
 Compact PlaceChecker-to-Planner contract giữ `sourceKind`, ActivityItem IDs và
-timing source. Planner phân period theo giờ stop thực tế, áp largest-remainder
+timing source. URL ảnh từ các property ảnh của place trong Knowledge Graph được
+chuẩn hóa thành `imageUrls`, giữ qua Itinerary Planner output và được frontend
+dùng cho ảnh thẻ lịch trình. Planner phân period theo giờ stop thực tế, áp largest-remainder
 70/30 cho morning và 60/40 cho evening bằng soft source-mix penalty, đồng thời
 trả target/actual/fallback audit. Bayesian review quality tiếp tục xếp hạng độ
 nổi tiếng trong objective sau các hard feasibility constraints.
+Planner cấm food-to-food arc để mỗi cặp bữa liên tiếp có ít nhất một activity,
+đồng thời giới hạn waiting giữa hai stop ở 15 phút ngoài safe-travel buffer.
+Sparse-arc policy giữ meal-access theo từng ngày và hai chiều để pruning không
+làm mất đường activity vào/ra meal.
 Retrieval ngoài gap phân tích còn mở hai core pool có quota độc lập theo chuyến:
-`12 TravelPlace/ngày` và `12 Restaurant/ngày`, tối đa 60 mỗi loại. Core query
+`8 TravelPlace/ngày` và `8 Restaurant/ngày`, tối thiểu 12 và tối đa 60 mỗi loại. Core query
 over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt quota sau
 dedupe và quality gate. Restaurant được compact builder đưa vào `food`, không
 trộn thành activity place.
-Compatibility graph không database vẫn dùng `DevelopmentCatalog`;
-Google Maps/external live provider chưa được nối.
+Compatibility graph không database vẫn dùng `DevelopmentCatalog`. Khi có
+`DATABASE_URL` và `GOOGLE_MAPS_SCRAPER_ENABLED=true`, gap retrieval chỉ gọi
+`GoogleMapsPlaywrightSearch` sau khi Knowledge Graph không đủ candidate đã
+xác minh. Kết quả được upsert vào Knowledge Graph với `status=pending`; property
+giữ Google Maps URL, `fetch_at` và note
+`provider=google_maps_playwright;verification=not_verified`. Candidate này là
+provisional tới khi admin đổi entity sang `verified`; `rejected` không được đọc.
 `shared/tools/bayesian_rating.py` cung cấp prior, adjusted rating, review
 reliability và quality 0..1 dùng chung cho PlaceChecker và
 FinalItineraryPlanner; module vẫn tự sở hữu cách đưa quality vào business score.
@@ -324,3 +353,14 @@ contract to the existing view models without changing the planner layout.
 theo shell/run, responsive, Knowledge Graph và AI import trong
 `admin-frontend/styles/`; các panel Knowledge Graph nằm trong
 `admin-frontend/app/components/knowledge-graph/`.
+
+Observability admin tách danh sách tại `/observability/traces` và detail có URL
+ổn định tại `/observability/traces/[traceId]`. Trang detail dựng execution tree
+từ `parentId`; trang Steps luôn hiển thị `traceId` và liên kết về request sở hữu
+step đó. Frontend dùng contract `TraceSummary`, `TraceDetail` và
+`TraceObservation` thay cho một record không định kiểu cho trace detail.
+
+`shared/observability.py` là capability kỹ thuật dùng chung, không chứa business
+rule. Nó bọc lời gọi provider thành child Runnable chỉ khi request hiện tại có
+callback, đồng thời chỉ đưa input/output summary đã chọn vào trace. Local adapter
+trong module `observability` vẫn sở hữu JSON store, callback và admin API.

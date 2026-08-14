@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.modules.place_checker.analysis_contract import (
     BudgetAnalysis,
@@ -117,6 +117,7 @@ class PlannerPlaceContext(ContractModel):
     category: str | None = None
     pool_category: str | None = None
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
@@ -161,9 +162,43 @@ class PlannerPrice(ContractModel):
     currency: str = "VND"
 
 
+class PlannerDailyBudgetEstimate(ContractModel):
+    accommodation: int = Field(ge=0)
+    food: int = Field(ge=0)
+    local_transport: int = Field(ge=0)
+    activities: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def total_matches_components(self) -> "PlannerDailyBudgetEstimate":
+        expected = (
+            self.accommodation + self.food + self.local_transport + self.activities
+        )
+        if self.total != expected:
+            raise ValueError("daily budget total must equal its components")
+        return self
+
+
 class PlannerBudget(ContractModel):
     amount: float | None = Field(default=None, ge=0)
     currency: str = "VND"
+    source: Literal["explicit", "estimated_daily_cost", "unspecified"] = "unspecified"
+    daily_estimate: PlannerDailyBudgetEstimate | None = None
+    profile_version: str | None = None
+
+    @model_validator(mode="after")
+    def source_fields_are_consistent(self) -> "PlannerBudget":
+        if self.source == "explicit" and self.amount is None:
+            raise ValueError("explicit budget requires amount")
+        if self.source == "estimated_daily_cost" and (
+            self.amount is None
+            or self.daily_estimate is None
+            or not self.profile_version
+        ):
+            raise ValueError(
+                "estimated budget requires amount, daily estimate, and version"
+            )
+        return self
 
 
 class PlannerTimeWindow(ContractModel):
@@ -176,19 +211,18 @@ class PlannerOutputPlace(ContractModel):
     name: str
     coordinates: Coordinates
     address: str | None = None
-    priority: Literal[
-        "user_input", "url", "special_experience", "special_near"
-    ]
+    priority: Literal["user_input", "url", "special_experience", "special_near"]
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     duration_minutes: int = Field(ge=1)
     opening_hours: dict[str, list[PlannerTimeWindow]] | None = None
     preferred_time_windows: list[PlannerTimeWindow] = Field(default_factory=list)
-    source_kind: Literal[
-        "special_experience", "offer_item", "both", "generic"
-    ] = "generic"
+    source_kind: Literal["special_experience", "offer_item", "both", "generic"] = (
+        "generic"
+    )
     offered_activity_ids: list[str] = Field(default_factory=list)
     time_source: Literal[
         "place", "activity_item", "has_style", "source_hint", "unknown"
@@ -198,18 +232,25 @@ class PlannerOutputPlace(ContractModel):
 
 
 class PlannerOutputFood(PlannerOutputPlace):
-    supported_meals: list[Literal["breakfast", "lunch", "dinner"]] = Field(
-        min_length=1
-    )
+    supported_meals: list[Literal["breakfast", "lunch", "dinner"]] = Field(min_length=1)
 
 
 class PlannerOutputAccommodation(ContractModel):
     place_id: str
     name: str
+    coordinates: Coordinates
     address: str | None = None
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     price_per_night: PlannerPrice
+
+
+class PlannerExcludedCandidate(ContractModel):
+    place_id: str
+    name: str
+    priority: Literal["user_input", "url"]
+    reason_code: str
+    message: str
 
 
 class PlannerOutputTrip(ContractModel):
@@ -226,4 +267,8 @@ class PlaceCheckerPlannerOutput(ContractModel):
     trip: PlannerOutputTrip
     places: list[PlannerOutputPlace] = Field(default_factory=list)
     food: list[PlannerOutputFood] = Field(default_factory=list)
-    accommodation: PlannerOutputAccommodation | None = None
+    accommodations: list[PlannerOutputAccommodation] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    excluded_candidates: list[PlannerExcludedCandidate] = Field(default_factory=list)

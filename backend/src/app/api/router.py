@@ -66,10 +66,66 @@ async def invoke_explorer(
             },
         }),
     ],
+    request: Request,
     graph=Depends(get_explorer_graph),
 ) -> ExplorerOutput:
-    result = await graph.ainvoke({"payload": payload})
-    return result["output"]
+    request_id = str(uuid4())
+    started_at = perf_counter()
+    observability: ObservabilityService = request.app.state.observability_service
+    trace_callback = observability.start_trace(
+        request_id=request_id,
+        metadata={
+            "requestId": request_id,
+            "threadId": request_id,
+            "entryPoint": "explorer.invoke",
+            "messageLength": len(payload.raw_prompt or ""),
+            "input": {
+                "promptChars": len(payload.raw_prompt or ""),
+                "urlCount": len(payload.urls),
+                "imageCount": len(payload.images),
+                "forceRefresh": payload.force_refresh,
+            },
+        },
+    )
+    try:
+        result = await graph.ainvoke(
+            {"payload": payload},
+            config={"callbacks": [trace_callback]},
+        )
+        output = result["output"]
+        source_count = len(output.completeness.sources) if output.completeness else 0
+        await observability.record_agent_invoke(
+            request_id=request_id,
+            route="explorer",
+            success=True,
+            message_length=len(payload.raw_prompt or ""),
+            warning_count=len(output.warnings),
+            source_count=source_count,
+            has_itinerary=False,
+            output={
+                "status": output.status,
+                "placeCount": len(output.places or []),
+                "warningCount": len(output.warnings),
+                "sourceCount": source_count,
+            },
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        return output
+    except Exception as exc:
+        await observability.record_agent_invoke(
+            request_id=request_id,
+            route="explorer",
+            success=False,
+            message_length=len(payload.raw_prompt or ""),
+            warning_count=0,
+            source_count=0,
+            has_itinerary=False,
+            error_code=type(exc).__name__,
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        raise
+    finally:
+        await trace_callback.flush()
 
 
 @router.post("/v1/agent/invoke", response_model=InvokeResponse)
@@ -95,7 +151,16 @@ async def invoke_agent(
         metadata={
             "requestId": request_id,
             "threadId": payload.thread_id,
-            "input": graph_input,
+            "entryPoint": "agent.invoke",
+            "messageLength": len(payload.message or ""),
+            "input": {
+                "messageChars": len(payload.message or ""),
+                "urlCount": len(payload.urls),
+                "imageCount": len(payload.images),
+                "forceRefresh": payload.force_refresh,
+                "hasExistingItinerary": payload.existing_itinerary is not None,
+                "hasEditOperation": payload.edit_operation is not None,
+            },
         },
     )
     graph_config = {"configurable": {"thread_id": payload.thread_id}}

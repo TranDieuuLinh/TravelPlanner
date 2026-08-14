@@ -27,6 +27,7 @@ class LocalObservabilityStore:
             "finished_at": None, "duration_ms": None, "message_length": metadata.get("messageLength", 0),
             "warning_count": 0, "source_count": 0, "has_itinerary": False, "error_code": None,
             "thread_id": metadata.get("threadId"), "observations": [],
+            "entry_point": metadata.get("entryPoint", "agent.invoke"),
             "input_preview": _safe_preview(metadata.get("input")),
             "output_preview": None,
         }
@@ -115,12 +116,23 @@ class LocalObservabilityStore:
             errors = sum(item["status"] == "error" for item in traces)
         return {"configured": True, "reachable": True, "message": "Local observability đang hoạt động trong backend process.", "trace_count": len(traces), "observation_count": observations, "error_count": errors, "retention_limit": self.max_traces}
 
-    def page(self, resource: str, page: int, limit: int) -> dict[str, Any]:
+    def page(
+        self,
+        resource: str,
+        page: int,
+        limit: int,
+        trace_id: str | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
             if resource == "traces":
                 records = [_public_trace(item) for item in reversed(self._traces.values())]
             elif resource == "observations":
-                records = [_public_observation(observation) for trace in reversed(self._traces.values()) for observation in reversed(trace["observations"])]
+                records = [
+                    _public_observation(observation)
+                    for trace in reversed(self._traces.values())
+                    if trace_id is None or trace["id"] == trace_id
+                    for observation in reversed(trace["observations"])
+                ]
             else:
                 records = self._sessions()
         start = (page - 1) * limit
@@ -177,7 +189,9 @@ def _redact(value: Any) -> Any:
 
 
 def _public_trace(trace: dict[str, Any]) -> dict[str, Any]:
-    return _camelize({key: value for key, value in trace.items() if key != "observations"})
+    public = {key: value for key, value in trace.items() if key != "observations"}
+    public["observation_count"] = len(trace.get("observations", []))
+    return _camelize(public)
 
 
 def _public_observation(observation: dict[str, Any]) -> dict[str, Any]:

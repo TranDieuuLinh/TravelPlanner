@@ -42,6 +42,14 @@ FinalItineraryPlanner Phase 5 không thêm table hoặc migration. Global matrix
 CP-SAT result, selected route detail và `ItineraryPlannerOutput` chỉ tồn tại
 trong graph state/request hiện tại; việc lưu plan production vẫn phải đi qua
 trip-chat/revision ownership riêng, không ghi trực tiếp từ Planner.
+`excludedCandidates`, accommodation route geometry và solver audit metadata
+cũng chỉ là contract/runtime state, không tạo thêm database ownership.
+
+Observability thay đổi hiện tại không thêm table hoặc migration. Trace được giữ
+tối đa 500 request trong snapshot cục bộ
+`backend/logs/observability/traces.json`; đây là diagnostic theo process, không
+phải durable database tracing và không an toàn cho mô hình nhiều worker cùng
+ghi. Mỗi trace dùng request UUID riêng, còn `thread_id` chỉ dùng để nhóm session.
 
 Explorer có ba loại snapshot logic: `ready`, `clarification` và `failure`.
 Thay đổi hiện tại dùng `InMemoryExplorerSnapshotRepository`, không tạo table
@@ -317,7 +325,7 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 ### `knowledge_properties`
 
-Ngày sửa đổi cuối cùng: 2026-08-11.
+Ngày sửa đổi cuối cùng: 2026-08-14.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -329,6 +337,12 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `note` | text | Có | Ghi chú property. |
 | `fetch_at` | timestamptz | Có | Thời điểm dữ liệu property được lấy từ nguồn. |
+
+Dữ liệu do Google Maps Playwright tạo giữ URL thật trong `source`, thời điểm
+scrape trong `fetch_at`, và
+`note=provider=google_maps_playwright;verification=not_verified`. Entity được
+upsert với `status=pending`; admin đổi sang `verified` để cho phép trust như KG.
+Entity `rejected` bị loại khỏi PlaceChecker. Adapter không lưu raw page payload.
 
 ### `knowledge_relationships`
 
@@ -374,6 +388,12 @@ non-special. Trong nhóm non-special, `Offer_Item -> ActivityItem`, metadata
 Read path đưa `entityType` và `time_windows` của target `ActivityItem` vào
 relationship evidence để PlaceChecker phân biệt Offer Item activity và timing;
 không thêm cột, table hoặc ghi ngược dữ liệu Knowledge Graph.
+
+PlaceChecker metadata read path truyền toàn bộ giá trị từ property `tags` cùng
+tag suy ra từ `Special_Experience`, `Offer_Item`, `Has_Style` và `Special_Near`.
+Planner normalize cả tag tiếng Việt (`Tâm linh`, `Văn hóa`, `kiến trúc`,
+`di tích`, ...) để preference và diversity objective dùng đúng dữ liệu cloud;
+thay đổi này không thêm bảng hoặc ghi ngược Knowledge Graph.
 
 PlaceChecker code ngày 2026-08-14 đã chuẩn bị primary read path yêu cầu cùng
 FoodItem ID trên hai cạnh `Special_Experience`: ADM → `FoodItem` và Restaurant
