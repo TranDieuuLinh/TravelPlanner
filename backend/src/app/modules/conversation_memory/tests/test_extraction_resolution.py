@@ -206,15 +206,21 @@ class TestPhase02ExtractionAndResolution(unittest.TestCase):
             self.assertTrue(0.0 <= f.provenance.confidence <= 1.0)
 
     def test_process_message_full_pipeline(self):
-        updated_mem, extracted, refs, clarify = asyncio.run(
-            self.service.process_message(
+        async def run_pipeline():
+            mem, extracted, refs, clarify = await self.service.prepare_message_context(
                 chat_id=self.chat_id,
                 user_id=self.user_id,
                 message="Tôi muốn đi Hà Nội 3 ngày, 2 người",
                 turn=1,
                 message_id="msg_001",
             )
-        )
+            return await self.service.persist_prepared_context(
+                memory=mem,
+                facts=extracted,
+                expected_version=0,
+            ), extracted, refs, clarify
+
+        updated_mem, extracted, refs, clarify = asyncio.run(run_pipeline())
         self.assertEqual(updated_mem.destination, "Hà Nội")
         self.assertEqual(updated_mem.duration_days, 3)
         self.assertEqual(updated_mem.travelers, 2)

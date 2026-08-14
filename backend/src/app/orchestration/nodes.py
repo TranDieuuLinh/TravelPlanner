@@ -51,23 +51,79 @@ class RootNodes:
 
     async def run_supervisor(self, state: RootState) -> dict:
         previous_response = state.get("response")
-        previous_context = state.get("conversation_context", [])
-        context_items = [*previous_context]
+        recent = state.get("recent_messages") or []
+        context_items = list(recent)
+
+        previous_response = state.get("response")
         if previous_response and previous_response not in context_items:
-            context_items.append(f"[Trợ lý] {previous_response}")
-        conversation_context = [
-            *context_items,
-            *([state["message"]] if state.get("message") else []),
-        ][-6:]
-        result = await self.supervisor.ainvoke(
-            {
-                "message": state["message"],
-                "conversation_context": conversation_context,
-                "has_source_input": bool(state.get("urls") or state.get("images")),
-                "has_itinerary": state.get("existing_itinerary") is not None,
-                "has_edit_operation": state.get("edit_operation") is not None,
-            }
+            context_items.append(previous_response)
+
+        current_msg = state.get("message")
+        if current_msg and current_msg not in context_items:
+            context_items.append(current_msg)
+
+        conversation_context = context_items[-10:]
+
+        memory = state.get("conversation_memory")
+        dest = (
+            getattr(memory, "destination", None)
+            if memory
+            else None
         )
+        if not dest and isinstance(memory, dict):
+            dest = memory.get("destination")
+        dur = (
+            getattr(memory, "duration_days", None)
+            if memory
+            else None
+        )
+        if not dur and isinstance(memory, dict):
+            dur = memory.get("duration_days") or memory.get("durationDays")
+        places = (
+            getattr(memory, "mentioned_places", [])
+            if memory
+            else []
+        )
+        if not places and isinstance(memory, dict):
+            places = memory.get("mentioned_places") or memory.get("mentionedPlaces") or []
+        sel_places = (
+            getattr(memory, "selected_places", [])
+            if memory
+            else []
+        )
+        if not sel_places and isinstance(memory, dict):
+            sel_places = memory.get("selected_places") or memory.get("selectedPlaces") or []
+        summary = (
+            getattr(memory, "summary", None)
+            if memory
+            else None
+        )
+        if not summary and isinstance(memory, dict):
+            summary = memory.get("summary")
+        pending_goal = (
+            getattr(memory, "pending_goal", None)
+            if memory
+            else None
+        )
+        if not pending_goal and isinstance(memory, dict):
+            pending_goal = memory.get("pending_goal") or memory.get("pendingGoal")
+        clarification = pending_goal == "clarify_reference"
+
+        supervisor_payload = {
+            "message": state["message"],
+            "conversation_context": conversation_context,
+            "has_source_input": bool(state.get("urls") or state.get("images")),
+            "has_itinerary": state.get("existing_itinerary") is not None,
+            "has_edit_operation": state.get("edit_operation") is not None,
+            "destination": dest,
+            "duration_days": dur,
+            "mentioned_places": places,
+            "selected_places": sel_places,
+            "clarification_required": clarification,
+            "conversation_summary": summary,
+        }
+
+        result = await self.supervisor.ainvoke(supervisor_payload)
         decision = result["decision"]
         update = {
             "decision": decision,
@@ -90,6 +146,39 @@ class RootNodes:
             }}
         )
         output = result["output"]
+
+        # Context enrichment from conversation memory if present
+        memory = state.get("conversation_memory")
+        if memory:
+            dest = getattr(memory, "destination", None) or (memory.get("destination") if isinstance(memory, dict) else None)
+            dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
+            places = getattr(memory, "mentioned_places", None) or (memory.get("mentioned_places") or memory.get("mentionedPlaces") if isinstance(memory, dict) else None)
+
+            if dest and not output.input_adm:
+                output.input_adm = dest
+            if dur and not output.days:
+                output.days = dur
+            if places and not output.places:
+                from app.modules.explorer.contract import ExplorerPlace, PlaceSource
+                output.places = [
+                    ExplorerPlace(
+                        name=p,
+                        confidence=0.9,
+                        source_places=[
+                            PlaceSource(
+                                origin="input",
+                                evidence_type="raw_prompt",
+                                evidence=f"Memory place: {p}",
+                            )
+                        ],
+                    )
+                    for p in places
+                ]
+
+            if output.status == "clarification" and output.input_adm:
+                output.status = "ready"
+                output.clarification_question = None
+
         update = {
             "explorer_output": output,
             "warnings": [*state.get("warnings", []), *output.warnings],

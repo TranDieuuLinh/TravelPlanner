@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
-
+from app.modules.conversation_memory.public import (
+    MemoryReference,
+    WorkingMemoryState,
+)
 from app.modules.explorer.public import ExplorerImageInput
 from app.modules.information_finder.public import SourceReference
 from app.modules.itinerary_planner.public import ItineraryPlannerOutput
@@ -16,6 +18,11 @@ class RootGraphInput(BaseModel):
     force_refresh: bool = False
     existing_itinerary: Itinerary | None = None
     edit_operation: EditOperation | None = None
+
+    conversation_memory: WorkingMemoryState | None = None
+    recent_messages: list[str] = Field(default_factory=list, max_length=20)
+    conversation_summary: str | None = None
+    resolved_references: list[MemoryReference] = Field(default_factory=list)
 
 
 class RootGraphOutput(BaseModel):

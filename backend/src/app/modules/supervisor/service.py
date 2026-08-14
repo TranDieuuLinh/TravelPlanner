@@ -23,6 +23,21 @@ class SupervisorService:
         self._confidence_threshold = confidence_threshold
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
+        if payload.clarification_required:
+            places_str = (
+                ", ".join(payload.mentioned_places[:3])
+                if payload.mentioned_places
+                else "các địa điểm đã đề cập"
+            )
+            question = f"Bạn đang muốn tham chiếu đến địa điểm nào trong {places_str}?"
+            return SupervisorDecision(
+                route="finish",
+                confidence=1.0,
+                reason="Ambiguous reference requires clarification from user.",
+                clarification_question=question,
+                response=question,
+            )
+
         if self._classifier is None:
             return build_fallback_decision(
                 warning="Supervisor LLM chưa được cấu hình."

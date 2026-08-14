@@ -141,16 +141,17 @@ class ConversationMemoryService:
             expected_version=effective_expected_version,
         )
 
-    async def process_message(
+    async def prepare_message_context(
         self,
         chat_id: str,
         user_id: int,
         message: str,
         turn: int = 1,
         message_id: str | None = None,
+        initial_memory: WorkingMemoryState | None = None,
     ) -> tuple[WorkingMemoryState, Sequence[MemoryFact], Sequence[MemoryReference], bool]:
-        """Full Phase 02 pipeline: extract facts, resolve references, evaluate merge policies, and persist state atomically."""
-        current = await self.load_context(chat_id, user_id)
+        """Extract facts, resolve references, and evaluate merge policies without persisting."""
+        current = initial_memory if initial_memory is not None else await self.load_context(chat_id, user_id)
         extracted_facts = await self.extract_facts(message, current, turn=turn, message_id=message_id)
         references, clarification_required = await self.resolve_references(message, current)
 
@@ -164,10 +165,17 @@ class ConversationMemoryService:
                 update={"active_references": ref_list, "pending_goal": goal}
             )
 
-        saved_memory = await self.repository.save_memory_and_facts(
-            memory=merged_state,
-            facts=valid_facts,
-            expected_version=current.version,
-        )
+        return merged_state, valid_facts, references, clarification_required
 
-        return saved_memory, valid_facts, references, clarification_required
+    async def persist_prepared_context(
+        self,
+        memory: WorkingMemoryState,
+        facts: Sequence[MemoryFact],
+        expected_version: int,
+    ) -> WorkingMemoryState:
+        """Persist a prepared memory state and facts atomically."""
+        return await self.repository.save_memory_and_facts(
+            memory=memory,
+            facts=facts,
+            expected_version=expected_version,
+        )

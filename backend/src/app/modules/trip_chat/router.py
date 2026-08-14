@@ -18,8 +18,13 @@ from app.modules.trip_chat.service import TripChatService
 router = APIRouter(prefix="/v1/trip-chats", tags=["trip-chat"])
 
 
-def _service(request: Request) -> TripChatService:
-    return TripChatService(request.app.state.trip_chat_repository, get_graph())
+def _service(request: Request, graph = Depends(get_graph)) -> TripChatService:
+    memory_service = getattr(request.app.state, "conversation_memory_service", None)
+    return TripChatService(
+        repository=request.app.state.trip_chat_repository,
+        graph=graph,
+        memory_service=memory_service,
+    )
 
 
 def _not_found() -> None:

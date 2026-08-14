@@ -20,6 +20,13 @@ class SupervisorInput(BaseModel):
     has_itinerary: bool = False
     has_edit_operation: bool = False
 
+    destination: str | None = Field(default=None, max_length=200)
+    duration_days: int | None = Field(default=None, ge=1, le=60)
+    mentioned_places: list[str] = Field(default_factory=list, max_length=50)
+    selected_places: list[str] = Field(default_factory=list, max_length=50)
+    clarification_required: bool = False
+    conversation_summary: str | None = Field(default=None, max_length=2000)
+
 
 class ClassifierResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
