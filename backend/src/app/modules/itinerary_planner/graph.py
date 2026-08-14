@@ -64,4 +64,7 @@ def build_itinerary_planner_graph(
     builder.add_edge("optimize_itinerary", "enrich_selected_routes")
     builder.add_edge("enrich_selected_routes", "finalize_output")
     builder.add_edge("finalize_output", END)
-    return builder.compile()
+    # This subgraph keeps dataclass and immutable mapping objects in transient
+    # state. Do not inherit the root checkpointer: only the public planner input
+    # and output belong in the root conversation checkpoint.
+    return builder.compile(checkpointer=False)

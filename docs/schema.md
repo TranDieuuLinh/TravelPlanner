@@ -272,7 +272,7 @@ Các schema dùng chung chính:
 
 ## Auto-attach Style rules
 
-The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
+The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Default `time_duration` and `time_windows` are read from the target Style node; direct place timing overrides those defaults. Relationship properties remain a compatible per-attachment override. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
 
 Relationship contract accepts `recommendations` as either an object or an
 array of evidence objects, matching the runtime Knowledge Graph. Ontology also

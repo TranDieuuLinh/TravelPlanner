@@ -198,6 +198,26 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             """,
             place_ids,
         )
+        style_ids = list(
+            dict.fromkeys(
+                row["to_entity_id"]
+                for row in relationship_rows
+                if row["relationship_type"] == "Has_Style"
+            )
+        )
+        style_property_rows = (
+            await pool.fetch(
+                """
+                SELECT entity_id, key, value
+                FROM knowledge_properties
+                WHERE entity_id = ANY($1::text[])
+                  AND key IN ('time_duration', 'time_windows')
+                """,
+                style_ids,
+            )
+            if style_ids
+            else []
+        )
         properties: dict[str, dict[str, Any]] = defaultdict(dict)
         fetched_at: dict[str, datetime] = {}
         for row in property_rows:
@@ -207,9 +227,17 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 fetched_at[row["entity_id"]] = row["updated_at"]
         tags: dict[str, list[str]] = defaultdict(list)
         relationships = defaultdict(list)
+        style_properties: dict[str, dict[str, Any]] = defaultdict(dict)
+        for row in style_property_rows:
+            style_properties[row["entity_id"]][row["key"]] = row["value"]
         for row in relationship_rows:
             relationship = self._relationships(
-                [self._metadata_relationship(row)]
+                [
+                    self._metadata_relationship(
+                        row,
+                        style_properties=style_properties.get(row["to_entity_id"]),
+                    )
+                ]
             )[0]
             relationships[row["entity_id"]].append(relationship)
             if row["relationship_type"] == "Special_Experience":
@@ -235,7 +263,7 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
         }
 
     @staticmethod
-    def _metadata_relationship(row):
+    def _metadata_relationship(row, *, style_properties=None):
         raw = row["recommendations"]
         try:
             recommendations = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -264,6 +292,8 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             score = max(confidences, default=0.45 if payload.get("status") == "pending" else 0.72)
         else:
             score = min(0.75, 0.45 + float(payload.get("priority", 40)) / 400)
+        relationship_properties = dict(style_properties or {})
+        relationship_properties.update(payload.get("properties") or {})
         return {
             "relationshipType": relationship_type,
             "direction": row["direction"],
@@ -279,6 +309,6 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             "thresholdKm": threshold,
             "source": row["source"],
             "sourceNote": row["source_note"],
-            "properties": payload.get("properties") or {},
+            "properties": relationship_properties,
             "score": min(1, max(0, score)),
         }

@@ -10,9 +10,6 @@ services:
         required: true
     ports:
       - "${BACKEND_PORT:?Set BACKEND_PORT in backend/.env}:8000"
-    # Development mode: use the entire backend working tree directly so code
-    # and backend file changes do not require rebuilding the image. Remove this
-    # mount for production.
     volumes:
       - ./backend:/app
     command:
@@ -52,6 +49,19 @@ services:
     volumes:
       - ./routing-data/valhalla:/custom_files
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://localhost:8002/status",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   opentripplanner:
     image: docker.io/opentripplanner/opentripplanner:2.9.0

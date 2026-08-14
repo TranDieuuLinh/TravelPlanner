@@ -349,8 +349,12 @@ Runtime relationship semantics observed on 2026-08-13:
   `distance_km`, `threshold_km` and optional derivation rule;
 - `Offer_Item`: place → item; recommendations may be an evidence array or an
   object containing status/priority;
-- `Has_Style`: place → style; object may contain priority and fallback
-  `time_windows`/`time_duration` properties.
+- `Has_Style`: place → style. Runtime reads default `time_windows` and
+  `time_duration` from properties of the target `Style` node. A place's direct
+  properties take precedence; relationship properties remain a compatible
+  per-attachment override of the Style defaults. Multiple attached Style nodes
+  contribute all distinct time windows; the largest Style duration is used as
+  the place-level fallback duration.
 
 ### `knowledge_entity_images`
 

@@ -384,3 +384,17 @@ def test_external_call_budget_uses_at_most_two_sources() -> None:
     asyncio.run(service.retrieve(gap(), analysis_context()))
 
     assert [source.calls for source in sources] == [1, 1, 0]
+
+
+def test_food_query_reserves_three_meal_candidates_per_day() -> None:
+    food_gap = gap().gaps[0]
+
+    query = TargetedRetrievalService._query(
+        food_gap,
+        analysis_context(days=2),
+        None,
+        anchor_place_ids=[],
+        limit=3,
+    )
+
+    assert query.limit == 6

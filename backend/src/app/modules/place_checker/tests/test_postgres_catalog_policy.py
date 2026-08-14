@@ -63,6 +63,8 @@ def test_postgres_search_supports_cloud_relationship_shape() -> None:
     assert "special.to_entity_id" in PLACE_SEARCH_SQL
     assert "special.from_entity_id IN (SELECT id FROM adm_scope)" in PLACE_SEARCH_SQL
     assert "relationship_evidence" in PLACE_SEARCH_SQL
+    assert "PARTITION BY relation.to_entity_id" in PLACE_SEARCH_SQL
+    assert "'style_breakfast', 'style_lunch', 'style_dinner'" in PLACE_SEARCH_SQL
 
 
 def test_style_time_properties_only_fill_missing_place_metadata() -> None:
@@ -96,6 +98,100 @@ def test_style_time_properties_only_fill_missing_place_metadata() -> None:
     assert fallback.opening_hours == ["18:00-23:59"]
     assert direct.typical_duration_minutes == 45
     assert direct.opening_hours == ["09:00-10:00"]
+
+
+def test_style_node_properties_are_projected_onto_has_style_evidence() -> None:
+    row = {
+        "relationship_type": "Has_Style",
+        "direction": "place_to_attribute",
+        "scope": "place",
+        "from_entity_id": "restaurant:1",
+        "to_entity_id": "style:lunch",
+        "related_entity_id": "style:lunch",
+        "related_name": "Ăn trưa",
+        "recommendations": '{"priority":80}',
+        "source": "auto_attach",
+        "source_note": None,
+    }
+
+    evidence = PostgresPlaceCatalog._metadata_relationship(
+        row,
+        style_properties={
+            "time_duration": "PT45M",
+            "time_windows": '[{"start":"11:00","end":"13:00"}]',
+        },
+    )
+    relationship = PlaceRelationshipEvidence.model_validate(evidence)
+    metadata = PostgresCatalogMappingMixin._metadata(
+        "restaurant:1", "Restaurant", {}, [], None, [relationship]
+    )
+
+    assert metadata.typical_duration_minutes == 45
+    assert metadata.opening_hours == ["11:00-13:00"]
+
+
+def test_has_style_edge_properties_override_style_node_defaults() -> None:
+    row = {
+        "relationship_type": "Has_Style",
+        "direction": "place_to_attribute",
+        "scope": "place",
+        "from_entity_id": "restaurant:1",
+        "to_entity_id": "style:lunch",
+        "related_entity_id": "style:lunch",
+        "related_name": "Ăn trưa",
+        "recommendations": (
+            '{"properties":{"time_duration":"PT60M",'
+            '"time_windows":[{"start":"11:30","end":"14:00"}]}}'
+        ),
+        "source": "manual",
+        "source_note": None,
+    }
+
+    evidence = PostgresPlaceCatalog._metadata_relationship(
+        row,
+        style_properties={
+            "time_duration": "PT45M",
+            "time_windows": '[{"start":"11:00","end":"13:00"}]',
+        },
+    )
+
+    assert evidence["properties"] == {
+        "time_duration": "PT60M",
+        "time_windows": [{"start": "11:30", "end": "14:00"}],
+    }
+
+
+def test_multiple_style_windows_are_combined_when_place_has_no_direct_timing() -> None:
+    relationships = [
+        PlaceRelationshipEvidence(
+            relationship_type="Has_Style",
+            direction="place_to_attribute",
+            scope="place",
+            from_entity_id="restaurant:1",
+            to_entity_id=f"style:{meal}",
+            priority=priority,
+            properties={
+                "time_duration": duration,
+                "time_windows": [{"start": start, "end": end}],
+            },
+        )
+        for meal, priority, duration, start, end in (
+            ("breakfast", 90, "PT45M", "06:00", "10:00"),
+            ("lunch", 80, "PT45M", "11:00", "13:00"),
+            ("dinner", 70, "PT60M", "18:00", "20:00"),
+        )
+    ]
+
+    metadata = PostgresCatalogMappingMixin._metadata(
+        "restaurant:1", "Restaurant", {}, [], None, relationships
+    )
+
+    assert metadata.typical_duration_minutes == 60
+    assert metadata.opening_hours == [
+        "06:00-10:00",
+        "11:00-13:00",
+        "18:00-20:00",
+    ]
 
 
 def test_special_near_score_decreases_with_distance() -> None:

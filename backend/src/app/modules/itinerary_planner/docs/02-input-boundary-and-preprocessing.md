@@ -122,8 +122,10 @@ special_experience/special_near lỗi -> discarded optional
 ```
 
 Budget hoặc candidate cost có thể `null` khi upstream thật sự không biết.
-Budget `null` nghĩa là phase solver không bật hard budget constraint; candidate
-cost `null` được phân loại bằng `missing_cost`, không được âm thầm coi là 0.
+Budget `null` nghĩa là phase solver không bật hard budget constraint. Place
+cost `null` được phân loại bằng `missing_cost`. Riêng food cost `null` vẫn được
+giữ để bảo toàn meal coverage, tạo warning và không đóng góp vào budget total;
+điều này biểu thị chi phí chưa biết, không phải quán miễn phí.
 
 Reason code nên ổn định:
 

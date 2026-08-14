@@ -513,6 +513,9 @@ class TargetedRetrievalService:
             query_text = f"{', '.join(item_names)} restaurant"
         elif gap.gap_id == "pool:drink_alternatives" and item_names:
             query_text = f"{', '.join(item_names)} cafe"
+        query_limit = limit or per_gap_pool_target(context.days, 1)
+        if gap.gap_type == GapType.food_coverage:
+            query_limit = max(query_limit, min(60, context.days * 3))
         return TargetedRetrievalQuery(
             gap_id=gap.gap_id,
             gap_type=gap.gap_type,
@@ -533,5 +536,5 @@ class TargetedRetrievalService:
             relation_terms=POOL_RELATION_TERMS.get(gap.gap_id, []),
             # Longer trips need a wider reserve, while PlaceChecker still
             # leaves day assignment and route ordering to the final planner.
-            limit=limit or per_gap_pool_target(context.days, 1),
+            limit=query_limit,
         )

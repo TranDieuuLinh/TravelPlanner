@@ -139,6 +139,21 @@ def test_meal_eligibility_uses_meal_start_and_duration() -> None:
     )
 
 
+def test_food_with_unknown_cost_is_retained_and_warned() -> None:
+    unknown_cost = food("unknown_cost")
+    unknown_cost["price"]["cost"] = None
+    parsed = ItineraryPlannerInput.model_validate(payload(foods=[unknown_cost]))
+
+    prepared = prepare_planning_problem(parsed)
+
+    assert [item.place_id for item in prepared.valid_food] == ["unknown_cost"]
+    assert prepared.discarded_optional == ()
+    assert any(
+        "unknown_cost" in warning and "excluded from the budget total" in warning
+        for warning in prepared.warnings
+    )
+
+
 def test_preflight_reports_each_missing_day_and_meal() -> None:
     parsed = ItineraryPlannerInput.model_validate(
         payload(days=2, foods=[food(supported_meals=["lunch", "dinner"])])

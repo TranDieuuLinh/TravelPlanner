@@ -48,6 +48,29 @@ WITH RECURSIVE adm_descendants(id) AS (
       AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
       AND target.normalized_name % $1
     UNION ALL
+    SELECT styled.from_entity_id, 1.0 - styled.style_rank * 0.01
+    FROM (
+        SELECT relation.from_entity_id,
+               row_number() OVER (
+                   PARTITION BY relation.to_entity_id
+                   ORDER BY relation.from_entity_id
+               ) AS style_rank
+        FROM scoped
+        JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
+        WHERE $1 = 'restaurant'
+          AND relation.relationship_type = 'Has_Style'
+          AND relation.to_entity_id IN (
+              'style_breakfast', 'style_lunch', 'style_dinner'
+          )
+    ) styled
+    WHERE styled.style_rank <= 20
+    UNION ALL
+    SELECT relation.from_entity_id, 0.90
+    FROM scoped
+    JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
+    WHERE $1 = 'cafe'
+      AND relation.relationship_type = 'Has_Style'
+    UNION ALL
     SELECT special.to_entity_id, 0.0
     FROM knowledge_relationships special
     JOIN scoped ON scoped.id = special.to_entity_id
@@ -186,7 +209,11 @@ LEFT JOIN LATERAL (
         JOIN knowledge_entities target ON target.id = relation.to_entity_id
         WHERE relation.from_entity_id = entity.id
           AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
-          AND target.normalized_name % $1
+          AND (
+              target.normalized_name % $1
+              OR ($1 IN ('restaurant', 'cafe')
+                  AND relation.relationship_type = 'Has_Style')
+          )
     ) scored_relations
     ORDER BY score DESC, kind
     LIMIT 1

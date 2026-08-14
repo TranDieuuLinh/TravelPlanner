@@ -44,8 +44,15 @@ kiểm tra ADM, category và policy.
 `distance_km/threshold_km`; `Offer_Item` dùng confidence/status;
 `Has_Style` dùng priority; `Special_Experience` pending có boost thấp hơn.
 Keyword fallback chịu penalty `0.08`, relationship pending chịu penalty
-`0.04`. Time window/duration của `Has_Style` chỉ lấp metadata còn thiếu, không
-ghi đè property trực tiếp của place.
+`0.04`. Time window/duration mặc định được đọc từ node Style đích của
+`Has_Style`; relationship properties có thể override theo từng attachment.
+Các giá trị này chỉ lấp metadata còn thiếu, không ghi đè property trực tiếp
+của place. Khi một place có nhiều Style, adapter giữ toàn bộ time window để
+phủ các bữa/khung giờ tương ứng và dùng duration lớn nhất làm duration tổng
+bảo thủ trong contract hiện tại.
+Food retrieval giữ tối thiểu ba candidate cho mỗi ngày và interleave các
+Style `breakfast`/`lunch`/`dinner`, để pool gửi sang Planner có coverage theo
+từng bữa thay vì chỉ ưu tiên lexical match `restaurant`.
 
 ## Xếp hạng lại
 

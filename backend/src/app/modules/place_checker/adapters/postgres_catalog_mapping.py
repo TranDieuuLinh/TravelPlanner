@@ -128,7 +128,7 @@ class PostgresCatalogMappingMixin:
             {
                 (
                     relationship.relationship_type,
-                    relationship.related_entity_id,
+                    relationship.related_entity_id or relationship.to_entity_id,
                     relationship.scope,
                 ): relationship
                 for relationship in sorted(
@@ -171,8 +171,9 @@ class PostgresCatalogMappingMixin:
         except (TypeError, ValueError):
             return []
 
-    @staticmethod
+    @classmethod
     def _with_style_defaults(
+        cls,
         values: dict[str, Any],
         relationships: list[PlaceRelationshipEvidence],
     ) -> dict[str, Any]:
@@ -187,12 +188,29 @@ class PostgresCatalogMappingMixin:
             key=lambda relationship: relationship.priority or 0,
             reverse=True,
         )
+        style_windows: list[dict[str, Any]] = []
+        style_durations: list[int] = []
         for relationship in styles:
             properties = relationship.properties
-            if not merged.get("time_windows") and properties.get("time_windows"):
-                merged["time_windows"] = json.dumps(properties["time_windows"])
-            if not merged.get("time_duration") and properties.get("time_duration"):
-                merged["time_duration"] = properties["time_duration"]
+            if properties.get("time_windows"):
+                raw_windows = properties["time_windows"]
+                try:
+                    parsed_windows = (
+                        json.loads(raw_windows)
+                        if isinstance(raw_windows, str)
+                        else raw_windows
+                    )
+                except (TypeError, ValueError):
+                    parsed_windows = []
+                for window in parsed_windows if isinstance(parsed_windows, list) else []:
+                    if isinstance(window, dict) and window not in style_windows:
+                        style_windows.append(window)
+            if duration := cls._duration(properties.get("time_duration")):
+                style_durations.append(duration)
+        if not merged.get("time_windows") and style_windows:
+            merged["time_windows"] = json.dumps(style_windows)
+        if not merged.get("time_duration") and style_durations:
+            merged["time_duration"] = f"PT{max(style_durations)}M"
         return merged
 
     @staticmethod

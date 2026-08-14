@@ -37,6 +37,12 @@ def test_graph_prepares_new_planner_input() -> None:
     assert result["output"].phase_timings_ms["total"] >= 0
 
 
+def test_graph_does_not_inherit_parent_checkpointer() -> None:
+    graph = build_itinerary_planner_graph()
+
+    assert graph.checkpointer is False
+
+
 def test_graph_returns_preflight_error_without_three_meals() -> None:
     graph = build_itinerary_planner_graph()
     raw = payload()

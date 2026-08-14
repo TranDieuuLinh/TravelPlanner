@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-14.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -219,6 +219,9 @@ hoặc runtime fallback. Supervisor hiện được cấu hình
 Routing baseline chưa
 được production-evaluated. Root graph truyền tối đa sáu user message gần nhất
 từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải durable memory.
+Itinerary Planner subgraph không kế thừa root checkpointer vì state tính toán
+tạm thời chứa dataclass và immutable mappings; root chỉ checkpoint public input,
+output và conversation state sau khi subgraph hoàn tất.
 
 `shared/llm/` cung cấp port và Gemini REST adapter dùng chung, bao gồm tùy chọn
 URL Context tool cho module cần Gemini đọc URL public. `GEMINI_API_KEY`
@@ -242,7 +245,9 @@ Google Maps/external live provider chưa được nối.
 Candidate contract của tool giữ relationship evidence chuẩn hóa ở dạng dữ liệu
 trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`/`Near`,
 `Special_Experience`, `Offer_Item` và `Has_Style`, duyệt ADM đệ quy và chuyển
-evidence có provenance sang scoring/output. Identity acceptance mềm dành riêng
+evidence có provenance sang scoring/output. Timing mặc định của `Has_Style`
+được đọc từ properties của node Style đích; timing riêng của place được ưu tiên.
+Identity acceptance mềm dành riêng
 cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
 không áp dụng cho system/retrieval candidate.
 
