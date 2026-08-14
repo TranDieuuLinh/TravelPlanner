@@ -29,7 +29,8 @@ backend/
 │   ├── shared/
 │   │   ├── contracts/
 │   │   ├── persistence/
-│   │   └── llm/
+│   │   ├── llm/
+│   │   └── tools/       # search, rating, daily/transport cost dùng chung
 │   └── modules/
 │       ├── supervisor/
 │       ├── explorer/
@@ -71,18 +72,29 @@ adapter.
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
 module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
 fallback đường chim bay khi Valhalla unavailable, và
-sparse arcs trên contract `trip + places + food`, sau đó chạy Phase 4 OR-Tools
+sparse arcs trên contract `trip + places + food + accommodation`, sau đó chạy Phase 4 OR-Tools
 CP-SAT ba pass để giữ tối đa `user_input`, tiếp đến URL rồi tối ưu utility.
 Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator;
 fallback đường chim bay được gắn tại provider boundary và luôn phát warning.
+Fare estimator thuộc `shared/tools/transport_cost.py` để city-cost estimation
+và Planner dùng cùng một policy/version thay vì sở hữu hai bảng giá.
 Phase 5 lấy detail chỉ cho selected arcs, repair tối đa một vòng khi duration
 thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
+Mỗi itinerary day có `costBreakdown` gồm accommodation, food, localTransport,
+activities, misc và total trên một người. Planner điền giá stop, route và
+Accommodation có giá do PlaceChecker chọn; misc giữ 0 khi chưa có dữ liệu thật.
+Khi intake chưa có số phòng, accommodation tạm suy ra một phòng cho mỗi hai
+khách rồi chia lại thành giá/người/ngày.
 TripChat lưu hai snapshot độc lập: `currentItinerary` cho PlanEditor legacy và
 `currentPlannerOutput` cho frontend hiển thị output mới. Frontend map
 `days[].stops` thành item và `days[].legs` thành transport leg; guest planner
 cũng gọi trực tiếp `POST /v1/agent/invoke` thay vì adapter plan legacy.
+Danh sách TripChat chỉ map contract summary và giữ `hasItinerary`; sau một
+message, frontend áp dụng trực tiếp full chat snapshot vừa nhận để chuyển sang
+itinerary mà không phụ thuộc vào một lượt GET đồng bộ thứ hai. Output không có
+ngày hoặc có ngày không chứa stop không được coi là `TravelPlan` hợp lệ.
 
 ## Ranh giới API hiện tại
 

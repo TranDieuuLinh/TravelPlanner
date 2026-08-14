@@ -12,7 +12,7 @@ class CandidatePoolBalancer:
         *,
         target_per_type: int,
     ) -> list[ScoredCandidate]:
-        existing = {"travel_place": 0, "restaurant": 0}
+        existing = {"travel_place": 0, "restaurant": 0, "accommodation": 0}
         for evaluation in existing_places.places:
             if not evaluation.planner_eligible or not evaluation.place.place_id:
                 continue
@@ -24,13 +24,14 @@ class CandidatePoolBalancer:
             existing[cls._entity_type(category)] += 1
 
         selected_keys: set[str] = set()
-        for entity_type in ("travel_place", "restaurant"):
+        for entity_type in ("travel_place", "restaurant", "accommodation"):
             candidates = [
                 item
                 for item in ranked
                 if cls._entity_type(item.candidate.category) == entity_type
             ]
-            limit = max(0, target_per_type - existing[entity_type])
+            target = 1 if entity_type == "accommodation" else target_per_type
+            limit = max(0, target - existing[entity_type])
             selected_keys.update(
                 item.candidate.candidate_key
                 for item in cls.balance_categories(candidates, limit)
@@ -86,8 +87,9 @@ class CandidatePoolBalancer:
 
     @staticmethod
     def _entity_type(category: str | None) -> str:
-        return (
-            "restaurant"
-            if normalize_text(category) == "restaurant"
-            else "travel_place"
-        )
+        normalized = normalize_text(category)
+        if normalized == "restaurant":
+            return "restaurant"
+        if normalized == "accommodation":
+            return "accommodation"
+        return "travel_place"

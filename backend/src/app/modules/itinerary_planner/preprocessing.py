@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from math import ceil
 from types import MappingProxyType
 
 from app.modules.itinerary_planner.contract import (
@@ -10,6 +11,7 @@ from app.modules.itinerary_planner.contract import (
     ItineraryPlannerInput,
     MealType,
     PlannerCandidate,
+    PlannerAccommodation,
     PlannerFoodCandidate,
     PlannerTrip,
 )
@@ -62,6 +64,7 @@ MealSlot = tuple[str, int, MealType]
 @dataclass(frozen=True, slots=True)
 class PreparedPlanningProblem:
     trip: PlannerTrip
+    accommodation: PlannerAccommodation | None
     valid_places: tuple[PlannerCandidate, ...]
     valid_food: tuple[PlannerFoodCandidate, ...]
     candidate_by_id: Mapping[str, Candidate]
@@ -76,6 +79,7 @@ class PreparedPlanningProblem:
     unscheduled_priority: tuple[CandidateExclusion, ...]
     discarded_optional: tuple[CandidateExclusion, ...]
     warnings: tuple[str, ...]
+    accommodation_cost_per_person_per_day: int = 0
 
 
 def normalize_tag(value: str) -> str:
@@ -246,6 +250,16 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     unscheduled: list[CandidateExclusion] = []
     discarded: list[CandidateExclusion] = []
     warnings = list(payload.upstream_warnings)
+    accommodation_cost = 0
+    if payload.accommodation is not None:
+        # Until room count is part of the intake contract, use the conventional
+        # two-travelers-per-room estimate and expose a per-person daily cost.
+        inferred_rooms = max(1, ceil(trip.people / 2))
+        accommodation_cost = ceil(
+            payload.accommodation.price_per_night.cost
+            * inferred_rooms
+            / trip.people
+        )
 
     for candidate in payload.places:
         normalized, windows, unknown_days, exclusion = _prepare_place(candidate, trip)
@@ -333,6 +347,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         )
     return PreparedPlanningProblem(
         trip=trip,
+        accommodation=payload.accommodation,
         valid_places=tuple(valid_places),
         valid_food=tuple(valid_food),
         candidate_by_id=MappingProxyType(candidate_by_id),
@@ -347,4 +362,5 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         unscheduled_priority=tuple(unscheduled),
         discarded_optional=tuple(discarded),
         warnings=tuple(warnings),
+        accommodation_cost_per_person_per_day=accommodation_cost,
     )

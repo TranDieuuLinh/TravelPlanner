@@ -24,7 +24,7 @@ def test_three_days_keep_thirty_six_candidates_of_each_type() -> None:
     )
 
     categories = [item.candidate.category for item in result.ranked]
-    assert result.pool_target == 72
+    assert result.pool_target == 73
     assert categories.count("travel_place") == 36
     assert categories.count("restaurant") == 36
 

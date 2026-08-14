@@ -328,7 +328,10 @@ def test_orchestration_projects_ready_explorer_output_into_rich_pipeline() -> No
     )
 
     assert isinstance(update["place_output"], PlaceCheckerResult)
-    assert any(place.place_id == "kg:mausoleum" for place in update["planner_places"])
+    assert any(
+        place.place_id == "kg:mausoleum"
+        for place in update["planner_input"].places
+    )
     assert update["planner_input"].trip.start_date == explorer_output.start_date
     assert update["planner_input"].trip.timezone == "Asia/Ho_Chi_Minh"
     assert all(

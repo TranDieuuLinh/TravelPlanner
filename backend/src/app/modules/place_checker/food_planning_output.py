@@ -7,6 +7,29 @@ from app.modules.place_checker.output_contract import (
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
 
 
+def limit_food_pool(
+    food: list[PlannerOutputFood],
+    *,
+    limit: int,
+    required_ids: set[str],
+    paired_ids: set[str],
+) -> list[PlannerOutputFood]:
+    if len(food) <= limit:
+        return food
+    indexed = list(enumerate(food))
+    indexed.sort(
+        key=lambda entry: (
+            0
+            if entry[1].place_id in required_ids
+            else 1
+            if entry[1].place_id in paired_ids
+            else 2,
+            entry[0],
+        )
+    )
+    return [candidate for _, candidate in indexed[:limit]]
+
+
 class SelectedFoodPlanningProjector:
     @classmethod
     def project(

@@ -15,7 +15,6 @@ from app.modules.itinerary_planner.ports import (
     MatrixCache,
     RouteDetailProvider,
     RoutingMatrixProvider,
-    TransportCostEstimator,
 )
 from app.modules.itinerary_planner.preprocessing import (
     PlanningPreflightError,
@@ -28,6 +27,7 @@ from app.modules.itinerary_planner.route_enrichment import (
     invalid_timeline_days,
 )
 from app.modules.itinerary_planner.routing import build_routing_problem
+from app.shared.tools.transport_cost import TransportCostEstimator
 from app.modules.itinerary_planner.routing_models import RoutingPhaseError
 from app.modules.itinerary_planner.state import ItineraryPlannerState
 

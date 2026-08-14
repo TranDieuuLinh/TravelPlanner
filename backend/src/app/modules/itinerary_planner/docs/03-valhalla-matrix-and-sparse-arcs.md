@@ -173,14 +173,15 @@ retry K khi diagnostics cho thấy thiếu connectivity.
 
 ## Virtual start/end
 
-Input chưa có accommodation. Mỗi ngày dùng virtual start/end nội bộ:
+Accommodation hiện dùng cho cost và output, chưa được dùng làm routing anchor.
+Mỗi ngày vẫn dùng virtual start/end nội bộ:
 
 ```text
 VIRTUAL_START[d] -> first stop -> ... -> last stop -> VIRTUAL_END[d]
 ```
 
-Hai virtual leg có travel time/cost 0 và không xuất hiện trong itinerary. Sau
-này có accommodation chỉ cần thay bằng matrix nodes thật.
+Hai virtual leg có travel time/cost 0 và không xuất hiện trong itinerary. Bước
+sau có thể dùng tọa độ accommodation làm matrix node thật.
 
 ## Transport cost
 
@@ -192,8 +193,9 @@ TransportCostEstimator.estimate(distanceMeters, profile, people)
 -> (daytimeCostPerPerson, lateNightSurchargePerPerson)
 ```
 
-Implementation hiện tại là `XanhSmTransportCostEstimator`, dựa trên bảng giá
-Green SM Car công khai cho Hà Nội được kiểm tra ngày 2026-08-13:
+Implementation hiện tại là shared `XanhSmTransportCostEstimator` tại
+`app/shared/tools/transport_cost.py`, dựa trên bảng giá
+Green SM Car công khai cho Hà Nội được kiểm tra ngày 2026-08-14:
 
 ```text
 2 km đầu:                 30.500 VND/xe
@@ -205,11 +207,17 @@ planning buffer:          15%
 capacity mặc định:        4 người/xe
 ```
 
-Nguồn: [Green SM - bảng giá Hà Nội](https://www.greensm.com/vn-vi/news/cach-dat-xe-taxi-xanh-sm-nhanh-chong-tien-loi).
+Nguồn: [Green SM - bảng giá Hà Nội](https://www.greensm.com/vn-vi/news/bang-gia-xe-taxi-ha-noi).
 Không tính khuyến mãi. Số xe là `ceil(people / 4)` và kết quả được chia lại
 cho `people` để budget vẫn là budget/người. Phase 3 giữ riêng phụ phí đêm vì
-chỉ Phase 4 mới biết arc được dùng vào giờ nào. Fare policy có version để cập
-nhật/regression test khi hãng đổi giá.
+chỉ Phase 4 mới biết arc được dùng vào giờ nào. Fare estimate mang provider,
+market, currency và version để city-cost estimation tái sử dụng cùng nguồn.
+Fare policy có version để cập nhật/regression test khi hãng đổi giá.
+
+Phase 5 dùng shared `DailyCostCalculator` tạo breakdown/người/ngày. Food và
+activities lấy từ stop đã chọn, local transport lấy từ route; accommodation
+lấy từ `pricePerNight` đã chọn và số phòng suy ra, còn misc bằng 0 khi chưa có
+dữ liệu.
 
 Production không được âm thầm coi transport cost là 0 nếu hard budget bao gồm
 transport.
@@ -231,12 +239,14 @@ xác định ownership; Planner không tự tạo DB table trong phase này.
 ## File map triển khai
 
 ```text
-ports.py                         matrix/detail/cost interfaces
+ports.py                         matrix/detail interfaces
 routing_models.py                TravelMatrix, RouteDetail, SparseArc
 routing.py                       dedup, buffer, feasibility, sparse graph
 adapters/valhalla.py             HTTP adapter
 adapters/in_memory_matrix.py     deterministic tests
-adapters/transport_cost.py       policy giá theo distance được inject
+shared/tools/transport_cost.py   policy giá theo distance dùng chung
+shared/tools/daily_cost.py       cộng breakdown chi phí/người/ngày
+adapters/transport_cost.py       compatibility import cho caller cũ
 tests/test_routing_matrix.py
 tests/test_sparse_arcs.py
 tests/test_valhalla_adapter.py

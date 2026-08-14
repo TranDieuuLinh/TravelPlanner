@@ -1515,7 +1515,8 @@ function Planner() {
       let refreshedHasPlan: boolean | null = null;
       try {
         if (resultBelongsToActiveChat) {
-          const fresh = await getTripChat(result.turn.chatId);
+          const fresh = result.turn.chatSnapshot
+            ?? await getTripChat(result.turn.chatId);
           refreshedHasPlan = Boolean(fresh.currentPlan);
           if (
             shouldApplyBackgroundChatResult(

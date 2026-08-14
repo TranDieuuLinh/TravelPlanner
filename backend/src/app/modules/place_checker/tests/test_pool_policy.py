@@ -26,9 +26,9 @@ def test_pool_target_is_twelve_places_per_day_with_bounds() -> None:
 
 
 def test_combined_pool_has_independent_travel_and_restaurant_targets() -> None:
-    assert combined_pool_target_for_days(1) == 24
-    assert combined_pool_target_for_days(3) == 72
-    assert combined_pool_target_for_days(5) == 120
+    assert combined_pool_target_for_days(1) == 25
+    assert combined_pool_target_for_days(3) == 73
+    assert combined_pool_target_for_days(5) == 121
     assert pool_query_limit_for_days(1) == 24
     assert pool_query_limit_for_days(3) == 60
 
@@ -84,9 +84,13 @@ def test_core_pool_retrieval_always_queries_both_entity_types() -> None:
     assert set(queries) == {
         "pool:travel_place_candidates",
         "pool:restaurant_candidates",
+        "pool:accommodation_candidates",
+        "pool:accommodation_candidates",
         "pool:travel_place_reserve",
         "pool:restaurant_reserve",
     }
     assert queries["pool:travel_place_candidates"].category_hint == "travel place"
     assert queries["pool:restaurant_candidates"].category_hint == "restaurant"
+    assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
+    assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
     assert all(query.limit == 60 for query in queries.values())

@@ -98,3 +98,34 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   assert.deepEqual(plan.days[0].transportLegs[0].geometryCoordinates[0], [21.0285, 105.8542]);
   assert.equal(plan.unscheduledPlaces[0].reasonCode, "not_selected_by_optimizer");
 });
+
+test("rejects planner outputs without a scheduled stop on every day", () => {
+  const base = {
+    destination: "Hà Nội",
+    timezone: "Asia/Ho_Chi_Minh",
+    totalCostPerPerson: 0,
+    currency: "VND",
+    solver: {},
+    unscheduled: [],
+    discardedOptionalCount: 0,
+    warnings: [],
+    phaseTimingsMs: {},
+  };
+
+  assert.equal(plannerOutputToTravelPlan({ ...base, days: [] }), null);
+  assert.equal(
+    plannerOutputToTravelPlan({
+      ...base,
+      days: [{
+        day: 1,
+        date: "2026-08-15",
+        stops: [],
+        legs: [],
+        activityMinutes: 0,
+        travelMinutes: 0,
+        costPerPerson: 0,
+      }],
+    }),
+    null,
+  );
+});

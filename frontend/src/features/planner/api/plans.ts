@@ -1,8 +1,14 @@
 import { apiFetch } from "@/shared/api/client";
+import { plannerOutputToTravelPlan } from "@/features/planner/lib/planner-output";
 import {
-  plannerOutputToTravelPlan,
-  type ItineraryPlannerOutput,
-} from "@/features/planner/lib/planner-output";
+  mapCurrentTripChat,
+  mapCurrentTripChatSummary,
+  type CurrentTripChat,
+  type CurrentTripChatSummary,
+} from "@/features/planner/lib/trip-chat-mapping";
+
+const mapFullCurrentTripChat = (chat: CurrentTripChat): TripChat =>
+  mapCurrentTripChat(chat, plannerOutputToTravelPlan);
 
 export type OpeningHourEntry = {
   dayOfWeek?: number | null;
@@ -212,6 +218,13 @@ export type TravelPlan = {
   regionStories?: PlanNoteSource[];
   kind: "main" | "backup";
   days: PlanDay[];
+  accommodation?: {
+    placeId: string;
+    name: string;
+    address?: string | null;
+    pricePerNight: number;
+    currency: string;
+  } | null;
   planningAssumptions?: string[];
   warnings?: string[];
   unscheduledPlaces?: UnscheduledPlace[];
@@ -551,105 +564,12 @@ export type TripChat = TripChatSummary & {
   turns: TripChatTurn[];
 };
 
-type CurrentTripChat = {
-  id: string;
-  title: string;
-  threadId: string;
-  revision: number;
-  hasItinerary: boolean;
-  currentItinerary?: Record<string, any> | null;
-  currentPlannerOutput?: ItineraryPlannerOutput | null;
-  createdAt: string;
-  updatedAt: string;
-  messages?: Array<{
-    id: string;
-    role: "assistant" | "user";
-    content: string;
-    route?: string | null;
-    clarificationQuestion?: string | null;
-    warnings?: string[];
-    sources?: Array<Record<string, unknown>>;
-    createdAt: string;
-  }>;
-};
-
-function currentItineraryToPlan(itinerary: Record<string, any> | null | undefined): TravelPlan | null {
-  if (!itinerary) return null;
-  const intent = itinerary.intent ?? {};
-  return {
-    id: itinerary.itineraryId ?? itinerary.itinerary_id ?? "agent-itinerary",
-    title: `${intent.destination ?? "Chuyến đi"} · ${itinerary.days?.length ?? 0} ngày`,
-    destination: intent.destination ?? "",
-    kind: "main",
-    warnings: itinerary.warnings ?? [],
-    days: (itinerary.days ?? []).map((day: any) => ({
-      day: day.day,
-      transportLegs: [],
-      items: (day.items ?? []).map((item: any) => {
-        const place = item.place ?? {};
-        const start = item.startMinute ?? item.start_minute;
-        const end = item.endMinute ?? item.end_minute;
-        return {
-          itemId: item.itemId ?? item.item_id,
-          placeId: place.placeId ?? place.place_id,
-          name: place.name ?? "Địa điểm",
-          address: null,
-          timeWindow: `${formatMinute(start)} – ${formatMinute(end)}`,
-          placeType: "activity",
-          source: place.source ?? "agent",
-          sourceRefs: [],
-          latitude: place.coordinates?.latitude ?? null,
-          longitude: place.coordinates?.longitude ?? null,
-          tags: place.tags ?? [],
-        };
-      }),
-    })),
-  };
-}
-
-function formatMinute(value: unknown): string {
-  const minute = Number(value);
-  if (!Number.isFinite(minute)) return "--:--";
-  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-}
-
-function mapCurrentTripChat(chat: CurrentTripChat): TripChat {
-  const plan = plannerOutputToTravelPlan(chat.currentPlannerOutput, {
-    id: `agent-${chat.id}`,
-  }) ?? currentItineraryToPlan(chat.currentItinerary);
-  return {
-    id: chat.id,
-    title: chat.title,
-    destination: plan?.destination ?? null,
-    revision: chat.revision,
-    hasPlan: Boolean(plan),
-    createdAt: chat.createdAt,
-    updatedAt: chat.updatedAt,
-    tripIntentVersion: 0,
-    tripIntentPlanStatus: "synced",
-    currentPlan: plan,
-    currentTripIntent: null,
-    candidateReviews: [],
-    messages: (chat.messages ?? []).map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      attachmentNames: [],
-      planRevision: plan ? chat.revision : null,
-      createdAt: message.createdAt,
-      messageKind: message.role,
-      contentBlocks: [],
-    })),
-    turns: [],
-  };
-}
-
 async function sendCurrentTripChatMessage(chatId: string, content: string): Promise<TripChat> {
   const response = await apiFetch<{ chat: CurrentTripChat }>(
     `/v1/trip-chats/${encodeURIComponent(chatId)}/messages`,
     { method: "POST", body: JSON.stringify({ content }) },
   );
-  return mapCurrentTripChat(response.chat);
+  return mapFullCurrentTripChat(response.chat);
 }
 
 function completedAgentTurn(chat: TripChat, content: string, clientTurnId?: string): TripChatTurn {
@@ -673,6 +593,7 @@ function completedAgentTurn(chat: TripChat, content: string, clientTurnId?: stri
     createdAt: now,
     updatedAt: now,
     planRevision: chat.currentPlan ? chat.revision : null,
+    chatSnapshot: chat,
   };
 }
 
@@ -729,6 +650,7 @@ export type TripChatTurn = {
   createdAt: string;
   updatedAt: string;
   planRevision: number | null;
+  chatSnapshot?: TripChat;
 };
 
 export const TERMINAL_TURN_STATUSES: ReadonlySet<TurnStatus> = new Set([
@@ -801,14 +723,14 @@ export async function createTripChat(title?: string): Promise<TripChat> {
     method: "POST",
     body: JSON.stringify({ title: title || null })
   });
-  return mapCurrentTripChat(chat);
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function listTripChats(
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChatSummary[]> {
-  const chats = await apiFetch<CurrentTripChat[]>("/v1/trip-chats", init);
-  return chats.map((chat) => mapCurrentTripChat(chat));
+  const chats = await apiFetch<CurrentTripChatSummary[]>("/v1/trip-chats", init);
+  return chats.map(mapCurrentTripChatSummary);
 }
 
 export async function getTripChat(
@@ -816,7 +738,7 @@ export async function getTripChat(
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChat> {
   const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${encodeURIComponent(chatId)}`, init);
-  return mapCurrentTripChat(chat);
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function updateTripChatIntent(input: {

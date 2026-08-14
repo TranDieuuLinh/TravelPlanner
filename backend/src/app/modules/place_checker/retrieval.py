@@ -96,6 +96,11 @@ CORE_POOL_QUERY_SPECS = {
         "restaurant",
         "restaurant",
     ),
+    "pool:accommodation_candidates": (
+        GapType.budget,
+        "hotel",
+        "accommodation",
+    ),
     "pool:travel_place_reserve": (
         GapType.experience_coverage,
         "culture museum heritage",

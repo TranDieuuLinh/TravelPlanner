@@ -1,4 +1,7 @@
 from app.modules.place_checker.checked_output_contract import CheckedPlace
+from app.modules.place_checker.accommodation_planning_output import (
+    select_accommodation,
+)
 from app.modules.place_checker.enums import SourceTier, VerificationStatus
 from app.modules.place_checker.output_contract import (
     PlaceCheckerPlannerOutput,
@@ -12,7 +15,14 @@ from app.modules.place_checker.output_contract import (
 )
 from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
-from app.modules.place_checker.food_planning_output import SelectedFoodPlanningProjector
+from app.modules.place_checker.food_planning_output import (
+    SelectedFoodPlanningProjector,
+    limit_food_pool,
+)
+from app.modules.place_checker.planning_time_windows import (
+    meals_for_hours,
+    parse_planner_windows,
+)
 from app.modules.place_checker.planner_candidate_metadata import (
     preferred_time_values,
     source_metadata,
@@ -36,10 +46,12 @@ class PlaceCheckerPlannerOutputBuilder:
         places: list[PlannerOutputPlace] = []
         food: list[PlannerOutputFood] = []
         for checked in result.checked_places:
+            if checked.category == "accommodation":
+                continue
             if not self._eligible(checked):
                 continue
             if checked.category in {"restaurant", "drink_dessert"}:
-                meals = self._supported_meals(checked)
+                meals = meals_for_hours(checked.opening.hours)
                 if meals:
                     food.append(
                         self._food(checked, result.trip_context.days, meals)
@@ -62,7 +74,7 @@ class PlaceCheckerPlannerOutputBuilder:
             ):
                 continue
             if item.selected.category in {"restaurant", "drink_dessert"}:
-                meals = self._meals_for_hours(item.selected.opening_hours)
+                meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
                     continue
                 food.append(self._item_food(item, result.trip_context.days, meals))
@@ -125,7 +137,7 @@ class PlaceCheckerPlannerOutputBuilder:
             selection.restaurant_id
             for selection in result.food_restaurant_selections
         }
-        food = self._limit_food_pool(
+        food = limit_food_pool(
             food,
             limit=pool_target_for_days(result.trip_context.days),
             required_ids=required_food_ids,
@@ -150,30 +162,10 @@ class PlaceCheckerPlannerOutputBuilder:
             ),
             places=places,
             food=food,
+            accommodation=select_accommodation(result),
         )
 
-    @staticmethod
-    def _limit_food_pool(
-        food: list[PlannerOutputFood],
-        *,
-        limit: int,
-        required_ids: set[str],
-        paired_ids: set[str],
-    ) -> list[PlannerOutputFood]:
-        if len(food) <= limit:
-            return food
-        indexed = list(enumerate(food))
-        indexed.sort(
-            key=lambda entry: (
-                0
-                if entry[1].place_id in required_ids
-                else 1
-                if entry[1].place_id in paired_ids
-                else 2,
-                entry[0],
-            )
-        )
-        return [candidate for _, candidate in indexed[:limit]]
+    _limit_food_pool = staticmethod(limit_food_pool)
 
     @staticmethod
     def _eligible(checked: CheckedPlace) -> bool:
@@ -260,7 +252,7 @@ class PlaceCheckerPlannerOutputBuilder:
             review_count=option.review_count,
             duration_minutes=option.typical_duration_minutes,
             opening_hours=cls._opening_hours(option.opening_hours, days),
-            preferred_time_windows=cls._windows(preferred_values),
+            preferred_time_windows=parse_planner_windows(preferred_values),
             source_kind=source_kind,
             offered_activity_ids=offered_activity_ids,
             time_source=time_source(
@@ -359,57 +351,14 @@ class PlaceCheckerPlannerOutputBuilder:
             direct_values=checked.time_preferences,
             relationships=checked.relationship_evidence,
         )
-        return cls._windows(values)
+        return parse_planner_windows(values)
 
     @classmethod
     def _opening_hours(
         cls, values: list[str] | None, days: int
     ) -> dict[str, list[PlannerTimeWindow]] | None:
-        windows = cls._windows(values or [])
+        windows = parse_planner_windows(values or [])
         return {str(day): windows for day in range(1, days + 1)} if windows else None
-
-    @staticmethod
-    def _windows(values: list[str]) -> list[PlannerTimeWindow]:
-        result: list[PlannerTimeWindow] = []
-        for value in values:
-            if "-" not in value:
-                continue
-            start, end = value.split("-", 1)
-            try:
-                start_hour, start_minute = (int(part) for part in start.split(":"))
-                end_hour, end_minute = (int(part) for part in end.split(":"))
-            except (TypeError, ValueError):
-                continue
-            start_total = start_hour * 60 + start_minute
-            end_total = end_hour * 60 + end_minute
-            if start_total == end_total:
-                end_total = 1440
-            if not (0 <= start_total <= 1439 and 0 <= end_total <= 1440):
-                continue
-            window = PlannerTimeWindow(
-                start_minute=start_total,
-                end_minute=end_total,
-            )
-            if window not in result:
-                result.append(window)
-        return result
-
-    @classmethod
-    def _supported_meals(cls, checked: CheckedPlace) -> list[str]:
-        if checked.category not in {"restaurant", "drink_dessert"}:
-            return []
-        return cls._meals_for_hours(checked.opening.hours)
-
-    @classmethod
-    def _meals_for_hours(cls, opening_hours: list[str] | None) -> list[str]:
-        spans = cls._windows(opening_hours or [])
-        if not spans:
-            return ["breakfast", "lunch", "dinner"]
-        return [
-            meal
-            for meal, minute in (("breakfast", 480), ("lunch", 720), ("dinner", 1140))
-            if any(window.start_minute <= minute <= window.end_minute for window in spans)
-        ]
 
     @staticmethod
     def _price(checked: CheckedPlace) -> PlannerPrice:

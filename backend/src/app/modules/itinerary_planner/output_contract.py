@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     MealType,
+    PlannerAccommodation,
     PlannerContractModel,
     PlannerCoordinates,
 )
@@ -39,6 +40,29 @@ class ItineraryRouteLeg(PlannerContractModel):
     geometry_available: bool
 
 
+class DailyCostBreakdown(PlannerContractModel):
+    accommodation: int = Field(ge=0)
+    food: int = Field(ge=0)
+    local_transport: int = Field(ge=0)
+    activities: int = Field(ge=0)
+    misc: int = Field(ge=0)
+    total: int = Field(ge=0)
+    currency: str
+
+    @model_validator(mode="after")
+    def total_matches_components(self) -> "DailyCostBreakdown":
+        expected = (
+            self.accommodation
+            + self.food
+            + self.local_transport
+            + self.activities
+            + self.misc
+        )
+        if self.total != expected:
+            raise ValueError("cost breakdown total must equal its components")
+        return self
+
+
 class ItineraryDay(PlannerContractModel):
     day: int = Field(ge=1, le=30)
     date: date
@@ -47,6 +71,13 @@ class ItineraryDay(PlannerContractModel):
     activity_minutes: int = Field(ge=0)
     travel_minutes: int = Field(ge=0)
     cost_per_person: int = Field(ge=0)
+    cost_breakdown: DailyCostBreakdown
+
+    @model_validator(mode="after")
+    def cost_matches_breakdown(self) -> "ItineraryDay":
+        if self.cost_per_person != self.cost_breakdown.total:
+            raise ValueError("cost_per_person must equal cost_breakdown.total")
+        return self
 
 
 class UnscheduledPriority(PlannerContractModel):
@@ -91,6 +122,7 @@ class SourceMixAudit(PlannerContractModel):
 class ItineraryPlannerOutput(PlannerContractModel):
     destination: str
     timezone: str
+    accommodation: PlannerAccommodation | None = None
     days: list[ItineraryDay]
     total_cost_per_person: int = Field(ge=0)
     budget_per_person: float | None = Field(default=None, ge=0)

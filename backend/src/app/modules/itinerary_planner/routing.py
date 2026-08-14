@@ -13,7 +13,6 @@ from app.modules.itinerary_planner.policies import MEAL_POLICIES
 from app.modules.itinerary_planner.ports import (
     MatrixCache,
     RoutingMatrixProvider,
-    TransportCostEstimator,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import (
@@ -29,6 +28,7 @@ from app.modules.itinerary_planner.routing_models import (
     SparseArc,
     TravelMatrix,
 )
+from app.shared.tools.transport_cost import TransportCostEstimator
 
 
 DEFAULT_NEIGHBOR_LIMIT = 12

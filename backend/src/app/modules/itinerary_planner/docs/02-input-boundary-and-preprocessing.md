@@ -61,7 +61,8 @@ PlannerTrip(...)
 PlannerPrice(cost, currency)
 PlannerCandidate(...)
 PlannerFoodCandidate(..., supportedMeals)
-ItineraryPlannerInput(trip, places, food, upstreamWarnings)
+PlannerAccommodation(..., pricePerNight)
+ItineraryPlannerInput(trip, places, food, accommodation, upstreamWarnings)
 ```
 
 Enum bắt buộc:
@@ -75,6 +76,10 @@ MealType = breakfast | lunch | dinner
 chứa ID thuộc tập này. Nếu tương lai có nhiều activity khác nhau tại
 cùng physical place thì mới bổ sung `candidateId`; không thêm sớm khi chưa
 có use case thật.
+
+Accommodation là lựa chọn lưu trú riêng, không nằm trong tập stop và không cần
+opening/duration. Khi intake chưa có `rooms`, preprocessing suy ra
+`ceil(people / 2)` phòng và quy đổi `pricePerNight` thành chi phí/người/ngày.
 
 ## Ý nghĩa opening hours
 

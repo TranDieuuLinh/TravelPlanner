@@ -7,9 +7,9 @@ from app.modules.itinerary_planner.adapters import (
     InMemoryMatrixCache,
     StraightLineRoutingAdapter,
     ValhallaAdapter,
-    XanhSmTransportCostEstimator,
 )
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
+from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
 
 
 def build_valhalla_itinerary_planner_graph(
